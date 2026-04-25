@@ -234,6 +234,10 @@ add a jurisdiction, start from [jurisdiction_starter/](jurisdiction_starter/).
 ## License and Legal Disclaimer
 
 LawVM output is not legal advice, not an official legal consolidation, and not a
-substitute for authoritative legal sources. Divergences emitted by LawVM are
-candidates for investigation unless confirmed by the responsible authority or
+substitute for authoritative legal sources.
+
+When LawVM replay agrees with an independent consolidated source, that agreement
+is strong evidence that the text-state is correct, though still not an absolute
+legal guarantee. When LawVM diverges from a witness surface, the divergence is a
+candidate for investigation unless confirmed by the responsible authority or
 another authoritative process.
