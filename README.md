@@ -134,6 +134,12 @@ Selected commands:
 
 ```bash
 # Finland / default frontend
+# First import the public Finlex source archives.
+uv run lawvm import-zip \
+  --statute-zip https://www.finlex.fi/api/assets/open-data/archives/statute.zip \
+  --consolidated-zip https://www.finlex.fi/api/assets/open-data/archives/statute-consolidated.zip
+
+# Then replay, explain, diff, and oracle-check statutes from the local archive.
 uv run lawvm replay 2002/738 --as-of 2024-01-01
 uv run lawvm explain 2002/738
 uv run lawvm diff 2002/738
@@ -152,8 +158,11 @@ uv run lawvm no-index
 uv run lawvm sweden --help
 ```
 
-Many workflows require local archived sources under `data/*.farchive`. Replay
-and verification should be archive-first whenever possible.
+Full Finland replay workflows require local archived sources under
+`data/*.farchive`. Use `uv run lawvm import-zip` with the public Finlex
+`statute.zip` and `statute-consolidated.zip` archives before running ordinary
+Finland replay, diff, oracle-check, or benchmark commands. Replay and
+verification should be archive-first whenever possible.
 
 The repository includes small public corpus indexes and fixtures, not the full
 source archives needed for every replay workflow.
