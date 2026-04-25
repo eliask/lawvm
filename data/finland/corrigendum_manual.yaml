@@ -1,0 +1,74 @@
+# Corrigendum manual override dataset.
+#
+# Use for cases where automated extraction produced wrong/missing wrong_text
+# that can't be matched in the source XML (e.g. LLM used ellipsis, text spans
+# multiple XML elements, or extraction missed a case entirely).
+#
+# IMPORTANT: wrong_text must appear verbatim in the amendment's johtolause XML.
+# Entries here REPLACE all DB entries for the same amendment_id.
+# correction_type defaults to "johtolause".
+#
+# Format:
+#   - amendment_id: "NUM/YEAR"
+#     wrong_text: "exact text in source XML"
+#     correct_text: "corrected text per corrigendum PDF"
+#     correction_type: johtolause   # or: table, prose
+#     notes: "human-readable explanation"
+#     verified: "YYYY-MM-DD"
+
+# 991/2012 (Laki varainsiirtoverolain muuttamisesta ja väliaikaisesta muuttamisesta)
+# Source: sk20120991_1.pdf
+# LLM used ellipsis "..." spanning two separate XML <block> elements → NO MATCH.
+# Fix: split into two atomic replacements, both within the johtolause preamble.
+# Verified 2026-03-23 against statute.zip akn/fi/act/statute/2012/991/fin@/main.xml.
+
+- amendment_id: "991/2012"
+  wrong_text: "sekä 43 b ja 43 c §,"
+  correct_text: "sekä väliaikaisesti 43 b ja 43 c §,"
+  correction_type: johtolause
+  notes: "block[substitutions]: adds 'väliaikaisesti' before '43 b'; LLM collapsed two blocks into one with ellipsis"
+  verified: "2026-03-23"
+
+- amendment_id: "991/2012"
+  wrong_text: "ja lakiin uusi 43 a §"
+  correct_text: "ja lakiin väliaikaisesti uusi 43 a §"
+  correction_type: johtolause
+  notes: "block[insertions]: adds 'väliaikaisesti' before 'uusi 43 a §'"
+  verified: "2026-03-23"
+
+# 442/2016 (Puolustusministeriön asetus ... asetuksen muuttamisesta)
+# Source: sk20160442_1.pdf
+# The active replay-relevant corrigenda are both in the johtolause preamble.
+# The DB extraction used ellipsis spans; the exact source XML needs two atomic
+# substitutions inside the enacting clause blocks. The same amendment also has
+# prose-level corrigendum rows in the body, but the current runtime patch path
+# only applies source XML pre-PEG fixes through the johtolause fragment.
+# Verified 2026-03-29 against statute.zip akn/fi/act/statute/2016/442/fin@/main.xml.
+
+- amendment_id: "442/2016"
+  wrong_text: "18 §:n 4 ja 5 momentti ja 31 § ja"
+  correct_text: "18 §:n 4 ja 5 momentti, 31 §:n 1 momentti sekä"
+  correction_type: johtolause
+  notes: "block[substitutions]: fixes omitted '31 §:n 1 momentti' before the following insertions block"
+  verified: "2026-03-29"
+
+- amendment_id: "442/2016"
+  wrong_text: "9 §:n 1 momenttiin uusi 9 kohta ja uusi 2 momentti seuraavasti:"
+  correct_text: "9 §:n 1 momenttiin uusi 9 kohta ja pykälään uusi 2 momentti, jolloin nykyinen 2 ja 3 momentti siirtyvät 3 ja 4 momentiksi, seuraavasti:"
+  correction_type: johtolause
+  notes: "block[insertions]: restores missing 'pykälään' phrase and renumbering clause for new 2 momentti"
+  verified: "2026-03-29"
+
+# 541/2018 (Laki varhaiskasvatuksen asiakasmaksuista annetun lain muuttamisesta)
+# Source: statute 2016/1503 §4 mom 1 is truncated in SD amendment body to 1 sentence.
+# The sd-cons snapshot fin@20180541 has the correct 4-sentence text.
+# This is a Finlex publication error (SD body incomplete, not a johtolause issue).
+# Fix: body_text patch replaces the truncated 1-sentence text with the full 4-sentence text.
+# Verified 2026-04-09 against sd-cons/2016/1503/fin@20180541/main.xml.
+
+- amendment_id: "541/2018"
+  wrong_text: "Varhaiskasvatuslaissa tarkoitetusta päiväkotitoimintana ja perhepäivähoitona järjestettävästä varhaiskasvatuksesta voidaan määrätä kuukausimaksu."
+  correct_text: "Varhaiskasvatuslaissa tarkoitetusta päiväkotitoimintana ja perhepäivähoitona järjestettävästä varhaiskasvatuksesta voidaan määrätä kuukausimaksu. Maksu voidaan periä enintään yhdeltätoista kalenterikuukaudelta toimintavuoden aikana. Jos lapsi on varhaiskasvatuksessa toimintavuoden kaikkina kuukausina ja hän on poissa varhaiskasvatuksesta toimintavuoden aikana muusta syystä kuin sairauden vuoksi enintään kolme neljäsosaa kuukausimaksun perusteena olevien kuukausittaisten varhaiskasvatuspäivien määrästä, voidaan maksu kuitenkin periä 12 kuukaudelta. Poissaolopäiviä laskettaessa otetaan huomioon etukäteen ilmoitetut poissaolot."
+  correction_type: body_text
+  notes: "SD body for §4 mom 1 truncated (1 sentence); sd-cons fin@20180541 has full 4-sentence text. Finlex publication error."
+  verified: "2026-04-09"

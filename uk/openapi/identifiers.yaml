@@ -1,0 +1,1354 @@
+openapi: "3.0.0"
+info:
+  version: 1.0.0
+  title: Legislation Identifiers API
+  description: Identifier URIs are the best method to cite legislation. When an identifier URI is requested, the response will usually be a 303 redirection to a document URI that is considered to be the best available data for that item of legislation in a representation as determined by the Accept headers of the HTTP request. 
+  license:
+    name: OGL
+servers:
+  - url: https://www.legislation.gov.uk/
+    description: English language legislation domain
+  - url: https://www.legislation.gov.uk/en/
+    description: Explicit English language legislation domain
+  - url: https://www.legislation.gov.uk/cy/
+    description: Welsh language legislation domain
+paths:
+  /id:
+      get:
+        summary: "Identifier URI  page forms"
+        description: "The URI defines  page forms"
+        operationId: "identifiers-id"
+        parameters:
+           - $ref: "#/components/parameters/SearchTitleQuery"
+           - $ref: "#/components/parameters/SearchTypeQuery"
+           - $ref: "#/components/parameters/SearchYearQuery"
+           - $ref: "#/components/parameters/SearchNumberQuery"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}:
+      get:
+        summary: "Identifier URI  for type, year and number"
+        description: "The URI defines  a search request where custom values for type, year and number can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{notesType}:
+      get:
+        summary: "Identifier URI  for type, year, number and notesType"
+        description: "The URI defines  a search request where custom values for type, year, number and notesType can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-notesType"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/notesType"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{provision}:
+      get:
+        summary: "Identifier URI  for type, year, number and provision"
+        description: "The URI defines  a search request where custom values for type, year, number and provision can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-provision"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{provision}/{provisionNumber}:
+      get:
+        summary: "Identifier URI  for type, year, number, provision and provisionNumber"
+        description: "The URI defines  a search request where custom values for type, year, number, provision and provisionNumber can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-provision-provisionNumber"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{provision}/{provisionNumber}/{subprovisionNumber}:
+      get:
+        summary: "Identifier URI  for type, year, number, provision, provisionNumber and subprovisionNumber"
+        description: "The URI defines  a search request where custom values for type, year, number, provision, provisionNumber and subprovisionNumber can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-provision-provisionNumber-subprovisionNumber"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/subprovisionNumber"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{highlevel}/{provision}/{provisionNumber}:
+      get:
+        summary: "Identifier URI  for type, year, number, highlevel, provision and provisionNumber"
+        description: "The URI defines  a search request where custom values for type, year, number, highlevel, provision and provisionNumber can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-highlevel-provision-provisionNumber"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{highlevel}/{highlevelNumber}/{provision}/{provisionNumber}:
+      get:
+        summary: "Identifier URI  for type, year, number, highlevel, highlevelNumber, provision and provisionNumber"
+        description: "The URI defines  a search request where custom values for type, year, number, highlevel, highlevelNumber, provision and provisionNumber can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-highlevel-highlevelNumber-provision-provisionNumber"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/highlevelNumber"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{format}:
+      get:
+        summary: "Identifier URI  for type, year and number returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type, year and number can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "identifiers-id-type-year-number-format"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/format"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{provision}/{notesType}:
+      get:
+        summary: "Identifier URI  for type, year, number, provision and notesType"
+        description: "The URI defines  a search request where custom values for type, year, number, provision and notesType can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-provision-notesType"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/notesType"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{provision}/{provisionNumber}/{notesType}:
+      get:
+        summary: "Identifier URI  for type, year, number, provision, provisionNumber and notesType"
+        description: "The URI defines  a search request where custom values for type, year, number, provision, provisionNumber and notesType can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-provision-provisionNumber-notesType"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/notesType"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{provision}/{provisionNumber}/{subprovisionNumber}/{notesType}:
+      get:
+        summary: "Identifier URI  for type, year, number, provision, provisionNumber, subprovisionNumber and notesType"
+        description: "The URI defines  a search request where custom values for type, year, number, provision, provisionNumber, subprovisionNumber and notesType can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-provision-provisionNumber-subprovisionNumber-notesType"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/subprovisionNumber"
+          - $ref: "#/components/parameters/notesType"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{highlevel}/{provision}/{provisionNumber}/{notesType}:
+      get:
+        summary: "Identifier URI  for type, year, number, highlevel, provision, provisionNumber and notesType"
+        description: "The URI defines  a search request where custom values for type, year, number, highlevel, provision, provisionNumber and notesType can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-highlevel-provision-provisionNumber-notesType"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/notesType"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{highlevel}/{highlevelNumber}/{provision}/{provisionNumber}/{notesType}:
+      get:
+        summary: "Identifier URI  for type, year, number, highlevel, highlevelNumber, provision, provisionNumber and notesType"
+        description: "The URI defines  a search request where custom values for type, year, number, highlevel, highlevelNumber, provision, provisionNumber and notesType can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-highlevel-highlevelNumber-provision-provisionNumber-notesType"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/highlevelNumber"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/notesType"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{notesType}/{notesSection}:
+      get:
+        summary: "Identifier URI  for type, year, number, notesType and notesSection"
+        description: "The URI defines  a search request where custom values for type, year, number, notesType and notesSection can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-notesType-notesSection"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/notesType"
+          - $ref: "#/components/parameters/notesSection"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{provision}/{format}:
+      get:
+        summary: "Identifier URI  for type, year, number and provision returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type, year, number and provision can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "identifiers-id-type-year-number-provision-format"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/format"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{provision}/{provisionNumber}/{format}:
+      get:
+        summary: "Identifier URI  for type, year, number, provision and provisionNumber returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type, year, number, provision and provisionNumber can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "identifiers-id-type-year-number-provision-provisionNumber-format"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/format"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{provision}/{provisionNumber}/{subprovisionNumber}/{format}:
+      get:
+        summary: "Identifier URI  for type, year, number, provision, provisionNumber and subprovisionNumber returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type, year, number, provision, provisionNumber and subprovisionNumber can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "identifiers-id-type-year-number-provision-provisionNumber-subprovisionNumber-format"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/subprovisionNumber"
+          - $ref: "#/components/parameters/format"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{highlevel}/{provision}/{provisionNumber}/{format}:
+      get:
+        summary: "Identifier URI  for type, year, number, highlevel, provision and provisionNumber returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type, year, number, highlevel, provision and provisionNumber can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "identifiers-id-type-year-number-highlevel-provision-provisionNumber-format"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/format"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{highlevel}/{highlevelNumber}/{provision}/{provisionNumber}/{format}:
+      get:
+        summary: "Identifier URI  for type, year, number, highlevel, highlevelNumber, provision and provisionNumber returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type, year, number, highlevel, highlevelNumber, provision and provisionNumber can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "identifiers-id-type-year-number-highlevel-highlevelNumber-provision-provisionNumber-format"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/highlevelNumber"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/format"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{provision}/{notesType}/{notesSection}:
+      get:
+        summary: "Identifier URI  for type, year, number, provision, notesType and notesSection"
+        description: "The URI defines  a search request where custom values for type, year, number, provision, notesType and notesSection can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-provision-notesType-notesSection"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/notesType"
+          - $ref: "#/components/parameters/notesSection"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{provision}/{provisionNumber}/{notesType}/{notesSection}:
+      get:
+        summary: "Identifier URI  for type, year, number, provision, provisionNumber, notesType and notesSection"
+        description: "The URI defines  a search request where custom values for type, year, number, provision, provisionNumber, notesType and notesSection can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-provision-provisionNumber-notesType-notesSection"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/notesType"
+          - $ref: "#/components/parameters/notesSection"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{provision}/{provisionNumber}/{subprovisionNumber}/{notesType}/{notesSection}:
+      get:
+        summary: "Identifier URI  for type, year, number, provision, provisionNumber, subprovisionNumber, notesType and notesSection"
+        description: "The URI defines  a search request where custom values for type, year, number, provision, provisionNumber, subprovisionNumber, notesType and notesSection can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-provision-provisionNumber-subprovisionNumber-notesType-notesSection"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/subprovisionNumber"
+          - $ref: "#/components/parameters/notesType"
+          - $ref: "#/components/parameters/notesSection"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{highlevel}/{provision}/{provisionNumber}/{notesType}/{notesSection}:
+      get:
+        summary: "Identifier URI  for type, year, number, highlevel, provision, provisionNumber, notesType and notesSection"
+        description: "The URI defines  a search request where custom values for type, year, number, highlevel, provision, provisionNumber, notesType and notesSection can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-highlevel-provision-provisionNumber-notesType-notesSection"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/notesType"
+          - $ref: "#/components/parameters/notesSection"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{year}/{number}/{highlevel}/{highlevelNumber}/{provision}/{provisionNumber}/{notesType}/{notesSection}:
+      get:
+        summary: "Identifier URI  for type, year, number, highlevel, highlevelNumber, provision, provisionNumber, notesType and notesSection"
+        description: "The URI defines  a search request where custom values for type, year, number, highlevel, highlevelNumber, provision, provisionNumber, notesType and notesSection can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-year-number-highlevel-highlevelNumber-provision-provisionNumber-notesType-notesSection"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/highlevelNumber"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/notesType"
+          - $ref: "#/components/parameters/notesSection"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear and number"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear and number can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{notesType}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number and notesType"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number and notesType can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-notesType"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/notesType"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{provision}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number and provision"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number and provision can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-provision"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{provision}/{provisionNumber}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number, provision and provisionNumber"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number, provision and provisionNumber can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-provision-provisionNumber"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{provision}/{provisionNumber}/{subprovisionNumber}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number, provision, provisionNumber and subprovisionNumber"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number, provision, provisionNumber and subprovisionNumber can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-provision-provisionNumber-subprovisionNumber"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/subprovisionNumber"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{highlevel}/{provision}/{provisionNumber}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number, highlevel, provision and provisionNumber"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number, highlevel, provision and provisionNumber can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-highlevel-provision-provisionNumber"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{highlevel}/{highlevelNumber}/{provision}/{provisionNumber}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number, highlevel, highlevelNumber, provision and provisionNumber"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number, highlevel, highlevelNumber, provision and provisionNumber can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-highlevel-highlevelNumber-provision-provisionNumber"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/highlevelNumber"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{provision}/{notesType}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number, provision and notesType"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number, provision and notesType can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-provision-notesType"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/notesType"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{provision}/{provisionNumber}/{notesType}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number, provision, provisionNumber and notesType"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number, provision, provisionNumber and notesType can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-provision-provisionNumber-notesType"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/notesType"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{provision}/{provisionNumber}/{subprovisionNumber}/{notesType}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number, provision, provisionNumber, subprovisionNumber and notesType"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number, provision, provisionNumber, subprovisionNumber and notesType can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-provision-provisionNumber-subprovisionNumber-notesType"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/subprovisionNumber"
+          - $ref: "#/components/parameters/notesType"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{highlevel}/{provision}/{provisionNumber}/{notesType}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number, highlevel, provision, provisionNumber and notesType"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number, highlevel, provision, provisionNumber and notesType can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-highlevel-provision-provisionNumber-notesType"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/notesType"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{highlevel}/{highlevelNumber}/{provision}/{provisionNumber}/{notesType}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number, highlevel, highlevelNumber, provision, provisionNumber and notesType"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number, highlevel, highlevelNumber, provision, provisionNumber and notesType can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-highlevel-highlevelNumber-provision-provisionNumber-notesType"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/highlevelNumber"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/notesType"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{notesType}/{notesSection}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number, notesType and notesSection"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number, notesType and notesSection can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-notesType-notesSection"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/notesType"
+          - $ref: "#/components/parameters/notesSection"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{provision}/{notesType}/{notesSection}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number, provision, notesType and notesSection"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number, provision, notesType and notesSection can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-provision-notesType-notesSection"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/notesType"
+          - $ref: "#/components/parameters/notesSection"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{provision}/{provisionNumber}/{notesType}/{notesSection}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number, provision, provisionNumber, notesType and notesSection"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number, provision, provisionNumber, notesType and notesSection can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-provision-provisionNumber-notesType-notesSection"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/notesType"
+          - $ref: "#/components/parameters/notesSection"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{provision}/{provisionNumber}/{subprovisionNumber}/{notesType}/{notesSection}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number, provision, provisionNumber, subprovisionNumber, notesType and notesSection"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number, provision, provisionNumber, subprovisionNumber, notesType and notesSection can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-provision-provisionNumber-subprovisionNumber-notesType-notesSection"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/subprovisionNumber"
+          - $ref: "#/components/parameters/notesType"
+          - $ref: "#/components/parameters/notesSection"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{highlevel}/{provision}/{provisionNumber}/{notesType}/{notesSection}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number, highlevel, provision, provisionNumber, notesType and notesSection"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number, highlevel, provision, provisionNumber, notesType and notesSection can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-highlevel-provision-provisionNumber-notesType-notesSection"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/notesType"
+          - $ref: "#/components/parameters/notesSection"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{type}/{monarch}/{regnalYear}/{number}/{highlevel}/{highlevelNumber}/{provision}/{provisionNumber}/{notesType}/{notesSection}:
+      get:
+        summary: "Identifier URI  for type, monarch, regnalYear, number, highlevel, highlevelNumber, provision, provisionNumber, notesType and notesSection"
+        description: "The URI defines  a search request where custom values for type, monarch, regnalYear, number, highlevel, highlevelNumber, provision, provisionNumber, notesType and notesSection can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-type-monarch-regnalYear-number-highlevel-highlevelNumber-provision-provisionNumber-notesType-notesSection"
+        parameters:
+          - $ref: "#/components/parameters/type"
+          - $ref: "#/components/parameters/monarch"
+          - $ref: "#/components/parameters/regnalYear"
+          - $ref: "#/components/parameters/number"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/highlevelNumber"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/notesType"
+          - $ref: "#/components/parameters/notesSection"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{draftType}/{year}/{isbn}:
+      get:
+        summary: "Identifier URI  for draftType, year and isbn"
+        description: "The URI defines  a search request where custom values for draftType, year and isbn can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-draftType-year-isbn"
+        parameters:
+          - $ref: "#/components/parameters/draftType"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/isbn"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{draftType}/{year}/{isbn}/{format}:
+      get:
+        summary: "Identifier URI  for draftType, year and isbn returned in a defined representation"
+        description: "The URI defines  a search request where custom values for draftType, year and isbn can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "identifiers-id-draftType-year-isbn-format"
+        parameters:
+          - $ref: "#/components/parameters/draftType"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/isbn"
+          - $ref: "#/components/parameters/format"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{draftType}/{year}/{isbn}/{provision}:
+      get:
+        summary: "Identifier URI  for draftType, year, isbn and provision"
+        description: "The URI defines  a search request where custom values for draftType, year, isbn and provision can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-draftType-year-isbn-provision"
+        parameters:
+          - $ref: "#/components/parameters/draftType"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/isbn"
+          - $ref: "#/components/parameters/provision"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{draftType}/{year}/{isbn}/{provision}/{provisionNumber}:
+      get:
+        summary: "Identifier URI  for draftType, year, isbn, provision and provisionNumber"
+        description: "The URI defines  a search request where custom values for draftType, year, isbn, provision and provisionNumber can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-draftType-year-isbn-provision-provisionNumber"
+        parameters:
+          - $ref: "#/components/parameters/draftType"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/isbn"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{draftType}/{year}/{isbn}/{provision}/{provisionNumber}/{subprovisionNumber}:
+      get:
+        summary: "Identifier URI  for draftType, year, isbn, provision, provisionNumber and subprovisionNumber"
+        description: "The URI defines  a search request where custom values for draftType, year, isbn, provision, provisionNumber and subprovisionNumber can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-draftType-year-isbn-provision-provisionNumber-subprovisionNumber"
+        parameters:
+          - $ref: "#/components/parameters/draftType"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/isbn"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/subprovisionNumber"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{draftType}/{year}/{isbn}/{highlevel}/{provision}/{provisionNumber}:
+      get:
+        summary: "Identifier URI  for draftType, year, isbn, highlevel, provision and provisionNumber"
+        description: "The URI defines  a search request where custom values for draftType, year, isbn, highlevel, provision and provisionNumber can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-draftType-year-isbn-highlevel-provision-provisionNumber"
+        parameters:
+          - $ref: "#/components/parameters/draftType"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/isbn"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{draftType}/{year}/{isbn}/{highlevel}/{highlevelNumber}/{provision}/{provisionNumber}:
+      get:
+        summary: "Identifier URI  for draftType, year, isbn, highlevel, highlevelNumber, provision and provisionNumber"
+        description: "The URI defines  a search request where custom values for draftType, year, isbn, highlevel, highlevelNumber, provision and provisionNumber can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-draftType-year-isbn-highlevel-highlevelNumber-provision-provisionNumber"
+        parameters:
+          - $ref: "#/components/parameters/draftType"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/isbn"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/highlevelNumber"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{draftType}/{year}/{isbn}/{provision}/{format}:
+      get:
+        summary: "Identifier URI  for draftType, year, isbn and provision returned in a defined representation"
+        description: "The URI defines  a search request where custom values for draftType, year, isbn and provision can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "identifiers-id-draftType-year-isbn-provision-format"
+        parameters:
+          - $ref: "#/components/parameters/draftType"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/isbn"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/format"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{draftType}/{year}/{isbn}/{provision}/{provisionNumber}/{format}:
+      get:
+        summary: "Identifier URI  for draftType, year, isbn, provision and provisionNumber returned in a defined representation"
+        description: "The URI defines  a search request where custom values for draftType, year, isbn, provision and provisionNumber can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "identifiers-id-draftType-year-isbn-provision-provisionNumber-format"
+        parameters:
+          - $ref: "#/components/parameters/draftType"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/isbn"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/format"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{draftType}/{year}/{isbn}/{provision}/{provisionNumber}/{subprovisionNumber}/{format}:
+      get:
+        summary: "Identifier URI  for draftType, year, isbn, provision, provisionNumber and subprovisionNumber returned in a defined representation"
+        description: "The URI defines  a search request where custom values for draftType, year, isbn, provision, provisionNumber and subprovisionNumber can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "identifiers-id-draftType-year-isbn-provision-provisionNumber-subprovisionNumber-format"
+        parameters:
+          - $ref: "#/components/parameters/draftType"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/isbn"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/subprovisionNumber"
+          - $ref: "#/components/parameters/format"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{draftType}/{year}/{isbn}/{highlevel}/{provision}/{provisionNumber}/{format}:
+      get:
+        summary: "Identifier URI  for draftType, year, isbn, highlevel, provision and provisionNumber returned in a defined representation"
+        description: "The URI defines  a search request where custom values for draftType, year, isbn, highlevel, provision and provisionNumber can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "identifiers-id-draftType-year-isbn-highlevel-provision-provisionNumber-format"
+        parameters:
+          - $ref: "#/components/parameters/draftType"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/isbn"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/format"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{draftType}/{year}/{isbn}/{highlevel}/{highlevelNumber}/{provision}/{provisionNumber}/{format}:
+      get:
+        summary: "Identifier URI  for draftType, year, isbn, highlevel, highlevelNumber, provision and provisionNumber returned in a defined representation"
+        description: "The URI defines  a search request where custom values for draftType, year, isbn, highlevel, highlevelNumber, provision and provisionNumber can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "identifiers-id-draftType-year-isbn-highlevel-highlevelNumber-provision-provisionNumber-format"
+        parameters:
+          - $ref: "#/components/parameters/draftType"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/isbn"
+          - $ref: "#/components/parameters/highlevel"
+          - $ref: "#/components/parameters/highlevelNumber"
+          - $ref: "#/components/parameters/provision"
+          - $ref: "#/components/parameters/provisionNumber"
+          - $ref: "#/components/parameters/format"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+  /id/{euTreatyType}/{year}/{treatyName}:
+      get:
+        summary: "Identifier URI  for euTreatyType, year and treatyName"
+        description: "The URI defines  a search request where custom values for euTreatyType, year and treatyName can be applied with the content returned in a representation defined content negotiation"
+        operationId: "identifiers-id-euTreatyType-year-treatyName"
+        parameters:
+          - $ref: "#/components/parameters/euTreatyType"
+          - $ref: "#/components/parameters/year"
+          - $ref: "#/components/parameters/treatyName"
+        responses:
+          "303":
+            $ref: '#/components/responses/Legislation303Redirect'
+          "400":
+            $ref: '#/components/responses/Legislation400BadRequest'
+          "404":
+            $ref: '#/components/responses/Legislation404NotFound'
+components:
+  parameters:
+    type:
+      name: "type"
+      in: "path"
+      description: "The Legislation Abbreviated Type"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/type'
+    year:
+      name: "year"
+      in: "path"
+      description: "The Legislation Year"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/year'
+    number:
+      name: "number"
+      in: "path"
+      description: "The Legislation Number. This can either be the basic integer number or a compound series number that is prefixed with the relevant series letter - w (Wales), s (Scotland), ni (Northern Ireland), l (Legal), c (Commencing)"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/number'
+    notesType:
+      name: "notesType"
+      in: "path"
+      description: "The type of explanatory note, a value of either notes, memorandum, executive-note or policy-note"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/notesType'
+    provision:
+      name: "provision"
+      in: "path"
+      description: "The Legislation provision name"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/provision'
+    provisionNumber:
+      name: "provisionNumber"
+      in: "path"
+      description: "The Legislation provision number"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/provisionNumber'
+    subprovisionNumber:
+      name: "subprovisionNumber"
+      in: "path"
+      description: "The Legislation sub-provision number. There are 6 levels of sub-provision and these can be requested by using using the uri scheme /{sub-provNo1}/{sub-provNo2}/{sub-provNo3}/{sub-provNo4}/{sub-provNo5}/{sub-provNo6}. When requesting text/html or application/pdf the response will be a redirect to the main provision"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/provisionNumber'
+    highlevel:
+      name: "highlevel"
+      in: "path"
+      description: "The Legislation high level structure. There can be multiple levels of high level structures which can be combined to provide a full structural uri"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/provision'
+    highlevelNumber:
+      name: "highlevelNumber"
+      in: "path"
+      description: "The Legislation High level number"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/provisionNumber'
+    format:
+      name: "format"
+      in: "path"
+      description: "The data type specified by data.[ext] (e.g. data.akn). Supported types are xml, akn, htm, html (html 5), pdf, rdf. This will override the http content negotiation"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/format'
+    notesSection:
+      name: "notesSection"
+      in: "path"
+      description: "The Explanatory note section"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/notesSection'
+    monarch:
+      name: "monarch"
+      in: "path"
+      description: "The monarch string that defines a regnal year"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/monarch'
+    regnalYear:
+      name: "regnalYear"
+      in: "path"
+      description: "The Legislation regnal Year used in a monarch/regnal year combination"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/regnalYear'
+    draftType:
+      name: "draftType"
+      in: "path"
+      description: "The Legislation Draft Abbreviated Type"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/draftType'
+    isbn:
+      name: "isbn"
+      in: "path"
+      description: "The Legislation ISBN used for draft legislation and unnumbered SIs"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/isbn'
+    euTreatyType:
+      name: "euTreatyType"
+      in: "path"
+      description: "The Legislation EU Treaty Abbreviated Type"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/euTreatyType'
+    treatyName:
+      name: "treatyName"
+      in: "path"
+      description: "The EU abbreviated Treaty name"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/treatyName'
+    SearchTitleQuery:
+      name: title
+      in: query
+      description: Search query string for a Legislation titles
+      schema:
+        type: string
+    SearchTypeQuery:
+      name: type
+      in: query
+      description:  Search query string for a Legislation type
+      schema:
+        type: string
+    SearchYearQuery:
+      name: year
+      in: query
+      description:  Search query string for Legislation year
+      schema:
+        type: string
+    SearchNumberQuery:
+      name: number
+      in: query
+      description:  Search query string for legislation number.
+      schema:
+        type: string
+  responses:
+    Legislation200Success:
+      description: Successful response
+      content:
+        text/html:
+          schema:
+            type: object
+        application/xhtml+xml:
+          schema:
+            type: object
+        application/pdf:
+          schema:
+            type: object
+        application/akn+xhtml:
+          schema:
+            type: object
+        application/rdf+xml:
+          schema:
+            type: object
+        application/xml:
+          schema:
+            type: object
+    Legislation300Redirect:
+      description: Multiple options for the Legislation resource
+    Legislation301Redirect:
+      description: Legislation permanently moved
+    Legislation303Redirect:
+      description: Exact Legislation not available, redirect to alternative option
+    Legislation307Redirect:
+      description: Exact Legislation not available, temporary redirect
+    Legislation404NotFound:
+      description: The requested Legislation is not available
+    Legislation400BadRequest:
+      description: The requested Legislation is out of scope for what is stored on the site
+
+  schemas:
+    # Schema for error response body
+    HTMLSuccess:
+      type: object
+    FeedSuccess:
+      type: object 
+    type:
+        type: string
+        description: Restricts the legislation type to a specific valid abbreviated type
+        pattern: '^(uksi|ukmd|wsi|nisi|ssi|nisro|nisr|ukci|ukmo|uksro|eur|eudn|eudr|ukpga|ukla|ukppa|gbppa|gbla|apgb|aep|aosp|asp|aip|apni|mnia|nia|ukcm|mwa|anaw|asc)$'
+    year:
+        type: string
+        description: Restricts the regnal year(s)
+        pattern: '^[0-9]+$'
+    number:
+        type: string
+        description: An optional character to refer to a specific series - w (Wales), s (Scotland), ni (Northern Ireland), l (Legal), c (Commencing) followed by an integer for the number
+        pattern: '^((c|ni|l|s|w)?[0-9]+)$'
+    notesType:
+        type: string
+        description: A legitimate provision number
+        pattern: '(notes|memorandum|executive-note|policy-note)'
+    provision:
+        type: string
+        description: A legitimate provision name
+        pattern: '^(group|part|title|chapter|schedule|attachmentgroup|attachment|annex|appendix|block|section|crossheading|article|rule|regulation|order|paragraph)$'
+    provisionNumber:
+        type: string
+        description: A legitimate provision number
+        pattern: '^([0-9a-zA-Z\/\.\-]*)$'
+    format:
+        type: string
+        description: Restricts the data format
+        pattern: '(data\.([a-z]+))$'
+    notesSection:
+        type: string
+        description: A legitimate provision number
+        pattern: '((annex/[0-9]+/)?division/[0-9]+(/[0-9]+)*)|(?:paragraph/[0-9]+)'
+    monarch:
+        type: string
+        description: Restricts the monarch
+        pattern: '^[.]+$'
+    regnalYear:
+        type: string
+        description: Restricts the type to a specific valid abbreviated type
+        pattern: '^[.]+$'
+    draftType:
+        type: string
+        description: Restricts the legislation draft type to a specific valid abbreviated type
+        pattern: '^(sdsi|nidsr|ukdsi|ukmd|nidsi|wdsi)$'
+    isbn:
+        type: string
+        description: A legitimate legislation ISBN
+        pattern: '^([0-9xX]{5}[0-9xX]+)$'
+    euTreatyType:
+        type: string
+        description: Restricts the EU Treaty type to a specific valid abbreviated type.Currently thi sonly has a single value
+        pattern: '^(eut)$'
+    treatyName:
+        type: string
+        description: Restricts the EU Treaty type to a specific valid abbreviated type.Currently thi sonly has a single value
+        pattern: '^(withdrawal-agreement|teu|teec|eea-agreement|euratom)$'

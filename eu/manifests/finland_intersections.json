@@ -1,0 +1,89 @@
+{
+  "generated_at": "2026-03-19",
+  "notes": [
+    "Small EU sample set aimed at Finland/EU intersections.",
+    "Fetches XML notices plus official text views from EUR-Lex."
+  ],
+  "sources": [
+    {
+      "id": "celex/32023L0977",
+      "label": "Directive (EU) 2023/977",
+      "why": "Explicitly implemented in Finnish Act 806/2024.",
+      "artifacts": [
+        {
+          "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/XML/?uri=CELEX:32023L0977",
+          "path": "eu/data/raw/celex/32023L0977/notice_en.xml"
+        },
+        {
+          "url": "https://eur-lex.europa.eu/legal-content/FI/TXT/XML/?uri=CELEX:32023L0977",
+          "path": "eu/data/raw/celex/32023L0977/notice_fi.xml"
+        },
+        {
+          "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32023L0977",
+          "path": "eu/data/raw/celex/32023L0977/text_en.html"
+        },
+        {
+          "url": "https://eur-lex.europa.eu/legal-content/FI/TXT/HTML/?uri=CELEX:32023L0977",
+          "path": "eu/data/raw/celex/32023L0977/text_fi.html"
+        }
+      ]
+    },
+    {
+      "id": "celex/32016R0679",
+      "label": "Regulation (EU) 2016/679",
+      "why": "Supplemented and specified in Finnish Data Protection Act 1050/2018.",
+      "artifacts": [
+        {
+          "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/XML/?uri=CELEX:32016R0679",
+          "path": "eu/data/raw/celex/32016R0679/notice_en.xml"
+        },
+        {
+          "url": "https://eur-lex.europa.eu/legal-content/FI/TXT/XML/?uri=CELEX:32016R0679",
+          "path": "eu/data/raw/celex/32016R0679/notice_fi.xml"
+        },
+        {
+          "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32016R0679",
+          "path": "eu/data/raw/celex/32016R0679/text_en.html"
+        },
+        {
+          "url": "https://eur-lex.europa.eu/legal-content/FI/TXT/HTML/?uri=CELEX:32016R0679",
+          "path": "eu/data/raw/celex/32016R0679/text_fi.html"
+        }
+      ]
+    },
+    {
+      "id": "celex/32016L0680",
+      "label": "Directive (EU) 2016/680",
+      "why": "Implemented in Finnish Act 1054/2018 in the criminal matters / national security data-protection domain.",
+      "artifacts": [
+        {
+          "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/XML/?uri=CELEX:32016L0680",
+          "path": "eu/data/raw/celex/32016L0680/notice_en.xml"
+        },
+        {
+          "url": "https://eur-lex.europa.eu/legal-content/FI/TXT/XML/?uri=CELEX:32016L0680",
+          "path": "eu/data/raw/celex/32016L0680/notice_fi.xml"
+        },
+        {
+          "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32016L0680",
+          "path": "eu/data/raw/celex/32016L0680/text_en.html"
+        },
+        {
+          "url": "https://eur-lex.europa.eu/legal-content/FI/TXT/HTML/?uri=CELEX:32016L0680",
+          "path": "eu/data/raw/celex/32016L0680/text_fi.html"
+        }
+      ]
+    },
+    {
+      "id": "eurlex/retrieval-guide",
+      "label": "EUR-Lex retrieval guide",
+      "why": "Official guidance on machine-readable retrieval and manifestations.",
+      "artifacts": [
+        {
+          "url": "https://eur-lex.europa.eu/content/tools/Retrieval_machine-readable_formats.pdf",
+          "path": "eu/data/raw/guides/eurlex_retrieval_machine_readable_formats.pdf"
+        }
+      ]
+    }
+  ]
+}

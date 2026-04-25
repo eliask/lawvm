@@ -1,0 +1,100 @@
+{
+  "generated_at": "2026-03-20",
+  "notes": [
+    "Representative sample across UK jurisdictions, primary/secondary split, and temporal eras.",
+    "Includes foundational acts, high-churn secondary legislation (COVID era), and Brexit-related items."
+  ],
+  "sources": [
+    {
+      "id": "ukpga/1998/42",
+      "label": "Human Rights Act 1998",
+      "category": "ukpga",
+      "jurisdiction": "UK",
+      "type": "Primary",
+      "why": "Core benchmark for PIT similarity; complex schedule structure.",
+      "artifacts": [
+        {"url": "https://www.legislation.gov.uk/ukpga/1998/42/enacted/data.xml", "path": "uk/data/raw/ukpga/1998/42/enacted/data.xml"},
+        {"url": "https://www.legislation.gov.uk/ukpga/1998/42/data.xml", "path": "uk/data/raw/ukpga/1998/42/current/data.xml"},
+        {"url": "https://www.legislation.gov.uk/changes/affected/ukpga/1998/42/data.feed", "path": "uk/data/raw/effects/affected/ukpga/1998/42/data.feed"}
+      ]
+    },
+    {
+      "id": "ukpga/1972/68",
+      "label": "European Communities Act 1972",
+      "category": "ukpga",
+      "jurisdiction": "UK",
+      "type": "Primary",
+      "why": "Foundational historic act, now repealed; test case for 'repealed' status handling.",
+      "artifacts": [
+        {"url": "https://www.legislation.gov.uk/ukpga/1972/68/enacted/data.xml", "path": "uk/data/raw/ukpga/1972/68/enacted/data.xml"},
+        {"url": "https://www.legislation.gov.uk/ukpga/1972/68/data.xml", "path": "uk/data/raw/ukpga/1972/68/current/data.xml"},
+        {"url": "https://www.legislation.gov.uk/changes/affected/ukpga/1972/68/data.feed", "path": "uk/data/raw/effects/affected/ukpga/1972/68/data.feed"}
+      ]
+    },
+    {
+      "id": "uksi/2020/350",
+      "label": "Health Protection (Coronavirus, Restrictions) (England) Regulations 2020",
+      "category": "uksi",
+      "jurisdiction": "England",
+      "type": "Secondary",
+      "why": "High-churn instrument with many rapid amendments; stress test for temporal resolution.",
+      "artifacts": [
+        {"url": "https://www.legislation.gov.uk/uksi/2020/350/made/data.xml", "path": "uk/data/raw/uksi/2020/350/enacted/data.xml"},
+        {"url": "https://www.legislation.gov.uk/uksi/2020/350/data.xml", "path": "uk/data/raw/uksi/2020/350/current/data.xml"},
+        {"url": "https://www.legislation.gov.uk/changes/affected/uksi/2020/350/data.feed", "path": "uk/data/raw/effects/affected/uksi/2020/350/data.feed"}
+      ]
+    },
+    {
+      "id": "asp/2000/6",
+      "label": "Standards in Scotland's Schools etc. Act 2000",
+      "category": "asp",
+      "jurisdiction": "Scotland",
+      "type": "Primary",
+      "why": "Example of devolved primary legislation from the early Holyrood era.",
+      "artifacts": [
+        {"url": "https://www.legislation.gov.uk/asp/2000/6/enacted/data.xml", "path": "uk/data/raw/asp/2000/6/enacted/data.xml"},
+        {"url": "https://www.legislation.gov.uk/asp/2000/6/data.xml", "path": "uk/data/raw/asp/2000/6/current/data.xml"},
+        {"url": "https://www.legislation.gov.uk/changes/affected/asp/2000/6/data.feed", "path": "uk/data/raw/effects/affected/asp/2000/6/data.feed"}
+      ]
+    },
+    {
+      "id": "asc/2020/1",
+      "label": "National Health Service (Indemnities) (Wales) Act 2020",
+      "category": "asc",
+      "jurisdiction": "Wales",
+      "type": "Primary",
+      "why": "Recent Welsh primary legislation (Acts of Senedd Cymru).",
+      "artifacts": [
+        {"url": "https://www.legislation.gov.uk/asc/2020/1/enacted/data.xml", "path": "uk/data/raw/asc/2020/1/enacted/data.xml"},
+        {"url": "https://www.legislation.gov.uk/asc/2020/1/data.xml", "path": "uk/data/raw/asc/2020/1/current/data.xml"},
+        {"url": "https://www.legislation.gov.uk/changes/affected/asc/2020/1/data.feed", "path": "uk/data/raw/effects/affected/asc/2020/1/data.feed"}
+      ]
+    },
+    {
+      "id": "nia/2000/1",
+      "label": "Allowances to Members of the Assembly Act (Northern Ireland) 2000",
+      "category": "nia",
+      "jurisdiction": "Northern Ireland",
+      "type": "Primary",
+      "why": "Northern Ireland Assembly primary legislation.",
+      "artifacts": [
+        {"url": "https://www.legislation.gov.uk/nia/2000/1/enacted/data.xml", "path": "uk/data/raw/nia/2000/1/enacted/data.xml"},
+        {"url": "https://www.legislation.gov.uk/nia/2000/1/data.xml", "path": "uk/data/raw/nia/2000/1/current/data.xml"},
+        {"url": "https://www.legislation.gov.uk/changes/affected/nia/2000/1/data.feed", "path": "uk/data/raw/effects/affected/nia/2000/1/data.feed"}
+      ]
+    },
+    {
+      "id": "eur/2016/679",
+      "label": "General Data Protection Regulation (GDPR)",
+      "category": "eur",
+      "jurisdiction": "EU/UK",
+      "type": "Regulation",
+      "why": "High-impact EU-origin legislation with specialized structure (Articles/Paragraphs).",
+      "artifacts": [
+        {"url": "https://www.legislation.gov.uk/eur/2016/679/enacted/data.xml", "path": "uk/data/raw/eur/2016/679/enacted/data.xml"},
+        {"url": "https://www.legislation.gov.uk/eur/2016/679/data.xml", "path": "uk/data/raw/eur/2016/679/current/data.xml"},
+        {"url": "https://www.legislation.gov.uk/changes/affected/eur/2016/679/data.feed", "path": "uk/data/raw/effects/affected/eur/2016/679/data.feed"}
+      ]
+    }
+  ]
+}

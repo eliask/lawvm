@@ -1,0 +1,6 @@
+statute_id,act_type,year,n_effects,n_enacted_eids,n_oracle_eids,n_common,score,status,error
+asc/2020/1,asc,2020,3,420,492,420,0.8537,OK,
+asc/2020/2,asc,2020,1,149,173,149,0.8613,OK,
+asc/2021/1,asc,2021,15,2851,3124,2736,0.8758,OK,
+asc/2021/2,asc,2021,1,183,0,0,0.0000,OK,
+asc/2021/3,asc,2021,2,237,269,237,0.8810,OK,

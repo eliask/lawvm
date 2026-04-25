@@ -1,0 +1,98 @@
+"""lawvm no-verify -- compare Norway replay against current consolidated law."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    import argparse
+
+
+def main(args: "argparse.Namespace") -> None:
+    from lawvm.norway.verify import verify_no_against_current
+
+    data_dir_arg = getattr(args, "data_dir", None)
+    data_dir = Path(data_dir_arg) if data_dir_arg else None
+    index_arg = getattr(args, "index", None)
+    index_path = Path(index_arg) if index_arg else None
+    commencement_arg = getattr(args, "commencement", None)
+    commencement_path = Path(commencement_arg) if commencement_arg else None
+
+    result = verify_no_against_current(
+        getattr(args, "base_id"),
+        as_of=getattr(args, "as_of"),
+        data_dir=data_dir,
+        index_path=index_path,
+        commencement_path=commencement_path,
+    )
+
+    payload: dict[str, object] = {
+        "base_id": result.base_id,
+        "as_of": result.as_of,
+        "current_title": result.current_title,
+        "replay_status": result.replay_status,
+        "consistent": result.consistent,
+        "divergence_count": result.divergence_count,
+        "divergence_counts": dict(result.divergence_counts or {}),
+        "raw_divergence_count": result.raw_divergence_count,
+        "raw_divergence_counts": dict(result.raw_divergence_counts or {}),
+        "indexed_amendment_count": result.indexed_amendment_count,
+        "applied_amendment_count": result.applied_amendment_count,
+        "replay_op_count": result.replay_op_count,
+        "source_signal": result.source_signal or "",
+        "error": result.error or "",
+    }
+    if getattr(args, "verbose", False) and result.divergences is not None:
+        max_divergences = getattr(args, "max_divergences", None)
+        divergences = result.divergences
+        if isinstance(max_divergences, int) and max_divergences >= 0:
+            divergences = divergences[:max_divergences]
+        payload["divergences"] = [
+            {
+                "address": list(divergence.address.path),
+                "divergence_type": divergence.divergence_type,
+                "ops_text": divergence.ops_text,
+                "consolidated_text": divergence.consolidated_text,
+            }
+            for divergence in divergences
+        ]
+
+    if getattr(args, "json", False):
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    print()
+    print("=== Norway Verify ===")
+    print(f"  base id         : {payload['base_id']}")
+    print(f"  as of           : {payload['as_of']}")
+    print(f"  replay status   : {payload['replay_status']}")
+    if payload["current_title"]:
+        print(f"  current title   : {payload['current_title']}")
+    if payload["error"]:
+        print(f"  error           : {payload['error']}")
+        return
+    print(f"  consistent      : {'yes' if payload['consistent'] else 'no'}")
+    print(f"  divergence count: {payload['divergence_count']}")
+    print(
+        "  source coverage : "
+        f"indexed={payload['indexed_amendment_count']} | "
+        f"applied={payload['applied_amendment_count']} | "
+        f"ops={payload['replay_op_count']}"
+    )
+    if payload["source_signal"]:
+        print(f"  source signal   : {payload['source_signal']}")
+    if payload["divergence_counts"]:
+        print(
+            "  by type         : "
+            + ", ".join(f"{k}={v}" for k, v in sorted(payload["divergence_counts"].items()))
+        )
+    if payload["raw_divergence_count"] != payload["divergence_count"]:
+        print(
+            "  raw divergences : "
+            f"{payload['raw_divergence_count']}"
+        )
+    if getattr(args, "verbose", False):
+        for divergence in cast(list[dict[str, Any]], payload.get("divergences", [])):
+            address = "/".join(f"{kind}:{label}" for kind, label in divergence["address"])
+            print(f"    [{divergence['divergence_type']}] {address}")

@@ -1,0 +1,141 @@
+"""EU Amendment -> LawVM IR Operation parser.
+
+The old Stanza-based parser has been removed. This module now provides only a
+minimal compatibility parser so the EU replay scaffolding remains importable
+until the EU frontend is rebuilt properly.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
+
+from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
+from lawvm.core.semantic_types import StructuralAction
+
+VERB_MAPPING = {
+    "replace": "replace",
+    "insert": "insert",
+    "add": "insert",
+    "delete": "repeal",
+    "repeal": "repeal",
+    "amend": "replace",
+}
+
+KIND_MAPPING = {
+    "article": "article",
+    "paragraph": "paragraph",
+    "point": "point",
+    "annex": "annex",
+    "recital": "recital",
+    "subparagraph": "subparagraph",
+    "chapter": "chapter",
+    "division": "division",
+}
+
+_CONTEXT_RE = re.compile(r"\b(in|to)\s+(Article|Chapter|Division)\s+([0-9A-Za-z]+)\b", re.I)
+_TARGET_RE = re.compile(
+    r"\b(Article|paragraph|point|annex|recital|subparagraph|chapter|division)\s+([0-9A-Za-z().-]+)\b",
+    re.I,
+)
+
+
+@dataclass
+class EUOpsParser:
+    """Minimal compatibility parser for EU Regulation amendments."""
+
+    def __init__(self, model_dir: Optional[str] = None, cache_dir: Optional[str] = None):
+        self.model_dir = model_dir
+        self.cache_dir = cache_dir
+
+    def extract_ops(self, text: str) -> List[LegalOperation]:
+        """Extract LegalOperations from amendment text with shallow regexes."""
+        corrigenda_ops = self._extract_corrigenda_ops(text)
+        if corrigenda_ops:
+            return corrigenda_ops
+
+        ops: List[LegalOperation] = []
+        context_path: List[Tuple[str, str]] = []
+        for segment in re.split(r"[;\n]+", text):
+            segment = segment.strip()
+            if not segment:
+                continue
+
+            lowered = segment.lower()
+            action = next(
+                (mapped for verb, mapped in VERB_MAPPING.items() if re.search(rf"\b{verb}\w*\b", lowered)),
+                None,
+            )
+            if action is None:
+                continue
+            action_kind = StructuralAction(action)
+
+            context_match = _CONTEXT_RE.search(segment)
+            if context_match:
+                context_kind = KIND_MAPPING[context_match.group(2).lower()]
+                context_path = [(context_kind, context_match.group(3).strip("()."))]
+
+            for index, match in enumerate(_TARGET_RE.finditer(segment), start=1):
+                raw_kind = match.group(1).lower()
+                raw_label = match.group(2).strip("().")
+                if (
+                    raw_kind in {"article", "chapter", "division"}
+                    and context_match
+                    and match.start() == context_match.start(2)
+                ):
+                    continue
+                kind = KIND_MAPPING.get(raw_kind)
+                if not kind or not raw_label:
+                    continue
+                path = tuple(context_path + [(kind, raw_label)])
+                ops.append(
+                    LegalOperation(
+                        op_id=f"eu-compat-{len(ops) + 1}-{index}",
+                        sequence=len(ops) + 1,
+                        action=action_kind,
+                        target=LegalAddress(path=path),
+                        source=OperationSource(statute_id="unknown"),
+                        provenance_tags=(f"ir_apply_class={self._apply_class(action_kind, path)}",),
+                    )
+                )
+
+        return ops
+
+    def _extract_corrigenda_ops(self, text: str) -> List[LegalOperation]:
+        """Specific handling for EU Corrigenda 'for: ... read: ...' formulas."""
+        ops: List[LegalOperation] = []
+
+        for match in re.finditer(r"for\s*:(.*?)read\s*:(.*?)(;|\.|\n|$)", text, re.S | re.I):
+            content_before = text[: match.start()]
+            target_match = list(re.finditer(r"(Article|paragraph|point)\s+([0-9a-zA-Z\(\)\.]+)", content_before, re.I))
+            if not target_match:
+                continue
+
+            last_target = target_match[-1]
+            kind = last_target.group(1).lower()
+            num = last_target.group(2).strip("(). :")
+            path = ((kind, num),)
+
+            ops.append(
+                LegalOperation(
+                    op_id=f"corrigenda-{len(ops) + 1}",
+                    sequence=len(ops) + 1,
+                    action=StructuralAction.REPLACE,
+                    target=LegalAddress(path=path),
+                    source=OperationSource(statute_id="unknown"),
+                    provenance_tags=(f"ir_apply_class={self._apply_class(StructuralAction.REPLACE, path)}",),
+                )
+            )
+
+        return ops
+
+    def _apply_class(self, action: StructuralAction, path: Tuple[Tuple[str, str], ...]) -> str:
+        has_sub = len(path) > 1
+        if action == StructuralAction.REPLACE:
+            return "subsection_replace" if has_sub else "whole_section_replace"
+        if action == StructuralAction.INSERT:
+            return "subsection_insert" if has_sub else "whole_section_insert"
+        if action == StructuralAction.REPEAL:
+            return "subsection_repeal" if has_sub else "whole_section_repeal"
+        return "unknown"

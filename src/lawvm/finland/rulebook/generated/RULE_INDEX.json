@@ -1,0 +1,898 @@
+{
+  "rulebook": {
+    "families": [
+      {
+        "description": "Clause parsing rules.",
+        "family_id": "clause",
+        "rules": [
+          {
+            "authority": "enacted_text",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "section",
+                    "sec"
+                  ],
+                  [
+                    "moments",
+                    "moms"
+                  ]
+                ],
+                "emit_id": "emit_intro_replace_for_each_moment"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "replace section:20/subsection:2 facet:intro",
+                  "replace section:20/subsection:3 facet:intro"
+                ],
+                "input_text": "muutetaan 20 §:n 2 ja 3 momentin johdantokappale",
+                "input_xml": "",
+                "label": "dual moment intro",
+                "rejects": []
+              }
+            ],
+            "guards": [],
+            "phase": "clause_parse",
+            "priority": 220,
+            "purpose": "Bind johdantokappale to every coordinated momentti in the same genitive chain",
+            "rule_id": "fi.clause.shared_intro_over_conjuncted_momentti",
+            "strength": "literal",
+            "when": [
+              "SECTION_REF",
+              "MOMENTTI_LIST_GEN",
+              "JOHD"
+            ]
+          },
+          {
+            "authority": "enacted_text",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "section",
+                    "sec"
+                  ],
+                  [
+                    "pairs",
+                    "pairs"
+                  ]
+                ],
+                "emit_id": "emit_renumber_pair_scope"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "renumber pair:3/1",
+                  "renumber pair:3/2"
+                ],
+                "input_text": "jolloin 3 §:n 1 ja 2 momentit numeroidaan uudelleen",
+                "input_xml": "",
+                "label": "renumber pair with jolloin",
+                "rejects": []
+              }
+            ],
+            "guards": [],
+            "phase": "clause_parse",
+            "priority": 210,
+            "purpose": "Keep jolloin-driven renumber pairs scoped to the immediate pair being renumbered",
+            "rule_id": "fi.clause.jolloin_renumber_pair",
+            "strength": "literal",
+            "when": [
+              "SECTION_REF",
+              "JOLLOIN_RENUMBER_PAIR"
+            ]
+          },
+          {
+            "authority": "enacted_text",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "section",
+                    "sec"
+                  ],
+                  [
+                    "scope",
+                    "exception"
+                  ]
+                ],
+                "emit_id": "emit_renumber_pair_scope"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "exclude section:1/subsection:2"
+                ],
+                "input_text": "muutetaan 1 § lukuun ottamatta 2 momenttia",
+                "input_xml": "",
+                "label": "exception scope",
+                "rejects": []
+              }
+            ],
+            "guards": [],
+            "phase": "clause_parse",
+            "priority": 205,
+            "purpose": "Keep lukuun ottamatta phrases scoped as exclusions, not as enacted target text",
+            "rule_id": "fi.clause.lukuun_ottamatta_exception_scope",
+            "strength": "literal",
+            "when": [
+              "SECTION_REF",
+              "LUKUUNOTTAMATTA"
+            ]
+          }
+        ]
+      },
+      {
+        "description": "Payload shape rules.",
+        "family_id": "payload",
+        "rules": [
+          {
+            "authority": "enacted_text",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "section",
+                    "sec"
+                  ],
+                  [
+                    "siblings",
+                    "ctx"
+                  ]
+                ],
+                "emit_id": "classify_context_carried_siblings"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "item:1=context_carried",
+                  "omission=omitted_context"
+                ],
+                "input_text": "",
+                "input_xml": "<section><kohta>1 kohta</kohta><omissio>2-4</omissio></section>",
+                "label": "omission sibling context",
+                "rejects": []
+              }
+            ],
+            "guards": [
+              {
+                "args": [],
+                "guard_id": "siblings_same_level_as_omission"
+              },
+              {
+                "args": [],
+                "guard_id": "siblings_not_claimed_by_clause_target"
+              }
+            ],
+            "phase": "payload_normalize",
+            "priority": 140,
+            "purpose": "Carry non-claimed siblings beside omission markers as context, not payload",
+            "rule_id": "fi.payload.omission_sibling_context",
+            "strength": "literal",
+            "when": [
+              "SECTION_WITH_OMISSION",
+              "UNCLAIMED_NONOMISSION_SIBLINGS"
+            ]
+          },
+          {
+            "authority": "enacted_text",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "run",
+                    "run"
+                  ],
+                  [
+                    "parent",
+                    "parent"
+                  ]
+                ],
+                "emit_id": "link_lettered_subitem_run_to_parent"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "item:a=parented_to_1",
+                  "item:b=parented_to_1"
+                ],
+                "input_text": "4) ...; a) ...; b) ...; c) ...; 5) ...",
+                "input_xml": "",
+                "label": "explicit parent host",
+                "rejects": [
+                  "auto_attach_to_5"
+                ]
+              }
+            ],
+            "guards": [
+              {
+                "args": [],
+                "guard_id": "preceding_item_ends_with_host_signal"
+              }
+            ],
+            "phase": "payload_normalize",
+            "priority": 135,
+            "purpose": "Attach a lettered subitem run to the preceding numbered item only when the host signal is explicit",
+            "rule_id": "fi.payload.lettered_subitems_attach_previous_if_explicit",
+            "strength": "conventional",
+            "when": [
+              "DIRECT_LETTERED_SUBITEM_RUN"
+            ]
+          },
+          {
+            "authority": "lawvm_policy",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "run",
+                    "run"
+                  ]
+                ],
+                "emit_id": "emit_unresolved_subitem_parentage"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "unresolved_subitem_parentage:run"
+                ],
+                "input_text": "4) ...; a) ...; b) ...; c) ...; 5) ...",
+                "input_xml": "",
+                "label": "ambiguous lettered run",
+                "rejects": []
+              }
+            ],
+            "guards": [],
+            "phase": "payload_normalize",
+            "priority": 120,
+            "purpose": "Leave lettered subitem parentage unresolved when the host signal is not explicit enough",
+            "rule_id": "fi.payload.lettered_subitems_ambiguous_default",
+            "strength": "policy",
+            "when": [
+              "DIRECT_LETTERED_SUBITEM_RUN"
+            ]
+          },
+          {
+            "authority": "finlex_akn_profile",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "table",
+                    "table"
+                  ]
+                ],
+                "emit_id": "classify_table_with_named_rows"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "table_rows:named"
+                ],
+                "input_text": "",
+                "input_xml": "<table><tr><th>a</th><td>1</td></tr></table>",
+                "label": "table row names",
+                "rejects": []
+              }
+            ],
+            "guards": [],
+            "phase": "payload_normalize",
+            "priority": 130,
+            "purpose": "Preserve table rows with explicit names as named row payload, not anonymous text",
+            "rule_id": "fi.payload.table_with_named_rows",
+            "strength": "literal",
+            "when": [
+              "TABLE_WITH_NAMED_ROWS"
+            ]
+          },
+          {
+            "authority": "enacted_text",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "subsection",
+                    "subsection"
+                  ]
+                ],
+                "emit_id": "classify_sparse_subsection_body"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "subsection:sparse_body"
+                ],
+                "input_text": "",
+                "input_xml": "<section><momentti>1 mom.</momentti><p>...</p></section>",
+                "label": "sparse subsection",
+                "rejects": []
+              }
+            ],
+            "guards": [],
+            "phase": "payload_normalize",
+            "priority": 128,
+            "purpose": "Keep sparse subsection bodies explicit instead of collapsing them into surrounding prose",
+            "rule_id": "fi.payload.sparse_subsection_body",
+            "strength": "literal",
+            "when": [
+              "SPARSE_SUBSECTION_BODY"
+            ]
+          },
+          {
+            "authority": "enacted_text",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "continuation",
+                    "intro_list"
+                  ]
+                ],
+                "emit_id": "classify_intro_list_continuation"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "intro_continuation:structured"
+                ],
+                "input_text": "edellä 1 momentissa tarkoitetussa kohdassa ...",
+                "input_xml": "",
+                "label": "intro continuation",
+                "rejects": []
+              }
+            ],
+            "guards": [],
+            "phase": "payload_normalize",
+            "priority": 125,
+            "purpose": "Carry intro/list continuations as structured continuation payload",
+            "rule_id": "fi.payload.intro_list_continuation",
+            "strength": "literal",
+            "when": [
+              "INTRO_LIST_CONTINUATION"
+            ]
+          }
+        ]
+      },
+      {
+        "description": "Temporal scope rules.",
+        "family_id": "temporal",
+        "rules": [
+          {
+            "authority": "enacted_text",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "targets",
+                    "cluster"
+                  ]
+                ],
+                "emit_id": "mark_targets_temporary"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "temporary target section:21b",
+                  "permanent target section:21c",
+                  "permanent target section:22b"
+                ],
+                "input_text": "lisätään lakiin väliaikaisesti uusi 21 b § sekä uusi 21 c ja 22 b §",
+                "input_xml": "",
+                "label": "21b only temporary",
+                "rejects": []
+              }
+            ],
+            "guards": [
+              {
+                "args": [],
+                "guard_id": "marker_attaches_to_immediate_cluster"
+              }
+            ],
+            "phase": "temporal",
+            "priority": 180,
+            "purpose": "Temporary marker applies to the immediately governed insert cluster",
+            "rule_id": "fi.temporal.valiaikaisesti_immediate_target_cluster",
+            "strength": "literal",
+            "when": [
+              "TEMPORAL_WORD",
+              "INSERT_TARGET_CLUSTER"
+            ]
+          },
+          {
+            "authority": "enacted_text",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "kind",
+                    "commencement"
+                  ]
+                ],
+                "emit_id": "mark_commencement_targets"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "commencement:1.1.2027"
+                ],
+                "input_text": "Tämä laki tulee voimaan 1.1.2027.",
+                "input_xml": "",
+                "label": "commencement date",
+                "rejects": []
+              }
+            ],
+            "guards": [],
+            "phase": "temporal",
+            "priority": 175,
+            "purpose": "Extract commencement targets from explicit voimaantulo-style text",
+            "rule_id": "fi.temporal.commencement_extract",
+            "strength": "literal",
+            "when": [
+              "COMMENCEMENT_WORD"
+            ]
+          },
+          {
+            "authority": "enacted_text",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "kind",
+                    "expiry"
+                  ]
+                ],
+                "emit_id": "mark_expiry_targets"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "expiry:31.12.2027"
+                ],
+                "input_text": "Tämä laki on voimassa 31.12.2027 asti.",
+                "input_xml": "",
+                "label": "expiry date",
+                "rejects": []
+              }
+            ],
+            "guards": [],
+            "phase": "temporal",
+            "priority": 170,
+            "purpose": "Extract expiry targets from explicit määräaikainen / asti-style text",
+            "rule_id": "fi.temporal.expiry_extract",
+            "strength": "literal",
+            "when": [
+              "EXPIRY_WORD"
+            ]
+          },
+          {
+            "authority": "enacted_text",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "kind",
+                    "deferred"
+                  ]
+                ],
+                "emit_id": "mark_deferred_commencement"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "commencement:deferred"
+                ],
+                "input_text": "Lain 1 § tulee voimaan myöhemmin erikseen säädettävänä ajankohtana.",
+                "input_xml": "",
+                "label": "deferred commencement",
+                "rejects": []
+              }
+            ],
+            "guards": [],
+            "phase": "temporal",
+            "priority": 172,
+            "purpose": "Keep explicit deferred commencement markers attached to the deferred activation window",
+            "rule_id": "fi.temporal.deferred_commencement",
+            "strength": "literal",
+            "when": [
+              "DEFERRED_COMMENCEMENT_WORD"
+            ]
+          },
+          {
+            "authority": "lawvm_policy",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "kind",
+                    "phased"
+                  ]
+                ],
+                "emit_id": "mark_phased_activation"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "activation:phased"
+                ],
+                "input_text": "Pykälät 1-3 tulevat voimaan vaiheittain.",
+                "input_xml": "",
+                "label": "phased activation",
+                "rejects": []
+              }
+            ],
+            "guards": [],
+            "phase": "temporal",
+            "priority": 168,
+            "purpose": "Represent phased activation as a structured activation policy rather than free text",
+            "rule_id": "fi.temporal.phased_activation",
+            "strength": "policy",
+            "when": [
+              "PHASED_ACTIVATION_WORD"
+            ]
+          }
+        ]
+      },
+      {
+        "description": "Source normalization rules.",
+        "family_id": "source",
+        "rules": [
+          {
+            "authority": "oracle_editorial",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "kind",
+                    "heading_noise"
+                  ]
+                ],
+                "emit_id": "drop_editorial_heading_noise"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "source_normalization:drop_heading_noise"
+                ],
+                "input_text": "Lain voimaantulo",
+                "input_xml": "",
+                "label": "editorial heading noise",
+                "rejects": []
+              }
+            ],
+            "guards": [],
+            "phase": "source_normalize",
+            "priority": 108,
+            "purpose": "Drop editorial heading noise before source comparison",
+            "rule_id": "fi.source.editorial_heading_noise",
+            "strength": "conventional",
+            "when": [
+              "EDITORIAL_HEADING_NOISE"
+            ]
+          },
+          {
+            "authority": "oracle_editorial",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "kind",
+                    "kumottu_banner"
+                  ]
+                ],
+                "emit_id": "drop_editorial_banner"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "source_normalization:drop_kumottu_banner"
+                ],
+                "input_text": "kumottu laki ...",
+                "input_xml": "",
+                "label": "kumottu banner",
+                "rejects": []
+              }
+            ],
+            "guards": [],
+            "phase": "source_normalize",
+            "priority": 110,
+            "purpose": "Drop editorial kumottu banners from source normalization output",
+            "rule_id": "fi.source.omit_editorial_kumottu_banner",
+            "strength": "conventional",
+            "when": [
+              "EDITORIAL_KUMOTTU_BANNER"
+            ]
+          },
+          {
+            "authority": "oracle_editorial",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "kind",
+                    "source_tag"
+                  ]
+                ],
+                "emit_id": "reclassify_editorial_source_tag"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "source_normalization:reclassify_source_tag"
+                ],
+                "input_text": "",
+                "input_xml": "<source>...</source>",
+                "label": "source tag wrapper",
+                "rejects": []
+              }
+            ],
+            "guards": [],
+            "phase": "source_normalize",
+            "priority": 104,
+            "purpose": "Reclassify editorial source-tag wrappers instead of treating them as semantic content",
+            "rule_id": "fi.source.editorial_source_tag_reclassification",
+            "strength": "conventional",
+            "when": [
+              "EDITORIAL_SOURCE_TAG_RECLASSIFICATION"
+            ]
+          },
+          {
+            "authority": "finlex_akn_profile",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "from",
+                    "subsection"
+                  ],
+                  [
+                    "to",
+                    "paragraph"
+                  ]
+                ],
+                "emit_id": "reclassify_node_kind"
+              },
+              {
+                "args": [
+                  [
+                    "kind",
+                    "tag_reclassify"
+                  ],
+                  [
+                    "basis",
+                    "impossible_numbering"
+                  ]
+                ],
+                "emit_id": "record_source_normalization_fact"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "reclassify subsection -> paragraph",
+                  "record source_normalization_fact"
+                ],
+                "input_text": "",
+                "input_xml": "<subsection><num>9)</num><content>...</content></subsection>",
+                "label": "subsection carrying item numbering",
+                "rejects": []
+              }
+            ],
+            "guards": [],
+            "phase": "source_normalize",
+            "priority": 102,
+            "purpose": "Reclassify impossible subsection numbering as paragraph-shaped source, while recording the normalization fact",
+            "rule_id": "fi.source.reclassify_subsection_with_item_numbering",
+            "strength": "heuristic",
+            "when": [
+              "IMPOSSIBLE_SUBSECTION_NUMBERING"
+            ]
+          },
+          {
+            "authority": "finlex_akn_profile",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "reason",
+                    "schema_invalid_body"
+                  ]
+                ],
+                "emit_id": "flag_schema_invalid_source"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "source_normalization:flag_schema_invalid_source"
+                ],
+                "input_text": "",
+                "input_xml": "<body><section><section></body>",
+                "label": "invalid body tree",
+                "rejects": []
+              }
+            ],
+            "guards": [],
+            "phase": "source_normalize",
+            "priority": 100,
+            "purpose": "Flag malformed body trees as schema-invalid source instead of silently normalizing them away",
+            "rule_id": "fi.source.schema_invalid_body",
+            "strength": "heuristic",
+            "when": [
+              "SCHEMA_INVALID_BODY"
+            ]
+          }
+        ]
+      },
+      {
+        "description": "Comparison rules.",
+        "family_id": "compare",
+        "rules": [
+          {
+            "authority": "lawvm_policy",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "reason",
+                    "repeal_notice_editorial"
+                  ]
+                ],
+                "emit_id": "mark_compare_equivalent"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "compare_equivalent:repeal_notice_editorial"
+                ],
+                "input_text": "",
+                "input_xml": "",
+                "label": "oracle repeal notice vs replay placeholder",
+                "rejects": [
+                  "false_positive_xml_topology_drift"
+                ]
+              }
+            ],
+            "guards": [],
+            "phase": "compare",
+            "priority": 160,
+            "purpose": "Classify oracle repeal notice text against a replay repeal placeholder as editorial convention, not replay-missing",
+            "rule_id": "fi.compare.repeal_notice_editorial",
+            "strength": "policy",
+            "when": [
+              "ORACLE_REPEAL_NOTICE_TEXT",
+              "REPLAY_REPEAL_PLACEHOLDER"
+            ]
+          },
+          {
+            "authority": "lawvm_policy",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "reason",
+                    "topology_drift_display_only"
+                  ]
+                ],
+                "emit_id": "mark_compare_equivalent"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "compare_equivalent:topology_drift_display_only"
+                ],
+                "input_text": "",
+                "input_xml": "",
+                "label": "html/xml layout drift",
+                "rejects": [
+                  "substantive_marker_mismatch"
+                ]
+              }
+            ],
+            "guards": [],
+            "phase": "compare",
+            "priority": 155,
+            "purpose": "Treat oracle HTML/XML topology drift as display-only when the substantive markers still align",
+            "rule_id": "fi.compare.oracle_html_xml_topology_drift",
+            "strength": "policy",
+            "when": [
+              "ORACLE_HTML_XML_TOPOLOGY_DRIFT"
+            ]
+          },
+          {
+            "authority": "oracle_editorial",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "reason",
+                    "oracle_omission_blank"
+                  ]
+                ],
+                "emit_id": "mark_compare_omission_blank"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "compare_equivalent:oracle_omission_blank"
+                ],
+                "input_text": "",
+                "input_xml": "",
+                "label": "omission blank",
+                "rejects": [
+                  "semantic_payload_mismatch"
+                ]
+              }
+            ],
+            "guards": [],
+            "phase": "compare",
+            "priority": 150,
+            "purpose": "Treat oracle omission blanks as a display convention rather than a semantic mismatch",
+            "rule_id": "fi.compare.oracle_omission_blank",
+            "strength": "conventional",
+            "when": [
+              "ORACLE_OMISSION_BLANK"
+            ]
+          },
+          {
+            "authority": "lawvm_policy",
+            "emits": [
+              {
+                "args": [
+                  [
+                    "reason",
+                    "oracle_stale_source"
+                  ]
+                ],
+                "emit_id": "mark_compare_stale_source"
+              }
+            ],
+            "examples": [
+              {
+                "expects": [
+                  "compare_equivalent:oracle_stale_source"
+                ],
+                "input_text": "",
+                "input_xml": "",
+                "label": "stale oracle source",
+                "rejects": [
+                  "replay_materialization_mismatch"
+                ]
+              }
+            ],
+            "guards": [],
+            "phase": "compare",
+            "priority": 148,
+            "purpose": "Treat stale oracle source material as a compare-policy concern instead of a replay mismatch",
+            "rule_id": "fi.compare.oracle_stale_source",
+            "strength": "policy",
+            "when": [
+              "ORACLE_STALE_SOURCE"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

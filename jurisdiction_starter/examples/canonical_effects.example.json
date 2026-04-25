@@ -1,0 +1,24 @@
+{
+  "kind": "<code>_canonical_effects",
+  "source_id": "<AMENDING ACT ID>",
+  "base_id": "<BASE ACT ID>",
+  "effects": [
+    {
+      "effect_id": "e1",
+      "action": "replace",
+      "target": {
+        "path": [
+          [
+            "section",
+            "3"
+          ]
+        ],
+        "special": null
+      },
+      "payload_kind": "section",
+      "notes": [
+        "example only"
+      ]
+    }
+  ]
+}

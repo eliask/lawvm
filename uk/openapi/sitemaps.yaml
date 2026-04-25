@@ -1,0 +1,117 @@
+
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD XHTML+RDFa 1.0//EN" "http://www.w3.org/MarkUp/DTD/xhtml-rdfa-1.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:dct="http://purl.org/dc/terms/" xml:lang="en">
+<head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><meta name="viewport" content="width=device-width, initial-scale=0.1, user-scalable=1" /><title>Legislation OpenAPI - Legislation Module</title><link rel="icon" href="/favicon.ico" /><link rel="stylesheet" href="/styles/screen.css" type="text/css" /><link rel="stylesheet" href="/styles/survey/survey.css" type="text/css" /><!--[if lte IE 6]><link rel="stylesheet" href="/styles/IE/ie6chromeAdditions.css" type="text/css" /><![endif]--><!--[if lte IE 7]><link rel="stylesheet" href="/styles/IE/ie7chromeAdditions.css" type="text/css" /><![endif]--><script type="text/javascript" src="/scripts/jquery-3.7.1.min.js"></script><script type="text/javascript" src="/scripts/CentralConfig.js"></script><script type="text/javascript" src="/scripts/survey/survey.js"></script><script type="text/javascript" src="/scripts/chrome.js"></script><link rel="apple-touch-icon" href="/images/chrome/apple-touch-icons/apple-touch-icon.png" />
+      
+      
+      <meta charset="UTF-8" />
+      
+      
+      
+      <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,700|Source+Code+Pro:300,600|Titillium+Web:400,600,700" rel="stylesheet" />
+      
+      <link rel="stylesheet" type="text/css" href="/styles/swagger-ui/3.24.2/swagger-ui.css" />
+      <style>
+    html
+    {
+      box-sizing: border-box;
+      overflow: -moz-scrollbars-vertical;
+      overflow-y: scroll;
+    }
+    *,
+    *:before,
+    *:after
+    {
+      box-sizing: inherit;
+    }
+
+    body {
+      margin:0;
+      background: #fafafa;
+    }
+  </style>
+      <link rel="stylesheet" href="/styles/website.css" type="text/css" /><link rel="stylesheet" href="/styles/print.css" type="text/css" media="print" /><link rel="stylesheet" href="/styles/buy-now.css" type="text/css" /><script type="text/javascript" src="/scripts/jquery-cookie-directive/jquery.cookie.js"></script><script type="text/javascript" src="/scripts/jquery-cookie-directive/jquery-cookie-functions.js"></script><script type="text/javascript" src="/scripts/cookie-directive.js"></script><!--Google Tag Manager--><script type="text/javascript">
+			function addGtm(w, d, s, l, i) {
+				// Legislation.gov.uk: Check cookie preferences before running the Google analytics code.
+				if (window.legGlobals.cookiePolicy.userSet &amp;&amp; window.legGlobals.cookiePolicy.analytics) {
+					w[l] = w[l] || [];
+					w[l].push({'gtm.start': new Date().getTime(), event: 'gtm.js'});
+					var and = '&amp;';
+					and = and.charAt(0);
+					var f = d.getElementsByTagName(s)[0], j = d.createElement(s),
+							dl = l != 'dataLayer' ? (and + 'l=' + l) : '';
+					j.async = true;
+					j.src = 'https://www.googletagmanager.com/gtm.js?id=' + i + dl;
+					f.parentNode.insertBefore(j, f);
+				} else {
+					$.removeCookie('_ga', {path: '/'});
+					$.removeCookie('_gid', {path: '/'});
+					$.removeCookie('_gat_UA-2827241-23', {path: '/'});
+					$.removeCookie('_ga', {path: '/', domain: '.legislation.gov.uk'});
+					$.removeCookie('_gid', {path: '/', domain: '.legislation.gov.uk'});
+					$.removeCookie('_gat_UA-2827241-23', {path: '/', domain: '.legislation.gov.uk'});
+				}
+			}
+			addGtm(window, document, 'script', 'dataLayer', 'GTM-TWB7339');
+
+			$('body').on('cookie.preferences.saved.banner', function () {
+				addGtm(window, document, 'script', 'dataLayer', 'GTM-TWB7339');
+			});
+		</script><!--End Google Tag Manager--></head><body id="doc" class="openapi"><div id="preloadBg"><script type="text/javascript">
+						$("body").addClass("js");
+					</script></div><ul id="top" class="accessibleLinks"><li><a href="#pageTitle">Skip to main content</a></li><li><a href="#primaryNav">Skip to navigation</a></li></ul><div id="layout1"><div id="header"><h2><a href="/">legislation.gov.uk<span class="english"></span></a></h2><span class="natArch"><a href="https://www.nationalarchives.gov.uk"><span class="backgroundImage"></span><span class="accessibleText">https://www.nationalarchives.gov.uk</span></a></span><ul id="secondaryNav"><li><a class="langaugeSwitch" href="/cy/openapi/sitemaps">Cymraeg</a></li></ul></div><div id="primaryNav"><div class="navLayout"><ul><li class="link1"><a href="/"><span>Home</span></a></li><li class="link2"><a href="/explore"><span>Explore our collections</span></a></li><li class="link3"><a href="/research-tools"><span>Research tools</span></a></li><li class="link4"><a href="/help"><span>Help and guidance</span></a></li><li class="link5"><a href="/new"><span>What's new</span></a></li><li class="link6"><a href="/about-us"><span>About us</span></a></li><li id="quickSearch" class="en"><a href="#contentSearch"><span>Search Legislation</span></a></li></ul></div></div><div id="background"></div>
+      
+      <div id="layout2">
+         
+         
+         <form id="contentSearch" method="get" action="/search" class="contentSearch"><h2>Search Legislation</h2><div class="title"><label for="title">Title: <em>(or keywords in the title)</em></label><input type="text" id="title" name="title" /></div><div class="year"><label for="year">Year:</label><input type="text" id="year" name="year" /></div><div class="number"><label for="number">Number:</label><input type="text" id="number" name="number" /></div><div class="type"><label for="type">Type:</label><select name="type" id="type"><option value="primary+secondary" selected="selected">All UK Legislation (excluding originating from the EU)</option><option disabled="disabled">--------------------------------------------</option><option value="all">All Legislation (including originating from the EU)</option><option disabled="disabled">--------------------------------------------</option><option value="primary">All Primary Legislation</option><option value="ukpga">    UK Public General Acts</option><option value="ukla">    UK Local Acts</option><option value="ukppa">    UK Private and Personal Acts</option><option value="asp">    Acts of the Scottish Parliament</option><option value="asc">    Acts of Senedd Cymru</option><option value="anaw">    Acts of the National Assembly for Wales</option><option value="mwa">    Measures of the National Assembly for Wales</option><option value="ukcm">    Church Measures</option><option value="nia">    Acts of the Northern Ireland Assembly</option><option value="aosp">    Acts of the Old Scottish Parliament</option><option value="aep">    Acts of the English Parliament</option><option value="aip">    Acts of the Old Irish Parliament</option><option value="apgb">    Acts of the Parliament of Great Britain</option><option value="gbla">    Local Acts of the Parliament of Great Britain</option><option value="gbppa">    Private and Personal Acts of the Parliament of Great Britain</option><option value="nisi">    Northern Ireland Orders in Council</option><option value="mnia">    Measures of the Northern Ireland Assembly</option><option value="apni">    Acts of the Northern Ireland Parliament</option><option disabled="disabled">--------------------------------------------</option><option value="secondary">All Secondary Legislation</option><option value="uksi">    UK Statutory Instruments</option><option value="wsi">    Welsh Statutory Instruments</option><option value="ssi">    Scottish Statutory Instruments</option><option value="nisr">    Northern Ireland Statutory Rules</option><option value="ukci">    Church Instruments</option><option value="ukmd">    UK Ministerial Directions</option><option value="ukmo">    UK Ministerial Orders</option><option value="uksro">    UK Statutory Rules and Orders</option><option value="nisro">    Northern Ireland Statutory Rules and Orders</option><option disabled="disabled">--------------------------------------------</option><option value="eu-origin">All Legislation originating from the EU</option><option value="eur">    Regulations originating from the EU</option><option value="eudn">    Decisions originating from the EU</option><option value="eudr">    Directives originating from the EU</option><option value="eut">    European Union Treaties</option><option disabled="disabled">--------------------------------------------</option><option value="draft">All Draft Legislation</option><option value="ukdsi">    UK Draft Statutory Instruments</option><option value="sdsi">    Scottish Draft Statutory Instruments</option><option value="nidsr">    Northern Ireland Draft Statutory Rules</option><option disabled="disabled">--------------------------------------------</option><option value="ukia">All Impact Assessments</option><option value="ukia">    UK Impact Assessments</option></select></div><div class="submit"><button type="submit" id="contentSearchSubmit" class="userFunctionalElement"><span class="btl"></span><span class="btr"></span>Search<span class="bbl"></span><span class="bbr"></span></button></div><div class="advSearch"><a href="/search">Advanced Search</a></div></form>
+         <div id="title">
+            <h1 id="pageTitle"><a href="/openapi">Legislation OpenAPI </a>- Legislation Module
+            </h1>
+         </div>
+         
+         
+         <div id="swagger-ui"></div>
+         
+         <script src="/scripts/swagger-ui/3.24.2/swagger-ui-bundle.js"> </script>
+         <script src="/scripts/swagger-ui/3.24.2/swagger-ui-standalone-preset.js"> </script>
+         <script>
+window.onload = function() {
+
+  var spec = {"openapi": "3.0.0", "info": {"version": "1.0.0", "title": "Legislation Sitemaps API", "description": "Sitemap API", "license": {"name": "OGL"}}, "servers": [{"url": "https://www.legislation.gov.uk/", "description": "English language legislation domain"}, {"url": "https://www.legislation.gov.uk/en/", "description": "Explicit English language legislation domain"}, {"url": "https://www.legislation.gov.uk/cy/", "description": "Welsh language legislation domain"}], "paths": {"/sitemap-{type}.xml": {"get": {"summary": "Sitemaps by sitemap-type.xml", "description": "The URI defines  a sitemap request where custom values for sitemap-type.xml can be applied with the content returned in a representation defined content negotiation", "operationId": "sitemaps-sitemap-type.xml", "parameters": [{"$ref": "#/components/parameters/type"}], "responses": {"200": {"$ref": "#/components/responses/Legislation200Success"}, "400": {"$ref": "#/components/responses/Legislation400BadRequest"}, "404": {"$ref": "#/components/responses/Legislation404NotFound"}}}}, "/sitemap-{type}-{status}-{year}-{numberRange}.xml": {"get": {"summary": "Sitemaps by sitemap-type-status-year-numberRange.xml", "description": "The URI defines  a sitemap request where custom values for sitemap-type-status-year-numberRange.xml can be applied with the content returned in a representation defined content negotiation", "operationId": "sitemaps-sitemap-type-status-year-numberRange.xml", "parameters": [{"$ref": "#/components/parameters/type"}, {"$ref": "#/components/parameters/status"}, {"$ref": "#/components/parameters/year"}, {"$ref": "#/components/parameters/numberRange"}], "responses": {"200": {"$ref": "#/components/responses/Legislation200Success"}, "400": {"$ref": "#/components/responses/Legislation400BadRequest"}, "404": {"$ref": "#/components/responses/Legislation404NotFound"}}}}}, "components": {"parameters": {"type": {"name": "type", "in": "path", "description": "The Legislation Abbreviated Type", "required": true, "style": "simple", "schema": {"$ref": "#/components/schemas/type"}}, "status": {"name": "status", "in": "path", "description": "The Legislation status", "required": true, "style": "simple", "schema": {"$ref": "#/components/schemas/status"}}, "year": {"name": "year", "in": "path", "description": "The Legislation Year", "required": true, "style": "simple", "schema": {"$ref": "#/components/schemas/year"}}, "numberRange": {"name": "numberRange", "in": "path", "description": "The Legislation Number Range", "required": true, "style": "simple", "schema": {"$ref": "#/components/schemas/numberRange"}}}, "responses": {"Legislation200Success": {"description": "Successful response", "content": {"application/xml": {"schema": {"type": "object"}}}}, "Legislation404NotFound": {"description": "The requested Legislation is not available"}, "Legislation400BadRequest": {"description": "The requested Legislation is out of scope for what is stored on the site"}}, "schemas": {"HTMLSuccess": {"type": "object"}, "FeedSuccess": {"type": "object"}, "type": {"type": "string", "description": "Restricts the legislation type to a specific valid abbreviated type", "pattern": "^(uksi|ukmd|wsi|nisi|ssi|nisro|nisr|ukci|ukmo|uksro|eur|eudn|eudr|ukpga|ukla|ukppa|gbppa|gbla|apgb|aep|aosp|asp|aip|apni|mnia|nia|ukcm|mwa|anaw|asc)$"}, "status": {"type": "string", "description": "The version of the legislation which can either be the final naming convention, or a dated revised version. Prospective versions are deprecated", "pattern": "^(final|revised)$"}, "year": {"type": "string", "description": "Restricts the regnal year(s)", "pattern": "^[0-9]+$"}, "numberRange": {"type": "string", "description": "Any two sets of digits", "pattern": "^([0-9]+)-([0-9]+)$"}}}};
+
+  // Build a system
+  const ui = SwaggerUIBundle({
+    spec: spec,
+    dom_id: '#swagger-ui',
+    deepLinking: true,
+    presets: [
+      SwaggerUIBundle.presets.apis,
+      SwaggerUIStandalonePreset
+    ],
+    plugins: [
+      SwaggerUIBundle.plugins.DownloadUrl
+    ],
+    layout: "StandaloneLayout"
+  })
+
+  window.ui = ui
+var elements = document.getElementsByClassName("topbar");
+while(elements.length &gt; 0){
+    elements[0].parentNode.removeChild(elements[0]);
+    }
+}
+</script>
+         </div>
+      
+   <div id="footerNav"><ul><li><a href="/new-design">New site design</a></li><li><a href="/help">Help</a></li><li><a href="/about-us">About us</a></li><li><a href="/sitemap">Site map</a></li><li><a href="/accessibility">Accessibility</a></li><li><a href="/contact-us">Contact us</a></li><li><a href="/privacynotice">Privacy notice</a></li><li><a href="/cookiepolicy" id="cookies-content-link">Cookies</a></li></ul></div><div id="footer"><div><p class="copyrightstatement"><img src="/images/chrome/ogl-symbol.gif" alt="OGL logo" /><span xml:lang="" id="Copyright_Statement">All content is available under the <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3" target="_blank" rel="license">Open Government Licence v3.0</a> except where <a href="/contributors">otherwise stated</a>. This site additionally contains content derived from EUR-Lex, reused under the terms of the <a href="https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX%3A32011D0833" target="_blank">Commission Decision 2011/833/EU</a> on the reuse of documents from the EU institutions. For more information see the <a href="https://eur-lex.europa.eu/content/legal-notice/legal-notice.html" target="_blank">EUR-Lex public statement on re-use</a>.</span></p><span class="copyright">© <span rel="dct:rights" resource="http://reference.data.gov.uk/def/copyright/crown-copyright">Crown and database right</span></span></div></div><!--Google Tag Manager NoScript--><div id="google-tag-manager"><script type="text/javascript">
+				if (window.legGlobals.cookiePolicy.userSet &amp;&amp; window.legGlobals.cookiePolicy.analytics) {
+					var toRemove = document.getElementById('google-tag-manager');
+					document.getElementById('google-tag-manager').parentNode.removeChild(toRemove);
+				}
+			</script><div style="visibility: hidden; height: 0; width: 0; overflow: hidden; position: absolute"><object data="https://www.googletagmanager.com/ns.html?id=GTM-TWB7339" height="0" width="0" type="text/html"></object></div></div><!--End Google Tag Manager NoScript--></div><div id="modalBg" style="width: 1264px; height: 1731px; opacity: 0.8; display: none;"></div><script type="text/javascript">
+					$("#statusWarningSubSections").css("display", "none");
+					$(".help").css("display", "none");
+					$("#searchChanges", "#existingSearch").css({"display": "none"});
+				</script><script type="text/javascript" src="/scripts/libs/scrollmagic/ScrollMagic.min.js"></script><script type="text/javascript" src="/scripts/SidebarScroll.js"></script><script type="text/javascript" src="/scripts/StickyElements.js"></script></body></html>

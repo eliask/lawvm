@@ -1,0 +1,34 @@
+{
+  "description": "Tracked U.S. federal statutory smoke sample references for initial LawVM reconnaissance.",
+  "notes": [
+    "These are source references and target artifacts for a small federal-statutes prototype.",
+    "Acquisition is not yet hardened in this environment; some OLRC endpoints are slow or timing out.",
+    "The purpose of this manifest is to keep the intended official witness set explicit."
+  ],
+  "sources": [
+    {
+      "id": "uscode_title_7_releasepoint",
+      "kind": "uscode_releasepoint_reference",
+      "label": "U.S. Code Title 7 XML at release point 119-18",
+      "official_host": "uscode.house.gov",
+      "reference_url": "https://uscode.house.gov/download/releasepoints/us/pl/119/18/usc-rp@119-18.htm",
+      "intended_artifact": "us/data/raw/uscode/title7/xml_usc07@119-18.zip"
+    },
+    {
+      "id": "classification_tables_index",
+      "kind": "classification_reference",
+      "label": "OLRC classification tables index",
+      "official_host": "uscode.house.gov",
+      "reference_url": "https://uscode.house.gov/classification/tables.shtml",
+      "intended_artifact": "us/data/raw/classification/tables_index.html"
+    },
+    {
+      "id": "govinfo_comps_10294",
+      "kind": "statute_compilation_reference",
+      "label": "Research Facilities Act statute compilation",
+      "official_host": "govinfo.gov",
+      "reference_url": "https://www.govinfo.gov/app/details/COMPS-10294",
+      "intended_artifact": "us/data/raw/comps/COMPS-10294"
+    }
+  ]
+}

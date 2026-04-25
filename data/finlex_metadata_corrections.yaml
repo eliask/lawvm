@@ -1,0 +1,5789 @@
+# Finlex metadata corrections and review ledger.
+# Primary source is this YAML; the CSV is a temporary working sheet folded into it.
+# Rows with scope: stale_in_force feed the absent-ajantasa scanner.
+
+validity_judgements:
+- statute_id: 1886/29-001
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Old Grand Duchy forest act was later repealed in parts and replaced
+    by modern forest legislation.
+  reasoning: ''
+  validity: not valid
+  title: Metsälaki Suomen Suuriruhtinaanmaalle
+  evidence_statute: 1998/861
+  expired_date: '1999-01-01'
+  mechanism: explicitly_repealed
+  notes: Kumottu laeilla 861/1998 ja 693/2000. Korvattu metsälailla 1093/1996.
+- statute_id: 1901/34-001
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: ''
+  validity: not valid
+  title: Laki asiakirjain kuolettamisesta
+  evidence_statute: 1998/400
+  mechanism: explicitly_repealed
+  notes: Kumottu lailla 400/1998.
+- statute_id: 1901/9-001
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Old electricity-works act was superseded by later electricity-market
+    legislation.
+  reasoning: ''
+  validity: not valid
+  title: Laki sähkölaitoksista
+  mechanism: explicitly_repealed
+  notes: Korvattu sähkömarkkinalailla 588/2013.
+- statute_id: 1907/48-005
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: 'Its own title is year-specific: spirits tax law for 1908 only.'
+  reasoning: ''
+  validity: not valid
+  title: Laki siitä verosta, joka paloviinan valmistamisesta Suomessa on suoritettava, sekä
+    tämän veron käyttämisestä vuonna 1908
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1907/48-006
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: 'Its own title is year-specific: malt-beverage tax law for 1908 only.'
+  reasoning: ''
+  validity: not valid
+  title: Laki suostuntaverosta mallasjuomain valmistamisesta vuonna 1908
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1918/135-001
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Later implementing legislation and the 1921 supplementary act still build on
+    this rent-area redemption law, and I found no repeal.
+  validity: valid
+- statute_id: 1918/183-001
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old consent tax on share transfers was superseded by later transfer-tax/stamp-duty
+    legislation.
+  validity: ''
+- statute_id: 1918/67-001
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: One-time law on enforcing sentences imposed by state-treason courts; operative
+    purpose completed.
+  validity: ''
+- statute_id: 1918/72-001
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: Wartime exceptional-price-control act; one-off emergency regime completed.
+  reasoning: ''
+  validity: not valid
+  title: Laki kohtuuttomien hintojen ehkäisemiseksi sodan aiheuttamissa poikkeuksellisissa
+    oloissa
+  mechanism: price_control_wartime
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1918/72-006
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to food administration in wartime exceptional conditions; operative
+    purpose completed.
+  validity: ''
+- statute_id: 1919/79-001
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: Applied only to compensation for the 1919 parliamentary session.
+  reasoning: ''
+  validity: not valid
+  title: Laki edustajanpalkkiosta 1919 vuoden varsinaisilta valtiopäiviltä.
+  mechanism: one_time_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1919/94-024
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Implementation act of the 1919 Constitution; the historical implementation framework
+    was superseded by later constitutional reform.
+  validity: not valid
+- statute_id: 1920/125
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Implementation act for the Åland self-government framework; Finlex still shows
+    it as updated legislation and no repeal was identified.
+  validity: valid
+- statute_id: 1920/137
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: Applied only to compensation for the 1920 parliamentary session.
+  reasoning: ''
+  validity: not valid
+  title: Laki edustajanpalkkiosta 1920 vuoden varsinaisilta valtiopäiviltä.
+  mechanism: one_time_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1920/180
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off amendment act to section 3 of the Bank of Finland instruction; the amendment
+    act itself has no current independent force.
+  validity: not valid
+- statute_id: 1920/330
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to continued collection of certain taxes and charges in 1921
+    only.
+  validity: not valid
+- statute_id: 1921/143
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: Applied only to compensation for the 1921 parliamentary session.
+  reasoning: ''
+  validity: not valid
+  title: Laki edustajanpalkkiosta 1921 vuoden varsinaisilta valtiopäiviltä
+  mechanism: one_time_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1921/280
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: 1922 tariff/export-duty law was year-specific and later displaced by
+    modern/EU law.
+  reasoning: ''
+  validity: not valid
+  title: Laki tullitariffista ja vientimaksusta vuodeksi 1922
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1921/293
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Amending act to the 1734 Inheritance Code; the operative rule lives in the amended
+    code, not in this stand-alone amending act.
+  validity: not valid
+- statute_id: 1922/129
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Historical land-settlement act on State forest lands and redemption of lease
+    areas; operative purpose completed.
+  validity: not valid
+- statute_id: 1922/183
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Act on parish clerks’ and organists’ salaries and official residences appears
+    superseded by later church legislation.
+  validity: not valid
+- statute_id: 1922/309
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Earlier match-tax act was replaced by later excise-tax legislation.
+  reasoning: ''
+  validity: not valid
+  title: Laki tulitikkuverosta
+  mechanism: likely_superseded
+  notes: 14 amendments. Earlier match tax act, same as 1939/550.
+- statute_id: 1922/73
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Historical act on redeeming lease areas attached to State official residences
+    and the use of those residences; operative purpose completed.
+  validity: not valid
+- statute_id: 1923/137
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Act laying down the basic organisational form of elementary-school administration
+    was superseded by later school legislation.
+  validity: not valid
+- statute_id: 1923/191
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Act laying down the basic organisational form of the University of Helsinki was
+    superseded by later university legislation.
+  validity: not valid
+- statute_id: 1924/16
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Later legislation still referred to rights arising under the fishery-croft redemption
+    act, and I found no repeal.
+  validity: valid
+- statute_id: 1924/293
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: One-time law abolishing the rouble tax; operative purpose completed.
+  validity: ''
+- statute_id: 1925/155
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Historical corrective act concerning illegally acquired real estate of timber
+    companies; operative purpose completed.
+  validity: not valid
+- statute_id: 1925/157
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists for the Inari/Enontekiö/Utsjoki partition and redemption
+    act and I found no repeal.
+  validity: valid
+- statute_id: 1925/159
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Petsamo land-settlement law became moot after the wartime territorial
+    changes.
+  reasoning: ''
+  validity: not valid
+  title: Laki Petsamon kihlakunnassa olevain valtion maiden luovuttamisesta paikkakunnan entisille
+    asukkaille ja uusien asutustilojen perustamisesta
+  mechanism: wartime_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1925/354
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Old candy-excise regime was replaced by later excise-tax legislation.
+  reasoning: ''
+  validity: not valid
+  title: Laki makeisvalmisteverosta
+  mechanism: likely_superseded
+  notes: 28 amendments. Candy excise tax. Likely superseded by makeisverolaki.
+- statute_id: 1926/180
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Kansakoulu funding regime was superseded after the peruskoulu reform.
+  reasoning: ''
+  validity: not valid
+  title: Laki kansakoululaitoksen kustannuksista
+  mechanism: likely_superseded
+  notes: 40 amendments. Folk school funding. Kansakoulu system replaced by peruskoulu (1968/467).
+- statute_id: 1928/346
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Egg/pork export-certificate regime was superseded by EU CAP/common commercial
+    policy on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki kananmunain ja sianlihan vientitodistuksista.
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1929/22
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Old motor-vehicle tax act was replaced by later vehicle-tax legislation.
+  reasoning: ''
+  validity: not valid
+  title: Laki moottoriajoneuvoverosta
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1929/429
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: 'Its own title is year-specific: customs collection law for 1930 only.'
+  reasoning: ''
+  validity: not valid
+  title: Laki tullien kantamisesta vuonna 1930
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1929/65
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Historical land-settlement act on State-owned tax and noble lands and redemption
+    of lease areas; operative purpose completed.
+  validity: not valid
+- statute_id: 1930/118
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: State-aid framework for bull associations, cooperatives, and cattle-recording
+    associations belongs to an obsolete agricultural-aid regime.
+  validity: not valid
+- statute_id: 1930/232
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off act abolishing tax price schedules and stabilising related expenditures;
+    operative purpose completed.
+  validity: not valid
+- statute_id: 1930/396
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old malt-beverage-tax act was superseded by later excise-tax legislation.
+  validity: ''
+- statute_id: 1931/221
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Cities’ participation in police expenses belongs to an obsolete municipal/police-finance
+    framework.
+  validity: not valid
+- statute_id: 1931/381
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: 'Its own title is year-specific: customs collection law for 1932 only.'
+  reasoning: ''
+  validity: not valid
+  title: Laki tullien kantamisesta vuonna 1932
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1931/393
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Old motor-vehicle tax act was replaced by later vehicle-tax legislation.
+  reasoning: ''
+  validity: not valid
+  title: Laki moottoriajoneuvoverosta
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1931/413
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Approval/implementation act for the Nordic family-law convention on marriage,
+    adoption and guardianship; no repeal identified.
+  validity: valid
+- statute_id: 1932/148
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: 1987/983 says Akordilaki (148/32) remained in force only until the end
+    of 1992.
+  reasoning: ''
+  validity: not valid
+  title: Akordilaki
+  evidence_statute: 1987/983
+  evidence_quote: Akordilaki (148/32) on edelleen voimassa vuoden 1992 loppuun.
+  expired_date: '1992-12-31'
+  mechanism: sunset_clause
+  notes: Temporary extension until end of 1992. Last amended 1991/761.
+- statute_id: 1932/379
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: 'Its own title is year-specific: customs collection law for 1933 only.'
+  reasoning: ''
+  validity: not valid
+  title: Laki tullien kantamisesta vuonna 1933
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1932/50
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Excise-tax act on spirits and berry wines was replaced by later alcohol-excise
+    legislation.
+  validity: not valid
+- statute_id: 1932/51
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Old beer-excise regime was abolished/replaced by later excise legislation.
+  reasoning: ''
+  validity: not valid
+  title: Laki mallasjuomaverosta
+  mechanism: excise_tax_abolished
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1932/55
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary amendment of the bankruptcy statute; the temporary
+    regime is no longer independently operative.
+  validity: not valid
+- statute_id: 1933/108
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off procedural act changing the order of handling certain land-partition
+    proceedings; operative purpose completed.
+  validity: not valid
+- statute_id: 1933/179
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Later HE material states the law on increased supervision of municipal administration
+    was repealed in 1969 by 531/1969.
+  validity: not valid
+- statute_id: 1933/325
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Old motor-vehicle tax act was replaced by later vehicle-tax legislation.
+  reasoning: ''
+  validity: not valid
+  title: Laki moottoriajoneuvoverosta
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1933/350
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: 'Its own title is year-specific: customs collection law for 1934 only.'
+  reasoning: ''
+  validity: not valid
+  title: Laki tullien kantamisesta vuonna 1934
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1933/52
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Depression-era scheme stabilising certain agricultural debts was a one-off measure
+    whose purpose has been completed.
+  validity: not valid
+- statute_id: 1933/53
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off State participation in expanding a named bank for agricultural debt stabilisation;
+    operative purpose completed.
+  validity: not valid
+- statute_id: 1934/12
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Special-settlement act was enacted as an anti-unemployment measure and later
+    HE materials concern extending its validity period, indicating a temporary regime.
+  validity: not valid
+- statute_id: 1934/19
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Institution-specific act giving Maakiinteistöpankki rights to buy or redeem auctioned
+    properties; historical operative purpose completed.
+  validity: not valid
+- statute_id: 1934/191
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Old margarine/protectionist regime was superseded by later food and
+    agricultural legislation.
+  reasoning: ''
+  validity: not valid
+  title: Laki margariinista
+  mechanism: likely_superseded
+  notes: Protektionistinen margariinisääntely. Poistettu maataloustukiuudistuksessa.
+- statute_id: 1934/213
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old framework for export regulation in certain cases belongs to an obsolete trade-control
+    regime.
+  validity: not valid
+- statute_id: 1934/227
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off State participation in compensating an agio loss on a named guaranteed
+    foreign bond; operative purpose completed.
+  validity: not valid
+- statute_id: 1934/333
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Approval/implementation act for the Nordic bankruptcy convention; no repeal identified.
+  validity: valid
+- statute_id: 1934/417
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: One-off export-ban act on war supplies to Bolivia and Paraguay during the Chaco
+    War; operative purpose completed.
+  validity: not valid
+- statute_id: 1934/458
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Excise-tax act on certain alcoholic beverages was replaced by later alcohol-excise
+    legislation.
+  validity: not valid
+- statute_id: 1934/490
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Old feed-tax regime was superseded by later tax/agricultural legislation.
+  reasoning: ''
+  validity: not valid
+  title: Laki eräistä rehuaineista suoritettavasta verosta
+  mechanism: likely_superseded
+  notes: Vanha rehuverotus.
+- statute_id: 1934/9
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Act on keeping certain alcohol-offence convicts in public work belongs to an
+    obsolete penal-policy framework.
+  validity: not valid
+- statute_id: 1935/185
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off regional loan scheme for land partition shareholders and certain smallholders
+    in Kuusamo and Posio; operative purpose completed.
+  validity: not valid
+- statute_id: 1935/207
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Act on taxing the State liquor company and using its annual profit belongs to
+    an obsolete alcohol/State-company framework.
+  validity: not valid
+- statute_id: 1936/120
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists for the redemption of leased areas in dense settlement
+    groups and I found no repeal.
+  validity: valid
+- statute_id: 1936/188
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Liquidation act for Merimieseläkelaitos; operative purpose completed.
+  validity: not valid
+- statute_id: 1936/427
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: 'Its own title is year-specific: customs collection law for 1937 only.'
+  reasoning: ''
+  validity: not valid
+  title: Laki tullien kantamisesta vuonna 1937
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1936/431
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Political-symbol-ban law appears to have been continued through later validity-extension
+    acts; I found no evidence of present-day application.
+  validity: not valid
+- statute_id: 1936/455
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off transfer of claims to the cyclical fund; operative purpose completed.
+  validity: not valid
+- statute_id: 1937/150
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: One-off export ban to Spain, its dependencies and the Spanish zone of Morocco
+    during the Spanish Civil War; operative purpose completed.
+  validity: not valid
+- statute_id: 1937/172
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: One-off measures to prevent participation in the Spanish Civil War; operative
+    purpose completed.
+  validity: not valid
+- statute_id: 1937/290
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: One-time amnesty for 1918 convictions; fully exhausted.
+  reasoning: ''
+  validity: not valid
+  title: Laki eräiden vuoden 1918 kapinan johdosta tuomittujen armahtamisesta
+  mechanism: one_time_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1937/332
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to customs duties on certain grain products in 1938 only.
+  validity: ''
+- statute_id: 1937/457
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Old spirits-tax regime was abolished/replaced by later alcohol-excise
+    law.
+  reasoning: ''
+  validity: not valid
+  title: Laki väkiviinaverosta
+  mechanism: excise_tax_abolished
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1937/459
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Old berry-wine tax regime was abolished/replaced by later alcohol-excise
+    law.
+  reasoning: ''
+  validity: not valid
+  title: Laki marjaviiniverosta
+  mechanism: excise_tax_abolished
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1938/208
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off act appropriating funds for defence basic acquisitions and levying an
+    additional tax for that purpose; operative purpose completed.
+  validity: not valid
+- statute_id: 1938/303
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Domestic-grain marketing-support act belongs to an obsolete agricultural market-support
+    regime.
+  validity: not valid
+- statute_id: 1938/311
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists for the State Export Credit Act and related application
+    material remains indexed.
+  validity: valid
+- statute_id: 1938/386
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Margarine-excise regime was superseded by later tax/agricultural legislation.
+  reasoning: ''
+  validity: not valid
+  title: Laki margariinivalmisteista suoritettavasta verosta
+  mechanism: likely_superseded
+  notes: Protektionistinen margariinivero. Poistettu maataloustukiuudistuksessa.
+- statute_id: 1938/83
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive act establishing certain nature reserves on state lands; no repeal
+    identified.
+  validity: valid
+- statute_id: 1939/136
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Exceptional animal-disease-control law for extraordinary conditions appears to
+    have operated via fixed-term extensions; I found no sign of current application.
+  validity: not valid
+- statute_id: 1939/307
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Republic Protection Act was wartime/emergency legislation with no current
+    operative effect.
+  reasoning: ''
+  validity: not valid
+  title: Tasavallan suojelulaki
+  mechanism: wartime_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1939/308
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title itself applies to marine-service accident insurance during wartime only.
+  validity: not valid
+- statute_id: 1939/312
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Fee-basis act for the Licensing Committee’s official acts and documents belongs
+    to an obsolete institutional framework.
+  validity: not valid
+- statute_id: 1939/378
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Sugar excise-tax regime was replaced by later excise-tax and agricultural legislation.
+  validity: not valid
+- statute_id: 1939/390
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Coffee-tax regime was replaced by later excise-tax legislation.
+  validity: not valid
+- statute_id: 1939/469
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Wartime war-damage regime has been fully completed.
+  reasoning: ''
+  validity: not valid
+  title: Sotavahinkolaki
+  mechanism: wartime_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1939/494
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Old conjuncture-tax regime was long ago superseded.
+  reasoning: ''
+  validity: not valid
+  title: Laki suhdanneverosta
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1939/550
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Old match-tax regime was replaced by later excise-tax legislation.
+  reasoning: ''
+  validity: not valid
+  title: Laki tulitikkuverosta
+  mechanism: likely_superseded
+  notes: 25 amendments. Match tax. Likely superseded by modern excise tax framework.
+- statute_id: 1940/104
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: Wartime tax-exceptions act; emergency regime completed.
+  reasoning: ''
+  validity: not valid
+  title: Laki eräistä sotatilan aiheuttamia poikkeussäännöksistä verolakeihin
+  mechanism: wartime_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1940/189
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: State lending-fund act appears tied to an obsolete emergency finance structure
+    superseded by later arrangements.
+  validity: not valid
+- statute_id: 1940/283
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Act preventing unreasonable rents belonged to a wartime/postwar rent-control
+    framework that is obsolete.
+  validity: not valid
+- statute_id: 1940/419
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Wartime property-surrender tax regime completed.
+  reasoning: ''
+  validity: not valid
+  title: Laki omaisuudenluovutusverosta
+  mechanism: wartime_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1940/719
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: State-guarantee scheme to support economic life was a wartime emergency measure
+    whose operative purpose has been completed.
+  validity: not valid
+- statute_id: 1940/88
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Movable-property war-damage regime completed.
+  reasoning: ''
+  validity: not valid
+  title: Irtaimiston sotavahinkolaki
+  mechanism: wartime_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1940/92
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title itself limits State aid to wartime maintenance and operating costs only.
+  validity: not valid
+- statute_id: 1941/17
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists for the Commerce and Industry Fund act and I found
+    no repeal.
+  validity: valid
+- statute_id: 1941/303
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Wartime economic-regulation act is obsolete and has no current operative
+    context.
+  reasoning: ''
+  validity: not valid
+  title: Laki talouselämän säännöstelemisestä poikkeuksellisissa oloissa
+  mechanism: likely_superseded
+  notes: 16 amendments. Wartime economic regulation. De facto obsolete.
+- statute_id: 1941/304
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Wartime criminal act on offences endangering the population’s livelihood; the
+    emergency regime is obsolete.
+  validity: not valid
+- statute_id: 1941/356
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Temporary fishing-right act was explicitly temporary and no longer operative.
+  reasoning: ''
+  validity: not valid
+  title: Laki väliaikaisesta kalastusoikeudesta
+  mechanism: temporary_experiment
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1941/528
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Wartime act on the organisation of administration during war; the emergency regime
+    is obsolete.
+  validity: not valid
+- statute_id: 1941/555
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Wartime extension of the military-accident scheme has been fully spent.
+  reasoning: ''
+  validity: not valid
+  title: Laki sotatapaturmalain soveltamisalan laajentamisesta
+  mechanism: wartime_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1941/839
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Act restoring rights concerning property in restored territories was a wartime/postwar
+    settlement measure whose purpose has been completed.
+  validity: not valid
+- statute_id: 1941/926
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Wartime war-damage act has been fully spent.
+  reasoning: ''
+  validity: not valid
+  title: Sotavahinkolaki.
+  mechanism: wartime_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1942/1052
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Wartime special tax-exception law for restored areas; operative purpose completed.
+  validity: ''
+- statute_id: 1942/18
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Wartime emergency act authorizing State takeover of foreign property in Finland;
+    no current operative role.
+  validity: not valid
+- statute_id: 1942/302
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off act restoring the domicile of certain companies and other entities; operative
+    purpose completed.
+  validity: not valid
+- statute_id: 1942/374
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary prohibition on founding life-insurance companies
+    and distributing profits; the temporary regime is no longer operative.
+  validity: not valid
+- statute_id: 1942/395
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Wartime act creating exceptions to ordinary criminal procedure and sentence execution;
+    the emergency regime is obsolete.
+  validity: not valid
+- statute_id: 1942/543
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Act on collecting increased customs duties belonged to a wartime customs regime
+    that is obsolete.
+  validity: not valid
+- statute_id: 1942/544
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off wartime procedural act on renewing certain mortgages; operative purpose
+    completed.
+  validity: not valid
+- statute_id: 1942/580
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Property-right arrangement act for territories restored to the realm was a wartime/postwar
+    settlement measure whose purpose has been completed.
+  validity: not valid
+- statute_id: 1942/629
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists for this property-acquisition restriction law and
+    I found no explicit repeal, despite overlap with later statutes.
+  validity: valid
+- statute_id: 1942/641
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists for this peat-bog expropriation law and I found no
+    repeal.
+  validity: valid
+- statute_id: 1942/649
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists for the war-invalids labour-care act and I found no
+    repeal.
+  validity: valid
+- statute_id: 1942/656
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Wartime compensation regime has been fully spent.
+  reasoning: ''
+  validity: not valid
+  title: Korvauslaki
+  mechanism: wartime_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1943/1078
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Fee-basis act for the licence committee’s official acts and documents; obsolete
+    institutional framework.
+  validity: not valid
+- statute_id: 1943/363
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Wartime war-orphans labour-care regime has been fully spent.
+  reasoning: ''
+  validity: not valid
+  title: Laki sotaorpojen työhuollosta
+  mechanism: wartime_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1943/392
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive act on the use of the President’s pardon power; Finlex still shows
+    it as updated legislation.
+  validity: valid
+- statute_id: 1943/665
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary increase of income and property tax; that temporary
+    measure has ended.
+  validity: ''
+- statute_id: 1944/199
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: Title itself limits it to wartime school arrangements.
+  reasoning: ''
+  validity: not valid
+  title: Laki eräistä koulutoimen järjestelyistä sota-aikana
+  mechanism: wartime_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1944/498
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Special wartime and postwar tax and shipping-promotion regime for ship income;
+    no current operative role.
+  validity: not valid
+- statute_id: 1944/834
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off home-establishment-loan scheme for conscripts based on wartime service;
+    operative purpose completed.
+  validity: not valid
+- statute_id: 1944/861
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to representative elections held in 1945 only.
+  validity: ''
+- statute_id: 1944/862
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: One-time amnesty act for military-court convictions; exhausted.
+  reasoning: ''
+  validity: not valid
+  title: Laki eräiden sotatuomioistuimissa rangaistukseen tuomittujen henkilöiden armahtamisesta
+  mechanism: one_time_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1944/9
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to the State budget for 1944 only.
+  validity: ''
+- statute_id: 1944/961
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: One-time amnesty act; exhausted.
+  reasoning: ''
+  validity: not valid
+  title: Laki eräiden rangaistukseen tuomittujen henkilöiden armahtamisesta
+  mechanism: one_time_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1944/972
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Wartime price-equalisation fund regime has ended.
+  reasoning: ''
+  validity: not valid
+  title: Laki hinnantasausrahastosta
+  mechanism: price_control_wartime
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1944/976
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists for the property-acquisition restriction law and I
+    found no explicit repeal, though it is a narrow legacy restriction statute.
+  validity: valid
+- statute_id: 1944/977
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists for the restriction on acquiring certain real-estate
+    shares and I found no explicit repeal.
+  validity: valid
+- statute_id: 1945/1076
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: Its own title limits it to crop years 1946–1948.
+  reasoning: ''
+  validity: not valid
+  title: Laki leipäviljan tuotannon tukemisesta satovuosina 1946-1947 ja 1947- 1948
+  mechanism: one_time_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1945/1255
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Emergency act on regulating monetary conditions appears superseded by later monetary
+    and financial legislation.
+  validity: not valid
+- statute_id: 1945/129
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off relief act for paying taxes and the war loan in certain cases; operative
+    purpose completed.
+  validity: not valid
+- statute_id: 1945/279
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to the National Pensions Act; the temporary
+    regime is no longer operative.
+  validity: not valid
+- statute_id: 1945/390
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Second compensation act was a postwar compensation regime that has been
+    fully completed.
+  reasoning: ''
+  validity: not valid
+  title: toinen korvauslaki
+  mechanism: wartime_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1945/392
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off act on the management entity for compensation shares; operative purpose
+    completed.
+  validity: not valid
+- statute_id: 1945/394
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Second property-surrender tax act was a postwar temporary regime that
+    has been fully completed.
+  reasoning: ''
+  validity: not valid
+  title: Laki toisesta omaisuudenluovutusverosta
+  mechanism: wartime_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1945/395
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off act on paying the second property-surrender tax with a company’s own
+    shares; operative purpose completed.
+  validity: not valid
+- statute_id: 1945/401
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Act on State promissory notes issued under the Land Acquisition Act belonged
+    to a postwar settlement-financing regime that has been completed.
+  validity: not valid
+- statute_id: 1945/586
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Act extending lease relationships in certain cases was a temporary postwar measure
+    whose operative purpose was completed.
+  validity: not valid
+- statute_id: 1946/204
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to exceptional municipal taxation in certain municipalities in
+    1946-1947 only.
+  validity: ''
+- statute_id: 1946/3
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Temporary postwar tax exemption for gains from certain disposals; no current
+    operative effect.
+  validity: not valid
+- statute_id: 1946/410
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off postwar act on surrender of German property; operative purpose completed.
+  validity: not valid
+- statute_id: 1946/706
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Temporary tax relief for deposits/bonds; no current operative effect.
+  reasoning: ''
+  validity: not valid
+  title: Laki eräiden talletusten ja obligatioiden omistajille myönnettävästä veronhuojennuksesta
+  mechanism: temporary_tax_exception
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1946/753
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off postwar act authorizing State guarantees for certain exchange-rate losses;
+    operative purpose completed.
+  validity: not valid
+- statute_id: 1946/804
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off act addressing savings banks that suffered war losses; operative purpose
+    completed.
+  validity: not valid
+- statute_id: 1947/144
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Poor-relief domicile-right act for certain cases belongs to an obsolete welfare/residence
+    framework.
+  validity: not valid
+- statute_id: 1947/453
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive act on the University of Helsinki’s language regime and required
+    language skills of office-holders; no repeal identified.
+  validity: valid
+- statute_id: 1947/52
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists for the state-office transfer law and I found no repeal.
+  validity: valid
+- statute_id: 1948/361
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off act on exceptional training and appointment of schoolteachers; operative
+    purpose completed.
+  validity: not valid
+- statute_id: 1948/413
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Temporary tax relief for deposits/bonds/shares; no current operative
+    effect.
+  reasoning: ''
+  validity: not valid
+  title: Laki eräiden talletusten, obligatioiden ja osuustodistusten omistajille sekä eräiden
+    velkasitoumusten saajille myönnettävästä veronhuojennuksesta
+  mechanism: temporary_tax_exception
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1948/457
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Forest Improvement Act was superseded by later forest-improvement legislation.
+  validity: not valid
+- statute_id: 1948/650
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off act on reimbursement of child benefit in certain cases; operative purpose
+    completed.
+  validity: not valid
+- statute_id: 1948/826
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Temporary leasing regime for farmland, hay and pasture to evacuees; postwar regime
+    completed.
+  validity: not valid
+- statute_id: 1948/865
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Pension act tied to the second compensation law was part of a postwar compensation
+    regime that has been completed.
+  validity: not valid
+- statute_id: 1948/940
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Coffee-tax regime was abolished/replaced by later excise law.
+  reasoning: ''
+  validity: not valid
+  title: Laki kahviverosta
+  mechanism: excise_tax_abolished
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1949/191
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: State-guarantee scheme to facilitate power-plant credit was a historical support
+    measure and no longer operates.
+  validity: not valid
+- statute_id: 1949/493
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off act on paying certain surveying costs from State funds; operative purpose
+    completed.
+  validity: not valid
+- statute_id: 1949/836
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Rent-control act was a wartime/postwar price-control regime and has
+    ended.
+  reasoning: ''
+  validity: not valid
+  title: Laki huoneenvuokrien säännöstelystä
+  mechanism: price_control_wartime
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1949/864
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Postwar act on organizing the care of displaced persons; operative regime completed.
+  validity: not valid
+- statute_id: 1950/215
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Temporary restriction on insurance business was exhausted.
+  reasoning: ''
+  validity: not valid
+  title: Laki vakuutusliikkeen väliaikaisesta rajoittamisesta
+  mechanism: temporary_tax_exception
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1950/231
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Act on State aid to schools of commerce was superseded by later education-funding
+    legislation.
+  validity: not valid
+- statute_id: 1950/26
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off reconstruction act for the Finnish Greek Orthodox Church; operative purpose
+    completed.
+  validity: not valid
+- statute_id: 1950/307
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists and later materials treat 307/1950 as the operative
+    legacy pension statute for church preparatory-school teachers.
+  validity: valid
+- statute_id: 1950/459
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Recent Valtiokonttori budget-reference material still cites the Civil Servants'
+    Pensions Act (459/1950).
+  validity: valid
+- statute_id: 1950/526
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Temporary tax relief for deposits/bonds/shares; no current operative
+    effect.
+  reasoning: ''
+  validity: not valid
+  title: Laki eräiden talletusten, obligatioiden ja osuustodistusten omistajille sekä eräiden
+    velkasitoumusten saajille myönnettävästä veronhuojennuksesta
+  mechanism: temporary_tax_exception
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1950/633
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Rent-control act was a wartime/postwar price-control regime and has
+    ended.
+  reasoning: ''
+  validity: not valid
+  title: Laki huoneenvuokrien säännöstelystä
+  mechanism: price_control_wartime
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1950/636
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Exceptional postwar scheme securing exports of metal and shipbuilding products
+    in certain cases; operative purpose completed.
+  validity: not valid
+- statute_id: 1951/142
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off reorganisation act abolishing district hospitals and sick-bays; operative
+    purpose completed.
+  validity: not valid
+- statute_id: 1951/402
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Old tenure-conversion act completed its purpose and has no current operative
+    effect.
+  reasoning: ''
+  validity: not valid
+  title: Laki rälssitilojen ja eräiden kruununluontoisten tilanosien muuttamisesta perintöluontoisiksi.
+  mechanism: wartime_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1951/565
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: 'Its own title is year-specific: customs collection law for 1952 only.'
+  reasoning: ''
+  validity: not valid
+  title: Laki tullien kantamisesta vuonna 1952
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1951/665
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; this 1951 temporary regime
+    is no longer operative.
+  validity: ''
+- statute_id: 1952/411
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Repeal act abolishing the 1879 freedom-of-trade ordinance and compulsory trade
+    associations; its operative purpose was completed when those measures were abolished.
+  validity: not valid
+- statute_id: 1952/463
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Special act on declaring missing persons dead in certain cases appears superseded
+    by later general legislation on declaring a person dead.
+  validity: not valid
+- statute_id: 1953/399
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Forest Improvement Act was superseded by later forest-improvement legislation.
+  validity: not valid
+- statute_id: 1953/459
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Act on posts and offices in the State construction administration belongs to
+    an obsolete administrative structure.
+  validity: not valid
+- statute_id: 1953/474
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Fee-basis act for the Licensing Office’s official acts and documents belongs
+    to an obsolete institutional framework.
+  validity: not valid
+- statute_id: 1953/477
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Housing-production tax-relief law was an obsolete tax-incentive regime.
+  validity: not valid
+- statute_id: 1954/485
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Temporary tax relief for deposits/bonds/shares; no current operative
+    effect.
+  reasoning: ''
+  validity: not valid
+  title: Laki eräiden talletusten, obligatioiden ja osuustodistusten omistajille sekä eräiden
+    velkasitoumusten saajille myönnettävästä veronhuojennuksesta
+  mechanism: temporary_tax_exception
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1954/512
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: 'Its own title is year-specific: customs collection law for 1955 only.'
+  reasoning: ''
+  validity: not valid
+  title: Laki tullien kantamisesta vuonna 1955
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1955/129
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Subsidy act on new-cultivation and stone-clearing bonuses was a historical support
+    scheme and no longer operates.
+  validity: not valid
+- statute_id: 1955/160
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Drainage Act was superseded by later drainage, water-law, and land-improvement
+    legislation.
+  validity: not valid
+- statute_id: 1955/180
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Additional-compensation act for certain compensation-law beneficiaries was a
+    one-off postwar measure whose purpose has been completed.
+  validity: not valid
+- statute_id: 1955/43
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions from the rules prohibiting women’s night
+    work; the temporary regime is no longer operative.
+  validity: not valid
+- statute_id: 1955/544
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: 'Its own title is year-specific: customs collection law for 1956 only.'
+  reasoning: ''
+  validity: not valid
+  title: Laki tullien kantamisesta vuonna 1956
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1955/545
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Act on timber measurement in export trade appears superseded by later timber-measurement
+    legislation.
+  validity: not valid
+- statute_id: 1955/561
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Act on arrangements of compensation pensions was a postwar transitional measure
+    whose purpose has been completed.
+  validity: not valid
+- statute_id: 1955/574
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Act on arrangements of certain pensions paid from State funds appears to be a
+    historical transitional regime no longer independently operative.
+  validity: not valid
+- statute_id: 1955/588
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old employer child-allowance and national-pension contribution act was replaced
+    by later contribution legislation.
+  validity: not valid
+- statute_id: 1956/341
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Porkkala return act completed its one-off purpose.
+  reasoning: ''
+  validity: not valid
+  title: Porkkalan palautuslaki
+  mechanism: wartime_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1956/390
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Extension act within the military-disability framework still has a current Finlex
+    page and no repeal found.
+  validity: valid
+- statute_id: 1956/574
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Current Finlex page and search snippets still show operative compensation rules
+    for reindeer killed by predators.
+  validity: valid
+- statute_id: 1956/634
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive act establishing certain new nature reserves on state lands; no repeal
+    identified.
+  validity: valid
+- statute_id: 1956/665
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Turnover-tax refund scheme for housing construction materials was an obsolete
+    tax-relief regime.
+  validity: not valid
+- statute_id: 1956/667
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Price-equalisation act was temporary price-control legislation and has
+    ended.
+  reasoning: ''
+  validity: not valid
+  title: Hinnantasauslaki
+  mechanism: price_control_wartime
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1956/672
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Employment Act was superseded by later employment-services legislation.
+  validity: not valid
+- statute_id: 1956/696
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: State officials’ family-pension and burial-grant act appears superseded by later
+    state pension legislation.
+  validity: not valid
+- statute_id: 1957/235
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Excise-tax act on liquid fuels was replaced by later fuel and energy-tax legislation.
+  validity: not valid
+- statute_id: 1957/243
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old employer child-allowance and national-pension contribution act was replaced
+    by later contribution legislation.
+  validity: not valid
+- statute_id: 1957/253
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old framework limiting powers relating to foreign-trade regulation is obsolete
+    within later trade legislation.
+  validity: not valid
+- statute_id: 1957/423
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Forest Improvement Act was superseded by later forest-improvement legislation.
+  validity: not valid
+- statute_id: 1957/438
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: 'Its own title is year-specific: customs collection law for 1958 only.'
+  reasoning: ''
+  validity: not valid
+  title: Laki tullien kantamisesta vuonna 1958
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1957/440
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Tax on passenger cars and motorcycles was replaced by later vehicle-tax legislation.
+  validity: not valid
+- statute_id: 1957/442
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Price-equalisation act was temporary price-control legislation and has
+    ended.
+  reasoning: ''
+  validity: not valid
+  title: hinnantasauslaki
+  mechanism: price_control_wartime
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1957/446
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Emergency framework for safeguarding foreign trade and the national economy is
+    obsolete.
+  validity: not valid
+- statute_id: 1957/459
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; this 1957 temporary regime
+    is no longer operative.
+  validity: ''
+- statute_id: 1958/184
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Vocational Schools Act was superseded by later vocational-education legislation.
+  validity: not valid
+- statute_id: 1958/190
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Tax-relief act for Northern Finland industry was an obsolete regional incentive
+    scheme.
+  validity: not valid
+- statute_id: 1958/249
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Loan scheme funded from export levies belonged to an obsolete levy regime
+    and no longer operates.
+  reasoning: ''
+  validity: not valid
+  title: Laki lainojen myöntämisestä vientimaksuna kertyvistä varoista
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1958/283
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Tax-relief act to promote shipping was superseded by later shipping and tax legislation.
+  validity: not valid
+- statute_id: 1958/361
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists for this redemption act on certain leased areas in
+    rural municipalities and I found no repeal.
+  validity: valid
+- statute_id: 1958/504
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Housing-production tax-relief law was an obsolete tax-incentive regime.
+  validity: not valid
+- statute_id: 1958/529
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Act on duration/application of the price-equalisation act expired with
+    that regime.
+  reasoning: ''
+  validity: not valid
+  title: Laki hinnantasauslain voimassaoloajasta ja soveltamisesta
+  mechanism: price_control_wartime
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1958/530
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Import-trade fund belonged to an obsolete trade-control regime and has
+    no current operative effect.
+  reasoning: ''
+  validity: not valid
+  title: Laki tuontikaupparahastosta
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1958/552
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; this 1958 temporary regime
+    is no longer operative.
+  validity: ''
+- statute_id: 1959/126
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Edilex note says the unemployment-assistance law applied only until the end of
+    1959.
+  validity: not valid
+- statute_id: 1959/135
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to customs collection in 1959 only.
+  validity: not valid
+  title: Laki tullien kantamisesta vuonna 1959
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1959/139
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Excise-tax regime for certain edible fats was replaced by later excise-tax legislation.
+  validity: not valid
+- statute_id: 1959/233
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to payment of certain prestations for 1959 only.
+  validity: ''
+- statute_id: 1959/283
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Reward scheme for establishing pioneer farms in certain cases was a one-off settlement
+    measure and is no longer operative.
+  validity: not valid
+- statute_id: 1959/441
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old currency-control regime was dismantled with EEA/EU-era capital-movement liberalisation.
+  validity: not valid
+  title: Laki valuutan säännöstelystä
+  mechanism: currency_control_abolished
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1959/525
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Temporary tax-relief law for certain deposits; same relief was re-enacted in
+    other years and this 1959 act no longer has operative effect.
+  validity: not valid
+  title: Laki eräiden talletusten veronhuojennuksista
+  mechanism: temporary_tax_exception
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1959/528
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Edilex note says the employer child-benefit/national-pension contribution law
+    concerns only the year 1960.
+  validity: not valid
+- statute_id: 1959/529
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists and I found no explicit repeal; the old application/duration
+    act still appears to operate as a legacy framework provision.
+  validity: valid
+- statute_id: 1959/557
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Genocide Convention implementation act remains a standing treaty-implementation
+    law; current Finlex page exists.
+  validity: valid
+- statute_id: 1959/560
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex indexing still lists the state-guarantee act and I found no explicit
+    repeal, though it looks like a narrow legacy scheme.
+  validity: valid
+- statute_id: 1960/279
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists for this private-school pension-entitlement act and
+    I found no repeal.
+  validity: valid
+- statute_id: 1960/284
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Student-loan scheme for completing a medical degree abroad appears superseded
+    by later student-finance law.
+  validity: not valid
+- statute_id: 1960/309
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Reward scheme for forest-drainage work appears to be an obsolete subsidy instrument
+    superseded by later legislation.
+  validity: not valid
+- statute_id: 1960/487
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exception to the kansakoulu law; the temporary regime
+    is no longer operative.
+  validity: not valid
+- statute_id: 1960/520
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Act on collecting treaty duties in certain cases belongs to an obsolete customs
+    framework superseded by later customs legislation.
+  validity: not valid
+- statute_id: 1960/523
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; this 1960 temporary regime
+    is no longer operative.
+  validity: ''
+- statute_id: 1961/307
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Substantive reciprocal border-area healthcare act; no repeal identified.
+  validity: valid
+- statute_id: 1961/321
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off authorization for the Government to conclude a specific building-lot
+    contract with Postisäästöpankki; operative purpose completed.
+  validity: not valid
+- statute_id: 1961/342
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exemption from tax on certain capital gains; the
+    temporary regime is no longer operative.
+  validity: not valid
+- statute_id: 1961/595
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists for the State Grain Storage Act and I found no repeal
+    or sunset.
+  validity: valid
+- statute_id: 1962/139
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists for this military-disability pension payment provision
+    and I found no repeal.
+  validity: valid
+- statute_id: 1962/2
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old wage-income deduction act was superseded by later income-tax legislation.
+  validity: not valid
+- statute_id: 1962/200
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Approval/application act for the 1958 New York Convention on foreign arbitral
+    awards; no repeal identified.
+  validity: valid
+- statute_id: 1962/3
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; the temporary regime is no
+    longer operative.
+  validity: not valid
+- statute_id: 1962/375
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to the additional tax based on 1962 income only.
+  validity: ''
+- statute_id: 1962/400
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Later HE materials still refer to venue rules remaining in 400/1962, indicating
+    continued force.
+  validity: valid
+- statute_id: 1962/459
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Agricultural marketing-fund regime was superseded by EU CAP on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki maataloustuotteiden markkinoimisrahastosta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: 31 amendments. Agricultural marketing fund, superseded by EU CAP.
+- statute_id: 1962/464
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Housing-construction tax-relief regime is an obsolete tax incentive.
+  validity: not valid
+- statute_id: 1962/541
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Storage-promotion regime for grain, potatoes and horticultural products is an
+    obsolete support scheme.
+  validity: not valid
+- statute_id: 1962/647
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Temporary tax-relief law for certain deposits; no current operative effect.
+  validity: not valid
+  title: Laki eräiden talletusten veronhuojennuksista
+  mechanism: temporary_tax_exception
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1962/650
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Edilex note says it applies only to the year 1963.
+  validity: not valid
+- statute_id: 1963/338
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off State-liability act for exchange loss on Teollistamisrahasto Oy’s foreign
+    loan; operative purpose completed.
+  validity: not valid
+- statute_id: 1963/365
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Implementation act for the Sickness Insurance Act with continuing residual/transitional
+    significance; Finlex still shows it as updated legislation.
+  validity: valid
+- statute_id: 1963/533
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Turnover-tax refund regime was superseded by later turnover-tax and VAT legislation.
+  validity: not valid
+- statute_id: 1963/556
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off settlement act for land surrendered because of Kemijoki water regulation;
+    operative purpose completed.
+  validity: not valid
+- statute_id: 1963/663
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Student-loan scheme for completing a dentistry degree abroad appears superseded
+    by later student-finance law.
+  validity: not valid
+- statute_id: 1964/40
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; this 1964 temporary regime
+    is no longer operative.
+  validity: ''
+- statute_id: 1964/427
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off State civil-service pay-adjustment act; operative purpose completed.
+  validity: not valid
+- statute_id: 1964/432
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive act establishing Karkali Strict Nature Reserve; no repeal identified.
+  validity: valid
+- statute_id: 1964/648
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Mining-investment reserve regime is an obsolete tax and economic instrument.
+  validity: not valid
+- statute_id: 1964/651
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; the temporary regime is no
+    longer operative.
+  validity: not valid
+- statute_id: 1964/655
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old motor-vehicle-tax act was superseded by later vehicle-tax legislation.
+  validity: not valid
+  title: Laki moottoriajoneuvoverosta
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1964/659
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Same agricultural import-levy framework; superseded by EU CAP on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki maataloustuotteiden tuontimaksuista
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: 17 amendments. Same series.
+- statute_id: 1965/35
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Historical act on the arrangement of soldier crofts; the settlement regime was
+    completed long ago.
+  validity: not valid
+- statute_id: 1965/39
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to the State budget for 1965 only.
+  validity: ''
+- statute_id: 1965/404
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: 2011/104 still expressly refers to the Canal Charges Act (404/1965), indicating
+    continued force.
+  validity: valid
+- statute_id: 1965/698
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Same agricultural import-levy framework; superseded by EU CAP on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki maataloustuotteiden tuontimaksuista
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: 20 amendments. Same series as 1968/376 and 1973/258.
+- statute_id: 1966/162
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Export-reserve-fund regime is an obsolete financial/tax mechanism superseded
+    by later legislation.
+  validity: not valid
+  title: Laki vientivarausrahastoista
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1966/228
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to development of higher education during 1967-1981 only.
+  validity: ''
+- statute_id: 1966/229
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Shipping tax-relief regime is an obsolete subsidy and tax instrument.
+  validity: not valid
+- statute_id: 1966/243
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Early development-area economy-promotion framework appears superseded by later
+    regional-development legislation.
+  validity: not valid
+- statute_id: 1966/244
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Development-area industry tax-relief regime is an obsolete investment-aid scheme.
+  validity: not valid
+- statute_id: 1966/246
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Development-area industry and investment-loan regime is an obsolete financing
+    scheme.
+  validity: not valid
+- statute_id: 1966/270
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Training regime for home aides and social-care staff was superseded by later
+    education and professional regulation.
+  validity: not valid
+- statute_id: 1966/284
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive act on the Parliamentary Ombudsman’s pension and survivor pension;
+    Finlex still shows it as updated legislation.
+  validity: valid
+- statute_id: 1966/401
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; this 1966 temporary regime
+    is no longer operative.
+  validity: not valid
+  title: Laki eräistä väliaikaisista poikkeuksista verolakeihin
+  mechanism: temporary_tax_exception
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1966/576
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits the bond-tax relief to bonds issued in 1967 only.
+  validity: ''
+- statute_id: 1966/667
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; the temporary regime is no
+    longer operative.
+  validity: not valid
+- statute_id: 1966/731
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Agricultural import-levy regime was superseded by EU CAP on 1.1.1995.
+  validity: not valid
+  title: Laki maataloustuotteiden tuontimaksuista
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1966/74
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off land-exchange act between the State and the City of Vaasa; operative
+    purpose completed.
+  validity: not valid
+- statute_id: 1966/777
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Personnel-arrangement act for hospital institutions in certain cases; transitional
+    purpose completed.
+  validity: not valid
+- statute_id: 1967/145
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: National agricultural price-level regime was superseded by EU CAP on 1.1.1995.
+  validity: not valid
+- statute_id: 1967/265
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Domestic sugar-production support regime was superseded by EU sugar/CAP rules
+    on 1.1.1995.
+  validity: not valid
+  title: Laki kotimaisen sokerintuotannon turvaamisesta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1967/444
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Export-levy regime was superseded by EU common commercial policy on
+    1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki vientimaksusta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: 15 amendments. Export levy. Superseded by EU Common Commercial Policy.
+- statute_id: 1967/477
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: One-time amnesty law for convictions in the 1967 jubilee year; fully exhausted.
+  validity: not valid
+  title: Laki eräiden rangaistukseen tuomittujen henkilöiden armahtamisesta Suomen itsenäisyyden
+    juhlavuonna 1967
+  mechanism: one_time_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1967/579
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; this 1967 temporary regime
+    is no longer operative.
+  validity: not valid
+  title: Laki eräistä väliaikaisista poikkeuksista verolakeihin
+  mechanism: temporary_tax_exception
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1967/581
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits the bond-tax relief to bonds issued in 1968 only.
+  validity: ''
+- statute_id: 1967/582
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old wage-income deduction act was superseded by later income-tax legislation.
+  validity: not valid
+- statute_id: 1968/207
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to securing economic development in 1968-1969 only.
+  validity: ''
+- statute_id: 1968/26
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Passenger-tax regime was superseded by later tax legislation.
+  validity: not valid
+- statute_id: 1968/376
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Same agricultural import-levy framework; superseded by EU CAP on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki maataloustuotteiden tuontimaksuista
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: '73 amendments, latest 994/1971. Same framework as 1973/258. Replaced by EU CAP.
+
+    '
+- statute_id: 1968/723
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Deposit tax-relief regime is an obsolete tax measure.
+  validity: not valid
+- statute_id: 1968/748
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Special rent-adjustment regime for Helsinki and certain municipalities belongs
+    to an old price-control framework and is no longer operative.
+  validity: not valid
+  title: Laki huoneenvuokrien sovittelusta Helsingin kaupungissa ja eräissä muissa kunnissa
+  mechanism: price_control_wartime
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1969/216
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Field-use restriction regime was superseded by EU CAP on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki pellon käytön rajoittamisesta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: EU CAP korvasi kansallisen peltorajoituksen.
+- statute_id: 1969/397
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Special tax regime for goods sold on passenger ships in foreign traffic was superseded
+    by later customs, excise and EU rules.
+  validity: not valid
+- statute_id: 1969/412
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Bond-tax-relief regime is an obsolete tax measure.
+  validity: not valid
+- statute_id: 1969/446
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Substantive act on supplements and housing support attached to national pensions;
+    no repeal identified.
+  validity: valid
+- statute_id: 1969/475
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Agricultural income-stabilisation regime was superseded by EU CAP on 1.1.1995.
+  validity: not valid
+  title: Laki maataloustulon vakaannuttamisesta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1969/476
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Milk/wheat marketing-charge regime belongs to an obsolete agricultural pricing
+    system and no longer operates.
+  validity: not valid
+  title: Laki maidon ja vehnän markkinoimismaksusta
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1969/70
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Student-loan guarantee scheme for certain vocational students appears superseded
+    by later student-finance law.
+  validity: not valid
+- statute_id: 1969/753
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary change to the Supreme Administrative Court quorum;
+    no longer operative.
+  validity: ''
+- statute_id: 1969/878
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Small-industry interest-support regime is an obsolete subsidy instrument.
+  validity: not valid
+- statute_id: 1969/881
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Development-area credit act is an obsolete regional-finance regime.
+  validity: not valid
+- statute_id: 1969/885
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; the temporary regime is no
+    longer operative.
+  validity: not valid
+- statute_id: 1969/891
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists for the State Conjuncture Fund act and later amendment
+    references remain indexed.
+  validity: valid
+- statute_id: 1969/894
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Development-area tax-relief regime was superseded by later regional-aid legislation.
+  validity: not valid
+- statute_id: 1970/218
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Defence Forces working-hours act has later amendments/references, including 2019
+    changes, showing continued operative use.
+  validity: valid
+- statute_id: 1970/225
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off support act for starting mining at Rautaruukki’s Rautuvaara deposit;
+    operative purpose completed.
+  validity: not valid
+- statute_id: 1970/426
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Special organisational act on carrying out certain water-construction tasks appears
+    long spent.
+  validity: not valid
+- statute_id: 1970/784
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; this 1970 temporary regime
+    is no longer operative.
+  validity: not valid
+  title: Laki eräistä väliaikaisista poikkeuksista verolakeihin
+  mechanism: temporary_tax_exception
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1970/868
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old economic-growth safeguarding act is an obsolete economic-policy instrument.
+  validity: not valid
+- statute_id: 1970/872
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old cyclical-tax law was superseded by later tax and economic-policy legislation.
+  validity: not valid
+- statute_id: 1971/345
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off support act for starting vanadium production at a named Rautaruukki site;
+    operative purpose completed.
+  validity: not valid
+- statute_id: 1971/378
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Inflation-era special act on revising certain long-term contracts is no longer
+    operative.
+  validity: not valid
+- statute_id: 1971/429
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old equalisation-tax regime is obsolete and was superseded by later tax/trade
+    law.
+  validity: not valid
+  title: Tasausverolaki
+  mechanism: price_control_wartime
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1971/527
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old cyclical-deposit mechanism for growth and environment measures is an obsolete
+    economic-policy instrument.
+  validity: not valid
+- statute_id: 1971/67
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old regional interest-subsidy-loan scheme for municipalities was a temporary
+    subsidy regime and no longer operates.
+  validity: not valid
+  title: Laki kehitysalueiden kunnille yritystoiminnan edistämiseksi myönnettävistä korkotukiluotoista
+  mechanism: temporary_subsidy
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1971/808
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old excise regime for certain food products was superseded by later excise-tax
+    legislation.
+  validity: not valid
+- statute_id: 1971/867
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Deposit tax-relief regime is an obsolete tax measure.
+  validity: not valid
+- statute_id: 1971/922
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Old equalisation-tax regime is obsolete and was superseded by later
+    trade/tax law.
+  reasoning: ''
+  validity: not valid
+  title: Tasausverolaki
+  mechanism: likely_superseded
+  notes: 28 amendments. Equalization tax. Likely superseded by EU trade law.
+- statute_id: 1971/975
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Agricultural marketing-fund rules were superseded by EU CAP on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki maataloustuotteiden markkinoimisrahastosta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: EU CAP korvasi.
+- statute_id: 1971/992
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; this 1971 temporary regime
+    is no longer operative.
+  validity: ''
+- statute_id: 1972/10
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Personnel-arrangement act for abolished State secondary schools; transitional
+    purpose completed.
+  validity: not valid
+- statute_id: 1972/16
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Special act on establishing subject-teacher posts in certain cases during school
+    reform; transitional purpose completed.
+  validity: not valid
+- statute_id: 1972/465
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Current Finlex page exists for this gas-network expropriation law and I found
+    no repeal or sunset.
+  validity: valid
+- statute_id: 1972/555
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off adjustment act for certain State pensions; operative purpose completed.
+  validity: not valid
+- statute_id: 1972/67
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Implementation act for the Public Health Act with continuing residual/transitional
+    significance; later legislation still refers to it.
+  validity: valid
+- statute_id: 1972/871
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Agricultural overproduction/equalisation levy regime was superseded
+    by EU CAP on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki kananmunavalmisteiden hintojen tasaamisesta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: EU CAP korvasi.
+- statute_id: 1972/872
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Egg overproduction-charge regime belongs to an obsolete national agricultural-control
+    system.
+  validity: not valid
+  title: Laki kananmunien ylituotantomaksusta
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1972/873
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; this 1972 temporary regime
+    is no longer operative.
+  validity: ''
+- statute_id: 1972/910
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Currency-control regime was dismantled with EEA/EU-era capital-movement
+    liberalisation.
+  reasoning: ''
+  validity: not valid
+  title: Valuuttalaki
+  mechanism: formally_repealed
+  notes: Valuuttasääntely purettu. Pääomanliikkeet vapautettu ETA-sopimuksen myötä.
+- statute_id: 1973/1002
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Special notification act for choosing pension entitlement in certain cases; one-off
+    transition appears completed.
+  validity: not valid
+- statute_id: 1973/1026
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Agricultural export-levy regime was superseded by EU common commercial
+    policy/CAP on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki vientimaksusta eräistä maataloustuotteista
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: EU:n yhteinen kauppapolitiikka korvasi.
+- statute_id: 1973/106
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Agricultural income framework was superseded by EU CAP on 1.1.1995.
+  validity: not valid
+  title: Laki maataloustulosta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1973/258
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Agricultural import-levy framework was superseded by EU CAP when Finland
+    joined the EU on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki maataloustuotteiden tuontimaksuista
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: '167 amendments, latest 1032/1975. Agricultural import levy framework replaced by
+    EU Common Agricultural Policy on accession 1995-01-01. No explicit repeal found. Last
+    touched 50+ years ago.
+
+    '
+- statute_id: 1973/26
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Early development-area transport-support regime appears superseded by later regional
+    transport-support legislation.
+  validity: not valid
+- statute_id: 1973/282
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old excise regime for certain food products was superseded by later excise-tax
+    legislation.
+  validity: not valid
+- statute_id: 1973/494
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off support act for construction of Outokumpu’s Tornio stainless-steel plant;
+    operative purpose completed.
+  validity: not valid
+- statute_id: 1973/524
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Labour-policy financing regime for development-area production activity appears
+    superseded by later subsidy law.
+  validity: not valid
+- statute_id: 1973/572
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive act on privileges and immunities for international conferences and
+    special missions; no repeal identified.
+  validity: valid
+- statute_id: 1973/597
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Special arrangement act for certain settlement loans appears long spent.
+  validity: not valid
+- statute_id: 1973/667
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Approval/application act for the CMR Convention; no repeal identified.
+  validity: valid
+- statute_id: 1973/928
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; this 1973 temporary regime
+    is no longer operative.
+  validity: ''
+- statute_id: 1974/1065
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Cyclical-withholding tax regime for forest industry is an obsolete economic-policy
+    instrument.
+  validity: not valid
+  title: Laki metsäteollisuuden suhdannepidätysten verottamisesta
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1974/127
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: This exact farmer annual-leave arrangement act appears superseded by later farmer
+    holiday-relief legislation.
+  validity: not valid
+  title: Laki maatalousyrittäjän vuosiloman järjestämisestä
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1974/155
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Price-equalisation/price-freeze regime was temporary economic-control legislation
+    and is no longer operative.
+  validity: not valid
+  title: Laki hinnantasauksesta sekä hintasulusta eräissä tapauksissa
+  mechanism: price_control_wartime
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1974/262
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old restriction on index clauses was superseded by later contract law and economic-policy
+    reforms.
+  validity: not valid
+  title: Laki indeksiehdon käytön rajoittamisesta
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1974/541
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive implementation act for crimes against internationally protected persons;
+    no repeal identified.
+  validity: valid
+- statute_id: 1974/771
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to the turnover-tax act; this temporary
+    regime is no longer operative.
+  validity: ''
+- statute_id: 1975/1003
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Development-area tax-relief regime was superseded by later regional-aid and tax
+    legislation.
+  validity: not valid
+- statute_id: 1975/1008
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to state-income-tax scales and rates for tax year 1976 only.
+  validity: ''
+- statute_id: 1975/1060
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Personnel-arrangement act for transfer of State welfare institutions to municipalities;
+    transitional purpose completed.
+  validity: not valid
+- statute_id: 1975/13
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Seed-production support regime was superseded by EU CAP on 1.1.1995.
+  validity: not valid
+  title: Laki kylvösiementuotannon edistämisestä
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1975/302
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Pig and poultry production-control regime was superseded by EU CAP on 1.1.1995.
+  validity: not valid
+- statute_id: 1975/303
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Domestic sugar-production regime was superseded by EU sugar/CAP rules on 1.1.1995.
+  validity: not valid
+  title: Laki kotimaisen sokerin tuotannosta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1975/435
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; the temporary regime is no
+    longer operative.
+  validity: not valid
+- statute_id: 1975/451
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Early regional-development framework appears superseded by later regional-development
+    legislation.
+  validity: not valid
+- statute_id: 1975/452
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Development-area production support regime was superseded by later regional-aid
+    legislation.
+  validity: not valid
+- statute_id: 1975/891
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; this 1975 temporary regime
+    is no longer operative.
+  validity: ''
+- statute_id: 1975/988
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Personnel-arrangement act for transfer of private institutions to municipal management;
+    transitional purpose completed.
+  validity: not valid
+- statute_id: 1976/1
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Old fisheries interest-subsidy-loan regime appears long exhausted and superseded
+    by later fisheries financing law.
+  validity: not valid
+  title: Laki kalatalouden korkotukilainoista
+  mechanism: temporary_subsidy
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1976/1019
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; this 1976 temporary regime
+    is no longer operative.
+  validity: ''
+- statute_id: 1976/1029
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old excise-tax act on certain food products was replaced by later excise-tax
+    legislation.
+  validity: not valid
+- statute_id: 1976/12
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Finlex’s own note says it is applied to transports occurring in 1976–1981, so
+    the scheme is spent.
+  validity: not valid
+- statute_id: 1976/344
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Institutional-reorganisation act transferring magistrates and city enforcement
+    services to the State and abolishing order courts; reform completed.
+  validity: not valid
+- statute_id: 1976/345
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Ancillary cost-arrangement act linked to judicial/local-administration reorganisation;
+    transitional regime appears spent.
+  validity: not valid
+- statute_id: 1976/349
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off abolition of certain city traffic charges; operative purpose completed.
+  validity: not valid
+- statute_id: 1976/509
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Wheat equalisation charge was superseded by EU CAP on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki vehnän hinnantasausmaksusta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: Hinnantasaus poistettu EU-jäsenyyden myötä.
+- statute_id: 1976/535
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Tax-relief regime for new industrial buildings is an obsolete investment incentive.
+  validity: not valid
+- statute_id: 1976/568
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Fertiliser excise-tax regime was replaced by later tax and agricultural legislation.
+  validity: not valid
+- statute_id: 1976/569
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Feed-mixture excise-tax regime was replaced by later tax and agricultural legislation.
+  validity: not valid
+- statute_id: 1976/583
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Dairy equalisation levy was superseded by the EU milk-market regime
+    on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki kerman ja vähärasvaisen maidon tasausmaksusta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: 15 amendments. Dairy equalization levy. Superseded by EU milk market regulation.
+- statute_id: 1976/655
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Employment-policy cyclical-loan scheme for enterprises is an obsolete economic-policy
+    instrument.
+  validity: not valid
+- statute_id: 1976/931
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive act on the reorganisation of the Antell collections and assets; later
+    legislative materials still refer to section 1 of this act.
+  validity: valid
+- statute_id: 1977/1066
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Edilex note says the law was in force only until the end of 1979 (17 §).
+  validity: not valid
+- statute_id: 1977/1077
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old general municipal-financing-assistance regime was superseded by 1273/1988
+    and later state-share/state-aid legislation.
+  validity: not valid
+- statute_id: 1977/1102
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Maataloustulolaki was superseded by EU CAP on 1.1.1995.
+  validity: not valid
+  title: Maataloustulolaki
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1977/161
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Agricultural marketing/export charge was superseded by EU CAP/common
+    commercial policy on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki vientikustannusmaksusta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: EU:n yhteinen kauppapolitiikka korvasi.
+- statute_id: 1977/391
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Food-export charge was superseded by EU CAP on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki eräiden elintarvikkeiden vientimaksusta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: EU CAP korvasi.
+- statute_id: 1977/446
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Agricultural production steering/balancing regime was superseded by
+    EU CAP on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki maataloustuotannon ohjaamisesta ja tasapainottamisesta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: EU CAP korvasi.
+- statute_id: 1977/520
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Implementation act for the Special Care for Persons with Intellectual Disabilities
+    Act; the core act still points to this entry-into-force framework.
+  validity: valid
+- statute_id: 1977/813
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to state-income-tax scales and rates for tax year 1978 only.
+  validity: ''
+- statute_id: 1977/82
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Substantive land-register arrangement act; no repeal identified.
+  validity: valid
+- statute_id: 1977/835
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old excise-tax act on certain food products was replaced by later excise-tax
+    legislation.
+  validity: not valid
+- statute_id: 1977/843
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; this 1977 temporary regime
+    is no longer operative.
+  validity: not valid
+  title: Laki eräistä väliaikaisista poikkeuksista verolakeihin
+  mechanism: temporary_tax_exception
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1977/847
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to postponement of 1977 tax refunds only.
+  validity: ''
+- statute_id: 1977/881
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Approval/application act for the Nordic judgments convention; no repeal identified.
+  validity: valid
+- statute_id: 1977/939
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Fertiliser excise-tax regime was replaced by later tax and agricultural legislation.
+  validity: not valid
+- statute_id: 1977/943
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Special tax-exception act tied to activity in the Kostamus area; project-specific
+    regime no longer operative.
+  validity: not valid
+- statute_id: 1978/1029
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old restriction on index clauses was superseded by later contract law and economic-policy
+    reforms.
+  validity: not valid
+  title: Laki indeksiehdon käytön rajoittamisesta
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1978/240
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to subsidised loans due to the 1977 crop-damage year; one-time
+    regime completed.
+  validity: not valid
+  title: Laki vuoden 1977 satovahinkojen johdosta myönnettävistä korkotukilainoista
+  mechanism: one_time_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1978/262
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Domestic oilseed-production support regime was superseded by EU CAP
+    on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki kotimaisesta öljykasvituotannosta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: EU CAP korvasi.
+- statute_id: 1978/419
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits the extra turnover-tax deduction to year 1978 only.
+  validity: ''
+- statute_id: 1978/5
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Tax-relief regime to promote the metal and construction industries was an obsolete
+    investment incentive.
+  validity: not valid
+- statute_id: 1978/560
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: This 1978 municipal-merger-grant law appears superseded by later municipal-structure
+    legislation.
+  validity: not valid
+  title: Laki kuntien yhdistymisavustuksista
+  mechanism: one_time_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1978/592
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Implementation act for the support-supplement and pensioners’ housing-support
+    laws; the transitional regime appears spent.
+  validity: not valid
+- statute_id: 1978/822
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; the temporary regime is no
+    longer operative.
+  validity: not valid
+- statute_id: 1978/836
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old subsidised-loan regime for certain heating-equipment investments was temporary
+    and no longer operates.
+  validity: not valid
+  title: Laki eräisiin lämmityslaitosinvestointeihin myönnettävistä korkotukilainoista
+  mechanism: temporary_subsidy
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1978/869
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to subsidised loans due to the 1978 crop-damage year; one-time
+    regime completed.
+  validity: not valid
+  title: Laki vuoden 1978 satovahinkojen johdosta myönnettävistä korkotukilainoista
+  mechanism: one_time_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1978/919
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to employer/social-insurance charges for 1979 only.
+  validity: not valid
+  title: Laki vuodelta 1979 suoritettavasta työnantajan sosiaaliturvamaksusta ja vakuutetun
+    sairausvakuutusmaksusta
+  mechanism: annual_tax_law
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1979/803
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; this 1979 temporary regime
+    is no longer operative.
+  validity: ''
+- statute_id: 1979/926
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Special act for handling compensation issues caused by Kemijoki construction;
+    legacy settlement regime appears spent.
+  validity: not valid
+- statute_id: 1979/974
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Substantive forestry tax-relief act; no repeal identified.
+  validity: valid
+- statute_id: 1979/996
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Livestock-production steering regime was superseded by EU CAP on 1.1.1995.
+  validity: not valid
+  title: Laki kotieläintuotannon ohjaamisesta eräissä tapauksissa
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1980/323
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Treaty-approval act for GATT tariff-concession amendments; current Finlex page
+    exists and I found no repeal or sunset.
+  validity: valid
+- statute_id: 1980/525
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off tax treatment for compensation paid because of Kemijoki fishing damage;
+    operative purpose completed.
+  validity: not valid
+- statute_id: 1980/894
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive act on maritime cases and ship-register matters in Åland; no repeal
+    identified.
+  validity: valid
+- statute_id: 1981/1035
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Later HE material states the law was in force only until the end of 1981.
+  validity: not valid
+- statute_id: 1981/284
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive MLA act linked to the European Convention on Mutual Assistance in
+    Criminal Matters; no repeal identified.
+  validity: valid
+- statute_id: 1981/299
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Substantive guarantee act for repayment of certain water-law compensation liabilities;
+    no repeal identified.
+  validity: valid
+- statute_id: 1981/398
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Stabilisation scheme for certain farm loans was a one-off economic-policy measure
+    and no longer operates.
+  validity: not valid
+- statute_id: 1981/479
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to the employer health-insurance contribution for 1982 only.
+  validity: not valid
+  title: Laki vuodelta 1982 suoritettavasta työnantajan sairausvakuutusmaksusta
+  mechanism: annual_tax_law
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1981/674
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive act establishing certain national parks and strict nature reserves;
+    no repeal identified.
+  validity: valid
+- statute_id: 1981/758
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary exceptions to tax laws; this 1981 temporary regime
+    is no longer operative.
+  validity: ''
+- statute_id: 1981/769
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Temporary fuel-tax law is an obsolete one-off tax measure.
+  validity: not valid
+  title: Laki väliaikaisesta polttoaineverosta
+  mechanism: temporary_tax_exception
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1981/802
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to employer/social-insurance charges for 1982 only.
+  validity: not valid
+  title: Laki vuodelta 1982 suoritettavasta työnantajan sosiaaliturvamaksusta ja vakuutetun
+    sairausvakuutusmaksusta
+  mechanism: annual_tax_law
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1981/844
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title itself says temporary change to the Supreme Administrative Court quorum;
+    no longer operative.
+  validity: ''
+- statute_id: 1982/1037
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Domestic starch-production support regime was superseded by EU CAP on
+    1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki kotimaisesta tärkkelystuotannosta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: EU CAP korvasi.
+- statute_id: 1982/1099
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Feed-mixture tax was superseded by the EU agricultural framework on
+    1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki rehuseosverosta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: 14 amendments. Feed mixture tax. Superseded by EU agricultural framework.
+- statute_id: 1982/351
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Temporary industrial-investment tax-relief law from the recession era; later
+    HE materials describe it as one of the old temporary tax-relief statutes.
+  validity: not valid
+- statute_id: 1982/629
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Maataloustulolaki was superseded by EU CAP on 1.1.1995.
+  validity: not valid
+  title: Maataloustulolaki
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1982/936
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title limits it to Finnish Export Credit interest support for 1982-1983; temporary
+    subsidy regime.
+  validity: not valid
+  title: Laki Suomen Vientiluotto Oy:n vuosien 1982-1983 ulkomaisen luotonannon korkotuesta
+  mechanism: temporary_subsidy
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1983/1125
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to employer/social-insurance charges for 1984 only.
+  validity: not valid
+  title: Laki vuodelta 1984 suoritettavasta työnantajan sosiaaliturvamaksusta ja vakuutetun
+    kansaneläke- ja sairausvakuutusmaksusta
+  mechanism: annual_tax_law
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1983/1142
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Personnel-arrangement act for transfer of a regional institute’s functions to
+    municipalities; transitional purpose completed.
+  validity: not valid
+- statute_id: 1983/228
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive national-park act establishing Urho Kekkonen National Park; Finlex
+    still shows it as updated legislation.
+  validity: valid
+- statute_id: 1983/485
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Repeal act removing section 31 from the implementation act; no independent current
+    operative effect.
+  validity: not valid
+- statute_id: 1983/81
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Agricultural production steering regime was superseded by EU CAP on
+    1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki maataloustuotannon ohjaamisesta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: EU CAP korvasi.
+- statute_id: 1983/822
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to exceptional tax provisions for 1984 only.
+  validity: ''
+- statute_id: 1984/1015
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to the employer child-benefit contribution for 1985 only.
+  validity: not valid
+  title: Laki vuodelta 1985 suoritettavasta työnantajan lapsilisämaksusta
+  mechanism: annual_tax_law
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1985/1053
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title limits it to Finnish Export Credit support for 1986-1989; temporary subsidy
+    regime.
+  validity: not valid
+  title: Laki Suomen Vientiluotto Oy:n vuosien 1986-1989 ulkomaisen luotonoton korkotuesta
+    ja valuuttakurssitappioiden korvaamisesta
+  mechanism: temporary_subsidy
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1985/1093
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old subsidised-loan regime for ship deliveries was temporary and has been superseded.
+  validity: not valid
+  title: Laki alustoimitusten rahoitukseen myönnettävistä korkotukilainoista
+  mechanism: temporary_subsidy
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1985/1135
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old restriction on index clauses was superseded by later contract law and economic-policy
+    reforms.
+  validity: not valid
+  title: Laki indeksiehdon käytön rajoittamisesta
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1985/377
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to the 1985 occupational and business survey only.
+  validity: ''
+- statute_id: 1986/1031
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Old rural small-business support act still appears relevant for legacy loans/support
+    arrangements in later legislation.
+  validity: valid
+- statute_id: 1987/1327
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Sugar-market regime was superseded by the EU sugar market organisation
+    on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Sokerilaki
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: EU:n sokerimarkkinajärjestely korvasi.
+- statute_id: 1987/1334
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Domestic starch-production regime was superseded by EU CAP on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki kotimaisesta tärkkelystuotannosta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: EU CAP korvasi.
+- statute_id: 1987/1338
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Domestic oilseed-production regime was superseded by EU CAP on 1.1.1995.
+  reasoning: ''
+  validity: not valid
+  title: Laki kotimaisesta öljykasvituotannosta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: EU CAP korvasi.
+- statute_id: 1987/142
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Substantive emergency/shipping-security act; no repeal identified.
+  validity: valid
+- statute_id: 1987/602
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Field-clearing charge belongs to an obsolete national agricultural-control system
+    superseded by EU CAP on 1.1.1995.
+  validity: not valid
+  title: Laki pellonraivausmaksusta
+  expired_date: '1995-01-01'
+  mechanism: eu_accession_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1987/882
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to subsidised loans due to the 1987 crop-damage year; one-time
+    regime completed.
+  validity: not valid
+  title: Laki vuoden 1987 satovahinkojen johdosta myönnettävistä korkotukilainoista
+  mechanism: one_time_completed
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1988/1026
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Substantive criminal-procedure act on cases handled by a single judge; no repeal
+    identified.
+  validity: valid
+- statute_id: 1988/1227
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to the health-insurance contribution for 1989 only.
+  validity: not valid
+  title: Laki vuodelta 1989 suoritettavasta sairausvakuutusmaksusta
+  mechanism: annual_tax_law
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1988/342
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Bilateral recognition/enforcement act for Austrian civil judgments; no repeal
+    identified.
+  validity: valid
+- statute_id: 1989/1063
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Implementation act for the Specialised Medical Care Act with continuing residual/transitional
+    significance; later legislation still refers to it.
+  validity: valid
+- statute_id: 1989/1073
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Finlex shows it applied in tax years 1990–1997, so the regional tax-relief regime
+    has run out.
+  validity: not valid
+- statute_id: 1989/1076
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to the 1990 agricultural census only.
+  validity: ''
+- statute_id: 1989/1334
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to state-income-tax scales and rates for tax year 1990 only.
+  validity: ''
+- statute_id: 1989/1364
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old Finnish Export Credit support/guarantee regime appears superseded by later
+    state export-finance legislation.
+  validity: not valid
+  title: Laki Suomen Vientiluotto Oy:n korkotuesta, valuuttakurssitappioiden korvaamisesta
+    ja antolainauksen valtion takauksista
+  mechanism: temporary_subsidy
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1989/511
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to the 1989 building tax only.
+  validity: not valid
+  title: Vuoden 1989 rakennusverolaki
+  mechanism: excise_tax_abolished
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1989/657
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive act on special compensation for spouses of foreign-service officials;
+    no repeal identified.
+  validity: valid
+- statute_id: 1990/1025
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to the health-insurance contribution for 1991 only.
+  validity: not valid
+  title: Laki vuodelta 1991 suoritettavasta sairausvakuutusmaksusta
+  mechanism: annual_tax_law
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1990/1173
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Old interest-support law for ship deliveries appears superseded by later export/ship-finance
+    legislation.
+  validity: not valid
+  title: Laki alustoimitusten rahoitukseen myönnettävästä korkotuesta
+  mechanism: temporary_subsidy
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1990/1186
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive act on changing the terms of rental-housing loans; later amendment
+    history runs well beyond the 1990s.
+  validity: valid
+- statute_id: 1990/1266
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to encouraging voluntary municipal mergers in 1992-1993 only.
+  validity: ''
+- statute_id: 1990/593
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off land-exchange act between the State and the City of Helsinki; operative
+    purpose completed.
+  validity: not valid
+- statute_id: 1990/761
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Transitional restructuring act converting vocational course centres into adult
+    education centres; reform completed.
+  validity: not valid
+- statute_id: 1991/1069
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Entry-into-force act for the book-entry system legislation; the transitional
+    regime appears spent.
+  validity: not valid
+- statute_id: 1991/1667
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to applying certain provisions of the agricultural income law
+    in 1992 only.
+  validity: ''
+- statute_id: 1992/1032
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive fees act on services of the Finnish Patent and Registration Office;
+    no repeal identified.
+  validity: valid
+- statute_id: 1992/1321
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: HE 288/1993 says the law applied under 6 § until the end of 1993, and Edilex
+    marks the regime as covering time only until 11.4.1995.
+  validity: not valid
+- statute_id: 1992/352
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Approval act for the EFTA–Turkey agreement appears to have been superseded for
+    Finland by EU membership and later EU–Turkey trade law.
+  validity: not valid
+- statute_id: 1992/538
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Old SME investment interest-subsidy-loan regime appears long exhausted and superseded
+    by later business-financing law.
+  validity: not valid
+  title: Laki pienten ja keskisuurten yritysten investointien korkotukilainoista
+  mechanism: temporary_subsidy
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1992/976
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Charter-flight tax regime was superseded by later tax legislation and
+    has no current operative effect.
+  reasoning: ''
+  validity: not valid
+  title: Laki tilauslentoverosta
+  mechanism: likely_superseded
+  notes: Valmisteverolainsäädännön kokonaisuudistus.
+- statute_id: 1993/1121
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: 'Repeal act: it repealed the earlier law on decision-making in the Council of
+    State and ministries, and has no current independent operative role.'
+  validity: not valid
+- statute_id: 1993/1257
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Title itself says it was an emergency-response-centre experiment; that temporary
+    trial is no longer operative.
+  validity: not valid
+  title: Laki hätäkeskuksia koskevasta kokeilusta
+  mechanism: temporary_experiment
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1993/1262
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Later amendments and government-proposal material show it applied only to specified
+    tax years/investment periods, ultimately through tax year 2013.
+  validity: not valid
+- statute_id: 1993/1504
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Core approval/application act for the EEA Agreement; no repeal identified.
+  validity: valid
+- statute_id: 1993/1511
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Approval act for the EFTA States’ Standing Committee agreement; no repeal identified.
+  validity: valid
+- statute_id: 1993/1536
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to temporary pension-contribution changes and entrepreneur charges
+    in 1994 only.
+  validity: ''
+- statute_id: 1993/961
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: HE 159/1994 stated the law’s validity was extended only through the end of 1995
+    and the tax applied only to services supplied in 1994–1995.
+  validity: not valid
+- statute_id: 1993/966
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off authorization to transfer Karttakeskus assets to a new State company;
+    operative purpose completed.
+  validity: not valid
+- statute_id: 1994/1099
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Repeal act for several agricultural laws; its operative purpose was completed
+    when those laws were repealed.
+  validity: not valid
+- statute_id: 1994/1255
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Temporary customs act; Finlex metadata shows it entered into force on 1.1.1995
+    and was in force only for the stated period.
+  validity: not valid
+- statute_id: 1994/135
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: This vehicle-tax act for certain vehicles appears superseded by later vehicle-tax
+    legislation.
+  validity: not valid
+  title: Laki eräistä ajoneuvoista suoritettavasta ajoneuvoverosta
+  mechanism: likely_superseded
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1994/1401
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: ''
+  reasoning: Title limits it to the health-insurance contribution for 1995 only.
+  validity: not valid
+  title: Laki vuodelta 1995 suoritettavasta sairausvakuutusmaksusta
+  mechanism: annual_tax_law
+  notes: Pre-1995 audit 2026-03-31
+- statute_id: 1994/530
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Approval/application act for EEA Joint Committee Decision 7/94; no repeal identified.
+  validity: valid
+- statute_id: 1995/1528
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: 'Repeal act: it repealed the Tapaturmavirasto act and has no current independent
+    operative function.'
+  validity: not valid
+- statute_id: 1995/1591
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: One-off corporatisation act for Autorekisterikeskus and allocation of its tasks;
+    operative purpose completed.
+  validity: not valid
+- statute_id: 1996/451
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Personnel-arrangement act for privatizing certain Ministry of Education vocational
+    institutions and forming private polytechnics; transitional purpose completed.
+  validity: not valid
+- statute_id: 1997/115
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive act on grants payable to visual artists; no repeal identified.
+  validity: valid
+- statute_id: 1997/728
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: Temporary household-work tax support was replaced by the permanent kotitalousvähennys
+    regime.
+  reasoning: ''
+  validity: not valid
+  title: Laki kotitaloustyön väliaikaisesta verotuesta
+  mechanism: likely_superseded
+  notes: Väliaikainen kotitalousvähennys. Korvattu pysyvällä kotitalousvähennyksellä tuloverolain
+    127a-c §.
+- statute_id: 1998/513
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: Annual contribution law for year 1999 only.
+  reasoning: ''
+  validity: not valid
+  title: Laki vuodelta 1999 suoritettavista sairausvakuutusmaksuista, työnantajan kansaneläkemaksusta
+    ja työnantajan lapsilisämaksusta
+  expired_date: '1999-12-31'
+  mechanism: annual_tax_law
+  notes: Vuosittainen maksulaki, soveltui vain vuoteen 1999.
+- statute_id: 1998/662
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Substantive act on certain education-sector pension arrangements; no repeal identified.
+  validity: valid
+- statute_id: 1999/1217
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: Annual tax-scale law for tax year 2000 only.
+  reasoning: ''
+  validity: not valid
+  title: Vuoden 2000 veroasteikkolaki
+  expired_date: '2000-12-31'
+  mechanism: annual_tax_law
+  notes: Vuosittainen veroasteikkolaki, soveltui vain verovuoteen 2000.
+- statute_id: 1999/1277
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: Annual health-insurance/national-pension contribution law for year 2000
+    only.
+  reasoning: ''
+  validity: not valid
+  title: Laki vuodelta 2000 suoritettavista sairausvakuutusmaksuista ja työnantajan kansaneläkemaksusta
+  expired_date: '2000-12-31'
+  mechanism: annual_tax_law
+  notes: Vuosittainen maksulaki, soveltui vain vuoteen 2000.
+- statute_id: 1999/25
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Substantive register act on seafarers’ medical examinations; no repeal identified.
+  validity: valid
+- statute_id: 2002/1161
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: Annual tax-scale law for tax year 2003 only.
+  reasoning: ''
+  validity: not valid
+  title: Vuoden 2003 veroasteikkolaki
+  expired_date: '2003-12-31'
+  mechanism: annual_tax_law
+  notes: Vuosittainen veroasteikkolaki, soveltui vain verovuoteen 2003.
+- statute_id: 2002/1358
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for SOLAS annex amendments; no repeal identified.
+  validity: valid
+- statute_id: 2002/475
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Finland–Cuba investment-protection agreement;
+    no repeal identified.
+  validity: valid
+- statute_id: 2002/513
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Finland–Costa Rica investment-protection agreement;
+    no repeal identified.
+  validity: valid
+- statute_id: 2004/148
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Implementation/applicability act for the EU MLA Convention; no repeal identified.
+  validity: valid
+- statute_id: 2004/257
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Finland–Nicaragua investment-protection agreement;
+    no repeal identified.
+  validity: valid
+- statute_id: 2004/427
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the customs-administration mutual-assistance convention;
+    no repeal identified.
+  validity: valid
+- statute_id: 2004/525
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for amendments to COTIF; no repeal identified.
+  validity: valid
+- statute_id: 2005/287
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the protocol to the European Convention on the
+    Suppression of Terrorism; no repeal identified.
+  validity: valid
+- statute_id: 2005/491
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the 2004 amending protocol to the Paris Convention
+    on nuclear liability; no repeal identified.
+  validity: valid
+- statute_id: 2005/492
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the 2004 amending protocol to the Brussels supplementary
+    convention on nuclear liability; no repeal identified.
+  validity: valid
+- statute_id: 2006/1106
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Finland–Zambia investment-protection agreement;
+    no repeal identified.
+  validity: valid
+- statute_id: 2006/891
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Morocco income-tax treaty; no repeal identified.
+  validity: valid
+- statute_id: 2007/1382
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Nordic Arrest Warrant agreement; no repeal
+    identified.
+  validity: valid
+- statute_id: 2007/1480
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Implementation/entry-into-force act for amendments to the rural-business financing
+    law; the transitional regime appears spent.
+  validity: not valid
+- statute_id: 2007/277
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Implementation/applicability act for the Prüm Convention; no repeal identified.
+  validity: valid
+- statute_id: 2007/78
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Administrative transfer act for old Ministry of Agriculture and Forestry loans
+    and receivables; legacy-loan framework may still matter.
+  validity: valid
+- statute_id: 2007/828
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Nordic marriage/adoption/guardianship convention
+    amendment; no repeal identified.
+  validity: valid
+- statute_id: 2007/900
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the protocol amending the International Hydrographic
+    Organization convention; no repeal identified.
+  validity: valid
+- statute_id: 2008/142
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the EU–US Air Transport Agreement; no repeal identified.
+  validity: valid
+- statute_id: 2008/351
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Aarhus Convention amendment; no repeal identified.
+  validity: valid
+- statute_id: 2008/38
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the European Common Aviation Area agreement; no
+    repeal identified.
+  validity: valid
+- statute_id: 2008/39
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Project/treaty-implementation act for the Finland–Bulgaria Kyoto joint-implementation
+    framework; no repeal identified.
+  validity: valid
+- statute_id: 2008/407
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Nordic institutions status agreement amendment;
+    no repeal identified.
+  validity: valid
+- statute_id: 2008/513
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the amendment to the Convention on the Physical
+    Protection of Nuclear Material; no repeal identified.
+  validity: valid
+- statute_id: 2008/778
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the EU/Switzerland anti-fraud cooperation agreement;
+    no repeal identified.
+  validity: valid
+- statute_id: 2009/1014
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Finland–Kenya investment-protection agreement;
+    no repeal identified.
+  validity: valid
+- statute_id: 2009/191
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for SOLAS Chapter V amendments; no repeal identified.
+  validity: valid
+- statute_id: 2009/202
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the EU/Bosnia and Herzegovina Stabilisation and
+    Association Agreement; no repeal identified.
+  validity: valid
+- statute_id: 2009/413
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation/applicability act for STCW amendments; no repeal identified.
+  validity: valid
+- statute_id: 2009/917
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Belgium tax-treaty protocol; no repeal identified.
+  validity: valid
+- statute_id: 2009/918
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Netherlands Antilles tax agreements; amended
+    in 2021 rather than repealed outright.
+  validity: valid
+- statute_id: 2009/919
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for Aruba tax agreements; no repeal identified.
+  validity: valid
+- statute_id: 2010/1017
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for Annex VI to the Antarctic Environmental Protocol;
+    no repeal identified.
+  validity: valid
+- statute_id: 2010/1018
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for Annex II to the Antarctic Environmental Protocol;
+    no repeal identified.
+  validity: valid
+- statute_id: 2010/1019
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for Antarctic Treaty Measure 4(2004); no repeal identified.
+  validity: valid
+- statute_id: 2010/1219
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Belize tax-information-exchange agreement;
+    no repeal identified.
+  validity: valid
+- statute_id: 2010/1220
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Marshall Islands tax-information-exchange agreement;
+    no repeal identified.
+  validity: valid
+- statute_id: 2010/161
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Samoa tax-information-exchange agreement; no
+    repeal identified.
+  validity: valid
+- statute_id: 2010/779
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Implementation/applicability act for the Hague Convention on the International
+    Protection of Adults; no repeal identified.
+  validity: valid
+- statute_id: 2010/854
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Dominica tax-information-exchange agreement;
+    no repeal identified.
+  validity: valid
+- statute_id: 2010/855
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Grenada tax-information-exchange agreement;
+    no repeal identified.
+  validity: valid
+- statute_id: 2010/927
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Turkey income-tax treaty and protocol; no repeal
+    identified.
+  validity: valid
+- statute_id: 2011/104
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Saimaa Canal lease/traffic treaty implementation act; no repeal or expiry identified.
+  validity: valid
+- statute_id: 2011/1061
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the EU/Serbia Stabilisation and Association Agreement;
+    no repeal identified.
+  validity: valid
+- statute_id: 2011/1118
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Seychelles tax-information-exchange agreement;
+    no repeal identified.
+  validity: valid
+- statute_id: 2011/1119
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Costa Rica tax-information-exchange agreement
+    and protocol; no repeal identified.
+  validity: valid
+- statute_id: 2011/129
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the CARIFORUM economic partnership agreement; no
+    repeal identified.
+  validity: valid
+- statute_id: 2011/130
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Liberia tax-information-exchange agreement;
+    no repeal identified.
+  validity: valid
+- statute_id: 2011/1452
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Barbados tax-treaty protocol; no repeal identified.
+  validity: valid
+- statute_id: 2011/1453
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Bahrain tax-information-exchange agreement;
+    no repeal identified.
+  validity: valid
+- statute_id: 2011/149
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Liechtenstein tax-information-exchange agreement;
+    no repeal identified.
+  validity: valid
+- statute_id: 2012/21
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the European Convention on the Adoption of Children;
+    no repeal identified.
+  validity: valid
+- statute_id: 2012/411
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Mission-specific implementation act, but later UNIFIL statutes continued to apply
+    and amend the 411/2012 framework.
+  validity: valid
+- statute_id: 2012/946
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: medium
+  confidence_fi: keskitaso
+  reasoning_evidence: ''
+  reasoning: Implementation act for the EU–Russia readmission protocol; no repeal identified.
+  validity: valid
+- statute_id: 2014/300
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for the Second Additional Protocol to the European
+    MLA Convention; no repeal identified.
+  validity: valid
+- statute_id: 2015/304
+  scope: review_ledger
+  status: not valid
+  status_fi: ei voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: 'Commencement act: it brought 303/2015 into force on 1.1.2016 and has no current
+    independent operative role.'
+  validity: not valid
+- statute_id: 2015/40
+  scope: review_ledger
+  status: valid
+  status_fi: voimassa
+  confidence: high
+  confidence_fi: korkea
+  reasoning_evidence: ''
+  reasoning: Treaty-implementation act for SOLAS/IMSBC amendments; no repeal or sunset identified.
+  validity: valid
+- statute_id: 2019/1572
+  scope: stale_in_force
+  status: not valid
+  status_fi: ei voimassa
+  confidence: confirmed
+  confidence_fi: vahvistettu
+  reasoning_evidence: Its own title limits it to tax years 2020–2025, so it expired after
+    2025.
+  reasoning: ''
+  validity: not valid
+  title: Laki koneiden, kaluston ja muun niihin verrattavan irtaimen käyttöomaisuuden korotetuista
+    poistoista verovuosina 2020–2025
+  expired_date: '2025-12-31'
+  mechanism: sunset_clause
+  notes: Soveltamisaika päättyi verovuoden 2025 lopussa.

@@ -1,0 +1,268 @@
+from __future__ import annotations
+
+from lawvm.estonia.fetch import AmendmentRef
+from lawvm.estonia.pair_planning import plan_ee_oracle_pair
+
+
+def _ref(akt_viide: str, joustumine: str) -> AmendmentRef:
+    return AmendmentRef(
+        aktViide=akt_viide,
+        passed=joustumine,
+        joustumine=joustumine,
+    )
+
+
+def test_plan_ee_oracle_pair_classifies_same_chain_editorial_drift(monkeypatch) -> None:
+    base_xml = b"<base/>"
+    oracle_xml = b"<oracle/>"
+    shared_refs = [_ref("101", "2025-01-01"), _ref("102", "2025-02-01")]
+
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-1")
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
+        lambda grupi_id, as_of, archive: "oracle",
+    )
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", lambda akt_viide, archive: oracle_xml)
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.extract_amendment_refs",
+        lambda xml: shared_refs if xml == base_xml else list(shared_refs),
+    )
+
+    planned = plan_ee_oracle_pair(
+        base_id="base",
+        as_of="2026-03-24",
+        base_xml=base_xml,
+        archive=None,
+    )
+
+    assert planned.plan.oracle_id == "oracle"
+    assert planned.plan.source_basis.value == "earliest_available_terviktekst"
+    assert planned.plan.comparison_class == "same_chain_editorial_drift"
+    assert planned.plan.amendments_to_apply == ()
+    assert planned.plan.source_adjudication.oracle_suspect == "same_chain_editorial_drift"
+
+
+def test_plan_ee_oracle_pair_selects_only_effective_new_amendments(monkeypatch) -> None:
+    base_xml = b"<base/>"
+    oracle_xml = b"<oracle/>"
+    base_refs = [_ref("101", "2025-01-01"), _ref("102", "2025-02-01")]
+    oracle_refs = [
+        _ref("101", "2025-01-01"),
+        _ref("102", "2025-02-01"),
+        _ref("103", "2026-03-01"),
+        _ref("104", "2026-04-01"),
+    ]
+
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-2")
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
+        lambda grupi_id, as_of, archive: "oracle",
+    )
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", lambda akt_viide, archive: oracle_xml)
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.extract_amendment_refs",
+        lambda xml: base_refs if xml == base_xml else oracle_refs,
+    )
+
+    planned = plan_ee_oracle_pair(
+        base_id="base",
+        as_of="2026-03-24",
+        base_xml=base_xml,
+        archive=None,
+    )
+
+    assert planned.plan.source_basis.value == "pairwise_terviktekst_delta"
+    assert planned.plan.comparison_class == "forward_looking_oracle"
+    assert [ref.aktViide for ref in planned.plan.amendments_to_apply] == ["103"]
+    assert planned.plan.effective_new_amendments == ("103",)
+    assert planned.plan.future_new_amendments == ("104",)
+    assert planned.plan.source_adjudication.oracle_suspect == "forward_looking_oracle"
+
+
+def test_plan_ee_oracle_pair_treats_later_slice_of_same_act_as_new_delta(monkeypatch) -> None:
+    base_xml = b"<base/>"
+    oracle_xml = b"<oracle/>"
+    base_refs = [_ref("101", "2025-01-01")]
+    oracle_refs = [
+        _ref("101", "2025-01-01"),
+        _ref("101", "2026-03-01"),
+    ]
+
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-slice")
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
+        lambda grupi_id, as_of, archive: "oracle",
+    )
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_effective_date", lambda xml: "2025-01-01")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", lambda akt_viide, archive: oracle_xml)
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.extract_amendment_refs",
+        lambda xml: base_refs if xml == base_xml else oracle_refs,
+    )
+
+    planned = plan_ee_oracle_pair(
+        base_id="base",
+        as_of="2026-03-24",
+        base_xml=base_xml,
+        archive=None,
+    )
+
+    assert planned.plan.source_basis.value == "pairwise_terviktekst_delta"
+    assert planned.plan.comparison_class == "commensurable_delta"
+    assert planned.plan.effective_new_amendments == ("101",)
+    assert planned.plan.future_new_amendments == ()
+    assert [(ref.aktViide, ref.joustumine) for ref in planned.plan.amendments_to_apply] == [
+        ("101", "2026-03-01"),
+    ]
+
+
+def test_plan_ee_oracle_pair_keeps_multiple_slices_of_same_act_when_base_lacks_it(monkeypatch) -> None:
+    base_xml = b"<base/>"
+    oracle_xml = b"<oracle/>"
+    base_refs = [_ref("100", "2020-05-07")]
+    oracle_refs = [
+        _ref("100", "2020-05-07"),
+        _ref("101", "2020-07-01"),
+        _ref("101", "2021-01-01"),
+    ]
+
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-multi-slice")
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
+        lambda grupi_id, as_of, archive: "oracle",
+    )
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_effective_date", lambda xml: "2020-05-07")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", lambda akt_viide, archive: oracle_xml)
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.extract_amendment_refs",
+        lambda xml: base_refs if xml == base_xml else oracle_refs,
+    )
+
+    planned = plan_ee_oracle_pair(
+        base_id="base",
+        as_of="2021-01-01",
+        base_xml=base_xml,
+        archive=None,
+    )
+
+    assert [(ref.aktViide, ref.joustumine) for ref in planned.plan.amendments_to_apply] == [
+        ("101", "2020-07-01"),
+        ("101", "2021-01-01"),
+    ]
+
+
+def test_plan_ee_oracle_pair_replays_future_effective_refs_already_in_base(monkeypatch) -> None:
+    base_xml = b"<base/>"
+    oracle_xml = b"<oracle/>"
+    base_refs = [_ref("101", "2025-01-01"), _ref("102", "2026-03-01")]
+
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-3")
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
+        lambda grupi_id, as_of, archive: "oracle",
+    )
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_effective_date", lambda xml: "2025-02-01")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", lambda akt_viide, archive: oracle_xml)
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.extract_amendment_refs",
+        lambda xml: base_refs if xml == base_xml else list(base_refs),
+    )
+
+    planned = plan_ee_oracle_pair(
+        base_id="base",
+        as_of="2026-03-24",
+        base_xml=base_xml,
+        archive=None,
+    )
+
+    assert planned.plan.source_basis.value == "earliest_available_terviktekst"
+    assert [ref.aktViide for ref in planned.plan.amendments_to_apply] == ["102"]
+    assert planned.plan.effective_new_amendments == ()
+    assert planned.plan.future_new_amendments == ()
+
+
+def test_plan_ee_oracle_pair_classifies_base_is_oracle_source_basis(monkeypatch) -> None:
+    base_xml = b"<base/>"
+
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-5")
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
+        lambda grupi_id, as_of, archive: "base",
+    )
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_amendment_refs", lambda xml: [])
+
+    planned = plan_ee_oracle_pair(
+        base_id="base",
+        as_of="2026-03-24",
+        base_xml=base_xml,
+        archive=None,
+    )
+
+    assert planned.plan.source_basis.value == "base_is_oracle"
+    assert planned.plan.comparison_class == "base_is_oracle"
+
+
+def test_plan_ee_oracle_pair_classifies_algtekst_source_basis(monkeypatch) -> None:
+    base_xml = b"<base/>"
+
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-6")
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
+        lambda grupi_id, as_of, archive: None,
+    )
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "algtekst")
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.extract_amendment_refs",
+        lambda xml: [_ref("101", "2025-01-01")],
+    )
+
+    planned = plan_ee_oracle_pair(
+        base_id="base",
+        as_of="2026-03-24",
+        base_xml=base_xml,
+        archive=None,
+    )
+
+    assert planned.plan.source_basis.value == "algtekst_source"
+
+
+def test_plan_ee_oracle_pair_orders_same_effective_refs_by_passed_then_id(monkeypatch) -> None:
+    base_xml = b"<base/>"
+    oracle_xml = b"<oracle/>"
+    base_refs = [
+        AmendmentRef(aktViide="101072025001", passed="2025-06-18", joustumine="2025-09-01"),
+        AmendmentRef(aktViide="109012025001", passed="2024-12-11", joustumine="2025-09-01"),
+        AmendmentRef(aktViide="123122024001", passed="2024-12-04", joustumine="2025-09-01"),
+    ]
+
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-4")
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
+        lambda grupi_id, as_of, archive: "oracle",
+    )
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_effective_date", lambda xml: "2025-01-01")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", lambda akt_viide, archive: oracle_xml)
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.extract_amendment_refs",
+        lambda xml: list(base_refs),
+    )
+
+    planned = plan_ee_oracle_pair(
+        base_id="base",
+        as_of="2025-09-01",
+        base_xml=base_xml,
+        archive=None,
+    )
+
+    assert [ref.aktViide for ref in planned.plan.amendments_to_apply] == [
+        "123122024001",
+        "109012025001",
+        "101072025001",
+    ]

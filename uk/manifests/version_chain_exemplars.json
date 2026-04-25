@@ -1,0 +1,110 @@
+{
+  "generated_at": "2026-03-18",
+  "notes": [
+    "Selected dated versions for publication/demo exemplar chains.",
+    "This is intentionally not the full version history."
+  ],
+  "sources": [
+    {
+      "id": "ukpga/1978/30-chain",
+      "label": "Interpretation Act 1978 exemplar chain",
+      "why": "Long visible chain from enacted to current with 86 dated versions in current metadata.",
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1978/30/enacted/data.xml",
+          "path": "uk/data/raw/chains/ukpga/1978/30/enacted/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1978/30/1991-02-01/data.xml",
+          "path": "uk/data/raw/chains/ukpga/1978/30/1991-02-01/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1978/30/2005-04-01/data.xml",
+          "path": "uk/data/raw/chains/ukpga/1978/30/2005-04-01/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1978/30/2018-06-07/data.xml",
+          "path": "uk/data/raw/chains/ukpga/1978/30/2018-06-07/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1978/30/2020-07-24/data.xml",
+          "path": "uk/data/raw/chains/ukpga/1978/30/2020-07-24/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1978/30/2024-01-01/data.xml",
+          "path": "uk/data/raw/chains/ukpga/1978/30/2024-01-01/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1978/30/2026-01-01/data.xml",
+          "path": "uk/data/raw/chains/ukpga/1978/30/2026-01-01/data.xml"
+        }
+      ]
+    },
+    {
+      "id": "ukpga/1998/29-chain",
+      "label": "Data Protection Act 1998 exemplar chain",
+      "why": "Dense modern amendment chain with 89 dated versions in current metadata.",
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1998/29/enacted/data.xml",
+          "path": "uk/data/raw/chains/ukpga/1998/29/enacted/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1998/29/1998-07-16/data.xml",
+          "path": "uk/data/raw/chains/ukpga/1998/29/1998-07-16/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1998/29/2004-04-01/data.xml",
+          "path": "uk/data/raw/chains/ukpga/1998/29/2004-04-01/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1998/29/2010-04-01/data.xml",
+          "path": "uk/data/raw/chains/ukpga/1998/29/2010-04-01/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1998/29/2015-04-06/data.xml",
+          "path": "uk/data/raw/chains/ukpga/1998/29/2015-04-06/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1998/29/2018-12-17/data.xml",
+          "path": "uk/data/raw/chains/ukpga/1998/29/2018-12-17/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1998/29/2019-12-02/data.xml",
+          "path": "uk/data/raw/chains/ukpga/1998/29/2019-12-02/data.xml"
+        }
+      ]
+    },
+    {
+      "id": "ukpga/2018/16-chain",
+      "label": "European Union (Withdrawal) Act 2018 exemplar chain",
+      "why": "Brexit-era stress case with shorter but still visible chain.",
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2018/16/enacted/data.xml",
+          "path": "uk/data/raw/chains/ukpga/2018/16/enacted/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2018/16/2018-06-26/data.xml",
+          "path": "uk/data/raw/chains/ukpga/2018/16/2018-06-26/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2018/16/2019-03-01/data.xml",
+          "path": "uk/data/raw/chains/ukpga/2018/16/2019-03-01/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2018/16/2020-12-31/data.xml",
+          "path": "uk/data/raw/chains/ukpga/2018/16/2020-12-31/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2018/16/2023-06-29/data.xml",
+          "path": "uk/data/raw/chains/ukpga/2018/16/2023-06-29/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2018/16/2025-08-20/data.xml",
+          "path": "uk/data/raw/chains/ukpga/2018/16/2025-08-20/data.xml"
+        }
+      ]
+    }
+  ]
+}

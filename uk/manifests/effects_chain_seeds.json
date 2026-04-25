@@ -1,0 +1,42 @@
+{
+  "generated_at": "2026-03-18",
+  "notes": [
+    "Seed fetches for UK effects-chain investigation.",
+    "These target the affected-statute side of the amendment chain."
+  ],
+  "sources": [
+    {
+      "id": "effects/ukpga/1978/30",
+      "label": "Interpretation Act 1978 effects feed",
+      "why": "Seed the affecting-act side for a long-lived statute with many visible revised versions.",
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/changes/affected/ukpga/1978/30/data.feed",
+          "path": "uk/data/raw/effects/affected/ukpga/1978/30/data.feed"
+        }
+      ]
+    },
+    {
+      "id": "effects/ukpga/1998/29",
+      "label": "Data Protection Act 1998 effects feed",
+      "why": "Seed the affecting-act side for a dense modern amendment chain.",
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/changes/affected/ukpga/1998/29/data.feed",
+          "path": "uk/data/raw/effects/affected/ukpga/1998/29/data.feed"
+        }
+      ]
+    },
+    {
+      "id": "effects/ukpga/2018/16",
+      "label": "European Union (Withdrawal) Act 2018 effects feed",
+      "why": "Seed the affecting-act side for a Brexit-era stress case.",
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/changes/affected/ukpga/2018/16/data.feed",
+          "path": "uk/data/raw/effects/affected/ukpga/2018/16/data.feed"
+        }
+      ]
+    }
+  ]
+}

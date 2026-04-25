@@ -1,0 +1,1748 @@
+openapi: "3.0.0"
+info:
+  version: 1.0.0
+  title: Legislation Search API
+  description: Search API for items of legislation held within Legislation API. 
+  license:
+    name: OGL
+servers:
+  - url: https://www.legislation.gov.uk/
+    description: English language legislation domain
+  - url: https://www.legislation.gov.uk/en/
+    description: Explicit English language legislation domain
+  - url: https://www.legislation.gov.uk/cy/
+    description: Welsh language legislation domain
+paths:
+  /title/{title}:
+      get:
+        summary: "Search by title"
+        description: "The URI defines  a search request where custom values for title can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-title-title"
+        parameters:
+          - $ref: "#/components/parameters/SearchTitle"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /title/{title}/{format}:
+      get:
+        summary: "Search by title returned in a defined representation"
+        description: "The URI defines  a search request where custom values for title can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-title-title-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchTitle"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}:
+      get:
+        summary: "Search by type"
+        description: "The URI defines  a search request where custom values for type can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-type"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{extent}:
+      get:
+        summary: "Search by type and extent"
+        description: "The URI defines  a search request where custom values for type and extent can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-type-extent"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchExtent"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{extent}/{format}:
+      get:
+        summary: "Search by type and extent returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type and extent can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-extent-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchExtent"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}:
+      get:
+        summary: "Search by type and year"
+        description: "The URI defines  a search request where custom values for type and year can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-type-year"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/{numberRange}:
+      get:
+        summary: "Search by type, year and numberRange"
+        description: "The URI defines  a search request where custom values for type, year and numberRange can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-type-year-numberRange"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumberRange"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/{numberRange}/{version}:
+      get:
+        summary: "Search by type, year, numberRange and version"
+        description: "The URI defines  a search request where custom values for type, year, numberRange and version can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-type-year-numberRange-version"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumberRange"
+          - $ref: "#/components/parameters/SearchVersion"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/{numberRange}/{format}:
+      get:
+        summary: "Search by type, year and numberRange returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type, year and numberRange can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-year-numberRange-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumberRange"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/{numberRange}/{extent}:
+      get:
+        summary: "Search by type, year, numberRange and extent"
+        description: "The URI defines  a search request where custom values for type, year, numberRange and extent can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-type-year-numberRange-extent"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumberRange"
+          - $ref: "#/components/parameters/SearchExtent"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/{number}/impacts/{format}:
+      get:
+        summary: "Search by type, year and number returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type, year and number can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-year-number-impacts-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumber"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/{numberRange}/{version}/{format}:
+      get:
+        summary: "Search by type, year, numberRange and version returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type, year, numberRange and version can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-year-numberRange-version-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumberRange"
+          - $ref: "#/components/parameters/SearchVersion"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/{numberRange}/{extent}/{format}:
+      get:
+        summary: "Search by type, year, numberRange and extent returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type, year, numberRange and extent can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-year-numberRange-extent-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumberRange"
+          - $ref: "#/components/parameters/SearchExtent"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/{number}/impacts/{impactyear}/{format}:
+      get:
+        summary: "Search by type, year, number and impactyear returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type, year, number and impactyear can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-year-number-impacts-impactyear-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumber"
+          - $ref: "#/components/parameters/SearchImpactyear"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/{extent}:
+      get:
+        summary: "Search by type, year and extent"
+        description: "The URI defines  a search request where custom values for type, year and extent can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-type-year-extent"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchExtent"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/{extent}/{format}:
+      get:
+        summary: "Search by type, year and extent returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type, year and extent can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-year-extent-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchExtent"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/{format}:
+      get:
+        summary: "Search by type and year returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type and year can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-year-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/impacts:
+      get:
+        summary: "Search by type and year"
+        description: "The URI defines  a search request where custom values for type and year can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-type-year-impacts"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/impacts/{impactyear}:
+      get:
+        summary: "Search by type, year and impactyear"
+        description: "The URI defines  a search request where custom values for type, year and impactyear can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-type-year-impacts-impactyear"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchImpactyear"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/impacts/{format}:
+      get:
+        summary: "Search by type and year returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type and year can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-year-impacts-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/impacts/{impactyear}/{format}:
+      get:
+        summary: "Search by type, year and impactyear returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type, year and impactyear can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-year-impacts-impactyear-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchImpactyear"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/{subject}:
+      get:
+        summary: "Search by type, year and subject"
+        description: "The URI defines  a search request where custom values for type, year and subject can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-type-year-subject"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchSubject"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/{subject}/{format}:
+      get:
+        summary: "Search by type, year and subject returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type, year and subject can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-year-subject-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchSubject"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/{version}:
+      get:
+        summary: "Search by type, year and version"
+        description: "The URI defines  a search request where custom values for type, year and version can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-type-year-version"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchVersion"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{year}/{version}/{format}:
+      get:
+        summary: "Search by type, year and version returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type, year and version can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-year-version-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchVersion"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{format}:
+      get:
+        summary: "Search by type returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/impacts:
+      get:
+        summary: "Search by type"
+        description: "The URI defines  a search request where custom values for type can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-type-impacts"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/impacts/{format}:
+      get:
+        summary: "Search by type returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-impacts-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/impacts/{impactyear}:
+      get:
+        summary: "Search by type and impactyear"
+        description: "The URI defines  a search request where custom values for type and impactyear can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-type-impacts-impactyear"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchImpactyear"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/impacts/{impactyear}/{format}:
+      get:
+        summary: "Search by type and impactyear returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type and impactyear can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-impacts-impactyear-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchImpactyear"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{subject}:
+      get:
+        summary: "Search by type and subject"
+        description: "The URI defines  a search request where custom values for type and subject can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-type-subject"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchSubject"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{subject}/{format}:
+      get:
+        summary: "Search by type and subject returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type and subject can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-subject-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchSubject"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{version}:
+      get:
+        summary: "Search by type and version"
+        description: "The URI defines  a search request where custom values for type and version can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-type-version"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchVersion"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{type}/{version}/{format}:
+      get:
+        summary: "Search by type and version returned in a defined representation"
+        description: "The URI defines  a search request where custom values for type and version can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-type-version-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchType"
+          - $ref: "#/components/parameters/SearchVersion"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{IAtype}:
+      get:
+        summary: "Search by IAtype"
+        description: "The URI defines  a search request where custom values for IAtype can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-IAtype"
+        parameters:
+          - $ref: "#/components/parameters/SearchIAtype"
+          - $ref: "#/components/parameters/SearchStageQuery"
+          - $ref: "#/components/parameters/SearchDepartmentQuery"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{IAtype}/{year}:
+      get:
+        summary: "Search by IAtype and year"
+        description: "The URI defines  a search request where custom values for IAtype and year can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-IAtype-year"
+        parameters:
+          - $ref: "#/components/parameters/SearchIAtype"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchStageQuery"
+          - $ref: "#/components/parameters/SearchDepartmentQuery"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{IAtype}/{year}/{format}:
+      get:
+        summary: "Search by IAtype and year returned in a defined representation"
+        description: "The URI defines  a search request where custom values for IAtype and year can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-IAtype-year-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchIAtype"
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchStageQuery"
+          - $ref: "#/components/parameters/SearchDepartmentQuery"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{IAtype}/{format}:
+      get:
+        summary: "Search by IAtype returned in a defined representation"
+        description: "The URI defines  a search request where custom values for IAtype can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-IAtype-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchIAtype"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchStageQuery"
+          - $ref: "#/components/parameters/SearchDepartmentQuery"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{extent}:
+      get:
+        summary: "Search by extent"
+        description: "The URI defines  a search request where custom values for extent can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-extent"
+        parameters:
+          - $ref: "#/components/parameters/SearchExtent"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{extent}/{format}:
+      get:
+        summary: "Search by extent returned in a defined representation"
+        description: "The URI defines  a search request where custom values for extent can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-extent-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchExtent"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /search:
+      get:
+        summary: "Search page forms"
+        description: "The URI defines  page forms"
+        operationId: "search-search"
+        parameters:
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /search/draft-legislation:
+      get:
+        summary: "Search page forms"
+        description: "The URI defines  page forms"
+        operationId: "search-search-draft-legislation"
+        parameters:
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /search/extent:
+      get:
+        summary: "Search page forms"
+        description: "The URI defines  page forms"
+        operationId: "search-search-extent"
+        parameters:
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /search/{format}:
+      get:
+        summary: "Search page forms"
+        description: "The URI defines  page forms"
+        operationId: "search-search-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /search/impacts:
+      get:
+        summary: "Search page forms"
+        description: "The URI defines  page forms"
+        operationId: "search-search-impacts"
+        parameters:
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /search/point-in-time:
+      get:
+        summary: "Search page forms"
+        description: "The URI defines  page forms"
+        operationId: "search-search-point-in-time"
+        parameters:
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{subject}:
+      get:
+        summary: "Search by subject"
+        description: "The URI defines  a search request where custom values for subject can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-subject"
+        parameters:
+          - $ref: "#/components/parameters/SearchSubject"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{subject}/{format}:
+      get:
+        summary: "Search by subject returned in a defined representation"
+        description: "The URI defines  a search request where custom values for subject can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-subject-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchSubject"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{year}:
+      get:
+        summary: "Search by year"
+        description: "The URI defines  a search request where custom values for year can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-year"
+        parameters:
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{year}/{number}:
+      get:
+        summary: "Search by year and number"
+        description: "The URI defines  a search request where custom values for year and number can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-year-number"
+        parameters:
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumber"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{year}/{number}/{extent}:
+      get:
+        summary: "Search by year, number and extent"
+        description: "The URI defines  a search request where custom values for year, number and extent can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-year-number-extent"
+        parameters:
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumber"
+          - $ref: "#/components/parameters/SearchExtent"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{year}/{number}/{extent}/{format}:
+      get:
+        summary: "Search by year, number and extent returned in a defined representation"
+        description: "The URI defines  a search request where custom values for year, number and extent can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-year-number-extent-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumber"
+          - $ref: "#/components/parameters/SearchExtent"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{year}/{number}/{format}:
+      get:
+        summary: "Search by year and number returned in a defined representation"
+        description: "The URI defines  a search request where custom values for year and number can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-year-number-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumber"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{year}/{number}/{version}:
+      get:
+        summary: "Search by year, number and version"
+        description: "The URI defines  a search request where custom values for year, number and version can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-year-number-version"
+        parameters:
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumber"
+          - $ref: "#/components/parameters/SearchVersion"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{year}/{number}/{version}/{format}:
+      get:
+        summary: "Search by year, number and version returned in a defined representation"
+        description: "The URI defines  a search request where custom values for year, number and version can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-year-number-version-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchNumber"
+          - $ref: "#/components/parameters/SearchVersion"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{year}/{extent}:
+      get:
+        summary: "Search by year and extent"
+        description: "The URI defines  a search request where custom values for year and extent can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-year-extent"
+        parameters:
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchExtent"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{year}/{extent}/{format}:
+      get:
+        summary: "Search by year and extent returned in a defined representation"
+        description: "The URI defines  a search request where custom values for year and extent can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-year-extent-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchExtent"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{year}/{format}:
+      get:
+        summary: "Search by year returned in a defined representation"
+        description: "The URI defines  a search request where custom values for year can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-year-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{year}/{subject}:
+      get:
+        summary: "Search by year and subject"
+        description: "The URI defines  a search request where custom values for year and subject can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-year-subject"
+        parameters:
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchSubject"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{year}/{subject}/{format}:
+      get:
+        summary: "Search by year and subject returned in a defined representation"
+        description: "The URI defines  a search request where custom values for year and subject can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-year-subject-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchSubject"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{year}/{version}:
+      get:
+        summary: "Search by year and version"
+        description: "The URI defines  a search request where custom values for year and version can be applied with the content returned in a representation defined content negotiation"
+        operationId: "search-year-version"
+        parameters:
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchVersion"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+  /{year}/{version}/{format}:
+      get:
+        summary: "Search by year and version returned in a defined representation"
+        description: "The URI defines  a search request where custom values for year and version can be applied with the content returned in a representation defined by the format parameter"
+        operationId: "search-year-version-format"
+        parameters:
+          - $ref: "#/components/parameters/SearchYear"
+          - $ref: "#/components/parameters/SearchVersion"
+          - $ref: "#/components/parameters/SearchFormat"
+          - $ref: "#/components/parameters/SearchNumberQuery"
+          - $ref: "#/components/parameters/SearchResultsCountQuery"
+          - $ref: "#/components/parameters/SearchPageQuery"
+          - $ref: "#/components/parameters/SearchTitleQuery"
+          - $ref: "#/components/parameters/SearchTextQuery"
+          - $ref: "#/components/parameters/SearchLanguageQuery"
+          - $ref: "#/components/parameters/SearchSortQuery"
+          - $ref: "#/components/parameters/SearchConfersPowerQuery"
+          - $ref: "#/components/parameters/SearchThemeQuery"
+        responses:
+          "200":
+            $ref: '#/components/responses/SearchSuccess'
+          "301":
+            $ref: '#/components/responses/SearchRedirect'
+          "404":
+            $ref: '#/components/responses/SearchNotFound'
+components:
+  parameters:
+    SearchTitle:
+      name: "title"
+      in: "path"
+      description: "The data format request"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/SearchTitle'
+    SearchFormat:
+      name: "format"
+      in: "path"
+      description: "The data format request"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/SearchFormat'
+    SearchType:
+      name: "type"
+      in: "path"
+      description: "The Legislation Type(s)"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/SearchType'
+    SearchExtent:
+      name: "extent"
+      in: "path"
+      description: "The data format request"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/SearchExtent'
+    SearchYear:
+      name: "year"
+      in: "path"
+      description: "The Legislation Year or Year Range"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/SearchYear'
+    SearchNumberRange:
+      name: "numberRange"
+      in: "path"
+      description: "The Legislation Number Range - a range can only be used to differentiate a search uri from a legislation uri. When a specific number uri is required the used of the number uri parameter is required"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/SearchNumberRange'
+    SearchVersion:
+      name: "version"
+      in: "path"
+      description: "The data format request"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/SearchVersion'
+    SearchNumber:
+      name: "number"
+      in: "path"
+      description: "The Legislation Number or Number Range"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/SearchNumber'
+    SearchImpactyear:
+      name: "impactyear"
+      in: "path"
+      description: "The data format request"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/SearchImpactyear'
+    SearchSubject:
+      name: "subject"
+      in: "path"
+      description: "The data format request"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/SearchSubject'
+    SearchIAtype:
+      name: "IAtype"
+      in: "path"
+      description: "The Legislation Type(s)"
+      required: true
+      style: "simple"
+      schema:
+            $ref: '#/components/schemas/SearchIAtype'
+    SearchStageQuery:
+      name: stage
+      in: query
+      description: Search query string for an Impact Assessment stage
+      schema:
+        type: string
+    SearchDepartmentQuery:
+      name: department
+      in: query
+      description: Search query string for an Impact Assessment Department
+      schema:
+        type: string
+    SearchNumberQuery:
+      name: number
+      in: query
+      description:  Search query string for legislation number.
+      schema:
+        type: string
+    SearchResultsCountQuery:
+      name: results-count
+      in: query
+      description: The number of search results per page
+      schema:
+        type: integer
+    SearchPageQuery:
+      name: page
+      in: query
+      description: Search page number
+      schema:
+        type: integer
+    SearchTitleQuery:
+      name: title
+      in: query
+      description: Search query string for a Legislation titles
+      schema:
+        type: string
+    SearchTextQuery:
+      name: text
+      in: query
+      description:  Search query string  Legislation textual content
+      schema:
+        type: string
+    SearchLanguageQuery:
+      name: lang
+      in: query
+      description: target specific legislation language
+      schema:
+        type: string
+    SearchSortQuery:
+      name: sort
+      in: query
+      description: Sort preference for legislation
+      schema:
+        type: string
+    SearchConfersPowerQuery:
+      name: confers-power
+      in: query
+      description: target legislation with confers powers
+      schema:
+        type: boolean
+    SearchThemeQuery:
+      name: theme
+      in: query
+      description: target legislation with confers powers
+      deprecated: true
+      schema:
+        type: string
+  responses:
+    SearchSuccess:
+      description: The requested search has been successful
+      content:
+        application/atom+xml:
+          schema:
+            type: object
+        application/xhtml+xml:
+          schema:
+            type: object
+    SearchRedirect:
+      description: Redirect to Restful URI from uri parameters
+    SearchNotFound:
+      description: The requested search criteria is not available  
+
+  schemas:
+    # Schema for error response body
+    HTMLSuccess:
+      type: object
+    FeedSuccess:
+      type: object 
+    SearchTitle:
+        type: string
+        description: limited character string
+        pattern: '^([^/]+)$'
+    SearchFormat:
+        type: string
+        description: the string 'data.' postfixed with either feed (for atom feed) or htm (for html)
+        pattern: '^(data.(feed|htm))?$'
+    SearchType:
+        type: string
+        description: Allows for individual types or groups of legislation such as primary, secondary, eu-origin and draft. Multiple types are defined by concatenating the types with the plus (+) character. All types of legislation is defined by either all or the wildcard character *
+        pattern: '^(\*|all|primary|secondary|eu-origin|draft|legislation|eur|eudn|eudr|ukpga|ukla|ukppa|gbppa|gbla|apgb|aep|aosp|asp|aip|apni|mnia|nia|ukcm|mwa|uksi|ukmd|ssi|wsi|nisro|nisr|ukci|nisi|ukmo|uksro|ukdsi|nidsr|sdsi|nidsi|wdsi)(\+(?:primary|secondary|eu-origin|eur|eudn|eudr|ukpga|ukla|ukppa|gbppa|gbla|apgb|aep|aosp|asp|aip|apni|mnia|nia|ukcm|mwa|uksi|ukmd|ssi|wsi|nisro|nisr|ukci|nisi|ukmo|uksro|ukdsi|nidsr|sdsi|nidsi|wdsi))?$'
+        minimum: 1
+    SearchExtent:
+        type: string
+        description: optional '=' followed by any combination of scotland, england, wales, ni
+        pattern: '^((\=)?(?:scotland|england|wales|ni)(\+(?:scotland|england|wales|ni))*)$'
+    SearchYear:
+        type: string
+        description: Either a four digit number or two four digit numbers concatenated with a hyphen to define a year range
+        pattern: '^((\*|[0-9]{4}(-(\*|[0-9]{4}))?))$'
+    SearchNumberRange:
+        type: string
+        description: Any number of digits or two sets of digits concatenated with a hyphen to define a number range. The first digit can be preceded by a Series letter w (Wales), s (Scotland), ni (Northern Ireland), l (Legal), c (Commencing)
+        pattern: '^(w|s|ni|l|c)?(\*|[0-9]+)-(\*|[0-9]+)$'
+    SearchVersion:
+        type: string
+        description: date in YYYY-MM-DD format
+        pattern: '^([0-9]{4}-[0-9]{2}-[0-9]{2})$'
+    SearchNumber:
+        type: string
+        description: Any number of digits or two sets of digits concatenated with a hyphen to define a number range. The first digit can be preceded by a Series letter w (Wales), s (Scotland), ni (Northern Ireland), l (Legal), c (Commencing)
+        pattern: '^(w|s|ni|l|c)?(\*|[0-9]+)(-(\*|[0-9]+))?$'
+    SearchImpactyear:
+        type: string
+        description: Either a four digit number or two four digit numbers concatenated with a hyphen to define a year range
+        pattern: '^([0-9]{4})$'
+    SearchSubject:
+        type: string
+        description: limited character string
+        pattern: '^([^0-9\/\*]+)$'
+    SearchIAtype:
+        type: string
+        description: Allows searches for Impact Assessment types - currently we only hold UKIA as distinct types
+        pattern: '^(impacts|ukia)?$'
+        minimum: 1
