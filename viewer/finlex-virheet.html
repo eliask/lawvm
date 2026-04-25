@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finlex candidate findings</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/diff_match_patch/20121119/diff_match_patch.js"></script>
+<link rel="stylesheet" href="finlex-virheet.css">
+</head>
+<body>
+
+<div id="loading">
+  <h2>Finlex candidate findings</h2>
+  <div class="progress-track"><div id="progress-bar"></div></div>
+  <div id="load-status">Ladataan todistusaineistoa…</div>
+</div>
+
+<div id="topbar" style="display:none">
+  <h1>Finlex candidate findings</h1>
+  <div style="display:flex;gap:2px;margin-left:8px">
+    <button class="tab-btn active" id="tab-dashboard" title="Yhteenveto">Yhteenveto</button>
+    <button class="tab-btn" id="tab-errors" title="Candidate consolidation findings">Findings</button>
+    <button class="tab-btn" id="tab-absent" title="Muutetut lait joille ei ole konsolidoitua ajantasatekstiä">Konsolidoimattomat</button>
+    <button class="tab-btn" id="tab-source-absent" title="Voimassaolevat säädökset ilman lähde-XML:ää" style="border-color:var(--amber)">Lähde puuttuu</button>
+  </div>
+  <div class="topbar-stats" id="topbar-stats"></div>
+</div>
+
+<div id="app">
+  <!-- Dashboard tab -->
+  <div id="panel-dashboard" style="flex:1;overflow-y:auto;padding:0"></div>
+
+  <!-- Errors tab -->
+  <div id="panel-errors" style="display:none">
+  <div id="sidebar">
+    <div id="filter-bar">
+      <input id="search-input" type="search" placeholder="Hae säädöksellä tai nimellä…">
+      <div class="filter-row" style="display:flex;gap:4px;flex-wrap:wrap">
+        <button class="toggle-btn active" data-family="all" id="btn-fam-all">Kaikki</button>
+        <button class="toggle-btn" data-family="oracle_section_stale" style="font-size:10px">Pykälävirheet</button>
+        <button class="toggle-btn" data-family="oracle_cutoff_version_drift" style="font-size:10px">Versioviive</button>
+        <button class="toggle-btn" data-family="structural" style="font-size:10px">Rakennevirheet</button>
+        <button class="toggle-btn" data-family="corrigendum_applied" style="font-size:10px">Oikaisut</button>
+      </div>
+      <div id="statute-count"></div>
+    </div>
+    <div id="statute-list"></div>
+  </div>
+  <div id="detail">
+    <div id="detail-empty">Valitse säädös vasemmalta</div>
+  </div>
+  </div>
+
+  <!-- Absent tab -->
+  <div id="panel-absent" style="display:none;flex:1;overflow:hidden;flex-direction:column">
+    <div style="padding:10px 14px;border-bottom:1px solid var(--border);background:var(--panel);display:flex;gap:8px;align-items:center;flex-shrink:0">
+      <input id="absent-search" type="search" placeholder="Hae…" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);padding:5px 9px;border-radius:4px;font-size:13px;width:220px;font-family:inherit">
+      <button class="toggle-btn active absent-filter-btn" data-level="modern" id="btn-absent-amended" title="1995+ muutetut lait (luotettavin)">1995+ muutetut</button>
+      <button class="toggle-btn absent-filter-btn" data-level="amended" id="btn-absent-all" title="Klikkaa toistuvasti: kaikki muutetut → kaikki voimassaolevat">+ vanhemmat / kaikki</button>
+      <span id="absent-count" style="font-size:11px;color:var(--dim);margin-left:auto"></span>
+    </div>
+    <div id="absent-list" style="flex:1;overflow-y:auto"></div>
+  </div>
+
+  <!-- Source-absent tab -->
+  <div id="panel-source-absent" style="display:none;flex:1;overflow:hidden;flex-direction:column">
+    <div style="padding:8px 14px;border-bottom:1px solid var(--border);background:var(--panel);display:flex;gap:8px;align-items:center;flex-shrink:0;flex-wrap:wrap">
+      <input id="source-absent-search" type="search" placeholder="Hae…" style="background:var(--bg);border:1px solid var(--border);color:var(--bright);padding:5px 9px;border-radius:4px;font-size:13px;width:220px;font-family:inherit">
+      <button class="toggle-btn active source-absent-filter-btn" data-sa-level="unclear" id="btn-sa-unclear" title="Ei repealedBy eikä contentAbsent — todennäköisesti voimassa">Todennäköisesti voimassa</button>
+      <button class="toggle-btn source-absent-filter-btn" data-sa-level="all_active" id="btn-sa-all" title="Kaikki joissa ei repealedBy">Kaikki ei-kumotut</button>
+      <span id="source-absent-count" style="font-size:11px;color:var(--dim);margin-left:auto"></span>
+    </div>
+    <div id="source-absent-list" style="flex:1;overflow-y:auto"></div>
+  </div>
+</div>
+
+<script type="module" src="finlex-virheet.js"></script>
+</body>
+</html>

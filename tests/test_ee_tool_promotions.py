@@ -1,0 +1,223 @@
+from __future__ import annotations
+
+import csv
+from argparse import Namespace
+from types import SimpleNamespace
+
+from lawvm.tools import (
+    bench_regression_guard,
+    cli,
+    ee_chain_quality,
+    ee_corpus,
+    ee_pair_status,
+)
+
+
+def test_cli_parser_accepts_promoted_ee_tools() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(["ee-chain-quality", "162951"])
+    assert args.command == "ee-chain-quality"
+    assert args.grupi_ids == ["162951"]
+
+    args = parser.parse_args(
+        ["ee-pair-status", "--base-id", "193936", "--oracle-id", "13336397", "--json"]
+    )
+    assert args.command == "ee-pair-status"
+    assert args.base_id == "193936"
+    assert args.oracle_id == "13336397"
+    assert args.json is True
+
+    args = parser.parse_args(["ee-corpus", "acquire", "--phase", "1", "--parts", "2"])
+    assert args.command == "ee-corpus"
+    assert args.ee_corpus_command == "acquire"
+    assert args.phase == 1
+    assert args.parts == "2"
+
+    args = parser.parse_args(["ee-corpus", "curate", "--laws-only"])
+    assert args.command == "ee-corpus"
+    assert args.ee_corpus_command == "curate"
+    assert args.laws_only is True
+
+    args = parser.parse_args(
+        ["bench-regression-guard", "--baseline", "old", "--current", "new"]
+    )
+    assert args.command == "bench-regression-guard"
+    assert args.baseline == "old"
+    assert args.current == "new"
+
+
+def test_ee_chain_quality_run_chain_prints_totals(capsys, monkeypatch) -> None:
+    monkeypatch.setattr(
+        ee_chain_quality,
+        "fetch_redactions_feed",
+        lambda grupi_id, archive: [
+            SimpleNamespace(aktViide="a1", effective="2020-01-01"),
+            SimpleNamespace(aktViide="a2", effective="2021-01-01"),
+        ],
+    )
+    monkeypatch.setattr(
+        ee_chain_quality,
+        "replay_ee_to_pit",
+        lambda *args, **kwargs: SimpleNamespace(
+            error="",
+            oracle=object(),
+            oracle_id="a2",
+            n_ops=5,
+            n_mismatch=1,
+            n_ops_missing=0,
+            n_con_missing=0,
+            divergences=[object()],
+        ),
+    )
+
+    totals = ee_chain_quality.run_chain("162951", "Courts Act", archive=object())
+
+    out = capsys.readouterr().out
+    assert "Courts Act  (grupiId=162951)" in out
+    assert "a1" in out
+    assert "TOTAL" in out
+    assert totals["pairs"] == 1
+    assert totals["tot"] == 1
+
+
+def test_ee_pair_status_main_prints_matched_and_open(capsys, monkeypatch) -> None:
+    monkeypatch.setattr(ee_pair_status, "open_rt_archive", lambda path: object())
+    monkeypatch.setattr(ee_pair_status, "fetch_rt_xml", lambda base_id, archive: b"<base/>")
+    monkeypatch.setattr(
+        ee_pair_status,
+        "plan_ee_oracle_pair",
+        lambda **kwargs: SimpleNamespace(plan=SimpleNamespace(source_basis=SimpleNamespace(value="pairwise_terviktekst_delta"))),
+    )
+    monkeypatch.setattr(
+        ee_pair_status,
+        "_score_one_pair",
+        lambda gid, base_id, oracle_id, title, archive: SimpleNamespace(
+            base_id=base_id,
+            oracle_id=oracle_id,
+            title=title,
+            as_of="2011-03-17",
+            status="OK",
+            comparison_class="commensurable_delta",
+            core_benchmark=True,
+            n_ops=217,
+            n_divs=7,
+            sec_match=0.99,
+            r_secs=852,
+            o_secs=852,
+            adjudicated_residual_count=7,
+            matched_current_residual_count=7,
+            adjudicated_bucket_counts="appendix_display_pathology=1,source_oracle_drift=6",
+            unknown_current_residual_count=0,
+            open_current_divergence_count=0,
+        ),
+    )
+
+    payload = ee_pair_status.build_pair_status_payload(
+        base_id="193936",
+        oracle_id="13336397",
+        title="Liiklusseadus",
+    )
+    ee_pair_status.main(
+        Namespace(base_id="193936", oracle_id="13336397", title="Liiklusseadus", json=False)
+    )
+
+    out = capsys.readouterr().out
+    assert "=== EE Pair Status ===" in out
+    assert "basis      : pairwise_terviktekst_delta" in out
+    assert "reporting  : EE_CORE_COMMENSURABLE (headline=yes)" in out
+    assert "drift      : 2 non-silent comparison rules" in out
+    assert "classes   : lexical_institutional_drift=2, manual_exception=0" in out
+    assert "rules     : politseiasutus_rename, politsei_plural_rename" in out
+    assert "matched current       : 7" in out
+    assert "open current          : 0" in out
+    assert payload["benchmark_reporting_stratum"] == "EE_CORE_COMMENSURABLE"
+    assert payload["benchmark_reporting_headline_eligible"] is True
+    assert payload["comparison_policy"]["non_silent_rule_count"] == 2
+    assert payload["comparison_policy"]["non_silent_rule_names"] == [
+        "politseiasutus_rename",
+        "politsei_plural_rename",
+    ]
+
+def test_ee_corpus_summarize_pairs_counts_laws_decrees_and_buckets() -> None:
+    schema_counts, n_laws, n_decrees, amend_buckets = ee_corpus.summarize_pairs(
+        [
+            ("g1", "b1", "o1", 0, "tyviseadus"),
+            ("g2", "b2", "o2", 2, "maarus"),
+            ("g3", "b3", "o3", 12, "juurakt"),
+        ]
+    )
+
+    assert schema_counts == {"tyviseadus": 1, "maarus": 1, "juurakt": 1}
+    assert n_laws == 1
+    assert n_decrees == 2
+    assert amend_buckets == {"0": 1, "2-3": 1, "11-50": 1}
+
+
+def test_ee_corpus_run_curate_writes_csv_and_notes(tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(ee_corpus, "build_index", lambda archive: {"g1": SimpleNamespace()})
+    monkeypatch.setattr(
+        ee_corpus,
+        "select_pairs",
+        lambda groups, include_decrees: ([("g1", "b1", "o1", 2, "tyviseadus")], {"x": 1}),
+    )
+    notes_path = tmp_path / "notes.md"
+    csv_path = tmp_path / "bench.csv"
+    db_path = tmp_path / "archive.db"
+    db_path.write_bytes(b"stub")
+
+    class _Archive:
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(ee_corpus, "open_rt_archive", lambda path: _Archive())
+
+    ee_corpus.run_curate(
+        Namespace(
+            db=str(db_path),
+            laws_only=False,
+            output_csv=str(csv_path),
+            output_notes=str(notes_path),
+        )
+    )
+
+    out = capsys.readouterr().out
+    assert "Selected: 1 pairs" in out
+    assert csv_path.exists()
+    assert notes_path.exists()
+    rows = list(csv.DictReader(csv_path.open()))
+    assert rows[0]["grupi_id"] == "g1"
+    assert rows[0]["schema"] == "tyviseadus"
+
+
+def test_bench_regression_guard_run_guard_pass_and_fail(tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(bench_regression_guard, "BENCH_RUNS_DIR", tmp_path)
+
+    baseline = tmp_path / "20260329_old.csv"
+    current = tmp_path / "20260329_new.csv"
+    with baseline.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["statute_id", "similarity"])
+        writer.writeheader()
+        writer.writerow({"statute_id": "s1", "similarity": "0.90"})
+        writer.writerow({"statute_id": "s2", "similarity": "0.95"})
+    with current.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["statute_id", "similarity"])
+        writer.writeheader()
+        writer.writerow({"statute_id": "s1", "similarity": "0.91"})
+        writer.writerow({"statute_id": "s2", "similarity": "0.949"})
+
+    rc = bench_regression_guard.run_guard("old", "new", threshold=0.02, max_regressions=1)
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "RESULT: PASS" in out
+
+    with current.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["statute_id", "similarity"])
+        writer.writeheader()
+        writer.writerow({"statute_id": "s1", "similarity": "0.70"})
+        writer.writerow({"statute_id": "s2", "similarity": "0.60"})
+
+    rc = bench_regression_guard.run_guard("old", "new", threshold=0.02, max_regressions=0)
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "RESULT: FAIL" in out

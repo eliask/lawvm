@@ -1,0 +1,19 @@
+{
+  "sfs_id": "<IDENTIFIER>",
+  "title": "<OFFICIAL TITLE>",
+  "act_type": "<ACT TYPE>",
+  "issued_date": "",
+  "published_date": "",
+  "repealed": false,
+  "source_urls": {
+    "current_url": "",
+    "official_doc_url": "",
+    "official_pdf_url": "",
+    "register_url": ""
+  },
+  "source_confidence": "CURRENT_TEXT_ONLY",
+  "source_text_kind": "current_consolidated_html",
+  "notes": [
+    "example only"
+  ]
+}

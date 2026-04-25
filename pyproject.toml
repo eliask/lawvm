@@ -1,0 +1,182 @@
+[project]
+name = "lawvm"
+version = "0.1.0"
+description = "Executable legal amendment replay and proof-carrying statute history tooling."
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+dependencies = [
+  "PyYAML>=6.0",
+  "lxml>=5.1.0",
+  "aiohttp",
+  "python-Levenshtein",
+  "zstandard>=0.21",
+  "icontract>=2.7.3",
+  "ortools>=9.15.6755",
+  "farchive",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.0",
+  "hypothesis>=6.100",
+]
+
+[project.scripts]
+lawvm = "lawvm.tools.cli:main"
+lawvm-uk-bootstrap = "lawvm.uk_legislation.bootstrap:main"
+lawvm-eu-cellar = "lawvm.eu.cellar:main"
+lawvm-us-bootstrap = "lawvm.us_federal.bootstrap:main"
+lawvm-fi-amendments = "lawvm.finland.amendment_index:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+#[tool.uv]
+#exclude-newer = "7 days"
+
+[tool.uv.sources]
+farchive = { git = "https://github.com/eliask/farchive.git", rev = "5ec162e9d80a1ba96b0e6116198bc396b2950430" }
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# =============================================================================
+# Quality tooling
+# =============================================================================
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+# F = pyflakes (real bugs: undefined names, unused imports, f-string errors)
+# E = pycodestyle errors (only the serious ones)
+# W = pycodestyle warnings
+# B = flake8-bugbear (common bug patterns)
+# RUF = ruff-specific rules
+select = ["F", "E", "W", "B033", "RUF034"]
+ignore = [
+  "E501",  # line-too-long — AI-only development, line length is not meaningful
+  "E701",  # multiple-statements-on-one-line-colon — used deliberately for `if DEBUG: print(...)`
+  "E702",  # multiple-statements-on-one-line-semicolon — same pattern
+  "E741",  # ambiguous-variable-name — `l` is fine in legal context (luku/chapter)
+  "E402",  # module-import-not-at-top-of-file — deferred imports are intentional
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files can be looser
+"**/test_*.py" = ["F841"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+# Strict on core/ — these types are the contract
+# Lenient on finland/ — grafter is migration-in-progress
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "lawvm.core.*"
+disallow_untyped_defs = false
+check_untyped_defs = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = "lawvm.finland.grafter"
+check_untyped_defs = true
+
+[dependency-groups]
+dev = [
+    "crosshair-tool>=0.0.102",
+    "hypothesis>=6.151.9",
+    "lxml-stubs>=0.5",
+    "mutmut>=3.5.0",
+    "pytest>=9.0.2",
+    "pytest-xdist>=3.8.0",
+    "ruff>=0.15.9",
+    "ty>=0.0.28",
+    "z3-solver>=4.16.0.0",
+]
+
+# =============================================================================
+# Mutation testing (mutmut 3.x)
+# =============================================================================
+[tool.mutmut]
+paths_to_mutate = ["src/"]
+# Only mutate the three trusted kernels — exclude everything else
+do_not_mutate = [
+    "src/lawvm/core/__init__*",
+    "src/lawvm/core/canonical_intent*",
+    "src/lawvm/core/clause_ast*",
+    "src/lawvm/core/compile_facade*",
+    "src/lawvm/core/compile_result*",
+    "src/lawvm/core/continuation*",
+    "src/lawvm/core/coverage*",
+    "src/lawvm/core/effect_intent*",
+    "src/lawvm/core/effect_lowering*",
+    "src/lawvm/core/elaboration_context*",
+    "src/lawvm/core/graph*",
+    "src/lawvm/core/observation_registry*",
+    "src/lawvm/core/occupancy*",
+    "src/lawvm/core/parse_witness*",
+    "src/lawvm/core/payload_surface*",
+    "src/lawvm/core/phase_result*",
+    "src/lawvm/core/pipeline_capture*",
+    "src/lawvm/core/replay_lints*",
+    "src/lawvm/core/section_evidence_context*",
+    "src/lawvm/core/span_anchor*",
+    "src/lawvm/core/timeline_invariants*",
+    "src/lawvm/core/unit_registry*",
+    "src/lawvm/finland/*",
+    "src/lawvm/tools/*",
+    "src/lawvm/estonia/*",
+    "src/lawvm/eu/*",
+    "src/lawvm/uk_legislation/*",
+    "src/lawvm/us_federal/*",
+    "src/lawvm/norway/*",
+    "src/lawvm/sweden/*",
+    "src/lawvm/fetch_archive*",
+    "src/lawvm/corpus_store*",
+    "src/lawvm/__init__*",
+    "src/lawvm/citation*",
+    "src/lawvm/metadata*",
+]
+tests_dir = [
+    "tests/test_kernel_properties.py",
+    "tests/test_stateful_properties.py",
+    "tests/test_exhaustive_enumeration.py",
+    "tests/test_timeline_invariants.py",
+    "tests/test_tree_ops_properties.py",
+    "tests/test_materialization_invariants.py",
+    "tests/test_decomposition.py",
+    "tests/test_mutation_gaps.py",
+]
+also_copy = ["conftest.py", "data/"]
+# Disable xdist — mutmut handles parallelism itself.
+# Override addopts to prevent pyproject.toml's "-n 4 --tb=short" from conflicting.
+pytest_add_cli_args = ["-o", "addopts=", "-p", "no:xdist", "--tb=line"]
+
+[tool.pytest.ini_options]
+# -n 4: use 4 parallel workers via pytest-xdist.
+# Benchmark on 16-core WSL2 (1550 real tests + 100k corpus-gated skips):
+#   single-core: ~83s for real tests alone, ~129s full suite
+#   -n 4:        ~62s for real tests alone, ~175s full suite
+#   -n 8:        ~50s for real tests alone
+# The full-suite regression vs single-core is caused by test_pipeline_gold.py
+# and test_citation_routing.py distributing 100k skip evaluations across workers.
+# For targeted runs (uv run pytest tests/ -k "...") the speedup is ~1.5-2x.
+# Override with -n 0 (or -p no:xdist) to disable: uv run pytest -n 0 tests/
+addopts = "-n 4 --tb=short"
+markers = [
+    "slow: marks tests as slow (full gold corpus, 404 captures). Run with: pytest -m slow",
+    "network: marks tests that require live HTTP access. Run with: pytest -m network",
+]
+filterwarnings = [
+    # ortools 9.15 cp_model.py uses ~False and ~True as integer sentinels (-1, -2).
+    # This is an upstream bug (not our code); suppress until ortools fixes it.
+    "ignore:Bitwise inversion.*bool.*deprecated:DeprecationWarning",
+]

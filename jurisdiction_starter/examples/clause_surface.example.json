@@ -1,0 +1,19 @@
+{
+  "kind": "<code>_clause_surface",
+  "source_id": "<AMENDING ACT ID>",
+  "base_id": "<BASE ACT ID>",
+  "clauses": [
+    {
+      "clause_id": "c1",
+      "instruction_family": "replace_section",
+      "raw_text": "Section 3 shall have the following wording",
+      "target_hints": [
+        {
+          "kind": "section",
+          "label": "3"
+        }
+      ],
+      "confidence": "direct"
+    }
+  ]
+}

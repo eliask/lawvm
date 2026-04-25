@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+import sys
+from pathlib import Path
+from lawvm.uk_legislation.uk_amendment_replay import fetch_effects_for_statute
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python3 scripts/uk_fetch_effects.py <statute_id>")
+        sys.exit(1)
+
+    statute_id = sys.argv[1]
+    repo_root = Path('/home/elias/c/civos/book/LawVM')
+    dest_dir = repo_root / f"uk/data/raw/effects/affected/{statute_id}"
+
+    print(f"--- Fetching Effects Feed: {statute_id} ---")
+    pages = fetch_effects_for_statute(statute_id, dest_dir)
+    print(f"Successfully fetched {pages} pages to {dest_dir}")
+
+if __name__ == "__main__":
+    main()

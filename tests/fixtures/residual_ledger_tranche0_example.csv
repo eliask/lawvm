@@ -1,0 +1,2 @@
+statute_id,path,observed_symptom,suspected_first_bad_phase,confirmed_first_bad_phase,interaction_family,secondary_phase,source_pathology_present,oracle_or_editorial_witness_drift,source_lane_used,fix_owner,regression_ids,status,notes
+1967/550,chapter:2/section:8,replay keeps the repealed subsection-1 family visible in chapter:2/section:8,replay_fold,,sparse subsection / repeal visibility,materialization,no,yes,preamble,finland,1967/550 section 8,open,public fixture replacing archived internal ledger example

@@ -1,0 +1,116 @@
+{
+  "generated_at": "2026-03-18",
+  "notes": [
+    "This is an intentionally small first pilot set.",
+    "Current versions are fetched via the canonical non-versioned URL; enacted versions are fetched explicitly."
+  ],
+  "sources": [
+    {
+      "id": "ukpga/1978/30",
+      "label": "Interpretation Act 1978",
+      "why": "Foundational interpretation statute and good baseline corpus item.",
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1978/30/enacted/data.xml",
+          "path": "uk/data/raw/ukpga/1978/30/enacted/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1978/30/enacted/data.akn",
+          "path": "uk/data/raw/ukpga/1978/30/enacted/data.akn"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1978/30/data.xml",
+          "path": "uk/data/raw/ukpga/1978/30/current/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1978/30/data.akn",
+          "path": "uk/data/raw/ukpga/1978/30/current/data.akn"
+        }
+      ]
+    },
+    {
+      "id": "ukpga/1998/29",
+      "label": "Data Protection Act 1998",
+      "why": "Dense modern amendment chain with broad practical relevance.",
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1998/29/enacted/data.xml",
+          "path": "uk/data/raw/ukpga/1998/29/enacted/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1998/29/enacted/data.akn",
+          "path": "uk/data/raw/ukpga/1998/29/enacted/data.akn"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1998/29/data.xml",
+          "path": "uk/data/raw/ukpga/1998/29/current/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1998/29/data.akn",
+          "path": "uk/data/raw/ukpga/1998/29/current/data.akn"
+        }
+      ]
+    },
+    {
+      "id": "ukpga/2018/16",
+      "label": "European Union (Withdrawal) Act 2018",
+      "why": "Useful stress case for revised-version handling and effects metadata.",
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2018/16/enacted/data.xml",
+          "path": "uk/data/raw/ukpga/2018/16/enacted/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2018/16/enacted/data.akn",
+          "path": "uk/data/raw/ukpga/2018/16/enacted/data.akn"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2018/16/data.xml",
+          "path": "uk/data/raw/ukpga/2018/16/current/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2018/16/data.akn",
+          "path": "uk/data/raw/ukpga/2018/16/current/data.akn"
+        }
+      ]
+    },
+    {
+      "id": "ukpga/2025/18",
+      "label": "Data (Use and Access) Act 2025",
+      "why": "Recent act with modern site metadata and a useful enacted/current contrast.",
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2025/18/enacted/data.xml",
+          "path": "uk/data/raw/ukpga/2025/18/enacted/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2025/18/enacted/data.akn",
+          "path": "uk/data/raw/ukpga/2025/18/enacted/data.akn"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2025/18/data.xml",
+          "path": "uk/data/raw/ukpga/2025/18/current/data.xml"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2025/18/data.akn",
+          "path": "uk/data/raw/ukpga/2025/18/current/data.akn"
+        }
+      ]
+    },
+    {
+      "id": "feed/ukpga/2025",
+      "label": "UKPGA 2025 discovery feed",
+      "why": "Small discovery artifact that shows current version/date links exposed by the feed layer.",
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2025/data.feed",
+          "path": "uk/data/raw/discovery/ukpga/2025/data.feed"
+        },
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2025/data.csv",
+          "path": "uk/data/raw/discovery/ukpga/2025/data.csv"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "generated_at": "2026-03-19",
+  "notes": [
+    "Official Cellar notice fetches by CELEX.",
+    "Use these instead of the blocked eur-lex web presentation URLs."
+  ],
+  "sources": [
+    {
+      "id": "32023L0977",
+      "celex": "32023L0977",
+      "label": "Directive (EU) 2023/977 Cellar notices",
+      "requests": [
+        {
+          "format": "xml",
+          "notice": "object",
+          "language": "eng",
+          "path": "eu/data/raw/cellar/celex/32023L0977/object_eng.xml"
+        },
+        {
+          "format": "xml",
+          "notice": "tree",
+          "language": "eng",
+          "path": "eu/data/raw/cellar/celex/32023L0977/tree_eng.xml"
+        }
+      ]
+    },
+    {
+      "id": "32016R0679",
+      "celex": "32016R0679",
+      "label": "Regulation (EU) 2016/679 Cellar notices",
+      "requests": [
+        {
+          "format": "xml",
+          "notice": "object",
+          "language": "eng",
+          "path": "eu/data/raw/cellar/celex/32016R0679/object_eng.xml"
+        },
+        {
+          "format": "xml",
+          "notice": "tree",
+          "language": "eng",
+          "path": "eu/data/raw/cellar/celex/32016R0679/tree_eng.xml"
+        }
+      ]
+    },
+    {
+      "id": "32016L0680",
+      "celex": "32016L0680",
+      "label": "Directive (EU) 2016/680 Cellar notices",
+      "requests": [
+        {
+          "format": "xml",
+          "notice": "object",
+          "language": "eng",
+          "path": "eu/data/raw/cellar/celex/32016L0680/object_eng.xml"
+        },
+        {
+          "format": "xml",
+          "notice": "tree",
+          "language": "eng",
+          "path": "eu/data/raw/cellar/celex/32016L0680/tree_eng.xml"
+        }
+      ]
+    }
+  ]
+}

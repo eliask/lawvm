@@ -1,0 +1,95 @@
+from __future__ import annotations
+
+import io
+import tarfile
+from typing import Any, cast
+
+from lawvm.norway.index import (
+    build_no_amendment_index,
+    load_no_amendment_index,
+    save_no_amendment_index,
+)
+
+
+def _amendment_xml(date_in_force: str) -> bytes:
+    return f"""<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <dd class="dateInForce">{date_in_force}</dd>
+    <article class="document-change" data-document="lov/2025-01-01-1">
+      <article class="change" data-change-part="lov/2025-01-01-1/§1">
+        <article class="futureLegalArticle" data-name="§1">
+          <span class="futureLegalArticleHeader">
+            <span class="legalArticleValue">§ 1</span>.
+            <span class="legalArticleTitle">Nytt krav</span>
+          </span>
+          <article class="legalP">Oppdatert paragraftekst.</article>
+        </article>
+      </article>
+    </article>
+  </body>
+</html>
+""".encode("utf-8")
+
+
+def _write_archive(archive_path, members: list[tuple[str, bytes]]) -> None:
+    with tarfile.open(archive_path, "w:bz2") as tf:
+        for member_name, payload in members:
+            info = tarfile.TarInfo(member_name)
+            info.size = len(payload)
+            tf.addfile(info, io.BytesIO(payload))
+
+
+def test_build_no_amendment_index_captures_member_and_status(tmp_path) -> None:
+    _write_archive(
+        tmp_path / "lovtidend-avd1-2025.tar.bz2",
+        [
+            ("lti/2025/nl-20250202-005.xml", _amendment_xml("2025-02-10")),
+            ("lti/2025/nl-20250303-006.xml", _amendment_xml("Kongen bestemmer")),
+        ],
+    )
+
+    index = build_no_amendment_index(tmp_path)
+
+    assert len(index.entries) == 2
+    first = index.entries[0]
+    assert first.archive == "lovtidend-avd1-2025.tar.bz2"
+    assert first.member_name == "lti/2025/nl-20250202-005.xml"
+    assert first.effective_status == "dated"
+    assert first.effective_date == "2025-02-10"
+    assert first.base_ids == ("no/lov/2025-01-01-1",)
+
+
+def test_save_and_load_no_amendment_index_round_trips(tmp_path) -> None:
+    _write_archive(
+        tmp_path / "lovtidend-avd1-2025.tar.bz2",
+        [("lti/2025/nl-20250202-005.xml", _amendment_xml("2025-02-10"))],
+    )
+    index = build_no_amendment_index(tmp_path)
+    index_path = tmp_path / "no_index.json"
+
+    save_no_amendment_index(index, index_path)
+    loaded = load_no_amendment_index(index_path)
+
+    assert loaded.to_dict() == index.to_dict()
+
+
+def test_no_amendment_index_staleness_report_detects_archive_change(tmp_path) -> None:
+    archive_path = tmp_path / "lovtidend-avd1-2025.tar.bz2"
+    _write_archive(
+        archive_path,
+        [("lti/2025/nl-20250202-005.xml", _amendment_xml("2025-02-10"))],
+    )
+    index = build_no_amendment_index(tmp_path)
+
+    fresh = index.staleness_report(tmp_path)
+    assert fresh["index_stale"] is False
+
+    _write_archive(
+        archive_path,
+        [("lti/2025/nl-20250303-006.xml", _amendment_xml("2025-03-15"))],
+    )
+    stale = cast(dict[str, Any], index.staleness_report(tmp_path))
+
+    assert stale["index_stale"] is True
+    assert stale["stale_archives"][0]["archive"] == "lovtidend-avd1-2025.tar.bz2"

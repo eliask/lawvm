@@ -1,0 +1,21 @@
+{
+  "base_id": "<BASE ACT ID>",
+  "as_of": "<YYYY-MM-DD>",
+  "replay_status": "replayed",
+  "consistent": false,
+  "divergence_count": 2,
+  "partitions": {
+    "replay_defect": 1,
+    "compare_shape_only": 0,
+    "source_sparse": 1
+  },
+  "rows": [
+    {
+      "target_kind": "section",
+      "label": "3",
+      "classification": "replay_defect",
+      "replay_text": "...",
+      "oracle_text": "..."
+    }
+  ]
+}

@@ -1,0 +1,3545 @@
+{
+  "kind": "uk_affecting_acts_manifest",
+  "total_structural_effects": 106,
+  "affecting_acts": 43,
+  "sources": [
+    {
+      "label": "Legislation (Procedure, Publication and Repeals) (Wales) Act 2025",
+      "act_id": "asc/2025/3",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-af2afbe0fae33e3ff8abbe1a50d32248",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 23C(1A)",
+          "affecting_act_id": "asc/2025/3",
+          "affecting_provisions": "Sch. 3 para. 4",
+          "affecting_title": "Legislation (Procedure, Publication and Repeals) (Wales) Act 2025",
+          "modified": "2026-03-09",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/asc/2025/3/data.xml",
+          "path": "uk/data/raw/affecting_acts/asc_2025_3/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Justice Act (Northern Ireland) 2015",
+      "act_id": "northernirelandact/2015/9",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-f8502e2f7c7c59f4834ab3aca9677a16",
+          "effect_type": "words repealed",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "northernirelandact/2015/9",
+          "affecting_provisions": "Sch. 1 para. 75 Sch. 9 Pt. 1",
+          "affecting_title": "Justice Act (Northern Ireland) 2015",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/northernirelandact/2015/9/data.xml",
+          "path": "uk/data/raw/affecting_acts/northernirelandact_2015_9/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Local Government (Wales) Act 1994",
+      "act_id": "ukpga/1994/19",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-32c98046cb5281cbf07daf11e60e4b80",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/1994/19",
+          "affecting_provisions": "s. 1(3) Sch. 2 para. 9",
+          "affecting_title": "Local Government (Wales) Act 1994",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1994/19/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_1994_19/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Health Authorities Act 1995",
+      "act_id": "ukpga/1995/17",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-04ca13eeb0113e87b933bee42b6365b5",
+          "effect_type": "repealed in part",
+          "applied": true,
+          "affected_provisions": "Sch. 2 Pt. 1 para. 4(6)",
+          "affecting_act_id": "ukpga/1995/17",
+          "affecting_provisions": "s. 5(1) Sch. 3",
+          "affecting_title": "Health Authorities Act 1995",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1995/17/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_1995_17/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Justice (Northern Ireland) Act 2002",
+      "act_id": "ukpga/2002/26",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-51aacf861f0cdf33e2b21742f1ee0500",
+          "effect_type": "words repealed",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2002/26",
+          "affecting_provisions": "Sch. 13",
+          "affecting_title": "Justice (Northern Ireland) Act 2002",
+          "modified": "2025-10-15",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2002/26/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2002_26/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Income Tax (Earnings and Pensions) Act 2003",
+      "act_id": "ukpga/2003/1",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-5f4f506a2065dfe03fdbe561f5389c68",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2003/1",
+          "affecting_provisions": "Sch. 6 para. 148",
+          "affecting_title": "Income Tax (Earnings and Pensions) Act 2003",
+          "modified": "2025-10-29",
+          "in_force_date": "2003-04-06"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2003/1/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2003_1/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Criminal Justice Act 2003",
+      "act_id": "ukpga/2003/44",
+      "effect_count": 2,
+      "effects": [
+        {
+          "effect_id": "key-64a28cb0bae7117e47b5c367f13de240",
+          "effect_type": "words repealed",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2003/44",
+          "affecting_provisions": "Sch. 3 para. 49(a) Sch. 37 Pt. 4",
+          "affecting_title": "Criminal Justice Act 2003",
+          "modified": "2022-07-19",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-7bb1ab797efc4c472ebf7489e0abf5d7",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2003/44",
+          "affecting_provisions": "Sch. 3 para. 49(b)",
+          "affecting_title": "Criminal Justice Act 2003",
+          "modified": "2022-07-19",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2003/44/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2003_44/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Civil Partnership Act 2004",
+      "act_id": "ukpga/2004/33",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-eaaa4cdc69ab69049c4e21970e7b1456",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2004/33",
+          "affecting_provisions": "Sch. 27 para. 59",
+          "affecting_title": "Civil Partnership Act 2004",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2004/33/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2004_33/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Commissioners for Revenue and Customs Act 2005",
+      "act_id": "ukpga/2005/11",
+      "effect_count": 2,
+      "effects": [
+        {
+          "effect_id": "key-ec7b74a1c1b46b71a7af87cf33c38a1d",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2005/11",
+          "affecting_provisions": "s. 2(7)",
+          "affecting_title": "Commissioners for Revenue and Customs Act 2005",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-8d3fdb4861e1286134b5b95a88f9ce13",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2005/11",
+          "affecting_provisions": "s. 4(3)",
+          "affecting_title": "Commissioners for Revenue and Customs Act 2005",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2005/11/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2005_11/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Constitutional Reform Act 2005",
+      "act_id": "ukpga/2005/4",
+      "effect_count": 2,
+      "effects": [
+        {
+          "effect_id": "key-605d5e010e8b43885936382ca6ec39e8",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2005/4",
+          "affecting_provisions": "Sch. 11 para. 24(a)",
+          "affecting_title": "Constitutional Reform Act 2005",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-7dc18c302a2a45fb1c57dcb1a541763b",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2005/4",
+          "affecting_provisions": "Sch. 11 para. 24(b)",
+          "affecting_title": "Constitutional Reform Act 2005",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2005/4/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2005_4/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Immigration, Asylum and Nationality Act 2006",
+      "act_id": "ukpga/2006/13",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-e17c91986a1636a66604e183a005b1d4",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2006/13",
+          "affecting_provisions": "s. 64(4)",
+          "affecting_title": "Immigration, Asylum and Nationality Act 2006",
+          "modified": "2019-09-11",
+          "in_force_date": "2006-03-30"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2006/13/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2006_13/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Government of Wales Act 2006",
+      "act_id": "ukpga/2006/32",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-edd33877a3ac6ac991438f6de2bce6a1",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 23B",
+          "affecting_act_id": "ukpga/2006/32",
+          "affecting_provisions": "Sch. 10 para. 11",
+          "affecting_title": "Government of Wales Act 2006",
+          "modified": "2025-11-07",
+          "in_force_date": "2007-05-03"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2006/32/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2006_32/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Charities Act 2006",
+      "act_id": "ukpga/2006/50",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-69ff9a83d780e73975e48801d6ed2574",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2006/50",
+          "affecting_provisions": "Sch. 8 para. 61",
+          "affecting_title": "Charities Act 2006",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2006/50/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2006_50/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Legislative and Regulatory Reform Act 2006",
+      "act_id": "ukpga/2006/51",
+      "effect_count": 5,
+      "effects": [
+        {
+          "effect_id": "key-2d8756b5e0c6e17c8d3faec726085754",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 20A",
+          "affecting_act_id": "ukpga/2006/51",
+          "affecting_provisions": "s. 25(1)",
+          "affecting_title": "Legislative and Regulatory Reform Act 2006",
+          "modified": "2019-09-11",
+          "in_force_date": "2007-01-08"
+        },
+        {
+          "effect_id": "key-97c0944ade3a52f36ff69f080789e5a8",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 22(1)",
+          "affecting_act_id": "ukpga/2006/51",
+          "affecting_provisions": "s. 25(2)",
+          "affecting_title": "Legislative and Regulatory Reform Act 2006",
+          "modified": "2019-09-11",
+          "in_force_date": "2007-01-08"
+        },
+        {
+          "effect_id": "key-10ad37462f4f5703953941095f9ae369",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 24(3A)",
+          "affecting_act_id": "ukpga/2006/51",
+          "affecting_provisions": "s. 25(3)",
+          "affecting_title": "Legislative and Regulatory Reform Act 2006",
+          "modified": "2019-09-11",
+          "in_force_date": "2007-01-08"
+        },
+        {
+          "effect_id": "key-88c3f45d611ee489257ebbb76f666fe5",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 24(4)",
+          "affecting_act_id": "ukpga/2006/51",
+          "affecting_provisions": "s. 26(2)",
+          "affecting_title": "Legislative and Regulatory Reform Act 2006",
+          "modified": "2019-09-11",
+          "in_force_date": "2007-01-08"
+        },
+        {
+          "effect_id": "key-964da5a019bda5aef399e39597affce9",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2006/51",
+          "affecting_provisions": "s. 26(1)",
+          "affecting_title": "Legislative and Regulatory Reform Act 2006",
+          "modified": "2019-09-11",
+          "in_force_date": "2007-01-08"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2006/51/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2006_51/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Offender Management Act 2007",
+      "act_id": "ukpga/2007/21",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-b96ecd794f3e7fa11966dd734cfc1ff6",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2007/21",
+          "affecting_provisions": "Sch. 3 para. 2",
+          "affecting_title": "Offender Management Act 2007",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2007/21/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2007_21/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Local Government and Public Involvement in Health Act 2007",
+      "act_id": "ukpga/2007/28",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-2f73543cb8a3858c9fc3fbf2e414a67f",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2007/28",
+          "affecting_provisions": "Sch. 1 para. 14",
+          "affecting_title": "Local Government and Public Involvement in Health Act 2007",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2007/28/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2007_28/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "UK Borders Act 2007",
+      "act_id": "ukpga/2007/30",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-824428fc30f48e7c63991ee0d4785fc8",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2007/30",
+          "affecting_provisions": "s. 61(4)",
+          "affecting_title": "UK Borders Act 2007",
+          "modified": "2019-09-11",
+          "in_force_date": "2007-10-30"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2007/30/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2007_30/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Housing and Regeneration Act 2008",
+      "act_id": "ukpga/2008/17",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-8d1377b274ea84282af312b339b8a8a8",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2008/17",
+          "affecting_provisions": "Sch. 9 para. 5",
+          "affecting_title": "Housing and Regeneration Act 2008",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2008/17/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2008_17/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "European Union (Amendment) Act 2008",
+      "act_id": "ukpga/2008/7",
+      "effect_count": 3,
+      "effects": [
+        {
+          "effect_id": "key-384029a951207560ed4481983745978c",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 20A heading",
+          "affecting_act_id": "ukpga/2008/7",
+          "affecting_provisions": "Sch. Pt. 2",
+          "affecting_title": "European Union (Amendment) Act 2008",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-562f1f34e48ea308588a8172f6b189cc",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 20A",
+          "affecting_act_id": "ukpga/2008/7",
+          "affecting_provisions": "Sch. Pt. 2",
+          "affecting_title": "European Union (Amendment) Act 2008",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-7aaed76b0f1d83add86c3d98785e6f58",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2008/7",
+          "affecting_provisions": "Sch. Pt. 2",
+          "affecting_title": "European Union (Amendment) Act 2008",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2008/7/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2008_7/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Police Reform and Social Responsibility Act 2011",
+      "act_id": "ukpga/2011/13",
+      "effect_count": 4,
+      "effects": [
+        {
+          "effect_id": "key-bfda13f789afbf7ff727ae10e838346a",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2011/13",
+          "affecting_provisions": "s. 97(2)",
+          "affecting_title": "Police Reform and Social Responsibility Act 2011",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-fe8212b9eec3c8a91a3977d069bf75b4",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2011/13",
+          "affecting_provisions": "s. 97(3)",
+          "affecting_title": "Police Reform and Social Responsibility Act 2011",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-36467d9f2c6d092322d220920646a63d",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2011/13",
+          "affecting_provisions": "s. 97(4)",
+          "affecting_title": "Police Reform and Social Responsibility Act 2011",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-3ab5c6847d785bf772628c5cb550bd7e",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2011/13",
+          "affecting_provisions": "s. 97(5)",
+          "affecting_title": "Police Reform and Social Responsibility Act 2011",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2011/13/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2011_13/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Charities Act 2011",
+      "act_id": "ukpga/2011/25",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-bb2e463a9dcd1055a1c27b6851354e17",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2011/25",
+          "affecting_provisions": "Sch. 7 para. 35",
+          "affecting_title": "Charities Act 2011",
+          "modified": "2019-09-11",
+          "in_force_date": "2012-03-14"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2011/25/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2011_25/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Budget Responsibility and National Audit Act 2011",
+      "act_id": "ukpga/2011/4",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-0c768efb9222ad92e5cfd1c04a55d38b",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2011/4",
+          "affecting_provisions": "Sch. 5 para. 12",
+          "affecting_title": "Budget Responsibility and National Audit Act 2011",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2011/4/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2011_4/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Crime and Courts Act 2013",
+      "act_id": "ukpga/2013/22",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-5b6240603263f4e5a9a99196b6384834",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2013/22",
+          "affecting_provisions": "Sch. 9 para. 94",
+          "affecting_title": "Crime and Courts Act 2013",
+          "modified": "2021-09-29",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2013/22/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2013_22/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Enterprise and Regulatory Reform Act 2013",
+      "act_id": "ukpga/2013/24",
+      "effect_count": 2,
+      "effects": [
+        {
+          "effect_id": "key-5f74418c391f5b397c6e2bfd8cd4020a",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 14A",
+          "affecting_act_id": "ukpga/2013/24",
+          "affecting_provisions": "s. 59(2)",
+          "affecting_title": "Enterprise and Regulatory Reform Act 2013",
+          "modified": "2019-09-11",
+          "in_force_date": "2013-04-25"
+        },
+        {
+          "effect_id": "key-6d121e1da7f9e7e3224d759a22afeae1",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 2 para. 1",
+          "affecting_act_id": "ukpga/2013/24",
+          "affecting_provisions": "s. 59(3)",
+          "affecting_title": "Enterprise and Regulatory Reform Act 2013",
+          "modified": "2019-09-11",
+          "in_force_date": "2013-04-25"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2013/24/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2013_24/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Infrastructure Act 2015",
+      "act_id": "ukpga/2015/7",
+      "effect_count": 2,
+      "effects": [
+        {
+          "effect_id": "key-c594712b8219765a602509ed46355658",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2015/7",
+          "affecting_provisions": "Sch. 5 para. 34(a)",
+          "affecting_title": "Infrastructure Act 2015",
+          "modified": "2019-09-11",
+          "in_force_date": "2015-04-12"
+        },
+        {
+          "effect_id": "key-201bf39ff0f136d749772ab70d648ff2",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2015/7",
+          "affecting_provisions": "Sch. 5 para. 34(b)",
+          "affecting_title": "Infrastructure Act 2015",
+          "modified": "2019-09-11",
+          "in_force_date": "2015-04-12"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2015/7/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2015_7/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "European Union (Withdrawal) Act 2018",
+      "act_id": "ukpga/2018/16",
+      "effect_count": 12,
+      "effects": [
+        {
+          "effect_id": "key-d69c4b733c0b5dd5ae2acff7d373f070",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 21(1)",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 19",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-085acc3e55e30a0334e305e09ad5e90a",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 23ZA",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 20",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-8a7e5cee77f661d3332ea83e8e2df241",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "s. 24(4)",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 21(a)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-ee9bb012791f68dc429bcad4b662988d",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 24(4)",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 21(b)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-34e595ab551a5b4aeb26786cce8a4bbe",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 24(4)",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 21(c)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-b533f1a90c997ffba0fd2d0f2fa450c8",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 24(4)",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 21(d)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-ea4549e861a8ce117704c5798c3aaa43",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 24(4)",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 21(e)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-5cd4fe2aa416937340a36368148cc3c8",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 22(a)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-d2f8782d184390ad491f1da44697bba9",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 22(b)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-576aaedacb618834ad84813afbedd886",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 22(c)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-68784ec0c7b1fe909e9c005b57fd6629",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 22(d)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-a84e4adeb79fc2eff6c6ee0545dd93f0",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 22(e)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2018/16/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2018_16/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "European Union (Withdrawal Agreement) Act 2020",
+      "act_id": "ukpga/2020/1",
+      "effect_count": 8,
+      "effects": [
+        {
+          "effect_id": "key-82a968042816392d9e5657a55fba4bca",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 20(3)",
+          "affecting_act_id": "ukpga/2020/1",
+          "affecting_provisions": "Sch. 5 para. 9",
+          "affecting_title": "European Union (Withdrawal Agreement) Act 2020",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-d2da8e0cd3415f3b236459dff7a5f584",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 21(1)",
+          "affecting_act_id": "ukpga/2020/1",
+          "affecting_provisions": "Sch. 5 para. 10",
+          "affecting_title": "European Union (Withdrawal Agreement) Act 2020",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-21e7661fceaf72ad96dbf51a97dc0c48",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23ZA(4)(a)(ii)",
+          "affecting_act_id": "ukpga/2020/1",
+          "affecting_provisions": "Sch. 5 para. 11",
+          "affecting_title": "European Union (Withdrawal Agreement) Act 2020",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-b0e2c8db4156fc2ec22843c5e97938cd",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2020/1",
+          "affecting_provisions": "Sch. 5 para. 12(a)",
+          "affecting_title": "European Union (Withdrawal Agreement) Act 2020",
+          "modified": "2020-12-29",
+          "in_force_date": "2020-01-23"
+        },
+        {
+          "effect_id": "key-0c16d86f919e9463a9b4f26d18d363b4",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2020/1",
+          "affecting_provisions": "Sch. 5 para. 12(b)",
+          "affecting_title": "European Union (Withdrawal Agreement) Act 2020",
+          "modified": "2020-12-29",
+          "in_force_date": "2020-01-23"
+        },
+        {
+          "effect_id": "key-a3031fceaca392098279c829d9a9e958",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2020/1",
+          "affecting_provisions": "Sch. 5 para. 12(c)",
+          "affecting_title": "European Union (Withdrawal Agreement) Act 2020",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-c5ff7710035b360dee194c5d8489d3f4",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2020/1",
+          "affecting_provisions": "Sch. 5 para. 12(d)(i)",
+          "affecting_title": "European Union (Withdrawal Agreement) Act 2020",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-9bfe268fb822fac44c6ce619c5968c13",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2020/1",
+          "affecting_provisions": "Sch. 5 para. 12(d)(ii)",
+          "affecting_title": "European Union (Withdrawal Agreement) Act 2020",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2020/1/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2020_1/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Sentencing Act 2020",
+      "act_id": "ukpga/2020/17",
+      "effect_count": 2,
+      "effects": [
+        {
+          "effect_id": "key-20f307411d7587eb50700ae0aaf2b4f5",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2020/17",
+          "affecting_provisions": "Sch. 24 para. 39(2)",
+          "affecting_title": "Sentencing Act 2020",
+          "modified": "2022-05-12",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-318232fdb01ed45e549723c29bba49b6",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2020/17",
+          "affecting_provisions": "Sch. 24 para. 39(3)",
+          "affecting_title": "Sentencing Act 2020",
+          "modified": "2022-05-12",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2020/17/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2020_17/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Direct Payments to Farmers (Legislative Continuity) Act 2020",
+      "act_id": "ukpga/2020/2",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-3c3442e29b04f9d86c281b0411a672bb",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2020/2",
+          "affecting_provisions": "Sch. 1 para. 3",
+          "affecting_title": "Direct Payments to Farmers (Legislative Continuity) Act 2020",
+          "modified": "2021-06-29",
+          "in_force_date": "2020-01-30"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2020/2/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2020_2/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Fisheries Act 2020",
+      "act_id": "ukpga/2020/22",
+      "effect_count": 2,
+      "effects": [
+        {
+          "effect_id": "key-9c4eea4ea5cc458eda69bb6320a6f732",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23B(6)",
+          "affecting_act_id": "ukpga/2020/22",
+          "affecting_provisions": "s. 46(2)",
+          "affecting_title": "Fisheries Act 2020",
+          "modified": "2021-01-08",
+          "in_force_date": "2021-01-23"
+        },
+        {
+          "effect_id": "key-de824a4b7492cb0c294dff8ee0d17f30",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 23B(7)",
+          "affecting_act_id": "ukpga/2020/22",
+          "affecting_provisions": "s. 46(3)",
+          "affecting_title": "Fisheries Act 2020",
+          "modified": "2021-01-08",
+          "in_force_date": "2021-01-23"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2020/22/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2020_22/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Judicial Review and Courts Act 2022",
+      "act_id": "ukpga/2022/35",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-2b9d4291fbcb1df35c6bc8dded16a83b",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2022/35",
+          "affecting_provisions": "s. 13(3)",
+          "affecting_title": "Judicial Review and Courts Act 2022",
+          "modified": "2024-05-01",
+          "in_force_date": "2022-04-28"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2022/35/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2022_35/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Retained EU Law (Revocation and Reform) Act 2023",
+      "act_id": "ukpga/2023/28",
+      "effect_count": 12,
+      "effects": [
+        {
+          "effect_id": "key-13c4a95cddd705a3dea65a223f3314c9",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23ZA heading",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(3)(a)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-7f7b5d754ab29aa3635535f55ffb33fe",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 21",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(2)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-bccb6f45001afc5d2d22cc497194ae29",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23B(3)",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(4)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-a7d66343022bb3ee5baf8b7d4d5e4988",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23C(1)(d)",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(5)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-8f09e5e73923155d3864c473141a6a8d",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23ZA",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(3)(b)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-54c3cde96c738a82cb15221525b0e02d",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(6)(a)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-385f4206f3e080d9796c8ec5b957c91f",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(6)(b)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-d8f0833e13a2b40c5049d6b9e8b8b374",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(6)(c)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-33470f67111ee544403326f589b327d8",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(6)(d)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-6604378262e348a2c59e3c00c3920931",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(6)(e)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-2bad1dd7f507b98e88acadc96c5f1f22",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(6)(f)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-b00e21e85436c7b1a4ac1d72cc148199",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 2 para. 8",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(7)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2023/28/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2023_28/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Medical Act 1983 (Amendment) Order 2002",
+      "act_id": "uksi/2002/3135",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-cc5ec9b380045aa43368d30af76ffd0c",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2002/3135",
+          "affecting_provisions": "Sch. 1 para. 10",
+          "affecting_title": "The Medical Act 1983 (Amendment) Order 2002",
+          "modified": "2025-08-27",
+          "in_force_date": "2009-11-16"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2002/3135/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2002_3135/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Health Act 1999 (Consequential Amendments) (Nursing and Midwifery) Order 2004",
+      "act_id": "uksi/2004/1771",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-7cc9e8ba5b4dbf033453c039ec2a98d2",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2004/1771",
+          "affecting_provisions": "Sch. para. 7",
+          "affecting_title": "The Health Act 1999 (Consequential Amendments) (Nursing and Midwifery) Order 2004",
+          "modified": "2019-09-11",
+          "in_force_date": "2004-08-01"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2004/1771/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2004_1771/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Housing and Regeneration Act 2008 (Registration of Local Authorities) Order 2010",
+      "act_id": "uksi/2010/844",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-a666154be437bcc0660276593eaaa3fb",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2010/844",
+          "affecting_provisions": "Sch. 2 para. 1",
+          "affecting_title": "The Housing and Regeneration Act 2008 (Registration of Local Authorities) Order 2010",
+          "modified": "2019-09-11",
+          "in_force_date": "2010-04-01"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2010/844/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2010_844/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Police and Fire Reform (Scotland) Act 2012 (Consequential Provisions and Modifications) Order 2013",
+      "act_id": "uksi/2013/602",
+      "effect_count": 4,
+      "effects": [
+        {
+          "effect_id": "key-fa8d13961bf5a4775e348a1152a2c931",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2013/602",
+          "affecting_provisions": "Sch. 2 para. 15(2)(a)",
+          "affecting_title": "The Police and Fire Reform (Scotland) Act 2012 (Consequential Provisions and Modifications) Order 2013",
+          "modified": "2019-09-11",
+          "in_force_date": "2013-04-01"
+        },
+        {
+          "effect_id": "key-461bd9d55802e3965943daabd567c2cf",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2013/602",
+          "affecting_provisions": "Sch. 2 para. 15(2)(b)",
+          "affecting_title": "The Police and Fire Reform (Scotland) Act 2012 (Consequential Provisions and Modifications) Order 2013",
+          "modified": "2019-09-11",
+          "in_force_date": "2013-04-01"
+        },
+        {
+          "effect_id": "key-b7ea0bd65f52b7891ee6f381fb46be32",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2013/602",
+          "affecting_provisions": "Sch. 2 para. 15(3)",
+          "affecting_title": "The Police and Fire Reform (Scotland) Act 2012 (Consequential Provisions and Modifications) Order 2013",
+          "modified": "2019-09-11",
+          "in_force_date": "2013-04-01"
+        },
+        {
+          "effect_id": "key-cc1865c36ce8243de301c79a33418976",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 2 para. 6",
+          "affecting_act_id": "uksi/2013/602",
+          "affecting_provisions": "Sch. 2 para. 15(4)",
+          "affecting_title": "The Police and Fire Reform (Scotland) Act 2012 (Consequential Provisions and Modifications) Order 2013",
+          "modified": "2019-09-11",
+          "in_force_date": "2013-04-01"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2013/602/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2013_602/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Courts Reform (Scotland) Act 2014 (Consequential Provisions and Modifications) Order 2015",
+      "act_id": "uksi/2015/700",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-7fa72327b853f644c4158f86781a479e",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2015/700",
+          "affecting_provisions": "Sch. para. 10",
+          "affecting_title": "The Courts Reform (Scotland) Act 2014 (Consequential Provisions and Modifications) Order 2015",
+          "modified": "2019-09-11",
+          "in_force_date": "2015-04-01"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2015/700/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2015_700/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Nursing and Midwifery (Amendment) Order 2018",
+      "act_id": "uksi/2018/838",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-8f952bf941c926410ddefb094c7ed051",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2018/838",
+          "affecting_provisions": "Sch. 3 para. 1",
+          "affecting_title": "The Nursing and Midwifery (Amendment) Order 2018",
+          "modified": "2019-09-11",
+          "in_force_date": "2019-01-28"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2018/838/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2018_838/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Civil Partnership (Opposite-sex Couples) Regulations 2019",
+      "act_id": "uksi/2019/1458",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-fbb9d82675c9cdc72c51baada36bb7ed",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2019/1458",
+          "affecting_provisions": "Sch. 3 para. 6",
+          "affecting_title": "The Civil Partnership (Opposite-sex Couples) Regulations 2019",
+          "modified": "2019-12-02",
+          "in_force_date": "2019-12-02"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2019/1458/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2019_1458/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The European Union (Withdrawal) Act 2018 (Consequential Modifications and Repeals and Revocations) (EU Exit) Regulations 2019",
+      "act_id": "uksi/2019/628",
+      "effect_count": 2,
+      "effects": [
+        {
+          "effect_id": "key-8d3936e52acce23a357d173ca70a4300",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 20(3)-(5)",
+          "affecting_act_id": "uksi/2019/628",
+          "affecting_provisions": "reg. 3(2)",
+          "affecting_title": "The European Union (Withdrawal) Act 2018 (Consequential Modifications and Repeals and Revocations) (EU Exit) Regulations 2019",
+          "modified": "2020-07-06",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-d263950c5dad617ea545c556d51dffeb",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 22(1)",
+          "affecting_act_id": "uksi/2019/628",
+          "affecting_provisions": "reg. 3(3)",
+          "affecting_title": "The European Union (Withdrawal) Act 2018 (Consequential Modifications and Repeals and Revocations) (EU Exit) Regulations 2019",
+          "modified": "2020-07-06",
+          "in_force_date": "2020-12-31"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2019/628/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2019_628/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+      "act_id": "uksi/2020/1447",
+      "effect_count": 10,
+      "effects": [
+        {
+          "effect_id": "key-84365804bf356dcc434369187b5f2913",
+          "effect_type": "word inserted",
+          "applied": true,
+          "affected_provisions": "s. 20 heading",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(2)(a)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-01b5d7410483404fefbc3199c921a90b",
+          "effect_type": "word inserted",
+          "applied": true,
+          "affected_provisions": "s. 20A heading",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(3)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-6d2e1957f6779b22458309819b5f5847",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 20(2A)",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(2)(b)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-99ade20bfe00fc29af11538dee0549fd",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 20(3)",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(2)(c)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-2dc7eaf80a642000bc3dad370cd2adb9",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 20(5)",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(2)(d)(i)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-95d40f9fa37b537df35029b310f34b65",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 20(5)",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(2)(d)(ii)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-7c80829e808d8793c3ffcfe2116ee5ec",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 20(6)",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(2)(e)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-64e19b8f4cac56c2da79734e56be7e9d",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 22(1)",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(4)(a)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-3dd44e945c669f4637020ae0d2301805",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 22(1)",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(4)(b)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-c6c0b9cad2d7087536f92206f5124759",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 2 para. 8",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(5)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2020/1447/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2020_1447/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Direct Payments to Farmers (Legislative Continuity) Act 2020 (Consequential Amendments) Regulations 2020",
+      "act_id": "uksi/2020/463",
+      "effect_count": 4,
+      "effects": [
+        {
+          "effect_id": "key-7b39e22664de31530496e1552ba46b33",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 21(1)",
+          "affecting_act_id": "uksi/2020/463",
+          "affecting_provisions": "reg. 2(2)",
+          "affecting_title": "The Direct Payments to Farmers (Legislative Continuity) Act 2020 (Consequential Amendments) Regulations 2020",
+          "modified": "2020-05-07",
+          "in_force_date": "2020-04-30"
+        },
+        {
+          "effect_id": "key-a68245f420894530675afd31ae17c478",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 23ZA(4)(a)(ia)",
+          "affecting_act_id": "uksi/2020/463",
+          "affecting_provisions": "reg. 2(3)(b)",
+          "affecting_title": "The Direct Payments to Farmers (Legislative Continuity) Act 2020 (Consequential Amendments) Regulations 2020",
+          "modified": "2020-05-07",
+          "in_force_date": "2020-04-30"
+        },
+        {
+          "effect_id": "key-472d2265b855f5ecba955dfa6924f416",
+          "effect_type": "word omitted",
+          "applied": true,
+          "affected_provisions": "s. 23ZA(4)(a)(i)",
+          "affecting_act_id": "uksi/2020/463",
+          "affecting_provisions": "reg. 2(3)(a)",
+          "affecting_title": "The Direct Payments to Farmers (Legislative Continuity) Act 2020 (Consequential Amendments) Regulations 2020",
+          "modified": "2020-05-07",
+          "in_force_date": "2020-04-30"
+        },
+        {
+          "effect_id": "key-b352eaf36ed66ac9d6445148bd004d66",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 23ZA(4)(a)(ii)",
+          "affecting_act_id": "uksi/2020/463",
+          "affecting_provisions": "reg. 2(3)(c)",
+          "affecting_title": "The Direct Payments to Farmers (Legislative Continuity) Act 2020 (Consequential Amendments) Regulations 2020",
+          "modified": "2020-05-07",
+          "in_force_date": "2020-04-30"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2020/463/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2020_463/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Legislation (Wales) Act 2019 (Commencement) Order 2019",
+      "act_id": "welshstatutoryinstrument/2019/1333",
+      "effect_count": 3,
+      "effects": [
+        {
+          "effect_id": "key-fb81c981d87323fa654ac7285734cea4",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23B(1)(b)",
+          "affecting_act_id": "welshstatutoryinstrument/2019/1333",
+          "affecting_provisions": "art. 4(a)",
+          "affecting_title": "The Legislation (Wales) Act 2019 (Commencement) Order 2019",
+          "modified": "2019-11-20",
+          "in_force_date": "2019-10-11"
+        },
+        {
+          "effect_id": "key-d3bb552a5c66084158a769432ce7b354",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23B(2)(b)",
+          "affecting_act_id": "welshstatutoryinstrument/2019/1333",
+          "affecting_provisions": "art. 4(b)",
+          "affecting_title": "The Legislation (Wales) Act 2019 (Commencement) Order 2019",
+          "modified": "2019-11-20",
+          "in_force_date": "2019-10-11"
+        },
+        {
+          "effect_id": "key-9c4991941f6ddcbf922ebf2d80839094",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23B(3)(a)",
+          "affecting_act_id": "welshstatutoryinstrument/2019/1333",
+          "affecting_provisions": "art. 4(b)",
+          "affecting_title": "The Legislation (Wales) Act 2019 (Commencement) Order 2019",
+          "modified": "2019-11-20",
+          "in_force_date": "2019-10-11"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/welshstatutoryinstrument/2019/1333/data.xml",
+          "path": "uk/data/raw/affecting_acts/welshstatutoryinstrument_2019_1333/data.xml"
+        }
+      ],
+      "already_fetched": false
+    }
+  ],
+  "_all_sources": [
+    {
+      "label": "Legislation (Procedure, Publication and Repeals) (Wales) Act 2025",
+      "act_id": "asc/2025/3",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-af2afbe0fae33e3ff8abbe1a50d32248",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 23C(1A)",
+          "affecting_act_id": "asc/2025/3",
+          "affecting_provisions": "Sch. 3 para. 4",
+          "affecting_title": "Legislation (Procedure, Publication and Repeals) (Wales) Act 2025",
+          "modified": "2026-03-09",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/asc/2025/3/data.xml",
+          "path": "uk/data/raw/affecting_acts/asc_2025_3/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Justice Act (Northern Ireland) 2015",
+      "act_id": "northernirelandact/2015/9",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-f8502e2f7c7c59f4834ab3aca9677a16",
+          "effect_type": "words repealed",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "northernirelandact/2015/9",
+          "affecting_provisions": "Sch. 1 para. 75 Sch. 9 Pt. 1",
+          "affecting_title": "Justice Act (Northern Ireland) 2015",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/northernirelandact/2015/9/data.xml",
+          "path": "uk/data/raw/affecting_acts/northernirelandact_2015_9/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Local Government (Wales) Act 1994",
+      "act_id": "ukpga/1994/19",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-32c98046cb5281cbf07daf11e60e4b80",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/1994/19",
+          "affecting_provisions": "s. 1(3) Sch. 2 para. 9",
+          "affecting_title": "Local Government (Wales) Act 1994",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1994/19/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_1994_19/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Health Authorities Act 1995",
+      "act_id": "ukpga/1995/17",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-04ca13eeb0113e87b933bee42b6365b5",
+          "effect_type": "repealed in part",
+          "applied": true,
+          "affected_provisions": "Sch. 2 Pt. 1 para. 4(6)",
+          "affecting_act_id": "ukpga/1995/17",
+          "affecting_provisions": "s. 5(1) Sch. 3",
+          "affecting_title": "Health Authorities Act 1995",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/1995/17/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_1995_17/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Justice (Northern Ireland) Act 2002",
+      "act_id": "ukpga/2002/26",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-51aacf861f0cdf33e2b21742f1ee0500",
+          "effect_type": "words repealed",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2002/26",
+          "affecting_provisions": "Sch. 13",
+          "affecting_title": "Justice (Northern Ireland) Act 2002",
+          "modified": "2025-10-15",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2002/26/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2002_26/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Income Tax (Earnings and Pensions) Act 2003",
+      "act_id": "ukpga/2003/1",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-5f4f506a2065dfe03fdbe561f5389c68",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2003/1",
+          "affecting_provisions": "Sch. 6 para. 148",
+          "affecting_title": "Income Tax (Earnings and Pensions) Act 2003",
+          "modified": "2025-10-29",
+          "in_force_date": "2003-04-06"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2003/1/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2003_1/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Criminal Justice Act 2003",
+      "act_id": "ukpga/2003/44",
+      "effect_count": 2,
+      "effects": [
+        {
+          "effect_id": "key-64a28cb0bae7117e47b5c367f13de240",
+          "effect_type": "words repealed",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2003/44",
+          "affecting_provisions": "Sch. 3 para. 49(a) Sch. 37 Pt. 4",
+          "affecting_title": "Criminal Justice Act 2003",
+          "modified": "2022-07-19",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-7bb1ab797efc4c472ebf7489e0abf5d7",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2003/44",
+          "affecting_provisions": "Sch. 3 para. 49(b)",
+          "affecting_title": "Criminal Justice Act 2003",
+          "modified": "2022-07-19",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2003/44/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2003_44/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Civil Partnership Act 2004",
+      "act_id": "ukpga/2004/33",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-eaaa4cdc69ab69049c4e21970e7b1456",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2004/33",
+          "affecting_provisions": "Sch. 27 para. 59",
+          "affecting_title": "Civil Partnership Act 2004",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2004/33/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2004_33/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Commissioners for Revenue and Customs Act 2005",
+      "act_id": "ukpga/2005/11",
+      "effect_count": 2,
+      "effects": [
+        {
+          "effect_id": "key-ec7b74a1c1b46b71a7af87cf33c38a1d",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2005/11",
+          "affecting_provisions": "s. 2(7)",
+          "affecting_title": "Commissioners for Revenue and Customs Act 2005",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-8d3fdb4861e1286134b5b95a88f9ce13",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2005/11",
+          "affecting_provisions": "s. 4(3)",
+          "affecting_title": "Commissioners for Revenue and Customs Act 2005",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2005/11/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2005_11/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Constitutional Reform Act 2005",
+      "act_id": "ukpga/2005/4",
+      "effect_count": 2,
+      "effects": [
+        {
+          "effect_id": "key-605d5e010e8b43885936382ca6ec39e8",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2005/4",
+          "affecting_provisions": "Sch. 11 para. 24(a)",
+          "affecting_title": "Constitutional Reform Act 2005",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-7dc18c302a2a45fb1c57dcb1a541763b",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2005/4",
+          "affecting_provisions": "Sch. 11 para. 24(b)",
+          "affecting_title": "Constitutional Reform Act 2005",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2005/4/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2005_4/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Immigration, Asylum and Nationality Act 2006",
+      "act_id": "ukpga/2006/13",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-e17c91986a1636a66604e183a005b1d4",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2006/13",
+          "affecting_provisions": "s. 64(4)",
+          "affecting_title": "Immigration, Asylum and Nationality Act 2006",
+          "modified": "2019-09-11",
+          "in_force_date": "2006-03-30"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2006/13/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2006_13/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Government of Wales Act 2006",
+      "act_id": "ukpga/2006/32",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-edd33877a3ac6ac991438f6de2bce6a1",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 23B",
+          "affecting_act_id": "ukpga/2006/32",
+          "affecting_provisions": "Sch. 10 para. 11",
+          "affecting_title": "Government of Wales Act 2006",
+          "modified": "2025-11-07",
+          "in_force_date": "2007-05-03"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2006/32/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2006_32/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Charities Act 2006",
+      "act_id": "ukpga/2006/50",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-69ff9a83d780e73975e48801d6ed2574",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2006/50",
+          "affecting_provisions": "Sch. 8 para. 61",
+          "affecting_title": "Charities Act 2006",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2006/50/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2006_50/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Legislative and Regulatory Reform Act 2006",
+      "act_id": "ukpga/2006/51",
+      "effect_count": 5,
+      "effects": [
+        {
+          "effect_id": "key-2d8756b5e0c6e17c8d3faec726085754",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 20A",
+          "affecting_act_id": "ukpga/2006/51",
+          "affecting_provisions": "s. 25(1)",
+          "affecting_title": "Legislative and Regulatory Reform Act 2006",
+          "modified": "2019-09-11",
+          "in_force_date": "2007-01-08"
+        },
+        {
+          "effect_id": "key-97c0944ade3a52f36ff69f080789e5a8",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 22(1)",
+          "affecting_act_id": "ukpga/2006/51",
+          "affecting_provisions": "s. 25(2)",
+          "affecting_title": "Legislative and Regulatory Reform Act 2006",
+          "modified": "2019-09-11",
+          "in_force_date": "2007-01-08"
+        },
+        {
+          "effect_id": "key-10ad37462f4f5703953941095f9ae369",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 24(3A)",
+          "affecting_act_id": "ukpga/2006/51",
+          "affecting_provisions": "s. 25(3)",
+          "affecting_title": "Legislative and Regulatory Reform Act 2006",
+          "modified": "2019-09-11",
+          "in_force_date": "2007-01-08"
+        },
+        {
+          "effect_id": "key-88c3f45d611ee489257ebbb76f666fe5",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 24(4)",
+          "affecting_act_id": "ukpga/2006/51",
+          "affecting_provisions": "s. 26(2)",
+          "affecting_title": "Legislative and Regulatory Reform Act 2006",
+          "modified": "2019-09-11",
+          "in_force_date": "2007-01-08"
+        },
+        {
+          "effect_id": "key-964da5a019bda5aef399e39597affce9",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2006/51",
+          "affecting_provisions": "s. 26(1)",
+          "affecting_title": "Legislative and Regulatory Reform Act 2006",
+          "modified": "2019-09-11",
+          "in_force_date": "2007-01-08"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2006/51/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2006_51/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Offender Management Act 2007",
+      "act_id": "ukpga/2007/21",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-b96ecd794f3e7fa11966dd734cfc1ff6",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2007/21",
+          "affecting_provisions": "Sch. 3 para. 2",
+          "affecting_title": "Offender Management Act 2007",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2007/21/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2007_21/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Local Government and Public Involvement in Health Act 2007",
+      "act_id": "ukpga/2007/28",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-2f73543cb8a3858c9fc3fbf2e414a67f",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2007/28",
+          "affecting_provisions": "Sch. 1 para. 14",
+          "affecting_title": "Local Government and Public Involvement in Health Act 2007",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2007/28/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2007_28/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "UK Borders Act 2007",
+      "act_id": "ukpga/2007/30",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-824428fc30f48e7c63991ee0d4785fc8",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2007/30",
+          "affecting_provisions": "s. 61(4)",
+          "affecting_title": "UK Borders Act 2007",
+          "modified": "2019-09-11",
+          "in_force_date": "2007-10-30"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2007/30/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2007_30/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Housing and Regeneration Act 2008",
+      "act_id": "ukpga/2008/17",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-8d1377b274ea84282af312b339b8a8a8",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2008/17",
+          "affecting_provisions": "Sch. 9 para. 5",
+          "affecting_title": "Housing and Regeneration Act 2008",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2008/17/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2008_17/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "European Union (Amendment) Act 2008",
+      "act_id": "ukpga/2008/7",
+      "effect_count": 3,
+      "effects": [
+        {
+          "effect_id": "key-384029a951207560ed4481983745978c",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 20A heading",
+          "affecting_act_id": "ukpga/2008/7",
+          "affecting_provisions": "Sch. Pt. 2",
+          "affecting_title": "European Union (Amendment) Act 2008",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-562f1f34e48ea308588a8172f6b189cc",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 20A",
+          "affecting_act_id": "ukpga/2008/7",
+          "affecting_provisions": "Sch. Pt. 2",
+          "affecting_title": "European Union (Amendment) Act 2008",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-7aaed76b0f1d83add86c3d98785e6f58",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2008/7",
+          "affecting_provisions": "Sch. Pt. 2",
+          "affecting_title": "European Union (Amendment) Act 2008",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2008/7/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2008_7/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Police Reform and Social Responsibility Act 2011",
+      "act_id": "ukpga/2011/13",
+      "effect_count": 4,
+      "effects": [
+        {
+          "effect_id": "key-bfda13f789afbf7ff727ae10e838346a",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2011/13",
+          "affecting_provisions": "s. 97(2)",
+          "affecting_title": "Police Reform and Social Responsibility Act 2011",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-fe8212b9eec3c8a91a3977d069bf75b4",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2011/13",
+          "affecting_provisions": "s. 97(3)",
+          "affecting_title": "Police Reform and Social Responsibility Act 2011",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-36467d9f2c6d092322d220920646a63d",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2011/13",
+          "affecting_provisions": "s. 97(4)",
+          "affecting_title": "Police Reform and Social Responsibility Act 2011",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-3ab5c6847d785bf772628c5cb550bd7e",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2011/13",
+          "affecting_provisions": "s. 97(5)",
+          "affecting_title": "Police Reform and Social Responsibility Act 2011",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2011/13/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2011_13/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Charities Act 2011",
+      "act_id": "ukpga/2011/25",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-bb2e463a9dcd1055a1c27b6851354e17",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2011/25",
+          "affecting_provisions": "Sch. 7 para. 35",
+          "affecting_title": "Charities Act 2011",
+          "modified": "2019-09-11",
+          "in_force_date": "2012-03-14"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2011/25/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2011_25/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Budget Responsibility and National Audit Act 2011",
+      "act_id": "ukpga/2011/4",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-0c768efb9222ad92e5cfd1c04a55d38b",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2011/4",
+          "affecting_provisions": "Sch. 5 para. 12",
+          "affecting_title": "Budget Responsibility and National Audit Act 2011",
+          "modified": "2019-09-11",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2011/4/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2011_4/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Crime and Courts Act 2013",
+      "act_id": "ukpga/2013/22",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-5b6240603263f4e5a9a99196b6384834",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2013/22",
+          "affecting_provisions": "Sch. 9 para. 94",
+          "affecting_title": "Crime and Courts Act 2013",
+          "modified": "2021-09-29",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2013/22/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2013_22/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Enterprise and Regulatory Reform Act 2013",
+      "act_id": "ukpga/2013/24",
+      "effect_count": 2,
+      "effects": [
+        {
+          "effect_id": "key-5f74418c391f5b397c6e2bfd8cd4020a",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 14A",
+          "affecting_act_id": "ukpga/2013/24",
+          "affecting_provisions": "s. 59(2)",
+          "affecting_title": "Enterprise and Regulatory Reform Act 2013",
+          "modified": "2019-09-11",
+          "in_force_date": "2013-04-25"
+        },
+        {
+          "effect_id": "key-6d121e1da7f9e7e3224d759a22afeae1",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 2 para. 1",
+          "affecting_act_id": "ukpga/2013/24",
+          "affecting_provisions": "s. 59(3)",
+          "affecting_title": "Enterprise and Regulatory Reform Act 2013",
+          "modified": "2019-09-11",
+          "in_force_date": "2013-04-25"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2013/24/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2013_24/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Infrastructure Act 2015",
+      "act_id": "ukpga/2015/7",
+      "effect_count": 2,
+      "effects": [
+        {
+          "effect_id": "key-c594712b8219765a602509ed46355658",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2015/7",
+          "affecting_provisions": "Sch. 5 para. 34(a)",
+          "affecting_title": "Infrastructure Act 2015",
+          "modified": "2019-09-11",
+          "in_force_date": "2015-04-12"
+        },
+        {
+          "effect_id": "key-201bf39ff0f136d749772ab70d648ff2",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2015/7",
+          "affecting_provisions": "Sch. 5 para. 34(b)",
+          "affecting_title": "Infrastructure Act 2015",
+          "modified": "2019-09-11",
+          "in_force_date": "2015-04-12"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2015/7/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2015_7/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "European Union (Withdrawal) Act 2018",
+      "act_id": "ukpga/2018/16",
+      "effect_count": 12,
+      "effects": [
+        {
+          "effect_id": "key-d69c4b733c0b5dd5ae2acff7d373f070",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 21(1)",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 19",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-085acc3e55e30a0334e305e09ad5e90a",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 23ZA",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 20",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-8a7e5cee77f661d3332ea83e8e2df241",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "s. 24(4)",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 21(a)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-ee9bb012791f68dc429bcad4b662988d",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 24(4)",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 21(b)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-34e595ab551a5b4aeb26786cce8a4bbe",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 24(4)",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 21(c)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-b533f1a90c997ffba0fd2d0f2fa450c8",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 24(4)",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 21(d)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-ea4549e861a8ce117704c5798c3aaa43",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 24(4)",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 21(e)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-5cd4fe2aa416937340a36368148cc3c8",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 22(a)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-d2f8782d184390ad491f1da44697bba9",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 22(b)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-576aaedacb618834ad84813afbedd886",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 22(c)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-68784ec0c7b1fe909e9c005b57fd6629",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 22(d)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-a84e4adeb79fc2eff6c6ee0545dd93f0",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2018/16",
+          "affecting_provisions": "Sch. 8 para. 22(e)",
+          "affecting_title": "European Union (Withdrawal) Act 2018",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2018/16/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2018_16/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "European Union (Withdrawal Agreement) Act 2020",
+      "act_id": "ukpga/2020/1",
+      "effect_count": 8,
+      "effects": [
+        {
+          "effect_id": "key-82a968042816392d9e5657a55fba4bca",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 20(3)",
+          "affecting_act_id": "ukpga/2020/1",
+          "affecting_provisions": "Sch. 5 para. 9",
+          "affecting_title": "European Union (Withdrawal Agreement) Act 2020",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-d2da8e0cd3415f3b236459dff7a5f584",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 21(1)",
+          "affecting_act_id": "ukpga/2020/1",
+          "affecting_provisions": "Sch. 5 para. 10",
+          "affecting_title": "European Union (Withdrawal Agreement) Act 2020",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-21e7661fceaf72ad96dbf51a97dc0c48",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23ZA(4)(a)(ii)",
+          "affecting_act_id": "ukpga/2020/1",
+          "affecting_provisions": "Sch. 5 para. 11",
+          "affecting_title": "European Union (Withdrawal Agreement) Act 2020",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-b0e2c8db4156fc2ec22843c5e97938cd",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2020/1",
+          "affecting_provisions": "Sch. 5 para. 12(a)",
+          "affecting_title": "European Union (Withdrawal Agreement) Act 2020",
+          "modified": "2020-12-29",
+          "in_force_date": "2020-01-23"
+        },
+        {
+          "effect_id": "key-0c16d86f919e9463a9b4f26d18d363b4",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2020/1",
+          "affecting_provisions": "Sch. 5 para. 12(b)",
+          "affecting_title": "European Union (Withdrawal Agreement) Act 2020",
+          "modified": "2020-12-29",
+          "in_force_date": "2020-01-23"
+        },
+        {
+          "effect_id": "key-a3031fceaca392098279c829d9a9e958",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2020/1",
+          "affecting_provisions": "Sch. 5 para. 12(c)",
+          "affecting_title": "European Union (Withdrawal Agreement) Act 2020",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-c5ff7710035b360dee194c5d8489d3f4",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2020/1",
+          "affecting_provisions": "Sch. 5 para. 12(d)(i)",
+          "affecting_title": "European Union (Withdrawal Agreement) Act 2020",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-9bfe268fb822fac44c6ce619c5968c13",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2020/1",
+          "affecting_provisions": "Sch. 5 para. 12(d)(ii)",
+          "affecting_title": "European Union (Withdrawal Agreement) Act 2020",
+          "modified": "2020-12-29",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2020/1/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2020_1/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Sentencing Act 2020",
+      "act_id": "ukpga/2020/17",
+      "effect_count": 2,
+      "effects": [
+        {
+          "effect_id": "key-20f307411d7587eb50700ae0aaf2b4f5",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2020/17",
+          "affecting_provisions": "Sch. 24 para. 39(2)",
+          "affecting_title": "Sentencing Act 2020",
+          "modified": "2022-05-12",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-318232fdb01ed45e549723c29bba49b6",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2020/17",
+          "affecting_provisions": "Sch. 24 para. 39(3)",
+          "affecting_title": "Sentencing Act 2020",
+          "modified": "2022-05-12",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2020/17/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2020_17/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Direct Payments to Farmers (Legislative Continuity) Act 2020",
+      "act_id": "ukpga/2020/2",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-3c3442e29b04f9d86c281b0411a672bb",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2020/2",
+          "affecting_provisions": "Sch. 1 para. 3",
+          "affecting_title": "Direct Payments to Farmers (Legislative Continuity) Act 2020",
+          "modified": "2021-06-29",
+          "in_force_date": "2020-01-30"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2020/2/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2020_2/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Fisheries Act 2020",
+      "act_id": "ukpga/2020/22",
+      "effect_count": 2,
+      "effects": [
+        {
+          "effect_id": "key-9c4eea4ea5cc458eda69bb6320a6f732",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23B(6)",
+          "affecting_act_id": "ukpga/2020/22",
+          "affecting_provisions": "s. 46(2)",
+          "affecting_title": "Fisheries Act 2020",
+          "modified": "2021-01-08",
+          "in_force_date": "2021-01-23"
+        },
+        {
+          "effect_id": "key-de824a4b7492cb0c294dff8ee0d17f30",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 23B(7)",
+          "affecting_act_id": "ukpga/2020/22",
+          "affecting_provisions": "s. 46(3)",
+          "affecting_title": "Fisheries Act 2020",
+          "modified": "2021-01-08",
+          "in_force_date": "2021-01-23"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2020/22/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2020_22/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Judicial Review and Courts Act 2022",
+      "act_id": "ukpga/2022/35",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-2b9d4291fbcb1df35c6bc8dded16a83b",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2022/35",
+          "affecting_provisions": "s. 13(3)",
+          "affecting_title": "Judicial Review and Courts Act 2022",
+          "modified": "2024-05-01",
+          "in_force_date": "2022-04-28"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2022/35/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2022_35/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "Retained EU Law (Revocation and Reform) Act 2023",
+      "act_id": "ukpga/2023/28",
+      "effect_count": 12,
+      "effects": [
+        {
+          "effect_id": "key-13c4a95cddd705a3dea65a223f3314c9",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23ZA heading",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(3)(a)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-7f7b5d754ab29aa3635535f55ffb33fe",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 21",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(2)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-bccb6f45001afc5d2d22cc497194ae29",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23B(3)",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(4)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-a7d66343022bb3ee5baf8b7d4d5e4988",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23C(1)(d)",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(5)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-8f09e5e73923155d3864c473141a6a8d",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23ZA",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(3)(b)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-54c3cde96c738a82cb15221525b0e02d",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(6)(a)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-385f4206f3e080d9796c8ec5b957c91f",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(6)(b)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-d8f0833e13a2b40c5049d6b9e8b8b374",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(6)(c)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-33470f67111ee544403326f589b327d8",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(6)(d)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-6604378262e348a2c59e3c00c3920931",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(6)(e)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-2bad1dd7f507b98e88acadc96c5f1f22",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(6)(f)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        },
+        {
+          "effect_id": "key-b00e21e85436c7b1a4ac1d72cc148199",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 2 para. 8",
+          "affecting_act_id": "ukpga/2023/28",
+          "affecting_provisions": "Sch. 2 para. 2(7)",
+          "affecting_title": "Retained EU Law (Revocation and Reform) Act 2023",
+          "modified": "2024-10-04",
+          "in_force_date": ""
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/ukpga/2023/28/data.xml",
+          "path": "uk/data/raw/affecting_acts/ukpga_2023_28/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Medical Act 1983 (Amendment) Order 2002",
+      "act_id": "uksi/2002/3135",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-cc5ec9b380045aa43368d30af76ffd0c",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2002/3135",
+          "affecting_provisions": "Sch. 1 para. 10",
+          "affecting_title": "The Medical Act 1983 (Amendment) Order 2002",
+          "modified": "2025-08-27",
+          "in_force_date": "2009-11-16"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2002/3135/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2002_3135/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Health Act 1999 (Consequential Amendments) (Nursing and Midwifery) Order 2004",
+      "act_id": "uksi/2004/1771",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-7cc9e8ba5b4dbf033453c039ec2a98d2",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2004/1771",
+          "affecting_provisions": "Sch. para. 7",
+          "affecting_title": "The Health Act 1999 (Consequential Amendments) (Nursing and Midwifery) Order 2004",
+          "modified": "2019-09-11",
+          "in_force_date": "2004-08-01"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2004/1771/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2004_1771/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Housing and Regeneration Act 2008 (Registration of Local Authorities) Order 2010",
+      "act_id": "uksi/2010/844",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-a666154be437bcc0660276593eaaa3fb",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2010/844",
+          "affecting_provisions": "Sch. 2 para. 1",
+          "affecting_title": "The Housing and Regeneration Act 2008 (Registration of Local Authorities) Order 2010",
+          "modified": "2019-09-11",
+          "in_force_date": "2010-04-01"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2010/844/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2010_844/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Police and Fire Reform (Scotland) Act 2012 (Consequential Provisions and Modifications) Order 2013",
+      "act_id": "uksi/2013/602",
+      "effect_count": 4,
+      "effects": [
+        {
+          "effect_id": "key-fa8d13961bf5a4775e348a1152a2c931",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2013/602",
+          "affecting_provisions": "Sch. 2 para. 15(2)(a)",
+          "affecting_title": "The Police and Fire Reform (Scotland) Act 2012 (Consequential Provisions and Modifications) Order 2013",
+          "modified": "2019-09-11",
+          "in_force_date": "2013-04-01"
+        },
+        {
+          "effect_id": "key-461bd9d55802e3965943daabd567c2cf",
+          "effect_type": "words omitted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2013/602",
+          "affecting_provisions": "Sch. 2 para. 15(2)(b)",
+          "affecting_title": "The Police and Fire Reform (Scotland) Act 2012 (Consequential Provisions and Modifications) Order 2013",
+          "modified": "2019-09-11",
+          "in_force_date": "2013-04-01"
+        },
+        {
+          "effect_id": "key-b7ea0bd65f52b7891ee6f381fb46be32",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2013/602",
+          "affecting_provisions": "Sch. 2 para. 15(3)",
+          "affecting_title": "The Police and Fire Reform (Scotland) Act 2012 (Consequential Provisions and Modifications) Order 2013",
+          "modified": "2019-09-11",
+          "in_force_date": "2013-04-01"
+        },
+        {
+          "effect_id": "key-cc1865c36ce8243de301c79a33418976",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 2 para. 6",
+          "affecting_act_id": "uksi/2013/602",
+          "affecting_provisions": "Sch. 2 para. 15(4)",
+          "affecting_title": "The Police and Fire Reform (Scotland) Act 2012 (Consequential Provisions and Modifications) Order 2013",
+          "modified": "2019-09-11",
+          "in_force_date": "2013-04-01"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2013/602/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2013_602/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Courts Reform (Scotland) Act 2014 (Consequential Provisions and Modifications) Order 2015",
+      "act_id": "uksi/2015/700",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-7fa72327b853f644c4158f86781a479e",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2015/700",
+          "affecting_provisions": "Sch. para. 10",
+          "affecting_title": "The Courts Reform (Scotland) Act 2014 (Consequential Provisions and Modifications) Order 2015",
+          "modified": "2019-09-11",
+          "in_force_date": "2015-04-01"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2015/700/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2015_700/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Nursing and Midwifery (Amendment) Order 2018",
+      "act_id": "uksi/2018/838",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-8f952bf941c926410ddefb094c7ed051",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2018/838",
+          "affecting_provisions": "Sch. 3 para. 1",
+          "affecting_title": "The Nursing and Midwifery (Amendment) Order 2018",
+          "modified": "2019-09-11",
+          "in_force_date": "2019-01-28"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2018/838/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2018_838/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Civil Partnership (Opposite-sex Couples) Regulations 2019",
+      "act_id": "uksi/2019/1458",
+      "effect_count": 1,
+      "effects": [
+        {
+          "effect_id": "key-fbb9d82675c9cdc72c51baada36bb7ed",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 1",
+          "affecting_act_id": "uksi/2019/1458",
+          "affecting_provisions": "Sch. 3 para. 6",
+          "affecting_title": "The Civil Partnership (Opposite-sex Couples) Regulations 2019",
+          "modified": "2019-12-02",
+          "in_force_date": "2019-12-02"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2019/1458/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2019_1458/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The European Union (Withdrawal) Act 2018 (Consequential Modifications and Repeals and Revocations) (EU Exit) Regulations 2019",
+      "act_id": "uksi/2019/628",
+      "effect_count": 2,
+      "effects": [
+        {
+          "effect_id": "key-8d3936e52acce23a357d173ca70a4300",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 20(3)-(5)",
+          "affecting_act_id": "uksi/2019/628",
+          "affecting_provisions": "reg. 3(2)",
+          "affecting_title": "The European Union (Withdrawal) Act 2018 (Consequential Modifications and Repeals and Revocations) (EU Exit) Regulations 2019",
+          "modified": "2020-07-06",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-d263950c5dad617ea545c556d51dffeb",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 22(1)",
+          "affecting_act_id": "uksi/2019/628",
+          "affecting_provisions": "reg. 3(3)",
+          "affecting_title": "The European Union (Withdrawal) Act 2018 (Consequential Modifications and Repeals and Revocations) (EU Exit) Regulations 2019",
+          "modified": "2020-07-06",
+          "in_force_date": "2020-12-31"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2019/628/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2019_628/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+      "act_id": "uksi/2020/1447",
+      "effect_count": 10,
+      "effects": [
+        {
+          "effect_id": "key-84365804bf356dcc434369187b5f2913",
+          "effect_type": "word inserted",
+          "applied": true,
+          "affected_provisions": "s. 20 heading",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(2)(a)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-01b5d7410483404fefbc3199c921a90b",
+          "effect_type": "word inserted",
+          "applied": true,
+          "affected_provisions": "s. 20A heading",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(3)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-6d2e1957f6779b22458309819b5f5847",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 20(2A)",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(2)(b)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-99ade20bfe00fc29af11538dee0549fd",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 20(3)",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(2)(c)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-2dc7eaf80a642000bc3dad370cd2adb9",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 20(5)",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(2)(d)(i)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-95d40f9fa37b537df35029b310f34b65",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 20(5)",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(2)(d)(ii)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-7c80829e808d8793c3ffcfe2116ee5ec",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 20(6)",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(2)(e)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-64e19b8f4cac56c2da79734e56be7e9d",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 22(1)",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(4)(a)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-3dd44e945c669f4637020ae0d2301805",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 22(1)",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(4)(b)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        },
+        {
+          "effect_id": "key-c6c0b9cad2d7087536f92206f5124759",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "Sch. 2 para. 8",
+          "affecting_act_id": "uksi/2020/1447",
+          "affecting_provisions": "reg. 2(5)",
+          "affecting_title": "The European Union Withdrawal (Consequential Modifications) (EU Exit) Regulations 2020",
+          "modified": "2020-12-09",
+          "in_force_date": "2020-12-31"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2020/1447/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2020_1447/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Direct Payments to Farmers (Legislative Continuity) Act 2020 (Consequential Amendments) Regulations 2020",
+      "act_id": "uksi/2020/463",
+      "effect_count": 4,
+      "effects": [
+        {
+          "effect_id": "key-7b39e22664de31530496e1552ba46b33",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 21(1)",
+          "affecting_act_id": "uksi/2020/463",
+          "affecting_provisions": "reg. 2(2)",
+          "affecting_title": "The Direct Payments to Farmers (Legislative Continuity) Act 2020 (Consequential Amendments) Regulations 2020",
+          "modified": "2020-05-07",
+          "in_force_date": "2020-04-30"
+        },
+        {
+          "effect_id": "key-a68245f420894530675afd31ae17c478",
+          "effect_type": "inserted",
+          "applied": true,
+          "affected_provisions": "s. 23ZA(4)(a)(ia)",
+          "affecting_act_id": "uksi/2020/463",
+          "affecting_provisions": "reg. 2(3)(b)",
+          "affecting_title": "The Direct Payments to Farmers (Legislative Continuity) Act 2020 (Consequential Amendments) Regulations 2020",
+          "modified": "2020-05-07",
+          "in_force_date": "2020-04-30"
+        },
+        {
+          "effect_id": "key-472d2265b855f5ecba955dfa6924f416",
+          "effect_type": "word omitted",
+          "applied": true,
+          "affected_provisions": "s. 23ZA(4)(a)(i)",
+          "affecting_act_id": "uksi/2020/463",
+          "affecting_provisions": "reg. 2(3)(a)",
+          "affecting_title": "The Direct Payments to Farmers (Legislative Continuity) Act 2020 (Consequential Amendments) Regulations 2020",
+          "modified": "2020-05-07",
+          "in_force_date": "2020-04-30"
+        },
+        {
+          "effect_id": "key-b352eaf36ed66ac9d6445148bd004d66",
+          "effect_type": "words inserted",
+          "applied": true,
+          "affected_provisions": "s. 23ZA(4)(a)(ii)",
+          "affecting_act_id": "uksi/2020/463",
+          "affecting_provisions": "reg. 2(3)(c)",
+          "affecting_title": "The Direct Payments to Farmers (Legislative Continuity) Act 2020 (Consequential Amendments) Regulations 2020",
+          "modified": "2020-05-07",
+          "in_force_date": "2020-04-30"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/uksi/2020/463/data.xml",
+          "path": "uk/data/raw/affecting_acts/uksi_2020_463/data.xml"
+        }
+      ],
+      "already_fetched": false
+    },
+    {
+      "label": "The Legislation (Wales) Act 2019 (Commencement) Order 2019",
+      "act_id": "welshstatutoryinstrument/2019/1333",
+      "effect_count": 3,
+      "effects": [
+        {
+          "effect_id": "key-fb81c981d87323fa654ac7285734cea4",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23B(1)(b)",
+          "affecting_act_id": "welshstatutoryinstrument/2019/1333",
+          "affecting_provisions": "art. 4(a)",
+          "affecting_title": "The Legislation (Wales) Act 2019 (Commencement) Order 2019",
+          "modified": "2019-11-20",
+          "in_force_date": "2019-10-11"
+        },
+        {
+          "effect_id": "key-d3bb552a5c66084158a769432ce7b354",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23B(2)(b)",
+          "affecting_act_id": "welshstatutoryinstrument/2019/1333",
+          "affecting_provisions": "art. 4(b)",
+          "affecting_title": "The Legislation (Wales) Act 2019 (Commencement) Order 2019",
+          "modified": "2019-11-20",
+          "in_force_date": "2019-10-11"
+        },
+        {
+          "effect_id": "key-9c4991941f6ddcbf922ebf2d80839094",
+          "effect_type": "words substituted",
+          "applied": true,
+          "affected_provisions": "s. 23B(3)(a)",
+          "affecting_act_id": "welshstatutoryinstrument/2019/1333",
+          "affecting_provisions": "art. 4(b)",
+          "affecting_title": "The Legislation (Wales) Act 2019 (Commencement) Order 2019",
+          "modified": "2019-11-20",
+          "in_force_date": "2019-10-11"
+        }
+      ],
+      "artifacts": [
+        {
+          "url": "https://www.legislation.gov.uk/welshstatutoryinstrument/2019/1333/data.xml",
+          "path": "uk/data/raw/affecting_acts/welshstatutoryinstrument_2019_1333/data.xml"
+        }
+      ],
+      "already_fetched": false
+    }
+  ]
+}
