@@ -653,18 +653,19 @@ def test_replay_xml_keeps_1967_550_section_2_sparse_insert_on_fifth_moment() -> 
     assert "kuuden kuukauden kuluessa" in sixth_text
 
 
-def test_replay_xml_places_2019_371_section_159_in_replay_fold_container_frame() -> None:
-    """2019/371 preserves §159 text under the final replay-fold container frame."""
+def test_replay_xml_places_2019_371_section_159_in_final_container_frame() -> None:
+    """2019/371 preserves §159 text under the final replay and materialized frame."""
     replay = pinned_replay("2017/320", mode="finlex_oracle", quiet=True, strict_johto_temporal=False)
-    sections = extract_ir_sections(replay.replay_fold_state.ir)
+    for ir in (replay.replay_fold_state.ir, replay.materialized_state.ir):
+        sections = extract_ir_sections(ir)
+        section_159_keys = [key for key in sections if key.endswith("/section:159") or key == "section:159"]
+        assert section_159_keys == ["part:4/chapter:18/section:159"]
+        text = irnode_to_text(sections["part:4/chapter:18/section:159"])
 
-    section = sections["part:4/chapter:18/section:159"]
-    text = irnode_to_text(section)
-
-    assert text.startswith("159 §")
-    assert "avoimia rajapintoja teknisesti yhdistävien palveluntarjoajien" in text
-    assert "matkustusoikeuden todentamiseen liittyvien taustajärjestelmien" in text
-    assert "liityntäpysäköintiä tarjoavan" not in text
+        assert text.startswith("159 §")
+        assert "avoimia rajapintoja teknisesti yhdistävien palveluntarjoajien" in text
+        assert "matkustusoikeuden todentamiseen liittyvien taustajärjestelmien" in text
+        assert "liityntäpysäköintiä tarjoavan" not in text
 
     rows = [
         row

@@ -1003,7 +1003,13 @@ def materialize_pit_ex(
         if not relative_path:
             return True
 
-        child_kinds = {"section"} if parent_addr.leaf_kind() in {"chapter", "part"} else {"subsection", "item"}
+        parent_leaf = parent_addr.leaf_kind()
+        if parent_leaf == "part":
+            child_kinds = {"chapter"}
+        elif parent_leaf == "chapter":
+            child_kinds = {"section"}
+        else:
+            child_kinds = {"subsection", "item"}
         has_structural_children = any(
             getattr(child, "label", None) and child.kind.value in child_kinds
             for child in content.children
@@ -1090,6 +1096,33 @@ def materialize_pit_ex(
                         active_versions[d2_addr] = d1_v
                     # Always remove body-level entry (section lives in chapter)
                     superseded.add(addr)
+
+    # A shallow chapter-scoped section can survive a recodification even after
+    # the same provision has been projected into a more specific part/chapter
+    # frame. Only collapse this when the deeper section label is unique; if
+    # multiple deeper same-label sections exist, the shallow address is
+    # ambiguous evidence rather than a safe duplicate.
+    deeper_section_labels: Dict[Tuple[str, str], List[LegalAddress]] = {}
+    for addr in active:
+        if len(addr.path) > 2 and addr.path[-1][0] == "section":
+            deeper_section_labels.setdefault(addr.path[-1], []).append(addr)
+    unique_deeper_section_labels = {
+        key: addresses[0]
+        for key, addresses in deeper_section_labels.items()
+        if len(addresses) == 1
+    }
+    for addr in list(active):
+        if len(addr.path) >= 3 or not addr.path or addr.path[-1][0] != "section":
+            continue
+        deeper_addr = unique_deeper_section_labels.get(addr.path[-1])
+        if deeper_addr is None:
+            continue
+        deeper_v = active_versions.get(deeper_addr)
+        shallow_v = active_versions.get(addr)
+        if deeper_v and shallow_v and shallow_v.effective > deeper_v.effective:
+            active[deeper_addr] = active[addr]
+            active_versions[deeper_addr] = shallow_v
+        superseded.add(addr)
 
     for addr in superseded:
         del active[addr]
