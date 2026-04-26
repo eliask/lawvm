@@ -1139,6 +1139,7 @@ def _execute_same_parent_relabel_group(
     found_paths: dict[StructuralTransformOp, Tuple[Tuple[str, str], ...]] = {}
     op_by_source: dict[tuple[str, str], StructuralTransformOp] = {}
     dest_by_source: dict[tuple[str, str], str] = {}
+    missing_executed: list[ExecutedOp] = []
     for op in ops:
         target_path = _parse_address(op.target)
         dest_path = _parse_address(op.destination or "")
@@ -1172,46 +1173,71 @@ def _execute_same_parent_relabel_group(
                 op.notes,
                 op.destination,
             )
-            return tree, [
+            missing_executed.append(
                 ExecutedOp(
-                    op=o,
+                    op=op,
                     success=False,
-                    note=f"target not found: {o.target}",
+                    note=f"target not found: {op.target}",
                     reason_code=consumed_reason,
                 )
-                for o in ops
-            ]
+            )
+            continue
         found_paths[op] = tuple(found_path)
         source_key = found_path[-1]
         op_by_source[source_key] = op
         dest_by_source[source_key] = dest_path[-1][1]
 
+    if not found_paths:
+        return tree, missing_executed
+
     parent_paths = {path[:-1] for path in found_paths.values()}
     if len(parent_paths) != 1:
-        return tree, [
+        return tree, missing_executed + [
             ExecutedOp(
                 op=o,
                 success=False,
                 note="grouped relabel paths do not share one parent",
                 reason_code="group_parent_mismatch",
             )
-            for o in ops
+            for o in found_paths
         ]
     parent_path = next(iter(parent_paths))
     parent_node = _tops.resolve(tree, parent_path) if parent_path else tree
     if parent_node is None:
-        return tree, [
+        return tree, missing_executed + [
             ExecutedOp(
                 op=op,
                 success=False,
                 note=f"parent not found: {parent_path!r}",
                 reason_code="group_parent_not_found",
             )
-            for op in ops
+            for op in found_paths
         ]
 
+    parent_child_keys = {
+        (child.kind.value, child.label)
+        for child in parent_node.children
+        if child.label is not None
+    }
+    found_source_keys = set(op_by_source)
+    collision_ops: list[ExecutedOp] = []
+    for source_key, op in op_by_source.items():
+        dest_label = dest_by_source[source_key]
+        dest_key = (source_key[0], dest_label)
+        if dest_key in parent_child_keys and dest_key not in found_source_keys:
+            collision_ops.append(
+                ExecutedOp(
+                    op=op,
+                    success=False,
+                    note=f"grouped relabel destination occupied: {dest_key[0]}:{dest_key[1]}",
+                    reason_code="group_destination_collision",
+                )
+            )
+    if collision_ops:
+        return tree, missing_executed + collision_ops
+
     new_children: list[IRNode] = []
-    executed: list[ExecutedOp] = []
+    executed: list[ExecutedOp] = list(missing_executed)
     seen_sources: set[tuple[str, str]] = set()
     for child in parent_node.children:
         if child.label is None:

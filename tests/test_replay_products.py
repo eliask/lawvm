@@ -2470,6 +2470,81 @@ def test_rekey_timelines_merges_ancestor_only_migration_into_native_destination_
     assert destination_versions[-1].source.statute_id == "2020/1256"
 
 
+def test_rekey_timelines_same_wave_incoming_section_still_follows_ancestor_migration() -> None:
+    source_addr = LegalAddress(path=(("part", "3"), ("chapter", "2"), ("section", "159")))
+    destination_addr = LegalAddress(path=(("part", "4"), ("chapter", "18"), ("section", "159")))
+    part_addr = LegalAddress(path=(("part", "3"),))
+    timelines = {
+        part_addr: ProvisionTimeline(
+            address=part_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="0000-00-00",
+                    enacted="0000-00-00",
+                    content=IRNode(kind=IRNodeKind.PART, label="3", text="part 3 before"),
+                    source=None,
+                ),
+                ProvisionVersion(
+                    effective="2019-04-01",
+                    enacted="2019-04-01",
+                    content=IRNode(kind=IRNodeKind.PART, label="3", text="part 3 same-wave version"),
+                    source=OperationSource(statute_id="2019/371", effective="2019-04-01"),
+                ),
+            ],
+        ),
+        source_addr: ProvisionTimeline(
+            address=source_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2019-04-01",
+                    enacted="2019-04-01",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="159", text="159 § migrated same-wave section"),
+                    source=OperationSource(statute_id="2019/371", effective="2019-04-01"),
+                ),
+            ],
+        ),
+    }
+    events = (
+        MigrationEvent(
+            event_id="mig:2019/371:part3/chapter2/section5-section159",
+            kind="renumber",
+            from_address=LegalAddress(path=(("part", "3"), ("chapter", "2"), ("section", "5"))),
+            to_address=source_addr,
+            effective="2019-04-01",
+            source_statute="2019/371",
+        ),
+        MigrationEvent(
+            event_id="mig:2019/371:part3-part4",
+            kind="renumber",
+            from_address=part_addr,
+            to_address=LegalAddress(path=(("part", "4"),)),
+            effective="2019-04-01",
+            source_statute="2019/371",
+        ),
+        MigrationEvent(
+            event_id="mig:2020/1256:part4/chapter2-chapter18",
+            kind="renumber",
+            from_address=LegalAddress(path=(("part", "4"), ("chapter", "2"))),
+            to_address=LegalAddress(path=(("part", "4"), ("chapter", "18"))),
+            effective="2021-02-01",
+            source_statute="2020/1256",
+        ),
+    )
+
+    rekeyed = _rekey_timelines_with_migration_events(
+        timelines,
+        events,
+        as_of="2026-01-01",
+    )
+
+    assert destination_addr in rekeyed
+    assert source_addr not in rekeyed
+    versions = rekeyed[destination_addr].versions
+    assert len(versions) == 1
+    assert versions[0].source is not None
+    assert versions[0].source.statute_id == "2019/371"
+
+
 def test_select_pit_lineage_inputs_prefers_rekeyed_native_rebirth_over_scope_changing_migration() -> None:
     source_addr = LegalAddress(path=(("chapter", "1"), ("section", "5")))
     raw_destination_addr = LegalAddress(path=(("part", "I"), ("chapter", "2"), ("section", "5")))
