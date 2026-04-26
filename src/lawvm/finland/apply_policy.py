@@ -308,6 +308,11 @@ def _resolve_section_path_with_fallbacks(
     allow_unique_global_fallback = (
         rop.resolved_action_type != "INSERT"
         or rop.effective_target_special in {"otsikko", "otsikko_edella", "johd"}
+        or (
+            rop.resolved_action_type == "INSERT"
+            and target_address is not None
+            and any(kind in {"subsection", "item"} for kind, _label in target_address.path)
+        )
     )
     scope_confidence = runtime_scope_confidence_for_op(rop)
     scope_is_explicit = scope_confidence is None or scope_confidence.is_explicit
@@ -325,6 +330,16 @@ def _resolve_section_path_with_fallbacks(
                     rop.resolved_action_type == "INSERT"
                     and rop.effective_target_special in {"otsikko", "otsikko_edella", "johd"}
                 )
+                is_descendant_insert = (
+                    rop.resolved_action_type == "INSERT"
+                    and target_address is not None
+                    and any(kind in {"subsection", "item"} for kind, _label in target_address.path)
+                )
+                if is_descendant_insert and (_target_part is None or global_part == _target_part):
+                    return SectionPathResolution(
+                        path=global_path,
+                        reason_code="live_unique_global_fallback",
+                    )
                 # Cross-chapter and root-level fallbacks are deferred to the
                 # move+replace mechanism in _apply_whole_section_op.  Returning
                 # a path here would cause the section to be modified in-place at

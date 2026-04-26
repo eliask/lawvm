@@ -1347,6 +1347,24 @@ class TestPartLevelInsertionViaSeka:
             "Regression: sekä conjunction restart drops part-level INSERT."
         )
 
+    def test_fallback_recovers_cited_statute_item_then_part_insert(self):
+        """Fallback keeps 2018/579's part insert when citation prose defeats surface parsing."""
+        from lawvm.finland.normalize import parse_ops_fallback_heuristic
+
+        text = (
+            "lisätään liikenteen palvelusta annetun lain (320/2017) I osan 1 luvun "
+            "2 §:ään, sellaisena kuin se on laissa 301/2018, uusi 10 kohta sekä "
+            "lakiin uusi II A osa seuraavasti:"
+        )
+        ops = parse_ops_fallback_heuristic(text)
+
+        assert any(
+            op.op_type == "INSERT"
+            and op.target_unit_kind == "part"
+            and op.target_section == "iia"
+            for op in ops
+        )
+
     def test_bare_seka_before_part_ref(self):
         """Leading sekä separator before part target is skipped."""
         ops = parse_clause("lisätään sekä II A osa").parsed_ops

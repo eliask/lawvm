@@ -414,6 +414,19 @@ def _extract_insert_container_ops_fallback(cleaned: str) -> List[AmendmentOp]:
             )
         )
 
+    for m in re.finditer(r"\blakiin\s+uusi\s+([ivxlcdm]+\s*[a-z]?)\s+osa\b", cleaned, flags=re.I):
+        part = _norm_num_token(m.group(1))
+        if not part:
+            continue
+        ops.append(
+            AmendmentOp(
+                op_id="",
+                op_type="INSERT",
+                target_section=part,
+                target_unit_kind="part",
+            )
+        )
+
     for m in re.finditer(r"\b(\d+\s*[a-z]?)\s+lukuun\s+uusi\s+([^§]{1,120})§", cleaned, flags=re.I):
         chapter = _RE_WHITESPACE.sub("", m.group(1)).lower()
         clause = m.group(2)

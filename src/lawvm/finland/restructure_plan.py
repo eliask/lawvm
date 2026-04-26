@@ -686,17 +686,16 @@ def _resolve_relabel_lookup_path(
     part_relabel_sources: dict[str, str] | None = None,
 ) -> Optional[Tuple[Tuple[str, str], ...]]:
     """Resolve one relabel lookup path using the executor's bounded search rules."""
-    found_path = None
-    if part_relabel_sources and len(target_path) > 1:
+    found_path = _find_path_by_suffix(tree, target_path)
+    if found_path is None:
+        if len(target_path) == 1:
+            found_path = _tops.find(tree, target_path[-1][0], target_path[-1][1])
+    if found_path is None and part_relabel_sources and len(target_path) > 1:
         found_path = _find_path_in_pre_part_relabel_frame(
             tree,
             target_path,
             part_relabel_sources=part_relabel_sources,
         )
-    if found_path is None:
-        found_path = _find_path_by_suffix(tree, target_path)
-    if found_path is None and len(target_path) == 1:
-        found_path = _tops.find(tree, target_path[-1][0], target_path[-1][1])
     if found_path is None:
         found_path = _find_path_in_pre_partification_frame(tree, target_path)
     if found_path is None:
@@ -1467,6 +1466,18 @@ def _execute_relabel(
         target_path,
         part_relabel_sources=part_relabel_sources,
     )
+    found_via_pre_part_relabel_frame = False
+    if found_path is not None and part_relabel_sources and target_path and target_path[0][0] == "part":
+        target_part = _norm_num_token(target_path[0][1])
+        source_part = part_relabel_sources.get(target_part)
+        if (
+            source_part
+            and found_path
+            and found_path[0][0] == "part"
+            and _norm_num_token(found_path[0][1]) == _norm_num_token(source_part)
+            and _find_path_by_suffix(tree, target_path) is None
+        ):
+            found_via_pre_part_relabel_frame = True
     restored_source_alias = False
     if (
         found_path is not None
@@ -1536,6 +1547,7 @@ def _execute_relabel(
         explicit_parent_found is not None
         and tuple(found_path[:-1]) != tuple(explicit_parent_found)
         and found_path[-1][0] == target_path[-1][0]
+        and not found_via_pre_part_relabel_frame
     ):
         tree = _tops.remove_at(tree, found_path)
         parent_node = _tops.resolve(tree, explicit_parent_found) if explicit_parent_found else tree
