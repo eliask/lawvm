@@ -647,7 +647,9 @@ def _emit_section_snapshot(
         if migration_ledger is not None:
             addr = LegalAddress(path=path)
             migrated = migration_ledger.current_address_with_prefix_migrations(addr)
-            return migrated.path
+            if migrated != addr and _tops.resolve(state.ir, migrated.path) is not None:
+                return migrated.path
+            return path
         if _use_root_address_for_pseudo_chapter_section():
                 return tuple(
                     (kind, label)

@@ -9288,11 +9288,12 @@ def test_strict_replay_emits_explicit_source_pathology_rejection_for_1994_1472()
     assert {
         cast(dict, row.get("detail") or {}).get("code")
         for row in rejected
-    } == {
-        "DESTRUCTIVE_SHAPE_LOSS_RISK",
-        "MALFORMED_BROAD_REPLACE_BODY",
-        "PARTIAL_WHOLE_SECTION_PAYLOAD",
-    }
+        } == {
+            "DESTRUCTIVE_SHAPE_LOSS_RISK",
+            "MALFORMED_BROAD_REPLACE_BODY",
+            "PARTIAL_WHOLE_SECTION_PAYLOAD",
+            "SUBSECTION_TARGET_REBOUND",
+        }
 
 
 def test_strict_replay_emits_explicit_source_pathology_rejection_for_2001_1234() -> None:
@@ -11466,7 +11467,7 @@ def test_replay_xml_1996_1093_drops_stale_section_18_item_6_after_2013_1085() ->
     assert sec is not None
 
     subsections = [child for child in sec.children if child.kind is IRNodeKind.SUBSECTION]
-    assert [child.label for child in subsections] == ["1", "2", "3"]
+    assert [child.label for child in subsections] == ["1", "2", "3", "4"]
     assert [child.label for child in subsections[1].children if child.kind is IRNodeKind.PARAGRAPH] == ["1", "2", "3", "4", "5"]
 
     text = " ".join(irnode_to_text(sec).split())

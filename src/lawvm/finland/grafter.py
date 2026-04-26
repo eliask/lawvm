@@ -5775,6 +5775,7 @@ def process_muutoslaki(
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
     mutation_invariant_reports_out: Optional[List[ApplyMutationInvariantReport]] = None,
     migration_events_out: Optional[List["MigrationEvent"]] = None,
+    prior_migration_events: Optional[Iterable["MigrationEvent"]] = None,
     restructure_plans_out: Optional[List[StructuralTransformPlan]] = None,
     processed_amendment_titles: Optional[Dict[str, str]] = None,
 ) -> "PhaseResult":
@@ -5885,10 +5886,16 @@ def process_muutoslaki(
             return
 
         governed_targets: set[str] = set()
+        pathology_details: list[dict[str, object]] = [
+            dict(pathology.as_detail())
+            for pathology in _compat_source_pathologies
+            if pathology.source_statute == amendment_id
+        ]
         for finding in _process_findings:
             if finding.kind != "ELAB.SOURCE_PATHOLOGY" or str(finding.source_statute or "") != amendment_id:
                 continue
-            detail = dict(finding.detail)
+            pathology_details.append(dict(finding.detail))
+        for detail in pathology_details:
             if detail.get("code") != "RECODIFICATION_SOURCE_CHAIN_GAP":
                 continue
             target_label = str(detail.get("target_label") or "").strip()
@@ -5932,6 +5939,76 @@ def process_muutoslaki(
                     "target_section": failed.target_section,
                     "failed_reason_code": failed.reason_code,
                     "source_pathology_code": "RECODIFICATION_SOURCE_CHAIN_GAP",
+                },
+                role="observation",
+                blocking=False,
+            )
+
+    def _govern_failed_ops_by_same_wave_migration(output_state: "ReplayState") -> None:
+        """Move transient old-frame failures behind exact same-wave lineage evidence.
+
+        Some recodification formulas first relabel a source section and then
+        refer to "the said section" in the old source frame. If the apply loop
+        records a scoped ``section_not_found`` for that old frame, but the same
+        amendment's migration ledger maps the exact address to a live final
+        section, the failure is governed by the recorded lineage rather than an
+        unresolved missing target.
+        """
+        if not _compat_failed_ops or len(_migration_ledger) <= _migration_ledger_initial_len:
+            return
+
+        kept: list[FailedOp] = []
+        governed: list[tuple[FailedOp, LegalAddress, LegalAddress]] = []
+        for failed in _compat_failed_ops:
+            if failed.reason_code != "section_not_found" or not failed.target_section:
+                kept.append(failed)
+                continue
+            source_path: list[tuple[str, str]] = []
+            if failed.target_part:
+                source_path.append(("part", failed.target_part))
+            if failed.target_chapter:
+                source_path.append(("chapter", failed.target_chapter))
+            source_path.append(("section", failed.target_section))
+            source_address = LegalAddress(path=tuple(source_path))
+            migrated = _migration_ledger.current_address_with_prefix_migrations(source_address)
+            if migrated == source_address:
+                kept.append(failed)
+                continue
+            migrated_labels = {kind: label for kind, label in migrated.path}
+            migrated_section = migrated_labels.get("section")
+            if not migrated_section:
+                kept.append(failed)
+                continue
+            migrated_path = output_state.find_section_path(
+                migrated_section,
+                migrated_labels.get("chapter"),
+                migrated_labels.get("part"),
+            )
+            if migrated_path is None:
+                kept.append(failed)
+                continue
+            governed.append((failed, source_address, migrated))
+
+        if not governed:
+            return
+        _compat_failed_ops[:] = kept
+        for failed, source_address, migrated in governed:
+            _record_process_finding(
+                kind="APPLY.FAILED_OPERATION_GOVERNED_BY_SAME_WAVE_MIGRATION",
+                message=(
+                    "Apply failure is governed by an exact same-wave migration "
+                    "from the old target frame to a live final target."
+                ),
+                source_statute=amendment_id,
+                detail={
+                    "failed_description": failed.description,
+                    "target_unit_kind": failed.target_unit_kind,
+                    "target_part": failed.target_part,
+                    "target_chapter": failed.target_chapter,
+                    "target_section": failed.target_section,
+                    "failed_reason_code": failed.reason_code,
+                    "source_address": str(source_address),
+                    "migrated_address": str(migrated),
                 },
                 role="observation",
                 blocking=False,
@@ -6077,11 +6154,13 @@ def process_muutoslaki(
             output=output_state,
             findings=tuple(deduped_findings),
             temporal_events=tuple(amendment_temporal_events),
+            migration_events=tuple(_migration_ledger.events[_migration_ledger_initial_len:]),
         )
 
     if corpus is None:
         corpus = _get_corpus_store()
-    _migration_ledger = MigrationLedger()
+    _migration_ledger = MigrationLedger(prior_migration_events or ())
+    _migration_ledger_initial_len = len(_migration_ledger)
     try:
         xml_bytes = corpus.read_source(amendment_id)
         if xml_bytes is None:
@@ -6620,8 +6699,8 @@ def process_muutoslaki(
             observations_out=_compat_elaboration_observations,
             findings_out=_process_findings,
         )
-        if migration_events_out is not None and _migration_ledger:
-            migration_events_out.extend(_migration_ledger.events)
+        if migration_events_out is not None and len(_migration_ledger) > _migration_ledger_initial_len:
+            migration_events_out.extend(_migration_ledger.events[_migration_ledger_initial_len:])
         if _migration_ledger:
             logger.debug(
                 "[%s] migration_ledger: %d event(s)",
@@ -6930,6 +7009,7 @@ def process_muutoslaki(
                         f"{_n_pure_sub} subsection(s)"
                     )
         _govern_failed_ops_by_recodification_source_chain_gap()
+        _govern_failed_ops_by_same_wave_migration(_final_state)
         return _build_result(_final_state)
 
     except KeyError:

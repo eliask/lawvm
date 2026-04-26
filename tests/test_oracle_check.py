@@ -141,7 +141,7 @@ def test_classify_statute_1901_15_001_raw_master_gap_wave_is_source_incomplete()
         assert by_section[label]["blame_source"] == "1975/351"
 
     for label in ("part:1/chapter:2/section:4", "part:1/chapter:2/section:5"):
-        assert by_section[label]["diagnosis"] == "EXTRA"
+        assert by_section[label]["diagnosis"] == "REPLAY_MISSING"
         assert by_section[label]["blame_source"] == "1975/351"
 
 

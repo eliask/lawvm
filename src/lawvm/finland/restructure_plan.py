@@ -852,6 +852,49 @@ class ExecutedOp:
     reason_code: str = ""
 
 
+def _record_pending_source_chain_relabel_lineage(
+    op: StructuralTransformOp,
+    *,
+    reason_code: str,
+    migration_ledger: "MigrationLedger | None",
+    effective_date: str,
+    source_statute: str,
+) -> bool:
+    """Record explicit relabel lineage for absent future source-chain leaves.
+
+    Recodification waves can rename a provision that is not live yet because an
+    earlier-numbered amendment has a later commencement date. The tree must not
+    be mutated in that case, but the explicit relabel still owns future lineage
+    for delayed inserts into the old address.
+    """
+    if migration_ledger is None or reason_code != "target_leaf_absent_under_existing_parent":
+        return False
+    target_path = tuple(_parse_address(op.target))
+    dest_path = tuple(_parse_address(op.destination or ""))
+    if not target_path or not dest_path:
+        return False
+    target_kind, _target_label = target_path[-1]
+    dest_kind, dest_label = dest_path[-1]
+    if target_kind != "section" or dest_kind != "section":
+        return False
+    if len(target_path) < 2:
+        return False
+    to_path = target_path[:-1] + ((target_kind, dest_label),)
+    migration_ledger.record_renumber(
+        LegalAddress(path=target_path),
+        LegalAddress(path=to_path),
+        effective=effective_date,
+        source_statute=source_statute,
+        witness={
+            "rule_id": "restructure.pending_source_chain_relabel_lineage",
+            "reason_code": reason_code,
+            "target": op.target,
+            "destination": op.destination or "",
+        },
+    )
+    return True
+
+
 def relabel_skip_finding(
     executed: ExecutedOp,
     *,
@@ -1165,6 +1208,13 @@ def _execute_same_parent_relabel_group(
                 part_relabel_sources=part_relabel_sources,
                 consumed_source_paths=consumed_source_paths,
             )
+            lineage_recorded = _record_pending_source_chain_relabel_lineage(
+                op,
+                reason_code=consumed_reason,
+                migration_ledger=migration_ledger,
+                effective_date=effective_date,
+                source_statute=source_statute,
+            )
             logger.warning(
                 "[%s] RELABEL target not found: %s (reason=%s, plan %s/%s)",
                 source_statute or "-",
@@ -1177,7 +1227,11 @@ def _execute_same_parent_relabel_group(
                 ExecutedOp(
                     op=op,
                     success=False,
-                    note=f"target not found: {op.target}",
+                    note=(
+                        f"target not found: {op.target}; pending relabel lineage recorded"
+                        if lineage_recorded
+                        else f"target not found: {op.target}"
+                    ),
                     reason_code=consumed_reason,
                 )
             )
@@ -1509,6 +1563,13 @@ def _execute_relabel(
             part_relabel_sources=part_relabel_sources,
             consumed_source_paths=consumed_source_paths,
         )
+        lineage_recorded = _record_pending_source_chain_relabel_lineage(
+            op,
+            reason_code=reason_code,
+            migration_ledger=migration_ledger,
+            effective_date=effective_date,
+            source_statute=source_statute,
+        )
         logger.warning(
             "[%s] RELABEL target not found: %s (reason=%s, plan %s/%s)",
             source_statute or "-",
@@ -1520,7 +1581,11 @@ def _execute_relabel(
         return tree, ExecutedOp(
             op=op,
             success=False,
-            note=f"target not found: {op.target}",
+            note=(
+                f"target not found: {op.target}; pending relabel lineage recorded"
+                if lineage_recorded
+                else f"target not found: {op.target}"
+            ),
             reason_code=reason_code,
         )
 

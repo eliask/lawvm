@@ -212,6 +212,9 @@ def execute_replay_plan(
     )
     repeal_suffix = future_repeals_for_index(repeal_schedule)
     processed_amendment_titles: dict[str, str] = {}
+    effective_migration_events_out: list[MigrationEvent] = (
+        migration_events_out if migration_events_out is not None else []
+    )
     record_titles = {
         str(record.get("statute_id") or ""): str(record.get("title") or "")
         for record in plan.amendment_records
@@ -237,7 +240,8 @@ def execute_replay_plan(
             sparse_leftovers_out=sparse_leftovers_out,
             commencement_expiry_overrides_out=commencement_expiry_overrides_out,
             mutation_events_out=mutation_events_out,
-            migration_events_out=migration_events_out,
+            migration_events_out=effective_migration_events_out,
+            prior_migration_events=tuple(effective_migration_events_out),
             restructure_plans_out=restructure_plans_out,
             processed_amendment_titles=processed_amendment_titles,
         )

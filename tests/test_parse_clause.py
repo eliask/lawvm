@@ -140,6 +140,31 @@ def test_parse_clause_chapter_backref_scoped_section_renumbers_continue_after_he
     assert ops[2].destination.path == (("section", "145"),)
 
 
+def test_parse_clause_chapter_heading_wording_and_number_keeps_later_part_context() -> None:
+    """Chapter heading wording plus ``ja numero`` must not terminate the target list."""
+    result = parse_clause(
+        "muutetaan VI osan 4 luvun otsikon ruotsinkielinen sanamuoto ja numero 29:ksi, "
+        "233 §:n 1 momentin johdantokappale, "
+        "VI osan 5 luvun otsikon ruotsinkielinen sanamuoto ja numero 30:ksi, "
+        "236 §:n otsikon ja 2 momentin ruotsinkielinen sanamuoto, "
+        "VII osan 1 luvun numero 31:ksi, "
+        "VII osan 2 luvun numero 32:ksi"
+    )
+
+    chapter_renumbers = [
+        op
+        for op in result.parsed_ops
+        if op.kind == "L" and op.renumber_dest in {"29", "30", "31", "32"}
+    ]
+
+    assert [(op.part, op.number, op.renumber_dest) for op in chapter_renumbers] == [
+        ("VI", "4", "29"),
+        ("VI", "5", "30"),
+        ("VII", "1", "31"),
+        ("VII", "2", "32"),
+    ]
+
+
 def test_parse_clause_chapter_backref_targets_continue_across_verb_groups() -> None:
     """Chapter context must survive into ``mainitun luvun`` after a prior verb group."""
     result = parse_clause(

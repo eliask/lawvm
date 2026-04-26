@@ -1456,6 +1456,14 @@ def _chapter_ref(s: Stream, verb: SourceVerb, part: str = "") -> Optional[list[S
     elif (t := s.peek()) and t.cat == "JOHD":
         s.pos += 1
         chapter_facet = FacetKind.INTRO
+    if (
+        chapter_facet is not None
+        and (t := s.peek())
+        and t.cat in {"JA", "CONJ"}
+        and (nxt := s.peek(1))
+        and nxt.cat == "NUMERO"
+    ):
+        s.pos += 1
     # Handle chapter-level renumbering: "luvun numero N:ksi"
     destination_by_source: dict[str, str] = {}
     has_renumber = False

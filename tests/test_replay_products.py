@@ -417,7 +417,8 @@ def test_replay_xml_1994_674_repeals_section_6_1_second_subsection_without_resur
     assert section is not None
 
     subsections = [child for child in section.children if child.kind is IRNodeKind.SUBSECTION]
-    assert [child.label for child in subsections] == ["1"]
+    assert [child.label for child in subsections] == ["1", "2"]
+    assert subsections[1].attrs.get("lawvm_repeal_placeholder") == "1"
 
     text = " ".join(irnode_to_text(section).split())
     assert text.startswith("1 § Päällikön kansalaisuus")
@@ -2300,6 +2301,49 @@ def test_rekey_timelines_native_rebirth_same_wave_chain_does_not_double_migrate(
     assert source_versions[0].content.label == "10"
     assert source_versions[0].source is not None
     assert source_versions[0].source.statute_id == "1992/878"
+
+
+def test_rekey_timelines_same_wave_incoming_prefix_does_not_double_migrate_sibling_source() -> None:
+    address = LegalAddress(path=(("part", "7"), ("chapter", "32"), ("section", "268")))
+    timelines = {
+        address: ProvisionTimeline(
+            address=address,
+            versions=[
+                ProvisionVersion(
+                    effective="2020-06-01",
+                    enacted="2018-08-10",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="268", text="268 §"),
+                    source=OperationSource(statute_id="2018/731", effective="2020-06-01"),
+                ),
+            ],
+        ),
+    }
+    same_wave = (
+        MigrationEvent(
+            event_id="mig:2019/371:part6-part7",
+            kind="renumber",
+            from_address=LegalAddress(path=(("part", "6"),)),
+            to_address=LegalAddress(path=(("part", "7"),)),
+            effective="2019-04-01",
+            source_statute="2019/371",
+        ),
+        MigrationEvent(
+            event_id="mig:2019/371:part7-part8",
+            kind="renumber",
+            from_address=LegalAddress(path=(("part", "7"),)),
+            to_address=LegalAddress(path=(("part", "8"),)),
+            effective="2019-04-01",
+            source_statute="2019/371",
+        ),
+    )
+
+    rekeyed = _rekey_timelines_with_migration_events(
+        timelines,
+        same_wave,
+        as_of="2025-01-01",
+    )
+
+    assert set(rekeyed) == {address}
 
 
 def test_rekey_timelines_post_renumber_descendant_stays_with_native_source_lineage() -> None:

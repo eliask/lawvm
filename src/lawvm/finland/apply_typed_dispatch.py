@@ -322,6 +322,26 @@ def _apply_intent_section_level(
         and rop.effective_target_special is None
         and any(binding.op_type == "INSERT" for binding in rop.slot_assignment.sparse_slot_bindings)
     )
+    migration_rebased_target_path: tuple[tuple[str, str], ...] | None = None
+    migration_rebase_source_path: tuple[tuple[str, str], ...] | None = None
+    if rop.resolved_action_type in {"INSERT", "REPLACE"} and migration_ledger is not None:
+        rop_lo = getattr(rop, "lo", None)
+        source_address = rop.resolved_target_address or (rop_lo.target if rop_lo is not None else None)
+        if source_address is not None:
+            migrated = migration_ledger.current_address_with_prefix_migrations(source_address)
+            if migrated != source_address and migrated.path and migrated.path[-1][0] == "section":
+                migration_rebased_target_path = _path_to_tuple(migrated.path)
+                source_labels = {kind: label for kind, label in source_address.path}
+                source_section = source_labels.get("section")
+                if source_section:
+                    migration_rebase_source_path = _path_to_tuple(
+                        state.find_section_path(
+                            source_section,
+                            source_labels.get("chapter"),
+                            source_labels.get("part"),
+                        )
+                    )
+                sec_path = None
 
     whole_result = _apply_whole_section_op(
         state,
@@ -335,12 +355,23 @@ def _apply_intent_section_level(
         replay_history_ops=replay_history_ops,
         source_pathologies_out=source_pathologies_out,
         mixed_sparse_insert=mixed_sparse_insert,
+        migration_ledger=migration_ledger,
     )
     if whole_result is not None:
         resolved_target_path = _resolved_target_path_for_rop_event(rop, sec_path)
+        if migration_rebased_target_path is not None:
+            resolved_target_path = migration_rebased_target_path
         parent_path = _parent_path(resolved_target_path)
         rebind_paths = _whole_section_move_rebind_paths(state, rop, muutos_ir, sec_path)
         declared_allowances = _whole_section_move_rebind_allowances(state, rop, muutos_ir, sec_path)
+        if migration_rebase_source_path is not None:
+            declared_allowances = declared_allowances + (
+                DeclaredMutationAllowance(
+                    kind="migration_path",
+                    paths=(migration_rebase_source_path,),
+                    rule_id="pending_source_chain_insert_rebase",
+                ),
+            )
         created_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
         replaced_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
         removed_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
@@ -350,6 +381,8 @@ def _apply_intent_section_level(
                 created_paths = (resolved_target_path,)
             if rebind_paths:
                 removed_paths = rebind_paths
+            if migration_rebase_source_path is not None:
+                removed_paths = tuple(dict.fromkeys((*removed_paths, migration_rebase_source_path)))
         elif rop.resolved_action_type == "REPLACE":
             if resolved_target_path is not None:
                 if sec_path is None:
@@ -358,6 +391,8 @@ def _apply_intent_section_level(
                     replaced_paths = (resolved_target_path,)
                 if rebind_paths:
                     removed_paths = rebind_paths
+                if migration_rebase_source_path is not None:
+                    removed_paths = tuple(dict.fromkeys((*removed_paths, migration_rebase_source_path)))
         elif rop.resolved_action_type == "REPEAL":
             if profile.synthesize_repeal_placeholders:
                 if resolved_target_path is not None:

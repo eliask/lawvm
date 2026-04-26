@@ -34,6 +34,7 @@ from lawvm.finland.apply_subsection_dispatch import (
 )
 from lawvm.finland.apply_events import (
     ApplyMutationEvent,
+    DeclaredMutationAllowance,
     _emit_apply_mutation_event,
     _emit_apply_mutation_event_for_rop,
     _path_to_tuple,
@@ -139,8 +140,10 @@ def _apply_legacy_dispatch(
         resolved_target_path: tuple[tuple[str, str], ...] | None = None,
         failure_reason: str = "",
         reason_code: str = "",
+        declared_allowances: tuple[DeclaredMutationAllowance, ...] = (),
         consumed_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
         created_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
+        removed_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
         replaced_paths: tuple[tuple[tuple[str, str], ...], ...] = (),
     ) -> None:
         if rop is not None:
@@ -153,8 +156,10 @@ def _apply_legacy_dispatch(
                 used_fallback_tags=used_fallback_tags,
                 failure_reason=failure_reason,
                 reason_code=reason_code,
+                declared_allowances=declared_allowances,
                 consumed_paths=consumed_paths,
                 created_paths=created_paths,
+                removed_paths=removed_paths,
                 replaced_paths=replaced_paths,
             )
             return
@@ -167,8 +172,10 @@ def _apply_legacy_dispatch(
             used_fallback_tags=used_fallback_tags,
             failure_reason=failure_reason,
             reason_code=reason_code,
+            declared_allowances=declared_allowances,
             consumed_paths=consumed_paths,
             created_paths=created_paths,
+            removed_paths=removed_paths,
             replaced_paths=replaced_paths,
         )
 
@@ -273,6 +280,27 @@ def _apply_legacy_dispatch(
     )
 
     whole_result = None
+    migration_rebased_target_path = None
+    migration_rebase_source_path = None
+    if (
+        dispatch_op.op_type in {"INSERT", "REPLACE"}
+        and migration_ledger is not None
+        and dispatch_op.lo is not None
+    ):
+        migrated = migration_ledger.current_address_with_prefix_migrations(dispatch_op.lo.target)
+        if migrated != dispatch_op.lo.target and migrated.path and migrated.path[-1][0] == "section":
+            migration_rebased_target_path = _path_to_tuple(migrated.path)
+            source_labels = {kind: label for kind, label in dispatch_op.lo.target.path}
+            source_section = source_labels.get("section")
+            if source_section:
+                migration_rebase_source_path = _path_to_tuple(
+                    state.find_section_path(
+                        source_section,
+                        source_labels.get("chapter"),
+                        source_labels.get("part"),
+                    )
+                )
+            sec_path = None
     if not blocked_scoped_whole_section_replace_recovery:
         whole_result = _apply_whole_section_op(
             state,
@@ -294,8 +322,21 @@ def _apply_legacy_dispatch(
             if rop is not None
             else _resolved_target_path_for_event(dispatch_op, sec_path)
         )
+        if migration_rebased_target_path is not None:
+            resolved_target_path = migration_rebased_target_path
         created_paths = ()
         replaced_paths = ()
+        removed_paths = ()
+        declared_allowances = ()
+        if migration_rebase_source_path is not None:
+            declared_allowances = (
+                DeclaredMutationAllowance(
+                    kind="migration_path",
+                    paths=(migration_rebase_source_path,),
+                    rule_id="pending_source_chain_insert_rebase",
+                ),
+            )
+            removed_paths = (migration_rebase_source_path,)
         if resolved_target_path is not None:
             if dispatch_op.op_type == "INSERT":
                 created_paths = (resolved_target_path,)
@@ -308,8 +349,10 @@ def _apply_legacy_dispatch(
             helper="_apply_whole_section_op",
             outcome="applied" if whole_result is not state else "failed",
             resolved_target_path=resolved_target_path,
+            declared_allowances=declared_allowances,
             created_paths=created_paths,
             replaced_paths=replaced_paths,
+            removed_paths=removed_paths,
         )
         return whole_result
 

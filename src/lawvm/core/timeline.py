@@ -1042,6 +1042,24 @@ def materialize_pit_ex(
             node = child
         return True
 
+    def _same_source_section_snapshot_masks_child(
+        parent_v: ProvisionVersion,
+        parent_addr: LegalAddress,
+        child_v: ProvisionVersion,
+    ) -> bool:
+        if parent_addr.leaf_kind() != "section" or parent_v.content is None:
+            return False
+        if parent_v.effective != child_v.effective or parent_v.enacted != child_v.enacted:
+            return False
+        parent_source = parent_v.source.statute_id if parent_v.source is not None else ""
+        child_source = child_v.source.statute_id if child_v.source is not None else ""
+        if not parent_source or parent_source != child_source:
+            return False
+        return any(
+            child.kind.value in {"subsection", "item"} and child.label
+            for child in parent_v.content.children
+        )
+
     for addr in list(active):
         if len(addr.path) <= 1:
             continue
@@ -1053,13 +1071,20 @@ def materialize_pit_ex(
             if (
                 parent_v
                 and parent_v.content is not None
-                and _parent_content_masks_child(parent_v.content, parent_addr, addr)
                 and child_v
                 and (
-                    parent_v.effective > child_v.effective
+                    (
+                        _parent_content_masks_child(parent_v.content, parent_addr, addr)
+                        and parent_v.effective > child_v.effective
+                    )
+                    or (
+                        _parent_content_masks_child(parent_v.content, parent_addr, addr)
+                        and parent_v.effective == child_v.effective
+                        and parent_v.enacted > child_v.enacted
+                    )
                     or (
                         parent_v.effective == child_v.effective
-                        and parent_v.enacted > child_v.enacted
+                        and _same_source_section_snapshot_masks_child(parent_v, parent_addr, child_v)
                     )
                 )
             ):
@@ -1103,7 +1128,11 @@ def materialize_pit_ex(
     # multiple deeper same-label sections exist, the shallow address is
     # ambiguous evidence rather than a safe duplicate.
     deeper_section_labels: Dict[Tuple[str, str], List[LegalAddress]] = {}
-    for addr in active:
+    for addr, content in active.items():
+        if content is None:
+            continue
+        if any(active.get(LegalAddress(path=addr.path[:depth])) is None for depth in range(1, len(addr.path))):
+            continue
         if len(addr.path) > 2 and addr.path[-1][0] == "section":
             deeper_section_labels.setdefault(addr.path[-1], []).append(addr)
     unique_deeper_section_labels = {
@@ -1117,11 +1146,6 @@ def materialize_pit_ex(
         deeper_addr = unique_deeper_section_labels.get(addr.path[-1])
         if deeper_addr is None:
             continue
-        deeper_v = active_versions.get(deeper_addr)
-        shallow_v = active_versions.get(addr)
-        if deeper_v and shallow_v and shallow_v.effective > deeper_v.effective:
-            active[deeper_addr] = active[addr]
-            active_versions[deeper_addr] = shallow_v
         superseded.add(addr)
 
     for addr in superseded:
@@ -1154,6 +1178,7 @@ def materialize_pit_ex(
     # or reconstructing from timeline entries when no base is available.
     body = _materialize_body(
         active,
+        active_versions,
         base,
         label_norm=label_norm,
         issue_sink=issues,

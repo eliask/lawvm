@@ -35,10 +35,12 @@ from lawvm.finland.source_pathology import (
     build_partial_whole_section_payload_pathology,
     build_sparse_merge_invariant_skip_pathology,
     build_temporary_section_rebase_pathology,
+    build_unique_payload_insert_under_live_duplicates_pathology,
 )
 from lawvm.finland.apply_ir_ops import (
     _build_repeal_placeholder_ir,
     _build_repeal_placeholder_from_label_ir,
+    _relabel_section_ir,
 )
 from lawvm.finland.apply_runtime_support import (
     _expired_temporary_section_merge_base,
@@ -362,6 +364,28 @@ def _preserve_live_container_on_merge_duplicate(
     return live_node
 
 
+def _merge_unique_payload_sections_after_live_duplicate_skip(
+    live_node: IRNode,
+    payload_node: IRNode,
+) -> IRNode | None:
+    """Admit unique payload sections even when the live container has duplicates."""
+    live_labels = {
+        child.label
+        for child in live_node.children
+        if child.kind is IRNodeKind.SECTION and child.label
+    }
+    payload_sections = [
+        child
+        for child in payload_node.children
+        if child.kind is IRNodeKind.SECTION and child.label and child.label not in live_labels
+    ]
+    if not payload_sections:
+        return None
+    return _tops.resort_children(
+        _tops._with_children(live_node, (*live_node.children, *payload_sections))
+    )
+
+
 def _prepare_section_root_payload_for_replay(
     payload: IRNode,
     *,
@@ -567,7 +591,7 @@ def _find_scoped_section_insert_parent_path(
 ) -> Path | None:
     """Resolve a section insert parent without dropping explicit part scope."""
     if target_part:
-        part_path = state.find("part", target_part)
+        part_path = _find_direct_body_part_path(state.ir, target_part) or state.find("part", target_part)
         if part_path is None:
             return None
         if target_chapter:
@@ -588,6 +612,17 @@ def _find_scoped_section_insert_parent_path(
     )
 
 
+def _find_direct_body_part_path(ir: IRNode, target_part: str | None) -> Path | None:
+    if not target_part:
+        return None
+    return _parent_direct_child_path_with_same_label(
+        ir,
+        (),
+        kind=IRNodeKind.PART,
+        label=target_part,
+    )
+
+
 @dataclass(frozen=True)
 class _StructureApplyView:
     target_unit_kind: TargetUnitKind
@@ -602,6 +637,8 @@ class _StructureApplyView:
     source_statute: str | None
     source_issue_date: dt.date | None
     source_title: str
+    target_address: LegalAddress | None = None
+    source_effective: str = ""
     payload_completeness: "PayloadCompletenessWitness | None" = None
 
 
@@ -618,6 +655,9 @@ def _structure_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _StructureAppl
         source_issue_date = op.resolved_source_issue_date
         source_title = op.resolved_source_title
         op_type = op.resolved_action_type
+        op_lo = getattr(op, "lo", None)
+        target_address = op.resolved_target_address or (op_lo.target if op_lo is not None else None)
+        source_effective = op_lo.source.effective if op_lo is not None and op_lo.source is not None else ""
         target_section = _legacy_target_section_for_scope(scope, op.target_unit_kind)
         target_item = scope.target_item
         target_special = _legacy_target_special_for_scope(scope, op.effective_target_special)
@@ -628,6 +668,8 @@ def _structure_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _StructureAppl
         source_issue_date = op.source_issue_date
         source_title = op.source_title or ""
         op_type = op.op_type
+        target_address = op.lo.target if op.lo is not None else None
+        source_effective = op.lo.source.effective if op.lo is not None and op.lo.source is not None else ""
         target_section = op.target_section or ""
         target_item = op.target_item
         target_special = op.target_special
@@ -646,6 +688,8 @@ def _structure_apply_view_for_op(op: AmendmentOp | ResolvedOp) -> _StructureAppl
         source_statute=source_statute,
         source_issue_date=source_issue_date,
         source_title=source_title,
+        target_address=target_address,
+        source_effective=source_effective,
         payload_completeness=op.payload_completeness if isinstance(op, ResolvedOp) else None,
     )
 
@@ -722,7 +766,11 @@ def _apply_container_op(
     _target_special = view.target_special
     _target_part = view.target_part
     _op_lo = getattr(op, "lo", None)
-    _op_source_effective = _op_lo.source.effective if _op_lo is not None and _op_lo.source is not None else ""
+    _op_source_effective = (
+        _op_lo.source.effective
+        if _op_lo is not None and _op_lo.source is not None
+        else view.source_effective
+    )
 
     if _target_unit_kind == "section":
         return None
@@ -1147,6 +1195,55 @@ def _apply_whole_section_op(
     _op_source_effective = _op_lo.source.effective if _op_lo is not None and _op_lo.source is not None else ""
 
     if (
+        _op_type in {"INSERT", "REPLACE"}
+        and sec_path is None
+        and migration_ledger is not None
+    ):
+        source_address = (
+            (
+                rop.resolved_target_address
+                or (
+                    _rop_lo.target
+                    if (_rop_lo := getattr(rop, "lo", None)) is not None
+                    else None
+                )
+            )
+            if rop is not None
+            else view.target_address
+        )
+        migrated = (
+            migration_ledger.current_address_with_prefix_migrations(source_address)
+            if source_address is not None
+            else None
+        )
+        if (
+            migrated is not None
+            and source_address is not None
+            and migrated != source_address
+            and migrated.path
+            and migrated.path[-1][0] == "section"
+        ):
+            migrated_labels = {kind: label for kind, label in migrated.path}
+            source_labels = {kind: label for kind, label in source_address.path}
+            migrated_section = migrated_labels.get("section")
+            if migrated_section:
+                source_section = source_labels.get("section")
+                if source_section:
+                    source_path = state.find_section_path(
+                        source_section,
+                        source_labels.get("chapter"),
+                        source_labels.get("part"),
+                    )
+                    if source_path is not None:
+                        state = state.with_ir(_tops.remove_at(state.ir, source_path))
+                        sec_path = None
+                _ts = migrated_section
+                _target_chapter = migrated_labels.get("chapter")
+                _target_part = migrated_labels.get("part")
+                if muutos_ir is not None and not _same_norm_label(muutos_ir.label, migrated_section):
+                    muutos_ir = _relabel_section_ir(muutos_ir, migrated_section)
+
+    if (
         _target_unit_kind != "section"
         or _target_paragraph
         or (_target_special and _target_special != "otsikko_edella")
@@ -1469,7 +1566,7 @@ def _apply_whole_section_op(
             base_path = None
             if base_ir is not None:
                 if _target_part:
-                    part_path = _tops.find(base_ir, "part", _target_part)
+                    part_path = _find_direct_body_part_path(base_ir, _target_part) or _tops.find(base_ir, "part", _target_part)
                     part_node = _tops.resolve(base_ir, part_path) if part_path is not None else None
                     if part_path is not None and part_node is not None:
                         if _target_chapter:
@@ -1700,7 +1797,7 @@ def _apply_whole_section_op(
         if _target_chapter:
             ch_path = None
             if _target_part:
-                part_path = state.find("part", _target_part)
+                part_path = _find_direct_body_part_path(state.ir, _target_part) or state.find("part", _target_part)
                 part_node = _tops.resolve(state.ir, part_path) if part_path is not None else None
                 if part_path is not None and part_node is not None:
                     local_ch_path = _tops.find(part_node, "chapter", _target_chapter)
@@ -1743,18 +1840,36 @@ def _apply_whole_section_op(
                                 [c for c in temp_ch.children if c.kind is IRNodeKind.SUBSECTION]
                             ),
                         )
-                    )
+                )
                 merged = _merge_same_numbered_container_insert_ir(ch_node, temp_ch)
                 if merged is None:
-                    merged = _preserve_live_container_on_merge_duplicate(
-                        source_pathologies_out=source_pathologies_out,
-                        source_statute=_source_statute or "",
-                        target_unit_kind=view.target_unit_kind,
-                        target_label=f"{_ts} §",
-                        recovery_kind="section_insert_chapter_merge_absorb_duplicate_labels",
-                        live_node=ch_node,
-                        payload_node=temp_ch,
-                    )
+                    merged = _merge_unique_payload_sections_after_live_duplicate_skip(ch_node, temp_ch)
+                    if merged is not None:
+                        if source_pathologies_out is not None:
+                            source_pathologies_out.append(
+                                build_unique_payload_insert_under_live_duplicates_pathology(
+                                    source_statute=_source_statute or "",
+                                    target_unit_kind=view.target_unit_kind,
+                                    target_label=f"{_ts} §",
+                                    recovery_kind="section_insert_chapter_merge_live_duplicates_preserve_unique_payload",
+                                    live_sibling_count=len(
+                                        [c for c in ch_node.children if c.kind is IRNodeKind.SECTION]
+                                    ),
+                                    payload_sibling_count=len(
+                                        [c for c in temp_ch.children if c.kind is IRNodeKind.SECTION]
+                                    ),
+                                )
+                            )
+                    else:
+                        merged = _preserve_live_container_on_merge_duplicate(
+                            source_pathologies_out=source_pathologies_out,
+                            source_statute=_source_statute or "",
+                            target_unit_kind=view.target_unit_kind,
+                            target_label=f"{_ts} §",
+                            recovery_kind="section_insert_chapter_merge_absorb_duplicate_labels",
+                            live_node=ch_node,
+                            payload_node=temp_ch,
+                        )
                 absorbed_ir = state.ir
                 merged_for_replace = merged
                 absorbed_paths: tuple[tuple[tuple[str, str], ...], ...] = ()
@@ -1800,7 +1915,7 @@ def _apply_whole_section_op(
                 base_path = None
                 if base_ir is not None:
                     if _target_part:
-                        part_path = _tops.find(base_ir, "part", _target_part)
+                        part_path = _find_direct_body_part_path(base_ir, _target_part) or _tops.find(base_ir, "part", _target_part)
                         part_node = _tops.resolve(base_ir, part_path) if part_path is not None else None
                         if part_path is not None and part_node is not None:
                             if _target_chapter:
