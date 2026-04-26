@@ -397,7 +397,13 @@ def snapshot_target_context(
     if unit_kind == "section":
         raw_path = master.find_section_path(target_norm, target_chapter, target_part)
     elif unit_kind == "chapter":
-        raw_path = master.find("chapter", target_norm)
+        if target_part:
+            part_path = master.find("part", target_part)
+            part_node = _tops.resolve(ir, part_path) if part_path is not None else None
+            chapter_path = _tops.find(part_node, "chapter", target_norm) if part_node is not None else None
+            raw_path = part_path + chapter_path if part_path is not None and chapter_path is not None else None
+        else:
+            raw_path = master.find("chapter", target_norm)
     elif unit_kind == "part":
         raw_path = master.find("part", target_norm)
     else:
@@ -420,6 +426,8 @@ def snapshot_target_context(
                     raw_parent_path = part_path + chapter_path
             if raw_parent_path is None:
                 raw_parent_path = master.find("chapter", target_chapter)
+        elif unit_kind == "chapter" and target_part:
+            raw_parent_path = master.find("part", target_part)
         if raw_parent_path is None:
             raw_parent_path = ()
     parent_path: Optional[Path] = _path_to_tuple(raw_parent_path)

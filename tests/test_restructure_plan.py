@@ -1387,15 +1387,15 @@ class TestExecuteRelabel:
         _new_tree, executed = execute_restructure_plan(plan, before_master.replay_fold_state.ir)
         by_target = {item.op.target: item for item in executed}
 
-        assert by_target["part:2/chapter:4/section:11"].reason_code == "target_leaf_absent_under_existing_parent"
+        assert by_target["part:2/chapter:4/section:11"].success
         assert by_target["part:6/chapter:2/section:7"].reason_code == "target_leaf_absent_under_existing_parent"
         pathology = relabel_skip_source_pathology_finding(
-            by_target["part:2/chapter:4/section:11"],
+            by_target["part:6/chapter:2/section:7"],
             source_statute=source_id,
         )
         assert pathology is not None
         assert pathology.detail["code"] == "RECODIFICATION_SOURCE_CHAIN_GAP"
-        assert pathology.detail["target_label"] == "4 luku 11 §"
+        assert pathology.detail["target_label"] == "2 luku 7 §"
 
     def test_2017_320_2020_1256_vi_chapter_26_28_relabels_execute_in_part_vi(self) -> None:
         """2020/1256 chapter 26-28 renumbers should execute from Part VI, not stale Part V."""

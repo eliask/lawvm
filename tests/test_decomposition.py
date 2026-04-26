@@ -1080,6 +1080,44 @@ class TestNormalizeAndCompileOps:
         assert ctx.parent_node.label == "2"
         assert ctx.sibling_labels == ("1",)
 
+    def test_snapshot_target_context_uses_part_scope_for_same_label_chapter(self) -> None:
+        master = _make_master(
+            (
+                (
+                    "<part><num>I OSA</num>"
+                    "<chapter><num>4 luku</num>"
+                    "<section><num>1 §</num><subsection><num>1</num><content><p>A.</p></content></subsection></section>"
+                    "</chapter>"
+                    "</part>"
+                ),
+                (
+                    "<part><num>II OSA</num>"
+                    "<chapter><num>4 luku</num>"
+                    "<section><num>11 §</num><subsection><num>1</num><content><p>B.</p></content></subsection></section>"
+                    "</chapter>"
+                    "</part>"
+                ),
+            )
+        )
+        lookups = ReplayLookups(
+            snapshot_rev=0,
+            unique_section_paths={},
+            chapter_members={},
+            part_members={},
+            all_section_labels=frozenset({"1", "11"}),
+        )
+
+        ctx = snapshot_target_context(cast(Any, master), "chapter", "4", None, lookups, target_part="2")
+
+        assert ctx.node_path == (("part", "2"), ("chapter", "4"))
+        assert ctx.live_node is not None
+        assert ctx.live_node.kind == IRNodeKind.CHAPTER
+        assert ctx.parent_path == (("part", "2"),)
+        assert ctx.parent_node is not None
+        assert ctx.parent_node.kind == IRNodeKind.PART
+        assert ctx.parent_node.label == "2"
+        assert ctx.sibling_labels == ("4",)
+
     def test_normalize_and_compile_ops_keeps_malformed_suffix_section_inserts_as_sections(self) -> None:
         master = _make_master(
             (
