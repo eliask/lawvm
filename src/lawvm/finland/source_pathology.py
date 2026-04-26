@@ -450,3 +450,30 @@ def build_sparse_merge_invariant_skip_pathology(
             "payload_sibling_count": payload_sibling_count,
         },
     )
+
+
+def build_unique_payload_insert_under_live_duplicates_pathology(
+    *,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_label: str,
+    recovery_kind: str,
+    live_sibling_count: int = 0,
+    payload_sibling_count: int = 0,
+) -> SourcePathology:
+    """Build a typed record for a unique insert into a duplicate-bearing live container."""
+    return SourcePathology.from_scope(
+        code="DESTRUCTIVE_SHAPE_LOSS_RISK",
+        message=(
+            "Live container has duplicate labels, but the amendment payload owns a "
+            "unique new child; replay preserved live duplicates and admitted the unique payload."
+        ),
+        source_statute=source_statute,
+        target_unit_kind=target_unit_kind,
+        target_label=target_label,
+        detail={
+            "recovery_kind": recovery_kind,
+            "live_sibling_count": live_sibling_count,
+            "payload_sibling_count": payload_sibling_count,
+        },
+    )

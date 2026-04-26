@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 from collections import Counter
+from typing import Any, cast
 
 import pytest
 
@@ -333,6 +334,48 @@ class TestNoDuplicatesInPIT:
         ]
         assert "5" in section_labels
         assert "21" not in section_labels
+
+    def test_2017_320_delayed_section_268_materializes_under_current_chapter_32(self) -> None:
+        """2018/731's delayed section must survive the 2019/371 and 2020/1256 recodification chain."""
+        replay_meta: dict[str, object] = {}
+        replay = pinned_replay("2017/320", mode="legal_pit", quiet=True, replay_meta_out=replay_meta)
+        ir = replay.ir
+        part_7 = next(
+            child
+            for child in ir.children
+            if child.kind is IRNodeKind.PART and child.label == "7"
+        )
+        chapter_32 = next(
+            child
+            for child in part_7.children
+            if child.kind is IRNodeKind.CHAPTER and child.label == "32"
+        )
+        section_268 = next(
+            child
+            for child in chapter_32.children
+            if child.kind is IRNodeKind.SECTION and child.label == "268"
+        )
+
+        text = " ".join(irnode_to_text(section_268).split())
+        assert "Moottorikäyttöisen ajoneuvon asiakirjoja" in text
+        assert "39 §:ssä" in text
+        assert any(
+            str(event.from_address) == "part:6/chapter:2/section:7"
+            and str(event.to_address) == "part:6/chapter:2/section:268"
+            and getattr(event, "witness", {}).get("rule_id")
+            == "restructure.pending_source_chain_relabel_lineage"
+            for event in replay.migration_events
+        )
+        source_pathologies = replay_meta.get("source_pathologies", [])
+        assert isinstance(source_pathologies, list)
+        assert any(
+            cast(dict[str, Any], pathology).get("source_statute") == "2018/731"
+            and cast(dict[str, Any], pathology).get("target_label") == "268 §"
+            and cast(dict[str, Any], pathology).get("recovery_kind")
+            == "section_insert_chapter_merge_live_duplicates_preserve_unique_payload"
+            for pathology in source_pathologies
+            if isinstance(pathology, dict)
+        )
 
     def test_2017_320_2018_301_does_not_flatten_sections_19_21_to_root(self) -> None:
         """2018/301 must not materialize chapter-owned sections 19-21 as root siblings."""

@@ -498,6 +498,18 @@ def rekey_timelines_with_migration_events(
             if event.kind == "renumber" and event.effective
         )
 
+    def _has_same_wave_incoming_to_source_prefix(
+        source_prefix: LegalAddress,
+        *,
+        at_effective: str,
+    ) -> bool:
+        return any(
+            event.effective == at_effective
+            and event.to_address.path == source_prefix.path
+            for event in migration_events
+            if event.kind == "renumber" and event.effective
+        )
+
     def _source_prefix_has_native_rebirth(
         source_address: LegalAddress,
         *,
@@ -534,6 +546,10 @@ def rekey_timelines_with_migration_events(
                 address,
                 at_effective=event.effective,
             )
+            same_wave_incoming_to_source_prefix = _has_same_wave_incoming_to_source_prefix(
+                event.from_address,
+                at_effective=event.effective,
+            )
             return [
                 (
                     address,
@@ -542,6 +558,7 @@ def rekey_timelines_with_migration_events(
                         address,
                         before_effective=event.effective,
                     )
+                    or same_wave_incoming_to_source_prefix
                     or (
                         not same_wave_incoming
                         and _source_prefix_has_native_rebirth(

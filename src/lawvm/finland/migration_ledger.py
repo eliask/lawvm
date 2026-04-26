@@ -11,6 +11,8 @@ tree surgery succeeds, and the finished ledger is surfaced through the
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from lawvm.core.ir import LegalAddress
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.timeline import current_address_from_migration_events
@@ -54,8 +56,8 @@ class MigrationLedger:
 
     __slots__ = ("_events",)
 
-    def __init__(self) -> None:
-        self._events: list[MigrationEvent] = []
+    def __init__(self, events: Iterable[MigrationEvent] = ()) -> None:
+        self._events: list[MigrationEvent] = list(events)
 
     # ------------------------------------------------------------------
     # Recording

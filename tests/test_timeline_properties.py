@@ -2240,6 +2240,7 @@ def test_materialize_body_preserves_descendant_override_under_inserted_root() ->
 
     body = materialize_body(
         active,
+        {},
         base,
         record_issue=lambda *args, **kwargs: None,
     )
@@ -2317,6 +2318,7 @@ def test_materialize_body_preserves_duplicate_base_siblings_with_descendant_owne
 
     body = materialize_body(
         active,
+        {},
         base,
         issue_sink=issues,
         emit_warnings=False,
@@ -2385,6 +2387,7 @@ def test_materialize_body_preserves_duplicate_base_children_under_selected_root(
 
     body = materialize_body(
         active,
+        {},
         base,
         issue_sink=issues,
         emit_warnings=False,
@@ -2457,6 +2460,7 @@ def test_materialize_body_preserves_duplicate_selected_children_when_direct_chil
 
     body = materialize_body(
         active,
+        {},
         base,
         issue_sink=issues,
         emit_warnings=False,

@@ -498,6 +498,7 @@ def overlay_on_container(
 
 def materialize_body(
     active: dict[LegalAddress, Optional[IRNode]],
+    active_versions: dict[LegalAddress, ProvisionVersion],
     base: Optional[IRStatute],
     *,
     label_norm: Optional[Callable[[str], str]] = None,
@@ -508,15 +509,33 @@ def materialize_body(
     """Build body from timeline entries, preserving unlabeled base content."""
     top_keys: set[LegalAddress] = {addr for addr in active if len(addr.path) == 1}
     for addr in list(active):
-        if len(addr.path) == 2:
-            parent = LegalAddress(path=addr.path[:1])
-            if parent not in top_keys and parent not in active:
-                kind, label = addr.path[0]
-                active[parent] = IRNode(
-                    kind=IRNodeKind(kind),
-                    label=label,
-                    children=(IRNode(kind=IRNodeKind.NUM, text=label),),
-                )
+        if active.get(addr) is None:
+            continue
+        for depth in range(1, len(addr.path)):
+            parent = LegalAddress(path=addr.path[:depth])
+            if parent in active and active[parent] is not None:
+                continue
+            kind, label = addr.path[depth - 1]
+            if kind in {"section", "subsection", "paragraph", "item"}:
+                continue
+            parent_version = active_versions.get(parent)
+            descendant_version = active_versions.get(addr)
+            if (
+                parent in active
+                and active[parent] is None
+                and parent_version is not None
+                and descendant_version is not None
+                and (descendant_version.effective, descendant_version.enacted)
+                <= (parent_version.effective, parent_version.enacted)
+            ):
+                continue
+            active[parent] = IRNode(
+                kind=IRNodeKind(kind),
+                label=label,
+                attrs={"lawvm_synthesized_container": "active_descendant"},
+                children=(IRNode(kind=IRNodeKind.NUM, text=label),),
+            )
+            if depth == 1:
                 top_keys.add(parent)
 
     if base is None:
@@ -769,6 +788,12 @@ def project_materialization_selection_states(
             continue
         if bucket.inactive:
             active[address] = None
+    for event in migration_events:
+        if as_of and event.effective and event.effective > as_of:
+            continue
+        if event.from_address != event.to_address and event.from_address not in active_versions:
+            suppressed_source_addresses.add(event.from_address)
     for address in sorted(suppressed_source_addresses, key=lambda item: item.path):
-        active[address] = None
+        if address not in active_versions:
+            active[address] = None
     return active, active_versions, tuple(ambiguous_addresses)
