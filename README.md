@@ -162,7 +162,12 @@ Full Finland replay workflows require local archived sources under
 `data/*.farchive`. Use `uv run lawvm import-zip` with the public Finlex
 `statute.zip` and `statute-consolidated.zip` archives before running ordinary
 Finland replay, diff, oracle-check, or benchmark commands. Replay and
-verification should be archive-first whenever possible.
+verification should be archive-first whenever possible. The `.farchive` files
+are local, history-preserving source archives backed by
+[farchive](https://github.com/eliask/farchive), a small archive format/library
+for exact bytes observed at named locators. It keeps large legal corpora
+efficiently queryable through SQLite and compact on disk; the Finlex import is
+roughly under 5 GB after ingesting about 13 GB of ZIP input.
 
 The repository includes small public corpus indexes and fixtures, not the full
 source archives needed for every replay workflow.
