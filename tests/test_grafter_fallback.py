@@ -7754,6 +7754,91 @@ def test_process_muutoslaki_2017_320_2019_371_follows_descendant_replace_through
     assert not [f for f in failed if f.reason_code == "section_not_found"]
 
 
+def test_process_muutoslaki_2017_320_2019_371_uses_destination_payload_surface_for_sparse_source_shells() -> None:
+    corpus = get_corpus()
+    orig = corpus.read_source("2017/320")
+    if orig is None:
+        pytest.skip("corpus archive not available")
+
+    ctx = StatuteContext.from_xml(orig, _fi_label_postprocessor)
+    before = pinned_replay("2017/320", mode="legal_pit", stop_before="2019/371", quiet=True)
+
+    with redirect_stdout(StringIO()):
+        phase = process_muutoslaki(
+            "2019/371",
+            before.replay_fold_state,
+            ctx,
+            replay_mode="legal_pit",
+            parent_id="2017/320",
+            corpus=corpus,
+        )
+
+    observations = [
+        f
+        for f in phase.findings()
+        if f.kind == "ELAB.RECODIFICATION_DESTINATION_PAYLOAD_SURFACE"
+    ]
+
+    assert any(
+        f.detail.get("source_target_norm") == "2"
+        and f.detail.get("destination_target_norm") == "115"
+        and f.detail.get("target_part") == "1"
+        and f.detail.get("target_chapter") == "1"
+        for f in observations
+    )
+    assert any(
+        f.detail.get("source_target_norm") == "3"
+        and f.detail.get("destination_target_norm") == "221"
+        and f.detail.get("target_part") == "2"
+        and f.detail.get("target_chapter") == "1"
+        for f in observations
+    )
+
+
+def test_process_muutoslaki_2017_320_2019_371_governs_pending_relabel_gap_failure() -> None:
+    corpus = get_corpus()
+    orig = corpus.read_source("2017/320")
+    if orig is None:
+        pytest.skip("corpus archive not available")
+
+    ctx = StatuteContext.from_xml(orig, _fi_label_postprocessor)
+    before = pinned_replay("2017/320", mode="legal_pit", stop_before="2019/371", quiet=True)
+    failed: list[FailedOp] = []
+
+    with redirect_stdout(StringIO()):
+        phase = process_muutoslaki(
+            "2019/371",
+            before.replay_fold_state,
+            ctx,
+            replay_mode="legal_pit",
+            parent_id="2017/320",
+            corpus=corpus,
+            failed_ops_out=failed,
+        )
+
+    assert not [
+        f
+        for f in failed
+        if f.target_part == "6"
+        and f.target_chapter == "2"
+        and f.target_section == "7"
+        and f.reason_code == "section_not_found"
+    ]
+    assert any(
+        f.kind == "ELAB.SOURCE_PATHOLOGY"
+        and f.detail.get("code") == "RECODIFICATION_SOURCE_CHAIN_GAP"
+        and f.detail.get("target_label") == "2 luku 7 §"
+        for f in phase.findings()
+    )
+    assert any(
+        f.kind == "APPLY.FAILED_OPERATION_GOVERNED_BY_SOURCE_CHAIN_GAP"
+        and f.detail.get("target_part") == "6"
+        and f.detail.get("target_chapter") == "2"
+        and f.detail.get("target_section") == "7"
+        for f in phase.findings()
+    )
+
+
 def test_uncovered_body_records_past_repeal_placeholder_guard_skip_finding() -> None:
     state = ReplayState(
         ir=IRNode(

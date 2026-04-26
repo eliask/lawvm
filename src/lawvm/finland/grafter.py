@@ -3005,6 +3005,12 @@ def _build_group_surface(
     """
     from lawvm.core.phase_result import PhaseBuilder
 
+    source_statute = next(
+        (str(op.source_statute or "") for op in group_ops if op.source_statute),
+        "",
+    )
+    surface_findings: list[Finding] = []
+
     def _renumber_destination_section_label() -> Optional[str]:
         labels = {
             dest_path["section"]
@@ -3018,6 +3024,22 @@ def _build_group_surface(
             return None
         return next(iter(labels))
 
+    def _is_sparse_source_shell(node: IRNode | None) -> bool:
+        if node is None or node.kind is not IRNodeKind.SECTION:
+            return False
+        has_omission = any(_is_omission_ir(child) for child in node.children)
+        has_substantive_child = any(
+            child.kind
+            not in {
+                IRNodeKind.NUM,
+                IRNodeKind.HEADING,
+                IRNodeKind.OMISSION,
+            }
+            and bool(irnode_to_text(child).strip())
+            for child in node.children
+        )
+        return has_omission and not has_substantive_child
+
     muutos_ir, cross_ir = _find_muutos_ir(
         muutos_tree,
         target_unit_kind,
@@ -3025,7 +3047,7 @@ def _build_group_surface(
         target_chapter,
         target_part,
     )
-    if muutos_ir is None and target_unit_kind == "section":
+    if target_unit_kind == "section":
         destination_section = _renumber_destination_section_label()
         has_same_group_relabel = any(op.op_type == "RENUMBER" for op in group_ops)
         has_followup_payload_op = any(
@@ -3043,18 +3065,40 @@ def _build_group_surface(
             )
             for op in group_ops
         )
-        if destination_section is not None and has_followup_payload_op:
-            muutos_ir, cross_ir = _find_muutos_ir(
+        source_shell = _is_sparse_source_shell(muutos_ir)
+        source_surface = "missing" if muutos_ir is None else "sparse_omission_shell"
+        if destination_section is not None and has_followup_payload_op and (muutos_ir is None or source_shell):
+            destination_ir, destination_cross_ir = _find_muutos_ir(
                 muutos_tree,
                 target_unit_kind,
                 destination_section,
                 None,
                 None,
             )
-    source_statute = next(
-        (str(op.source_statute or "") for op in group_ops if op.source_statute),
-        "",
-    )
+            if destination_ir is not None and not _is_sparse_source_shell(destination_ir):
+                muutos_ir, cross_ir = destination_ir, destination_cross_ir
+                surface_findings.append(
+                    Finding(
+                        kind="ELAB.RECODIFICATION_DESTINATION_PAYLOAD_SURFACE",
+                        role="observation",
+                        stage="_build_group_surface",
+                        detail={
+                            "kind": "ELAB.RECODIFICATION_DESTINATION_PAYLOAD_SURFACE",
+                            "message": (
+                                "Same-group recodification payload surface selected from the destination "
+                                "section because the source-number body is absent or an omission shell."
+                            ),
+                            "target_unit_kind": target_unit_kind,
+                            "source_target_norm": target_norm,
+                            "destination_target_norm": destination_section,
+                            "target_chapter": target_chapter or "",
+                            "target_part": target_part or "",
+                            "source_surface": source_surface,
+                        },
+                        source_statute=source_statute,
+                        blocking=False,
+                    )
+                )
     if muutos_ir is not None and source_statute:
         muutos_ir, _ = normalize_source_ir(muutos_ir, source_statute)
     group_surface = _build_group_surface_factory(
@@ -3067,6 +3111,8 @@ def _build_group_surface(
     )
 
     b = PhaseBuilder()
+    if surface_findings:
+        b.add_findings(tuple(surface_findings))
     if group_surface.body_ir is None and any(op.op_type not in ("REPEAL", "ADD_HEADING") for op in group_ops):
         b.add_findings((
             Finding(
@@ -5825,6 +5871,72 @@ def process_muutoslaki(
             blocking=(stage == "pre_routing"),
         )
 
+    def _govern_failed_ops_by_recodification_source_chain_gap() -> None:
+        """Move apply failures already owned by recodification source gaps out of failed_ops.
+
+        Large recodification waves can name a pre-wave source provision that is
+        missing from the executable live tree because the source chain itself is
+        incomplete for that frame.  The restructure phase emits
+        ``RECODIFICATION_SOURCE_CHAIN_GAP`` for that exact target; keeping a
+        second generic ``section_not_found`` failure obscures the phase-local
+        diagnosis without adding evidence.
+        """
+        if not _compat_failed_ops:
+            return
+
+        governed_targets: set[str] = set()
+        for finding in _process_findings:
+            if finding.kind != "ELAB.SOURCE_PATHOLOGY" or str(finding.source_statute or "") != amendment_id:
+                continue
+            detail = dict(finding.detail)
+            if detail.get("code") != "RECODIFICATION_SOURCE_CHAIN_GAP":
+                continue
+            target_label = str(detail.get("target_label") or "").strip()
+            if target_label:
+                governed_targets.add(target_label)
+        if not governed_targets:
+            return
+
+        kept: list[FailedOp] = []
+        governed: list[FailedOp] = []
+        for failed in _compat_failed_ops:
+            if failed.reason_code != "section_not_found":
+                kept.append(failed)
+                continue
+            target_label = (
+                f"{failed.target_chapter} luku {failed.target_section} §".strip()
+                if failed.target_chapter
+                else f"{failed.target_section} §"
+            )
+            if target_label in governed_targets:
+                governed.append(failed)
+            else:
+                kept.append(failed)
+
+        if not governed:
+            return
+        _compat_failed_ops[:] = kept
+        for failed in governed:
+            _record_process_finding(
+                kind="APPLY.FAILED_OPERATION_GOVERNED_BY_SOURCE_CHAIN_GAP",
+                message=(
+                    "Apply failure is governed by a recodification source-chain gap "
+                    "for the same target."
+                ),
+                source_statute=amendment_id,
+                detail={
+                    "failed_description": failed.description,
+                    "target_unit_kind": failed.target_unit_kind,
+                    "target_part": failed.target_part,
+                    "target_chapter": failed.target_chapter,
+                    "target_section": failed.target_section,
+                    "failed_reason_code": failed.reason_code,
+                    "source_pathology_code": "RECODIFICATION_SOURCE_CHAIN_GAP",
+                },
+                role="observation",
+                blocking=False,
+            )
+
     def _project_compat_sinks() -> None:
         """Project local compatibility capture to caller sinks at the boundary."""
         if failed_ops_out is not None:
@@ -6817,6 +6929,7 @@ def process_muutoslaki(
                         f"  [{amendment_id}] pure_kumotaan_subsection_repeal_injected: "
                         f"{_n_pure_sub} subsection(s)"
                     )
+        _govern_failed_ops_by_recodification_source_chain_gap()
         return _build_result(_final_state)
 
     except KeyError:
