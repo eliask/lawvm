@@ -162,7 +162,7 @@ _PART_CROSS_HEADING_RE = re.compile(
 
 def _direct_text(el: etree._Element) -> str:
     """Return whitespace-normalized direct text content for ``el``."""
-    return " ".join("".join(el.itertext()).split())
+    return " ".join("".join(str(part) for part in el.itertext()).split())
 
 
 def _part_label_from_cross_heading(el: etree._Element) -> str:

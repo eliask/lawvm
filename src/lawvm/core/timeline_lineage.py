@@ -43,8 +43,8 @@ class MaterializationLineageBridgeClassification:
     destination_occupancy_collision: bool = False
 
 
-type _RetargetVersionContentFn = Callable[[ProvisionVersion, LegalAddress], ProvisionVersion]
-type _MergeBucketCleanupFn = Callable[[list[ProvisionVersion]], list[ProvisionVersion]]
+_RetargetVersionContentFn = Callable[[ProvisionVersion, LegalAddress], ProvisionVersion]
+_MergeBucketCleanupFn = Callable[[list[ProvisionVersion]], list[ProvisionVersion]]
 
 
 def has_native_rebirth_after_renumber(

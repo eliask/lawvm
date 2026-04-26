@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import logging
 import re
 from dataclasses import replace as dc_replace
-from typing import FrozenSet, List, Optional, cast
+from typing import TYPE_CHECKING, FrozenSet, List, Optional, cast
 
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.elaboration_context import TargetUnitKind
@@ -51,6 +51,10 @@ from lawvm.finland.apply_runtime_support import (
     _same_norm_label,
     _with_preserved_provision_index,
 )
+
+if TYPE_CHECKING:
+    from lawvm.finland.payload_normalize import PayloadCompletenessWitness
+    from lawvm.finland.statute import ReplayState
 from lawvm.finland.merge import (
     _has_section_omissions_ir,
     _heading_intro_replace_preserve_items_ir,
@@ -166,7 +170,12 @@ def _apply_section_tail_policy_marker(
     view: _StructureApplyView | None = None,
 ) -> IRNode:
     """Stamp section-root replace coverage onto replay content for PIT masking."""
-    payload_completeness = rop.payload_completeness if rop is not None else (view.payload_completeness if view is not None else None)
+    if rop is not None:
+        payload_completeness = rop.payload_completeness
+    elif view is not None:
+        payload_completeness = view.payload_completeness
+    else:
+        payload_completeness = None
     if node.kind is not IRNodeKind.SECTION or payload_completeness is None:
         return node
     tail_policy = str(payload_completeness.tail_policy or "").strip()
@@ -201,7 +210,12 @@ def _preserve_unstated_live_subsection_tail(
     keep any unmatched trailing live subsections in place instead of collapsing
     the section down to the sparse shell.
     """
-    payload_completeness = rop.payload_completeness if rop is not None else (view.payload_completeness if view is not None else None)
+    if rop is not None:
+        payload_completeness = rop.payload_completeness
+    elif view is not None:
+        payload_completeness = view.payload_completeness
+    else:
+        payload_completeness = None
     if candidate.kind is not IRNodeKind.SECTION or payload_completeness is None:
         return candidate
     if str(payload_completeness.tail_policy or "").strip() != "preserve_unstated_tail":
@@ -264,7 +278,12 @@ def _align_section_payload_subsection_labels_from_slot_assignment(
     view: _StructureApplyView | None = None,
 ) -> IRNode:
     """Rewrite fragmentary section-shell subsection labels from legal slot targets."""
-    payload_completeness = rop.payload_completeness if rop is not None else (view.payload_completeness if view is not None else None)
+    if rop is not None:
+        payload_completeness = rop.payload_completeness
+    elif view is not None:
+        payload_completeness = view.payload_completeness
+    else:
+        payload_completeness = None
     slot_assignment = rop.slot_assignment if rop is not None else None
     if (
         payload.kind is not IRNodeKind.SECTION
@@ -583,7 +602,7 @@ class _StructureApplyView:
     source_statute: str | None
     source_issue_date: dt.date | None
     source_title: str
-    payload_completeness: object | None = None
+    payload_completeness: "PayloadCompletenessWitness | None" = None
 
 
 def _coerce_structure_apply_view(op: "_StructureApplyView | AmendmentOp | ResolvedOp") -> _StructureApplyView:

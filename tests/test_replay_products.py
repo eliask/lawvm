@@ -18,7 +18,7 @@ from lawvm.core.provenance import MigrationEvent
 from lawvm.core.compile_result import TemporalEvent, TemporalScope
 from lawvm.finland.apply import apply_op
 from lawvm.finland.frontend_compile import normalize_and_compile_ops
-from lawvm.finland.grafter import compile_amendment_ops, get_corpus, get_johtolause, replay_xml
+from lawvm.finland.grafter import compile_amendment_ops, get_corpus, get_johtolause
 from lawvm.core.timeline import compile_timelines
 from lawvm.core.timeline import materialize_pit_ex
 from lawvm.core.timeline import select_active_version
@@ -35,7 +35,6 @@ from lawvm.finland.replay_products import _select_pit_lineage_inputs
 from lawvm.finland.replay_products import _temporal_events_from_lo_ops
 from lawvm.finland.replay_products import build_replay_products
 from lawvm.finland.replay_products import validate_replay_products
-from lawvm.finland.consolidated_artifacts import ConsolidatedArtifactSelector
 from lawvm.core.timeline_addresses import _retarget_root_node
 from lawvm.tools.inspect_amendment import build_amendment_bundle
 from tests.corpus_pin_helpers import pinned_replay
@@ -1040,6 +1039,7 @@ def test_temporal_events_from_lo_ops_keeps_expire_when_group_has_explicit_commen
         group_id="finland-johto:2021/984:section_commencement",
     )
 
+    assert explicit_commence.group_id is not None
     got = _temporal_events_from_lo_ops(
         [op],
         target_statute="1999/488",

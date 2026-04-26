@@ -48,7 +48,6 @@ from lawvm.finland.normalize import (
     parse_ops_title_fallback,
 )
 from lawvm.finland.johtolause import (
-    extract_legal_ops as extract_johtolause_legal_ops,
     extract_legal_ops_from_parse_result as extract_johtolause_legal_ops_from_parse_result,
     parse_clause as parse_johtolause_clause,
 )
@@ -70,7 +69,6 @@ from lawvm.finland.metadata import (
     _amendment_expiry_date,
     _expiry_date_precedes_effective_date,
     _infer_expiry_date_from_temporary_payload_text,
-    _temporary_section_expiry_override,
     _temporary_section_expiry_overrides,
     _parse_section_list_labels,
     _normalize_fi_parse_text,
@@ -321,7 +319,6 @@ def _restore_heading_facet_for_mixed_scope_section_replaces(
         and (op.target_paragraph is not None or bool(op.target_item))
     }
 
-    findings: List[Finding] = []
     for op in ops:
         key = (
             str(op.op_type or "").strip(),
@@ -503,10 +500,12 @@ def _retime_ops_from_cited_version_effective_dates(
     patched: List[AmendmentOp] = []
     for op in ops:
         cited_id = str(op.target_version_statute_id or "")
-        source = op.lo.source if (op.lo is not None and op.lo.source is not None) else None
+        lo = op.lo
+        source = lo.source if (lo is not None and lo.source is not None) else None
         cited_effective_iso = cited_effective_dates.get(cited_id)
         if (
-            source is None
+            lo is None
+            or source is None
             or not cited_effective_iso
             or not source.effective
             or cited_effective_iso <= source.effective
@@ -517,9 +516,9 @@ def _retime_ops_from_cited_version_effective_dates(
             dc_replace(
                 op,
                 lo=dc_replace(
-                    op.lo,
-                    source=dc_replace(op.lo.source, effective=cited_effective_iso),
-                    provenance_tags=tuple(op.lo.provenance_tags) + (f"target_version_effective_from:{cited_id}",),
+                    lo,
+                    source=dc_replace(source, effective=cited_effective_iso),
+                    provenance_tags=tuple(lo.provenance_tags) + (f"target_version_effective_from:{cited_id}",),
                 ),
             )
         )
@@ -1924,10 +1923,6 @@ def normalize_and_compile_ops(
         temporal_events=tuple(temporary_temporal_events),
     )
 
-
-# TYPE-ONLY import (avoid circular at runtime; ReplayState is only used in
-# function signatures as a forward reference string annotation).
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from lawvm.finland.statute import ReplayState  # noqa: F401

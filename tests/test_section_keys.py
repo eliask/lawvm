@@ -534,6 +534,7 @@ def test_extract_oracle_sections_keeps_2017_519_section_28_live_replacement_subs
     from lawvm.finland.grafter import get_ground_truth_tree
 
     oracle = get_ground_truth_tree("2017/519")
+    assert oracle is not None
     oracle_keys = extract_oracle_sections(oracle)
     section = oracle_keys["chapter:5/section:28"]
     text = etree.tostring(section, method="text", encoding="unicode")

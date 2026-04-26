@@ -1393,8 +1393,9 @@ class TestCrossChapterInsertMisrouting:
 
         assert by_id[iv_sec.unit_id].status == "unmatched"
         assert by_id[v_sec.unit_id].status == "claimed_current"
-        assert by_id[v_sec.unit_id].claim is not None
-        assert by_id[v_sec.unit_id].claim.part == "5"
+        v_claim = by_id[v_sec.unit_id].claim
+        assert v_claim is not None
+        assert v_claim.part == "5"
 
     def test_part_insert_claim_adopts_part_subtree(self) -> None:
         """Part INSERT claims must adopt descendant chapters and sections."""
@@ -1436,8 +1437,9 @@ class TestCrossChapterInsertMisrouting:
         section_units = [u for u in inventory if u.kind == IRNodeKind.SECTION.value]
 
         assert by_id[part_unit.unit_id].status == "claimed_current"
-        assert by_id[part_unit.unit_id].claim is not None
-        assert by_id[part_unit.unit_id].claim.target_address == "5"
+        part_claim = by_id[part_unit.unit_id].claim
+        assert part_claim is not None
+        assert part_claim.target_address == "5"
 
         assert all(by_id[u.unit_id].status == "claimed_current" for u in chapter_units)
         assert all(by_id[u.unit_id].status == "claimed_current" for u in section_units)

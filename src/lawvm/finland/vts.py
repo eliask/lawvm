@@ -200,10 +200,11 @@ def _voimaantulo_repeal_fragment_for_parent(
             # paragraph under that intro is a repeal list item — even if the
             # word "kumotaan" is absent from the individual paragraph text.
             kumotaan_intro_subsections: set[etree._Element] = {
-                intro.getparent()
+                parent
                 for intro in sec.findall(".//{*}intro")
                 if "kumotaan" in (etree.tostring(intro, method="text", encoding="unicode") or "").lower()
-                if intro.getparent() is not None
+                for parent in (intro.getparent(),)
+                if parent is not None
             }
             for para in paragraphs:
                 para_text = etree.tostring(para, method="text", encoding="unicode")

@@ -1004,7 +1004,7 @@ def _rewrite_lo_op_source_effective(
         if (
             updated_lo.action is StructuralAction.REPLACE
             and updated_lo.target.path
-            and _tops.resolve(base_ir, updated_lo.target.path) is None
+            and (base_ir is None or _tops.resolve(base_ir, updated_lo.target.path) is None)
             and _timeline_target_exists(
                 updated_lo.target.path,
                 replay_history_ops=lo_ops_out[:i],
@@ -5895,7 +5895,7 @@ def process_muutoslaki(
         # The full list is checked at the outer replay_xml level (line ~6788).
         _mutation_start = getattr(_build_result, "_mutation_cursor", 0)
         _current_events = (mutation_events_out or [])[_mutation_start:]
-        _build_result._mutation_cursor = len(mutation_events_out or [])  # type: ignore[attr-defined]
+        setattr(_build_result, "_mutation_cursor", len(mutation_events_out or []))
         mutation_invariant_reports = build_apply_mutation_invariant_reports(_current_events)
         if mutation_invariant_reports_out is not None:
             mutation_invariant_reports_out.extend(mutation_invariant_reports)
@@ -6232,7 +6232,7 @@ def process_muutoslaki(
                 if _non_commence:
                     _amendment_temporal_events.extend(
                         _normalize_frontend_temporal_events(
-                            _non_commence,
+                            tuple(_non_commence),
                             amendment_id=amendment_id,
                             target_statute=parent_id,
                         )

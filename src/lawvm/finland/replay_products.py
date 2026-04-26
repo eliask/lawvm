@@ -390,10 +390,7 @@ def _dedupe_same_source_semantic_versions(
     one version so PIT selection has a single source-backed state transition.
     """
     deduped: list[ProvisionVersion] = []
-    index_by_key: dict[
-        tuple[str, str, str, str, str, tuple[str, ...], str],
-        int,
-    ] = {}
+    index_by_key: dict[tuple[object, ...], int] = {}
     for version in versions:
         source_id = version.source.statute_id if version.source is not None else ""
         if not source_id or version.content is None:

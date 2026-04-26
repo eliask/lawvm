@@ -292,7 +292,7 @@ class TestMoveCases:
 
     def test_inline_move_tail_with_pronoun_preserves_following_sibling_target(self):
         """`76 § ja siirretään se ... ja 87 §:n 2 momentti` must keep both targets."""
-        from lawvm.finland.grafter import AmendmentOp, extract_johtolause_legal_ops
+        from lawvm.finland.grafter import extract_johtolause_legal_ops
 
         text = "muutetaan 76 § ja siirretään se lakiin lisättävään 11 a lukuun ja 87 §:n 2 momentti"
         result = parse_clause(text)

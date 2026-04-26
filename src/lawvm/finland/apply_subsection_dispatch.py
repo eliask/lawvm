@@ -47,6 +47,7 @@ from lawvm.finland.source_pathology import (
 from lawvm.finland.apply_structure_ops import _normalize_subsection_target_hint_ir
 
 if TYPE_CHECKING:
+    from lawvm.finland.migration_ledger import MigrationLedger
     from lawvm.finland.statute import ReplayState
     from lawvm.finland.payload_normalize import SubsectionSlotAssignmentResult
 

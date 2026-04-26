@@ -1023,7 +1023,11 @@ def _expand_single_ellipsis_text_patch(
     root = _parse_fragment_root(xml_bytes)
     if root is None:
         return None
-    visible_norm = re.sub(r"\s+", " ", " ".join(" ".join(el.itertext()) for el in root)).strip()
+    visible_norm = re.sub(
+        r"\s+",
+        " ",
+        " ".join(" ".join(str(part) for part in el.itertext()) for el in root),
+    ).strip()
     if not visible_norm:
         return None
 
@@ -1894,7 +1898,8 @@ class CorrigendumPatchTable:
             _seen.add(dedup_key)
             kept_type = corr_type
             if location and corr_type in _STATUTE_BODY_TYPES | {"body_text"}:
-                kept_type = f"{corr_type}::{re.sub(r'\\s+', ' ', _normalize_ws(location)).strip()}"
+                location_key = re.sub(r"\s+", " ", _normalize_ws(location)).strip()
+                kept_type = f"{corr_type}::{location_key}"
             _kept_text_pairs.setdefault(amendment_id, []).append((kept_type, wrong_norm, correct_norm))
 
             op = _corrigendum_text_replace_op(

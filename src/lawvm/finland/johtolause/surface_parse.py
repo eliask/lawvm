@@ -3349,8 +3349,9 @@ def _target_list(
                     s.pos += 1  # skip the orphaned UUSI; outer loop will consume COMMA/CONJ
                     continue
             if s.pos != saved:
-                if _skip_inline_move_clause_tail(s, all_nodes, last_batch_nodes):
-                    while _skip_inline_move_clause_tail(s, all_nodes, last_batch_nodes):
+                batch_nodes = cast(list[SurfaceNode] | None, last_batch_nodes)
+                if _skip_inline_move_clause_tail(s, all_nodes, batch_nodes):
+                    while _skip_inline_move_clause_tail(s, all_nodes, batch_nodes):
                         pass
                     continue
                 if _skip_named_row_residue(s):

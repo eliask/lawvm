@@ -22,6 +22,7 @@ EEResidualBucket = Literal[
     "source_pathology",
     "appendix_display_pathology",
     "oracle_correction_notice",
+    "descendant_residual_mix",
 ]
 
 
@@ -62,7 +63,7 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
         oracle_id="127062017011",
         statute_title="Vabariigi Presidendi töökorra seadus",
         comparison_class="commensurable_delta",
-        residuals=(
+        residuals=cast(tuple[EEResidualRecord, ...], (
             EEResidualRecord(
                 address="chapter:6/section:30",
                 bucket="source_oracle_drift",
@@ -84,7 +85,7 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     "'Käesolev seadus jõustub 2001. aasta 1. septembril.'."
                 ),
             ),
-        ),
+        )),
     ),
     ("110012014014", "108072016042"): EEPairResidualInventory(
         base_id="110012014014",
@@ -117,7 +118,7 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
         oracle_id="111072013019",
         statute_title="Täiskasvanute koolituse seadus",
         comparison_class="forward_looking_oracle",
-        residuals=(
+        residuals=cast(tuple[EEResidualRecord, ...], (
             EEResidualRecord(
                 address="chapter:2",
                 bucket="source_oracle_drift",
@@ -252,14 +253,14 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     "rather than a missing replay op."
                 ),
             ),
-        ),
+        )),
     ),
     ("106012023046", "106012023047"): EEPairResidualInventory(
         base_id="106012023046",
         oracle_id="106012023047",
         statute_title="Mikrolülituse topoloogia kaitse seadus",
         comparison_class="same_chain_editorial_drift",
-        residuals=(
+        residuals=cast(tuple[EEResidualRecord, ...], (
             EEResidualRecord(
                 address="chapter:6",
                 bucket="source_oracle_drift",
@@ -293,7 +294,7 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     "source-backed amendment."
                 ),
             ),
-        ),
+        )),
     ),
     ("102102025017", "102102025018"): EEPairResidualInventory(
         base_id="102102025017",
@@ -508,8 +509,8 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
         oracle_id="113122013023",
         statute_title="Sotsiaalhoolekande seadus",
         comparison_class="forward_looking_oracle",
-        residuals=(
-            *build_address_list_family(
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
                 addresses=(
                     "chapter:3_1",
                     "chapter:3_1/section:21_3",
@@ -527,7 +528,7 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     "carries the future § 21^3 tegevusloa kontrolliese text."
                 ),
             ),
-            *build_address_list_family(
+            build_address_list_family(
                 addresses=(
                     "chapter:4",
                     "chapter:4/section:22_1",
@@ -545,7 +546,7 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     "sentence while the oracle shows it early."
                 ),
             ),
-            *build_address_list_family(
+            build_address_list_family(
                 addresses=(
                     "chapter:4/section:23_1",
                     "chapter:4/section:23_1/subsection:5",
@@ -625,7 +626,7 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
         oracle_id="112062025016",
         statute_title="Tööturumeetmete seadus",
         comparison_class="same_chain_editorial_drift",
-        residuals=(
+        residuals=cast(tuple[EEResidualRecord, ...], (
             EEResidualRecord(
                 address="chapter:5",
                 bucket="source_oracle_drift",
@@ -658,7 +659,7 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     "112062025016 omits it without a source witness."
                 ),
             ),
-        ),
+        )),
     ),
     ("112062025011", "112062025012"): EEPairResidualInventory(
         base_id="112062025011",
@@ -2785,7 +2786,7 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
         oracle_id="129102014007",
         statute_title="Riigilõivuseadus",
         comparison_class="forward_looking_oracle",
-        residuals=(
+        residuals=cast(tuple[EEResidualRecord, ...], (
             *(
                 EEResidualRecord(
                     address=record.address,
@@ -3031,7 +3032,7 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     "replay preserves the source-side appendix marker while oracle 129102014007 omits it."
                 ),
             ),
-        ),
+        )),
     ),
     ("119032013003", "131122025003"): EEPairResidualInventory(
         base_id="119032013003",

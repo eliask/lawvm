@@ -25,9 +25,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple, cast
 
 from lawvm.core.ir import IRNode, LegalAddress
+from lawvm.core.payload_surface import TargetUnitKind
 from lawvm.core.phase_result import Finding
 from lawvm.finland.source_pathology import build_recodification_source_chain_gap_pathology
 from lawvm.core.semantic_types import IRNodeKind
@@ -922,7 +923,7 @@ def relabel_skip_source_pathology_finding(
 
     pathology = build_recodification_source_chain_gap_pathology(
         source_statute=source_statute,
-        target_unit_kind=leaf_kind,
+        target_unit_kind=cast(TargetUnitKind, leaf_kind),
         target_label=target_label,
         diagnostic_reason=reason_code,
     )
