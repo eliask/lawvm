@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path
@@ -19,6 +19,7 @@ from lawvm.finland.ops import (
     AmendmentOp,
     ResolvedOp,
     SectionPathResolution,
+    SectionPathResolutionReason,
     runtime_scope_confidence_for_op,
 )
 from lawvm.finland.apply_runtime_support import _valid_target_path_hint
@@ -279,7 +280,7 @@ def _resolve_section_path_with_fallbacks(
                 )
                 return SectionPathResolution(
                     path=substantive_path,
-                    reason_code=fallback_reason,
+                    reason_code=cast(SectionPathResolutionReason, fallback_reason),
                 )
 
     # Pattern E guard: when an UNCOVERED BODY RECOVERY op has no chapter

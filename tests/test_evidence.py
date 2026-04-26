@@ -1,16 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
 import pytest
 import warnings
 from types import SimpleNamespace
-from pathlib import Path
-from typing import cast
 
-from lawvm.core.ir import LegalAddress
-from lawvm.core.phase_result import PhaseResult
-from lawvm.core.timeline import ConsistencyDivergence
 from lawvm.tools.classify_result import ClassifyResult
 from lawvm.tools._evidence_helpers import (
     _cross_chapter_same_label_oracle_matches,
@@ -22,42 +16,28 @@ from lawvm.tools._section_debug import render_node_text
 from lawvm.tools.oracle_check import get_ground_truth_tree
 from lawvm.tools.section_keys import extract_ir_sections, extract_oracle_sections
 from tests.corpus_pin_helpers import pinned_replay
-from lawvm.finland.apply_events import (
-    ApplyMutationAccountingResult,
-    ApplyMutationEvent,
-    ApplyMutationInvariantReport,
-)
-from lawvm.tools.evidence_render import _print_evidence_bundle, _print_review_summary
 from lawvm.tools.evidence import (
-    _effective_bundle_cache_dir,
-    _build_live_review_bundle_one,
     _compiler_observation_summary,
     _section_bisect_support,
     _build_section_claims,
     _build_proof_claims,
-    _build_live_review_bundles,
     _corrigendum_support_for_amendments,
-    _oracle_corpus_statute_ids,
-    _ee_oracle_corpus_pairs,
-    _ee_unknown_divergence_proof_kind,
-    _ee_unknown_divergence_section_kind,
-    _review_bundles,
     _primary_proof_tier,
-    _render_markdown_bundle,
     _same_chapter_alternative_replay_matches,
     _section_similarity,
-    _witness_for_op,
     _oracle_text_temporary_source_id,
     build_evidence_bundle,
-    build_ee_evidence_bundle,
-    build_uk_evidence_bundle,
-    review_live_oracle_corpus,
-    review_bundle_artifacts,
     build_oracle_proof_bundle,
     main,
 )
 from lawvm.tools.evidence_claims import build_section_claims_typed
 from lawvm.tools.evidence_statute_rules import build_proof_claims_typed
+
+
+def _ground_truth_tree(statute_id: str):
+    root = get_ground_truth_tree(statute_id)
+    assert root is not None
+    return root
 
 
 def test_oracle_text_temporary_source_id_accepts_bare_citation_suffix() -> None:
@@ -1891,7 +1871,7 @@ def test_1984_719_cross_chapter_oracle_match_finds_section_107_real_corpus() -> 
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1984/719")
+    oracle_root = _ground_truth_tree("1984/719")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "section:107"
 
@@ -1917,7 +1897,7 @@ def test_1984_719_typed_section_claims_select_cross_chapter_oracle_exact_for_107
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1984/719")
+    oracle_root = _ground_truth_tree("1984/719")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "section:107"
 
@@ -1961,7 +1941,7 @@ def test_1984_719_typed_proof_claims_promote_cross_chapter_oracle_exact_for_107(
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1984/719")
+    oracle_root = _ground_truth_tree("1984/719")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "section:107"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
@@ -2029,7 +2009,7 @@ def test_1984_719_same_chapter_oracle_range_match_finds_section_97_real_corpus()
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1984/719")
+    oracle_root = _ground_truth_tree("1984/719")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     replay_key = "chapter:11/section:97"
 
@@ -2054,7 +2034,7 @@ def test_1984_719_typed_section_claims_select_same_chapter_oracle_range_drift_fo
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1984/719")
+    oracle_root = _ground_truth_tree("1984/719")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     replay_key = "chapter:11/section:97"
 
@@ -2098,7 +2078,7 @@ def test_1984_719_typed_proof_claims_promote_same_chapter_oracle_range_drift_for
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1984/719")
+    oracle_root = _ground_truth_tree("1984/719")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     replay_key = "chapter:11/section:97"
 
@@ -2163,7 +2143,7 @@ def test_1984_719_bisect_support_finds_oracle_section_stale_for_79() -> None:
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1984/719")
+    oracle_root = _ground_truth_tree("1984/719")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "chapter:9/section:79"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
@@ -2197,7 +2177,7 @@ def test_1984_719_bisect_support_finds_preexisting_same_section_structure_drift_
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1984/719")
+    oracle_root = _ground_truth_tree("1984/719")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "chapter:9/section:78"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
@@ -2230,7 +2210,7 @@ def test_1984_719_typed_section_claims_select_preexisting_same_section_structure
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1984/719")
+    oracle_root = _ground_truth_tree("1984/719")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "chapter:9/section:78"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
@@ -2278,7 +2258,7 @@ def test_1984_719_typed_proof_claims_keep_preexisting_same_section_structure_dri
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1984/719")
+    oracle_root = _ground_truth_tree("1984/719")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "chapter:9/section:78"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
@@ -2350,7 +2330,7 @@ def test_1984_719_typed_section_claims_select_oracle_section_stale_for_79() -> N
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1984/719")
+    oracle_root = _ground_truth_tree("1984/719")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "chapter:9/section:79"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
@@ -2399,7 +2379,7 @@ def test_1984_719_typed_proof_claims_promote_oracle_section_stale_for_79() -> No
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1984/719")
+    oracle_root = _ground_truth_tree("1984/719")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "chapter:9/section:79"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
@@ -2472,7 +2452,7 @@ def test_1992_1702_same_chapter_replay_match_finds_section_38_real_corpus() -> N
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1992/1702")
+    oracle_root = _ground_truth_tree("1992/1702")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "chapter:8/section:38"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
@@ -2498,7 +2478,7 @@ def test_1992_1702_typed_section_claims_keep_section_38_as_same_chapter_replay_d
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1992/1702")
+    oracle_root = _ground_truth_tree("1992/1702")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "chapter:8/section:38"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
@@ -2542,7 +2522,7 @@ def test_1992_1702_bisect_support_finds_preexisting_same_chapter_section_drift_f
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1992/1702")
+    oracle_root = _ground_truth_tree("1992/1702")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "chapter:8/section:33"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
@@ -2582,7 +2562,7 @@ def test_1992_1702_typed_proof_claims_keep_section_38_as_same_chapter_replay_dri
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1992/1702")
+    oracle_root = _ground_truth_tree("1992/1702")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "chapter:8/section:38"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
@@ -2652,7 +2632,7 @@ def test_1992_1702_typed_section_claims_keep_same_chapter_section_drift_visible_
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1992/1702")
+    oracle_root = _ground_truth_tree("1992/1702")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "chapter:8/section:33"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
@@ -2698,7 +2678,7 @@ def test_1992_1702_typed_proof_claims_keep_section_33_at_no_strong_claim() -> No
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("1992/1702")
+    oracle_root = _ground_truth_tree("1992/1702")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "chapter:8/section:33"
     oracle_text = render_node_text(oracle_sections.get(oracle_key))
@@ -2766,7 +2746,7 @@ def test_2017_320_cross_chapter_replay_match_finds_section_243_real_corpus() -> 
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("2017/320")
+    oracle_root = _ground_truth_tree("2017/320")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "part:7/chapter:31/section:243"
     oracle_text = render_node_text(oracle_sections[oracle_key])
@@ -2801,7 +2781,7 @@ def test_2017_320_cross_chapter_replay_match_finds_section_266_real_corpus() -> 
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("2017/320")
+    oracle_root = _ground_truth_tree("2017/320")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "part:7/chapter:32/section:266"
     oracle_text = render_node_text(oracle_sections[oracle_key])
@@ -2827,7 +2807,7 @@ def test_2017_320_typed_section_claims_keep_243_as_unresolved_cross_chapter_repl
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("2017/320")
+    oracle_root = _ground_truth_tree("2017/320")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "part:7/chapter:31/section:243"
     oracle_text = render_node_text(oracle_sections[oracle_key])
@@ -2871,7 +2851,7 @@ def test_2017_320_typed_proof_claims_keep_243_as_unresolved() -> None:
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("2017/320")
+    oracle_root = _ground_truth_tree("2017/320")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "part:7/chapter:31/section:243"
     oracle_text = render_node_text(oracle_sections[oracle_key])
@@ -3004,7 +2984,7 @@ def test_2017_320_typed_section_claims_select_cross_chapter_replay_exact_for_266
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("2017/320")
+    oracle_root = _ground_truth_tree("2017/320")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "part:7/chapter:32/section:266"
     oracle_text = render_node_text(oracle_sections[oracle_key])
@@ -3048,7 +3028,7 @@ def test_2017_320_typed_proof_claims_promote_cross_chapter_replay_exact_for_266(
     replay_sections = extract_ir_sections(master.materialized_state.ir)
     replay_texts = {key: render_node_text(node) for key, node in replay_sections.items()}
 
-    oracle_root = get_ground_truth_tree("2017/320")
+    oracle_root = _ground_truth_tree("2017/320")
     oracle_sections = extract_oracle_sections(oracle_root, exclude_kumottu_stubs=False)
     oracle_key = "part:7/chapter:32/section:266"
     oracle_text = render_node_text(oracle_sections[oracle_key])
@@ -3459,7 +3439,7 @@ def test_build_evidence_bundle_auto_includes_bisect_for_replay_residue(monkeypat
 
 
 def test_build_evidence_bundle_summarizes_compiler_observations(monkeypatch) -> None:
-    replay_meta = {
+    replay_meta: dict[str, object] = {
         "elaboration_observations": [
             {
                 "kind": "ELAB.ALIGN_SPARSE_OMISSION_TO_LIVE",
@@ -3873,7 +3853,7 @@ def test_normalize_observation_streams_prefers_invariant_reports_over_raw_apply_
 
 
 def test_compiler_observation_summary_uses_invariant_apply_rows_for_helper_support() -> None:
-    replay_meta = {
+    replay_meta: dict[str, object] = {
         "apply_mutation_events": [
             {
                 "helper": "_apply_deterministic_subsection_op",

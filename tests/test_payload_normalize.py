@@ -2982,10 +2982,12 @@ def test_assign_subsection_slots_keeps_exact_first_target_and_owned_trailing_ins
 
     got = _assign_subsection_slots(slot_inputs)
 
-    assert got.subsec_map.for_op(op_replace) is not None
-    assert got.subsec_map.for_op(op_replace).label == "1"
-    assert got.subsec_map.for_op(op_insert) is not None
-    assert got.subsec_map.for_op(op_insert).label == "2"
+    replace_subsec = got.subsec_map.for_op(op_replace)
+    assert replace_subsec is not None
+    assert replace_subsec.label == "1"
+    insert_subsec = got.subsec_map.for_op(op_insert)
+    assert insert_subsec is not None
+    assert insert_subsec.label == "2"
     certs = {cert.slot_id: cert for cert in got.binding_certificates}
     assert certs[1].admissibility == "single"
     assert certs[2].admissibility == "single"
@@ -4413,6 +4415,7 @@ def test_prepare_payload_surface_does_not_merge_stale_subsection_shell_without_s
         _replay_profile_stub(),
         None,
     )
+    assert prepared is not None
 
     heading = next(child for child in prepared.children if child.kind is IRNodeKind.HEADING)
     assert heading.text == "Määritelmät"

@@ -210,16 +210,14 @@ def runtime_scope_confidence(
     )
 
 
-def runtime_scope_confidence_for_op(
-    op: "AmendmentOp | ResolvedOp",
-) -> ScopeConfidence | None:
+def runtime_scope_confidence_for_op(op: object) -> ScopeConfidence | None:
     """Return the governed live runtime/apply scope witness for an op shell.
 
     Stored Finland-local scope carriers are now runtime authority too. Raw tags
     remain a compatibility fallback only when the stored carrier is absent.
     """
     # Guard: _StructureApplyView and other lightweight views lack scope fields.
-    if not hasattr(op, "scope_confidence"):
+    if not isinstance(op, (AmendmentOp, ResolvedOp)):
         return None
     return projection_scope_confidence_for_op(op)
 

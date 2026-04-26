@@ -881,7 +881,7 @@ class TestNormalizeAndCompileOps:
         master = _make_master()
         muutos_tree = _make_muutos_tree()
 
-        with patch("lawvm.finland.frontend_compile.extract_johtolause_legal_ops", return_value=[]):
+        with patch("lawvm.finland.frontend_compile.extract_johtolause_legal_ops_from_parse_result", return_value=[]):
             ops = normalize_and_compile_ops(
                 johto="",
                 muutos_tree=muutos_tree,

@@ -522,7 +522,7 @@ def _is_rebased_sparse_subsection_surface_exact(payload: IRNode, group_rops: Lis
     for rop in group_rops:
         if not rop.is_replace_action or not rop.targets_subsection_only():
             return False
-        label = str(rop.resolved_target_subsection_label or rop.target_paragraph or "").strip()
+        label = str(rop.resolved_target_subsection_label or "").strip()
         if not label.isdigit():
             return False
         target_labels.add(int(label))
@@ -612,7 +612,7 @@ def _emit_section_snapshot(
     base_ir: Optional[IRNode] = None,
     path_hint: Optional[Path] = None,
     migration_ledger: Optional["MigrationLedger"] = None,
-    standalone_section_targets: "FrozenSet[tuple[str | None, str]] | None" = None,
+    standalone_section_targets: "FrozenSet[tuple[str | None, str | None, str]] | None" = None,
     source_pathologies_out: Optional[List["SourcePathology"]] = None,
 ) -> None:
     """Emit a section/chapter-level snapshot to lo_ops_out after ops are applied."""

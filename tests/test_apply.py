@@ -2730,7 +2730,7 @@ def test_emit_section_snapshot_skips_container_child_for_cross_chapter_standalon
         source_issue_date=_DATE,
         source_effective_date=_DATE,
         base_ir=state.ir,
-        standalone_section_targets=frozenset({("6", "23")}),
+        standalone_section_targets=frozenset({(None, "6", "23")}),
     )
 
     assert any(op.target.path == (("chapter", "5"), ("section", "18")) for op in lo_ops)
@@ -3101,7 +3101,7 @@ def test_emit_section_snapshot_keeps_container_child_when_same_label_exists_in_o
         source_issue_date=_DATE,
         source_effective_date=_DATE,
         base_ir=state.ir,
-        standalone_section_targets=frozenset({("15", "1")}),
+        standalone_section_targets=frozenset({(None, "15", "1")}),
     )
 
     assert any(
@@ -3144,7 +3144,7 @@ def test_emit_section_snapshot_keeps_part_wrapped_container_child_when_timeline_
     state = _make_state(_body(provisions))
     lo_ops: list[LegalOperation] = []
 
-    chapter_payload = cast(IRNode, provisions.children[0].children[0])
+    chapter_payload = provisions.children[0].children[0]
     rop = ResolvedOp.from_amendment_op(
         AmendmentOp(
             op_id="replace_part_wrapped_6_chapter_keep_1",
@@ -7669,7 +7669,7 @@ class TestSubsectionMigrationRebinding:
             _sub("5", _content("old fourth moved to 5")),
         )
         state = _make_state(_body(sec))
-        sec_path = [("section", "36")]
+        sec_path = (("section", "36"),)
         amend_sub = _sub("4", _content("replacement for moved fourth"))
         op = _op(op_type="REPLACE", target_section="36", target_paragraph=4)
         op.op_id = "replace_migrated_4"
@@ -7726,7 +7726,7 @@ class TestSubsectionMigrationRebinding:
             _sub("5", _content("old fourth moved to 5")),
         )
         state = _make_state(_body(sec))
-        sec_path = [("section", "36")]
+        sec_path = (("section", "36"),)
         amend_sub = _sub("3", _content("new third"))
         op = _op(op_type="INSERT", target_section="36", target_paragraph=3)
         op.op_id = "insert_new_3"

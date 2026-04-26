@@ -11,7 +11,6 @@ from lawvm.tools import (
     bisect_section,
     classify,
     cli,
-    explain,
     inspect_amendment,
     oracle_context,
     phase_witness,

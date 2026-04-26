@@ -27,7 +27,6 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.ops import (
     AmendmentOp,
     ResolvedOp,
-    normalize_scope_confidence,
     projection_scope_confidence,
 )
 from lawvm.finland.helpers import _norm_num_token
@@ -253,14 +252,14 @@ def sort_group_ops_for_apply(
         # groups so existing sparse merge behaviour stays stable.
         if all(o.op_type == "REPLACE" for o in plain_moment_ops):
             replace_targets = sorted(
-                int(o.target_paragraph)
+                int(str(o.target_paragraph))
                 for o in plain_moment_ops
                 if o.target_paragraph is not None
             )
             sec = target_ctx.live_node
             live_labels = (
                 sorted(
-                    int(child.label)
+                    int(str(child.label))
                     for child in sec.children
                     if child.kind == IRNodeKind.SUBSECTION and (child.label or "").isdigit()
                 )

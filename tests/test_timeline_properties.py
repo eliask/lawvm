@@ -24,7 +24,7 @@ import warnings
 import string
 from dataclasses import replace as dc_replace
 from datetime import date, timedelta
-from typing import List, cast
+from typing import Any, List, cast
 
 import pytest
 
@@ -2313,7 +2313,7 @@ def test_materialize_body_preserves_duplicate_base_siblings_with_descendant_owne
         if sink is None:
             return
         kwargs.pop("emit_warnings", None)
-        sink.append(TimelineIssue(**kwargs))
+        sink.append(TimelineIssue(**cast(Any, kwargs)))
 
     body = materialize_body(
         active,
@@ -2381,7 +2381,7 @@ def test_materialize_body_preserves_duplicate_base_children_under_selected_root(
         if sink is None:
             return
         kwargs.pop("emit_warnings", None)
-        sink.append(TimelineIssue(**kwargs))
+        sink.append(TimelineIssue(**cast(Any, kwargs)))
 
     body = materialize_body(
         active,
@@ -2434,7 +2434,7 @@ def test_materialize_body_preserves_duplicate_selected_children_when_direct_chil
     )
     section_addr = LegalAddress(path=(("chapter", "2"), ("division", "2"), ("section", "20")))
     subsection_addr = LegalAddress(path=(("chapter", "2"), ("division", "2"), ("section", "20"), ("subsection", "1")))
-    active = {
+    active: dict[LegalAddress, IRNode | None] = {
         section_addr: IRNode(
             kind=IRNodeKind.SECTION,
             label="20",
@@ -2453,7 +2453,7 @@ def test_materialize_body_preserves_duplicate_selected_children_when_direct_chil
         if sink is None:
             return
         kwargs.pop("emit_warnings", None)
-        sink.append(TimelineIssue(**kwargs))
+        sink.append(TimelineIssue(**cast(Any, kwargs)))
 
     body = materialize_body(
         active,

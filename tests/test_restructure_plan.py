@@ -1380,7 +1380,7 @@ class TestExecuteRelabel:
         assert ("part:5/chapter:2", "chapter:27") not in by_target_dest
         assert ("part:5/chapter:3", "chapter:28") not in by_target_dest
 
-    def test_relabel_missing_target_skips(self, caplog: object) -> None:
+    def test_relabel_missing_target_skips(self, caplog) -> None:
         """RELABEL for nonexistent target should not crash, return tree unchanged."""
         tree = _make_body_with_chapters(("1", ["1", "2"]))
         plan = _make_plan([
@@ -1399,7 +1399,7 @@ class TestExecuteRelabel:
         chapter_labels = [c.label for c in new_tree.children if c.kind == IRNodeKind.CHAPTER]
         assert chapter_labels == ["1"]
 
-    def test_relabel_missing_target_log_includes_amendment_id(self, caplog: object) -> None:
+    def test_relabel_missing_target_log_includes_amendment_id(self, caplog) -> None:
         """Relabel-skip logs should identify the owning amendment."""
         tree = _make_body_with_chapters(("1", ["1", "2"]))
         plan = _make_plan(
@@ -1424,7 +1424,7 @@ class TestExecuteRelabel:
             "(reason=target_not_found"
         ) in caplog.text
 
-    def test_relabel_consumed_source_log_includes_reason(self, caplog: object) -> None:
+    def test_relabel_consumed_source_log_includes_reason(self, caplog) -> None:
         """Consumed-source relabel conflicts should be explicit in warning logs."""
         tree = IRNode(
             kind=IRNodeKind.BODY,

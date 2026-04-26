@@ -31,8 +31,11 @@ Design:
 from __future__ import annotations
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from lawvm.finland.johtolause.lexicon import Token
+
+if TYPE_CHECKING:
+    from lawvm.finland.johtolause.surface_model import SurfaceTargetVersionBinding
 
 
 # ---------------------------------------------------------------------------

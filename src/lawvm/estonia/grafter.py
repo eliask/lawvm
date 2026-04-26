@@ -4824,8 +4824,6 @@ def _ee_apply_text_replace_value(
     if text is None or not old:
         return text
     replaced = text
-    old_norm = _ee_normalize_text_replace_surface(old)
-    new_norm = _ee_normalize_text_replace_surface(new)
     insert_after_style = mode == "insert_after"
     preserve_match_capital = _ee_should_preserve_match_capital(
         old,

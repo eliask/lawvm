@@ -2,7 +2,7 @@ import datetime as dt
 from contextlib import redirect_stdout
 from io import StringIO
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from lxml import etree
@@ -1689,7 +1689,7 @@ def test_retarget_duplicate_body_section_scope_from_close_live_siblings_uses_nei
         section_norm="18",
         body_chapter="3",
         body_part=None,
-        master=master,
+        master=cast(Any, master),
     )
 
     assert retargeted == (None, "4")
@@ -1730,7 +1730,7 @@ def test_retarget_duplicate_body_section_scope_from_close_live_siblings_requires
         section_norm="18",
         body_chapter="3",
         body_part=None,
-        master=master,
+        master=cast(Any, master),
     )
 
     assert retargeted is None
@@ -3664,7 +3664,7 @@ def test_retarget_stale_body_scope_does_not_hijack_explicit_same_label_move_dest
     got = _retarget_stale_body_scope_for_section_op(
         op=op,
         muutos_tree=muutos_tree,
-        master=master,
+        master=cast(Any, master),
         johto="muutetaan 29 e §, joka samalla siirretään 5 b lukuun",
     )
 
@@ -4781,8 +4781,9 @@ def test_apply_ops_to_tree_uses_cross_chapter_global_fallback_for_root_level_sec
     )
 
     # The section lives at root level — hint should point to its actual path, not None
-    assert seen.get("path_hint") is not None
-    assert seen["path_hint"][-1] == ("section", "45b")
+    path_hint = cast(tuple[tuple[str, str], ...], seen.get("path_hint"))
+    assert path_hint is not None
+    assert path_hint[-1] == ("section", "45b")
 
 
 def test_find_muutos_ir_relabels_requested_letter_suffix_insert_section() -> None:
@@ -5319,17 +5320,21 @@ def test_resolve_applicable_amendment_records_re_admits_oracle_reflected_source_
     orig_children = grafter_mod._amendment_children_by_parent
     orig_reflected = grafter_mod.get_consolidated_oracle_reflected_source_vts_children
     try:
-        grafter_mod._amendment_children_by_parent = lambda: {
-            "1986/506": ["1991/806", "1993/872", "1994/1264", "2024/1049"]
-        }
-        grafter_mod.get_consolidated_oracle_reflected_source_vts_children = (
-            lambda _parent_id, corpus=None, selector=None: {"2024/1049"}
+        setattr(
+            grafter_mod,
+            "_amendment_children_by_parent",
+            lambda: {"1986/506": ["1991/806", "1993/872", "1994/1264", "2024/1049"]},
+        )
+        setattr(
+            grafter_mod,
+            "get_consolidated_oracle_reflected_source_vts_children",
+            lambda _parent_id, corpus=None, selector=None: {"2024/1049"},
         )
         records, cutoff_date, oracle_version = grafter_mod._resolve_applicable_amendment_records(
             "1986/506",
             "legal_pit",
             corpus=corpus,
-            selector=cast(object, _Selector()),
+            selector=cast(Any, _Selector()),
         )
     finally:
         grafter_mod._amendment_children_by_parent = orig_children
@@ -5507,7 +5512,7 @@ def test_stabilize_insert_order_prefers_insert_first_when_replace_target_only_ex
         )
     )
 
-    got = _stabilize_insert_order(ops, target_ctx)
+    got = _stabilize_insert_order(ops, cast(Any, target_ctx))
 
     assert [(op.op_type, op.target_paragraph) for op in got] == [
         ("INSERT", 2),
@@ -5540,7 +5545,7 @@ def test_stabilize_insert_order_keeps_replace_first_when_live_target_exists() ->
         subsection_slots=tuple(SimpleNamespace(label=str(i)) for i in range(1, 5))
     )
 
-    got = _stabilize_insert_order(ops, target_ctx)
+    got = _stabilize_insert_order(ops, cast(Any, target_ctx))
 
     assert [(op.op_type, op.target_paragraph) for op in got] == [
         ("REPLACE", 3),
@@ -5575,7 +5580,7 @@ def test_stabilize_insert_order_moves_same_wave_subsection_renumber_after_rebase
         subsection_slots=tuple(SimpleNamespace(label=str(i)) for i in range(1, 4))
     )
 
-    got = _stabilize_insert_order(ops, target_ctx)
+    got = _stabilize_insert_order(ops, cast(Any, target_ctx))
 
     assert [(op.op_type, op.target_paragraph) for op in got] == [
         ("INSERT", 2),
@@ -11256,7 +11261,7 @@ def test_extract_temporary_targets_single_occurrence_still_works() -> None:
 
 
 def test_oracle_version_future_repeal_only_uses_cutoff_date_for_repeal_only_family() -> None:
-    compiled_ops = [
+    compiled_ops: list[dict[str, object]] = [
         {
             "action": "repeal",
             "source_statute": "2026/45",
@@ -11276,7 +11281,7 @@ def test_oracle_version_future_repeal_only_uses_cutoff_date_for_repeal_only_fami
 
 
 def test_oracle_version_future_repeal_only_uses_cutoff_date_keeps_future_replace_anchor() -> None:
-    compiled_ops = [
+    compiled_ops: list[dict[str, object]] = [
         {
             "action": "replace",
             "source_statute": "2021/1199",
@@ -11319,7 +11324,6 @@ def test_collect_johto_mentioned_section_labels_expands_alpha_suffix_ranges() ->
 
 
 def test_replay_xml_2001_101_preserves_section_24_sparse_item_tail_from_2017_169() -> None:
-    from lawvm.finland.grafter import replay_xml
     from lawvm.core.ir_helpers import irnode_to_text
 
     master = pinned_replay("2001/101", mode="finlex_oracle", quiet=True)
@@ -11337,7 +11341,6 @@ def test_replay_xml_2001_101_preserves_section_24_sparse_item_tail_from_2017_169
 
 
 def test_replay_xml_1996_1093_drops_stale_section_18_item_6_after_2013_1085() -> None:
-    from lawvm.finland.grafter import replay_xml
     from lawvm.core.ir_helpers import irnode_to_text
 
     master = pinned_replay("1996/1093", mode="finlex_oracle", quiet=True)
@@ -11673,7 +11676,7 @@ def test_attach_target_version_selectors_binds_matching_section_ops_only() -> No
 
     patched, findings = _attach_target_version_selectors(
         ops,
-        parse_result=parse_result,
+        parse_result=cast(Any, parse_result),
         amendment_id="2018/945",
     )
 
@@ -11694,7 +11697,7 @@ def test_attach_target_version_selectors_reports_ambiguous_label() -> None:
 
     patched, findings = _attach_target_version_selectors(
         [op],
-        parse_result=parse_result,
+        parse_result=cast(Any, parse_result),
         amendment_id="2018/945",
     )
 
@@ -11773,7 +11776,7 @@ def test_rewrite_later_effective_lo_groups_scopes_deferred_cited_version_ops() -
 
 
 def test_rewrite_compiled_op_activation_rule_effective_for_addresses_limits_to_exact_targets() -> None:
-    rows = [
+    rows: list[dict[str, object]] = [
         {
             "source_statute": "2018/945",
             "target_unit_kind": "section",
