@@ -1158,6 +1158,138 @@ def test_materialize_pit_keeps_older_chapter_children_absent_from_later_parent_p
     assert "1c" in section_labels
 
 
+def test_materialize_pit_keeps_deep_chapter_descendant_absent_from_later_part_payload() -> None:
+    base = IRStatute(
+        statute_id="test/part-child-preservation",
+        title="Part child preservation",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="4",
+                    children=(IRNode(kind=IRNodeKind.NUM, text="4 osa"),),
+                ),
+            ),
+        ),
+    )
+    part_addr = LegalAddress(path=(("part", "4"),))
+    chapter_addr = LegalAddress(path=(("part", "4"), ("chapter", "18")))
+    section_addr = LegalAddress(path=(("part", "4"), ("chapter", "18"), ("section", "159")))
+    timelines = {
+        part_addr: ProvisionTimeline(
+            address=part_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2019-04-01",
+                    enacted="2019-03-29",
+                    content=IRNode(
+                        kind=IRNodeKind.PART,
+                        label="4",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="4 osa"),
+                            IRNode(kind=IRNodeKind.CHAPTER, label="2", children=(IRNode(kind=IRNodeKind.NUM, text="2 luku"),)),
+                        ),
+                    ),
+                    source=OperationSource(statute_id="2019/371", effective="2019-04-01"),
+                )
+            ],
+        ),
+        chapter_addr: ProvisionTimeline(
+            address=chapter_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2021-02-01",
+                    enacted="2020-12-30",
+                    content=IRNode(kind=IRNodeKind.CHAPTER, label="18", children=(IRNode(kind=IRNodeKind.NUM, text="18 luku"),)),
+                    source=OperationSource(statute_id="2020/1256", effective="2021-02-01"),
+                )
+            ],
+        ),
+        section_addr: ProvisionTimeline(
+            address=section_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2019-04-01",
+                    enacted="2019-03-29",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="159", text="159 § migrated section"),
+                    source=OperationSource(statute_id="2019/371", effective="2019-04-01"),
+                )
+            ],
+        ),
+    }
+
+    pit = materialize_pit(timelines, "2026-01-01", base=base)
+    text = irnode_to_text(pit.body)
+
+    assert "18 luku" in text
+    assert "159 § migrated section" in text
+
+
+def test_materialize_pit_removes_unique_shallow_section_alias_after_deeper_projection() -> None:
+    shallow_addr = LegalAddress(path=(("chapter", "1"), ("section", "159")))
+    part_addr = LegalAddress(path=(("part", "4"),))
+    chapter_addr = LegalAddress(path=(("part", "4"), ("chapter", "18")))
+    deeper_addr = LegalAddress(path=(("part", "4"), ("chapter", "18"), ("section", "159")))
+    base = IRStatute(
+        statute_id="test/shallow-section-alias",
+        title="Shallow section alias",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+    )
+    timelines = {
+        part_addr: ProvisionTimeline(
+            address=part_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2019-04-01",
+                    enacted="2019-03-29",
+                    content=IRNode(kind=IRNodeKind.PART, label="4", children=(IRNode(kind=IRNodeKind.NUM, text="4 osa"),)),
+                    source=OperationSource(statute_id="2019/371", effective="2019-04-01"),
+                )
+            ],
+        ),
+        chapter_addr: ProvisionTimeline(
+            address=chapter_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2021-02-01",
+                    enacted="2020-12-30",
+                    content=IRNode(kind=IRNodeKind.CHAPTER, label="18", children=(IRNode(kind=IRNodeKind.NUM, text="18 luku"),)),
+                    source=OperationSource(statute_id="2020/1256", effective="2021-02-01"),
+                )
+            ],
+        ),
+        shallow_addr: ProvisionTimeline(
+            address=shallow_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2019-04-01",
+                    enacted="2019-03-29",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="159", text="159 § stale shallow alias"),
+                    source=OperationSource(statute_id="2019/371", effective="2019-04-01"),
+                )
+            ],
+        ),
+        deeper_addr: ProvisionTimeline(
+            address=deeper_addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2019-04-01",
+                    enacted="2019-03-29",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="159", text="159 § deeper projected section"),
+                    source=OperationSource(statute_id="2019/371", effective="2019-04-01"),
+                )
+            ],
+        ),
+    }
+
+    pit = materialize_pit(timelines, "2026-01-01", base=base)
+    text = irnode_to_text(pit.body)
+
+    assert "159 § deeper projected section" in text
+    assert "stale shallow alias" not in text
+
+
 # ---------------------------------------------------------------------------
 # Property 4: Identity (diff same date → empty)
 # ---------------------------------------------------------------------------

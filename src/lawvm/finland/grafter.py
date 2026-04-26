@@ -7493,6 +7493,7 @@ def replay_xml(
                 replay_findings=replay_findings,
                 replay_meta_out=replay_meta_out,
             )
+            products.materialized_state = products.materialized_state.with_ir(deduped_materialized_ir)
             materialized_text_duplication_findings = build_text_duplication_findings(
                 deduped_materialized_ir,
                 phase="materialized",
