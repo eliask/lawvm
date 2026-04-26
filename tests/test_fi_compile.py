@@ -653,19 +653,18 @@ def test_replay_xml_keeps_1967_550_section_2_sparse_insert_on_fifth_moment() -> 
     assert "kuuden kuukauden kuluessa" in sixth_text
 
 
-def test_replay_xml_documents_2019_371_section_159_recodification_frame_gap() -> None:
-    """2019/371 preserves §159 text but not yet the final oracle container frame."""
+def test_replay_xml_places_2019_371_section_159_in_replay_fold_container_frame() -> None:
+    """2019/371 preserves §159 text under the final replay-fold container frame."""
     replay = pinned_replay("2017/320", mode="finlex_oracle", quiet=True, strict_johto_temporal=False)
-    sections = extract_ir_sections(replay.materialized_state.ir)
+    sections = extract_ir_sections(replay.replay_fold_state.ir)
 
-    assert "part:4/chapter:18/section:159" not in sections
-    section = sections["part:3/chapter:16/section:159"]
+    section = sections["part:4/chapter:18/section:159"]
     text = irnode_to_text(section)
 
-    assert "159 § Palveluita ja rajapintoja yhdistävien palveluiden yhteentoimivuus" in text
+    assert text.startswith("159 §")
     assert "avoimia rajapintoja teknisesti yhdistävien palveluntarjoajien" in text
     assert "matkustusoikeuden todentamiseen liittyvien taustajärjestelmien" in text
-    assert "Henkilö- ja tavaraliikenneluvan myöntäminen" not in text
+    assert "liityntäpysäköintiä tarjoavan" not in text
 
     rows = [
         row

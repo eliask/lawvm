@@ -1110,6 +1110,56 @@ class TestExecuteRelabel:
         chapter = next(child for child in part_3.children if child.kind is IRNodeKind.CHAPTER and child.label == "1")
         assert [child.label for child in chapter.children if child.kind is IRNodeKind.SECTION] == ["139"]
 
+    def test_same_parent_relabel_group_executes_safe_found_subset_when_one_source_is_missing(self) -> None:
+        """A missing recodification alias must not block the proved same-parent relabel chain."""
+        tree = IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.PART, label="3", text="old part 3"),
+                IRNode(kind=IRNodeKind.PART, label="4", text="old part 4"),
+                IRNode(kind=IRNodeKind.PART, label="5", text="old part 5"),
+            ),
+        )
+        plan = _make_plan(
+            [
+                StructuralTransformOp(
+                    kind=TransformOpKind.RELABEL,
+                    target="part:iia",
+                    destination="part:3",
+                    notes=("from_amendment_op",),
+                ),
+                StructuralTransformOp(
+                    kind=TransformOpKind.RELABEL,
+                    target="part:3",
+                    destination="part:4",
+                    notes=("from_amendment_op",),
+                ),
+                StructuralTransformOp(
+                    kind=TransformOpKind.RELABEL,
+                    target="part:4",
+                    destination="part:5",
+                    notes=("from_amendment_op",),
+                ),
+                StructuralTransformOp(
+                    kind=TransformOpKind.RELABEL,
+                    target="part:5",
+                    destination="part:6",
+                    notes=("from_amendment_op",),
+                ),
+            ],
+            amendment_id="2019/371",
+        )
+
+        new_tree, executed = execute_restructure_plan(plan, tree)
+
+        by_target = {item.op.target: item for item in executed}
+        assert by_target["part:iia"].success is False
+        assert by_target["part:iia"].reason_code == "target_part_absent_in_pre_partification_frame"
+        assert by_target["part:3"].success is True
+        assert by_target["part:4"].success is True
+        assert by_target["part:5"].success is True
+        assert [child.label for child in new_tree.children if child.kind is IRNodeKind.PART] == ["4", "5", "6"]
+
     def test_2017_320_2019_371_single_relabel_resolves_pre_part_frame(self) -> None:
         """Live 2019/371 relabel lookup must resolve the owned pre-part source path."""
         from lxml import etree
