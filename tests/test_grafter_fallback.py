@@ -7717,7 +7717,7 @@ def test_process_muutoslaki_2017_320_2019_371_failed_ops_preserve_target_part_sc
     )
 
 
-def test_process_muutoslaki_2017_320_2019_371_standalone_path_uses_early_restructure_plan() -> None:
+def test_process_muutoslaki_2017_320_2019_371_standalone_path_preserves_unresolved_descendant_replace() -> None:
     corpus = get_corpus()
     orig = corpus.read_source("2017/320")
     if orig is None:
@@ -7738,7 +7738,7 @@ def test_process_muutoslaki_2017_320_2019_371_standalone_path_uses_early_restruc
             failed_ops_out=failed,
         )
 
-    assert not any(
+    assert any(
         f.description == "REPLACE 1 luku 10 §"
         and f.target_part == "4"
         and f.target_chapter == "1"

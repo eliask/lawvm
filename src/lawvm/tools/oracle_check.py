@@ -975,7 +975,7 @@ def _classify_statute(
         raw_master_gap_sources = {
             str(sec.get("blame_source") or "")
             for sec in section_results
-            if sec["diagnosis"] in ("MISSING", "REPLAY_MISSING", "UNKNOWN")
+            if sec["diagnosis"] in ("MISSING", "REPLAY_MISSING", "UNKNOWN", "EXTRA")
             and str(sec.get("blame_source") or "")
         }
         raw_master_gap_pre_blame_cache: Dict[str, tuple] = {}
@@ -1018,7 +1018,7 @@ def _classify_statute(
                 sec["diagnosis"] = "SOURCE_INCOMPLETE"
                 continue
 
-            if sec["diagnosis"] not in ("MISSING", "REPLAY_MISSING", "UNKNOWN"):
+            if sec["diagnosis"] not in ("MISSING", "REPLAY_MISSING", "UNKNOWN", "EXTRA"):
                 continue
             if not blame_source:
                 continue
@@ -1038,7 +1038,11 @@ def _classify_statute(
                         dict(pre_secs),
                         {str(sec["section"]): oracle_el},
                     )
-                pre_blame_absent_cache[cache_key] = scoped_pre_secs.get(sec["section"]) is None
+                pre_blame_section = scoped_pre_secs.get(sec["section"])
+                if pre_blame_section is None and "section:" in str(sec["section"]):
+                    section_label = str(sec["section"]).rsplit("section:", 1)[1].split("/", 1)[0]
+                    pre_blame_section = scoped_pre_secs.get(f"section:{section_label}")
+                pre_blame_absent_cache[cache_key] = pre_blame_section is None
             if pre_blame_absent_cache[cache_key]:
                 sec["diagnosis"] = "SOURCE_INCOMPLETE"
 
