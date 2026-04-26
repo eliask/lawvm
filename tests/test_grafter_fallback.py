@@ -7685,7 +7685,7 @@ def test_process_muutoslaki_2017_320_2019_371_no_longer_fails_old_section8_9_11_
     assert ("1", "11", "REPLACE 1 luku 11 §") not in blocked
 
 
-def test_process_muutoslaki_2017_320_2019_371_failed_ops_preserve_target_part_scope() -> None:
+def test_process_muutoslaki_2017_320_2019_371_no_longer_fails_iia_heading_replaces() -> None:
     corpus = get_corpus()
     orig = corpus.read_source("2017/320")
     if orig is None:
@@ -7706,14 +7706,14 @@ def test_process_muutoslaki_2017_320_2019_371_failed_ops_preserve_target_part_sc
             failed_ops_out=failed,
         )
 
-    assert any(
+    assert not any(
         f.description == "REPLACE 2 luku 4 § otsikko"
         and f.target_part == "iia"
         and f.target_chapter == "2"
         and f.target_section == "4"
         for f in failed
     )
-    assert any(
+    assert not any(
         f.description == "REPLACE 1 luku 4 § otsikko"
         and f.target_part == "iia"
         and f.target_chapter == "1"
@@ -7722,7 +7722,7 @@ def test_process_muutoslaki_2017_320_2019_371_failed_ops_preserve_target_part_sc
     )
 
 
-def test_process_muutoslaki_2017_320_2019_371_standalone_path_preserves_unresolved_descendant_replace() -> None:
+def test_process_muutoslaki_2017_320_2019_371_follows_descendant_replace_through_relabel_destination_frame() -> None:
     corpus = get_corpus()
     orig = corpus.read_source("2017/320")
     if orig is None:
@@ -7743,7 +7743,7 @@ def test_process_muutoslaki_2017_320_2019_371_standalone_path_preserves_unresolv
             failed_ops_out=failed,
         )
 
-    assert any(
+    assert not any(
         f.description == "REPLACE 1 luku 10 §"
         and f.target_part == "4"
         and f.target_chapter == "1"
@@ -7751,6 +7751,7 @@ def test_process_muutoslaki_2017_320_2019_371_standalone_path_preserves_unresolv
         and f.reason_code == "section_not_found"
         for f in failed
     )
+    assert not [f for f in failed if f.reason_code == "section_not_found"]
 
 
 def test_uncovered_body_records_past_repeal_placeholder_guard_skip_finding() -> None:

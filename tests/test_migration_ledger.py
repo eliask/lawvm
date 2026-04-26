@@ -258,6 +258,33 @@ class TestMigrationLedgerUnit:
             ("part", "4"), ("chapter", "2"), ("section", "159")
         )
 
+    def test_prefix_migrations_follow_specific_destination_source_frame_parent(self) -> None:
+        """A same-wave section relabel may target a parent frame also relabeled by the wave."""
+        ledger = MigrationLedger()
+        ledger.record_renumber(
+            _addr(("part", "III")),
+            _addr(("part", "IV")),
+            effective="2019-04-01",
+            source_statute="2019/371",
+        )
+        ledger.record_renumber(
+            _addr(("part", "IV")),
+            _addr(("part", "V")),
+            effective="2019-04-01",
+            source_statute="2019/371",
+        )
+        ledger.record_renumber(
+            _addr(("part", "IV"), ("chapter", "1"), ("section", "10")),
+            _addr(("part", "III"), ("chapter", "1"), ("section", "187")),
+            effective="2019-04-01",
+            source_statute="2019/371",
+        )
+
+        addr = _addr(("part", "IV"), ("chapter", "1"), ("section", "10"))
+        assert ledger.current_address_with_prefix_migrations(addr) == _addr(
+            ("part", "4"), ("chapter", "1"), ("section", "187")
+        )
+
     def test_prefix_migrations_chain_across_later_waves(self) -> None:
         ledger = MigrationLedger()
         ledger.record_renumber(

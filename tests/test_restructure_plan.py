@@ -938,17 +938,27 @@ class TestExecuteRelabel:
                 destination="part:3",
                 notes=("from_amendment_op",),
             ),
+            StructuralTransformOp(
+                kind=TransformOpKind.RELABEL,
+                target="part:3",
+                destination="part:4",
+                notes=("from_amendment_op",),
+            ),
         ])
 
         new_tree, executed = execute_restructure_plan(plan, tree)
 
-        assert len(executed) == 2
+        assert len(executed) == 3
         assert executed[0].success is True
         assert executed[1].success is True
+        assert executed[2].success is True
         part_3 = next(child for child in new_tree.children if child.kind is IRNodeKind.PART and child.label == "3")
         chapter = next(child for child in part_3.children if child.kind is IRNodeKind.CHAPTER and child.label == "1")
         section_labels = [child.label for child in chapter.children if child.kind is IRNodeKind.SECTION]
         assert "153" in section_labels
+        part_4 = next(child for child in new_tree.children if child.kind is IRNodeKind.PART and child.label == "4")
+        old_chapter = next(child for child in part_4.children if child.kind is IRNodeKind.CHAPTER and child.label == "1")
+        assert [child.label for child in old_chapter.children if child.kind is IRNodeKind.SECTION] == ["1", "2", "3"]
 
     def test_relabel_section_without_part_relabel_frame_still_skips(self) -> None:
         """Part-frame fallback must not guess without an owning part relabel."""
@@ -989,8 +999,8 @@ class TestExecuteRelabel:
         chapter = next(child for child in part_iia.children if child.kind is IRNodeKind.CHAPTER and child.label == "1")
         assert [child.label for child in chapter.children if child.kind is IRNodeKind.SECTION] == ["4"]
 
-    def test_relabel_section_prefers_pre_part_relabel_frame_over_live_same_label_match(self) -> None:
-        """Owned post-part-frame targets must not hijack a live same-label section."""
+    def test_relabel_section_prefers_exact_live_source_over_pre_part_relabel_frame(self) -> None:
+        """Exact source paths must not be hijacked by a pre-part-frame fallback."""
         tree = IRNode(
             kind=IRNodeKind.BODY,
             children=(
@@ -1039,12 +1049,73 @@ class TestExecuteRelabel:
         )
 
         assert executed.success is True
-        part_iia = next(child for child in new_tree.children if child.kind is IRNodeKind.PART and child.label == "iia")
         part_3 = next(child for child in new_tree.children if child.kind is IRNodeKind.PART and child.label == "3")
-        source_chapter = next(child for child in part_iia.children if child.kind is IRNodeKind.CHAPTER and child.label == "1")
         shadow_chapter = next(child for child in part_3.children if child.kind is IRNodeKind.CHAPTER and child.label == "1")
-        assert [child.label for child in source_chapter.children if child.kind is IRNodeKind.SECTION] == ["150"]
-        assert [child.label for child in shadow_chapter.children if child.kind is IRNodeKind.SECTION] == ["1"]
+        part_iia = next(child for child in new_tree.children if child.kind is IRNodeKind.PART and child.label == "iia")
+        source_chapter = next(child for child in part_iia.children if child.kind is IRNodeKind.CHAPTER and child.label == "1")
+        assert [child.label for child in shadow_chapter.children if child.kind is IRNodeKind.SECTION] == ["150"]
+        assert [child.label for child in source_chapter.children if child.kind is IRNodeKind.SECTION] == ["1"]
+
+    def test_relabel_section_carries_exact_source_frame_through_same_wave_part_chain(self) -> None:
+        """2019/371-style section relabels stay in old III before III becomes IV."""
+        tree = IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="iia",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CHAPTER,
+                            label="2",
+                            children=(IRNode(kind=IRNodeKind.SECTION, label="5", text="old iia section"),),
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="3",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CHAPTER,
+                            label="2",
+                            children=(IRNode(kind=IRNodeKind.SECTION, label="5", text="old iii section"),),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        plan = _make_plan([
+            StructuralTransformOp(
+                kind=TransformOpKind.RELABEL,
+                target="part:iia",
+                destination="part:3",
+                notes=("from_amendment_op",),
+            ),
+            StructuralTransformOp(
+                kind=TransformOpKind.RELABEL,
+                target="part:3",
+                destination="part:4",
+                notes=("from_amendment_op",),
+            ),
+            StructuralTransformOp(
+                kind=TransformOpKind.RELABEL,
+                target="part:3/chapter:2/section:5",
+                destination="section:159",
+                notes=("from_amendment_op",),
+            ),
+        ])
+
+        new_tree, executed = execute_restructure_plan(plan, tree)
+
+        assert [item.success for item in executed] == [True, True, True]
+        part_4 = next(child for child in new_tree.children if child.kind is IRNodeKind.PART and child.label == "4")
+        chapter_2 = next(child for child in part_4.children if child.kind is IRNodeKind.CHAPTER and child.label == "2")
+        section_159 = next(child for child in chapter_2.children if child.kind is IRNodeKind.SECTION and child.label == "159")
+        assert section_159.text == "old iii section"
+        part_3 = next(child for child in new_tree.children if child.kind is IRNodeKind.PART and child.label == "3")
+        remapped_chapter_2 = next(child for child in part_3.children if child.kind is IRNodeKind.CHAPTER and child.label == "2")
+        assert [child.label for child in remapped_chapter_2.children if child.kind is IRNodeKind.SECTION] == ["5"]
 
     def test_relabel_reports_consumed_prior_source_in_same_plan(self) -> None:
         """Later post-part-frame relabels must explain when an earlier relabel already consumed the source."""
@@ -1214,8 +1285,8 @@ class TestExecuteRelabel:
 
         assert executed.success is True
         root = next((child for child in new_tree.children if child.kind is IRNodeKind.HCONTAINER), new_tree)
-        part_iia = next(child for child in root.children if child.kind is IRNodeKind.PART and child.label == "iia")
-        chapter_1 = next(child for child in part_iia.children if child.kind is IRNodeKind.CHAPTER and child.label == "1")
+        part_3 = next(child for child in root.children if child.kind is IRNodeKind.PART and child.label == "3")
+        chapter_1 = next(child for child in part_3.children if child.kind is IRNodeKind.CHAPTER and child.label == "1")
         section_labels = [child.label for child in chapter_1.children if child.kind is IRNodeKind.SECTION]
         assert "153" in section_labels
 

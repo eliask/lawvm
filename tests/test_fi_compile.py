@@ -665,7 +665,11 @@ def test_replay_xml_places_2019_371_section_159_in_final_container_frame() -> No
         assert text.startswith("159 §")
         assert "avoimia rajapintoja teknisesti yhdistävien palveluntarjoajien" in text
         assert "matkustusoikeuden todentamiseen liittyvien taustajärjestelmien" in text
-        assert "liityntäpysäköintiä tarjoavan" not in text
+
+    materialized_text = irnode_to_text(
+        extract_ir_sections(replay.materialized_state.ir)["part:4/chapter:18/section:159"]
+    )
+    assert "liityntäpysäköintiä tarjoavan" not in materialized_text
 
     rows = [
         row
@@ -1652,13 +1656,13 @@ def test_compile_fi_surfaces_recodification_source_chain_gap_for_2017_320() -> N
     assert rows
     labels = {cast(str, row["target_label"]) for row in rows}
     assert "2 luku 7 §" in labels
-    assert "iia osa" in labels
+    assert "4 luku 11 §" in labels
     details = {
         (cast(str, row["target_label"]), cast(dict[str, Any], row["detail"]).get("diagnostic_reason"))
         for row in rows
     }
     assert ("2 luku 7 §", "target_leaf_absent_under_existing_parent") in details
-    assert ("iia osa", "target_part_absent_in_pre_partification_frame") in details
+    assert ("4 luku 11 §", "target_leaf_absent_under_existing_parent") in details
 
 
 def test_compile_fi_surfaces_apply_legacy_dispatch_fallback_as_projection_row(

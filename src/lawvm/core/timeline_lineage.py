@@ -383,6 +383,8 @@ def current_address_with_prefix_migrations_from_events(
     ):
         wave_start = normalize(current)
         applicable_wave_events: list[MigrationEvent] = []
+        applied_specificity: list[int] = []
+        allowed_destination_source_prefixes: set[tuple[tuple[str, str], ...]] = set()
         for event in sorted(
             wave_events,
             key=lambda item: (
@@ -398,6 +400,46 @@ def current_address_with_prefix_migrations_from_events(
             applicable_wave_events.append(event)
         for event in applicable_wave_events:
             normalized_event_from = normalize(event.from_address)
+            normalized_current = normalize(current)
+            if normalized_current.path[: len(normalized_event_from.path)] != normalized_event_from.path:
+                continue
+            prefix_len = len(event.from_address.path)
+            next_path = event.to_address.path + current.path[prefix_len:]
+            next_addr = normalize(LegalAddress(path=next_path, special=current.special))
+            addr_key = str(next_addr)
+            if addr_key in visited:
+                continue
+            visited.add(addr_key)
+            current = next_addr
+            event_specificity = len(normalized_event_from.path)
+            applied_specificity.append(event_specificity)
+            normalized_event_to = normalize(event.to_address)
+            for prefix_len in range(1, min(event_specificity, len(normalized_event_to.path) + 1)):
+                allowed_destination_source_prefixes.add(normalized_event_to.path[:prefix_len])
+
+        # Some recodification waves express a descendant relabel destination in
+        # a parent source frame that is itself relabeled later in the same act.
+        # Follow only those newly exposed ancestor relabels. This keeps sibling
+        # ancestor-only chains such as part III->IV and IV->V in the pre-act
+        # frame, while allowing section-level moves into a relabeled parent
+        # frame to land in the live post-wave container.
+        if not applied_specificity:
+            continue
+        max_specificity = max(applied_specificity)
+        for event in sorted(
+            wave_events,
+            key=lambda item: (
+                len(item.from_address.path),
+                str(item.from_address),
+                str(item.to_address),
+            ),
+            reverse=True,
+        ):
+            normalized_event_from = normalize(event.from_address)
+            if len(normalized_event_from.path) >= max_specificity:
+                continue
+            if normalized_event_from.path not in allowed_destination_source_prefixes:
+                continue
             normalized_current = normalize(current)
             if normalized_current.path[: len(normalized_event_from.path)] != normalized_event_from.path:
                 continue

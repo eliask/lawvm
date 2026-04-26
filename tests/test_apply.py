@@ -6490,6 +6490,44 @@ def test_apply_op_does_not_rehome_root_level_unique_global_section_for_carry_for
     assert source_pathologies == []
 
 
+def test_resolve_section_path_with_fallbacks_allows_unique_global_descendant_insert() -> None:
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="4",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="2",
+                        children=(_sec("159", _sub("1", _content("target"))),),
+                    ),
+                ),
+            )
+        )
+    )
+    op = _op(op_type="INSERT", target_section="159", target_chapter="1", target_paragraph=4)
+    rop = ResolvedOp.from_amendment_op(
+        op,
+        muutos_ir=_sub("4", _content("new fourth")),
+        cross_ir=None,
+        target_unit_kind="section",
+        target_norm="159",
+        target_chapter="1",
+    )
+
+    resolution = _resolve_section_path_with_fallbacks(
+        state,
+        rop,
+        rop.muutos_ir,
+        None,
+        "[2019/371] INSERT 1 luku 159 § 4 mom",
+    )
+
+    assert resolution.path == (("part", "4"), ("chapter", "2"), ("section", "159"))
+    assert resolution.reason_code == "live_unique_global_fallback"
+
+
 def test_apply_op_uses_apply_fallback_tag_not_source_pathology_for_live_unique_scope_fallback(monkeypatch) -> None:
     from lawvm.core.canonical_intent import ExecutionContract, IntentKind, NodeTarget, OccupancyPolicy, Replace
     from lawvm.core.ir import LegalAddress
