@@ -7839,6 +7839,37 @@ def test_process_muutoslaki_2017_320_2019_371_governs_pending_relabel_gap_failur
     )
 
 
+def test_replay_xml_2017_320_2018_301_keeps_part_scoped_chapter_4_section_11() -> None:
+    corpus = get_corpus()
+    orig = corpus.read_source("2017/320")
+    if orig is None:
+        pytest.skip("corpus archive not available")
+
+    ctx = StatuteContext.from_xml(orig, _fi_label_postprocessor)
+    before = pinned_replay("2017/320", mode="legal_pit", stop_before="2018/301", quiet=True)
+
+    with redirect_stdout(StringIO()):
+        phase = process_muutoslaki(
+            "2018/301",
+            before.replay_fold_state,
+            ctx,
+            replay_mode="legal_pit",
+            parent_id="2017/320",
+            corpus=corpus,
+        )
+
+    section = phase.output.find_section("11", "4", "2")
+    assert section is not None
+    assert "Yrittäjäkuljettajan työaikakirjanpito" in irnode_to_text(section)
+    assert not any(
+        f.kind == "ELAB.SOURCE_PATHOLOGY"
+        and f.detail.get("code") == "CONTAINER_MEMBERSHIP_MISMATCH"
+        and f.detail.get("target_label") == "4 luku"
+        and "11" in f.detail.get("detail", {}).get("pruned_sections", [])
+        for f in phase.findings()
+    )
+
+
 def test_uncovered_body_records_past_repeal_placeholder_guard_skip_finding() -> None:
     state = ReplayState(
         ir=IRNode(

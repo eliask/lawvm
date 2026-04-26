@@ -1656,13 +1656,12 @@ def test_compile_fi_surfaces_recodification_source_chain_gap_for_2017_320() -> N
     assert rows
     labels = {cast(str, row["target_label"]) for row in rows}
     assert "2 luku 7 §" in labels
-    assert "4 luku 11 §" in labels
+    assert "4 luku 11 §" not in labels
     details = {
         (cast(str, row["target_label"]), cast(dict[str, Any], row["detail"]).get("diagnostic_reason"))
         for row in rows
     }
     assert ("2 luku 7 §", "target_leaf_absent_under_existing_parent") in details
-    assert ("4 luku 11 §", "target_leaf_absent_under_existing_parent") in details
 
 
 def test_compile_fi_surfaces_apply_legacy_dispatch_fallback_as_projection_row(
