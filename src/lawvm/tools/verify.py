@@ -379,6 +379,12 @@ def _verify_full(sid: str, mode: Literal["finlex_oracle", "legal_pit"] = "finlex
                 ),
                 sid,
             ))
+        for issue in materialized.issues:
+            all_issues.append(_issue(
+                "timeline", "warning", f"timeline.{issue.kind}",
+                issue.message,
+                sid,
+            ))
 
         for violation in check_all_timeline_invariants(pit, compiled_timelines.timelines, pit_date):
             all_issues.append(_issue(

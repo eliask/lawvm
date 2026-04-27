@@ -5,6 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, Optional, Sequence
 
+from lawvm.core.duplicate_child_classification import (
+    DuplicateChildClassification,
+    classify_duplicate_child_family,
+    collect_duplicate_child_findings,
+    timeline_issue_kind_for_duplicate_classification,
+)
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, ProvisionVersion
 from lawvm.core.ir_helpers import _kind_str
 from lawvm.core.provenance import MigrationEvent
@@ -87,6 +93,63 @@ def _node_has_duplicate_raw_children(node: IRNode) -> bool:
         if counts[key] > 1:
             return True
     return False
+
+
+def _record_duplicate_child_classifications(
+    issue_sink: Any,
+    *,
+    node: IRNode,
+    parent_address: LegalAddress,
+    classification_hint: DuplicateChildClassification | None,
+    emit_warnings: bool,
+    record_issue: Callable[..., None],
+) -> None:
+    """Emit typed classifications for duplicate child families under ``node``."""
+    for finding in collect_duplicate_child_findings(
+        node,
+        parent_address=parent_address,
+        classification_hint=classification_hint,
+    ):
+        record_issue(
+            issue_sink,
+            kind=timeline_issue_kind_for_duplicate_classification(finding.classification),
+            message=(
+                f"duplicate child {finding.child_kind}:{finding.child_label} "
+                f"under {finding.parent_address} classified as {finding.classification}: "
+                f"{finding.reason}"
+            ),
+            address=finding.child_address,
+            emit_warnings=emit_warnings,
+        )
+
+
+def _record_duplicate_child_family_classification(
+    issue_sink: Any,
+    *,
+    parent_address: LegalAddress,
+    children: Sequence[IRNode],
+    classification_hint: DuplicateChildClassification,
+    emit_warnings: bool,
+    record_issue: Callable[..., None],
+) -> None:
+    finding = classify_duplicate_child_family(
+        parent_address,
+        children,
+        classification_hint=classification_hint,
+    )
+    if finding is None:
+        return
+    record_issue(
+        issue_sink,
+        kind=timeline_issue_kind_for_duplicate_classification(finding.classification),
+        message=(
+            f"duplicate child {finding.child_kind}:{finding.child_label} "
+            f"under {finding.parent_address} classified as {finding.classification}: "
+            f"{finding.reason}"
+        ),
+        address=finding.child_address,
+        emit_warnings=emit_warnings,
+    )
 
 
 def _node_has_relative_address(
@@ -224,6 +287,14 @@ def apply_overlays(
                 address=raw_addr,
                 emit_warnings=emit_warnings,
             )
+            _record_duplicate_child_classifications(
+                issue_sink,
+                node=content,
+                parent_address=parent_address,
+                classification_hint="unresolved_duplicate",
+                emit_warnings=emit_warnings,
+                record_issue=record_issue,
+            )
             normalized = normalize_base_node(child)
             child_active, child_active_prefixes = _filtered_active_for_base_child(
                 normalized,
@@ -347,6 +418,7 @@ def overlay_on_container(
         raw_key = (_kind_str(child.kind), child.label)
         duplicate_raw_counts[raw_key] = duplicate_raw_counts.get(raw_key, 0) + 1
 
+    direct_duplicate_classifications_emitted: set[tuple[str, str]] = set()
     for c in base_children:
         if is_strip_node(c):
             continue
@@ -364,6 +436,21 @@ def overlay_on_container(
                 preserve_base_structure = True
             if preserve_base_structure:
                 seen.add(raw_addr.path)
+                if duplicate_raw_counts.get(raw_key, 0) > 1 and raw_key not in direct_duplicate_classifications_emitted:
+                    direct_duplicate_classifications_emitted.add(raw_key)
+                    _record_duplicate_child_family_classification(
+                        issue_sink,
+                        parent_address=LegalAddress(path=parent_path),
+                        children=tuple(
+                            child
+                            for child in base_children
+                            if child.label is not None
+                            and (_kind_str(child.kind), child.label) == raw_key
+                        ),
+                        classification_hint="carried_tail_or_preserved_live_content",
+                        emit_warnings=emit_warnings,
+                        record_issue=record_issue,
+                    )
                 if raw_addr in active and active.get(raw_addr) is not None:
                     record_issue(
                         issue_sink,
@@ -375,6 +462,14 @@ def overlay_on_container(
                         address=raw_addr,
                         emit_warnings=emit_warnings,
                     )
+                _record_duplicate_child_classifications(
+                    issue_sink,
+                    node=c,
+                    parent_address=raw_addr,
+                    classification_hint="carried_tail_or_preserved_live_content",
+                    emit_warnings=emit_warnings,
+                    record_issue=record_issue,
+                )
                 normalized = normalize_base_node(c)
                 child_active, child_active_prefixes = _filtered_active_for_base_child(
                     normalized,
