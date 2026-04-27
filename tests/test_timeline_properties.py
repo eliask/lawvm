@@ -45,6 +45,10 @@ from lawvm.core.ir import (
 )
 from lawvm.core.ir_helpers import irnode_content_hash
 from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.duplicate_child_classification import (
+    classify_duplicate_child_family,
+    collect_duplicate_child_findings,
+)
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.core.timeline import (
     current_address_from_migration_events,
@@ -2339,6 +2343,11 @@ def test_materialize_body_preserves_duplicate_base_siblings_with_descendant_owne
         and issue.address == part_addr
         for issue in issues
     )
+    assert any(
+        issue.kind == "duplicate_same_label_child_carried_continuity"
+        and issue.address == part_addr
+        for issue in issues
+    )
 
 
 def test_materialize_body_preserves_duplicate_base_children_under_selected_root() -> None:
@@ -2404,6 +2413,11 @@ def test_materialize_body_preserves_duplicate_base_children_under_selected_root(
     assert any(
         issue.kind == "duplicate_base_address_descendant_overlay"
         and issue.address == chapter_addr
+        for issue in issues
+    )
+    assert any(
+        issue.kind == "duplicate_same_label_child_carried_continuity"
+        and issue.address == LegalAddress(path=(("chapter", "8"), ("division", "2")))
         for issue in issues
     )
 
@@ -2483,6 +2497,82 @@ def test_materialize_body_preserves_duplicate_selected_children_when_direct_chil
         and issue.address == subsection_addr
         for issue in issues
     )
+    assert any(
+        issue.kind == "duplicate_same_label_child_unresolved"
+        and issue.address == subsection_addr
+        for issue in issues
+    )
+
+
+def test_duplicate_child_classifier_reports_migration_collision_without_deleting_children() -> None:
+    parent = LegalAddress(path=(("chapter", "1"),))
+    child_address = LegalAddress(path=(("chapter", "1"), ("section", "5")))
+    migrated_from = LegalAddress(path=(("chapter", "9"), ("section", "5")))
+    finding = classify_duplicate_child_family(
+        parent,
+        (
+            IRNode(kind=IRNodeKind.SECTION, label="5", text="native section"),
+            IRNode(kind=IRNodeKind.SECTION, label="5", text="migrated section"),
+        ),
+        migration_events=(
+            MigrationEvent(
+                event_id="move-9-5-to-1-5",
+                kind="move",
+                from_address=migrated_from,
+                to_address=child_address,
+                effective="2020-01-01",
+                source_statute="2020/1",
+            ),
+        ),
+    )
+
+    assert finding is not None
+    assert finding.child_address == child_address
+    assert finding.classification == "migrated_native_identity_collision"
+
+
+def test_duplicate_child_classifier_marks_source_shadow_only_with_explicit_marker() -> None:
+    parent = LegalAddress(path=(("section", "1"),))
+    findings = collect_duplicate_child_findings(
+        IRNode(
+            kind=IRNodeKind.SECTION,
+            label="1",
+            children=(
+                IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="current text"),
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="2",
+                    text="old text",
+                    attrs={"lawvm_source_shadow": "1"},
+                ),
+            ),
+        ),
+        parent_address=parent,
+    )
+
+    assert len(findings) == 1
+    assert findings[0].child_address == LegalAddress(path=(("section", "1"), ("subsection", "2")))
+    assert findings[0].classification == "stale_publisher_or_source_shadow"
+
+
+def test_duplicate_child_classifier_marks_explicit_temporal_overlay() -> None:
+    parent = LegalAddress(path=(("section", "1"),))
+    finding = classify_duplicate_child_family(
+        parent,
+        (
+            IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="background"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="3",
+                text="temporary overlay",
+                attrs={"lawvm_temporal_overlay": "1"},
+            ),
+        ),
+    )
+
+    assert finding is not None
+    assert finding.child_address == LegalAddress(path=(("section", "1"), ("subsection", "3")))
+    assert finding.classification == "valid_temporal_overlay"
 
 
 def test_materialize_pit_preserves_duplicate_selected_children_in_timeline_versions() -> None:
