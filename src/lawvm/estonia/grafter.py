@@ -64,6 +64,7 @@ from lawvm.estonia.target_resolution import (
     is_omnibus_amendment as _tr_is_omnibus_amendment,
     is_specific_direct_target_fragment as _tr_is_specific_direct_target_fragment,
     old_format_collect_all_ops as _tr_old_format_collect_all_ops,
+    old_format_collect_nested_direct_target_ops as _tr_old_format_collect_nested_direct_target_ops,
     old_format_section_matches_target as _tr_old_format_section_matches_target,
     old_format_has_section_ref as _tr_old_format_has_section_ref,
     old_format_section_from_header_text as _tr_old_format_section_from_header_text,
@@ -1371,6 +1372,19 @@ def parse_ee_amendment_ops(
             has_earlier_same_act_slice=has_earlier_same_act_slice,
         )
     )
+    if not parsed_ops and has_paragrahv and target_title:
+        html_blocks: list[str] = []
+        for el in root.iter():
+            tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+            if tag == "HTMLKonteiner" and el.text:
+                html_blocks.append(el.text)
+        if html_blocks:
+            parsed_ops, _ = _tr_old_format_collect_nested_direct_target_ops(
+                full_html="\n".join(html_blocks),
+                source_id=source_id,
+                target_title=target_title,
+                seq_start=1,
+            )
     target_section_labels = _extract_old_format_target_section_labels(root, target_title)
     item_effects, section_effects = _extract_old_format_commencement_effects(
         root,
