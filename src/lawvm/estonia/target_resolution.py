@@ -852,6 +852,7 @@ def new_format_collect_op_texts(
     para: ET.Element,
     ns_str: str,
     embedded_target_sections: Sequence[str],
+    allow_plain_paragraph_items: bool = False,
 ) -> list[str]:
     """Assemble new-format amendment instruction texts before lowering."""
     op_texts: list[str] = []
@@ -913,7 +914,10 @@ def new_format_collect_op_texts(
             for html in html_sections:
                 st_html.append(html)
                 html_blocks.append(html)
-                item_texts = parse_html_op_items(html)
+                item_texts = parse_html_op_items(
+                    html,
+                    allow_plain_paragraph_items=allow_plain_paragraph_items,
+                )
                 wrapper_instruction = _html_wrapper_instruction(html)
                 if item_texts and wrapper_instruction:
                     for item_text in item_texts:
@@ -947,7 +951,10 @@ def new_format_collect_op_texts(
                 if (
                     content_plain
                     and (is_quoted_payload or not any(kw in content_plain.lower() for kw in op_kws))
-                    and not parse_html_op_items(html_block)
+                    and not parse_html_op_items(
+                        html_block,
+                        allow_plain_paragraph_items=allow_plain_paragraph_items,
+                    )
                 ):
                     for instr in tava_instructions:
                         combined = f"{instr} {content_plain}"
