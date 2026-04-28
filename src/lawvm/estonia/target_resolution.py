@@ -186,7 +186,7 @@ def extract_intro_statute_fragment(text: str) -> str:
     fragment_from_quoted_title = False
     quoted_title_match = re.match(
         r"^[A-ZÜÕÖÄ][^\n]{0,240}?\b(?:seaduse|seaduses|seadustiku|koodeksi|määruse|määruses)\b"
-        r"(?:\s+nr\.?\s*[\w./-]+)?\s+[„\"“](?P<title>[^„”\"]+)[”\"]"
+        r"(?:\s+nr\.?\s*[\w./-]+)?\s+[„\"“](?P<title>[^„”“\"]+)[”“\"]"
         r"\s+(?:§|paragrahv|\btehakse\b|\bmuudetakse\b|\btunnistatakse\b|\btäiendatakse\b|\bjäetakse\b)",
         text,
         re.IGNORECASE,
@@ -1898,7 +1898,7 @@ def extract_intro_statute_fragment(text: str) -> str:  # noqa: F811
     fragment_from_quoted_title = False
     quoted_title_match = re.match(
         r"^[A-ZÜÕÖÄ][^\n]{0,240}?\b(?:seaduse|seaduses|seadustiku|koodeksi|määruse|määruses)\b"
-        r"(?:\s+nr\.?\s*[\w./-]+)?\s+[„\"“](?P<title>[^„”\"]+)[”\"]"
+        r"(?:\s+nr\.?\s*[\w./-]+)?\s+[„\"“](?P<title>[^„”“\"]+)[”“\"]"
         r"\s+(?:§|paragrahv|\btehakse\b|\bmuudetakse\b|\btunnistatakse\b|\btäiendatakse\b|\bjäetakse\b)",
         text,
         re.IGNORECASE,
@@ -2241,6 +2241,19 @@ def parse_preambul_single_target_ops(
                 if candidate_fragment:
                     stat_fragment = candidate_fragment
                     intro_tava = candidate
+                    break
+            if stat_fragment:
+                break
+            for html_el in child.findall(_ns(ns_str, "HTMLKonteiner")):
+                html_text = "".join(str(part) for part in html_el.itertext())
+                for para_html in re.findall(r"<p\b[^>]*>.*?</p>", html_text, flags=re.IGNORECASE | re.DOTALL):
+                    candidate = plain_html_text(para_html)
+                    candidate_fragment = extract_intro_statute_fragment(candidate)
+                    if candidate_fragment:
+                        stat_fragment = candidate_fragment
+                        intro_tava = candidate
+                        break
+                if stat_fragment:
                     break
             if stat_fragment:
                 break
