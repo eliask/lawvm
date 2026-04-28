@@ -4401,6 +4401,32 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_nom": stem + "d",
             "pl_gen": stem + "te",
         }
+    if lower.endswith("nik"):
+        stem = word + "u"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": word + "ku",
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": word + "ud",
+            "pl_gen": word + "e",
+            "pl_part": word + "ke",
+            "pl_ine": word + "es",
+            "pl_ela": word + "est",
+            "pl_all": word + "ele",
+            "pl_ade": word + "el",
+            "pl_abl": word + "elt",
+            "pl_trn": word + "eks",
+        }
     if lower.endswith("ik"):
         stem = word + "u"
         return {
