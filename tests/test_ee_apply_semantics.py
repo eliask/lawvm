@@ -6215,6 +6215,63 @@ def test_apply_ee_ops_prefers_explicit_target_law_replace_over_generic_ministry_
     assert section_90_2.children[0].text == "Andmed esitati Kliimaministeeriumile."
 
 
+def test_exact_target_insert_after_with_repeated_source_surface_emits_ambiguity() -> None:
+    statute = IRStatute(
+        statute_id="ee/test",
+        title="Maagaasiseadus",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="26_7",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.SUBSECTION,
+                                    label="1",
+                                    text=(
+                                        "Varumakse katab strateegilise gaasivaru kulud ja "
+                                        "gaasivaru hoidmise korralduse."
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee-test-ambiguous-insert-after",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "26_7"), ("subsection", "1"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="gaasivaru ning terminali taristu",
+            attrs={
+                "old_text": "gaasivaru",
+                "rewrite_mode": "insert_after",
+            },
+        ),
+        source=OperationSource(statute_id="ee/test-source"),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    result = apply_ee_ops(statute, [op], adjudications_out=adjudications)
+
+    subsection = result.body.children[0].children[0].children[0]
+    assert subsection.text == statute.body.children[0].children[0].children[0].text
+    ambiguity = [record for record in adjudications if record.kind == "ee_ambiguous_single_occurrence_text_replace"]
+    assert len(ambiguity) == 1
+    assert ambiguity[0].detail["target"] == "section:26_7/subsection:1"
+    assert ambiguity[0].detail["match_count"] == "2"
+
+
 def test_apply_ee_ops_records_unsupported_action() -> None:
     statute = IRStatute(
         statute_id="ee/test",

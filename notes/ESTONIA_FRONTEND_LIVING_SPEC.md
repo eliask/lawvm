@@ -915,3 +915,55 @@ This ensures that for the chain-corruption case, the longer global
 `"Põllumajandusministeerium"` (25 chars) runs before the section-scoped
 `"Rahandusministeerium"` (20 chars), while for the substring-preemption case,
 the longer scoped op still runs before the shorter global op.
+
+## 48. EE generic ministry reorganization exceptions must be carried onto inferred global ops
+
+Generic ministry reorganization clauses can be parsed from a Vabariigi Valitsuse
+seadus transition section and materialized as target-statute global
+`text_replace` ops. Those inferred global ops must still preserve explicit
+exceptions written in the source.
+
+Observed failure (`130062023001` against `Kalapüügiseadus`):
+
+- `§ 105^19(7)` states that in current and future laws, except for
+  `kalapüügiseaduse § 90^2 lõikes 2`, `Maaeluministeerium` is replaced by
+  `Regionaal- ja Põllumajandusministeerium`.
+- LawVM materialized the global rewrite but did not carry the exception path.
+- Replay therefore mutated `Kalapüügiseadus § 90^2(2)` outside the source's
+  declared target region.
+
+Correct behavior:
+
+- parse the exception list only for the active target statute;
+- attach the excluded structural paths to the inferred global op;
+- preserve a stable rule marker:
+  `ee_generic_ministry_reorganization_explicit_exceptions`;
+- do not treat exceptions for other statutes as exclusions on the current
+  target.
+
+This is a source-scope ownership rule, not an oracle-matching rule.
+
+## 49. EE single-occurrence insert rewrites must not silently choose among repeated matches
+
+When source text says an exact target is supplemented before/after a word but
+the live target contains that word more than once, LawVM must not silently pick
+the first occurrence unless the source supplies a disambiguator such as
+`läbivalt`, sentence position, or another local selector.
+
+Observed failure (`102052024002` against `Maagaasiseadus § 26^7(1)`):
+
+- source says the provision is supplemented after the word `gaasivaru`;
+- the live subsection contains two occurrences of `gaasivaru`;
+- Riigi Teataja's consolidated text applies the insertion to both occurrences;
+- the source clause itself does not say whether one or both occurrences were
+  intended.
+
+Correct behavior:
+
+- block the single-occurrence insertion for that exact target;
+- emit `ee_ambiguous_single_occurrence_text_replace`;
+- leave the replay/oracle difference classified as `source_ambiguity`;
+- do not widen the operation to all occurrences merely because the oracle did.
+
+This preserves the legal uncertainty instead of resolving it by Python match
+order.

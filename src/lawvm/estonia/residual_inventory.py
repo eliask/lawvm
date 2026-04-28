@@ -2847,15 +2847,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     "— another ministry rename drift."
                 ),
             ),
-            EEResidualRecord(
-                address="chapter:7/section:90_2/subsection:2",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 130062023001 rewrites § 90^2(2) with replay-side text "
-                    "mentioning 'Regionaal-ja Põllumajandusministeerium'. Oracle carries "
-                    "'Maaeluministeerium' — ministry rename drift in the opposite direction."
-                ),
-            ),
         ),
     ),
     ("122032024011", "105072025019"): EEPairResidualInventory(
@@ -3290,12 +3281,6 @@ def _generated_ee_residual_records(base_id: str, oracle_id: str) -> tuple[EEResi
                             "Source act 130062023001 rewrites § 90^2(1) with replay-side text "
                             "mentioning 'Kliimaministeerium'. Oracle carries 'Keskkonnaministeerium' "
                             "— another ministry rename drift."
-                        ),
-                        (
-                            "chapter:7/section:90_2/subsection:2",
-                            "Source act 130062023001 rewrites § 90^2(2) with replay-side text "
-                            "mentioning 'Regionaal-ja Põllumajandusministeerium'. Oracle carries "
-                            "'Maaeluministeerium' — ministry rename drift in the opposite direction."
                         ),
                     ),
                 ),

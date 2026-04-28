@@ -53,7 +53,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core import tree_ops
 from lawvm.estonia.act_identity_registry import lookup_ee_act_identity
-from lawvm.estonia.peg import _instruction_preamble, _normalize_num, extract_ee_ops
+from lawvm.estonia.peg import _expand_ee_numeric_list, _instruction_preamble, _normalize_num, extract_ee_ops
 from lawvm.estonia.ee_instruction_waist import read_payload_rewrite_meta
 from lawvm.estonia.ee_instruction_waist import to_ee_parsed_instructions
 from lawvm.estonia.target_resolution import (
@@ -1660,6 +1660,10 @@ def _parse_generic_ministry_reorganization_ops(
     ):
         return []
 
+    generic_exclusions_by_old_title = _extract_generic_ministry_exclusions_by_old_title(
+        xml_text,
+        target_title=target_title,
+    )
     source = OperationSource(
         statute_id=source_id,
         title="ministeeriumide ja nende valitsemisalade ümberkorraldamine",
@@ -1678,6 +1682,16 @@ def _parse_generic_ministry_reorganization_ops(
                 "source_family": "generic_ministry_reorganization",
             },
         )
+        excluded_paths = generic_exclusions_by_old_title.get(old_title, ())
+        if excluded_paths:
+            payload = replace(
+                payload,
+                attrs={
+                    **payload.attrs,
+                    "exclude_paths": excluded_paths,
+                    "exclusion_rule": "ee_generic_ministry_reorganization_explicit_exceptions",
+                },
+            )
         ops.append(
             LegalOperation(
                 op_id=f"ee-generic-ministry-reorg-{seq}-{source_id}",
@@ -1691,6 +1705,72 @@ def _parse_generic_ministry_reorganization_ops(
             )
         )
     return ops
+
+
+def _extract_generic_ministry_exclusions_by_old_title(
+    xml_text: str,
+    *,
+    target_title: str,
+) -> dict[str, tuple[tuple[tuple[str, str], ...], ...]]:
+    """Extract target-statute exceptions from generic ministry reorganization clauses."""
+    visible_text = re.sub(r"<\s*sup\s*>(.*?)<\s*/\s*sup\s*>", r" \1", xml_text, flags=re.IGNORECASE | re.DOTALL)
+    visible_text = re.sub(r"<[^>]+>", " ", visible_text)
+    visible_text = _html.unescape(visible_text)
+    visible_text = re.sub(r"\s+", " ", visible_text)
+    by_old_title: dict[str, list[tuple[tuple[str, str], ...]]] = {}
+    quote = r"[„“”\"']"
+    pattern = re.compile(
+        rf"\bvälja\s+arvatud\s+(?P<excluded>.+?),\s*loetakse\b"
+        rf"(?:(?!\bvälja\s+arvatud\b).)*?\bsõna\s+{quote}(?P<old>[^„“”\"']+){quote}\s+asendatuks\b",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for match in pattern.finditer(visible_text):
+        old_title = match.group("old").strip()
+        paths = _extract_targeted_generic_ministry_exclusion_paths(
+            match.group("excluded"),
+            target_title=target_title,
+        )
+        if not paths:
+            continue
+        bucket = by_old_title.setdefault(old_title, [])
+        for path in paths:
+            if path not in bucket:
+                bucket.append(path)
+    return {old: tuple(paths) for old, paths in by_old_title.items()}
+
+
+def _extract_targeted_generic_ministry_exclusion_paths(
+    excluded_clause: str,
+    *,
+    target_title: str,
+) -> tuple[tuple[tuple[str, str], ...], ...]:
+    """Return only exception paths that name the target statute."""
+    if not target_title:
+        return ()
+    paths: list[tuple[tuple[str, str], ...]] = []
+    section_ref = re.compile(
+        r"(?P<title>[A-Za-zÀ-ž0-9 .–-]+?)\s+§(?:-s|-des)?\s*"
+        r"(?P<section>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)"
+        r"(?:\s+(?:lõikes?|lõigetes)\s+(?P<subsections>.+?))?"
+        r"(?=(?:\s*,\s*[A-Za-zÀ-ž0-9 .–-]+\s+§|\s+ja\s+\d{4}[.]|\s+ja\s+[A-Za-zÀ-ž0-9 .–-]+\s+§|$))",
+        re.IGNORECASE,
+    )
+    for match in section_ref.finditer(excluded_clause):
+        title_fragment = match.group("title").strip(" ,;")
+        if not _title_matches_para(target_title, title_fragment):
+            continue
+        section_label = _normalize_num(match.group("section"))
+        subsection_text = (match.group("subsections") or "").strip(" ,;")
+        if subsection_text:
+            for subsection_label in _expand_ee_numeric_list(subsection_text):
+                paths.append((("section", section_label), ("subsection", subsection_label)))
+        else:
+            paths.append((("section", section_label),))
+    deduped: list[tuple[tuple[str, str], ...]] = []
+    for path in paths:
+        if path not in deduped:
+            deduped.append(path)
+    return tuple(deduped)
 
 
 def _title_matches_para(target_title: str, para_title: str) -> bool:
@@ -2944,7 +3024,40 @@ def _replace_text_in_subtree_with_spec(
     return node, False
 
 
+def _ee_text_replace_match_spans(text: str | None, spec: EETextRewriteSpec) -> tuple[tuple[int, int], ...]:
+    """Return unique live-text spans matching a rewrite's source surface."""
+    if not text or not spec.old_text:
+        return ()
+    spans: list[tuple[int, int]] = []
+    variants = _ee_text_replace_variants(
+        spec.old_text,
+        spec.new_text,
+        case_inflected=spec.case_inflected,
+    )
+    for old_variant, _new_variant in variants:
+        pattern = re.compile(
+            _ee_wrap_word_boundaries(_ee_surface_pattern(old_variant), old_variant),
+            re.IGNORECASE,
+        )
+        for match in pattern.finditer(text):
+            span = match.span()
+            if span not in spans:
+                spans.append(span)
+    return tuple(sorted(spans))
+
+
+def _ee_repeated_single_occurrence_rewrite_match_count(node: IRNode, spec: EETextRewriteSpec) -> int:
+    """Count matches where a single-occurrence insert rewrite would need source disambiguation."""
+    if spec.all_occurrences or spec.mode not in {"insert_after", "insert_before"}:
+        return 0
+    count = len(_ee_text_replace_match_spans(node.text, spec))
+    for child in node.children:
+        count += _ee_repeated_single_occurrence_rewrite_match_count(child, spec)
+    return count
+
+
 _EE_SOURCE_TYPO_TEXT_REPLACE_RULE = "ee_source_typo_text_replace_near_match"
+_EE_AMBIGUOUS_SINGLE_OCCURRENCE_TEXT_REPLACE_RULE = "ee_ambiguous_single_occurrence_text_replace"
 
 
 def _ee_levenshtein_distance_at_most_one(left: str, right: str) -> bool:
@@ -7464,6 +7577,25 @@ def _ee_apply_op(
                                 children=tuple(node.children),
                             )
                             return tree_ops.replace_at(body, full_path, replaced_node)
+                        return body
+                    repeated_match_count = _ee_repeated_single_occurrence_rewrite_match_count(node, rewrite_spec)
+                    if repeated_match_count > 1:
+                        _append_ee_replay_adjudication(
+                            adjudications_out,
+                            kind=_EE_AMBIGUOUS_SINGLE_OCCURRENCE_TEXT_REPLACE_RULE,
+                            message=(
+                                "EE replay blocked a single-occurrence text insertion because "
+                                "the source surface matched the exact target more than once."
+                            ),
+                            op=op,
+                            detail={
+                                "target": str(op.target),
+                                "mode": rewrite_spec.mode,
+                                "source_old_text": rewrite_spec.old_text,
+                                "replacement": rewrite_spec.new_text,
+                                "match_count": str(repeated_match_count),
+                            },
+                        )
                         return body
                     replaced_node, changed = _replace_text_in_subtree_with_spec(
                         node,

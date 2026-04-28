@@ -138,7 +138,7 @@ def test_build_ee_residual_summary_derives_mixed_container_record_for_maagaas_pa
     assert summary.record_by_address["chapter:3"].bucket == "descendant_residual_mix"
     assert summary.record_by_address["chapter:3/section:26_7"].bucket == "descendant_residual_mix"
     assert summary.record_by_address["chapter:3/section:26_7/subsection:2"].bucket == "source_oracle_drift"
-    assert summary.record_by_address["chapter:3/section:26_7/subsection:1"].bucket == "source_pathology"
+    assert summary.record_by_address["chapter:3/section:26_7/subsection:1"].bucket == "source_ambiguity"
 
 
 def test_cli_parser_accepts_verify_consistency_json() -> None:

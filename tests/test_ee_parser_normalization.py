@@ -3132,6 +3132,77 @@ def test_parse_ee_amendment_ops_materializes_generic_ministry_reorganization_as_
     assert _payload(maaelu_ops[0]).attrs.get("source_family") == "generic_ministry_reorganization"
 
 
+def test_parse_ee_amendment_ops_materializes_generic_ministry_reorganization_exceptions() -> None:
+    xml = """
+    <tyviseadus xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
+      <aktinimi><nimi><pealkiri>Vabariigi Valitsuse seaduse muutmine</pealkiri></nimi></aktinimi>
+      <globaalID>130062023001</globaalID>
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>1</paragrahvNr>
+          <sisuTekst>
+            <tavatekst>
+              § 105 19. Ministeeriumide ja nende valitsemisalade ümberkorraldamine.
+              Maaeluministeerium korraldatakse ümber Regionaal- ja
+              Põllumajandusministeeriumiks alates 2023. aasta 1. juulist.
+              Kehtivates ja tulevikus jõustuvates seadustes, välja arvatud
+              kalapüügiseaduse § 90 2 lõikes 2 ja 2023. aasta riigieelarve seaduses,
+              loetakse alates 2023. aasta 1. juulist sõna „Maaeluministeerium”
+              asendatuks sõnadega „Regionaal- ja Põllumajandusministeerium”
+              vastavas käändes.
+            </tavatekst>
+          </sisuTekst>
+        </paragrahv>
+      </sisu>
+    </tyviseadus>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(xml, "ee/130062023001", target_title="Kalapüügiseadus")
+    maaelu_ops = [
+        op for op in ops if op.payload is not None and op.payload.attrs.get("old_text") == "Maaeluministeerium"
+    ]
+
+    assert len(maaelu_ops) == 1
+    payload = _payload(maaelu_ops[0])
+    assert payload.text == "Regionaal- ja Põllumajandusministeerium"
+    assert payload.attrs["exclude_paths"] == ((("section", "90_2"), ("subsection", "2")),)
+    assert payload.attrs["exclusion_rule"] == "ee_generic_ministry_reorganization_explicit_exceptions"
+
+
+def test_parse_ee_amendment_ops_ignores_other_statute_generic_ministry_exceptions() -> None:
+    xml = """
+    <tyviseadus xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
+      <aktinimi><nimi><pealkiri>Vabariigi Valitsuse seaduse muutmine</pealkiri></nimi></aktinimi>
+      <globaalID>130062023001</globaalID>
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>1</paragrahvNr>
+          <sisuTekst>
+            <tavatekst>
+              § 105 19. Ministeeriumide ja nende valitsemisalade ümberkorraldamine.
+              Maaeluministeerium korraldatakse ümber Regionaal- ja
+              Põllumajandusministeeriumiks alates 2023. aasta 1. juulist.
+              Kehtivates ja tulevikus jõustuvates seadustes, välja arvatud
+              kalapüügiseaduse § 90 2 lõikes 2 ja 2023. aasta riigieelarve seaduses,
+              loetakse alates 2023. aasta 1. juulist sõna „Maaeluministeerium”
+              asendatuks sõnadega „Regionaal- ja Põllumajandusministeerium”
+              vastavas käändes.
+            </tavatekst>
+          </sisuTekst>
+        </paragrahv>
+      </sisu>
+    </tyviseadus>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(xml, "ee/130062023001", target_title="Taimekaitseseadus")
+    maaelu_ops = [
+        op for op in ops if op.payload is not None and op.payload.attrs.get("old_text") == "Maaeluministeerium"
+    ]
+
+    assert len(maaelu_ops) == 1
+    assert "exclude_paths" not in _payload(maaelu_ops[0]).attrs
+
+
 def test_parse_ee_amendment_ops_materializes_pollumajandusministeerium_name_substitution() -> None:
     xml = """
     <tyviseadus xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
