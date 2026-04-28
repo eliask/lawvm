@@ -621,6 +621,9 @@ def _subsection_uses_appendix_html(el: ET.Element, ns_str: str) -> bool:
     return False
 
 
+_EE_DROP_ORPHAN_APPENDIX_MARKER_RULE = "ee_drop_orphan_appendix_marker_html"
+
+
 def _sisuTekst_text_with_appendix_markers(
     st: ET.Element,
     ns_str: str,
@@ -856,10 +859,22 @@ def _parse_subsection_nodes(el: ET.Element, ns_str: str, default_nr: int = 1) ->
         if txt:
             appendix_parts.append(txt)
     appendix_text = " ".join(appendix_parts).strip()
-    if not appendix_text:
-        return [base]
 
     intro_text = " ".join(intro_parts).strip() or base.text
+    if not appendix_text:
+        return [
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label=base.label,
+                text=intro_text,
+                attrs={
+                    **dict(base.attrs),
+                    "source_cleanup_rule": _EE_DROP_ORPHAN_APPENDIX_MARKER_RULE,
+                    "dropped_appendix_marker": appendix_marker,
+                },
+                children=tuple(base.children),
+            ),
+        ]
     return [
         IRNode(
             kind=IRNodeKind.SUBSECTION,
