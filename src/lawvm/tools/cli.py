@@ -41,13 +41,14 @@ Subcommands:
     audit     formats|staleness|html  Cross-format consistency audit (oracle staleness).
     ee-residual-inventory            Print deterministic EE residual adjudication inventory.
     ee-frontier                      Rank EE bench rows by open vs adjudicated residuals.
-    ee-chain-quality                Run consecutive-pair replay quality over an EE redaction chain.
+    ee-chain-quality                Run consecutive-pair replay quality over an EE version chain.
     ee-pair-status                  Score one EE base/oracle pair with residual-bucket summary.
     ee-explain                      Single-statute deep-dive (divergences + residual buckets + source chain).
+    ee-publication-db               Build Estonia divergence SQLite DB from current replayable corpus.
     residual-ledger validate|row    Validate or scaffold Finland residual-ledger CSV rows.
     destructive-repair-ledger       Emit the seeded Tranche 0 destructive-repair family ledger.
     ee-inspect-source               Inspect one EE source act, target filtering, and compiled ops.
-    ee-corpus acquire|curate|stats  Acquire, curate, or show stats for Estonia corpus artifacts.
+    ee-corpus acquire|curate|current|replayable|stats  Acquire, curate, or show stats for Estonia corpus artifacts.
     export-projections              Export canonical LawVM projections to JSONL/Parquet.
     sql                             Ad-hoc SQL over LawVM projections (DuckDB).
     bench-report                    Summarise a bench run CSV without re-running the bench.
@@ -4396,7 +4397,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="compare ops-replay vs consolidated text (Estonian: legal findings)",
         description=(
             "For Estonia: replays amendment chain from base statute and compares "
-            "against a later consolidated (authoritative) redaction. Divergences "
+            "against a later consolidated (authoritative) version. Divergences "
             "are legal findings — the official text may differ from what the "
             "amendment chain produces. Accepts Riigi Teataja globaalIDs or XML paths."
         ),
@@ -4529,10 +4530,10 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- ee-chain-quality ---
     ee_chain_quality_p = sub.add_parser(
         "ee-chain-quality",
-        help="run consecutive-pair replay quality over an EE redaction chain",
+        help="run consecutive-pair replay quality over an EE version chain",
         description=(
             "For each consecutive pair in one Estonia terviktekst chain, replay "
-            "the base to the next redaction date and report divergence totals."
+            "the base to the next consolidated-version date and report divergence totals."
         ),
         parents=_P,
     )
@@ -4571,6 +4572,38 @@ def _build_parser() -> argparse.ArgumentParser:
     ee_explain_p.add_argument("--oracle-id", required=True, metavar="ID", help="EE oracle statute globaalID")
     ee_explain_p.add_argument("--verbose", "-v", action="store_true", help="show full text and residual evidence")
     ee_explain_p.add_argument("--json", action="store_true", help="emit JSON")
+
+    # --- ee-publication-db ---
+    ee_pub_p = sub.add_parser(
+        "ee-publication-db",
+        help="build Estonia divergence SQLite DB from current replayable corpus",
+        description=(
+            "Replay current/latest Estonia corpus pairs and store pair metadata "
+            "plus replay-vs-Riigi-Teataja divergences in a browser-friendly "
+            "SQLite DB. Use this with ee-corpus current, not the small benchmark corpus."
+        ),
+        parents=_P,
+    )
+    ee_pub_p.add_argument(
+        "--corpus",
+        default="data/estonia/current_replayable_corpus.csv",
+        metavar="CSV",
+        help="current replayable Estonia corpus CSV (default: data/estonia/current_replayable_corpus.csv)",
+    )
+    ee_pub_p.add_argument(
+        "--output",
+        default="data/estonia/ee_divergences_publication.db",
+        metavar="PATH",
+        help="output SQLite path (default: data/estonia/ee_divergences_publication.db)",
+    )
+    ee_pub_p.add_argument(
+        "--db",
+        default="data/ee_riigiteataja.farchive",
+        metavar="PATH",
+        help="Riigi Teataja farchive path (default: data/ee_riigiteataja.farchive)",
+    )
+    ee_pub_p.add_argument("--limit", type=int, metavar="N", help="process only first N corpus rows")
+    ee_pub_p.add_argument("--workers", type=int, default=1, metavar="N", help="parallel replay workers (default: 1)")
 
     # --- residual-ledger ---
     residual_ledger_p = sub.add_parser(
@@ -4758,6 +4791,32 @@ def _build_parser() -> argparse.ArgumentParser:
     ee_corpus_curate_p.add_argument("--laws-only", action="store_true", help="include only law schemas, not decrees")
     ee_corpus_curate_p.add_argument("--output-csv", dest="output_csv", metavar="PATH", help="override output CSV path")
     ee_corpus_curate_p.add_argument(
+        "--output-notes", dest="output_notes", metavar="PATH", help="override notes output path"
+    )
+
+    ee_corpus_current_p = ee_corpus_sub.add_parser(
+        "current",
+        help="build current/latest replayable Estonia comparison cases",
+    )
+    ee_corpus_current_p.add_argument(
+        "--db", default="data/ee_riigiteataja.farchive", metavar="PATH", help="Farchive DB path"
+    )
+    ee_corpus_current_p.add_argument("--laws-only", action="store_true", help="include only law schemas, not decrees")
+    ee_corpus_current_p.add_argument("--output-csv", dest="output_csv", metavar="PATH", help="override output CSV path")
+    ee_corpus_current_p.add_argument(
+        "--output-notes", dest="output_notes", metavar="PATH", help="override notes output path"
+    )
+
+    ee_corpus_replayable_p = ee_corpus_sub.add_parser(
+        "replayable",
+        help="build all consecutive replayable Estonia version-comparison cases",
+    )
+    ee_corpus_replayable_p.add_argument(
+        "--db", default="data/ee_riigiteataja.farchive", metavar="PATH", help="Farchive DB path"
+    )
+    ee_corpus_replayable_p.add_argument("--laws-only", action="store_true", help="include only law schemas, not decrees")
+    ee_corpus_replayable_p.add_argument("--output-csv", dest="output_csv", metavar="PATH", help="override output CSV path")
+    ee_corpus_replayable_p.add_argument(
         "--output-notes", dest="output_notes", metavar="PATH", help="override notes output path"
     )
 
@@ -5551,6 +5610,11 @@ def main() -> None:
         from lawvm.tools.ee_explain import main as ee_explain_main
 
         ee_explain_main(args)
+
+    elif args.command == "ee-publication-db":
+        from lawvm.tools.ee_publication_db import main as ee_publication_db_main
+
+        ee_publication_db_main(args)
 
     elif args.command == "residual-ledger":
         from lawvm.tools.residual_ledger import main as residual_ledger_main
