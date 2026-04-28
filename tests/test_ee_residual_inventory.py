@@ -2092,22 +2092,14 @@ def test_get_ee_residual_inventory_sihtasutuste_seadus() -> None:
     assert inventory is not None
     assert inventory.statute_title == "Sihtasutuste seadus"
     assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 2
+    assert len(inventory.residuals) == 1
     assert {record.bucket for record in inventory.residuals} == {
-        "replay_bug",
         "source_oracle_drift",
     }
     assert any(
         record.address == "chapter:2/section:14/subsection:1/item:10_1"
         and "123122022002" in record.evidence
         and "final punctuation to a period" in record.evidence
-        for record in inventory.residuals
-    )
-    assert any(
-        record.address == "chapter:6/section:57_1/subsection:1"
-        and record.bucket == "replay_bug"
-        and "123122022002 § 7 p 6" in record.evidence
-        and "amendment-to-amendment" in record.evidence
         for record in inventory.residuals
     )
 

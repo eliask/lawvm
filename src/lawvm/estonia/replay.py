@@ -428,6 +428,129 @@ def _ee_filter_ops_for_ref_slice(
     return ops
 
 
+_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE = "ee_pending_amendment_text_precompose"
+
+
+def _ee_old_format_tag_value(op: LegalOperation, prefix: str) -> str:
+    for tag in op.provenance_tags:
+        if tag.startswith(prefix):
+            return tag[len(prefix) :].strip()
+    return ""
+
+
+def _ee_pending_patch_target_parts(op: LegalOperation) -> tuple[str, str] | None:
+    section = ""
+    item = ""
+    for kind, label in op.target.path:
+        if kind == "section":
+            section = label
+        elif kind == "item":
+            item = label
+    if not section or not item:
+        return None
+    return section, item
+
+
+def _ee_precompose_pending_amendment_text_patches(
+    ops: list[LegalOperation],
+    *,
+    refs: tuple[AmendmentRef, ...],
+    amendment_xml_by_ref: dict[str, bytes],
+) -> tuple[list[LegalOperation], tuple[CompileAdjudication, ...]]:
+    """Apply explicit amendments to not-yet-live amendment payloads.
+
+    Estonia sometimes amends a pending amendment act before that earlier act's
+    own target-law mutation has taken effect. This pass only composes exact
+    text-replace operations against earlier old-format amendment items when the
+    later source targets the earlier act by title and the earlier emitted op
+    carries matching amendment-section/amendment-item provenance.
+    """
+    updated_ops = list(ops)
+    adjudications: list[CompileAdjudication] = []
+    sorted_refs = tuple(sorted(refs, key=_ee_ref_sort_key))
+    parsed_meta_ops: dict[tuple[str, str], tuple[LegalOperation, ...]] = {}
+
+    for later_index, later_ref in enumerate(sorted_refs):
+        later_xml = amendment_xml_by_ref.get(later_ref.aktViide)
+        if later_xml is None:
+            continue
+        for earlier_ref in sorted_refs[:later_index]:
+            earlier_xml = amendment_xml_by_ref.get(earlier_ref.aktViide)
+            if earlier_xml is None:
+                continue
+            earlier_title = _ee_extract_act_title(earlier_xml)
+            if not earlier_title:
+                continue
+            meta_key = (later_ref.aktViide, earlier_title)
+            if meta_key not in parsed_meta_ops:
+                try:
+                    parsed = parse_ee_amendment_ops(
+                        later_xml,
+                        f"ee/{later_ref.aktViide}",
+                        target_title=earlier_title,
+                        ref_effective=later_ref.joustumine,
+                    )
+                except Exception:
+                    parsed = []
+                parsed_meta_ops[meta_key] = tuple(parsed)
+            for meta_op in parsed_meta_ops[meta_key]:
+                target_parts = _ee_pending_patch_target_parts(meta_op)
+                if target_parts is None or meta_op.text_patch is None:
+                    continue
+                match_text = meta_op.text_patch.selector.match_text
+                replacement = meta_op.text_patch.replacement
+                if not match_text or replacement is None:
+                    continue
+                target_section, target_item = target_parts
+                for index, candidate in enumerate(updated_ops):
+                    if candidate.source is None or candidate.source.statute_id != f"ee/{earlier_ref.aktViide}":
+                        continue
+                    if _ee_old_format_tag_value(candidate, "old_format_amendment_section:") != target_section:
+                        continue
+                    if _ee_old_format_tag_value(candidate, "old_format_amendment_item:") != target_item:
+                        continue
+                    if candidate.payload is None or match_text not in candidate.payload.text:
+                        continue
+                    patched_payload = replace(
+                        candidate.payload,
+                        text=candidate.payload.text.replace(match_text, replacement),
+                    )
+                    patched_op = replace(
+                        candidate,
+                        payload=patched_payload,
+                        witness_rule_id=_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE,
+                        provenance_tags=(
+                            *candidate.provenance_tags,
+                            (
+                                f"{_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE}:"
+                                f"{later_ref.aktViide}:{target_section}:{target_item}"
+                            ),
+                        ),
+                    )
+                    updated_ops[index] = patched_op
+                    adjudications.append(
+                        CompileAdjudication(
+                            kind=_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE,
+                            message=(
+                                "Applied source-backed text replacement to a pending "
+                                "amendment payload before replaying it into the target statute."
+                            ),
+                            source_statute=f"ee/{later_ref.aktViide}",
+                            op_id=candidate.op_id,
+                            detail={
+                                "earlier_amendment": earlier_ref.aktViide,
+                                "later_amendment": later_ref.aktViide,
+                                "amendment_section": target_section,
+                                "amendment_item": target_item,
+                                "match_text": match_text,
+                                "replacement": replacement,
+                            },
+                        )
+                    )
+                    break
+    return updated_ops, tuple(adjudications)
+
+
 # ---------------------------------------------------------------------------
 # Result type
 # ---------------------------------------------------------------------------
@@ -597,6 +720,7 @@ def replay_ee_to_pit(
     # ── Step 4: Fetch + parse ops ─────────────────────────────────────────────
     all_ops: List[LegalOperation] = []
     global_seq = 1
+    amendment_xml_by_ref: dict[str, bytes] = {}
 
     for ref in sorted(to_apply, key=_ee_ref_sort_key):
         _log(f"  {ref.aktViide}  effective={ref.joustumine}...")
@@ -606,6 +730,7 @@ def replay_ee_to_pit(
             _log(f"    fetch failed: {e}")
             result.amendments_failed.append(ref.aktViide)
             continue
+        amendment_xml_by_ref[ref.aktViide] = amend_xml
 
         try:
             same_act_refs = tuple(
@@ -651,6 +776,15 @@ def replay_ee_to_pit(
         all_ops.extend(ops)
         result.amendments_applied.append(ref.aktViide)
         _log(f"    {len(ops)} ops (total so far: {len(all_ops)})")
+
+    precomposition_adjudications: tuple[CompileAdjudication, ...] = ()
+    all_ops, precomposition_adjudications = _ee_precompose_pending_amendment_text_patches(
+        all_ops,
+        refs=tuple(to_apply),
+        amendment_xml_by_ref=amendment_xml_by_ref,
+    )
+    if precomposition_adjudications:
+        _log(f"Pending amendment precompositions: {len(precomposition_adjudications)}")
 
     result.n_ops = len(all_ops)
     _log(f"Total ops: {len(all_ops)}")
@@ -719,7 +853,7 @@ def replay_ee_to_pit(
         result.error = f"Failed to apply ops: {e}"
         return result
 
-    result.adjudications = adjudications
+    result.adjudications = [*precomposition_adjudications, *adjudications]
     _log(f"Timeline snapshots emitted: {len(lo_ops_out)}")
 
     # ── Step 5b: Timeline-primary — compile timelines + materialize PIT ────
