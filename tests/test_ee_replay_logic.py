@@ -946,6 +946,30 @@ def test_replay_ee_to_pit_respects_old_format_rakendamine_point_commencement() -
     assert result.divergences == []
 
 
+def test_replay_ee_to_pit_preserves_nested_quoted_act_title_in_text_insert() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "105092014003",
+        "2017-08-12",
+        archive=archive,
+        oracle_id="109082017006",
+    )
+
+    assert result.error is None
+    assert not any(
+        str(div.address).startswith("chapter:4/section:21")
+        for div in result.divergences
+    )
+    assert not any(
+        str(div.address).startswith("chapter:8/section:35")
+        for div in result.divergences
+    )
+
+
 def test_replay_ee_to_pit_replays_riigikogu_term_start_slice_in_erakonnaseadus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit

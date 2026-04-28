@@ -170,6 +170,7 @@ def test_insert_section_sentence_targets_existing_first_subsection_instead_of_du
             ),
         ),
     )
+    statute = IRStatute(statute_id="ee/test", title="Test", body=body)
     op = LegalOperation(
         op_id="ee_test_section_insert_second_sentence",
         sequence=1,
@@ -351,6 +352,52 @@ def test_text_replace_with_typed_rewrite_mode_insert_after() -> None:
     subsection = result.children[0].children[0].children[0]
 
     assert subsection.text == ("Määrus sisaldab kuni 100 trahviühikut või lisafraas ja seda rakendatakse.")
+
+
+def test_mixed_insert_after_and_delete_ops_apply_to_item_without_operand_inversion() -> None:
+    text = (
+        "tellima projektiauditi projektile, mille kogumaksumus tegevusaasta kohta "
+        "ületab 30 000 eurot. Komisjoni ettepaneku alusel võib projekti korral, "
+        "mille kogumaksumus tegevusaasta kohta jääb alla määra;"
+    )
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="35",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="4",
+                                children=(IRNode(kind=IRNodeKind.ITEM, label="10_1", text=text),),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    statute = IRStatute(statute_id="ee/test", title="Test", body=body)
+    source_text = (
+        "paragrahvi 35 lõike 4 punkti 10 1 esimest lauset täiendatakse pärast "
+        "sõna „mille” sõnadega „taotluses esitatud” ning punkti mõlemast "
+        "lausest jäetakse välja sõnad „tegevusaasta kohta”;"
+    )
+    ops = extract_ee_ops(source_text, OperationSource(statute_id="ee/test", raw_text=source_text))
+
+    result = apply_ee_ops(statute, ops)
+    item = result.body.children[0].children[0].children[0].children[0]
+
+    assert item.text == (
+        "tellima projektiauditi projektile, mille taotluses esitatud kogumaksumus "
+        "ületab 30 000 eurot. Komisjoni ettepaneku alusel võib projekti korral, "
+        "mille kogumaksumus jääb alla määra;"
+    )
 
 
 def test_text_replace_with_intro_only_subsection_scope_preserves_items() -> None:

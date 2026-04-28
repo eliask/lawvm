@@ -1199,6 +1199,16 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
     # RT HTML (CDATA) sometimes uses " (U+201D) for BOTH opening and closing
     # (non-standard pairing), so we also try " " (U+201D...U+201D).
     text = html.unescape(text)
+    if re.search(
+        r'\bt[aä]iendatakse\b[^.;]{0,180}\b(?:p[aä]rast|enne)\s+'
+        r'(?:sõn[au]|tekstiosa|lauseosa|arvu)\b[^.;]{0,180}'
+        r'\b(?:sõn(?:a|adega)|tekstiosaga|lauseosaga|arvuga)\b',
+        text,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        quoted = _extract_quoted_contents(text)
+        if len(quoted) >= 2:
+            return quoted[0].strip(), quoted[1].strip()
     nested_delete = re.search(
         r"\bj[aä]etakse\s+v[aä]lja\s+(?:sõn(?:a|ad)|tekstiosa)\s+[„\"“](.+?)[”“\"]\s*[.;]?\s*$",
         text,
@@ -1316,6 +1326,47 @@ def _extract_mixed_insert_after_and_replace_pairs(text: str) -> list[tuple[str, 
     if len(pairs) < 2:
         return []
     return pairs
+
+
+def _extract_mixed_insert_after_and_delete_segments(text: str) -> list[tuple[str, str, str]]:
+    """Extract segment-local rewrites from same-target insert-after plus delete clauses."""
+    if not (
+        re.search(r'\bt[aä]iendatakse\b', text, re.IGNORECASE)
+        and re.search(r'\bp[aä]rast\s+(?:sõn[au]|tekstiosa|lauseosa|arvu)\b', text, re.IGNORECASE)
+        and re.search(r'\bj[aä]etakse\b[^.;]{0,120}\bv[aä]lja\b', text, re.IGNORECASE)
+    ):
+        return []
+
+    normalized = html.unescape(text)
+    parts = re.split(
+        r'\s+(?:ning|ja)\s+(?=[^.;]{0,180}\bj[aä]etakse\b[^.;]{0,120}\bv[aä]lja\b)',
+        normalized,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )
+    if len(parts) != 2:
+        return []
+
+    segments: list[tuple[str, str, str]] = []
+    insert_segment = parts[0].strip()
+    delete_segment = parts[1].strip()
+    insert_old, insert_new = _normalize_text_replace_args(
+        insert_segment,
+        *_extract_text_replace_args(insert_segment),
+    )
+    if insert_old and insert_new:
+        segments.append((insert_segment, insert_old, insert_new))
+
+    delete_old, delete_new = _normalize_text_replace_args(
+        delete_segment,
+        *_extract_text_replace_args(delete_segment),
+    )
+    if delete_old is not None and delete_new is not None:
+        segments.append((delete_segment, delete_old, delete_new))
+
+    if len(segments) != 2:
+        return []
+    return segments
 
 
 def _extract_mixed_delete_replace_segments(text: str) -> List[tuple[str, str, str]]:
@@ -2142,7 +2193,8 @@ def _normalize_text_replace_args(
             )
         )
     ):
-        return old_text, f"{old_text} {new_text}"
+        separator = "" if re.match(r"^[\s–‒\-.,;:)]", new_text) else " "
+        return old_text, f"{old_text}{separator}{new_text}"
     return old_text, new_text
 
 
@@ -4213,6 +4265,33 @@ def extract_ee_ops(
                     text_patch=_typed_text_replace_patch(segment_old, segment_new),
                     source=source,
                     provenance_tags=(segment_text[:200],),
+                ))
+                seq += 1
+            return ops
+
+    if action == "text_replace":
+        mixed_segments = _extract_mixed_insert_after_and_delete_segments(clean)
+        if mixed_segments:
+            rule_id = "ee_mixed_insert_after_and_delete_same_target"
+            for segment_text, segment_old, segment_new in mixed_segments:
+                segment_payload = IRNode(kind=IRNodeKind.CONTENT, text=segment_new)
+                segment_payload, _segment_witness = _set_text_replace_payload_attrs(
+                    segment_payload,
+                    segment_text,
+                    segment_old,
+                    segment_new,
+                    source_family=rule_id,
+                )
+                ops.append(LegalOperation(
+                    op_id=f"ee-text_replace-mixed-insert-delete-{str(target)}-{seq}-{source.statute_id}",
+                    sequence=seq,
+                    action=_to_structural_action("text_replace"),
+                    target=target,
+                    payload=segment_payload,
+                    text_patch=_typed_text_replace_patch(segment_old, segment_new),
+                    source=source,
+                    provenance_tags=(rule_id, segment_text[:200]),
+                    witness_rule_id=rule_id,
                 ))
                 seq += 1
             return ops
