@@ -314,7 +314,7 @@ def test_replay_ee_to_pit_closes_spordiseadus_insert_after_duplication_family() 
     assert result.divergences == []
 
 
-def test_replay_ee_to_pit_surfaces_uhistranspordiseadus_section_53_5_oracle_drift() -> None:
+def test_replay_ee_to_pit_respects_old_format_commencement_range_after_item_gap() -> None:
     result = replay_ee_to_pit(
         "119032013007",
         as_of="2015-01-01",
@@ -325,7 +325,6 @@ def test_replay_ee_to_pit_surfaces_uhistranspordiseadus_section_53_5_oracle_drif
     assert [str(div.address) for div in result.divergences] == [
         "chapter:10",
         "chapter:10/section:53_5",
-        "chapter:10/section:53_5/subsection:1_1",
         "chapter:10/section:53_5/subsection:2",
     ]
 
@@ -1734,7 +1733,7 @@ def test_replay_ee_to_pit_energiamajandus_now_replays_cleanly() -> None:
     assert residual_summary.matched_current_divergence_count == 0
 
 
-def test_replay_ee_to_pit_adjudicates_atmosfaariohu_same_chain_unsourced_subsection() -> None:
+def test_replay_ee_to_pit_keeps_plain_range_endpoint_superscript_subsection() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -1751,12 +1750,7 @@ def test_replay_ee_to_pit_adjudicates_atmosfaariohu_same_chain_unsourced_subsect
     assert result.error is None
     assert result.oracle_id == "102102025018"
     divergence_addresses = tuple(str(div.address) for div in result.divergences)
-    assert set(divergence_addresses) == {
-        "chapter:7",
-        "chapter:7/division:1",
-        "chapter:7/division:1/section:156",
-        "chapter:7/division:1/section:156/subsection:5_1",
-    }
+    assert divergence_addresses == ()
     residual_summary = build_ee_residual_summary(
         base_id="102102025017",
         oracle_id="102102025018",
@@ -1764,7 +1758,7 @@ def test_replay_ee_to_pit_adjudicates_atmosfaariohu_same_chain_unsourced_subsect
     )
     assert residual_summary is not None
     assert residual_summary.unknown_current_divergence_count == 0
-    assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
+    assert residual_summary.matched_current_divergence_count == 0
 
 
 def test_replay_ee_to_pit_closes_volgade_umberkujundamise_kohtujurist_case_family() -> None:
@@ -1797,7 +1791,7 @@ def test_replay_ee_to_pit_closes_volgade_umberkujundamise_kohtujurist_case_famil
         assert residual_summary.matched_current_divergence_count == 0
 
 
-def test_replay_ee_to_pit_adjudicates_tooturumeetmete_seadus_same_chain_section_17_omission() -> None:
+def test_replay_ee_to_pit_applies_section_and_chapter_compound_repeal() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -1814,11 +1808,7 @@ def test_replay_ee_to_pit_adjudicates_tooturumeetmete_seadus_same_chain_section_
     assert result.error is None
     assert result.oracle_id == "112062025016"
     divergence_addresses = tuple(str(div.address) for div in result.divergences)
-    assert set(divergence_addresses) == {
-        "chapter:5",
-        "chapter:5/section:17",
-        "chapter:5/section:17/subsection:1",
-    }
+    assert divergence_addresses == ()
     residual_summary = build_ee_residual_summary(
         base_id="112062025015",
         oracle_id="112062025016",
@@ -1826,7 +1816,7 @@ def test_replay_ee_to_pit_adjudicates_tooturumeetmete_seadus_same_chain_section_
     )
     assert residual_summary is not None
     assert residual_summary.unknown_current_divergence_count == 0
-    assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
+    assert residual_summary.matched_current_divergence_count == 0
 
 
 def test_replay_ee_to_pit_adjudicates_riikliku_pensionikindlustuse_same_chain_editorial_drift() -> None:
