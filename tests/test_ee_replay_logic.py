@@ -928,6 +928,24 @@ def test_replay_ee_to_pit_respects_old_format_partial_commencement_in_riigipiiri
     assert result.divergences == []
 
 
+def test_replay_ee_to_pit_respects_old_format_rakendamine_point_commencement() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "108012013017",
+        "2013-04-01",
+        archive=archive,
+        oracle_id="108012013018",
+    )
+
+    assert result.error is None
+    assert result.oracle_id == "108012013018"
+    assert result.divergences == []
+
+
 def test_replay_ee_to_pit_replays_riigikogu_term_start_slice_in_erakonnaseadus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
