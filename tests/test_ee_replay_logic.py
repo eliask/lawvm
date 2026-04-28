@@ -459,6 +459,34 @@ def test_case_inflected_delete_matches_trailing_punctuation_forms() -> None:
     )
 
 
+def test_case_inflected_replace_matches_mang_and_korraldaja_forms() -> None:
+    text = (
+        "Õnnemängu mängimise piirangutega isikute nimekiri edastab "
+        "andmed õnnemängu korraldajale ja õnnemängukorraldajatele."
+    )
+
+    updated = _ee_apply_text_replace_value(
+        text,
+        "õnnemäng",
+        "hasartmäng",
+        case_inflected=True,
+        all_occurrences=True,
+    )
+    updated = _ee_apply_text_replace_value(
+        updated or "",
+        "õnnemängukorraldaja",
+        "hasartmängukorraldaja",
+        case_inflected=True,
+        all_occurrences=True,
+    )
+
+    assert (
+        updated
+        == "Hasartmängu mängimise piirangutega isikute nimekiri edastab "
+        "andmed hasartmängu korraldajale ja hasartmängukorraldajatele."
+    )
+
+
 def test_apply_ee_ops_expands_plain_section_repeal_ranges_over_live_superscript_sections() -> None:
     base = IRStatute(
         statute_id="ee/test",
@@ -1206,6 +1234,22 @@ def test_replay_ee_to_pit_applies_old_format_typographic_quote_text_replace() ->
         "2016-02-21",
         archive=archive,
         oracle_id="118022016007",
+    )
+
+    assert result.error is None
+    assert result.divergences == []
+
+
+def test_replay_ee_to_pit_applies_title_and_text_rewrite_without_rewriting_later_payloads() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "126062012022",
+        "2016-01-01",
+        archive=archive,
+        oracle_id="108072015019",
     )
 
     assert result.error is None

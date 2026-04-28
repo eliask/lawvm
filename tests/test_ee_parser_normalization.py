@@ -689,7 +689,7 @@ def test_parse_ee_amendment_ops_recovers_unstructured_single_clause_body() -> No
             LegalAddress(path=(("section", "4_1"), ("subsection", "8"))),
         ),
     ]
-    assert all("ee_unstructured_single_clause_amendment_body" in op.provenance_tags for op in ops)
+    assert all("ee_compound_section_item_subsection_repeal" in op.provenance_tags for op in ops)
 
 
 def test_parse_ee_amendment_ops_preserves_intro_only_item_fanout_in_maagaasiseadus() -> None:
@@ -2692,6 +2692,50 @@ def test_extract_ee_ops_splits_multiple_old_quotes_to_one_new_global_text_replac
     )
 
 
+def test_extract_ee_ops_splits_title_and_text_global_text_replace_pairs() -> None:
+    text = (
+        "määruse pealkirjas ja tekstis asendatakse läbivalt sõna "
+        "„õnnemäng” sõnaga „hasartmäng” ning sõna "
+        "„õnnemängukorraldaja” sõnaga „hasartmängukorraldaja” "
+        "vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(
+        text,
+        OperationSource(statute_id="ee/test", raw_text=text),
+    )
+
+    assert len(ops) == 2
+    assert all(op.action is StructuralAction.TEXT_REPLACE for op in ops)
+    assert all(op.target.path == () for op in ops)
+    assert all(op.payload is not None for op in ops)
+    assert {
+        op.payload.attrs["old_text"]
+        for op in ops
+        if op.payload is not None
+    } == {
+        "õnnemäng",
+        "õnnemängukorraldaja",
+    }
+    assert {
+        op.payload.text
+        for op in ops
+        if op.payload is not None
+    } == {
+        "hasartmäng",
+        "hasartmängukorraldaja",
+    }
+    assert all(
+        op.payload is not None
+        and op.payload.attrs.get("all_occurrences") is True
+        and op.payload.attrs.get("case_inflected") is True
+        and op.payload.attrs.get("compose_future_payloads") is False
+        and op.payload.attrs.get("rewrite_scope_surface") == "title_and_text"
+        and "ee_global_title_text_rewrite_no_payload_composition" in op.provenance_tags
+        for op in ops
+    )
+
+
 def test_extract_ee_ops_marks_combined_section_heading_text_replace_as_heading_special() -> None:
     ops = extract_ee_ops(
         (
@@ -3798,6 +3842,7 @@ def test_parse_ee_amendment_ops_excludes_specific_phrase_targets_from_global_tex
     expected_paths = {
         (("section", "10"),),
         (("section", "14"),),
+        (("section", "14"), ("subsection", "2")),
         (("section", "5"), ("subsection", "3")),
         (("section", "7"), ("subsection", "5")),
         (("section", "9"), ("subsection", "1")),

@@ -1095,6 +1095,20 @@ def _extract_quoted_content(text: str) -> Optional[str]:
     marker_payload = _extract_payload_after_marker(text)
     if marker_payload and len(matches) > 1 and _marker_payload_starts_with_right_quote(text):
         return marker_payload
+    if marker_payload and len(matches) == 1 and matches[0] != marker_payload:
+        # If the outer payload opener is Estonian „ and the payload itself
+        # contains a nested “ closer, the balanced extractor can consume the
+        # nested close as the outer close. The marker slice preserves the source
+        # tail without inventing structure.
+        if (
+            matches[0].count("\u201e") > matches[0].count("\u201c") + matches[0].count("\u201d")
+            and marker_payload.startswith(matches[0])
+            and (
+                marker_payload.count("\u201c") + marker_payload.count("\u201d")
+                > matches[0].count("\u201c") + matches[0].count("\u201d")
+            )
+        ):
+            return marker_payload
     return " ".join(matches)
 
 
@@ -2582,6 +2596,7 @@ def extract_ee_ops(
     # Statute-wide text replacement: "seaduse kogu tekstis asendatakse sõna X sõnadega Y"
     # Also: "seaduses asendatakse läbivalt number X numbriga Y"
     # Also: "seaduse tekstis asendatakse ..." (without "kogu")
+    # Also: "määruse pealkirjas ja tekstis asendatakse läbivalt ..."
     # Also: "seaduse N.–M. peatükis asendatakse ..." (chapter-range text replace)
     # Also: "seaduses asendatakse sõna X sõnaga Y" (inessive directly + asendatakse + noun)
     # Target is the whole statute (empty path); may generate multiple text_replace
@@ -2592,10 +2607,16 @@ def extract_ee_ops(
         r'(?:seadus|seadustik|koodeks|määrus)[a-z]*'
         r')'
     )
+    title_and_text_global = re.search(
+        rf'\b{statute_ref}\s+pealkirjas\s+ja\s+teksti[s]?\s+asendatakse(?:\s+läbivalt)?',
+        clean,
+        re.IGNORECASE,
+    )
     if re.search(
         rf'\b{statute_ref}\s+kogu\s+teksti[s]?\s+asendatakse'
         rf'|\b{statute_ref}\s+asendatakse\s+läbivalt'
         rf'|\b{statute_ref}\s+teksti[s]?\s+asendatakse'
+        rf'|\b{statute_ref}\s+pealkirjas\s+ja\s+teksti[s]?\s+asendatakse(?:\s+läbivalt)?'
         rf'|\b{statute_ref}\s*,\s*välja\s+arvatud\s+[^.]+?\s+asendatakse\s+(?:sõna[a-z]*|sõnu|arv[a-z]*|aastaarv[a-z]*|tekstiosa[a-z]*|lauseosa[a-z]*|number[a-z]*)'
         rf'|\b{statute_ref}\s+\d+[^§]*peatüki[s]?\s+(?:pealkirjas\s+)?asendatakse'
         rf'|\b{statute_ref}\s+asendatakse\s+(?:sõna[a-z]*|arv[a-z]*|aastaarv[a-z]*|tekstiosa[a-z]*|lauseosa[a-z]*|number[a-z]*)',
@@ -2650,6 +2671,15 @@ def extract_ee_ops(
                 scope_chapters=tuple(scope_chapters),
                 exclude_paths=tuple(exclusions),
             )
+            if title_and_text_global is not None:
+                payload = replace(
+                    payload,
+                    attrs={
+                        **payload.attrs,
+                        "compose_future_payloads": False,
+                        "rewrite_scope_surface": "title_and_text",
+                    },
+                )
             ops.append(LegalOperation(
                 op_id=f"ee-global-text_replace-{seq}-{source.statute_id}",
                 sequence=seq,
@@ -2658,7 +2688,14 @@ def extract_ee_ops(
                 payload=payload,
                 text_patch=_typed_text_replace_patch(old_t, new_t),
                 source=source,
-                provenance_tags=(clean[:200],),
+                provenance_tags=(
+                    clean[:200],
+                    *(
+                        ("ee_global_title_text_rewrite_no_payload_composition",)
+                        if title_and_text_global is not None
+                        else ()
+                    ),
+                ),
             ))
             seq += 1
         return ops
