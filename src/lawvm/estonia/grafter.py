@@ -4895,6 +4895,14 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_nom": stem + "d",
             "pl_gen": stem + "te",
         }
+    if lower.endswith("nikud"):
+        singular_forms = _ee_declension_forms(word[:-2])
+        if singular_forms is not None:
+            return {
+                key: value
+                for key, value in singular_forms.items()
+                if key.startswith("pl_")
+            }
     if lower.endswith("nik"):
         stem = word + "u"
         return {
@@ -6677,6 +6685,65 @@ def _ee_apply_op(
     special = op.target.special.value if hasattr(op.target.special, "value") else op.target.special
     path_dict = dict(op.target.path)
 
+    def _replace_children_at(parent_path: tree_ops.Path, children: tuple[IRNode, ...]) -> IRNode:
+        parent = tree_ops.resolve(body, parent_path) if parent_path else body
+        if parent is None:
+            return body
+        rebuilt = IRNode(
+            kind=parent.kind,
+            label=parent.label,
+            text=parent.text,
+            attrs=dict(parent.attrs),
+            children=children,
+        )
+        if not parent_path:
+            return rebuilt
+        return tree_ops.replace_at(body, parent_path, rebuilt)
+
+    def _repeal_flat_part_span(full_path: tree_ops.Path, target_node: IRNode) -> IRNode:
+        """Own repeal of a flat part marker plus its following section run."""
+        if target_node.children:
+            return body
+        parent_path = tuple(full_path[:-1])
+        parent = tree_ops.resolve(body, parent_path) if parent_path else body
+        if parent is None:
+            return body
+        new_children: list[IRNode] = []
+        in_repealed_span = False
+        removed_sections: list[str] = []
+        matched = False
+        for child in parent.children:
+            if (
+                not matched
+                and child.kind == target_node.kind
+                and child.label == target_node.label
+            ):
+                matched = True
+                in_repealed_span = True
+                new_children.append(child)
+                continue
+            if in_repealed_span:
+                if child.kind == IRNodeKind.SECTION:
+                    if child.label:
+                        removed_sections.append(child.label)
+                    continue
+                if child.kind == IRNodeKind.PART:
+                    in_repealed_span = False
+            new_children.append(child)
+        if not removed_sections:
+            return body
+        _append_ee_replay_adjudication(
+            adjudications_out,
+            kind="ee_flat_part_repeal_span",
+            message="Flat part repeal removed following section run until the next part marker.",
+            op=op,
+            detail={
+                "part": target_node.label or "",
+                "removed_sections": ",".join(removed_sections),
+            },
+        )
+        return _replace_children_at(parent_path, tuple(new_children))
+
     # ── Global text_replace: empty path → apply to ALL text nodes ──────────
     if not path and action == "text_replace" and payload is not None:
         parsed_instructions = to_ee_parsed_instructions(
@@ -7073,6 +7140,8 @@ def _ee_apply_op(
                     children=tuple(stub_children),
                 )
 
+            if target_node is not None and target_node.kind == IRNodeKind.PART and not target_node.children:
+                return _repeal_flat_part_span(tuple(full_path), target_node)
             if target_node is not None and target_node.kind == IRNodeKind.PART:
                 return tree_ops.replace_at(body, full_path, _repealed_container_stub(target_node))
             if target_node is not None and target_node.kind == IRNodeKind.CHAPTER:

@@ -1696,6 +1696,36 @@ def test_repeal_part_preserves_container_and_child_section_stubs() -> None:
     assert section.children == ()
 
 
+def test_repeal_flat_part_marker_removes_owned_section_run_until_next_part() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.PART, label="4", text="Neljas osa"),
+            IRNode(kind=IRNodeKind.SECTION, label="15", text="Owned"),
+            IRNode(kind=IRNodeKind.PART, label="5", text="Viies osa"),
+            IRNode(kind=IRNodeKind.SECTION, label="16", text="Unaffected"),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_flat_part_repeal_span",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("part", "4"),)),
+        source=OperationSource(statute_id="128032013013"),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    result = _ee_apply_op(body, op, adjudications_out=adjudications)
+
+    assert [(child.kind, child.label) for child in result.children] == [
+        (IRNodeKind.PART, "4"),
+        (IRNodeKind.PART, "5"),
+        (IRNodeKind.SECTION, "16"),
+    ]
+    assert [finding.kind for finding in adjudications] == ["ee_flat_part_repeal_span"]
+    assert adjudications[0].detail["removed_sections"] == "15"
+
+
 def test_repeal_subdivision_marks_only_matching_jaotis_sections_kehtetu() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,
@@ -4034,6 +4064,24 @@ def test_case_inflected_text_replace_handles_eu_development_project_phrase_forms
 
     assert genitive == "Euroopa Komisjoni arengukoostöö- ja humanitaarabiprojekti omafinantseering"
     assert plural == "Euroopa Komisjoni arengukoostöö- ja humanitaarabiprojektide kaasrahastamine"
+
+
+def test_case_inflected_text_replace_handles_nik_plural_forms() -> None:
+    genitive = _ee_apply_text_replace_value(
+        "ministeeriumi ametnike koolitusstrateegia",
+        "ametnikud",
+        "ametnikud ja töötajad",
+        case_inflected=True,
+    )
+    partitive = _ee_apply_text_replace_value(
+        "varustab ministeeriumi ametnikke vajalike töövahenditega",
+        "ametnikud",
+        "ametnikud ja töötajad",
+        case_inflected=True,
+    )
+
+    assert genitive == "ministeeriumi ametnike ja töötajate koolitusstrateegia"
+    assert partitive == "varustab ministeeriumi ametnikke ja töötajaid vajalike töövahenditega"
 
 
 def test_case_inflected_text_replace_handles_elukaaslane_genitive_family() -> None:
