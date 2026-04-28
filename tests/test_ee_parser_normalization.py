@@ -1216,6 +1216,17 @@ def test_parse_target_keeps_part_qualified_chapter_heading() -> None:
     assert target.special is FacetKind.HEADING
 
 
+def test_extract_ee_ops_recovers_part_repeal_target() -> None:
+    ops = extract_ee_ops(
+        "määruse 3. osa tunnistatakse kehtetuks;",
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target.path == (("part", "3"),)
+
+
 def test_extract_ee_ops_fans_out_shared_heading_text_replace_targets() -> None:
     ops = extract_ee_ops(
         (
