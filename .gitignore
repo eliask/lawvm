@@ -29,6 +29,10 @@ data/**
 !data/estonia/
 !data/estonia/bench_corpus.csv
 !data/estonia/bench_corpus_notes.md
+!data/estonia/current_replayable_corpus.csv
+!data/estonia/current_replayable_corpus_notes.md
+!data/estonia/replayable_corpus.csv
+!data/estonia/replayable_corpus_notes.md
 !data/bench_runs/
 !data/uk_bench_runs/
 !data/ee_bench_runs/
