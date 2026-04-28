@@ -17,6 +17,7 @@ from lawvm.estonia.replay import (
     _ee_filter_cancelled_pending_refs,
     _ee_filter_ops_for_ref_slice,
     _ee_precompose_pending_amendment_text_patches,
+    _ee_precompose_pending_source_act_commencements,
     replay_ee_to_pit,
 )
 from lawvm.core.compile_result import TemporalEvent, TemporalScope
@@ -2240,6 +2241,32 @@ def test_replay_ee_to_pit_keeps_kalapuugiseadus_minister_subject_nominative_befo
     assert all("valdkonna eest vastutava ministri käskkirjaga" not in div.ops_text for div in result.divergences)
 
 
+def test_replay_ee_to_pit_records_jalitustegevus_pending_source_act_commencement_override() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "13247639",
+        "2012-02-01",
+        archive=archive,
+        oracle_id="131012012006",
+    )
+
+    assert result.error is None
+    assert "121032011002" not in result.amendments_applied
+    assert result.n_ops == 2
+    assert any(
+        adjudication.kind == "ee_pending_source_act_commencement_precompose"
+        and adjudication.detail["earlier_amendment"] == "121032011002"
+        and adjudication.detail["later_amendment"] == "122122011003"
+        and adjudication.detail["old_effective"] == "2012-01-01"
+        and adjudication.detail["new_effective"] == "2013-01-01"
+        for adjudication in result.adjudications
+    )
+
+
 def test_replay_ee_to_pit_recovers_exact_target_source_typo_for_matusetoetus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -2327,6 +2354,98 @@ def test_precompose_pending_amendment_text_patch_requires_exact_old_format_item(
     assert patched[0].witness_rule_id == "ee_pending_amendment_text_precompose"
     assert patched[1].payload is not None
     assert "§ 59 või 60" in patched[1].payload.text
+    assert len(adjudications) == 1
+
+
+def test_precompose_pending_source_act_commencement_defers_future_effective_act(monkeypatch) -> None:
+    earlier_xml = """
+    <oigusakt xmlns="akt_1_10.06.2010">
+      <aktinimi><nimi><pealkiri>Testseaduse ja teiste seaduste muutmise seadus</pealkiri></nimi></aktinimi>
+      <sisu>
+        <sisuTekst><HTMLKonteiner><![CDATA[
+          <p><b>§ 20. Seaduse jõustumine</b></p>
+          <p>Käesolev seadus jõustub 2012. aasta 1. jaanuaril.</p>
+        ]]></HTMLKonteiner></sisuTekst>
+      </sisu>
+    </oigusakt>
+    """.encode()
+    later_xml = """
+    <oigusakt xmlns="akt_1_10.06.2010">
+      <aktinimi><nimi><pealkiri>Testseaduse ja teiste seaduste muutmise seaduse muutmise seadus</pealkiri></nimi></aktinimi>
+      <sisu>
+        <sisuTekst><HTMLKonteiner><![CDATA[
+          <p><b>1)</b> paragrahv 20 muudetakse ja sõnastatakse järgmiselt:</p>
+          <p>„<b>§ 20. Seaduse jõustumine</b></p>
+          <p>Käesolev seadus jõustub 2013. aasta 1. jaanuaril.”</p>
+        ]]></HTMLKonteiner></sisuTekst>
+      </sisu>
+    </oigusakt>
+    """.encode()
+    xml_by_id = {
+        "earlier": earlier_xml,
+        "later": later_xml,
+    }
+    monkeypatch.setattr(
+        "lawvm.estonia.replay.fetch_rt_xml",
+        lambda akt_viide, archive: xml_by_id[akt_viide],
+    )
+
+    refs, adjudications = _ee_precompose_pending_source_act_commencements(
+        (
+            _ref("later", "2011-12-08", "2011-12-23"),
+            _ref("earlier", "2011-02-17", "2012-01-01"),
+        ),
+        as_of="2012-02-01",
+        archive=None,
+    )
+
+    assert [ref.aktViide for ref in refs] == ["later"]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "ee_pending_source_act_commencement_precompose"
+    assert adjudications[0].detail["earlier_amendment"] == "earlier"
+    assert adjudications[0].detail["later_amendment"] == "later"
+    assert adjudications[0].detail["old_effective"] == "2012-01-01"
+    assert adjudications[0].detail["new_effective"] == "2013-01-01"
+
+
+def test_precompose_pending_source_act_commencement_keeps_now_effective_override(monkeypatch) -> None:
+    earlier_xml = """
+    <oigusakt xmlns="akt_1_10.06.2010">
+      <aktinimi><nimi><pealkiri>Testseaduse muutmise seadus</pealkiri></nimi></aktinimi>
+      <sisu><sisuTekst><HTMLKonteiner><![CDATA[
+        <p><b>§ 9. Seaduse jõustumine</b></p>
+        <p>Käesolev seadus jõustub 2012. aasta 1. jaanuaril.</p>
+      ]]></HTMLKonteiner></sisuTekst></sisu>
+    </oigusakt>
+    """.encode()
+    later_xml = """
+    <oigusakt xmlns="akt_1_10.06.2010">
+      <aktinimi><nimi><pealkiri>Testseaduse muutmise seaduse muutmise seadus</pealkiri></nimi></aktinimi>
+      <sisu><sisuTekst><HTMLKonteiner><![CDATA[
+        <p><b>1)</b> paragrahv 9 muudetakse ja sõnastatakse järgmiselt:</p>
+        <p>„<b>§ 9. Seaduse jõustumine</b></p>
+        <p>Käesolev seadus jõustub 2012. aasta 1. juulil.”</p>
+      ]]></HTMLKonteiner></sisuTekst></sisu>
+    </oigusakt>
+    """.encode()
+    monkeypatch.setattr(
+        "lawvm.estonia.replay.fetch_rt_xml",
+        lambda akt_viide, archive: {"earlier": earlier_xml, "later": later_xml}[akt_viide],
+    )
+
+    refs, adjudications = _ee_precompose_pending_source_act_commencements(
+        (
+            _ref("later", "2011-12-08", "2011-12-23"),
+            _ref("earlier", "2011-02-17", "2012-01-01"),
+        ),
+        as_of="2012-08-01",
+        archive=None,
+    )
+
+    assert [(ref.aktViide, ref.joustumine) for ref in refs] == [
+        ("later", "2011-12-23"),
+        ("earlier", "2012-07-01"),
+    ]
     assert len(adjudications) == 1
 
 
