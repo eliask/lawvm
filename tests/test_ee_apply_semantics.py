@@ -3503,6 +3503,52 @@ def test_global_case_inflected_text_replace_handles_coordinated_old_phrase_varia
     assert subsection.text == "Riigisaladust valdava töötleva üksuse juht korraldab kaitset."
 
 
+def test_global_case_inflected_text_replace_handles_coordinated_person_list_variant() -> None:
+    body = _body_with_section_and_subsection(
+        "52",
+        "1",
+        (
+            "Arvestust peetakse salastatud välisteabe ja seda valdavate asutuste, "
+            "põhiseaduslike institutsioonide ning füüsiliste ja juriidiliste isikute üle."
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_coordinated_person_list_case",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=()),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="töötlev üksus",
+            attrs={
+                "old_text": "asutus, põhiseaduslik institutsioon ja juriidiline isik",
+                "case_inflected": True,
+            },
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    subsection = result.children[0].children[0].children[0]
+
+    assert subsection.text == "Arvestust peetakse salastatud välisteabe ja seda valdavate töötlevate üksuste üle."
+
+
+def test_global_case_inflected_text_replace_does_not_rewrite_partial_person_list_variant() -> None:
+    text = (
+        "Arvestust peetakse asutuste, põhiseaduslike institutsioonide ning "
+        "füüsiliste isikute üle."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "asutus, põhiseaduslik institutsioon ja juriidiline isik",
+        "töötlev üksus",
+        case_inflected=True,
+    )
+
+    assert replaced == text
+
+
 def test_targeted_text_replace_can_extend_shadowed_teabevaldajale_phrase() -> None:
     body = _body_with_section_and_subsection(
         "22",

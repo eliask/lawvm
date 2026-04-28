@@ -4880,6 +4880,9 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
                 f"asutusele, põhiseaduslikule institutsioonile{joiner}juriidilisele isikule": "töötlevale üksusele",
                 f"asutusel, põhiseaduslikul institutsioonil{joiner}juriidilisel isikul": "töötleval üksusel",
                 f"asutuses, põhiseaduslikus institutsioonis{joiner}juriidilises isikus": "töötlevas üksuses",
+                "asutuste, põhiseaduslike institutsioonide ning füüsiliste ja juriidiliste isikute": "töötlevate üksuste",
+                "asutusi, põhiseaduslikke institutsioone ning füüsilisi ja juriidilisi isikuid": "töötlevaid üksusi",
+                "asutustele, põhiseaduslikele institutsioonidele ning füüsilistele ja juriidilistele isikutele": "töötlevatele üksustele",
             }
             for old_form, new_form in special_pairs.items():
                 if old_form not in variants:

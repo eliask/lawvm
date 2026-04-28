@@ -314,49 +314,31 @@ def test_get_ee_residual_inventory_sotsiaalmaksuseadus() -> None:
 
 
 def test_generated_riigisaladus_current_residual_family_matches_inventory() -> None:
-    generated = (
-        tuple(
-            build_shortened_section_family(
-                bucket="source_oracle_drift",
-                records=(
-                    (
-                        "chapter:2/division:1/section:8/subsection:1/item:8",
-                        "Source act 107032023002 rewrites § 8 p 8 and replay preserves the "
-                        "source-side terminal period after the final sentence; oracle "
-                        "103022026013 keeps a trailing semicolon instead. This is a bounded "
-                        "terminal punctuation oracle-surface drift, not a replay omission.",
-                    ),
-                    (
-                        "chapter:2/division:3/section:48/subsection:3/item:4",
-                        "Replay preserves the source-side terminal semicolon in "
-                        "§ 48(3) p 4, while oracle 103022026013 drops it. This is a "
-                        "bounded terminal punctuation oracle-surface drift.",
-                    ),
+    generated = tuple(
+        build_shortened_section_family(
+            bucket="source_oracle_drift",
+            records=(
+                (
+                    "chapter:2/division:1/section:8/subsection:1/item:8",
+                    "Source act 107032023002 rewrites § 8 p 8 and replay preserves the "
+                    "source-side terminal period after the final sentence; oracle "
+                    "103022026013 keeps a trailing semicolon instead. This is a bounded "
+                    "terminal punctuation oracle-surface drift, not a replay omission.",
                 ),
-            )
-        )
-        + tuple(
-            build_shortened_section_family(
-                bucket="source_pathology",
-                records=(
-                    (
-                        "chapter:3/section:52/subsection:1/item:1",
-                        "None of the applied in-range amendments directly target § 52(1) p 1. "
-                        "The 2023 statute-wide rewrites replace singular target phrases like "
-                        "'teabevaldaja' and 'asutus, põhiseaduslik institutsioon ...', but do "
-                        "not emit the oracle's plural coordinated surface 'töötlevate üksuste' "
-                        "for this item. Oracle 103022026013 therefore carries an unsupported "
-                        "target-local rewrite relative to the visible source chain.",
-                    ),
+                (
+                    "chapter:2/division:3/section:48/subsection:3/item:4",
+                    "Replay preserves the source-side terminal semicolon in "
+                    "§ 48(3) p 4, while oracle 103022026013 drops it. This is a "
+                    "bounded terminal punctuation oracle-surface drift.",
                 ),
-            )
+            ),
         )
     )
 
     inventory = get_ee_residual_inventory("106052020036", "103022026013")
 
     assert inventory is not None
-    assert len(generated) == 3
+    assert len(generated) == 2
     assert [
         (record.address, record.bucket, record.evidence)
         for record in inventory.residuals
@@ -1011,21 +993,14 @@ def test_get_ee_residual_inventory_riigisaladuse_ja_salastatud_valisteabe() -> N
     assert inventory is not None
     assert inventory.statute_title == "Riigisaladuse ja salastatud välisteabe seadus"
     assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 3
+    assert len(inventory.residuals) == 2
     assert {record.bucket for record in inventory.residuals} == {
         "source_oracle_drift",
-        "source_pathology",
     }
     assert any(
         record.address == "chapter:2/division:1/section:8/subsection:1/item:8"
         and record.bucket == "source_oracle_drift"
         and "terminal punctuation" in record.evidence
-        for record in inventory.residuals
-    )
-    assert any(
-        record.address == "chapter:3/section:52/subsection:1/item:1"
-        and record.bucket == "source_pathology"
-        and "do not emit the oracle's plural coordinated surface" in record.evidence
         for record in inventory.residuals
     )
 
