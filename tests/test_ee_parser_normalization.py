@@ -6000,6 +6000,23 @@ def test_old_format_wrapper_split_keeps_quoted_embedded_section_payload_together
     ) in targets
 
 
+def test_old_format_commencement_scan_ignores_plain_joustumisest_body_text() -> None:
+    archive = open_rt_archive(readonly=True)
+    xml = fetch_rt_xml("13310847", archive=archive)
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/13310847",
+        target_title="Ringhäälinguseadus",
+        ref_effective="2011-01-01",
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.TEXT_REPLACE, (("section", "43_4"),)),
+        (StructuralAction.TEXT_REPLACE, (("section", "43_5"),)),
+    ]
+
+
 def test_extract_ee_ops_stops_at_quote_prime_payload_for_direct_item_text_replace() -> None:
     ops = extract_ee_ops(
         (
