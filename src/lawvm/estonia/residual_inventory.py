@@ -1519,425 +1519,45 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             *(
                 EEResidualRecord(
                     address=address,
-                    bucket="source_pathology",
+                    bucket="source_oracle_drift",
                     evidence=(
                         "The only new amendment reference between 121052014030 and "
                         "121052014031 is source act 129062014109, which emits only the "
                         "generic minister-title substitutions '...minister' -> "
-                        "'valdkonna eest vastutav minister' for this statute. It emits "
-                        "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                        "regime rewrites, so oracle 121052014031 carries an unsourced "
-                        "chapter 16 / supervision rewrite relative to the visible pair delta."
+                        "'valdkonna eest vastutav minister' for this statute. It emits no "
+                        "operation dropping 'riiklikku' from § 94(6^3) or adding 'riiklikku' "
+                        "to § 95(3), so oracle 121052014031 carries unsupported supervision "
+                        "wording drift relative to the visible pair delta."
                     ),
                 )
                 for address in (
-                    "chapter:1/section:1/subsection:1",
-                    "chapter:10/section:76/subsection:7/item:4",
-                    "chapter:11/section:80/subsection:3/item:4",
-                    "chapter:12/section:83/subsection:8/item:4",
+                    "chapter:16",
+                    "chapter:16/section:94",
+                    "chapter:16/section:94/subsection:6_3",
+                    "chapter:16/section:95",
+                    "chapter:16/section:95/subsection:3",
                 )
             ),
             *(
                 EEResidualRecord(
-                    address=record.address,
-                    bucket=cast(EEResidualBucket, record.bucket),
-                    evidence=record.evidence,
-                )
-                for record in build_shortened_section_family(
-                    bucket="source_pathology",
-                    records=(
-                        (
-                            "chapter:16",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:93",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:93/subsection:1",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:93/subsection:2",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:93/subsection:3",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:93/subsection:4",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:94/subsection:2",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:94/subsection:2_1",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:94/subsection:6_3",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
+                    address=address,
+                    bucket="source_oracle_drift",
+                    evidence=(
+                        "The only new amendment reference between 121052014030 and "
+                        "121052014031 is source act 129062014109, which emits only the "
+                        "generic minister-title substitutions '...minister' -> "
+                        "'valdkonna eest vastutav minister' for this statute. It emits no "
+                        "operation changing § 31(1) terminal punctuation, so oracle "
+                        "121052014031's doubled period after 'toodete loetelu' is treated as "
+                        "oracle-surface punctuation drift."
                     ),
                 )
-            ),
-            *(
-                EEResidualRecord(
-                    address=record.address,
-                    bucket=cast(EEResidualBucket, record.bucket),
-                    evidence=record.evidence,
+                for address in (
+                    "chapter:5",
+                    "chapter:5/division:3",
+                    "chapter:5/division:3/section:31",
+                    "chapter:5/division:3/section:31/subsection:1",
                 )
-                for record in build_shortened_section_family(
-                    bucket="source_pathology",
-                    records=(
-                        (
-                            "chapter:16/section:95",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:95/subsection:1",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:95/subsection:2",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:95/subsection:3",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:95/subsection:5",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                    ),
-                )
-            ),
-            *(
-                EEResidualRecord(
-                    address=record.address,
-                    bucket=cast(EEResidualBucket, record.bucket),
-                    evidence=record.evidence,
-                )
-                for record in build_shortened_section_family(
-                    bucket="source_pathology",
-                    records=(
-                        (
-                            "chapter:16/section:96",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:96/subsection:1",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:96/subsection:1/item:1",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:96/subsection:1/item:2",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:96/subsection:1/item:3",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:96/subsection:1/item:4",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:96/subsection:1/item:5",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:96/subsection:2",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:96/subsection:3",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:96/subsection:4",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:96/subsection:5",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:97",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:97/subsection:1",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:97/subsection:1/item:1",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:97/subsection:1/item:2",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:97/subsection:1/item:3",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:97/subsection:2",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:97_1",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:97_1/subsection:1",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                        (
-                            "chapter:16/section:97_1/subsection:2",
-                            "The only new amendment reference between 121052014030 and "
-                            "121052014031 is source act 129062014109, which emits only the "
-                            "generic minister-title substitutions '...minister' -> "
-                            "'valdkonna eest vastutav minister' for this statute. It emits "
-                            "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                            "regime rewrites, so oracle 121052014031 carries an unsourced "
-                            "chapter 16 / supervision rewrite relative to the visible pair delta.",
-                        ),
-                    ),
-                )
-            ),
-            EEResidualRecord(
-                address="chapter:5/division:3/section:31/subsection:1",
-                bucket="source_pathology",
-                evidence=(
-                    "The only new amendment reference between 121052014030 and "
-                    "121052014031 is source act 129062014109, which emits only the "
-                    "generic minister-title substitutions '...minister' -> "
-                    "'valdkonna eest vastutav minister' for this statute. It emits "
-                    "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                    "regime rewrites, so oracle 121052014031 carries an unsourced "
-                    "chapter 16 / supervision rewrite relative to the visible pair delta."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:6/division:2/section:57_2/subsection:6/item:4",
-                bucket="source_pathology",
-                evidence=(
-                    "The only new amendment reference between 121052014030 and "
-                    "121052014031 is source act 129062014109, which emits only the "
-                    "generic minister-title substitutions '...minister' -> "
-                    "'valdkonna eest vastutav minister' for this statute. It emits "
-                    "no chapter 16, 'haldusjärelevalve', or adjacent järelevalve "
-                    "regime rewrites, so oracle 121052014031 carries an unsourced "
-                    "chapter 16 / supervision rewrite relative to the visible pair delta."
-                ),
             ),
         ),
     ),
@@ -3376,6 +2996,7 @@ def _generated_ee_residual_records(base_id: str, oracle_id: str) -> tuple[EEResi
                 ),
             )
         case ("121052014030", "121052014031"):
+            return ()
             return _lower_generated_residual_records(
                 build_shortened_section_family(
                     bucket="source_pathology",
