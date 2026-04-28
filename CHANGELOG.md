@@ -12,6 +12,10 @@ Release target date: 2026-04-25.
 - MIT license and package license metadata.
 - Public framing for Finland findings as reported candidate divergences, not
   confirmed official errors.
+- Estonia replayable corpus and publication SQLite export tooling for browsing
+  replay-vs-Riigi-Teataja divergences beyond the small benchmark slice.
+- Riigi Teataja-confirmed `Audiitortegevuse seadus` § 95^2(1) correction
+  recorded as an Estonia residual-inventory correction notice.
 
 ### Changed
 
