@@ -2636,20 +2636,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     "only the final punctuation to a period."
                 ),
             ),
-            EEResidualRecord(
-                address="chapter:6/section:57_1/subsection:1",
-                bucket="replay_bug",
-                evidence=(
-                    "Source act 105052022001 § 97 p 18 inserts Sihtasutuste seadus "
-                    "§ 57^1(1) with 'äriregistri seaduse § 59 või 60'. Before that "
-                    "insert takes effect, source act 123122022002 § 7 p 6 amends the "
-                    "pending insertion by replacing '§ 59 või 60' with '§ 61 või 62' "
-                    "inside Äriregistri seadus § 97 p 18. Oracle 123122022031 carries "
-                    "the amended '§ 61 või 62' text. LawVM does not yet precompose this "
-                    "amendment-to-amendment path into the later Sihtasutuste insertion, "
-                    "so this is replay frontend debt rather than oracle-side drift."
-                ),
-            ),
         ),
     ),
     ("130122025021", "130122025022"): EEPairResidualInventory(

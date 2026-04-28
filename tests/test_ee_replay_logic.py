@@ -1,6 +1,7 @@
 from __future__ import annotations
 from lawvm.core.ir import IRStatute
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 from lawvm.estonia.fetch import AmendmentRef
@@ -10,6 +11,7 @@ from lawvm.estonia.replay import (
     _derive_ee_temporal_expiry_events,
     _ee_filter_cancelled_pending_refs,
     _ee_filter_ops_for_ref_slice,
+    _ee_precompose_pending_amendment_text_patches,
     replay_ee_to_pit,
 )
 from lawvm.core.compile_result import TemporalEvent, TemporalScope
@@ -2146,10 +2148,61 @@ def test_replay_ee_to_pit_closes_sihtasutuste_register_cleanup_and_leaves_only_o
         "chapter:2/section:14",
         "chapter:2/section:14/subsection:1",
         "chapter:2/section:14/subsection:1/item:10_1",
-        "chapter:6",
-        "chapter:6/section:57_1",
-        "chapter:6/section:57_1/subsection:1",
     }
+    assert any(
+        adjudication.kind == "ee_pending_amendment_text_precompose"
+        and adjudication.detail["earlier_amendment"] == "105052022001"
+        and adjudication.detail["later_amendment"] == "123122022002"
+        and adjudication.detail["amendment_section"] == "97"
+        and adjudication.detail["amendment_item"] == "18"
+        for adjudication in result.adjudications
+    )
+
+
+def test_precompose_pending_amendment_text_patch_requires_exact_old_format_item() -> None:
+    from lawvm.estonia.fetch import fetch_rt_xml, open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+    amendment_xml_by_ref = {
+        "105052022001": fetch_rt_xml("105052022001", archive),
+        "123122022002": fetch_rt_xml("123122022002", archive),
+    }
+    source = OperationSource(statute_id="ee/105052022001")
+    matching = LegalOperation(
+        op_id="pending-insert",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "57_1"),)),
+        payload=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="57_1",
+            text="Sihtasutus võib otsustada äriregistri seaduse § 59 või 60 alusel.",
+        ),
+        source=source,
+        provenance_tags=("old_format_amendment_section:97", "old_format_amendment_item:18"),
+    )
+    wrong_item = replace(
+        matching,
+        op_id="wrong-item",
+        provenance_tags=("old_format_amendment_section:97", "old_format_amendment_item:19"),
+    )
+    refs = (
+        _ref("105052022001", "2022-04-13", "2023-02-01"),
+        _ref("123122022002", "2022-12-07", "2023-02-01"),
+    )
+
+    patched, adjudications = _ee_precompose_pending_amendment_text_patches(
+        [matching, wrong_item],
+        refs=refs,
+        amendment_xml_by_ref=amendment_xml_by_ref,
+    )
+
+    assert patched[0].payload is not None
+    assert "§ 61 või 62" in patched[0].payload.text
+    assert patched[0].witness_rule_id == "ee_pending_amendment_text_precompose"
+    assert patched[1].payload is not None
+    assert "§ 59 või 60" in patched[1].payload.text
+    assert len(adjudications) == 1
 
 
 def test_replay_ee_to_pit_threads_temporal_events_into_compile_timelines(
