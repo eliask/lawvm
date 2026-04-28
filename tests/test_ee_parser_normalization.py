@@ -1423,6 +1423,25 @@ def test_extract_ee_ops_recovers_heading_with_comma_prefixed_subsection_targets(
     )
 
 
+def test_extract_ee_ops_recovers_section_intro_and_item_targets() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 7 sissejuhatavas lauseosas ja punktis 1 asendatakse sõnad "
+            "„kantserogeenid või mutageenid” tekstiosaga "
+            "„kantserogeenid, mutageenid või reproduktiivtoksilised ained” "
+            "vastavas käändes;"
+        ),
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert sorted((op.action, op.target.path) for op in ops) == [
+        (StructuralAction.TEXT_REPLACE, (("section", "7"),)),
+        (StructuralAction.TEXT_REPLACE, (("section", "7"), ("item", "1"))),
+    ]
+    assert read_subsection_text_scope_meta(_payload(ops[0])).intro_only is True
+    assert read_subsection_text_scope_meta(_payload(ops[1])) is None
+
+
 def test_extract_ee_ops_keeps_section_heading_when_same_clause_also_targets_subsection() -> None:
     ops = extract_ee_ops(
         ("paragrahvi 45 pealkirja ja lõiget 1 täiendatakse pärast tekstiosa „tegemise,” tekstiosaga „soetamise,”;"),

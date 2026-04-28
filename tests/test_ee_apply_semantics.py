@@ -3851,6 +3851,76 @@ def test_global_case_inflected_text_replace_handles_coordinated_or_phrase_cases(
     assert "perekonnaseisuametnikul või perekonnaseisuasutuse ülesandeid täitval isikul" in section_21.text
 
 
+def test_case_inflected_text_replace_handles_cmr_toxic_agent_plural_forms() -> None:
+    updated = _ee_apply_text_replace_value(
+        "kantserogeenide või mutageenidega kokkupuute oht",
+        "kantserogeenid või mutageenid",
+        "kantserogeenid, mutageenid või reproduktiivtoksilised ained",
+        case_inflected=True,
+    )
+
+    assert (
+        updated
+        == "kantserogeenide, mutageenide või reproduktiivtoksiliste ainetega kokkupuute oht"
+    )
+
+
+def test_case_inflected_text_replace_handles_cmr_toxic_agent_elative_forms() -> None:
+    updated = _ee_apply_text_replace_value(
+        "kantserogeenidest või mutageenidest mõjutatud töökeskkond",
+        "kantserogeenid või mutageenid",
+        "kantserogeenid, mutageenid või reproduktiivtoksilised ained",
+        case_inflected=True,
+    )
+
+    assert (
+        updated
+        == "kantserogeenidest, mutageenidest või reproduktiivtoksilistest ainetest mõjutatud töökeskkond"
+    )
+
+
+def test_case_inflected_text_replace_handles_cmr_toxic_agent_and_comitative() -> None:
+    updated = _ee_apply_text_replace_value(
+        "kantserogeenide ja mutageenidega kokkupuute vältimiseks",
+        "kantserogeenid ja mutageenid",
+        "kantserogeenid, mutageenid ja reproduktiivtoksilised ained",
+        case_inflected=True,
+    )
+
+    assert (
+        updated
+        == "kantserogeenide, mutageenide ja reproduktiivtoksiliste ainetega kokkupuute vältimiseks"
+    )
+
+
+def test_case_inflected_text_replace_handles_cmr_toxic_agent_singular_comitative() -> None:
+    updated = _ee_apply_text_replace_value(
+        "kantserogeeni või mutageeniga toimunud kokkupuute kestus",
+        "kantserogeen või mutageen",
+        "kantserogeen, mutageen või reproduktiivtoksiline aine",
+        case_inflected=True,
+    )
+
+    assert (
+        updated
+        == "kantserogeeni, mutageeni või reproduktiivtoksilise ainega toimunud kokkupuute kestus"
+    )
+
+
+def test_case_inflected_text_replace_handles_cmr_toxic_agent_singular_genitive() -> None:
+    updated = _ee_apply_text_replace_value(
+        "kantserogeeni või mutageeni, millega töötaja kokku puutub",
+        "kantserogeen või mutageen",
+        "kantserogeen, mutageen või reproduktiivtoksiline aine",
+        case_inflected=True,
+    )
+
+    assert (
+        updated
+        == "kantserogeeni, mutageeni või reproduktiivtoksilise aine, millega töötaja kokku puutub"
+    )
+
+
 def test_case_inflected_text_replace_handles_elukaaslane_genitive_family() -> None:
     text = (
         "Ühe abikaasa poolt eraldi esitatud maksejõuetusavalduse korral tuleb "
