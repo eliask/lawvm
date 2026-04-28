@@ -5519,6 +5519,28 @@ def test_extract_intro_statute_fragment_handles_year_prefixed_statute_intro() ->
     assert _extract_intro_statute_fragment(text) == "2024. aasta riigieelarve seaduses"
 
 
+def test_extract_intro_statute_fragment_handles_quoted_regulation_title_intro() -> None:
+    text = (
+        "Rahandusministri 5. juuni 2009. a määruses nr 38 "
+        "„Täiendavad juhised kauba sisenemis- ja väljumisformaalsuste teostamiseks” "
+        "tehakse järgmised muudatused:"
+    )
+
+    assert (
+        _extract_intro_statute_fragment(text)
+        == "Täiendavad juhised kauba sisenemis- ja väljumisformaalsuste teostamiseks"
+    )
+
+
+def test_extract_intro_statute_fragment_handles_quoted_regulation_title_section_scope() -> None:
+    text = (
+        "Vabariigi Valitsuse 20. detsembri 2007. a määruse nr 251 "
+        "„Aadressiandmete süsteem” §-d 1–5 tunnistatakse kehtetuks."
+    )
+
+    assert _extract_intro_statute_fragment(text) == "Aadressiandmete süsteem"
+
+
 def test_parse_ee_amendment_ops_admits_html_only_year_prefixed_target_with_generic_paragraph_title() -> None:
     xml = """
     <oigusakt xmlns="http://www.riigiteataja.ee/ns/oigusakt/1.0">
@@ -6089,6 +6111,39 @@ def test_old_format_right_quote_payload_preserves_inner_right_quoted_titles() ->
     assert section_116_3.payload is not None
     assert section_116_3.action == StructuralAction.INSERT
     assert section_116_3.payload.text.count("Eesti maaelu arengukava 2014–2020") == 2
+
+
+def test_quoted_regulation_title_direct_target_paragraph_repeals_mixed_section_groups() -> None:
+    archive = open_rt_archive(readonly=True)
+    xml = fetch_rt_xml("113102015002", archive=archive)
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/113102015002",
+        target_title="Aadressiandmete süsteem",
+    )
+
+    targets = [(op.action, op.target.path) for op in ops]
+    assert (StructuralAction.REPEAL, (("section", "1"),)) in targets
+    assert (StructuralAction.REPEAL, (("section", "6"), ("subsection", "10"))) in targets
+    assert (StructuralAction.REPEAL, (("section", "11"), ("subsection", "14"))) in targets
+    assert (StructuralAction.REPEAL, (("section", "18"),)) in targets
+
+
+def test_quoted_ministerial_target_intro_admits_direct_html_items() -> None:
+    archive = open_rt_archive(readonly=True)
+    xml = fetch_rt_xml("121042016001", archive=archive)
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/121042016001",
+        target_title="Täiendavad juhised kauba sisenemis- ja väljumisformaalsuste teostamiseks",
+    )
+
+    targets = [(op.action, op.target.path) for op in ops]
+    assert (StructuralAction.TEXT_REPLACE, ()) in targets
+    assert (StructuralAction.REPEAL, (("section", "18"),)) in targets
+    assert (StructuralAction.INSERT, (("section", "31_1"),)) in targets
 
 
 def test_extract_ee_ops_stops_at_quote_prime_payload_for_direct_item_text_replace() -> None:
