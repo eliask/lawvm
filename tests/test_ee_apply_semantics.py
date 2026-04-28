@@ -3980,6 +3980,38 @@ def test_case_inflected_text_replace_handles_amet_illative_form() -> None:
     assert replaced == "Transpordiametisse hoiule jäetud dokumendid edastatakse Transpordiametile."
 
 
+def test_case_inflected_text_replace_handles_riigi_eesvool_compound_forms() -> None:
+    text = (
+        "riigi eesvoolude tööde mahud; riigi eesvooludel drenaažisuudmete tööde mahud; "
+        "maaparandussüsteemi eesvoolud, sealhulgas eraldi riigi eesvoolud;"
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "riigi eesvool",
+        "riigieesvool",
+        case_inflected=True,
+    )
+
+    assert replaced == (
+        "riigieesvoolude tööde mahud; riigieesvooludel drenaažisuudmete tööde mahud; "
+        "maaparandussüsteemi eesvoolud, sealhulgas eraldi riigieesvoolud;"
+    )
+
+
+def test_case_inflected_text_replace_handles_kond_family_forms() -> None:
+    text = "alamvesikonna ülevaade; Alamvesikonna ülevaates; alamvesikondade kohta."
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "alamvesikond",
+        "vesikond",
+        case_inflected=True,
+    )
+
+    assert replaced == "vesikonna ülevaade; Vesikonna ülevaates; vesikondade kohta."
+
+
 def test_case_inflected_text_replace_keeps_source_lowercase_for_mid_sentence_institution_rename() -> None:
     replaced = _ee_apply_text_replace_value(
         (

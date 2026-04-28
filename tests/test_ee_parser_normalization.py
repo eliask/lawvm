@@ -405,6 +405,32 @@ def test_parse_ee_amendment_ops_recovers_old_format_regulation_section_items() -
     )
 
 
+def test_parse_ee_amendment_ops_decodes_escaped_old_format_target_header() -> None:
+    xml = """
+    <tyviseadus xmlns="tyviseadus_1_10.02.2010">
+      <sisu>
+        <sisuTekst><HTMLKonteiner><![CDATA[
+          <p><b>&sect; 5.</b> P&otilde;llumajandusministri 14. juuli 2008. a m&auml;&auml;rust nr 72 &#132;Maaparandushoiukava sisu- ja vormin&otilde;uded ning kava koostamise kord&#148; (RTL&nbsp;2008, 61, 872) muudetakse j&auml;rgmiselt:</p>
+          <p><b>1)</b> paragrahvi 2 l&otilde;ige 2 s&otilde;nastatakse j&auml;rgmiselt:</p>
+          <p>&#132;(2) Uus tekst.&#148;;</p>
+        ]]></HTMLKonteiner></sisuTekst>
+      </sisu>
+    </tyviseadus>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Maaparandushoiukava sisu- ja vorminõuded ning kava koostamise kord",
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action == StructuralAction.REPLACE
+    assert ops[0].target == LegalAddress(path=(("section", "2"), ("subsection", "2")))
+    assert _payload(ops[0]).text == "(2) Uus tekst."
+    assert "old_format_amendment_section:5" in ops[0].provenance_tags
+
+
 def test_parse_ee_amendment_ops_excludes_later_scoped_old_text_from_global_lexical_replace() -> None:
     archive = open_rt_archive(readonly=True)
     ops = parse_ee_amendment_ops(
@@ -478,6 +504,24 @@ def test_extract_ee_ops_strips_direct_target_title_before_global_text_replace() 
     assert _payload(ops[0]).attrs["old_text"] == "Maanteeamet"
     assert _payload(ops[0]).text == "Transpordiamet"
     assert _payload(ops[0]).attrs["case_inflected"] is True
+
+
+def test_extract_ee_ops_does_not_strip_inner_quoted_source_citation_as_act_title() -> None:
+    text = (
+        "paragrahvi 2 lõiked 2 ja 3 sõnastatakse järgmiselt: "
+        "„(2) Hoiukavad koostatakse Vabariigi Valitsuse 9. septembri 2010. a "
+        "määruse nr 132 „Vesikondade ja alamvesikondade määramine” §-s 1 "
+        "nimetatud vesikondade kohta. (3) Hoiukava koostatakse.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPLACE, (("section", "2"), ("subsection", "2"))),
+        (StructuralAction.REPLACE, (("section", "2"), ("subsection", "3"))),
+    ]
+    assert "Vesikondade ja alamvesikondade määramine" in _payload(ops[0]).text
+    assert _payload(ops[1]).text == "(3) Hoiukava koostatakse."
 
 
 def test_parse_ee_amendment_ops_splits_plaintext_single_target_regulation_body() -> None:

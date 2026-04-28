@@ -1521,6 +1521,8 @@ def _strip_leading_clause_wrapper(text: str) -> str:
 
 def _strip_leading_quoted_act_reference(text: str) -> str:
     """Drop explicit act-title prefix before a structural target list."""
+    if re.match(r"^\s*(?:§|paragrahvi?|lõike|punkti)\b", text, re.IGNORECASE):
+        return text
     return re.sub(
         r"^[A-ZÜÕÖÄ][^\n]{0,260}?\b(?:seaduse|seaduses|seadustiku|koodeksi|määruse|määruses)\b"
         r"(?:\s+nr\.?\s*[\w./-]+)?\s+[„\"“][^„”“\"]+[”“\"]\s+"

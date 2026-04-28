@@ -4423,6 +4423,60 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_nom": word + "ad",
             "pl_gen": word + "ade",
         }
+    if lower.endswith("vool"):
+        stem = word + "u"
+        plural_stem = word + "ude"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": stem,
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": word + "ud",
+            "pl_gen": plural_stem,
+            "pl_part": word + "usid",
+            "pl_ine": plural_stem + "s",
+            "pl_ela": plural_stem + "st",
+            "pl_all": plural_stem + "le",
+            "pl_ade": plural_stem + "l",
+            "pl_abl": plural_stem + "lt",
+            "pl_trn": plural_stem + "ks",
+        }
+    if lower.endswith("kond"):
+        stem = word[:-4] + "konna"
+        plural_stem = word[:-4] + "kondade"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": stem[:-1] + "d",
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": stem + "d",
+            "pl_gen": plural_stem,
+            "pl_part": word[:-4] + "kondi",
+            "pl_ine": plural_stem + "s",
+            "pl_ela": plural_stem + "st",
+            "pl_all": plural_stem + "le",
+            "pl_ade": plural_stem + "l",
+            "pl_abl": plural_stem + "lt",
+            "pl_trn": plural_stem + "ks",
+        }
     if lower.endswith("ane"):
         stem = word[:-2] + "se"
         return {
