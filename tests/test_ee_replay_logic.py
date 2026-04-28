@@ -970,6 +970,58 @@ def test_replay_ee_to_pit_preserves_nested_quoted_act_title_in_text_insert() -> 
     )
 
 
+def test_replay_ee_to_pit_repeals_flat_part_section_run() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "129052012009",
+        "2013-04-01",
+        archive=archive,
+        oracle_id="128032013017",
+    )
+
+    assert result.error is None
+    assert not any(str(div.address).startswith("section:15") for div in result.divergences)
+    assert any(adjudication.kind == "ee_flat_part_repeal_span" for adjudication in result.adjudications)
+
+
+def test_replay_ee_to_pit_applies_nik_plural_case_inflection() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    def find_item(node: IRNode, section_label: str, item_label: str) -> IRNode | None:
+        if node.kind == IRNodeKind.SECTION and node.label == section_label:
+            for subsection in node.children:
+                for item in subsection.children:
+                    if item.kind == IRNodeKind.ITEM and item.label == item_label:
+                        return item
+        for child in node.children:
+            found = find_item(child, section_label, item_label)
+            if found is not None:
+                return found
+        return None
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "129052012009",
+        "2013-04-01",
+        archive=archive,
+        oracle_id="128032013017",
+    )
+
+    assert result.error is None
+    section_16_item_2 = find_item(result.replayed.body, "16", "2")
+    section_18_item_19 = find_item(result.replayed.body, "18", "19")
+    assert section_16_item_2 is not None
+    assert section_18_item_19 is not None
+    assert "ametnike ja töötajate koolitusstrateegia" in (section_16_item_2.text or "")
+    assert "ametnikke ja töötajaid vajalike töövahenditega" in (section_18_item_19.text or "")
+
+
 def test_replay_ee_to_pit_replays_riigikogu_term_start_slice_in_erakonnaseadus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
