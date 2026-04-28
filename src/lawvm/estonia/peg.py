@@ -2700,6 +2700,46 @@ def extract_ee_ops(
             seq += 1
         return ops
 
+    if action == "insert":
+        m_chapter_heading_after_section = re.search(
+            r'\b(?:seadust|seadustikku|määrust)\s+täiendatakse\s+pärast\s+§\s*'
+            r'(?P<anchor>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+            r'peatüki\s+pealkirjaga\s+'
+            r'(?:järgmises\s+sõnastuses|järgmiselt)\s*:',
+            clean,
+            re.IGNORECASE,
+        )
+        if m_chapter_heading_after_section is not None:
+            content = _extract_quoted_content(clean) or ""
+            chapter_match = re.match(
+                r'\s*(?P<label>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰_]*)[.]\s*peatükk\b',
+                content,
+                re.IGNORECASE,
+            )
+            if chapter_match is not None:
+                chapter_label = _normalize_num(chapter_match.group("label"))
+                anchor_label = _normalize_num(m_chapter_heading_after_section.group("anchor"))
+                payload = IRNode(
+                    kind=IRNodeKind.CONTENT,
+                    text=content,
+                    attrs={
+                        "insert_after_section": anchor_label,
+                        "rule_id": "ee_chapter_heading_insert_after_section",
+                    },
+                )
+                return [
+                    LegalOperation(
+                        op_id=f"ee-insert-chapter-heading-after-section-{chapter_label}-{source.statute_id}",
+                        sequence=seq,
+                        action=_to_structural_action("insert"),
+                        target=LegalAddress(path=(("chapter", chapter_label),)),
+                        payload=payload,
+                        source=source,
+                        provenance_tags=(clean[:200], "ee_chapter_heading_insert_after_section"),
+                        witness_rule_id="ee_chapter_heading_insert_after_section",
+                    )
+                ]
+
     # Division-level repeal: "seaduse N. peatüki M. jagu tunnistatakse kehtetuks"
     # RT often renders these as surviving division headings plus boundary stubs,
     # so emit a division-targeted repeal op instead of falling through.
@@ -3872,6 +3912,14 @@ def extract_ee_ops(
             explicit_targets = _extract_multiple_explicit_targets(_clean_preamble)
             if len(explicit_targets) > len(target_addrs):
                 target_addrs = explicit_targets
+        if action == "repeal":
+            explicit_targets = [
+                target
+                for target in _extract_multiple_explicit_targets(_clean_preamble)
+                if not (target.path and target.path[-1][0] == "subsection")
+            ]
+            if len(explicit_targets) > len(target_addrs):
+                target_addrs = explicit_targets
         for addr in target_addrs:
             payload = None
             if action == "text_replace" and new_t:
@@ -4037,15 +4085,20 @@ def extract_ee_ops(
                     ))
                     seq += 1
 
+                existing_repeal_targets = {op.target.path for op in ops}
                 for _num in _extract_sd_section_nums(clean):
+                    target_path = (("section", _num),)
+                    if target_path in existing_repeal_targets:
+                        continue
                     ops.append(LegalOperation(
                         op_id=f"ee-repeal-sect-{_num}-{source.statute_id}",
                         sequence=seq,
                         action=_to_structural_action("repeal"),
-                        target=LegalAddress(path=(("section", _num),)),
+                        target=LegalAddress(path=target_path),
                         source=source,
                         provenance_tags=(clean[:200],),
                     ))
+                    existing_repeal_targets.add(target_path)
                     seq += 1
             return ops
 

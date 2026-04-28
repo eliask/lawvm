@@ -1256,6 +1256,23 @@ def test_replay_ee_to_pit_applies_title_and_text_rewrite_without_rewriting_later
     assert result.divergences == []
 
 
+def test_replay_ee_to_pit_preserves_quoted_title_in_later_payload_composition() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "124112010012",
+        "2015-05-01",
+        archive=archive,
+        oracle_id="128042015015",
+    )
+
+    assert result.error is None
+    divergence_addresses = {str(div.address) for div in result.divergences}
+    assert "chapter:1/section:2/subsection:2" not in divergence_addresses
+
+
 def test_replay_ee_to_pit_recovers_marutaudi_old_format_regulation_items() -> None:
     from lawvm.estonia.fetch import open_rt_archive
 

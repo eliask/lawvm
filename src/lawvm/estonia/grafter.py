@@ -1464,23 +1464,100 @@ def parse_ee_amendment_ops(
         def _action_name(op: LegalOperation) -> str:
             return op.action.value if hasattr(op.action, "value") else str(op.action)
 
-        def _rewrite_node(node: IRNode, *, old: str, new: str, case_inflected: bool) -> IRNode:
-            new_text = _ee_apply_text_replace_value(
-                node.text,
+        def _quote_contains_rewrite_surface(text: str, *, old: str, case_inflected: bool) -> bool:
+            return any(
+                old_variant.casefold() in text.casefold()
+                for old_variant, _new_variant in _ee_text_replace_variants(
+                    old,
+                    old,
+                    case_inflected=case_inflected,
+                )
+                if old_variant
+            )
+
+        def _looks_like_legal_title_quote(text: str, start: int, end: int, quoted: str) -> bool:
+            first_alpha = next((char for char in quoted.strip() if char.isalpha()), "")
+            if not first_alpha or first_alpha != first_alpha.upper():
+                return False
+            prefix = text[max(0, start - 140):start]
+            suffix = text[end:min(len(text), end + 60)]
+            return bool(
+                re.search(r'\b(?:seaduse|seadustiku|määruse|otsuse|direktiivi)\b', prefix, re.IGNORECASE)
+                and re.search(r'^\s*(?:§|RT\b|\(|,)', suffix, re.IGNORECASE)
+            )
+
+        def _rewrite_text_preserving_quoted_titles(
+            text: str,
+            *,
+            old: str,
+            new: str,
+            case_inflected: bool,
+        ) -> tuple[str, bool]:
+            if not text:
+                return text, False
+            pieces: list[str] = []
+            protected = False
+            cursor = 0
+            quote_pattern = re.compile(r'[„“"]([^„“”"]+)[“”"]')
+            for match in quote_pattern.finditer(text):
+                quoted = match.group(1)
+                quote_is_protected = (
+                    _quote_contains_rewrite_surface(quoted, old=old, case_inflected=case_inflected)
+                    and _looks_like_legal_title_quote(text, match.start(), match.end(), quoted)
+                )
+                if not quote_is_protected:
+                    continue
+                before = text[cursor:match.start()]
+                rewritten_before = _ee_apply_text_replace_value(
+                    before,
+                    old,
+                    new,
+                    case_inflected=case_inflected,
+                )
+                pieces.append(rewritten_before or "")
+                pieces.append(match.group(0))
+                cursor = match.end()
+                protected = True
+            if cursor == 0:
+                rewritten = _ee_apply_text_replace_value(
+                    text,
+                    old,
+                    new,
+                    case_inflected=case_inflected,
+                )
+                return rewritten or "", False
+            tail = text[cursor:]
+            rewritten_tail = _ee_apply_text_replace_value(
+                tail,
                 old,
                 new,
                 case_inflected=case_inflected,
             )
-            new_children = tuple(
+            pieces.append(rewritten_tail or "")
+            return "".join(pieces), protected
+
+        def _rewrite_node(node: IRNode, *, old: str, new: str, case_inflected: bool) -> tuple[IRNode, bool]:
+            new_text, protected_quote = _rewrite_text_preserving_quoted_titles(
+                node.text,
+                old=old,
+                new=new,
+                case_inflected=case_inflected,
+            )
+            child_results = tuple(
                 _rewrite_node(child, old=old, new=new, case_inflected=case_inflected)
                 for child in node.children
             )
+            new_children = tuple(child for child, _protected in child_results)
+            protected_child = any(protected for _child, protected in child_results)
             if new_text == node.text and new_children == node.children:
-                return node
-            return replace(
-                node,
-                text=new_text,
-                children=new_children,
+                return node, protected_quote or protected_child
+            return (
+                replace(
+                    node,
+                    text=new_text,
+                    children=new_children,
+                ),
+                protected_quote or protected_child,
             )
 
         active_rewrites: list[tuple[str, str, bool]] = []
@@ -1489,22 +1566,33 @@ def parse_ee_amendment_ops(
             action = _action_name(op)
             payload = op.payload
             updated_op = op
+            protected_quote = False
             if payload is not None and action in {"replace", "insert"}:
                 updated_payload = payload
                 for old, new, case_inflected in active_rewrites:
-                    updated_payload = _rewrite_node(
+                    updated_payload, rewrite_protected_quote = _rewrite_node(
                         updated_payload,
                         old=old,
                         new=new,
                         case_inflected=case_inflected,
                     )
-                if updated_payload is not payload:
+                    protected_quote = protected_quote or rewrite_protected_quote
+                if updated_payload is not payload or protected_quote:
                     updated_op = replace(
                         op,
                         payload=updated_payload,
                         provenance_tags=(
                             *op.provenance_tags,
-                            "ee_source_local_global_text_replace_payload_composition",
+                            *(
+                                ("ee_source_local_global_text_replace_payload_composition",)
+                                if updated_payload is not payload
+                                else ()
+                            ),
+                            *(
+                                ("ee_source_local_payload_composition_quoted_title_skipped",)
+                                if protected_quote
+                                else ()
+                            ),
                         ),
                     )
             composed.append(updated_op)
@@ -3105,7 +3193,11 @@ def _parse_chapter_payload(content: str, chapter_label: str) -> IRNode:
             children=[division(label="1", children=[section, ...]), ...])
     """
     # Extract chapter title: text between "peatükk" and the first "§" or "N. jagu"
-    m_ch = re.match(r"^\s*\d[\d\s_]*[.]\s*peatükk\s+(.*?)(?=§\s*\d|\d[\d\s]*[.]\s*jagu\b)", content, re.DOTALL)
+    m_ch = re.match(
+        r"^\s*\d[\d\s_]*[.]\s*peatükk\s+(.*?)(?=§\s*\d|\d[\d\s]*[.]\s*jagu\b|$)",
+        content,
+        re.DOTALL,
+    )
     ch_title = m_ch.group(1).strip() if m_ch else ""
 
     # Check for divisions: "N. jagu DivTitle" before sections
@@ -3198,7 +3290,7 @@ def _parse_section_payload(text: str, kind: IRNodeKind = IRNodeKind.SECTION) -> 
 
     # Split at subsection markers: (N) at start of subsection
     # Pattern: split on "(N)" where N is 1+ digits, possibly with superscript
-    parts = re.split(r"(?=\(\d[\d\s_]*\)\s)", stripped)
+    parts = re.split(r"(?=\(\d[\d\s_]*\)\s*)", stripped)
 
     title_part = parts[0].strip() if parts else stripped.strip()
     subsection_parts = parts[1:] if len(parts) > 1 else []
@@ -7666,7 +7758,10 @@ def _ee_apply_op(
                         and not payload.text.lstrip().startswith("§")
                         and not re.match(r"^\(\d", payload.text.lstrip())
                         and "\x01" not in payload.text
-                        and len(parsed.text) > 40
+                        and (
+                            len(parsed.text) > 40
+                            or re.search(r'\btekst\s+sõnastatakse\b', note_text, re.IGNORECASE)
+                        )
                     ):
                         # Payload looks like body text, not a title.
                         # Wrap as subsection:1 and preserve existing title.
@@ -7921,6 +8016,43 @@ def _ee_apply_op(
                 return body
             elif kind == "chapter":
                 new_node = _parse_chapter_payload(payload.text, label)
+                insert_after_section = str(payload.attrs.get("insert_after_section", "")).strip()
+                if insert_after_section:
+                    anchor_full_path = _ee_resolve_full_path(body, (("section", insert_after_section),))
+                    if anchor_full_path is not None and len(anchor_full_path) >= 2:
+                        source_parent_path = anchor_full_path[:-1]
+                        source_parent = tree_ops.resolve(body, source_parent_path)
+                        if source_parent is not None and source_parent.kind in (
+                            IRNodeKind.CHAPTER,
+                            IRNodeKind.PART,
+                            IRNodeKind.DIVISION,
+                            IRNodeKind.BODY,
+                        ):
+                            retained_children: list[IRNode] = []
+                            moved_children: list[IRNode] = []
+                            after_anchor = False
+                            for child in source_parent.children:
+                                if after_anchor and child.kind == IRNodeKind.SECTION:
+                                    moved_children.append(child)
+                                    continue
+                                retained_children.append(child)
+                                if child.kind == IRNodeKind.SECTION and child.label == insert_after_section:
+                                    after_anchor = True
+                            if moved_children:
+                                updated_parent = replace(
+                                    source_parent,
+                                    children=tuple(retained_children),
+                                )
+                                body = tree_ops.replace_at(body, source_parent_path, updated_parent)
+                                new_node = replace(
+                                    new_node,
+                                    children=tuple((*new_node.children, *moved_children)),
+                                    attrs={
+                                        **dict(new_node.attrs),
+                                        "migration_rule": "ee_chapter_heading_insert_after_section",
+                                        "moved_after_section": insert_after_section,
+                                    },
+                                )
                 parent_path = _ee_resolve_parent_path(body, path)
                 if parent_path is not None:
                     return tree_ops.insert_sorted(
