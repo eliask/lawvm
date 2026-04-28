@@ -464,6 +464,22 @@ def test_extract_ee_ops_recovers_missing_closing_quote_in_replacement_payload() 
     assert _payload(ops[0]).text == "§ 18 lõike 1 punktis 1"
 
 
+def test_extract_ee_ops_strips_direct_target_title_before_global_text_replace() -> None:
+    text = (
+        "Majandus- ja kommunikatsiooniministri 27. juuni 2011. a määruses nr 53 "
+        "„Maastikusõiduki registreerimise tingimused ja kord” asendatakse sõna "
+        "„Maanteeamet” sõnaga „Transpordiamet” vastavas käändes."
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].target.path == ()
+    assert _payload(ops[0]).attrs["old_text"] == "Maanteeamet"
+    assert _payload(ops[0]).text == "Transpordiamet"
+    assert _payload(ops[0]).attrs["case_inflected"] is True
+
+
 def test_parse_ee_amendment_ops_splits_plaintext_single_target_regulation_body() -> None:
     archive = open_rt_archive(readonly=True)
     ops = parse_ee_amendment_ops(

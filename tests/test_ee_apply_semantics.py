@@ -3967,6 +3967,19 @@ def test_global_case_inflected_text_replace_handles_amet_and_ministeerium_forms(
     assert "Regionaal- ja Põllumajandusministeeriumi" in subsection.text
 
 
+def test_case_inflected_text_replace_handles_amet_illative_form() -> None:
+    text = "Maanteeametisse hoiule jäetud dokumendid edastatakse Maanteeametile."
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "Maanteeamet",
+        "Transpordiamet",
+        case_inflected=True,
+    )
+
+    assert replaced == "Transpordiametisse hoiule jäetud dokumendid edastatakse Transpordiametile."
+
+
 def test_case_inflected_text_replace_keeps_source_lowercase_for_mid_sentence_institution_rename() -> None:
     replaced = _ee_apply_text_replace_value(
         (
