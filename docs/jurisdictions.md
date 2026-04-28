@@ -9,7 +9,7 @@ commencement data, and how much replay evidence has been implemented.
 | Jurisdiction | v0.1 Status | Current Claim | Main Caveat |
 | --- | --- | --- | --- |
 | Finland | Reference frontend | National-scale amendment replay proof; 2026-04-16 snapshot measured 0.65% mean text distance against archived Finlex witness surfaces. | Finlex XML/HTML can diverge; some source XML and corrigenda need special handling. |
-| Estonia | Experimental consistency frontend | Replay can be used to check authoritative Riigi Teataja consolidated text for candidate inconsistencies. One candidate omission has been reported to Riigi Teataja. | Authoritative consolidation changes the truth model: replay is consistency evidence, not the primary legal surface. |
+| Estonia | Experimental consistency frontend | Replay can be used to check authoritative Riigi Teataja consolidated text for candidate inconsistencies. Riigi Teataja confirmed and corrected one LawVM-reported omission in `Audiitortegevuse seadus` § 95^2(1). | Authoritative consolidation changes the truth model: replay is consistency evidence, not the primary legal surface. |
 | United Kingdom | Experimental effects/version frontend | UK work is oriented around effect feeds, extent, commencement, and version graph reconstruction. | Commencement, extent, and prospective effects make naive text replay insufficient. |
 | Norway | Experimental | Structured source work exists, with replay and verification experiments. | Broad source availability is weaker before roughly 2001, so historical replay coverage has a hard source ceiling. |
 | Sweden | Experimental | Source/current/official-act lanes exist for replay experiments. | Broad source availability is weaker before roughly 1999, limiting complete historical replay. |

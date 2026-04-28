@@ -54,10 +54,12 @@ Estonia, the UK, Norway, Sweden, EU, and US federal lanes exist at different
 maturity levels. They are experimental unless their local docs say otherwise.
 
 LawVM has already found hundreds of replay-vs-Finlex divergences. From those,
-22 high-confidence meaningful divergences have been curated and reported to
-Finlex as candidate findings for external review. They should be described as
-divergences or candidate findings unless confirmed by the responsible
-authority.
+22 high-confidence meaningful Finland divergences have been curated and
+reported to Finlex as candidate findings for external review. LawVM also
+reported one Estonian consolidation omission to Riigi Teataja; Riigi Teataja
+confirmed and corrected that omission. Unconfirmed divergences should be
+described as divergences or candidate findings unless confirmed by the
+responsible authority.
 
 The purpose of v0.1 is to establish that ordinary human-written amendment
 streams can be compiled into auditable legal text-state, bringing Finland close
@@ -148,6 +150,8 @@ uv run lawvm oracle-check 2002/738
 # Estonia
 uv run lawvm -j ee replay <STATUTE_ID> --as-of 2024-01-01
 uv run lawvm verify-consistency --jurisdiction ee --base <BASE_ID> --consolidated <ID>
+uv run lawvm ee-corpus current
+uv run lawvm ee-publication-db --limit 100
 
 # UK
 uv run lawvm uk-replay <STATUTE_ID> --pit-date 2024-01-01

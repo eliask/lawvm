@@ -26,6 +26,27 @@ The 22 reported items are candidate findings. They are not official
 determinations and should not be described as confirmed errors unless the
 responsible authority confirms them.
 
+## Estonia Consistency Corpus
+
+Estonia is measured differently from Finland because Riigi Teataja consolidated
+law is an authoritative source surface. LawVM replay is therefore an independent
+consistency check, not the primary legal text surface.
+
+The small Estonia benchmark corpus is a release/evaluation slice. For browsing
+public replay-vs-Riigi-Teataja divergences, build the current replayable
+corpus:
+
+```bash
+uv run lawvm ee-corpus current
+uv run lawvm ee-publication-db
+```
+
+That corpus contains one latest/current comparison per amended structured
+Riigi Teataja group that LawVM can replay. It is not the historical
+consecutive-version corpus and it is not restricted to the small benchmark
+slice. Riigi Teataja has confirmed and corrected one LawVM-reported omission in
+`Audiitortegevuse seadus` § 95^2(1).
+
 ## Measurement Shape
 
 For each statute in the benchmark corpus, LawVM:
