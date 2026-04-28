@@ -2141,15 +2141,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                 ),
             ),
             EEResidualRecord(
-                address="chapter:3/section:21/subsection:1/item:6",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 121122016001 repeals item 6^1, leaving item 6 as the "
-                    "list tail; replay normalizes that last item to terminal '.', while "
-                    "the oracle keeps ';'."
-                ),
-            ),
-            EEResidualRecord(
                 address="chapter:5/section:42_5/subsection:1",
                 bucket="source_oracle_drift",
                 evidence=(

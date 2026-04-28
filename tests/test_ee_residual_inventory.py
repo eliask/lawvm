@@ -780,7 +780,7 @@ def test_get_ee_residual_inventory_abieluvararegister() -> None:
     assert inventory is not None
     assert inventory.statute_title == "Abieluvararegistri seadus"
     assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 3
+    assert len(inventory.residuals) == 2
     assert {record.bucket for record in inventory.residuals} == {
         "source_oracle_drift",
     }
