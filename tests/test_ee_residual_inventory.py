@@ -802,16 +802,12 @@ def test_get_ee_residual_inventory_kalapuugiseadus() -> None:
     assert inventory is not None
     assert inventory.statute_title == "Kalapüügiseadus"
     assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 4
+    assert len(inventory.residuals) == 3
     assert {record.bucket for record in inventory.residuals} == {
         "source_oracle_drift",
     }
     assert all("section:17_1" not in record.address for record in inventory.residuals)
-    assert any(
-        record.address == "chapter:3/section:19/subsection:6_3"
-        and "põllumajandusminister" in record.evidence
-        for record in inventory.residuals
-    )
+    assert all(record.address != "chapter:3/section:19/subsection:6_3" for record in inventory.residuals)
 
 
 def test_get_ee_residual_inventory_strateegilise_kauba_seadus() -> None:

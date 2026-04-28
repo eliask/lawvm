@@ -1786,15 +1786,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                 ),
             ),
             EEResidualRecord(
-                address="chapter:3/section:19/subsection:6_3",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 103072014018 inserts § 19(6^3) with the replay-side "
-                    "'põllumajandusminister' wording. Oracle 103072014023 already carries "
-                    "the later generic 'valdkonna eest vastutav minister' title."
-                ),
-            ),
-            EEResidualRecord(
                 address="chapter:3_1/section:23_2/subsection:2",
                 bucket="source_oracle_drift",
                 evidence=(

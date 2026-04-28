@@ -2722,6 +2722,25 @@ def test_global_case_inflected_text_replace_handles_multiword_minister_phrase_ca
     assert "Valdkonna eest vastutaval ministril" in section_71.text
 
 
+def test_case_inflected_text_replace_keeps_postposed_minister_subject_before_kaskkirjaga() -> None:
+    text = (
+        "Kui püügivõimalused on ammendatud, keelab ja lõpetab kalapüügi juhul, "
+        "kui kalapüüki ei ole lõpetanud Euroopa Liit, põllumajandusminister käskkirjaga."
+    )
+
+    updated = _ee_apply_text_replace_value(
+        text,
+        "põllumajandusminister",
+        "valdkonna eest vastutav minister",
+        case_inflected=True,
+    )
+
+    assert updated == (
+        "Kui püügivõimalused on ammendatud, keelab ja lõpetab kalapüügi juhul, "
+        "kui kalapüüki ei ole lõpetanud Euroopa Liit, valdkonna eest vastutav minister käskkirjaga."
+    )
+
+
 def test_global_case_inflected_text_replace_handles_ambiguous_genitive_phrase_context() -> None:
     body = _body_with_section_and_subsection(
         "20",
