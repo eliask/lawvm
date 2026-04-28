@@ -6463,6 +6463,55 @@ def test_structural_textosa_heading_relabel_resolves_duplicate_chapter_by_headin
     ]
 
 
+def test_high_division_insert_relabels_unique_duplicate_division_suffix_with_adjudication() -> None:
+    statute = IRStatute(
+        statute_id="ee/test",
+        title="Testmäärus",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="3",
+                    text="PEATUKK",
+                    children=(
+                        IRNode(kind=IRNodeKind.DIVISION, label="1", text="One"),
+                        IRNode(kind=IRNodeKind.DIVISION, label="2", text="Two A"),
+                        IRNode(kind=IRNodeKind.DIVISION, label="2", text="Two B"),
+                        IRNode(kind=IRNodeKind.DIVISION, label="3", text="Three"),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee-insert-division-5",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("chapter", "3"), ("division", "5"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="5. jagu Five § 50. Inserted section (1) Inserted.",
+        ),
+        source=OperationSource(statute_id="ee/test-source"),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    result = apply_ee_ops(statute, [op], adjudications_out=adjudications)
+    chapter = result.body.children[0]
+
+    assert [(child.label, child.text) for child in chapter.children] == [
+        ("1", "One"),
+        ("2", "Two A"),
+        ("3", "Two B"),
+        ("4", "Three"),
+        ("5", "Five"),
+    ]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "ee_implicit_division_sequence_relabel_after_high_jagu_insert"
+    ]
+
+
 def test_insert_lauseosa_append_is_idempotent_when_target_already_contains_phrase() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,
