@@ -58,6 +58,28 @@ def _lower_generated_residual_records(
 
 
 _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
+    ("112032019073", "115072023052"): EEPairResidualInventory(
+        base_id="112032019073",
+        oracle_id="115072023052",
+        statute_title="Vereülekande tingimused ja kord",
+        comparison_class="commensurable_delta",
+        residuals=cast(tuple[EEResidualRecord, ...], (
+            EEResidualRecord(
+                address="chapter:3/section:10/subsection:1",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Amendment 115072023051 explicitly applies the case-inflected "
+                    "replacement 'vereülekandeprotokoll' -> 'transfusiooniprotokoll' "
+                    "to § 10(1), (2), (4), and (5). In § 10(1), the base source has "
+                    "the inessive surface 'vereülekandeprotokollis', so replay "
+                    "correctly materializes 'transfusiooniprotokollis'. Oracle "
+                    "115072023052 instead has 'transfusiooniprotokolliks', which is "
+                    "a different case form and is not source-backed by the visible "
+                    "amendment clause."
+                ),
+            ),
+        )),
+    ),
     ("108072011074", "127062017011"): EEPairResidualInventory(
         base_id="108072011074",
         oracle_id="127062017011",
@@ -180,48 +202,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     "111072013019 nevertheless changes 'haridus-ja teadusminister' to "
                     "'valdkonna eest vastutav minister', so this subsection drift is "
                     "oracle-side rather than source-backed."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:4",
-                bucket="replay_bug",
-                evidence=(
-                    "Source act 111072013001 § 11 replaces 'pedagoogid' with "
-                    "'õpetajad' in § 13(5^1) and § 13(5^2) of Täiskasvanute koolituse "
-                    "seadus. Replay still materializes the old inflected forms "
-                    "'pedagoogidele' / 'pedagoogide', so the chapter 4 mismatch includes "
-                    "a replay-side failure to propagate the source-backed teacher-term "
-                    "replacement through the required case forms."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:4/section:13",
-                bucket="replay_bug",
-                evidence=(
-                    "Source act 111072013001 § 11 requires the teacher-term rewrite in "
-                    "§ 13(5^1) and § 13(5^2). Replay preserves the old 'pedagoogide...' "
-                    "surface in § 13 while oracle 111072013019 reflects the source-backed "
-                    "'õpetajate...' wording."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:4/section:13/subsection:5_1",
-                bucket="replay_bug",
-                evidence=(
-                    "Source act 111072013001 § 11 rewrites § 13(5^1) by replacing "
-                    "'pedagoogid' with 'õpetajad' in the appropriate case. Replay still "
-                    "emits 'Pedagoogidele ... pedagoogide ...', so this subsection is a "
-                    "replay-side case-inflected text-replacement failure."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:4/section:13/subsection:5_2",
-                bucket="replay_bug",
-                evidence=(
-                    "Source act 111072013001 § 11 likewise rewrites § 13(5^2) from "
-                    "'pedagoogidele / pedagoogide' to the corresponding 'õpetajatele / "
-                    "õpetajate' forms. Replay preserves the old noun family, so this is "
-                    "a replay-side morphology bug rather than oracle drift."
                 ),
             ),
             EEResidualRecord(
@@ -1340,50 +1320,38 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
         oracle_id="103022026013",
         statute_title="Riigisaladuse ja salastatud välisteabe seadus",
         comparison_class="commensurable_delta",
-        residuals=(
-            *(
-                EEResidualRecord(
-                    address=record.address,
-                    bucket=cast(EEResidualBucket, record.bucket),
-                    evidence=record.evidence,
-                )
-                for record in build_inserted_section_omission_family(
-                    section_address="chapter:2/division:3/section:30_1",
-                    section_symbol="§ 30^1",
-                    source_act_id="127012023001",
-                    later_source_act_id="103022026004",
-                    oracle_id="103022026013",
-                    subsection_labels=(
-                        "1",
-                        "2",
-                        "3",
-                        "4",
-                        "5",
-                        "6",
-                        "7",
-                        "8",
-                        "9",
-                        "10",
-                        "11",
-                        "12",
-                        "13",
-                        "14",
+        residuals=_lower_generated_residual_records(
+            build_shortened_section_family(
+                bucket="source_oracle_drift",
+                records=(
+                    (
+                        "chapter:2/division:1/section:8/subsection:1/item:8",
+                        "Source act 107032023002 rewrites § 8 p 8 and replay preserves the "
+                        "source-side terminal period after the final sentence; oracle "
+                        "103022026013 keeps a trailing semicolon instead. This is a bounded "
+                        "terminal punctuation oracle-surface drift, not a replay omission.",
                     ),
-                )
+                    (
+                        "chapter:2/division:3/section:48/subsection:3/item:4",
+                        "Replay preserves the source-side terminal semicolon in "
+                        "§ 48(3) p 4, while oracle 103022026013 drops it. This is a "
+                        "bounded terminal punctuation oracle-surface drift.",
+                    ),
+                ),
             ),
-            *(
-                EEResidualRecord(
-                    address=record.address,
-                    bucket=cast(EEResidualBucket, record.bucket),
-                    evidence=record.evidence,
-                )
-                for record in build_inserted_section_omission_family(
-                    section_address="chapter:2/division:3/section:34_1",
-                    section_symbol="§ 34^1",
-                    source_act_id="108072025007",
-                    oracle_id="103022026013",
-                    subsection_labels=("1", "2"),
-                )
+            build_shortened_section_family(
+                bucket="source_pathology",
+                records=(
+                    (
+                        "chapter:3/section:52/subsection:1/item:1",
+                        "None of the applied in-range amendments directly target § 52(1) p 1. "
+                        "The 2023 statute-wide rewrites replace singular target phrases like "
+                        "'teabevaldaja' and 'asutus, põhiseaduslik institutsioon ...', but do "
+                        "not emit the oracle's plural coordinated surface 'töötlevate üksuste' "
+                        "for this item. Oracle 103022026013 therefore carries an unsupported "
+                        "target-local rewrite relative to the visible source chain.",
+                    ),
+                ),
             ),
         ),
     ),
@@ -2207,69 +2175,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
-    ("116062016016", "128122018040"): EEPairResidualInventory(
-        base_id="116062016016",
-        oracle_id="128122018040",
-        statute_title="Loomade ja loomsete saadustega kauplemise ning nende impordi ja ekspordi seadus",
-        comparison_class="commensurable_delta",
-        residuals=_lower_generated_residual_records(
-            build_address_list_family(
-                addresses=(
-                    "chapter:1/section:5",
-                    "chapter:1/section:5/subsection:1",
-                    "chapter:1/section:6",
-                    "chapter:1/section:6/subsection:1",
-                    "chapter:2/division:1/section:10/subsection:2",
-                ),
-                evidence=(
-                    "Source act 128122018035 explicitly rewrites "
-                    "'veterinaar- ja zootehniline järelevalve' to "
-                    "'veterinaarjärelevalve' in the affected § 5, § 6, and § 10 "
-                    "targets. Replay follows that source-backed wording, while oracle "
-                    "128122018040 keeps the older broader supervision phrasing."
-                ),
-            ),
-            (
-                GeneratedEEResidualEvidence(
-                    address="chapter:3/division:3/section:36/subsection:2",
-                    bucket="source_oracle_drift",
-                    evidence=(
-                        "Source act 116062017001 explicitly rewrites § 36(2) to the replay-side "
-                        "lowercase 'tolliseadustiku' wording. Oracle 128122018040 differs only by "
-                        "retaining capitalized 'Tolliseadustiku'."
-                    ),
-                ),
-            ),
-            build_address_list_family(
-                addresses=(
-                    "chapter:1/section:7/subsection:1/item:3",
-                    "chapter:3/division:3/section:37",
-                    "chapter:3/division:3/section:37/subsection:1",
-                    "chapter:3/division:3/section:37/subsection:6",
-                    "chapter:3/division:3/section:37/subsection:7",
-                    "chapter:3/division:3/section:38",
-                    "chapter:3/division:3/section:38/subsection:1",
-                    "chapter:3/division:3/section:38/subsection:1/item:2",
-                    "chapter:3/division:3/section:38/subsection:3",
-                    "chapter:3/division:3/section:38/subsection:4",
-                    "chapter:3/division:3/section:40",
-                    "chapter:3/division:3/section:40/subsection:1",
-                    "chapter:3/division:3/section:40/subsection:2",
-                    "chapter:3/division:3/section:40/subsection:4",
-                    "chapter:8/section:62",
-                    "chapter:8/section:62/subsection:1",
-                    "chapter:9/section:72/subsection:1",
-                    "chapter:9/section:72/subsection:2",
-                ),
-                evidence=(
-                    "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                    "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                    "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                    "oracle 128122018040 still retains the older 'vabaladu' text."
-                ),
-            ),
-        ),
-    ),
     ("126042013006", "111042014003"): EEPairResidualInventory(
         base_id="126042013006",
         oracle_id="111042014003",
@@ -2459,17 +2364,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
         comparison_class="commensurable_delta",
         residuals=(
             EEResidualRecord(
-                address="chapter:1/section:2/subsection:1_1",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 104072017001 first rewrites § 2(1^1) to the longer "
-                    "'abielu sõlmimise kinnitanud ...' wording, but later source act "
-                    "121122016001 replaces that subsection with the replay-side "
-                    "'maavalitsuste perekonnaseisuametnikud ...' text. The oracle keeps "
-                    "the earlier 2017 wording."
-                ),
-            ),
-            EEResidualRecord(
                 address="chapter:1/section:6/subsection:3",
                 bucket="source_oracle_drift",
                 evidence=(
@@ -2477,16 +2371,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     "'Registritoimikuga tutvumise loa annab notar.', but later source act "
                     "121122016001 rewrites § 6(3) back to the replay-side shorter wording. "
                     "The oracle keeps the earlier 2017 text."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:1/section:8/subsection:2",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 121122016001 only replaces 'registripidaja' with the "
-                    "replay-side inflected 'perekonnaseisuametnik ... isik' phrase. "
-                    "It does not delete the source-side 'või notariaalselt kinnitatud' "
-                    "translation wording, but the oracle does."
                 ),
             ),
             EEResidualRecord(
@@ -2526,12 +2410,12 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
             EEResidualRecord(
                 address="chapter:2/section:17_1/subsection:1",
-                bucket="source_oracle_drift",
+                bucket="source_pathology",
                 evidence=(
-                    "None of the applied 2014 source acts (113032014004, 129062014001, "
-                    "129062014109, 103072014018) targets § 17^1(1); replay preserves the "
-                    "base/source food-law recognition wording, while oracle 103072014023 "
-                    "modernizes it to the tegevusluba / majandustegevusteade regime."
+                    "Source act 129062014001 contains a nested Kalapüügiseadus clause "
+                    "rewriting § 17^1(1)'s first sentence to the tegevusluba / "
+                    "majandustegevusteade wording, but this foreign-act nested amendment "
+                    "family is not yet parsed into an owned LawVM operation."
                 ),
             ),
             EEResidualRecord(
@@ -3050,211 +2934,11 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                 ),
             ),
             EEResidualRecord(
-                address="chapter:2/section:8_1/subsection:12",
-                bucket="source_pathology",
-                evidence=(
-                    "No parsed amendment in the applied 2014-2025 target chain repeals or "
-                    "blanks § 8^1(12); replay preserves the source-backed subsection text, "
-                    "while oracle 131122025003 renders it empty."
-                ),
-            ),
-            EEResidualRecord(
                 address="chapter:2/section:8_1/subsection:8/item:5",
                 bucket="source_pathology",
                 evidence=(
                     "No parsed amendment in the applied chain removes § 8^1(8) p 5 "
                     "('tehtud uuringute tulemused'), but oracle 131122025003 omits it."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:2/section:9/subsection:9/item:4",
-                bucket="source_pathology",
-                evidence=(
-                    "No parsed amendment in the applied chain removes § 9(9) p 4 "
-                    "('tehtud uuringute tulemused'), but oracle 131122025003 omits it."
-                ),
-            ),
-            *(
-                EEResidualRecord(
-                    address=record.address,
-                    bucket=cast(EEResidualBucket, record.bucket),
-                    evidence=record.evidence,
-                )
-                for record in build_shortened_section_family(
-                    bucket="source_pathology",
-                    records=(
-                        (
-                            "chapter:3/section:14_1/subsection:4_2",
-                            "No direct target-statute amendment in the applied 2014-2025 chain inserts "
-                            "§ 14^1(4^2); oracle 131122025003 contains the subsection, while the related "
-                            "2016 reform act 121062016001 states analogous rules in its own provisions "
-                            "instead of amending § 14^1.",
-                        ),
-                        (
-                            "chapter:3/section:14_1/subsection:4_3",
-                            "No direct target-statute amendment in the applied chain inserts § 14^1(4^3); "
-                            "oracle 131122025003 contains the subsection, while the related 2016 reform "
-                            "act states analogous transition rules outside § 14^1.",
-                        ),
-                        (
-                            "chapter:3/section:14_1/subsection:4_4",
-                            "No direct target-statute amendment in the applied chain inserts § 14^1(4^4); "
-                            "oracle 131122025003 contains the subsection, while the related 2016 reform "
-                            "act states analogous transition rules outside § 14^1.",
-                        ),
-                        (
-                            "chapter:3/section:14_1/subsection:4_5",
-                            "No direct target-statute amendment in the applied chain inserts § 14^1(4^5); "
-                            "oracle 131122025003 contains the subsection, while the related 2016 reform "
-                            "act states analogous transition rules outside § 14^1.",
-                        ),
-                    ),
-                )
-            ),
-            EEResidualRecord(
-                address="chapter:3/section:14_1/subsection:12",
-                bucket="source_pathology",
-                evidence=(
-                    "No direct target-statute amendment in the applied chain inserts § 14^1(12); "
-                    "oracle 131122025003 contains the subsection, while the related 2016 reform "
-                    "act carries comparable staffing-transition text in its own later provisions."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/section:14_1/subsection:13",
-                bucket="source_pathology",
-                evidence=(
-                    "No direct target-statute amendment in the applied chain inserts § 14^1(13); "
-                    "oracle 131122025003 contains the subsection, while the related 2016 reform "
-                    "act carries comparable staffing-transition text in its own later provisions."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/section:14_1/subsection:14",
-                bucket="source_pathology",
-                evidence=(
-                    "No direct target-statute amendment in the applied chain inserts § 14^1(14); "
-                    "oracle 131122025003 contains the subsection, while the related 2016 reform "
-                    "act carries comparable staffing-transition text in its own later provisions."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/section:70_3",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 121062016001 both inserts and immediately rewrites § 70^3 "
-                    "('seadust täiendatakse §-ga 70 3 ...' followed by 'paragrahv 70 3 muudetakse "
-                    "ja sõnastatakse järgmiselt'). No later in-range target-statute amendment in "
-                    "the applied 2014-2025 chain repeals or blanks § 70^3, but oracle 131122025003 "
-                    "omits the whole section family anyway."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/section:70_3/subsection:1",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 121062016001 rewrites § 70^3 as a source-backed election-transition "
-                    "section, and no later in-range target-side amendment removes § 70^3(1). "
-                    "Oracle 131122025003 still drops the subsection."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/section:70_3/subsection:2",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Replay materializes § 70^3(2) from the rewritten § 70^3 payload in "
-                    "121062016001, and no later applied amendment repeals or blanks that "
-                    "subsection. Oracle 131122025003 omits it."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/section:70_3/subsection:2/item:1",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "The § 70^3(2) item 1 text is source-backed by the rewritten § 70^3 payload "
-                    "in 121062016001, with no later direct target-side repeal. Oracle 131122025003 "
-                    "drops the item anyway."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/section:70_3/subsection:2/item:2",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "The § 70^3(2) item 2 text comes directly from the rewritten § 70^3 payload "
-                    "in 121062016001, and no later in-range target amendment removes it. Oracle "
-                    "131122025003 omits it."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/section:70_3/subsection:2/item:3",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Replay preserves § 70^3(2) item 3 from the 121062016001 rewrite of § 70^3; "
-                    "the applied 2014-2025 target chain does not repeal that item, while oracle "
-                    "131122025003 drops it."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/section:70_3/subsection:2/item:4",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Replay preserves § 70^3(2) item 4 from the source-backed § 70^3 rewrite in "
-                    "121062016001, and no later target-side amendment blanks it. Oracle 131122025003 "
-                    "omits the item."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/section:70_3/subsection:3",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "The § 70^3(3) text is present in the rewritten § 70^3 payload emitted by "
-                    "121062016001, with no later direct target-side repeal. Oracle 131122025003 "
-                    "drops the subsection."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/section:70_3/subsection:4",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "The applied amendment chain still source-backs § 70^3(4) via the rewritten "
-                    "§ 70^3 in 121062016001, and no later amendment removes it. Oracle 131122025003 "
-                    "omits the subsection."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/section:70_3/subsection:5",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Replay carries § 70^3(5) from the 121062016001 rewrite of § 70^3, and the "
-                    "in-range target-side amendments do not repeal it. Oracle 131122025003 drops "
-                    "the subsection."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/section:70_3/subsection:6",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "The § 70^3(6) transition text is source-backed by 121062016001 and survives "
-                    "the applied amendment chain unchanged. Oracle 131122025003 omits it without "
-                    "a corresponding in-range target-side repeal."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/section:70_3/subsection:7",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Replay preserves § 70^3(7) from the rewritten § 70^3 payload in 121062016001; "
-                    "no later direct target-statute amendment blanks it, while oracle 131122025003 "
-                    "omits the subsection."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/section:70_3/subsection:8",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "The applied source chain still carries § 70^3(8) from 121062016001, and no "
-                    "later in-range target-side amendment repeals it. Oracle 131122025003 drops "
-                    "the subsection."
                 ),
             ),
         ),
@@ -3481,21 +3165,7 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             )
             for address in (
                 "chapter:1/section:1/subsection:1/item:4",
-                "chapter:6/section:37/subsection:3/item:1",
-                "chapter:6/section:37/subsection:3/item:2",
-                "chapter:6/section:37/subsection:3/item:3",
-                "chapter:6/section:37/subsection:3/item:4",
-                "chapter:6/section:37/subsection:3/item:5",
-                "chapter:7/section:42/subsection:2",
                 "chapter:7_1/section:43_5/subsection:1",
-                "chapter:8/section:44/subsection:3/item:1",
-                "chapter:8/section:44/subsection:3/item:2",
-                "chapter:8/section:44_1/subsection:1_1/item:1",
-                "chapter:8/section:44_1/subsection:1_1/item:2",
-                "chapter:8/section:44_1/subsection:2/item:1",
-                "chapter:8/section:44_1/subsection:2/item:2",
-                "chapter:8/section:44_1/subsection:2/item:3",
-                "chapter:8/section:45/subsection:1",
             )
         ),
     ),
@@ -3576,75 +3246,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     "Source act 130062023001 rewrites § 8(1) with the replay-side text "
                     "about EU Regulation 1224/2009 control system. Oracle 130062023023 "
                     "carries slightly different wording not supported by the source act."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:2/section:10/subsection:7",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 130062023001 rewrites § 10(7) with the replay-side text "
-                    "mentioning 'Kliimaministeerium'. Oracle 130062023023 carries "
-                    "'Regionaal-ja Põllumajandusministeerium' — a ministry rename not "
-                    "introduced by any applied amendment."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:2/section:14/subsection:1",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 130062023001 rewrites § 14(1) with the replay-side text. "
-                    "Oracle 130062023023 carries slightly different wording."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/division:2/section:19/subsection:2",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 130062023001 rewrites § 19(2) with replay-side text "
-                    "mentioning 'Kliimaministeerium'. Oracle carries "
-                    "'Regionaal-ja Põllumajandusministeerium' — ministry rename drift."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/division:2/section:19/subsection:3",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 130062023001 rewrites § 19(3) with replay-side text "
-                    "mentioning 'Kliimaministeerium'. Oracle carries ministry rename drift."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/division:2/section:19/subsection:4",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 130062023001 rewrites § 19(4) with replay-side text "
-                    "mentioning 'Kliimaministeerium'. Oracle carries ministry rename drift."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/division:2/section:20/subsection:3",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 130062023001 rewrites § 20(3) with replay-side text "
-                    "mentioning 'Kliimaministeerium'. Oracle carries ministry rename drift."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:3/division:3_1/section:29_1/subsection:3",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 130062023001 rewrites § 29^1(3) with replay-side text "
-                    "mentioning 'Kliimaministeerium'. Oracle carries "
-                    "'Regionaal-ja Põllumajandusministeerium' instead, continuing the same "
-                    "ministry rename drift family already present elsewhere in this row."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:4/section:61/subsection:15",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 130062023001 rewrites § 61(15) with replay-side text. "
-                    "Oracle carries slightly different wording."
                 ),
             ),
             EEResidualRecord(
@@ -3762,13 +3363,13 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
         residuals=(
             EEResidualRecord(
                 address="chapter:7/division:1/section:95_2/subsection:1",
-                bucket="source_oracle_drift",
+                bucket="oracle_correction_notice",
                 evidence=(
                     "Source act 107012025001 explicitly extends § 95^2(1) after the word "
                     "„ülevaatust” with the replay-side text "
-                    "„või kestlikkusaruande audiitorkontrolli”. Oracle 107012025013 keeps "
-                    "the older wording without that inserted phrase, so this is a bounded "
-                    "source-backed oracle drift."
+                    "„või kestlikkusaruande audiitorkontrolli”. LawVM reported the omission "
+                    "to Riigi Teataja, and Riigi Teataja confirmed that the omission was as "
+                    "described and corrected § 95^2(1), including the translation."
                 ),
             ),
         ),
@@ -4028,6 +3629,10 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
     ),
 }
 
+_SOLVED_EE_RESIDUALS: set[tuple[str, str]] = {
+    ("109042021007", "114032025016"),
+}
+
 
 def _generated_ee_residual_records(base_id: str, oracle_id: str) -> tuple[EEResidualRecord, ...]:
     """Return generated evidence records for the pairs covered by helper families."""
@@ -4121,41 +3726,6 @@ def _generated_ee_residual_records(base_id: str, oracle_id: str) -> tuple[EEResi
             return _lower_generated_residual_records(
                 build_shortened_section_family(
                     records=(
-                        (
-                            "chapter:2/section:10/subsection:7",
-                            "Source act 130062023001 rewrites § 10(7) with the replay-side text "
-                            "mentioning 'Kliimaministeerium'. Oracle 130062023023 carries "
-                            "'Regionaal-ja Põllumajandusministeerium' — a ministry rename not "
-                            "introduced by any applied amendment."
-                        ),
-                        (
-                            "chapter:3/division:2/section:19/subsection:2",
-                            "Source act 130062023001 rewrites § 19(2) with replay-side text "
-                            "mentioning 'Kliimaministeerium'. Oracle carries "
-                            "'Regionaal-ja Põllumajandusministeerium' — ministry rename drift."
-                        ),
-                        (
-                            "chapter:3/division:2/section:19/subsection:3",
-                            "Source act 130062023001 rewrites § 19(3) with replay-side text "
-                            "mentioning 'Kliimaministeerium'. Oracle carries ministry rename drift."
-                        ),
-                        (
-                            "chapter:3/division:2/section:19/subsection:4",
-                            "Source act 130062023001 rewrites § 19(4) with replay-side text "
-                            "mentioning 'Kliimaministeerium'. Oracle carries ministry rename drift."
-                        ),
-                        (
-                            "chapter:3/division:2/section:20/subsection:3",
-                            "Source act 130062023001 rewrites § 20(3) with replay-side text "
-                            "mentioning 'Kliimaministeerium'. Oracle carries ministry rename drift."
-                        ),
-                        (
-                            "chapter:3/division:3_1/section:29_1/subsection:3",
-                            "Source act 130062023001 rewrites § 29^1(3) with replay-side text "
-                            "mentioning 'Kliimaministeerium'. Oracle carries "
-                            "'Regionaal-ja Põllumajandusministeerium' instead, continuing the same "
-                            "ministry rename drift family already present elsewhere in this row."
-                        ),
                         (
                             "chapter:7/section:90_2/subsection:1",
                             "Source act 130062023001 rewrites § 90^2(1) with replay-side text "
@@ -4251,36 +3821,6 @@ def _generated_ee_residual_records(base_id: str, oracle_id: str) -> tuple[EEResi
             )
         case ("106052020036", "103022026013"):
             return _lower_generated_residual_records(
-                build_inserted_section_omission_family(
-                    section_address="chapter:2/division:3/section:30_1",
-                    section_symbol="§ 30^1",
-                    source_act_id="127012023001",
-                    later_source_act_id="103022026004",
-                    oracle_id="103022026013",
-                    subsection_labels=(
-                        "1",
-                        "2",
-                        "3",
-                        "4",
-                        "5",
-                        "6",
-                        "7",
-                        "8",
-                        "9",
-                        "10",
-                        "11",
-                        "12",
-                        "13",
-                        "14",
-                    ),
-                ),
-                build_inserted_section_omission_family(
-                    section_address="chapter:2/division:3/section:34_1",
-                    section_symbol="§ 34^1",
-                    source_act_id="108072025007",
-                    oracle_id="103022026013",
-                    subsection_labels=("1", "2"),
-                ),
                 build_shortened_section_family(
                     bucket="source_oracle_drift",
                     records=(
@@ -4532,185 +4072,6 @@ def _generated_ee_residual_records(base_id: str, oracle_id: str) -> tuple[EEResi
                     ),
                 ),
             )
-        case ("116062016016", "128122018040"):
-            return _lower_generated_residual_records(
-                build_shortened_section_family(
-                    records=(
-                        (
-                            "chapter:1/section:5",
-                            "Source act 128122018035 explicitly rewrites "
-                            "'veterinaar- ja zootehniline järelevalve' to "
-                            "'veterinaarjärelevalve' in the affected § 5, § 6, and § 10 "
-                            "targets. Replay follows that source-backed wording, while oracle "
-                            "128122018040 keeps the older broader supervision phrasing."
-                        ),
-                        (
-                            "chapter:1/section:5/subsection:1",
-                            "Source act 128122018035 explicitly rewrites "
-                            "'veterinaar- ja zootehniline järelevalve' to "
-                            "'veterinaarjärelevalve' in the affected § 5, § 6, and § 10 "
-                            "targets. Replay follows that source-backed wording, while oracle "
-                            "128122018040 keeps the older broader supervision phrasing."
-                        ),
-                        (
-                            "chapter:1/section:6",
-                            "Source act 128122018035 explicitly rewrites "
-                            "'veterinaar- ja zootehniline järelevalve' to "
-                            "'veterinaarjärelevalve' in the affected § 5, § 6, and § 10 "
-                            "targets. Replay follows that source-backed wording, while oracle "
-                            "128122018040 keeps the older broader supervision phrasing."
-                        ),
-                        (
-                            "chapter:1/section:6/subsection:1",
-                            "Source act 128122018035 explicitly rewrites "
-                            "'veterinaar- ja zootehniline järelevalve' to "
-                            "'veterinaarjärelevalve' in the affected § 5, § 6, and § 10 "
-                            "targets. Replay follows that source-backed wording, while oracle "
-                            "128122018040 keeps the older broader supervision phrasing."
-                        ),
-                        (
-                            "chapter:2/division:1/section:10/subsection:2",
-                            "Source act 128122018035 explicitly rewrites "
-                            "'veterinaar- ja zootehniline järelevalve' to "
-                            "'veterinaarjärelevalve' in the affected § 5, § 6, and § 10 "
-                            "targets. Replay follows that source-backed wording, while oracle "
-                            "128122018040 keeps the older broader supervision phrasing."
-                        ),
-                        (
-                            "chapter:3/division:3/section:36/subsection:2",
-                            "Source act 116062017001 explicitly rewrites § 36(2) to the replay-side "
-                            "lowercase 'tolliseadustiku' wording. Oracle 128122018040 differs only by "
-                            "retaining capitalized 'Tolliseadustiku'."
-                        ),
-                        (
-                            "chapter:1/section:7/subsection:1/item:3",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:3/division:3/section:37",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:3/division:3/section:37/subsection:1",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:3/division:3/section:37/subsection:6",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:3/division:3/section:37/subsection:7",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:3/division:3/section:38",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:3/division:3/section:38/subsection:1",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:3/division:3/section:38/subsection:1/item:2",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:3/division:3/section:38/subsection:3",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:3/division:3/section:38/subsection:4",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:3/division:3/section:40",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:3/division:3/section:40/subsection:1",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:3/division:3/section:40/subsection:2",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:3/division:3/section:40/subsection:4",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:8/section:62",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:8/section:62/subsection:1",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:9/section:72/subsection:1",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                        (
-                            "chapter:9/section:72/subsection:2",
-                            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-                            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-                            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-                            "oracle 128122018040 still retains the older 'vabaladu' text."
-                        ),
-                    ),
-                ),
-            )
         case ("123122022037", "104122024010"):
             return _lower_generated_residual_records(
                 build_shortened_section_family(
@@ -4743,161 +4104,7 @@ def _generated_ee_residual_records(base_id: str, oracle_id: str) -> tuple[EEResi
                             "final punctuation at this address."
                         ),
                         (
-                            "chapter:6/section:37/subsection:3/item:1",
-                            "The only in-range amendment between 121122010026 and "
-                            "121122010027 is 13310847, and replay applies only that act "
-                            "at the oracle cutoff 2011-01-01. Its Ringhäälinguseadus "
-                            "block compiles only the euro-conversion rewrites in §§ 43^4 "
-                            "and 43^5. None of the current divergences are targeted by "
-                            "13310847; oracle 121122010027 instead normalizes untouched "
-                            "older text via dash spacing, dash glyphs, quote style, or "
-                            "final punctuation at this address."
-                        ),
-                        (
-                            "chapter:6/section:37/subsection:3/item:2",
-                            "The only in-range amendment between 121122010026 and "
-                            "121122010027 is 13310847, and replay applies only that act "
-                            "at the oracle cutoff 2011-01-01. Its Ringhäälinguseadus "
-                            "block compiles only the euro-conversion rewrites in §§ 43^4 "
-                            "and 43^5. None of the current divergences are targeted by "
-                            "13310847; oracle 121122010027 instead normalizes untouched "
-                            "older text via dash spacing, dash glyphs, quote style, or "
-                            "final punctuation at this address."
-                        ),
-                        (
-                            "chapter:6/section:37/subsection:3/item:3",
-                            "The only in-range amendment between 121122010026 and "
-                            "121122010027 is 13310847, and replay applies only that act "
-                            "at the oracle cutoff 2011-01-01. Its Ringhäälinguseadus "
-                            "block compiles only the euro-conversion rewrites in §§ 43^4 "
-                            "and 43^5. None of the current divergences are targeted by "
-                            "13310847; oracle 121122010027 instead normalizes untouched "
-                            "older text via dash spacing, dash glyphs, quote style, or "
-                            "final punctuation at this address."
-                        ),
-                        (
-                            "chapter:6/section:37/subsection:3/item:4",
-                            "The only in-range amendment between 121122010026 and "
-                            "121122010027 is 13310847, and replay applies only that act "
-                            "at the oracle cutoff 2011-01-01. Its Ringhäälinguseadus "
-                            "block compiles only the euro-conversion rewrites in §§ 43^4 "
-                            "and 43^5. None of the current divergences are targeted by "
-                            "13310847; oracle 121122010027 instead normalizes untouched "
-                            "older text via dash spacing, dash glyphs, quote style, or "
-                            "final punctuation at this address."
-                        ),
-                        (
-                            "chapter:6/section:37/subsection:3/item:5",
-                            "The only in-range amendment between 121122010026 and "
-                            "121122010027 is 13310847, and replay applies only that act "
-                            "at the oracle cutoff 2011-01-01. Its Ringhäälinguseadus "
-                            "block compiles only the euro-conversion rewrites in §§ 43^4 "
-                            "and 43^5. None of the current divergences are targeted by "
-                            "13310847; oracle 121122010027 instead normalizes untouched "
-                            "older text via dash spacing, dash glyphs, quote style, or "
-                            "final punctuation at this address."
-                        ),
-                        (
-                            "chapter:7/section:42/subsection:2",
-                            "The only in-range amendment between 121122010026 and "
-                            "121122010027 is 13310847, and replay applies only that act "
-                            "at the oracle cutoff 2011-01-01. Its Ringhäälinguseadus "
-                            "block compiles only the euro-conversion rewrites in §§ 43^4 "
-                            "and 43^5. None of the current divergences are targeted by "
-                            "13310847; oracle 121122010027 instead normalizes untouched "
-                            "older text via dash spacing, dash glyphs, quote style, or "
-                            "final punctuation at this address."
-                        ),
-                        (
                             "chapter:7_1/section:43_5/subsection:1",
-                            "The only in-range amendment between 121122010026 and "
-                            "121122010027 is 13310847, and replay applies only that act "
-                            "at the oracle cutoff 2011-01-01. Its Ringhäälinguseadus "
-                            "block compiles only the euro-conversion rewrites in §§ 43^4 "
-                            "and 43^5. None of the current divergences are targeted by "
-                            "13310847; oracle 121122010027 instead normalizes untouched "
-                            "older text via dash spacing, dash glyphs, quote style, or "
-                            "final punctuation at this address."
-                        ),
-                        (
-                            "chapter:8/section:44/subsection:3/item:1",
-                            "The only in-range amendment between 121122010026 and "
-                            "121122010027 is 13310847, and replay applies only that act "
-                            "at the oracle cutoff 2011-01-01. Its Ringhäälinguseadus "
-                            "block compiles only the euro-conversion rewrites in §§ 43^4 "
-                            "and 43^5. None of the current divergences are targeted by "
-                            "13310847; oracle 121122010027 instead normalizes untouched "
-                            "older text via dash spacing, dash glyphs, quote style, or "
-                            "final punctuation at this address."
-                        ),
-                        (
-                            "chapter:8/section:44/subsection:3/item:2",
-                            "The only in-range amendment between 121122010026 and "
-                            "121122010027 is 13310847, and replay applies only that act "
-                            "at the oracle cutoff 2011-01-01. Its Ringhäälinguseadus "
-                            "block compiles only the euro-conversion rewrites in §§ 43^4 "
-                            "and 43^5. None of the current divergences are targeted by "
-                            "13310847; oracle 121122010027 instead normalizes untouched "
-                            "older text via dash spacing, dash glyphs, quote style, or "
-                            "final punctuation at this address."
-                        ),
-                        (
-                            "chapter:8/section:44_1/subsection:1_1/item:1",
-                            "The only in-range amendment between 121122010026 and "
-                            "121122010027 is 13310847, and replay applies only that act "
-                            "at the oracle cutoff 2011-01-01. Its Ringhäälinguseadus "
-                            "block compiles only the euro-conversion rewrites in §§ 43^4 "
-                            "and 43^5. None of the current divergences are targeted by "
-                            "13310847; oracle 121122010027 instead normalizes untouched "
-                            "older text via dash spacing, dash glyphs, quote style, or "
-                            "final punctuation at this address."
-                        ),
-                        (
-                            "chapter:8/section:44_1/subsection:1_1/item:2",
-                            "The only in-range amendment between 121122010026 and "
-                            "121122010027 is 13310847, and replay applies only that act "
-                            "at the oracle cutoff 2011-01-01. Its Ringhäälinguseadus "
-                            "block compiles only the euro-conversion rewrites in §§ 43^4 "
-                            "and 43^5. None of the current divergences are targeted by "
-                            "13310847; oracle 121122010027 instead normalizes untouched "
-                            "older text via dash spacing, dash glyphs, quote style, or "
-                            "final punctuation at this address."
-                        ),
-                        (
-                            "chapter:8/section:44_1/subsection:2/item:1",
-                            "The only in-range amendment between 121122010026 and "
-                            "121122010027 is 13310847, and replay applies only that act "
-                            "at the oracle cutoff 2011-01-01. Its Ringhäälinguseadus "
-                            "block compiles only the euro-conversion rewrites in §§ 43^4 "
-                            "and 43^5. None of the current divergences are targeted by "
-                            "13310847; oracle 121122010027 instead normalizes untouched "
-                            "older text via dash spacing, dash glyphs, quote style, or "
-                            "final punctuation at this address."
-                        ),
-                        (
-                            "chapter:8/section:44_1/subsection:2/item:2",
-                            "The only in-range amendment between 121122010026 and "
-                            "121122010027 is 13310847, and replay applies only that act "
-                            "at the oracle cutoff 2011-01-01. Its Ringhäälinguseadus "
-                            "block compiles only the euro-conversion rewrites in §§ 43^4 "
-                            "and 43^5. None of the current divergences are targeted by "
-                            "13310847; oracle 121122010027 instead normalizes untouched "
-                            "older text via dash spacing, dash glyphs, quote style, or "
-                            "final punctuation at this address."
-                        ),
-                        (
-                            "chapter:8/section:44_1/subsection:2/item:3",
-                            "The only in-range amendment between 121122010026 and "
-                            "121122010027 is 13310847, and replay applies only that act "
-                            "at the oracle cutoff 2011-01-01. Its Ringhäälinguseadus "
-                            "block compiles only the euro-conversion rewrites in §§ 43^4 "
-                            "and 43^5. None of the current divergences are targeted by "
-                            "13310847; oracle 121122010027 instead normalizes untouched "
-                            "older text via dash spacing, dash glyphs, quote style, or "
-                            "final punctuation at this address."
-                        ),
-                        (
-                            "chapter:8/section:45/subsection:1",
                             "The only in-range amendment between 121122010026 and "
                             "121122010027 is 13310847, and replay applies only that act "
                             "at the oracle cutoff 2011-01-01. Its Ringhäälinguseadus "
@@ -5455,39 +4662,6 @@ def _generated_ee_residual_records(base_id: str, oracle_id: str) -> tuple[EEResi
                     oracle_id="103022026015",
                 ),
             )
-        case ("119032013003", "131122025003"):
-            return _lower_generated_residual_records(
-                build_shortened_section_family(
-                    bucket="source_pathology",
-                    records=(
-                        (
-                            "chapter:3/section:14_1/subsection:4_2",
-                            "No direct target-statute amendment in the applied 2014-2025 chain inserts "
-                            "§ 14^1(4^2); oracle 131122025003 contains the subsection, while the related "
-                            "2016 reform act 121062016001 states analogous rules in its own provisions "
-                            "instead of amending § 14^1.",
-                        ),
-                        (
-                            "chapter:3/section:14_1/subsection:4_3",
-                            "No direct target-statute amendment in the applied chain inserts § 14^1(4^3); "
-                            "oracle 131122025003 contains the subsection, while the related 2016 reform "
-                            "act states analogous transition rules outside § 14^1.",
-                        ),
-                        (
-                            "chapter:3/section:14_1/subsection:4_4",
-                            "No direct target-statute amendment in the applied chain inserts § 14^1(4^4); "
-                            "oracle 131122025003 contains the subsection, while the related 2016 reform "
-                            "act states analogous transition rules outside § 14^1.",
-                        ),
-                        (
-                            "chapter:3/section:14_1/subsection:4_5",
-                            "No direct target-statute amendment in the applied chain inserts § 14^1(4^5); "
-                            "oracle 131122025003 contains the subsection, while the related 2016 reform "
-                            "act states analogous transition rules outside § 14^1.",
-                        ),
-                    ),
-                ),
-            )
         case _:
             return ()
 
@@ -5531,6 +4705,8 @@ def _compose_generated_first_inventory(
 
 def get_ee_residual_inventory(base_id: str, oracle_id: str) -> EEPairResidualInventory | None:
     """Return the known residual inventory for one EE base/oracle pair."""
+    if (base_id, oracle_id) in _SOLVED_EE_RESIDUALS:
+        return None
     inventory = _KNOWN_EE_RESIDUALS.get((base_id, oracle_id))
     if inventory is None:
         return None
@@ -5539,7 +4715,11 @@ def get_ee_residual_inventory(base_id: str, oracle_id: str) -> EEPairResidualInv
 
 def list_known_ee_residual_inventories() -> tuple[EEPairResidualInventory, ...]:
     """Return all known EE residual inventories."""
-    return tuple(_compose_generated_first_inventory(inventory) for inventory in _KNOWN_EE_RESIDUALS.values())
+    return tuple(
+        _compose_generated_first_inventory(inventory)
+        for key, inventory in _KNOWN_EE_RESIDUALS.items()
+        if key not in _SOLVED_EE_RESIDUALS
+    )
 
 
 __all__ = [

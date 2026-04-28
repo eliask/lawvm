@@ -382,7 +382,7 @@ def find_algtekst_aktviide(
 
 
 def extract_amendment_refs(xml_bytes: bytes) -> List[AmendmentRef]:
-    """Extract all muutmismarge entries from a tyviseadus XML.
+    """Extract all muutmismarge entries from an RT act XML.
 
     Returns list sorted by joustumine ascending (chronological apply order).
     RT metadata may encode additional delayed partial commencements in note text
@@ -393,7 +393,7 @@ def extract_amendment_refs(xml_bytes: bytes) -> List[AmendmentRef]:
     except ET.ParseError:
         return []
 
-    ns = _NS_AMEND if _NS_AMEND in root.tag else _NS_BASE
+    ns = root.tag.split("}")[0].strip("{") if root.tag.startswith("{") else _NS_BASE
 
     refs: List[AmendmentRef] = []
     for muutm in root.findall(f"{{{ns}}}muutmismarge"):

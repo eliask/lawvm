@@ -1017,6 +1017,116 @@ def test_replay_ee_to_pit_keeps_subsection_intro_text_replace_local_in_maagaasis
     }.issubset(divergence_addresses)
 
 
+def test_replay_ee_to_pit_applies_case_inflected_protocol_compound_rewrite() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "112032019073",
+        "2023-07-18",
+        archive=archive,
+        oracle_id="115072023052",
+    )
+
+    assert result.error is None
+    divergence_by_address = {str(div.address): div for div in result.divergences}
+    assert "chapter:2/section:7" not in divergence_by_address
+    assert "chapter:3/section:10/subsection:2" not in divergence_by_address
+    assert "chapter:3/section:10/subsection:4" not in divergence_by_address
+    assert "chapter:3/section:10/subsection:5" not in divergence_by_address
+    subsection_1 = divergence_by_address["chapter:3/section:10/subsection:1"]
+    assert "transfusiooniprotokollis" in (subsection_1.ops_text or "")
+    assert "transfusiooniprotokolliks" in (subsection_1.consolidated_text or "")
+
+
+def test_replay_ee_to_pit_applies_old_format_typographic_quote_text_replace() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "129122014074",
+        "2016-02-21",
+        archive=archive,
+        oracle_id="118022016007",
+    )
+
+    assert result.error is None
+    assert result.divergences == []
+
+
+def test_replay_ee_to_pit_recovers_marutaudi_old_format_regulation_items() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "107072011007",
+        "2019-12-14",
+        archive=archive,
+        oracle_id="111122019011",
+    )
+
+    assert result.error is None
+    assert result.n_ops == 40
+    assert {str(div.address) for div in result.divergences} == {
+        "chapter:4",
+        "chapter:4/division:3",
+        "chapter:4/division:3/section:15",
+        "chapter:4/division:3/section:15/subsection:5",
+    }
+
+
+def test_replay_ee_to_pit_recovers_newcastle_single_clause_and_nested_quote_families() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "131052011009",
+        "2019-12-14",
+        archive=archive,
+        oracle_id="111122019012",
+    )
+
+    assert result.error is None
+    assert result.n_ops == 73
+    divergence_addresses = {str(div.address) for div in result.divergences}
+    assert "chapter:2/section:4/subsection:3/item:7" not in divergence_addresses
+    assert "chapter:2/section:4_1/subsection:8" not in divergence_addresses
+    assert "chapter:3/division:1/section:8/subsection:1/item:8" not in divergence_addresses
+    assert "chapter:3/division:3/section:16/subsection:3/item:3" not in divergence_addresses
+
+
+def test_replay_ee_to_pit_classifies_vereulekanne_protocol_case_oracle_drift() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.residual_reporting import build_ee_residual_summary
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "112032019073",
+        "2023-07-18",
+        archive=archive,
+        oracle_id="115072023052",
+    )
+
+    assert result.error is None
+    divergence_addresses = tuple(str(div.address) for div in result.divergences)
+    assert "chapter:3/section:10/subsection:1" in divergence_addresses
+    residual_summary = build_ee_residual_summary(
+        base_id="112032019073",
+        oracle_id="115072023052",
+        divergence_addresses=divergence_addresses,
+    )
+    assert residual_summary is not None
+    assert residual_summary.unknown_current_divergence_count == 0
+    assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
+    assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": len(divergence_addresses)}
+
+
 def test_replay_ee_to_pit_handles_finite_verb_taotlusel_genitive_in_riigisaladus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
@@ -1328,10 +1438,6 @@ def test_replay_ee_to_pit_adjudicates_taiskasvanute_koolituse_mixed_noncore_row(
         "chapter:2/section:6/subsection:1/item:3",
         "chapter:2/section:6_1",
         "chapter:2/section:6_1/subsection:2",
-        "chapter:4",
-        "chapter:4/section:13",
-        "chapter:4/section:13/subsection:5_1",
-        "chapter:4/section:13/subsection:5_2",
         "chapter:5",
         "chapter:5/section:16_1",
         "chapter:5/section:16_1/subsection:4",

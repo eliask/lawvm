@@ -54,6 +54,62 @@ def test_score_one_pair_accepts_current_ir_node_kinds(monkeypatch) -> None:
     assert result.sec_match == 1.0
 
 
+def test_get_sections_uses_ee_comparison_surface_for_kehtetu_section_titles() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="5",
+                        text="Repealed title",
+                        attrs={"kehtetu": True},
+                        children=(),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    assert ee_bench._get_sections(body) == {"chapter:1/section:5": ""}
+
+
+def test_score_one_pair_counts_missing_empty_oracle_section_as_match(monkeypatch) -> None:
+    monkeypatch.setattr(ee_bench, "fetch_rt_xml", lambda oracle_id, archive=None: b"<xml/>")
+    monkeypatch.setattr(ee_bench, "extract_effective_date", lambda xml_bytes: "2026-03-24")
+
+    replay_body = object()
+    oracle_body = object()
+    monkeypatch.setattr(
+        ee_bench,
+        "replay_ee_to_pit",
+        lambda *args, **kwargs: SimpleNamespace(
+            n_ops=1,
+            divergences=[],
+            replayed=SimpleNamespace(body=replay_body),
+            oracle=SimpleNamespace(body=oracle_body),
+            error="",
+            comparison_class="commensurable_delta",
+            source_basis="pairwise_terviktekst_delta",
+            source_adjudication=SimpleNamespace(oracle_suspect=False),
+        ),
+    )
+    monkeypatch.setattr(
+        ee_bench,
+        "_get_sections",
+        lambda body: {"section:1": "same"} if body is replay_body else {"section:1": "same", "section:2": ""},
+    )
+
+    result = ee_bench._score_one_pair("g1", "base", "oracle", "Empty missing", archive=None)
+
+    assert result.sec_match == 1.0
+    assert result.r_secs == 1
+    assert result.o_secs == 2
+
+
 def test_score_one_pair_attaches_known_residual_summary(monkeypatch) -> None:
     monkeypatch.setattr(ee_bench, "fetch_rt_xml", lambda oracle_id, archive=None: b"<xml/>")
     monkeypatch.setattr(ee_bench, "extract_effective_date", lambda xml_bytes: "2026-03-24")
@@ -89,11 +145,9 @@ def test_score_one_pair_attaches_known_residual_summary(monkeypatch) -> None:
     result = ee_bench._score_one_pair("161988", "193936", "13336397", "Liiklusseadus", archive=None)
 
     assert result.status == "OK"
-    assert result.adjudicated_residual_count == 7
+    assert result.adjudicated_residual_count == 1
     assert result.matched_current_residual_count == 1
-    assert result.adjudicated_bucket_counts == (
-        "appendix_display_pathology=1,source_oracle_drift=6"
-    )
+    assert result.adjudicated_bucket_counts == "source_oracle_drift=1"
     assert result.unknown_current_residual_count == 0
     assert result.open_current_divergence_count == 0
     assert result.source_basis == "pairwise_terviktekst_delta"

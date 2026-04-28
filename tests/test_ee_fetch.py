@@ -24,6 +24,24 @@ def test_extract_amendment_refs_preserves_partial_commencement_slices_from_note_
     ]
 
 
+def test_extract_amendment_refs_uses_decree_namespace() -> None:
+    xml = b"""
+    <oigusakt xmlns="maarus_1_10.02.2010">
+      <muutmismarge>
+        <aktikuupaev>2019-02-14</aktikuupaev>
+        <joustumine>2019-04-27</joustumine>
+        <avaldamismarge>
+          <aktViide>121022019003</aktViide>
+        </avaldamismarge>
+      </muutmismarge>
+    </oigusakt>
+    """
+
+    assert extract_amendment_refs(xml) == [
+        AmendmentRef(aktViide="121022019003", passed="2019-02-14", joustumine="2019-04-27"),
+    ]
+
+
 def test_extract_amendment_refs_preserves_multiple_dates_in_one_partial_commencement_phrase() -> None:
     xml = b"""
     <tyviseadus xmlns="tyviseadus_1_10.02.2010">
