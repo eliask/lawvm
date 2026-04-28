@@ -4874,6 +4874,34 @@ def test_parse_ee_amendment_ops_assigns_old_format_commencement_dates_to_named_i
     assert effective_by_target["section:9/subsection:2"] == "2019-01-01"
 
 
+def test_parse_ee_amendment_ops_reads_old_format_dates_from_rakendamine_section() -> None:
+    archive = open_rt_archive(readonly=True)
+    target_title = (
+        "Eesti Haigekassa meditsiiniseadmete loetelu ja meditsiiniseadmete "
+        "loetellu kantud meditsiiniseadme eest tasu maksmise kohustuse "
+        "ülevõtmise kord"
+    )
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("108012013001", archive),
+        "ee/108012013001",
+        target_title=target_title,
+        ref_effective="2013-04-01",
+        has_earlier_same_act_slice=True,
+    )
+    effective_by_item = {
+        next(
+            tag.split(":", 1)[1]
+            for tag in op.provenance_tags
+            if tag.startswith("old_format_amendment_item:")
+        ): (op.source.effective if op.source is not None else "")
+        for op in ops
+    }
+
+    assert effective_by_item["6"] == "2013-04-01"
+    assert effective_by_item["17"] == "2013-03-01"
+    assert effective_by_item["1"] == ""
+
+
 def test_parse_ee_amendment_ops_assigns_old_format_commencement_dates_when_sentence_lists_other_sections() -> None:
     xml = """
     <tyviseadus xmlns="tyviseadus_1_10.02.2010">

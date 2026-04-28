@@ -2546,16 +2546,9 @@ def _iter_commencement_section_label_groups(sentence: str) -> tuple[str, ...]:
 
 def _old_format_commencement_date(text: str) -> str:
     """Extract ``YYYY-MM-DD`` from a sentence like ``jõustub 2019. aasta 1. jaanuaril``."""
-    match = re.search(
-        r"(\d{4})\.\s*aasta\s+(\d{1,2})\.\s*([A-Za-zÕÄÖÜŠŽõäöüšž]+)",
-        text,
-        re.IGNORECASE,
-    )
-    if not match:
-        return ""
-    year = match.group(1)
-    day = int(match.group(2))
-    month_token = match.group(3).lower()
+    commencement_match = re.search(r"\bjõustu(?:b|vad)\b", text, re.IGNORECASE)
+    if commencement_match is not None:
+        text = text[commencement_match.start():]
     month_prefixes = (
         ("jaanuar", "01"),
         ("veebruar", "02"),
@@ -2570,6 +2563,29 @@ def _old_format_commencement_date(text: str) -> str:
         ("novembr", "11"),
         ("detsembr", "12"),
     )
+    match = re.search(
+        r"(\d{4})\.\s*aasta\s+(\d{1,2})\.\s*([A-Za-zÕÄÖÜŠŽõäöüšž]+)",
+        text,
+        re.IGNORECASE,
+    )
+    if match:
+        year = match.group(1)
+        day = int(match.group(2))
+        month_token = match.group(3).lower()
+        for prefix, month in month_prefixes:
+            if month_token.startswith(prefix):
+                return f"{year}-{month}-{day:02d}"
+        return ""
+    match = re.search(
+        r"(\d{1,2})\.\s*([A-Za-zÕÄÖÜŠŽõäöüšž]+)\s+(\d{4})\.\s*a",
+        text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    day = int(match.group(1))
+    month_token = match.group(2).lower()
+    year = match.group(3)
     for prefix, month in month_prefixes:
         if month_token.startswith(prefix):
             return f"{year}-{month}-{day:02d}"
@@ -2694,7 +2710,8 @@ def _extract_old_format_commencement_effects(
         para_text = re.sub(r"<[^>]+>", " ", para_text)
         para_text = re.sub(r"\s+", " ", para_text).strip()
         para_text = _strip_ee_quoted_payload_spans(para_text)
-        if "jõustum" not in title.lower():
+        title_lower = title.lower()
+        if "jõustum" not in title_lower and "rakendamine" not in title_lower:
             continue
         saw_structured_commencement = True
         clauses = re.findall(
