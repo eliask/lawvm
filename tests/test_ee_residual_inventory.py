@@ -458,19 +458,7 @@ def test_generated_shortened_section_family_matches_ringhaalinguseadus_editorial
 def test_get_ee_residual_inventory_kutseseadus() -> None:
     inventory = get_ee_residual_inventory("114032014062", "130012015002")
 
-    assert inventory is not None
-    assert inventory.statute_title == "Kutseseadus"
-    assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 1
-    assert {record.bucket for record in inventory.residuals} == {
-        "source_pathology",
-    }
-    assert any(
-        record.address == "chapter:5/section:32/subsection:2"
-        and "130012015001 does not touch § 32 at all" in record.evidence
-        and "stray 'Lisa 1'" in record.evidence
-        for record in inventory.residuals
-    )
+    assert inventory is None
 
 
 def test_generated_shortened_section_family_matches_uleliigse_laovaru_cluster() -> None:
@@ -783,6 +771,7 @@ def test_generated_first_residual_inventory_preserves_current_output_shape() -> 
             assert (base_id, oracle_id) in {
                 ("109042021007", "114032025016"),
                 ("106122012015", "104122014005"),
+                ("114032014062", "130012015002"),
             }
             continue
         assert inventory is not None

@@ -1840,6 +1840,48 @@ def test_parse_ee_statute_preserves_appendix_table_html_text() -> None:
     ]
 
 
+def test_parse_ee_statute_drops_orphan_appendix_marker_html_from_subsection_text() -> None:
+    xml = """
+    <tyviseadus xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
+      <aktinimi>
+        <nimi>
+          <pealkiri>Testseadus</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <peatykk>
+          <peatykkNr>5</peatykkNr>
+          <peatykkPealkiri>Rakendussätted</peatykkPealkiri>
+          <paragrahv>
+            <paragrahvNr>32</paragrahvNr>
+            <paragrahvPealkiri>Seaduse jõustumine</paragrahvPealkiri>
+            <loige>
+              <loigeNr>2</loigeNr>
+              <sisuTekst>
+                <tavatekst>Käesolev norm jõustub 2011. aasta 1. jaanuaril.</tavatekst>
+              </sisuTekst>
+              <sisuTekst>
+                <HTMLKonteiner><![CDATA[
+                  <table><tr><td><p align="center"><br/>Lisa 1<br/>seaduse juurde</p></td></tr></table>
+                ]]></HTMLKonteiner>
+              </sisuTekst>
+            </loige>
+          </paragrahv>
+        </peatykk>
+      </sisu>
+    </tyviseadus>
+    """.encode("utf-8")
+
+    statute = parse_ee_statute(xml, "ee/test")
+    section = statute.body.children[0].children[0]
+
+    assert [(child.label, child.text) for child in section.children] == [
+        ("2", "Käesolev norm jõustub 2011. aasta 1. jaanuaril."),
+    ]
+    assert section.children[0].attrs["source_cleanup_rule"] == "ee_drop_orphan_appendix_marker_html"
+    assert section.children[0].attrs["dropped_appendix_marker"] == "Lisa 1"
+
+
 def test_parse_ee_statute_preserves_table_html_in_existing_appendix_subsection() -> None:
     xml = """
     <tyviseadus xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
