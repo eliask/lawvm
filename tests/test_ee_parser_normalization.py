@@ -5275,6 +5275,48 @@ def test_old_format_html_commencement_assigns_embedded_section_item_dates() -> N
     assert effective_by_item == {"1": "", "2": "2014-10-01"}
 
 
+def test_extract_ee_ops_emits_structural_textosa_chapter_heading_relabel() -> None:
+    ops = extract_ee_ops(
+        (
+            "64) määruse tekstiosa „2. peatükk RISKIDE KONTROLL” "
+            "asendatakse tekstiosaga „4. peatükk RISKIDE KONTROLL”;"
+        ),
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.RENUMBER
+    assert op.target.path == (("chapter", "2"),)
+    assert op.destination is not None
+    assert op.destination.path == (("chapter", "4"),)
+    assert op.payload is not None
+    assert op.payload.attrs["rule_id"] == "ee_structural_textosa_heading_relabel"
+    assert op.payload.attrs["old_heading"] == "RISKIDE KONTROLL"
+    assert op.payload.attrs["new_heading"] == "RISKIDE KONTROLL"
+    assert "ee_structural_textosa_heading_relabel" in op.provenance_tags
+
+
+def test_parse_ee_amendment_ops_recovers_real_structural_textosa_chapter_heading_relabels() -> None:
+    archive = open_rt_archive(readonly=True)
+    base = parse_ee_statute(fetch_rt_xml("117032011030", archive))
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("120122011001", archive),
+        "ee/120122011001",
+        target_title=base.title,
+        ref_effective="2011-12-31",
+    )
+
+    relabels = [op for op in ops if op.witness_rule_id == "ee_structural_textosa_heading_relabel"]
+
+    assert [(op.target.path, op.destination.path if op.destination is not None else ()) for op in relabels] == [
+        ((("chapter", "2"),), (("chapter", "4"),)),
+        ((("chapter", "3"),), (("chapter", "5"),)),
+        ((("chapter", "4"),), (("chapter", "6"),)),
+        ((("chapter", "5"),), (("chapter", "7"),)),
+    ]
+
+
 def test_muutmisseadus_untitled_omnibus_paragraph_keeps_matching_tavatekst_target() -> None:
     xml = """
     <oigusakt xmlns="tyviseadus_1_10.02.2010">

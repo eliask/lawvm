@@ -1639,7 +1639,11 @@ def old_format_lower_op_texts(
     for op_text in op_texts:
         amendment_item_label = old_format_item_label(op_text)
         effective = op_text
-        if last_section and not old_format_has_section_ref(op_text):
+        is_container_heading_relabel = bool(
+            re.search(r"\btekstiosa[a-z]*\s+[„\"“][^”\"]*?\bpeatükk\b", op_text, re.IGNORECASE)
+            and re.search(r"\basendatakse\s+tekstiosaga\b", op_text, re.IGNORECASE)
+        )
+        if last_section and not old_format_has_section_ref(op_text) and not is_container_heading_relabel:
             last_sect_raw = last_section.replace("_", " ")
             effective = f"paragrahvi {last_sect_raw}, {op_text}"
         ops = extract_ee_ops(effective, source, seq_start=global_seq)

@@ -5822,6 +5822,89 @@ def _ee_resolve_full_path(body: IRNode, path: tree_ops.Path) -> Optional[tree_op
     return None
 
 
+def _ee_normalize_heading_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip().casefold()
+
+
+def _ee_resolve_full_path_by_heading(
+    body: IRNode,
+    path: tree_ops.Path,
+    *,
+    heading: str,
+) -> Optional[tree_ops.Path]:
+    """Resolve duplicate-labeled containers by exact heading/title witness."""
+    if not path or not heading:
+        return None
+    target_kind, target_label = path[-1]
+    wanted_heading = _ee_normalize_heading_text(heading)
+
+    def _walk(node: IRNode, prefix: tree_ops.Path) -> Optional[tree_ops.Path]:
+        for child in node.children:
+            if child.label is None:
+                child_path = prefix
+            else:
+                child_path = prefix + ((str(child.kind), child.label),)
+            if (
+                str(child.kind) == target_kind
+                and child.label == target_label
+                and _ee_normalize_heading_text(child.text) == wanted_heading
+            ):
+                tail = path[1:] if len(path) > 1 and path[0] == (target_kind, target_label) else ()
+                candidate = child_path + tail
+                if tree_ops.resolve(body, candidate) is not None:
+                    return candidate
+            found = _walk(child, child_path)
+            if found is not None:
+                return found
+        return None
+
+    return _walk(body, ())
+
+
+def _ee_remove_full_path_by_heading(
+    body: IRNode,
+    path: tree_ops.Path,
+    *,
+    heading: str,
+) -> tuple[IRNode | None, IRNode | None]:
+    """Remove and return a duplicate-labeled node using exact heading evidence."""
+    if not path or not heading:
+        return None, None
+    target_kind, target_label = path[-1]
+    wanted_heading = _ee_normalize_heading_text(heading)
+
+    def _walk(node: IRNode) -> tuple[IRNode | None, IRNode]:
+        new_children: list[IRNode] = []
+        removed: IRNode | None = None
+        for child in node.children:
+            if (
+                removed is None
+                and str(child.kind) == target_kind
+                and child.label == target_label
+                and _ee_normalize_heading_text(child.text) == wanted_heading
+            ):
+                removed = child
+                continue
+            if removed is None:
+                child_removed, updated_child = _walk(child)
+                if child_removed is not None:
+                    removed = child_removed
+                    new_children.append(updated_child)
+                    continue
+            new_children.append(child)
+        if removed is None:
+            return None, node
+        return removed, IRNode(
+            kind=node.kind,
+            label=node.label,
+            text=node.text,
+            attrs=dict(node.attrs),
+            children=tuple(new_children),
+        )
+
+    return _walk(body)
+
+
 def _ee_iter_section_parent_candidates(
     node: IRNode,
     prefix: tree_ops.Path | None = None,
@@ -6149,10 +6232,25 @@ def _ee_apply_op(
     if action == "renumber":
         if not path or op.destination is None or not op.destination.path:
             return body
-        full_path = _ee_resolve_full_path(body, path)
-        if full_path is None:
+        old_heading = ""
+        new_heading = ""
+        allow_occupied_destination = False
+        if op.payload is not None:
+            old_heading = str(op.payload.attrs.get("old_heading", ""))
+            new_heading = str(op.payload.attrs.get("new_heading", ""))
+            allow_occupied_destination = bool(op.payload.attrs.get("allow_occupied_destination"))
+        heading_source_node: IRNode | None = None
+        heading_without_source: IRNode | None = None
+        if old_heading:
+            heading_source_node, heading_without_source = _ee_remove_full_path_by_heading(
+                body,
+                path,
+                heading=old_heading,
+            )
+        full_path = _ee_resolve_full_path_by_heading(body, path, heading=old_heading) or _ee_resolve_full_path(body, path)
+        if full_path is None and heading_source_node is None:
             return body
-        source_node = tree_ops.resolve(body, full_path)
+        source_node = heading_source_node or tree_ops.resolve(body, full_path or ())
         if source_node is None:
             return body
 
@@ -6165,11 +6263,18 @@ def _ee_apply_op(
         moved_node = IRNode(
             kind=source_node.kind,
             label=dest_path[-1][1],
-            text=source_node.text,
+            text=new_heading or source_node.text,
             attrs=dict(source_node.attrs),
             children=tuple(source_node.children),
         )
-        without_source = tree_ops.remove_at(body, full_path)
+        without_source = heading_without_source or tree_ops.remove_at(body, full_path or ())
+        if allow_occupied_destination and dest_full is not None:
+            return tree_ops.insert_sorted(
+                without_source,
+                dest_parent or [],
+                moved_node,
+                sort_key_fn=tree_ops._default_sort_key,
+            )
         if dest_full is not None:
             return tree_ops.replace_at(without_source, dest_full, moved_node)
         return tree_ops.insert_sorted(
