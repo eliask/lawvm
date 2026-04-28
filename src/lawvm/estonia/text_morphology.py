@@ -59,6 +59,8 @@ def replace_sentence(text: str, replacement: str, sentence_index: int) -> str:
     sentences = split_ee_sentences(stripped)
     if not sentences:
         return repl
+    if sentence_index >= 1_000_000:
+        sentence_index = len(sentences) - 1
     if sentence_index >= len(sentences):
         return stripped
     if not repl:
