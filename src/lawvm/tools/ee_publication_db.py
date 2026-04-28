@@ -291,6 +291,7 @@ def _classify_replay_coverage_gaps(
     divergences: list[dict[str, Any]],
     *,
     amendments_failed: list[str],
+    unsupported_action_sources: list[str],
     n_ops: int,
     comparison_class: str,
 ) -> None:
@@ -308,6 +309,14 @@ def _classify_replay_coverage_gaps(
             "LawVM did not compile a complete amendment chain for this pair; "
             f"failed amendment refs: {failed}. Treat these rows as replay/source "
             "coverage debt, not as Riigi Teataja candidate divergences."
+        )
+    elif unsupported_action_sources:
+        sources = ", ".join(sorted(set(unsupported_action_sources)))
+        evidence = (
+            "LawVM parsed at least one source instruction but replay skipped an "
+            "unsupported action for this pair; unsupported source refs: "
+            f"{sources}. Treat these rows as replay/action coverage debt, not "
+            "as Riigi Teataja candidate divergences."
         )
     elif n_ops == 0 and comparison_class == "commensurable_delta" and divergences:
         evidence = (
@@ -491,6 +500,11 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
     _classify_replay_coverage_gaps(
         divergences,
         amendments_failed=list(getattr(result, "amendments_failed", ())),
+        unsupported_action_sources=[
+            str(adjudication.source_statute)
+            for adjudication in getattr(result, "adjudications", ())
+            if getattr(adjudication, "kind", "") == "ee_replay_unsupported_action"
+        ],
         n_ops=result.n_ops,
         comparison_class=result.comparison_class,
     )

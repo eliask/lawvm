@@ -467,6 +467,7 @@ def test_ee_publication_db_classifies_failed_amendment_chain_as_coverage_gap() -
     ee_publication_db._classify_replay_coverage_gaps(
         divergences,
         amendments_failed=["123122017034"],
+        unsupported_action_sources=[],
         n_ops=0,
         comparison_class="commensurable_delta",
     )
@@ -476,6 +477,32 @@ def test_ee_publication_db_classifies_failed_amendment_chain_as_coverage_gap() -
     assert "123122017034" in divergences[0]["residual_evidence"]
     assert divergences[1]["residual_bucket"] == "source_oracle_drift"
     assert divergences[1]["residual_evidence"] == "already adjudicated"
+
+
+def test_ee_publication_db_classifies_unsupported_action_as_coverage_gap() -> None:
+    divergences = [
+        {
+            "address": "chapter:1/section:1",
+            "replay_text": "base text",
+            "oracle_text": "replacement text",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+    ]
+
+    ee_publication_db._classify_replay_coverage_gaps(
+        divergences,
+        amendments_failed=[],
+        unsupported_action_sources=["ee/117022021004"],
+        n_ops=1,
+        comparison_class="commensurable_delta",
+    )
+
+    assert divergences[0]["residual_bucket"] == "replay_coverage_gap"
+    assert divergences[0]["open_current"] == 0
+    assert "unsupported source refs: ee/117022021004" in divergences[0]["residual_evidence"]
 
 
 def test_ee_publication_db_classifies_empty_program_as_coverage_gap() -> None:
@@ -494,6 +521,7 @@ def test_ee_publication_db_classifies_empty_program_as_coverage_gap() -> None:
     ee_publication_db._classify_replay_coverage_gaps(
         divergences,
         amendments_failed=[],
+        unsupported_action_sources=[],
         n_ops=0,
         comparison_class="commensurable_delta",
     )
@@ -519,6 +547,7 @@ def test_ee_publication_db_does_not_reclassify_zero_ops_noncommensurable_pair() 
     ee_publication_db._classify_replay_coverage_gaps(
         divergences,
         amendments_failed=[],
+        unsupported_action_sources=[],
         n_ops=0,
         comparison_class="forward_looking_oracle",
     )
