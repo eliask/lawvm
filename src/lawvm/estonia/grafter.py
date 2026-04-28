@@ -3618,6 +3618,36 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_nom": stem + "d",
             "pl_gen": stem + "de",
         }
+    if lower.endswith("vägi"):
+        prefix = word[:-4]
+        gen_stem = prefix + "väe"
+        part_stem = prefix + "väge"
+        pl_stem = prefix + "vägede"
+        return {
+            "sg_nom": word,
+            "sg_gen": gen_stem,
+            "sg_part": part_stem,
+            "sg_ine": gen_stem + "s",
+            "sg_ela": gen_stem + "st",
+            "sg_ill": prefix + "väkke",
+            "sg_all": gen_stem + "le",
+            "sg_ade": gen_stem + "l",
+            "sg_abl": gen_stem + "lt",
+            "sg_trn": gen_stem + "ks",
+            "sg_ter": gen_stem + "ni",
+            "sg_ess": gen_stem + "na",
+            "sg_abe": gen_stem + "ta",
+            "sg_com": gen_stem + "ga",
+            "pl_nom": prefix + "väed",
+            "pl_gen": pl_stem,
+            "pl_part": prefix + "vägesid",
+            "pl_ine": pl_stem + "s",
+            "pl_ela": pl_stem + "st",
+            "pl_all": pl_stem + "le",
+            "pl_ade": pl_stem + "l",
+            "pl_abl": pl_stem + "lt",
+            "pl_trn": pl_stem + "ks",
+        }
     if lower == "ärakiri":
         stem = word[:-1] + "ja"
         return {
@@ -5344,6 +5374,9 @@ def _ee_match_inside_existing_replacement(
     """Return True when the matched span already sits inside an existing replacement."""
     replacement_norm = _ee_normalize_text_replace_surface(replacement)
     if not replacement_norm:
+        return False
+    candidate = text[match_start:match_end]
+    if candidate.lower() == replacement_norm.lower() and candidate != replacement_norm:
         return False
     lowered_text = text.lower()
     lowered_replacement = replacement_norm.lower()

@@ -7466,6 +7466,18 @@ def test_case_inflected_rewrite_handles_plural_id_to_jad_family() -> None:
     )
 
 
+def test_case_inflected_rewrite_handles_vagi_genitive_family() -> None:
+    replaced = _ee_apply_text_replace_value(
+        "kaitseväe juhataja vastutab kaitseväe mobilisatsiooniplaanide eest.",
+        "kaitsevägi",
+        "Kaitsevägi",
+        case_inflected=True,
+        all_occurrences=True,
+    )
+
+    assert replaced == "Kaitseväe juhataja vastutab Kaitseväe mobilisatsiooniplaanide eest."
+
+
 def test_case_inflected_rewrite_matches_normalized_inflected_hyphen_spacing() -> None:
     assert (
         _ee_apply_text_replace_value(
