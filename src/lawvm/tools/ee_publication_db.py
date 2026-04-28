@@ -25,6 +25,27 @@ _DEFAULT_DB = _ROOT / "data" / "ee_riigiteataja.farchive"
 _DEFAULT_CORPUS = _ROOT / "data" / "estonia" / "current_replayable_corpus.csv"
 _DEFAULT_OUTPUT = _ROOT / "data" / "estonia" / "ee_divergences_publication.db"
 _WORKER_ARCHIVE: Any = None
+_INSTITUTIONAL_NAME_PROJECTIONS: tuple[tuple[str, str], ...] = (
+    ("Siseministeerium", "Rahandusministeerium"),
+    ("Siseministeeriumi", "Rahandusministeeriumi"),
+    ("siseminister", "rahandusminister"),
+    ("Veterinaar-ja Toiduamet", "Põllumajandus-ja Toiduamet"),
+    ("Veterinaar-ja Toiduameti", "Põllumajandus-ja Toiduameti"),
+    ("Põllumajandusamet", "Põllumajandus-ja Toiduamet"),
+    ("Põllumajandusameti", "Põllumajandus-ja Toiduameti"),
+    ("Maaeluministeerium", "Regionaal-ja Põllumajandusministeerium"),
+    ("Maaeluministeeriumi", "Regionaal-ja Põllumajandusministeeriumi"),
+    ("Maanteeamet", "Transpordiamet"),
+    ("Maanteeameti", "Transpordiameti"),
+    ("Põllumajandusministeerium", "Maaeluministeerium"),
+    ("Põllumajandusministeeriumi", "Maaeluministeeriumi"),
+    ("Maa-amet", "Maa-ja Ruumiamet"),
+    ("Maa-ameti", "Maa-ja Ruumiameti"),
+    ("Keskkonnateabe Keskus", "Keskkonnaagentuur"),
+    ("Keskkonnateabe Keskuse", "Keskkonnaagentuuri"),
+    ("Veeteede Amet", "Transpordiamet"),
+    ("Veeteede Ameti", "Transpordiameti"),
+)
 
 
 def _address_to_string(address: Any) -> str:
@@ -270,6 +291,8 @@ def _classify_replay_coverage_gaps(
     divergences: list[dict[str, Any]],
     *,
     amendments_failed: list[str],
+    n_ops: int,
+    comparison_class: str,
 ) -> None:
     """Mark rows whose amendment chain did not fully compile as non-candidates.
 
@@ -278,14 +301,23 @@ def _classify_replay_coverage_gaps(
     frontend coverage work, but they are not publication-side candidate
     divergences.
     """
-    if not amendments_failed:
+    evidence = ""
+    if amendments_failed:
+        failed = ", ".join(amendments_failed)
+        evidence = (
+            "LawVM did not compile a complete amendment chain for this pair; "
+            f"failed amendment refs: {failed}. Treat these rows as replay/source "
+            "coverage debt, not as Riigi Teataja candidate divergences."
+        )
+    elif n_ops == 0 and comparison_class == "commensurable_delta" and divergences:
+        evidence = (
+            "LawVM compiled no executable amendment operations for this changed "
+            "current-version pair. Treat these rows as amendment-extraction "
+            "coverage debt until the source program is compiled, not as Riigi "
+            "Teataja candidate divergences."
+        )
+    else:
         return
-    failed = ", ".join(amendments_failed)
-    evidence = (
-        "LawVM did not compile a complete amendment chain for this pair; "
-        f"failed amendment refs: {failed}. Treat these rows as replay/source "
-        "coverage debt, not as Riigi Teataja candidate divergences."
-    )
     for divergence in divergences:
         if divergence.get("residual_bucket"):
             continue
@@ -312,6 +344,46 @@ def _classify_noncommensurable_pair_surface(
             continue
         divergence["residual_bucket"] = "pair_surface_classification"
         divergence["residual_evidence"] = evidence
+        divergence["open_current"] = 0
+
+
+def _institutional_name_projection(text: str) -> tuple[str, tuple[str, ...]]:
+    projected = text
+    fired: list[str] = []
+    for old, new in _INSTITUTIONAL_NAME_PROJECTIONS:
+        if old not in projected:
+            continue
+        projected = projected.replace(old, new)
+        fired.append(f"{old} -> {new}")
+    return projected, tuple(fired)
+
+
+def _classify_institutional_name_projection(divergences: list[dict[str, Any]]) -> None:
+    """Close exact institutional-name projection rows for publication triage.
+
+    Estonia's consolidated surface sometimes carries later institutional
+    successor names where the replay source still contains the older institution
+    name. This classifier is deliberately exact: it does not normalize the
+    comparison globally and it only closes a row when the explicit term map makes
+    the full section texts equal.
+    """
+    for divergence in divergences:
+        if divergence.get("residual_bucket"):
+            continue
+        replay_text = divergence.get("replay_text")
+        oracle_text = divergence.get("oracle_text")
+        if replay_text is None or oracle_text is None:
+            continue
+        projected, fired = _institutional_name_projection(str(replay_text))
+        if not fired or projected != str(oracle_text):
+            continue
+        divergence["residual_bucket"] = "source_oracle_drift"
+        divergence["residual_evidence"] = (
+            "Exact bounded institutional-name projection makes replay and "
+            f"Riigi Teataja text equal for this section. Projection(s): {'; '.join(fired)}. "
+            "This is classified as source/oracle surface drift for publication triage; "
+            "it does not mutate replay output or decide a legal successor rule."
+        )
         divergence["open_current"] = 0
 
 
@@ -419,11 +491,14 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
     _classify_replay_coverage_gaps(
         divergences,
         amendments_failed=list(getattr(result, "amendments_failed", ())),
+        n_ops=result.n_ops,
+        comparison_class=result.comparison_class,
     )
     _classify_noncommensurable_pair_surface(
         divergences,
         comparison_class=result.comparison_class,
     )
+    _classify_institutional_name_projection(divergences)
     _classify_address_alignment_shadows(divergences)
     pair["browser_divergence_count"] = len(divergences)
     pair["browser_open_current_divergence_count"] = sum(1 for divergence in divergences if divergence["open_current"])

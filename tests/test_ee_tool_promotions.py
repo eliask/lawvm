@@ -467,6 +467,8 @@ def test_ee_publication_db_classifies_failed_amendment_chain_as_coverage_gap() -
     ee_publication_db._classify_replay_coverage_gaps(
         divergences,
         amendments_failed=["123122017034"],
+        n_ops=0,
+        comparison_class="commensurable_delta",
     )
 
     assert divergences[0]["residual_bucket"] == "replay_coverage_gap"
@@ -474,6 +476,86 @@ def test_ee_publication_db_classifies_failed_amendment_chain_as_coverage_gap() -
     assert "123122017034" in divergences[0]["residual_evidence"]
     assert divergences[1]["residual_bucket"] == "source_oracle_drift"
     assert divergences[1]["residual_evidence"] == "already adjudicated"
+
+
+def test_ee_publication_db_classifies_empty_program_as_coverage_gap() -> None:
+    divergences = [
+        {
+            "address": "chapter:1/section:1",
+            "replay_text": "base text",
+            "oracle_text": "changed text",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+    ]
+
+    ee_publication_db._classify_replay_coverage_gaps(
+        divergences,
+        amendments_failed=[],
+        n_ops=0,
+        comparison_class="commensurable_delta",
+    )
+
+    assert divergences[0]["residual_bucket"] == "replay_coverage_gap"
+    assert divergences[0]["open_current"] == 0
+    assert "compiled no executable amendment operations" in divergences[0]["residual_evidence"]
+
+
+def test_ee_publication_db_does_not_reclassify_zero_ops_noncommensurable_pair() -> None:
+    divergences = [
+        {
+            "address": "chapter:1/section:1",
+            "replay_text": "base text",
+            "oracle_text": "future text",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+    ]
+
+    ee_publication_db._classify_replay_coverage_gaps(
+        divergences,
+        amendments_failed=[],
+        n_ops=0,
+        comparison_class="forward_looking_oracle",
+    )
+
+    assert divergences[0]["residual_bucket"] is None
+    assert divergences[0]["open_current"] == 1
+
+
+def test_ee_publication_db_classifies_exact_institutional_name_projection() -> None:
+    divergences = [
+        {
+            "address": "chapter:1/section:3",
+            "replay_text": "Meetme rakendusasutus on Siseministeerium.",
+            "oracle_text": "Meetme rakendusasutus on Rahandusministeerium.",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+        {
+            "address": "chapter:1/section:4",
+            "replay_text": "Meetme rakendusasutus on Siseministeerium ja muu tekst.",
+            "oracle_text": "Meetme rakendusasutus on Rahandusministeerium ja teine tekst.",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+    ]
+
+    ee_publication_db._classify_institutional_name_projection(divergences)
+
+    assert divergences[0]["residual_bucket"] == "source_oracle_drift"
+    assert divergences[0]["open_current"] == 0
+    assert "Siseministeerium -> Rahandusministeerium" in divergences[0]["residual_evidence"]
+    assert divergences[1]["residual_bucket"] is None
+    assert divergences[1]["open_current"] == 1
 
 
 def test_ee_publication_db_classifies_noncommensurable_pair_surface() -> None:
