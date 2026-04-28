@@ -2306,6 +2306,28 @@ def test_replay_ee_to_pit_preserves_tee_section_body_for_heading_and_sentence_mi
     assert "Ühelgi juhul ei tohi teepeenra põikkalle olla väiksem" in (subsection_7.text or "")
 
 
+def test_replay_ee_to_pit_applies_kaitsevagi_case_inflected_global_rewrite() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "119072011012",
+        "2014-08-01",
+        archive=archive,
+        oracle_id="129072014013",
+    )
+
+    assert result.error is None
+    divergence_addresses = {
+        "/".join(f"{kind}:{label}" for kind, label in divergence.address.path)
+        for divergence in result.divergences
+    }
+    assert "chapter:1/section:1/subsection:2" not in divergence_addresses
+    assert "chapter:1/section:1/subsection:3" not in divergence_addresses
+    assert "chapter:1/section:6/subsection:1/item:1" not in divergence_addresses
+
+
 def test_replay_ee_to_pit_recovers_exact_target_source_typo_for_matusetoetus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
