@@ -2505,18 +2505,22 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
             EEResidualRecord(
                 address="part:5/chapter:20/section:357/subsection:2",
-                bucket="source_pathology",
+                bucket="appendix_display_pathology",
                 evidence=(
-                    "No parsed amendment in the applied 2014 chain targets appendix subsection 2 at § 357; "
-                    "replay preserves the source-side appendix marker while oracle 129102014007 omits it."
+                    "Base 127122013026 embeds source-side appendix HTML under § 357 while oracle "
+                    "129102014007 exposes appendix material through the out-of-body lisaViide lane. "
+                    "Replay preserves the in-body appendix marker, so this is an appendix display "
+                    "projection mismatch rather than a source-backed legal text mutation."
                 ),
             ),
             EEResidualRecord(
                 address="part:5/chapter:20/section:357/subsection:3",
-                bucket="source_pathology",
+                bucket="appendix_display_pathology",
                 evidence=(
-                    "No parsed amendment in the applied 2014 chain targets appendix subsection 3 at § 357; "
-                    "replay preserves the source-side appendix marker while oracle 129102014007 omits it."
+                    "Base 127122013026 embeds source-side appendix HTML under § 357 while oracle "
+                    "129102014007 exposes appendix material through the out-of-body lisaViide lane. "
+                    "Replay preserves the in-body appendix table text, so this is an appendix display "
+                    "projection mismatch rather than a source-backed legal text mutation."
                 ),
             ),
         )),
