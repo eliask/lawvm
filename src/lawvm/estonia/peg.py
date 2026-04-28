@@ -1442,6 +1442,17 @@ def _extract_secondary_subsection_repeals(clean: str) -> List[tuple[str, str]]:
       ``paragrahvid 39 ja 40, § 41 lõiked 1–2 ja lõige 8, §-d 41 1, 43 ja 44
       tunnistatakse kehtetuks``
     """
+    return [
+        (sect_label, label)
+        for sect_label, labels, _plain_ranges, _label_ranges in _extract_secondary_subsection_repeal_groups(clean)
+        for label in labels
+    ]
+
+
+def _extract_secondary_subsection_repeal_groups(
+    clean: str,
+) -> List[tuple[str, tuple[str, ...], tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]]:
+    """Extract grouped mixed subsection repeals with their source range witness."""
     clean = _normalize_ee_parse_text(clean)
     _NUM_PAT = _EE_NUM_ATOM
     _SUB_LIST_PAT = (
@@ -1468,14 +1479,22 @@ def _extract_secondary_subsection_repeals(clean: str) -> List[tuple[str, str]]:
     if not m:
         return []
     sect_label = _normalize_num(m.group(1).strip())
-    labels = _expand_ee_numeric_list(m.group(2).strip())
+    raw_subs = m.group(2).strip()
+    labels = _expand_ee_numeric_list(raw_subs)
     if m.group(3):
         labels.append(_normalize_num(m.group(3).strip()))
     deduped: list[str] = []
     for label in labels:
         if label not in deduped:
             deduped.append(label)
-    return [(sect_label, label) for label in deduped]
+    return [
+        (
+            sect_label,
+            tuple(deduped),
+            _plain_numeric_ranges(raw_subs),
+            _ee_label_ranges(raw_subs),
+        )
+    ]
 
 
 def _extract_trailing_section_subsection_repeals(clean: str) -> List[tuple[str, str]]:
@@ -2592,20 +2611,38 @@ def extract_ee_ops(
             seq += 1
         if action == "repeal":
             seen_sub_paths: set[tuple[tuple[str, str], ...]] = set()
-            for sect_label, sub_label in _extract_secondary_subsection_repeals(clean):
-                sub_path = (("section", sect_label), ("subsection", sub_label))
-                if sub_path in seen_sub_paths:
-                    continue
-                ops.append(LegalOperation(
-                    op_id=f"ee-repeal-sub-{sect_label}-{sub_label}-{source.statute_id}",
-                    sequence=seq,
-                    action=_to_structural_action("repeal"),
-                    target=LegalAddress(path=sub_path),
-                    source=source,
-                    provenance_tags=(clean[:200],),
-                ))
-                seen_sub_paths.add(sub_path)
-                seq += 1
+            for (
+                sect_label,
+                labels,
+                plain_numeric_ranges,
+                label_ranges,
+            ) in _extract_secondary_subsection_repeal_groups(clean):
+                from lawvm.estonia.ee_instruction_waist import make_subsection_selection_meta
+
+                subsection_selection_meta = make_subsection_selection_meta(
+                    explicit_labels=labels,
+                    plain_numeric_ranges=plain_numeric_ranges,
+                    label_ranges=label_ranges,
+                )
+                for sub_label in labels:
+                    sub_path = (("section", sect_label), ("subsection", sub_label))
+                    if sub_path in seen_sub_paths:
+                        continue
+                    ops.append(LegalOperation(
+                        op_id=f"ee-repeal-sub-{sect_label}-{sub_label}-{source.statute_id}",
+                        sequence=seq,
+                        action=_to_structural_action("repeal"),
+                        target=LegalAddress(path=sub_path),
+                        payload=IRNode(
+                            kind=IRNodeKind.CONTENT,
+                            text="",
+                            attrs={"subsection_selection_meta": subsection_selection_meta},
+                        ),
+                        source=source,
+                        provenance_tags=(clean[:200],),
+                    ))
+                    seen_sub_paths.add(sub_path)
+                    seq += 1
             seen_sections = {op.target.path for op in ops if op.target.path}
             for _num in _extract_sd_section_nums(clean):
                 sect_path = (("section", _num),)
@@ -3250,20 +3287,38 @@ def extract_ee_ops(
                     and op.target.path[0][0] == "section"
                     and op.target.path[1][0] == "subsection"
                 }
-                for extra_sect, extra_sub in _extract_secondary_subsection_repeals(clean):
-                    sub_path = (("section", extra_sect), ("subsection", extra_sub))
-                    if sub_path in seen_sub_paths:
-                        continue
-                    ops.append(LegalOperation(
-                        op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
-                        sequence=seq,
-                        action=_to_structural_action("repeal"),
-                        target=LegalAddress(path=sub_path),
-                        source=source,
-                        provenance_tags=(clean[:200],),
-                    ))
-                    seen_sub_paths.add(sub_path)
-                    seq += 1
+                for (
+                    extra_sect,
+                    labels,
+                    plain_numeric_ranges,
+                    label_ranges,
+                ) in _extract_secondary_subsection_repeal_groups(clean):
+                    from lawvm.estonia.ee_instruction_waist import make_subsection_selection_meta
+
+                    subsection_selection_meta = make_subsection_selection_meta(
+                        explicit_labels=labels,
+                        plain_numeric_ranges=plain_numeric_ranges,
+                        label_ranges=label_ranges,
+                    )
+                    for extra_sub in labels:
+                        sub_path = (("section", extra_sect), ("subsection", extra_sub))
+                        if sub_path in seen_sub_paths:
+                            continue
+                        ops.append(LegalOperation(
+                            op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
+                            sequence=seq,
+                            action=_to_structural_action("repeal"),
+                            target=LegalAddress(path=sub_path),
+                            payload=IRNode(
+                                kind=IRNodeKind.CONTENT,
+                                text="",
+                                attrs={"subsection_selection_meta": subsection_selection_meta},
+                            ),
+                            source=source,
+                            provenance_tags=(clean[:200],),
+                        ))
+                        seen_sub_paths.add(sub_path)
+                        seq += 1
                 seen_item_paths = {
                     op.target.path
                     for op in ops

@@ -2398,6 +2398,20 @@ def test_extract_ee_ops_handles_mixed_section_and_subsection_repeal_clause() -> 
         (StructuralAction.REPEAL, (("section", "43"),)),
         (StructuralAction.REPEAL, (("section", "44"),)),
     ]
+    subsection_ops = [
+        op
+        for op in ops
+        if op.target.path[:1] == (("section", "41"),)
+        and len(op.target.path) == 2
+        and op.target.path[1][0] == "subsection"
+    ]
+    assert len(subsection_ops) == 3
+    for op in subsection_ops:
+        selection_meta = read_subsection_selection_meta(_payload(op))
+        assert selection_meta is not None
+        assert selection_meta.explicit_labels == ("1", "2", "8")
+        assert selection_meta.plain_numeric_ranges == (("1", "2"),)
+        assert selection_meta.label_ranges == (("1", "2"),)
 
 
 def test_extract_ee_ops_keeps_leading_plain_section_repeal_in_mixed_clause() -> None:
