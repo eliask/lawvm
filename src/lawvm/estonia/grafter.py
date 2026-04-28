@@ -1512,6 +1512,8 @@ def parse_ee_amendment_ops(
                 continue
             if not payload.attrs.get("all_occurrences"):
                 continue
+            if payload.attrs.get("compose_future_payloads") is False:
+                continue
             rewrite = read_payload_rewrite_meta(payload).rewrite
             if rewrite is None or not rewrite.old_surface:
                 continue
@@ -4175,6 +4177,62 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "sg_com": stem + "ga",
             "pl_nom": stem + "d",
             "pl_gen": stem + "de",
+        }
+    if lower.endswith("mäng"):
+        stem = word + "u"
+        plural_stem = word + "ude"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": stem,
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_ill": stem + "sse",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": word + "ud",
+            "pl_gen": plural_stem,
+            "pl_part": word + "e",
+            "pl_ine": plural_stem + "s",
+            "pl_ela": plural_stem + "st",
+            "pl_all": plural_stem + "le",
+            "pl_ade": plural_stem + "l",
+            "pl_abl": plural_stem + "lt",
+            "pl_trn": plural_stem + "ks",
+        }
+    if lower.endswith("korraldaja"):
+        stem = word
+        plural_stem = word + "te"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": stem + "t",
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_ill": stem + "sse",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": stem + "d",
+            "pl_gen": plural_stem,
+            "pl_part": stem + "id",
+            "pl_ine": plural_stem + "s",
+            "pl_ela": plural_stem + "st",
+            "pl_all": plural_stem + "le",
+            "pl_ade": plural_stem + "l",
+            "pl_abl": plural_stem + "lt",
+            "pl_trn": plural_stem + "ks",
         }
     if lower == "koht":
         stem = word[:-2] + "ha"
