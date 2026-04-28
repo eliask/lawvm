@@ -375,6 +375,24 @@ def test_extract_ee_ops_preserves_intro_only_subsection_scope_and_item_targets()
     assert scope_meta.intro_only is True
 
 
+def test_extract_ee_ops_does_not_widen_subsection_intro_item_targets_to_section_items() -> None:
+    text = (
+        "paragrahvi 8 lõike 1 sissejuhatavas lauseosas ja punktides 5, 7 ja 8 "
+        "ning lõikes 2 asendatakse sõnad „Veterinaar- ja Toiduamet” sõnadega "
+        "„Põllumajandus- ja Toiduamet”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [op.target.path for op in ops] == [
+        (("section", "8"), ("subsection", "1")),
+        (("section", "8"), ("subsection", "1"), ("item", "5")),
+        (("section", "8"), ("subsection", "1"), ("item", "7")),
+        (("section", "8"), ("subsection", "1"), ("item", "8")),
+        (("section", "8"), ("subsection", "2")),
+    ]
+
+
 def test_extract_ee_ops_keeps_sentence_scope_target_local_for_mixed_text_delete() -> None:
     text = (
         "paragrahvi 14 2 lõike 4 teisest lausest ja lõikest 5 jäetakse "
