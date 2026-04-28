@@ -23,6 +23,13 @@ _EE_HYPHEN_SPACING_RE = re.compile(
 _EE_EN_DASH_DIGIT_SPACE_RE = re.compile(r"(?<=\d)[–‒]\s+(?=\d)")
 _EE_FIGURE_DASH_RE = re.compile(r"‒")
 _EE_NUMERIC_RANGE_HYPHEN_RE = re.compile(r"(?<=\d)-(?=\d)")
+_EE_SLASH_SPACING_RE = re.compile(r"(?<=\S)\s+/\s*(?=\S)")
+_EE_DEGREE_SPACING_RE = re.compile(r"(?<=\d)\s+(?=º)")
+_EE_SINGLE_LETTER_FORMULA_SUBSCRIPT_RE = re.compile(
+    r"(?:\b([A-Za-z])\s+(\d+)(?=/)|(?<=/)([A-Za-z])\s+(\d+)\b)"
+)
+_EE_LEADING_FOOTNOTE_MARKER_SPACE_RE = re.compile(r"^(\d+)\s+(?=[A-ZÕÄÖÜŠŽ])")
+_EE_INLINE_FOOTNOTE_MARKER_SPACE_RE = re.compile(r"(?<=\.)\s+(\d+)\s+(?=[A-ZÕÄÖÜŠŽ])")
 _EE_POST_PERIOD_JA_SPACE_RE = re.compile(r"(?<=\d\.)ja(?=\s+\d)")
 _EE_RT_BRACKET_SPACE_RE = re.compile(r"\[\s+RT")
 _EE_MISSING_JA_SPACE_RE = re.compile(r"(?<=\d)ja(?=\s+\d)")
@@ -120,6 +127,46 @@ _EE_NORMALIZATION_RULES = (
         description="Normalize hyphen-minus to en dash between digits for range-like comparison surfaces.",
         pattern=_EE_NUMERIC_RANGE_HYPHEN_RE,
         replacement="–",
+    ),
+    EENormalizationRule(
+        name="slash_spacing",
+        rule_class=EENormalizationRuleClass.punctuation,
+        kind="regex",
+        description="Collapse editorial spacing before slash-separated formula tokens.",
+        pattern=_EE_SLASH_SPACING_RE,
+        replacement="/",
+    ),
+    EENormalizationRule(
+        name="degree_spacing",
+        rule_class=EENormalizationRuleClass.punctuation,
+        kind="regex",
+        description="Collapse editorial spacing before degree-sign formula tokens.",
+        pattern=_EE_DEGREE_SPACING_RE,
+        replacement="",
+    ),
+    EENormalizationRule(
+        name="single_letter_formula_subscript_spacing",
+        rule_class=EENormalizationRuleClass.encoding_layout,
+        kind="regex",
+        description="Collapse RT spacing inside single-letter formula tokens such as O90/d90.",
+        pattern=_EE_SINGLE_LETTER_FORMULA_SUBSCRIPT_RE,
+        replacement=lambda match: f"{match.group(1) or match.group(3)}{match.group(2) or match.group(4)}",
+    ),
+    EENormalizationRule(
+        name="leading_footnote_marker_spacing",
+        rule_class=EENormalizationRuleClass.encoding_layout,
+        kind="regex",
+        description="Normalize spacing after a leading RT footnote marker.",
+        pattern=_EE_LEADING_FOOTNOTE_MARKER_SPACE_RE,
+        replacement=r"\1",
+    ),
+    EENormalizationRule(
+        name="inline_footnote_marker_spacing",
+        rule_class=EENormalizationRuleClass.encoding_layout,
+        kind="regex",
+        description="Normalize spacing after an inline RT footnote marker.",
+        pattern=_EE_INLINE_FOOTNOTE_MARKER_SPACE_RE,
+        replacement=r" \1",
     ),
     EENormalizationRule(
         name="standard_identifier_dash",

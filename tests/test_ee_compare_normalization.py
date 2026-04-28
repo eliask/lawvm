@@ -58,6 +58,33 @@ def test_normalize_ee_comparison_text_normalizes_numeric_range_hyphen() -> None:
     )
 
 
+def test_normalize_ee_comparison_text_collapses_formula_slash_spacing() -> None:
+    assert normalize_ee_comparison_text("poorsusnäitaja O 90 /d 90 väiksem kui 5") == (
+        "poorsusnäitaja O90/d90 väiksem kui 5"
+    )
+
+
+def test_normalize_ee_comparison_text_collapses_degree_spacing() -> None:
+    assert normalize_ee_comparison_text("eesvoolu teljest 70–80 º nurga all") == (
+        "eesvoolu teljest 70–80º nurga all"
+    )
+
+
+def test_normalize_ee_comparison_text_collapses_single_letter_formula_subscript_spacing() -> None:
+    assert normalize_ee_comparison_text("suhtarvu (edaspidi O 90/d 90) alusel") == (
+        "suhtarvu (edaspidi O90/d90) alusel"
+    )
+
+
+def test_normalize_ee_comparison_text_normalizes_leading_footnote_marker_spacing() -> None:
+    assert normalize_ee_comparison_text("1 Põllumajandusministeeriumi kogumik") == (
+        "1Põllumajandusministeeriumi kogumik"
+    )
+    assert normalize_ee_comparison_text("eelmine lause. 1 Põllumajandusministeeriumi kogumik") == (
+        "eelmine lause. 1Põllumajandusministeeriumi kogumik"
+    )
+
+
 def test_normalize_ee_comparison_text_normalizes_standard_identifier_dash() -> None:
     assert normalize_ee_comparison_text("standardi EVS 906 ja EVS-EN 16798–1 nõudeid") == (
         "standardi EVS 906 ja EVS-EN 16798-1 nõudeid"
