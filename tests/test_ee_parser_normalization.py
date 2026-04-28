@@ -868,6 +868,65 @@ def test_parse_ee_statute_keeps_reavahetus_numbered_items_structural() -> None:
     ]
 
 
+def test_parse_ee_statute_keeps_section_level_reavahetus_items_structural() -> None:
+    xml = """
+    <tyviseadus xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
+      <aktinimi>
+        <nimi>
+          <pealkiri>Testseadus</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>11</paragrahvNr>
+          <kuvatavNr>§ 11.</kuvatavNr>
+          <sisuTekst>
+            <tavatekst>Üldosakonna juhataja:<reavahetus/>1) vastutab;<reavahetus/>3 1) koordineerib.</tavatekst>
+          </sisuTekst>
+        </paragrahv>
+      </sisu>
+    </tyviseadus>
+    """.encode("utf-8")
+
+    statute = parse_ee_statute(xml, "ee/test")
+    section = statute.body.children[0]
+    subsection = section.children[0]
+
+    assert subsection.text == "Üldosakonna juhataja:"
+    assert [(item.label, item.text) for item in subsection.children] == [
+        ("1", "vastutab;"),
+        ("3_1", "koordineerib."),
+    ]
+
+
+def test_parse_ee_statute_recovers_real_section_level_reavahetus_items() -> None:
+    archive = open_rt_archive(readonly=True)
+    statute = parse_ee_statute(fetch_rt_xml("128032013017", archive), "128032013017")
+
+    section_11 = next(child for child in statute.body.children if child.kind == IRNodeKind.SECTION and child.label == "11")
+    subsection_11 = section_11.children[0]
+    section_16 = next(child for child in statute.body.children if child.kind == IRNodeKind.SECTION and child.label == "16")
+    subsection_16 = section_16.children[0]
+
+    assert subsection_11.text == "Üldosakonna juhataja:"
+    assert [item.label for item in subsection_11.children] == ["1", "2", "3", "4"]
+    assert "vastutab osakonnale pandud ülesannete täitmise eest" in (subsection_11.children[0].text or "")
+    assert {"3_1", "3_2"}.issubset({item.label for item in subsection_16.children})
+
+
+def test_parse_ee_statute_drops_reavahetus_item_amendment_history_notes() -> None:
+    archive = open_rt_archive(readonly=True)
+    statute = parse_ee_statute(fetch_rt_xml("128032013017", archive), "128032013017")
+
+    section_16 = next(child for child in statute.body.children if child.kind == IRNodeKind.SECTION and child.label == "16")
+    subsection_16 = section_16.children[0]
+    items = {item.label: item for item in subsection_16.children}
+
+    assert "RT I" not in (items["2"].text or "")
+    assert "RT I" not in (items["3_1"].text or "")
+    assert "jõust" not in (items["19"].text or "")
+
+
 def test_parse_ee_statute_drops_item_repealed_range_residue_with_marker() -> None:
     xml = """
     <tyviseadus xmlns="http://www.riigiteataja.ee/ns/akt/1.0">

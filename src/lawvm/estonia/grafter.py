@@ -469,6 +469,12 @@ def _normalize_ee_statute_surface_text(text: str) -> str:
     if not text:
         return text
     text = re.sub(r"\s*\(RT\s+[IVX]+[^)]*\)", "", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"\s*\[\s*(?:RT|RTL)\s+[^\]]*?(?:jõust\.|rakendatakse)[^\]]*?\]",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
     text = re.sub(r"\s+", " ", text).strip()
     text = re.sub(r" +([.,;:!?)])", r"\1", text)
     return text
@@ -761,71 +767,87 @@ def _extract_reavahetus_items(el: ET.Element, ns_str: str) -> List[IRNode]:
     Returns an empty list if no <reavahetus/> children with numbered-item tails
     are found (i.e., the subsection uses <alampunkt> XML items, handled elsewhere).
     """
-    items: List[IRNode] = []
-    _ITEM_RE = re.compile(r"^(\d[\d\s]*)\)\s*(.*)", re.DOTALL)
+    def _segments(st: ET.Element) -> list[str]:
+        segments = [""]
 
-    for st in el.findall(_ns(ns_str, "sisuTekst")):
-        cur_label: Optional[str] = None
-        cur_parts: List[str] = []
-        in_items = False  # True once we've seen the first numbered reavahetus item
+        def add_text(text: str | None, *, prefix_space: bool = False) -> None:
+            if not text:
+                return
+            cleaned = text.replace("\xa0", " ")
+            if prefix_space and cleaned.strip():
+                cleaned = " " + cleaned
+            segments[-1] += cleaned
+
+        def walk(node: ET.Element) -> None:
+            local = node.tag.split("}")[1] if "}" in node.tag else node.tag
+            if local == "reavahetus":
+                segments.append("")
+                add_text(node.tail)
+                return
+            if local == "viide":
+                kvt = node.find(_ns(ns_str, "kuvatavTekst"))
+                if kvt is not None:
+                    add_text(kvt.text)
+                add_text(node.tail)
+                return
+            add_text(node.text, prefix_space=(local == "sup"))
+            for child in node:
+                walk(child)
+            add_text(node.tail)
 
         for child in st:
-            local = child.tag.split("}")[1] if "}" in child.tag else child.tag
+            walk(child)
+        return [re.sub(r"\s+", " ", segment).strip() for segment in segments]
 
-            if local == "tavatekst":
-                # Process reavahetus children inside this tavatekst
-                for t_child in child:
-                    t_local = t_child.tag.split("}")[1] if "}" in t_child.tag else t_child.tag
-                    if t_local == "reavahetus":
-                        in_items = True
-                        tail = (t_child.tail or "").replace("\xa0", " ").strip()
-                        if tail:
-                            m = _ITEM_RE.match(tail)
-                            if m:
-                                if cur_label is not None:
-                                    items.append(
-                                        IRNode(
-                                            kind=IRNodeKind.ITEM,
-                                            label=cur_label,
-                                            text=" ".join(p for p in cur_parts if p).strip(),
-                                        )
-                                    )
-                                cur_label = re.sub(r"\s+", "_", m.group(1).strip()).rstrip("_")
-                                cur_parts = [m.group(2).strip()] if m.group(2).strip() else []
-                            elif cur_label is not None:
-                                cur_parts.append(tail)
-                    elif in_items and cur_label is not None and t_local in _INLINE_TAGS:
-                        txt = "".join(str(_t) for _t in t_child.itertext()).replace("\xa0", " ").strip()
-                        if txt:
-                            cur_parts.append(txt)
-                        if t_child.tail:
-                            cur_parts.append(t_child.tail.replace("\xa0", " ").strip())
-                # A standalone <tavatekst> with no reavahetus (e.g. "." after a viide)
-                # contributes its text to the current item if we're in item context
-                if (
-                    in_items
-                    and cur_label is not None
-                    and not any((tc.tag.split("}")[1] if "}" in tc.tag else tc.tag) == "reavahetus" for tc in child)
-                    and child.text
-                ):
-                    txt = child.text.replace("\xa0", " ").strip()
-                    if txt:
-                        cur_parts.append(txt)
+    items: List[IRNode] = []
+    item_re = re.compile(r"^(\d[\d\s_]*)\)\s*(.*)", re.DOTALL)
 
-            elif local == "viide" and in_items and cur_label is not None:
-                # Sibling <viide> element contributing to current item
-                kvt = child.find(_ns(ns_str, "kuvatavTekst"))
-                if kvt is not None and kvt.text:
-                    cur_parts.append(kvt.text.replace("\xa0", " ").strip())
-                if child.tail:
-                    cur_parts.append(child.tail.replace("\xa0", " ").strip())
+    cur_label: Optional[str] = None
+    cur_parts: List[str] = []
+    for st in el.findall(_ns(ns_str, "sisuTekst")):
+        for segment in _segments(st):
+            if not segment:
+                continue
+            match = item_re.match(segment)
+            if match is not None:
+                if cur_label is not None:
+                    item_text = _normalize_ee_statute_surface_text(" ".join(p for p in cur_parts if p).strip())
+                    items.append(
+                        IRNode(
+                            kind=IRNodeKind.ITEM,
+                            label=cur_label,
+                            text=item_text,
+                        )
+                    )
+                cur_label = re.sub(r"\s+", "_", match.group(1).strip()).rstrip("_")
+                cur_parts = [match.group(2).strip()] if match.group(2).strip() else []
+            elif cur_label is not None:
+                cur_parts.append(segment)
 
-        if cur_label is not None:
-            items.append(
-                IRNode(kind=IRNodeKind.ITEM, label=cur_label, text=" ".join(p for p in cur_parts if p).strip())
-            )
+    if cur_label is not None:
+        item_text = _normalize_ee_statute_surface_text(" ".join(p for p in cur_parts if p).strip())
+        items.append(
+            IRNode(kind=IRNodeKind.ITEM, label=cur_label, text=item_text)
+        )
 
     return items
+
+
+def _extract_reavahetus_intro_text(el: ET.Element, ns_str: str) -> str:
+    """Return text before the first reavahetus item list in an element."""
+    intro_parts: list[str] = []
+    for st in el.findall(_ns(ns_str, "sisuTekst")):
+        for tavatekst in st.findall(_ns(ns_str, "tavatekst")):
+            for child in tavatekst:
+                local = child.tag.split("}")[1] if "}" in child.tag else child.tag
+                if local != "reavahetus":
+                    continue
+                tail = (child.tail or "").replace("\xa0", " ").strip()
+                if re.match(r"^\d[\d\s]*\)", tail):
+                    if tavatekst.text:
+                        intro_parts.append(tavatekst.text.replace("\xa0", " ").strip())
+                    return " ".join(part for part in intro_parts if part).strip()
+    return " ".join(part for part in intro_parts if part).strip()
 
 
 def _parse_subsection(el: ET.Element, ns_str: str, default_nr: int = 1) -> IRNode:
@@ -868,14 +890,9 @@ def _parse_subsection(el: ET.Element, ns_str: str, default_nr: int = 1) -> IRNod
             # Rebuild sub_text as intro-only: the tavatekst.text before the first
             # <reavahetus/> separator, not the full _sisuTekst_text which also
             # captures sibling <viide> content that belongs to reavahetus items.
-            intro_parts = []
-            for st in el.findall(_ns(ns_str, "sisuTekst")):
-                for t in st.findall(_ns(ns_str, "tavatekst")):
-                    has_reavahetus = any((c.tag.split("}")[1] if "}" in c.tag else c.tag) == "reavahetus" for c in t)
-                    if has_reavahetus and t.text:
-                        intro_parts.append(t.text.replace("\xa0", " ").strip())
-            if intro_parts:
-                sub_text = " ".join(intro_parts)
+            intro_text = _extract_reavahetus_intro_text(el, ns_str)
+            if intro_text:
+                sub_text = intro_text
 
     attrs = {}
     if dropped_repealed_residues:
@@ -1057,13 +1074,24 @@ def _parse_section(el: ET.Element, ns_str: str) -> IRNode:
     # Section with no loige children — capture sisuTekst directly as single subsection.
     # _sisuTekst_text captures tavatekst + viide/kuvatavTekst in document order.
     if not children:
-        text_parts = []
-        for st in el.findall(_ns(ns_str, "sisuTekst")):
-            txt = _sisuTekst_text(st, ns_str)
-            if txt:
-                text_parts.append(txt)
-        if text_parts:
-            children.append(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text=" ".join(text_parts)))
+        reavahetus_items = _extract_reavahetus_items(el, ns_str)
+        if reavahetus_items:
+            children.append(
+                IRNode(
+                    kind=IRNodeKind.SUBSECTION,
+                    label="1",
+                    text=_extract_reavahetus_intro_text(el, ns_str),
+                    children=tuple(reavahetus_items),
+                )
+            )
+        else:
+            text_parts = []
+            for st in el.findall(_ns(ns_str, "sisuTekst")):
+                txt = _sisuTekst_text(st, ns_str)
+                if txt:
+                    text_parts.append(txt)
+            if text_parts:
+                children.append(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text=" ".join(text_parts)))
 
     # Detect already-repealed sections: muutmismarge says "Kehtetu" and there is
     # no body content.  RT tervikteksts preserve the original title of such sections
