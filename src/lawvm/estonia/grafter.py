@@ -53,7 +53,13 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core import tree_ops
 from lawvm.estonia.act_identity_registry import lookup_ee_act_identity
-from lawvm.estonia.peg import _expand_ee_numeric_list, _instruction_preamble, _normalize_num, extract_ee_ops
+from lawvm.estonia.peg import (
+    _expand_ee_numeric_list,
+    _instruction_preamble,
+    _normalize_num,
+    extract_ee_ops,
+    parse_html_op_items,
+)
 from lawvm.estonia.ee_instruction_waist import read_payload_rewrite_meta
 from lawvm.estonia.ee_instruction_waist import to_ee_parsed_instructions
 from lawvm.estonia.target_resolution import (
@@ -67,6 +73,7 @@ from lawvm.estonia.target_resolution import (
     old_format_collect_nested_direct_target_ops as _tr_old_format_collect_nested_direct_target_ops,
     old_format_section_matches_target as _tr_old_format_section_matches_target,
     old_format_has_section_ref as _tr_old_format_has_section_ref,
+    old_format_lower_op_texts as _tr_old_format_lower_op_texts,
     old_format_section_from_header_text as _tr_old_format_section_from_header_text,
     old_format_section_from_ops as _tr_old_format_section_from_ops,
     new_format_collect_all_ops as _tr_new_format_collect_all_ops,
@@ -1527,6 +1534,27 @@ def parse_ee_amendment_ops(
             has_earlier_same_act_slice=has_earlier_same_act_slice,
         )
     )
+    if has_paragrahv and target_title and (
+        not parsed_ops or all(op.action is StructuralAction.META for op in parsed_ops)
+    ):
+        plain_paragraph_ops = _parse_muutmisseadus_plain_paragraph_item_ops(
+            root,
+            source_id,
+            root_ns,
+            target_title=target_title,
+        )
+        if plain_paragraph_ops and any(op.action is not StructuralAction.META for op in plain_paragraph_ops):
+            parsed_ops = plain_paragraph_ops
+    if not has_paragrahv and target_title and (
+        not parsed_ops or all(op.action is StructuralAction.META for op in parsed_ops)
+    ):
+        plain_paragraph_ops = _parse_flat_html_plain_paragraph_item_ops(
+            root,
+            source_id,
+            target_title=target_title,
+        )
+        if plain_paragraph_ops and any(op.action is not StructuralAction.META for op in plain_paragraph_ops):
+            parsed_ops = plain_paragraph_ops
     if not parsed_ops and has_paragrahv and target_title:
         html_blocks: list[str] = []
         for el in root.iter():
@@ -1949,6 +1977,99 @@ def _parse_muutmisseadus_ops(
         section_from_ops=_section_from_ops,
     )
     return all_ops
+
+
+def _parse_muutmisseadus_plain_paragraph_item_ops(
+    root: ET.Element, source_id: str, ns_str: str = "", target_title: str = ""
+) -> List[LegalOperation]:
+    """Recover explicit new-format HTML amendment items written as plain <p>N)</p> paragraphs."""
+    ns_str = ns_str or NS_AMEND
+
+    def _collect_op_texts_with_plain_items(**kwargs: object) -> list[str]:
+        return _tr_new_format_collect_op_texts(
+            **kwargs,
+            allow_plain_paragraph_items=True,
+        )
+
+    all_ops, _ = _tr_new_format_collect_all_ops(
+        root=root,
+        ns_str=ns_str,
+        source_id=source_id,
+        target_title=target_title,
+        seq_start=1,
+        prepare_new_format_gate_flags=_tr_prepare_new_format_gate_flags,
+        prepare_new_format_paragraph_context=_tr_prepare_new_format_paragraph_context,
+        should_admit_new_format_paragraph=_tr_should_admit_new_format_paragraph,
+        new_format_collect_op_texts=_collect_op_texts_with_plain_items,
+        filter_direct_target_clause_op_texts=_tr_filter_direct_target_clause_op_texts,
+        new_format_lower_op_texts=_tr_new_format_lower_op_texts,
+        first_tavatekst_text=_first_tavatekst_text,
+        text_finder=_text,
+        find_child=_find,
+        is_omnibus_amendment=_is_omnibus_amendment,
+        para_contains_direct_target_clause=_para_contains_direct_target_clause,
+        collect_embedded_target_sections=_tr_collect_embedded_target_sections,
+        normalize_act_id=_paragrahv_to_act_id,
+        title_matcher=_title_matches_para,
+        lookup_act_identity=lookup_ee_act_identity,
+        extract_ops=extract_ee_ops,
+        has_section_ref=_has_section_ref,
+        section_from_ops=_section_from_ops,
+    )
+    return [
+        replace(
+            op,
+            provenance_tags=(
+                *op.provenance_tags,
+                "ee_plain_paragraph_html_items_extracted",
+            ),
+        )
+        for op in all_ops
+    ]
+
+
+def _parse_flat_html_plain_paragraph_item_ops(
+    root: ET.Element, source_id: str, target_title: str = ""
+) -> List[LegalOperation]:
+    """Recover direct single-target amendment HTML written as plain <p>N)</p> items."""
+    if not target_title:
+        return []
+    html_blocks: list[str] = []
+    for el in root.iter():
+        tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+        if tag == "HTMLKonteiner" and el.text:
+            html_blocks.append(el.text)
+    if not html_blocks:
+        return []
+    full_html = "\n".join(html_blocks)
+    first_para_match = re.match(r"\s*<p\b[^>]*>(.*?)</p>", full_html, flags=re.DOTALL | re.IGNORECASE)
+    if first_para_match is None:
+        return []
+    first_para_text = re.sub(r"<[^>]+>", " ", first_para_match.group(1))
+    first_para_text = _html.unescape(re.sub(r"\s+", " ", first_para_text)).strip()
+    if not _title_matches_para(target_title, first_para_text):
+        return []
+
+    op_texts = parse_html_op_items(full_html, allow_plain_paragraph_items=True)
+    if len(op_texts) < 2:
+        return []
+    source = OperationSource(statute_id=source_id, title=target_title)
+    ops, _global_seq, _last_section = _tr_old_format_lower_op_texts(
+        op_texts,
+        source,
+        seq_start=1,
+        base_act_name=target_title,
+    )
+    return [
+        replace(
+            op,
+            provenance_tags=(
+                *op.provenance_tags,
+                "ee_plain_paragraph_html_items_extracted",
+            ),
+        )
+        for op in ops
+    ]
 
 
 def _parse_old_format_amendment_ops(

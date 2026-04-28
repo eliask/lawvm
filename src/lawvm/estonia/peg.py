@@ -4675,12 +4675,52 @@ def extract_ee_ops(
     return ops
 
 
-def parse_html_op_items(html_cdata: str) -> List[str]:
+def parse_html_op_items(html_cdata: str, *, allow_plain_paragraph_items: bool = False) -> List[str]:
     """Split an HTMLKonteiner CDATA block into individual numbered op texts.
 
     Each item starts with <b>N)</b> or <p><b>N)</b>.
     Returns a list of stripped plain-text op strings (HTML tags removed).
     """
+    import html as _html
+
+    def _html_block_to_item_text(block: str) -> str:
+        # Before stripping, mark bold section-title boundaries with \x01.
+        # Pattern: <b>§ N. Title</b> → "§ N. Title\x01" so that
+        # _parse_section_payload (grafter) can split title from body text
+        # when no explicit (N) subsection markers are present.
+        # Only targets bold containing § (section marker), not item markers.
+        _SECT_TITLE_BOUNDARY = '\x01'
+
+        # Match <b>...</b> blocks containing § (section marker), including when
+        # nested tags like <sup> appear inside <b> (e.g. <b>§ 12<sup>1</sup>. Title</b>).
+        # Strategy: strip inner tags from the b-content first, then check for §.
+        def _b_sentinel(m: re.Match) -> str:
+            inner = m.group(1)
+            # Replace inner tags with a space so adjacent text/numbers are not
+            # concatenated: "<b>§ 11<sup>1</sup>. Title</b>" → "§ 11 1 . Title"
+            # (then _normalize_num converts "11 1" → "11_1").
+            inner_plain = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', inner)).strip()
+            inner_plain = _html.unescape(inner_plain)
+            if '§' in inner_plain:
+                return inner_plain + _SECT_TITLE_BOUNDARY
+            return inner  # not a section title — keep original (tags will be stripped later)
+
+        block = re.sub(
+            r'<(?:b|strong)\b[^>]*>(.*?)</(?:b|strong)>',
+            _b_sentinel,
+            block,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        # Strip HTML tags
+        text = re.sub(r'<[^>]+>', ' ', block)
+        # Decode HTML entities (old-format maarus CDATA uses &auml; etc.)
+        text = _html.unescape(text)
+        text = text.replace('\xa0', ' ')
+        text = re.sub(r'\s+', ' ', text).strip()
+        text = re.sub(r'\(\s+', '(', text)
+        text = re.sub(r'\s+\)', ')', text)
+        return text
+
     # Split on numbered item boundaries.
     # Allow optional HTML entities (e.g. &#8239; narrow no-break space) inside
     # <b>N)...</b> — some RT HTML uses <b>1)&#8239;</b> where the entity is
@@ -4696,42 +4736,57 @@ def parse_html_op_items(html_cdata: str) -> List[str]:
     )
 
     result = []
-    import html as _html
     for block in blocks:
-        # Before stripping, mark bold section-title boundaries with \x01.
-        # Pattern: <b>§ N. Title</b> → "§ N. Title\x01" so that
-        # _parse_section_payload (grafter) can split title from body text
-        # when no explicit (N) subsection markers are present.
-        # Only targets bold containing § (section marker), not item markers.
-        _SECT_TITLE_BOUNDARY = '\x01'
-        # Match <b>...</b> blocks containing § (section marker), including when
-        # nested tags like <sup> appear inside <b> (e.g. <b>§ 12<sup>1</sup>. Title</b>).
-        # Strategy: strip inner tags from the b-content first, then check for §.
-        def _b_sentinel(m: re.Match) -> str:
-            inner = m.group(1)
-            # Replace inner tags with a space so adjacent text/numbers are not
-            # concatenated: "<b>§ 11<sup>1</sup>. Title</b>" → "§ 11 1 . Title"
-            # (then _normalize_num converts "11 1" → "11_1").
-            inner_plain = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', inner)).strip()
-            inner_plain = _html.unescape(inner_plain)
-            if '§' in inner_plain:
-                return inner_plain + _SECT_TITLE_BOUNDARY
-            return inner  # not a section title — keep original (tags will be stripped later)
-        block = re.sub(
-            r'<(?:b|strong)\b[^>]*>(.*?)</(?:b|strong)>',
-            _b_sentinel,
-            block,
-            flags=re.DOTALL | re.IGNORECASE,
-        )
-        # Strip HTML tags
-        text = re.sub(r'<[^>]+>', ' ', block)
-        # Decode HTML entities (old-format maarus CDATA uses &auml; etc.)
-        text = _html.unescape(text)
-        text = text.replace('\xa0', ' ')
-        text = re.sub(r'\s+', ' ', text).strip()
-        text = re.sub(r'\(\s+', '(', text)
-        text = re.sub(r'\s+\)', ')', text)
+        text = _html_block_to_item_text(block)
         if text and re.match(r'\(?\d+\)', text):
             result.append(text)
+    if result and not allow_plain_paragraph_items:
+        return result
+    if not allow_plain_paragraph_items:
+        return result
 
+    # Some new-format RT amendment HTML uses plain paragraph starts such as
+    # <p>1) paragrahvi ...</p> instead of bold/strong item labels. Treat those
+    # as item boundaries only when the paragraph starts with an unparenthesized
+    # item marker followed by amendment-target vocabulary. Quoted replacement
+    # payloads and subsection payloads are deliberately excluded.
+    paragraph_blocks = re.findall(r"<p\b[^>]*>.*?</p>", html_cdata, flags=re.DOTALL | re.IGNORECASE)
+    if not paragraph_blocks:
+        return result
+
+    item_start = re.compile(
+        r"^\d+\)\s*("
+        r"paragrahv(?:i|is|ist|ile|id)?|"
+        r"lõige(?:t|test|tes|tele)?|"
+        r"lõik(?:e|es|est|ele)?|"
+        r"määrus(?:e|es|est|ele)?|"
+        r"seadus(?:e|es|est|ele)?|"
+        r"lisa(?:d|de|sid|le|ga|s|st)?|"
+        r"§|"
+        r"asendatakse|muudetakse|täiendatakse|tunnistatakse|lisatakse|jäetakse|sõnastatakse"
+        r")\b",
+        flags=re.IGNORECASE,
+    )
+    grouped_blocks: list[str] = []
+    current: list[str] = []
+    for paragraph in paragraph_blocks:
+        paragraph_text = _html_block_to_item_text(paragraph)
+        starts_item = bool(item_start.match(paragraph_text))
+        if starts_item:
+            if current:
+                grouped_blocks.append("".join(current))
+            current = [paragraph]
+            continue
+        if current:
+            current.append(paragraph)
+    if current:
+        grouped_blocks.append("".join(current))
+
+    fallback_result: list[str] = []
+    for block in grouped_blocks:
+        text = _html_block_to_item_text(block)
+        if text and re.match(r"\d+\)", text):
+            fallback_result.append(text)
+    if len(fallback_result) > 1 or not result:
+        return fallback_result
     return result

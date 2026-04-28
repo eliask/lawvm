@@ -2454,6 +2454,73 @@ def test_parse_html_op_items_splits_uppercase_old_format_markers() -> None:
     ]
 
 
+def test_parse_html_op_items_splits_plain_paragraph_item_markers() -> None:
+    items = parse_html_op_items(
+        (
+            "<p>1) paragrahvi 2 täiendatakse punktiga 7 järgmises sõnastuses:</p>"
+            "<p>„7) <b>IT õppevahendid</b> – digitaalsed õppevahendid.”;</p>"
+            "<p>2) paragrahvi 3 lõige 2 sõnastatakse järgmiselt:</p>"
+            "<p>„(2) Uus lõike tekst.”.</p>"
+        ),
+        allow_plain_paragraph_items=True,
+    )
+
+    assert items == [
+        "1) paragrahvi 2 täiendatakse punktiga 7 järgmises sõnastuses: "
+        "„7) IT õppevahendid – digitaalsed õppevahendid.”;",
+        "2) paragrahvi 3 lõige 2 sõnastatakse järgmiselt: „(2) Uus lõike tekst.”.",
+    ]
+
+
+def test_parse_html_op_items_does_not_split_plain_quoted_payload_items() -> None:
+    items = parse_html_op_items(
+        (
+            "<p>„1) esimene payloadi punkt;</p>"
+            "<p>2) teine payloadi punkt.”</p>"
+            "<p>(1) Payloadi lõige.</p>"
+        ),
+        allow_plain_paragraph_items=True,
+    )
+
+    assert items == []
+
+
+def test_parse_ee_amendment_ops_splits_plain_paragraph_items_for_2022_001() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("128062022001", archive),
+        "ee/128062022001",
+        target_title=(
+            "„Mitmekesine ja kvaliteetne haridus digitaalse õppevaraga” "
+            "elluviimiseks struktuuritoetuse andmise tingimused ja kord"
+        ),
+    )
+
+    targets = {op.target.path for op in ops}
+    assert len(ops) == 17
+    assert (("section", "2"), ("item", "7")) in targets
+    assert (("section", "3"), ("subsection", "2")) in targets
+    assert (("section", "10"), ("subsection", "2"), ("item", "1")) in targets
+    assert (("section", "27"), ("item", "4")) in targets
+
+
+def test_parse_ee_amendment_ops_splits_flat_plain_paragraph_items_for_2013_011() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("129052013011", archive),
+        "ee/129052013011",
+        target_title="Klastrite arendamise toetamise tingimused ja kord",
+    )
+
+    targets = {op.target.path for op in ops}
+    assert len(ops) == 20
+    assert (("section", "7"), ("subsection", "1")) in targets
+    assert (("section", "8"), ("subsection", "1")) in targets
+    assert (("section", "21"), ("subsection", "9_2")) in targets
+    assert (("section", "21"), ("subsection", "9_3")) in targets
+    assert all("ee_plain_paragraph_html_items_extracted" in op.provenance_tags for op in ops)
+
+
 def test_extract_ee_ops_records_chapter_scope_for_global_text_replace() -> None:
     ops = extract_ee_ops(
         (
