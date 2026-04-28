@@ -91,6 +91,17 @@ def test_ee_explain_builds_payload_with_residual_buckets(monkeypatch) -> None:
         "politsei_plural_rename",
     ]
     assert payload["divergence_count"] == 1
+    assert payload["residual_inventory"] == {
+        "residual_count": 7,
+        "bucket_counts": {
+            "appendix_display_pathology": 1,
+            "source_oracle_drift": 6,
+        },
+        "matched_current_divergence_count": 1,
+        "matched_current_bucket_counts": {"source_oracle_drift": 1},
+        "unknown_current_divergence_count": 0,
+        "unknown_current_divergence_addresses": (),
+    }
     assert len(payload["divergences"]) == 1
     div = payload["divergences"][0]
     assert div["address"] == "chapter:1/section:6/subsection:2"
