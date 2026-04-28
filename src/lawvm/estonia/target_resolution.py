@@ -1468,6 +1468,7 @@ def old_format_extract_section_header_text(section_html: str) -> str:
 
     header_text = re.sub(r"<[^>]+>", " ", header_raw)
     header_text = re.sub(r"&sect;", "§", header_text)
+    header_text = html_lib.unescape(header_text)
     header_text = re.sub(r"\s+", " ", header_text).strip()
     return header_text
 
