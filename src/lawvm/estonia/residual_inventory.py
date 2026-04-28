@@ -126,6 +126,48 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         )),
     ),
+    ("118062021013", "130062023099"): EEPairResidualInventory(
+        base_id="118062021013",
+        oracle_id="130062023099",
+        statute_title="Vedelkütusevaru seadus",
+        comparison_class="commensurable_delta",
+        residuals=cast(tuple[EEResidualRecord, ...], (
+            EEResidualRecord(
+                address="chapter:6",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "The chapter-level mismatch is inherited from § 22. Source act "
+                    "130062023001 contains targeted 'Majandus- ja "
+                    "Kommunikatsiooniministeerium' -> 'Kliimaministeerium' rewrites "
+                    "for §§ 3_1, 7, 7_2, 11, 11_1, and 18 of Vedelkütusevaru seadus, "
+                    "but no visible in-range clause targets § 22. Oracle "
+                    "130062023099 nevertheless rewrites § 22 to Kliimaministeerium."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:6/section:22",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Source act 130062023001 rewrites the ministry name in several "
+                    "enumerated Vedelkütusevaru seadus provisions but does not include "
+                    "§ 22. Replay therefore preserves 'Majandus- ja "
+                    "Kommunikatsiooniministeerium' in § 22, while oracle 130062023099 "
+                    "has 'Kliimaministeerium'."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:6/section:22/subsection:1",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "The live § 22(1) text names 'Majandus- ja "
+                    "Kommunikatsiooniministeerium' as the extra-judicial misdemeanour "
+                    "processor. Source act 130062023001 has no visible § 22 target for "
+                    "the ministry rewrite; oracle 130062023099 changes the same "
+                    "sentence to 'Kliimaministeerium'."
+                ),
+            ),
+        )),
+    ),
     ("112032019073", "115072023052"): EEPairResidualInventory(
         base_id="112032019073",
         oracle_id="115072023052",
