@@ -20,14 +20,16 @@ import sys
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, replace
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, List, Optional
 
 from lawvm.core.compile_result import (
     TemporalEvent,
 )
+from lawvm.core.temporal import TemporalScope
 from lawvm.replay_adjudication import CompileAdjudication, SourceAdjudication
-from lawvm.core.ir import IRStatute, LegalOperation, OperationSource
+from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource
 from lawvm.core.timeline import compile_timelines, materialize_pit
 from lawvm.core.timeline_consistency import ingest_consolidated, verify_consistency
 from lawvm.estonia.grafter import (
@@ -72,6 +74,159 @@ def _ee_extract_act_title(xml_bytes: bytes) -> str:
         return ""
     pealkiri = nimi.find(f"{{{ns}}}pealkiri")
     return (pealkiri.text or "").strip() if pealkiri is not None and pealkiri.text else ""
+
+
+_EE_MONTH_PREFIXES: tuple[tuple[str, int], ...] = (
+    ("jaanuar", 1),
+    ("veebruar", 2),
+    ("märts", 3),
+    ("aprill", 4),
+    ("mai", 5),
+    ("juuni", 6),
+    ("juuli", 7),
+    ("august", 8),
+    ("septemb", 9),
+    ("oktoob", 10),
+    ("novemb", 11),
+    ("detsemb", 12),
+)
+
+
+def _ee_month_number(raw_month: str) -> int | None:
+    normalized = raw_month.strip().lower()
+    if normalized.endswith("ni"):
+        normalized = normalized[:-2]
+    for prefix, number in _EE_MONTH_PREFIXES:
+        if normalized.startswith(prefix):
+            return number
+    return None
+
+
+def _ee_exclusive_date_after_until(year: str, day: str, month: str) -> str | None:
+    month_number = _ee_month_number(month)
+    if month_number is None:
+        return None
+    return (date(int(year), month_number, int(day)) + timedelta(days=1)).isoformat()
+
+
+def _derive_ee_temporal_expiry_events(
+    ops: list[LegalOperation],
+    *,
+    target_statute: str,
+) -> tuple[TemporalEvent, ...]:
+    """Lower explicit ``kehtib kuni`` provision clauses into temporal expiry events."""
+    events: list[TemporalEvent] = []
+    seen: set[tuple[tuple[tuple[str, str], ...], str, str]] = set()
+    expiry_pattern = re.compile(
+        r"§\s*("
+        r"\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*"
+        r")\s+l[oõ]ige\s+("
+        r"\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*"
+        r")\s+kehtib\s+kuni\s+(\d{4})\.\s*aasta\s+(\d{1,2})\.\s+([A-Za-zÕÄÖÜŠŽõäöüšž]+)",
+        re.IGNORECASE,
+    )
+    for op in ops:
+        payload_text = op.payload.text if op.payload is not None else ""
+        source_text = op.source.raw_text if op.source is not None else ""
+        witness_text = " ".join(part for part in (payload_text, source_text) if part)
+        if "kehtib kuni" not in witness_text:
+            continue
+        for match in expiry_pattern.finditer(witness_text):
+            section = _normalize_num(match.group(1))
+            subsection = _normalize_num(match.group(2))
+            expires = _ee_exclusive_date_after_until(
+                match.group(3),
+                match.group(4),
+                match.group(5),
+            )
+            if expires is None:
+                continue
+            address = LegalAddress(path=(("section", section), ("subsection", subsection)))
+            key = (address.path, expires, op.source.statute_id if op.source is not None else "")
+            if key in seen:
+                continue
+            seen.add(key)
+            event_source = op.source
+            if event_source is not None:
+                event_source = replace(event_source, expires=expires)
+            events.append(
+                TemporalEvent(
+                    event_id=(
+                        f"ee-expire-{section}-{subsection}-{expires}-"
+                        f"{op.source.statute_id if op.source is not None else op.op_id}"
+                    ),
+                    kind="expire",
+                    scope=TemporalScope(
+                        target_statute=target_statute,
+                        address_prefixes=(address,),
+                        include_future_descendants=True,
+                    ),
+                    expires=expires,
+                    source=event_source,
+                    group_id=f"ee-expiry:{op.op_id}",
+                )
+            )
+    return tuple(events)
+
+
+def _unique_ee_refs(refs: tuple[AmendmentRef, ...] | list[AmendmentRef]) -> tuple[AmendmentRef, ...]:
+    seen: set[tuple[str, str]] = set()
+    unique: list[AmendmentRef] = []
+    for ref in refs:
+        key = (ref.aktViide, ref.joustumine)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(ref)
+    return tuple(unique)
+
+
+def _ee_suffix_address_matches(statute: IRStatute, suffix: LegalAddress) -> tuple[LegalAddress, ...]:
+    matches: list[LegalAddress] = []
+    suffix_len = len(suffix.path)
+    if suffix_len == 0:
+        return ()
+
+    def _walk(node, path: tuple[tuple[str, str], ...]) -> None:
+        for child in node.children:
+            child_path = path + ((child.kind.value, child.label or ""),)
+            if child_path[-suffix_len:] == suffix.path:
+                matches.append(LegalAddress(path=child_path, special=suffix.special))
+            _walk(child, child_path)
+
+    _walk(statute.body, ())
+    return tuple(matches)
+
+
+def _resolve_ee_temporal_event_scopes(
+    events: tuple[TemporalEvent, ...],
+    statute: IRStatute,
+) -> tuple[TemporalEvent, ...]:
+    resolved_events: list[TemporalEvent] = []
+    for event in events:
+        resolved_prefixes: list[LegalAddress] = []
+        for prefix in event.scope.address_prefixes:
+            matches = _ee_suffix_address_matches(statute, prefix)
+            if matches:
+                resolved_prefixes.extend(matches)
+            else:
+                resolved_prefixes.append(prefix)
+        if not resolved_prefixes:
+            resolved_events.append(event)
+            continue
+        resolved_events.append(
+            replace(
+                event,
+                scope=TemporalScope(
+                    target_statute=event.scope.target_statute,
+                    exact_addresses=event.scope.exact_addresses,
+                    address_prefixes=tuple(resolved_prefixes),
+                    predicates=event.scope.predicates,
+                    include_future_descendants=event.scope.include_future_descendants,
+                ),
+            )
+        )
+    return tuple(resolved_events)
 
 
 def _ee_extract_target_matching_paragraph_numbers(xml_bytes: bytes, target_title: str) -> set[str]:
@@ -499,6 +654,56 @@ def replay_ee_to_pit(
 
     result.n_ops = len(all_ops)
     _log(f"Total ops: {len(all_ops)}")
+    temporal_source_ops: list[LegalOperation] = list(all_ops)
+    if pair_plan.base_is_consolidated and not to_apply:
+        temporal_refs = _unique_ee_refs(
+            [
+                ref
+                for ref in (*pair_plan.base_refs, *pair_plan.oracle_refs)
+                if ref.joustumine and ref.joustumine <= as_of
+            ]
+        )
+        applied_keys = {(ref.aktViide, ref.joustumine) for ref in to_apply}
+        for ref in temporal_refs:
+            if (ref.aktViide, ref.joustumine) in applied_keys:
+                continue
+            try:
+                amend_xml = fetch_rt_xml(ref.aktViide, _archive)
+                temporal_ops = parse_ee_amendment_ops(
+                    amend_xml,
+                    f"ee/{ref.aktViide}",
+                    target_title=base.title,
+                    ref_effective=ref.joustumine,
+                    has_earlier_same_act_slice=any(
+                        candidate.aktViide == ref.aktViide
+                        and candidate.joustumine
+                        and candidate.joustumine < ref.joustumine
+                        for candidate in temporal_refs
+                    ),
+                )
+            except Exception as e:
+                _log(f"    temporal scan failed for {ref.aktViide}: {e}")
+                continue
+            temporal_source_ops.extend(
+                replace(
+                    op,
+                    source=OperationSource(
+                        statute_id=f"ee/{ref.aktViide}",
+                        title=op.source.title if op.source else "",
+                        enacted=ref.passed,
+                        effective=(op.source.effective if op.source and op.source.effective else ref.joustumine),
+                        raw_text=op.source.raw_text if op.source else "",
+                    ),
+                )
+                for op in temporal_ops
+            )
+    derived_temporal_events = _derive_ee_temporal_expiry_events(
+        temporal_source_ops,
+        target_statute=base.statute_id,
+    )
+    result.temporal_events = (*temporal_events, *derived_temporal_events)
+    if derived_temporal_events:
+        _log(f"Derived temporal expiry events: {len(derived_temporal_events)}")
 
     # ── Step 5: Apply ops ─────────────────────────────────────────────────────
     lo_ops_out: list = []
@@ -522,10 +727,14 @@ def replay_ee_to_pit(
     # resolution during compilation.  The output is timeline-derived.
     if result.replayed is not None:
         replay_base = result.replayed  # capture pre-PIT tree for base-template
+        result.temporal_events = _resolve_ee_temporal_event_scopes(
+            result.temporal_events,
+            replay_base,
+        )
         timelines = compile_timelines(
             replay_base,
             lo_ops_out,
-            temporal_events=temporal_events,
+            temporal_events=result.temporal_events,
         )
         pit = materialize_pit(timelines, as_of=as_of, base=replay_base)
         result.replayed = IRStatute(

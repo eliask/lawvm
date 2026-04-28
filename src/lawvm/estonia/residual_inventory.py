@@ -557,33 +557,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             )
         ),
     ),
-    ("113022026005", "113022026006"): EEPairResidualInventory(
-        base_id="113022026005",
-        oracle_id="113022026006",
-        statute_title="Krediidiandjate ja -vahendajate seadus",
-        comparison_class="same_chain_editorial_drift",
-        residuals=_lower_generated_residual_records(
-            build_address_list_family(
-                addresses=(
-                    "chapter:1",
-                    "chapter:1/section:2",
-                    "chapter:1/section:2/subsection:6",
-                    "chapter:1/section:2/subsection:6/item:1",
-                    "chapter:1/section:2/subsection:6/item:2",
-                ),
-                bucket="replay_bug",
-                evidence=(
-                    "Source act 113022026001 inserts the temporal clause '§ 2 lõige 6 "
-                    "kehtib kuni 2029. aasta 31. märtsini.' Oracle 113022026006 marks "
-                    "§ 2(6) and its two condition items repealed from 2029-04-01. LawVM "
-                    "currently parses that clause as a commencement provision insert "
-                    "under § 114(2), but does not yet execute the source-backed expiry "
-                    "against § 2(6), so this is temporal replay debt rather than "
-                    "oracle-side drift."
-                ),
-            )
-        ),
-    ),
     ("112062025015", "112062025016"): EEPairResidualInventory(
         base_id="112062025015",
         oracle_id="112062025016",

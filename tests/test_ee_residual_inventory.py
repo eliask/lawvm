@@ -260,23 +260,7 @@ def test_get_ee_residual_inventory_kov_valimise_seadus_same_chain_editorial_drif
 def test_get_ee_residual_inventory_krediidiandjate_seadus_same_chain_editorial_drift() -> None:
     inventory = get_ee_residual_inventory("113022026005", "113022026006")
 
-    assert inventory is not None
-    assert inventory.statute_title == "Krediidiandjate ja -vahendajate seadus"
-    assert inventory.comparison_class == "same_chain_editorial_drift"
-    assert {record.address for record in inventory.residuals} == {
-        "chapter:1",
-        "chapter:1/section:2",
-        "chapter:1/section:2/subsection:6",
-        "chapter:1/section:2/subsection:6/item:1",
-        "chapter:1/section:2/subsection:6/item:2",
-    }
-    assert {record.bucket for record in inventory.residuals} == {"replay_bug"}
-    assert any(
-        record.address == "chapter:1/section:2/subsection:6"
-        and "kehtib kuni 2029. aasta 31. märtsini" in record.evidence
-        and "temporal replay debt" in record.evidence
-        for record in inventory.residuals
-    )
+    assert inventory is None
 
 
 def test_get_ee_residual_inventory_tsiviilseadustiku_uldosa_seadus() -> None:
@@ -2757,6 +2741,7 @@ def test_list_known_ee_residual_inventories_contains_active_non_zero_pairs() -> 
     assert ("109042021007", "114032025016") not in pairs
     assert ("106052020036", "103022026013") in pairs
     assert ("121052014030", "121052014031") in pairs
+    assert ("113022026005", "113022026006") not in pairs
     assert ("130042024004", "112122024004") not in pairs
     assert ("119032013007", "112072014164") in pairs
     assert ("106052020038", "127092023012") not in pairs

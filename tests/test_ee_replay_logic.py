@@ -6,7 +6,12 @@ from types import SimpleNamespace
 from lawvm.estonia.fetch import AmendmentRef
 from lawvm.estonia.ee_instruction_waist import make_section_selection_meta
 from lawvm.estonia.grafter import _ee_apply_text_replace_value, apply_ee_ops
-from lawvm.estonia.replay import _ee_filter_cancelled_pending_refs, _ee_filter_ops_for_ref_slice, replay_ee_to_pit
+from lawvm.estonia.replay import (
+    _derive_ee_temporal_expiry_events,
+    _ee_filter_cancelled_pending_refs,
+    _ee_filter_ops_for_ref_slice,
+    replay_ee_to_pit,
+)
 from lawvm.core.compile_result import TemporalEvent, TemporalScope
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, StructuralAction
 from lawvm.core.ir import OperationSource
@@ -1870,7 +1875,6 @@ def test_replay_ee_to_pit_adjudicates_kov_valimise_seadus_same_chain_editorial_d
 
 def test_replay_ee_to_pit_adjudicates_krediidiandjate_seadus_same_chain_editorial_drift() -> None:
     from lawvm.estonia.fetch import open_rt_archive
-    from lawvm.estonia.residual_reporting import build_ee_residual_summary
     from lawvm.estonia.replay import replay_ee_to_pit
 
     archive = open_rt_archive(readonly=True)
@@ -1884,15 +1888,14 @@ def test_replay_ee_to_pit_adjudicates_krediidiandjate_seadus_same_chain_editoria
 
     assert result.error is None
     assert result.oracle_id == "113022026006"
-    divergence_addresses = tuple(str(div.address) for div in result.divergences)
-    residual_summary = build_ee_residual_summary(
-        base_id="113022026005",
-        oracle_id="113022026006",
-        divergence_addresses=divergence_addresses,
+    assert result.divergences == []
+    assert len(result.temporal_events) == 1
+    event = result.temporal_events[0]
+    assert event.kind == "expire"
+    assert event.expires == "2029-04-01"
+    assert event.scope.address_prefixes == (
+        LegalAddress(path=(("chapter", "1"), ("section", "2"), ("subsection", "6"))),
     )
-    assert residual_summary is not None
-    assert residual_summary.unknown_current_divergence_count == 0
-    assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
 
 
 def test_replay_ee_to_pit_closes_rahvastikuregister_duplicate_head_after_delete() -> None:
@@ -2213,3 +2216,30 @@ def test_replay_ee_to_pit_threads_temporal_events_into_compile_timelines(
 
     assert seen["temporal_events"] == (event,)
     assert result.temporal_events == (event,)
+
+
+def test_derive_ee_temporal_expiry_events_from_kehtib_kuni_clause() -> None:
+    op = LegalOperation(
+        op_id="ee-test-expiry",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "114"), ("subsection", "2"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="(2) Käesoleva seaduse § 2 lõige 6 kehtib kuni 2029. aasta 31. märtsini.",
+        ),
+        source=OperationSource(statute_id="ee/113022026001", effective="2026-02-23"),
+    )
+
+    events = _derive_ee_temporal_expiry_events([op], target_statute="ee/113022026005")
+
+    assert len(events) == 1
+    event = events[0]
+    assert event.kind == "expire"
+    assert event.expires == "2029-04-01"
+    assert event.scope.target_statute == "ee/113022026005"
+    assert event.scope.address_prefixes == (
+        LegalAddress(path=(("section", "2"), ("subsection", "6"))),
+    )
+    assert event.source is not None
+    assert event.source.expires == "2029-04-01"
