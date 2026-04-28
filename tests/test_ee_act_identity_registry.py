@@ -14,6 +14,7 @@ from lawvm.estonia.grafter import (
     _parse_muutmisseadus_ops,
     parse_ee_amendment_ops,
 )
+from lawvm.estonia.ee_instruction_waist import read_sentence_target_meta
 
 
 def test_lookup_ee_act_identity_finds_exact_akt_viide_and_alias() -> None:
@@ -327,6 +328,57 @@ def test_direct_target_clause_does_not_match_generic_seadust_wrapper() -> None:
         "muutmisseadus_1_10.02.2010",
         "Väärteomenetluse seadustik",
     ) is False
+
+
+def test_nested_direct_target_law_clause_replays_owned_sentence_replace() -> None:
+    xml = """
+    <oigusakt xmlns="muutmisseadus_1_10.02.2010">
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>1</paragrahvNr>
+          <sisuTekst>
+            <tavatekst>Majandustegevuse seadustiku üldosa seaduses tehakse järgmised muudatused:</tavatekst>
+            <HTMLKonteiner><![CDATA[
+              <p><b>59)</b> seadust täiendatakse §-ga 89<sup>1</sup> järgmises sõnastuses:</p>
+              <p>„<b>§ 89<sup>1</sup>. Kalapüügiseaduse muutmine</b></p>
+              <p>Kalapüügiseaduse § 17<sup>1</sup> lõike 1 esimene lause muudetakse ja sõnastatakse järgmiselt:</p>
+              <p>„Kala esmakokkuostuga tohib tegeleda äriregistris registreeritud ettevõtja, kellele on antud tegevusluba.”;”;</p>
+            ]]></HTMLKonteiner>
+          </sisuTekst>
+        </paragrahv>
+        <paragrahv>
+          <paragrahvNr>2</paragrahvNr>
+          <paragrahvPealkiri>Korrakaitseseaduse muutmise ja rakendamise seaduse muutmine</paragrahvPealkiri>
+          <sisuTekst>
+            <HTMLKonteiner><![CDATA[
+              <p><b>1)</b> paragrahvi 1 lõige 1 muudetakse ja sõnastatakse järgmiselt: „võõras tekst.”;</p>
+            ]]></HTMLKonteiner>
+          </sisuTekst>
+        </paragrahv>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test/nested_direct_target_law_clause",
+        target_title="Kalapüügiseadus",
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action.value == "replace"
+    assert op.target.path == (("section", "17_1"), ("subsection", "1"))
+    assert op.payload is not None
+    assert op.payload.text == (
+        "Kala esmakokkuostuga tohib tegeleda äriregistris registreeritud ettevõtja, "
+        "kellele on antud tegevusluba."
+    )
+    sentence_meta = read_sentence_target_meta(op.payload)
+    assert sentence_meta is not None
+    assert sentence_meta.sentence_indexes == (0,)
+    assert "ee_nested_direct_target_law_clause" in op.provenance_tags
+    assert "old_format_amendment_item:59" in op.provenance_tags
 
 
 def test_registry_evidence_wins_for_omnibus_filter_when_strict_title_match_fails(

@@ -1749,6 +1749,60 @@ def old_format_collect_fallback_ops(
     return ops, global_seq
 
 
+def old_format_collect_nested_direct_target_ops(
+    *,
+    full_html: str,
+    source_id: str,
+    target_title: str,
+    seq_start: int,
+) -> tuple[list[LegalOperation], int]:
+    """Recover embedded direct target-law clauses inside old-format wrapper inserts.
+
+    Some old-format omnibus acts amend an amendment-and-implementation act by
+    inserting a provision whose body is itself an explicit amendment to another
+    statute. This helper only admits the nested instruction when the quoted body
+    names ``target_title`` directly, so a wrapper insert such as ``§ 89^1`` does
+    not get replayed against the nested target statute.
+    """
+    if not target_title:
+        return [], seq_start
+
+    source = OperationSource(statute_id=source_id, title=target_title)
+    lowered: list[LegalOperation] = []
+    global_seq = seq_start
+
+    for op_text in parse_html_op_items(full_html):
+        nested = _extract_quoted_content(op_text)
+        if not nested or "\x01" not in nested:
+            continue
+        nested_instruction = nested.split("\x01", 1)[1].strip()
+        if not nested_instruction or not title_matches_para(target_title, nested_instruction):
+            continue
+        ops = extract_ee_ops(
+            nested_instruction,
+            replace(source, raw_text=nested_instruction[:200]),
+            seq_start=global_seq,
+        )
+        amendment_item_label = old_format_item_label(op_text)
+        for op in ops:
+            if (
+                op.action == StructuralAction.META
+                and op.payload is None
+                and op.op_id.startswith("ee-unknown-")
+            ):
+                continue
+            tags = [
+                *op.provenance_tags,
+                "ee_nested_direct_target_law_clause",
+            ]
+            if amendment_item_label:
+                tags.append(f"old_format_amendment_item:{amendment_item_label}")
+            lowered.append(replace(op, provenance_tags=tuple(tags), sequence=global_seq))
+            global_seq += 1
+
+    return lowered, global_seq
+
+
 def old_format_collect_all_ops(
     *,
     full_html: str,
@@ -1770,6 +1824,15 @@ def old_format_collect_all_ops(
             seq_start=global_seq,
             lookup_act_identity=lookup_act_identity,
             split_wrapper_blocks=split_wrapper_blocks,
+        )
+        all_ops.extend(ops)
+
+    if not all_ops and target_title:
+        ops, global_seq = old_format_collect_nested_direct_target_ops(
+            full_html=full_html,
+            source_id=source_id,
+            target_title=target_title,
+            seq_start=global_seq,
         )
         all_ops.extend(ops)
 

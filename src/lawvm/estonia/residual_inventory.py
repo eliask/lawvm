@@ -2409,16 +2409,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                 ),
             ),
             EEResidualRecord(
-                address="chapter:2/section:17_1/subsection:1",
-                bucket="source_pathology",
-                evidence=(
-                    "Source act 129062014001 contains a nested Kalapüügiseadus clause "
-                    "rewriting § 17^1(1)'s first sentence to the tegevusluba / "
-                    "majandustegevusteade wording, but this foreign-act nested amendment "
-                    "family is not yet parsed into an owned LawVM operation."
-                ),
-            ),
-            EEResidualRecord(
                 address="chapter:3/section:19/subsection:6_3",
                 bucket="source_oracle_drift",
                 evidence=(
