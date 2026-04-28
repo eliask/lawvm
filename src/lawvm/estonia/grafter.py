@@ -622,6 +622,26 @@ def _subsection_uses_appendix_html(el: ET.Element, ns_str: str) -> bool:
 
 
 _EE_DROP_ORPHAN_APPENDIX_MARKER_RULE = "ee_drop_orphan_appendix_marker_html"
+_EE_DROP_REPEALED_RANGE_RESIDUE_RULE = "ee_drop_repealed_range_residue"
+
+
+def _element_has_kehtetu_marker(el: ET.Element, ns_str: str) -> bool:
+    for mm in el.findall(_ns(ns_str, "muutmismarge")):
+        for text_el in mm.findall(_ns(ns_str, "tavatekst")):
+            marker = " ".join(str(part) for part in text_el.itertext()).strip().lower()
+            if marker.startswith(("kehtetu", "kehtetud")):
+                return True
+    return False
+
+
+def _is_repealed_range_residue_text(text: str) -> bool:
+    cleaned = _ee_normalize_text_replace_surface(text).strip()
+    if not cleaned:
+        return False
+    return bool(
+        re.fullmatch(r"[–‒-]+\s*\(?\d+\)?", cleaned)
+        or re.fullmatch(r"§-d\s+\d[\d_]*\s*[–‒-]\s*\d[\d_]*", cleaned)
+    )
 
 
 def _sisuTekst_text_with_appendix_markers(
@@ -692,6 +712,16 @@ def _parse_item(el: ET.Element, ns_str: str) -> IRNode:
         if txt:
             text_parts.append(txt)
     item_text = " ".join(text_parts)
+    if _element_has_kehtetu_marker(el, ns_str) and _is_repealed_range_residue_text(item_text):
+        return IRNode(
+            kind=IRNodeKind.ITEM,
+            label="",
+            text="",
+            attrs={
+                "source_cleanup_rule": _EE_DROP_REPEALED_RANGE_RESIDUE_RULE,
+                "dropped_repealed_residue": item_text,
+            },
+        )
 
     # Sub-items (alampunkt nested inside alampunkt — rare)
     children = [_parse_item(sub, ns_str) for sub in el.findall(_ns(ns_str, "alampunkt"))]
@@ -799,10 +829,25 @@ def _parse_subsection(el: ET.Element, ns_str: str, default_nr: int = 1) -> IRNod
         if txt:
             text_parts.append(txt)
     sub_text = " ".join(text_parts)
+    if _element_has_kehtetu_marker(el, ns_str) and _is_repealed_range_residue_text(sub_text):
+        return IRNode(
+            kind=IRNodeKind.SUBSECTION,
+            label="",
+            text="",
+            attrs={
+                "source_cleanup_rule": _EE_DROP_REPEALED_RANGE_RESIDUE_RULE,
+                "dropped_repealed_residue": sub_text,
+            },
+        )
 
     # Prefer explicit <alampunkt> XML items; fall back to <reavahetus>-separated items.
-    children = [_parse_item(item_el, ns_str) for item_el in el.findall(_ns(ns_str, "alampunkt"))]
-    children = [child for child in children if child.label or child.text or child.children]
+    parsed_children = [_parse_item(item_el, ns_str) for item_el in el.findall(_ns(ns_str, "alampunkt"))]
+    dropped_repealed_residues = [
+        str(child.attrs["dropped_repealed_residue"])
+        for child in parsed_children
+        if child.attrs.get("source_cleanup_rule") == _EE_DROP_REPEALED_RANGE_RESIDUE_RULE
+    ]
+    children = [child for child in parsed_children if child.label or child.text or child.children]
     if not children:
         # Old tyviseadus format: items encoded as "N) text" in <tavatekst>
         # tails of <reavahetus> elements rather than as <alampunkt> XML nodes.
@@ -820,7 +865,12 @@ def _parse_subsection(el: ET.Element, ns_str: str, default_nr: int = 1) -> IRNod
             if intro_parts:
                 sub_text = " ".join(intro_parts)
 
-    return IRNode(kind=IRNodeKind.SUBSECTION, label=nr, text=sub_text, children=tuple(children))
+    attrs = {}
+    if dropped_repealed_residues:
+        attrs["source_cleanup_rules"] = (_EE_DROP_REPEALED_RANGE_RESIDUE_RULE,)
+        attrs["dropped_repealed_residues"] = tuple(dropped_repealed_residues)
+
+    return IRNode(kind=IRNodeKind.SUBSECTION, label=nr, text=sub_text, attrs=attrs, children=tuple(children))
 
 
 def _parse_subsection_nodes(el: ET.Element, ns_str: str, default_nr: int = 1) -> List[IRNode]:
@@ -983,9 +1033,14 @@ def _parse_section(el: ET.Element, ns_str: str) -> IRNode:
         title = ""
 
     children: List[IRNode] = []
+    dropped_repealed_residues: list[str] = []
     loige_els = el.findall(_ns(ns_str, "loige"))
     for i, loige_el in enumerate(loige_els, start=1):
-        children.extend(_parse_subsection_nodes(loige_el, ns_str, default_nr=i))
+        for node in _parse_subsection_nodes(loige_el, ns_str, default_nr=i):
+            if node.label or node.text or node.children:
+                children.append(node)
+            elif node.attrs.get("source_cleanup_rule") == _EE_DROP_REPEALED_RANGE_RESIDUE_RULE:
+                dropped_repealed_residues.append(str(node.attrs["dropped_repealed_residue"]))
 
     # Section with no loige children — capture sisuTekst directly as single subsection.
     # _sisuTekst_text captures tavatekst + viide/kuvatavTekst in document order.
@@ -1003,6 +1058,9 @@ def _parse_section(el: ET.Element, ns_str: str) -> IRNode:
     # without applying subsequent global text-replacements to it.  We mark these
     # with attrs={'kehtetu': True} so _ee_global_text_replace can skip their title.
     attrs: dict = {}
+    if dropped_repealed_residues:
+        attrs["source_cleanup_rules"] = (_EE_DROP_REPEALED_RANGE_RESIDUE_RULE,)
+        attrs["dropped_repealed_residues"] = tuple(dropped_repealed_residues)
     if not children:
         mm = el.find(_ns(ns_str, "muutmismarge"))
         if mm is not None:

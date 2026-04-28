@@ -575,6 +575,145 @@ def test_parse_ee_statute_keeps_reavahetus_numbered_items_structural() -> None:
     ]
 
 
+def test_parse_ee_statute_drops_item_repealed_range_residue_with_marker() -> None:
+    xml = """
+    <tyviseadus xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
+      <aktinimi>
+        <nimi>
+          <pealkiri>Testseadus</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <peatykk>
+          <peatykkNr>1</peatykkNr>
+          <peatykkPealkiri>Peatukk</peatykkPealkiri>
+          <paragrahv>
+            <paragrahvNr>10 1</paragrahvNr>
+            <paragrahvPealkiri>Loetelu</paragrahvPealkiri>
+            <loige>
+              <loigeNr>1</loigeNr>
+              <sisuTekst>
+                <tavatekst>Intro.</tavatekst>
+              </sisuTekst>
+              <alampunkt>
+                <alampunktNr>3</alampunktNr>
+                <sisuTekst>
+                  <tavatekst>Kehtiv punkt.</tavatekst>
+                </sisuTekst>
+              </alampunkt>
+              <alampunkt>
+                <alampunktNr>4</alampunktNr>
+                <sisuTekst>
+                  <tavatekst>--6)</tavatekst>
+                </sisuTekst>
+                <muutmismarge>
+                  <tavatekst>kehtetud –</tavatekst>
+                </muutmismarge>
+              </alampunkt>
+            </loige>
+          </paragrahv>
+        </peatykk>
+      </sisu>
+    </tyviseadus>
+    """.encode("utf-8")
+
+    statute = parse_ee_statute(xml, "ee/test")
+    subsection = statute.body.children[0].children[0].children[0]
+
+    assert [(item.label, item.text) for item in subsection.children] == [("3", "Kehtiv punkt.")]
+    assert subsection.attrs["source_cleanup_rules"] == ("ee_drop_repealed_range_residue",)
+    assert subsection.attrs["dropped_repealed_residues"] == ("--6)",)
+
+
+def test_parse_ee_statute_preserves_residue_like_item_without_repeal_marker() -> None:
+    xml = """
+    <tyviseadus xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
+      <aktinimi>
+        <nimi>
+          <pealkiri>Testseadus</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <peatykk>
+          <peatykkNr>1</peatykkNr>
+          <peatykkPealkiri>Peatukk</peatykkPealkiri>
+          <paragrahv>
+            <paragrahvNr>10 1</paragrahvNr>
+            <paragrahvPealkiri>Loetelu</paragrahvPealkiri>
+            <loige>
+              <loigeNr>1</loigeNr>
+              <alampunkt>
+                <alampunktNr>4</alampunktNr>
+                <sisuTekst>
+                  <tavatekst>--6)</tavatekst>
+                </sisuTekst>
+              </alampunkt>
+            </loige>
+          </paragrahv>
+        </peatykk>
+      </sisu>
+    </tyviseadus>
+    """.encode("utf-8")
+
+    statute = parse_ee_statute(xml, "ee/test")
+    subsection = statute.body.children[0].children[0].children[0]
+
+    assert [(item.label, item.text) for item in subsection.children] == [("4", "--6)")]
+    assert "source_cleanup_rules" not in subsection.attrs
+
+
+def test_parse_ee_statute_drops_subsection_repealed_range_residue_with_marker() -> None:
+    xml = """
+    <tyviseadus xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
+      <aktinimi>
+        <nimi>
+          <pealkiri>Testseadus</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <peatykk>
+          <peatykkNr>1</peatykkNr>
+          <peatykkPealkiri>Peatukk</peatykkPealkiri>
+          <paragrahv>
+            <paragrahvNr>16</paragrahvNr>
+            <paragrahvPealkiri>Loiked</paragrahvPealkiri>
+            <loige>
+              <loigeNr>1</loigeNr>
+              <sisuTekst>
+                <tavatekst>Kehtiv lõige.</tavatekst>
+              </sisuTekst>
+            </loige>
+            <loige>
+              <loigeNr>2</loigeNr>
+              <sisuTekst>
+                <tavatekst>–(3)</tavatekst>
+              </sisuTekst>
+              <muutmismarge>
+                <tavatekst>Kehtetud –</tavatekst>
+              </muutmismarge>
+            </loige>
+            <loige>
+              <sisuTekst>
+                <tavatekst>§-d 121–13</tavatekst>
+              </sisuTekst>
+              <muutmismarge>
+                <tavatekst>Kehtetud –</tavatekst>
+              </muutmismarge>
+            </loige>
+          </paragrahv>
+        </peatykk>
+      </sisu>
+    </tyviseadus>
+    """.encode("utf-8")
+
+    statute = parse_ee_statute(xml, "ee/test")
+    section = statute.body.children[0].children[0]
+
+    assert [(subsection.label, subsection.text) for subsection in section.children] == [("1", "Kehtiv lõige.")]
+    assert section.attrs["source_cleanup_rules"] == ("ee_drop_repealed_range_residue",)
+    assert section.attrs["dropped_repealed_residues"] == ("–(3)", "§-d 121–13")
+
+
 def test_extract_ee_ops_keeps_nested_french_quotes_inside_payload() -> None:
     ops = extract_ee_ops(
         (
