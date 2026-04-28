@@ -1065,7 +1065,7 @@ def test_apply_ee_ops_subsection_repeal_range_includes_live_intervening_superscr
     ]
 
 
-def test_apply_ee_ops_item_repeals_finalize_last_live_item_before_short_empty_stub_tail() -> None:
+def test_apply_ee_ops_item_repeals_finalize_last_live_normal_item_before_short_empty_stub_tail() -> None:
     statute = IRStatute(
         statute_id="ee/test",
         title="Test",
@@ -6562,7 +6562,7 @@ def test_text_replace_on_chapter_heading_consumes_waist_instruction(monkeypatch)
     assert chapter.children[0].text == "Ajutise juhiloa väljaandmine"
 
 
-def test_repeal_item_keeps_empty_placeholder_and_finalizes_previous_item() -> None:
+def test_repeal_inserted_item_keeps_empty_placeholder_and_preserves_previous_item_terminal() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,
         children=(
@@ -6579,8 +6579,8 @@ def test_repeal_item_keeps_empty_placeholder_and_finalizes_previous_item() -> No
                                 label="1",
                                 text="Intro.",
                                 children=(
-                                    IRNode(kind=IRNodeKind.ITEM, label="7", text="õppetasu tagastamise alused ja kord;"),
-                                    IRNode(kind=IRNodeKind.ITEM, label="8", text="vaidluste lahendamise kord."),
+                                    IRNode(kind=IRNodeKind.ITEM, label="6", text="muud seadusest tulenevad dokumendid;"),
+                                    IRNode(kind=IRNodeKind.ITEM, label="6_1", text="ajutine lisadokument."),
                                 ),
                             ),
                         ),
@@ -6590,17 +6590,17 @@ def test_repeal_item_keeps_empty_placeholder_and_finalizes_previous_item() -> No
         ),
     )
     op = LegalOperation(
-        op_id="ee_test_repeal_item_placeholder",
+        op_id="ee_test_repeal_inserted_item_placeholder",
         sequence=1,
         action=StructuralAction.REPEAL,
-        target=LegalAddress(path=(("section", "12"), ("subsection", "1"), ("item", "8"))),
+        target=LegalAddress(path=(("section", "12"), ("subsection", "1"), ("item", "6_1"))),
     )
 
     result = _ee_apply_op(body, op)
     subsection = result.children[0].children[0].children[0]
 
-    assert subsection.children[0].text == "õppetasu tagastamise alused ja kord."
-    assert subsection.children[1].label == "8"
+    assert subsection.children[0].text == "muud seadusest tulenevad dokumendid;"
+    assert subsection.children[1].label == "6_1"
     assert subsection.children[1].text == ""
 
 

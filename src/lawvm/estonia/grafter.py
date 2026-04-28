@@ -187,6 +187,11 @@ def _normalize_item_list_terminals(children: list[IRNode]) -> list[IRNode]:
     return normalized
 
 
+def _is_inserted_numbered_label(label: str | None) -> bool:
+    """Return whether an EE numeric label is an inserted/superscript label."""
+    return bool(label and "_" in label)
+
+
 def _text_merge_signature(op: LegalOperation) -> tuple[object | None, object | None, int]:
     """Return the text-level part of the Estonia merge key.
 
@@ -6400,9 +6405,12 @@ def _ee_apply_op(
                             children=tuple(
                                 new_children
                                 if (
-                                    had_trailing_empty_placeholders
-                                    and original_last_nonempty_index is not None
-                                    and target_index < original_last_nonempty_index
+                                    _is_inserted_numbered_label(target_node.label)
+                                    or (
+                                        had_trailing_empty_placeholders
+                                        and original_last_nonempty_index is not None
+                                        and target_index < original_last_nonempty_index
+                                    )
                                 )
                                 else _normalize_item_list_terminals(new_children)
                             ),
