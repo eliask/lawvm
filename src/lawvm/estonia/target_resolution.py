@@ -933,7 +933,11 @@ def new_format_collect_op_texts(
         if st_tava and not st_html:
             tava_text = " ".join(st_tava)
             if any(kw in tava_text.lower() for kw in op_kws) or re.search(r"§\s*\d", tava_text):
-                tava_instructions = [tava_text]
+                split_tava = split_plaintext_numbered_op_texts(tava_text)
+                if split_tava:
+                    op_texts.extend(split_tava)
+                else:
+                    tava_instructions = [tava_text]
         elif st_html and not st_tava and tava_instructions:
             for html_block in st_html:
                 content_plain = _strip_html(html_block)
@@ -978,7 +982,11 @@ def new_format_collect_op_texts(
             )
             or re.search(r"§\s*\d", full_text)
         ):
-            op_texts.append(full_text)
+            split_full_text = split_plaintext_numbered_op_texts(full_text)
+            if split_full_text:
+                op_texts.extend(split_full_text)
+            else:
+                op_texts.append(full_text)
 
     if not op_texts and tava_instructions:
         op_texts.extend(tava_instructions)
@@ -1252,6 +1260,7 @@ def old_format_has_section_ref(text: str) -> bool:
         re.search(
             r"\bparagrahvid(?:e[s]?)?\s+\d|\bparagrahvi(?:s|st)?\s+\d|\bparagrahv\s+\d|"
             r"§(?:-d|-s|-ga|-des|-dega)?\s*\d|"
+            r"\blisa(?:d|de|sid)?\s+\d|"
             r"\bpeatüki\s+\d|\bjao\s+\d|\bjaotis(?:e|es|t)?\s+\d|"
             r"\b\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s*[.]\s*peatük|\b\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s*[.]\s*jao|"
             r"\b\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s*[.]\s*jaotis",
@@ -1307,6 +1316,34 @@ def old_format_item_label(op_text: str) -> str | None:
     if not match:
         return None
     return _normalize_num(match.group(1))
+
+
+def split_plaintext_numbered_op_texts(text: str) -> list[str]:
+    """Split a flat plaintext amendment body into top-level numbered clauses."""
+    if not text:
+        return []
+    normalized = re.sub(r"\s+", " ", text.replace("\xa0", " ")).strip()
+    normalized = re.split(
+        r"\s§\s*\d+\.\s+Määrus(?:t)?\s+(?:jõustub|rakendatakse)\b",
+        normalized,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0].strip()
+    start_pattern = re.compile(
+        r"(?:^|\s)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\)\s+"
+        r"(?=(?:paragrahvi|paragrahv|määruse|seaduse|lisa|lisad|§)\b)",
+        re.IGNORECASE,
+    )
+    starts = [match.start(1) for match in start_pattern.finditer(normalized)]
+    if not starts:
+        return []
+    clauses: list[str] = []
+    for idx, start in enumerate(starts):
+        end = starts[idx + 1] if idx + 1 < len(starts) else len(normalized)
+        clause = normalized[start:end].strip()
+        if clause:
+            clauses.append(clause)
+    return clauses if len(clauses) > 1 else []
 
 
 def old_format_extract_op_texts(content_block: str, block_header_text: str) -> list[str]:
@@ -2237,10 +2274,18 @@ def parse_preambul_single_target_ops(
         for child in direct_sisu_blocks:
             for text_el in child.findall(_ns(ns_str, "tavatekst")):
                 candidate = tavatekst_text(text_el, ns_str)
-                candidate_fragment = extract_intro_statute_fragment(candidate)
+                candidate_intro = re.sub(r"^§\s*\d+\.\s*", "", candidate).strip()
+                target_intro_match = re.match(
+                    r"(.{0,500}?\btehakse\s+järgmised\s+muudatused:)",
+                    candidate_intro,
+                    re.IGNORECASE,
+                )
+                if target_intro_match is not None:
+                    candidate_intro = target_intro_match.group(1).strip()
+                candidate_fragment = extract_intro_statute_fragment(candidate_intro)
                 if candidate_fragment:
                     stat_fragment = candidate_fragment
-                    intro_tava = candidate
+                    intro_tava = candidate_intro
                     break
             if stat_fragment:
                 break

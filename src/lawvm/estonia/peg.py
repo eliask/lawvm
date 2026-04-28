@@ -966,6 +966,9 @@ def _extract_balanced_quoted_contents(text: str, open_quote: str, close_quote: s
 
 def _extract_quoted_contents(text: str) -> List[str]:
     """Extract one or more payload blocks between quotation marks."""
+    balanced_estonian_left_close = _extract_balanced_quoted_contents(text, '\u201e', '\u201c')
+    if balanced_estonian_left_close:
+        return balanced_estonian_left_close
     balanced_estonian = _extract_balanced_quoted_contents(text, '\u201e', '\u201d')
     if balanced_estonian:
         return balanced_estonian
@@ -973,6 +976,7 @@ def _extract_quoted_contents(text: str) -> List[str]:
     if balanced_french:
         return balanced_french
     for pat in (
+        r'\u201e(.*?)\u201c',
         r'\u201e(.*?)\u201d',
         r'\u201d(.*?)\u201d',
         r'\u02ee(.*?)\u02ee',
