@@ -357,7 +357,7 @@ def test_ee_publication_db_builds_sqlite_from_replayable_corpus(tmp_path, monkey
                 ConsistencyDivergence(
                     address=LegalAddress(path=(("section", "1"),)),
                     divergence_type="MISMATCH",
-                    ops_text="replay",
+                    ops_text="",
                     consolidated_text="oracle",
                 )
             ],
@@ -395,7 +395,108 @@ def test_ee_publication_db_builds_sqlite_from_replayable_corpus(tmp_path, monkey
     finally:
         con.close()
     assert pair == ("b1", "o1", 1, 2, 1, 1, 10, 4)
-    assert divergence == ("section:1", "replay", "oracle")
+    assert divergence == ("section:1", "", "oracle")
+
+
+def test_ee_publication_db_classifies_exact_cross_address_text_shadows() -> None:
+    moved_text = "Moved section text that is long enough to avoid generic short-label matching."
+    divergences = [
+        {
+            "address": "chapter:1/section:1",
+            "replay_text": "Old section text that remains at the replay address.",
+            "oracle_text": moved_text,
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+        {
+            "address": "chapter:1/section:2",
+            "replay_text": moved_text,
+            "oracle_text": "Different section text at the oracle address.",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+        {
+            "address": "chapter:1/section:3",
+            "replay_text": "short",
+            "oracle_text": "short",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+    ]
+
+    ee_publication_db._classify_address_alignment_shadows(divergences)
+
+    assert divergences[0]["residual_bucket"] == "address_alignment_shadow"
+    assert divergences[0]["open_current"] == 0
+    assert divergences[0]["alignment_peer_addresses"] == "chapter:1/section:2"
+    assert divergences[1]["residual_bucket"] == "address_alignment_shadow"
+    assert divergences[1]["open_current"] == 0
+    assert divergences[1]["alignment_peer_addresses"] == "chapter:1/section:1"
+    assert divergences[2]["residual_bucket"] is None
+    assert divergences[2]["open_current"] == 1
+
+
+def test_ee_publication_db_classifies_failed_amendment_chain_as_coverage_gap() -> None:
+    divergences = [
+        {
+            "address": "chapter:1/section:1",
+            "replay_text": "base text",
+            "oracle_text": "changed text",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+        {
+            "address": "chapter:1/section:2",
+            "replay_text": "known drift",
+            "oracle_text": "known drift changed",
+            "residual_bucket": "source_oracle_drift",
+            "residual_evidence": "already adjudicated",
+            "alignment_peer_addresses": "",
+            "open_current": 0,
+        },
+    ]
+
+    ee_publication_db._classify_replay_coverage_gaps(
+        divergences,
+        amendments_failed=["123122017034"],
+    )
+
+    assert divergences[0]["residual_bucket"] == "replay_coverage_gap"
+    assert divergences[0]["open_current"] == 0
+    assert "123122017034" in divergences[0]["residual_evidence"]
+    assert divergences[1]["residual_bucket"] == "source_oracle_drift"
+    assert divergences[1]["residual_evidence"] == "already adjudicated"
+
+
+def test_ee_publication_db_classifies_noncommensurable_pair_surface() -> None:
+    divergences = [
+        {
+            "address": "chapter:1/section:1",
+            "replay_text": "base text",
+            "oracle_text": "future text",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+    ]
+
+    ee_publication_db._classify_noncommensurable_pair_surface(
+        divergences,
+        comparison_class="forward_looking_oracle",
+    )
+
+    assert divergences[0]["residual_bucket"] == "pair_surface_classification"
+    assert divergences[0]["open_current"] == 0
+    assert "forward_looking_oracle" in divergences[0]["residual_evidence"]
 
 
 def test_bench_regression_guard_run_guard_pass_and_fail(tmp_path, monkeypatch, capsys) -> None:

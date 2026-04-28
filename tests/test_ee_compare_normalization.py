@@ -58,6 +58,20 @@ def test_normalize_ee_comparison_text_normalizes_numeric_range_hyphen() -> None:
     )
 
 
+def test_normalize_ee_comparison_text_collapses_numeric_range_dash_spacing() -> None:
+    assert normalize_ee_comparison_text("pikkus 60 –80 mm ja periood 01.07.2011 – 30.06.2015") == (
+        "pikkus 60–80 mm ja periood 01.07.2011–30.06.2015"
+    )
+
+
+def test_normalize_ee_comparison_text_restores_euro_suffix_spacing() -> None:
+    assert normalize_ee_comparison_text("25 337 991eurot") == "25 337 991 eurot"
+
+
+def test_normalize_ee_comparison_text_decodes_bounded_html_entities() -> None:
+    assert normalize_ee_comparison_text("määruse &#167; 5 ja &#171;Kord&#187;") == 'määruse § 5 ja "Kord"'
+
+
 def test_normalize_ee_comparison_text_collapses_formula_slash_spacing() -> None:
     assert normalize_ee_comparison_text("poorsusnäitaja O 90 /d 90 väiksem kui 5") == (
         "poorsusnäitaja O90/d90 väiksem kui 5"
