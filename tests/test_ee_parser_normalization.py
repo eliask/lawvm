@@ -24,7 +24,16 @@ from lawvm.estonia.grafter import (
     parse_ee_amendment_ops,
     parse_ee_statute,
 )
-from lawvm.core.ir import OperationSource, TextPatchSpec, TextSelector, LegalOperation, LegalAddress, StructuralAction
+from lawvm.core.ir import (
+    IRNode,
+    IRStatute,
+    OperationSource,
+    TextPatchSpec,
+    TextSelector,
+    LegalOperation,
+    LegalAddress,
+    StructuralAction,
+)
 from lawvm.core.semantic_types import FacetKind, TextPatchKindEnum, IRNodeKind
 from lawvm.estonia.peg import extract_ee_ops, parse_html_op_items, parse_target
 
@@ -580,6 +589,111 @@ def test_parse_ee_amendment_ops_excludes_later_scoped_old_text_from_global_lexic
     assert item_5_replace.payload is not None
     assert "liidu tollimaksuvabastuse süsteem" in (item_5_replace.payload.text or "")
     assert "ee_source_local_global_text_replace_payload_composition" in item_5_replace.provenance_tags
+
+
+def test_parse_ee_amendment_ops_preserves_quoted_legal_title_during_source_local_composition() -> None:
+    xml = """
+    <tyviseadus xmlns="tyviseadus_1_10.02.2010">
+      <sisu>
+        <sisuTekst><HTMLKonteiner><![CDATA[
+          <p><b>&sect; 1.</b> Testm&auml;&auml;rust &bdquo;Vesikondade ja alamvesikondade m&auml;&auml;ramine&ldquo; muudetakse j&auml;rgmiselt:</p>
+          <p><b>1)</b> m&auml;&auml;ruse tekstis asendatakse l&auml;bivalt s&otilde;na &bdquo;alamvesikond&ldquo; s&otilde;naga &bdquo;vesikond&ldquo; vastavas k&auml;&auml;ndes;</p>
+          <p><b>2)</b> paragrahvi 2 l&otilde;ige 2 s&otilde;nastatakse j&auml;rgmiselt:</p>
+          <p>&bdquo;(2) Hoiukavad koostatakse Vabariigi Valitsuse 9. septembri 2010. a m&auml;&auml;ruse nr 132 &bdquo;Vesikondade ja alamvesikondade m&auml;&auml;ramine&ldquo; &sect;-s 1 nimetatud alamvesikondade kohta.&ldquo;;</p>
+        ]]></HTMLKonteiner></sisuTekst>
+      </sisu>
+    </tyviseadus>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Vesikondade ja alamvesikondade määramine",
+    )
+
+    subsection = next(
+        op
+        for op in ops
+        if op.target.path == (("section", "2"), ("subsection", "2"))
+    )
+
+    assert subsection.payload is not None
+    assert "Vesikondade ja alamvesikondade määramine" in subsection.payload.text
+    assert "nimetatud vesikondade kohta" in subsection.payload.text
+    assert "ee_source_local_global_text_replace_payload_composition" in subsection.provenance_tags
+    assert "ee_source_local_payload_composition_quoted_title_skipped" in subsection.provenance_tags
+
+
+def test_parse_section_payload_accepts_subsection_marker_without_space() -> None:
+    parsed = _parse_section_payload(
+        (
+            "(1)Vesikonna maaparandushoiu kokkuvõttes antakse ülevaade: "
+            "1) riigieesvoolude prioriteetidest; "
+            "2) riigieesvoolude hoiutööde mahtudest. "
+            "Vesikonna maaparandushoiu kokkuvõttes analüüsitakse muutusi."
+        )
+    )
+
+    assert parsed.text == ""
+    assert len(parsed.children) == 1
+    subsection = parsed.children[0]
+    assert subsection.kind is IRNodeKind.SUBSECTION
+    assert subsection.label == "1"
+    assert subsection.text == "Vesikonna maaparandushoiu kokkuvõttes antakse ülevaade:"
+    assert [(item.label, item.text) for item in subsection.children] == [
+        ("1", "riigieesvoolude prioriteetidest;"),
+        (
+            "2",
+            (
+                "riigieesvoolude hoiutööde mahtudest. "
+                "Vesikonna maaparandushoiu kokkuvõttes analüüsitakse muutusi."
+            ),
+        ),
+    ]
+
+
+def test_replay_ee_to_pit_preserves_heading_for_short_section_text_replacement() -> None:
+    from lawvm.estonia.grafter import apply_ee_ops
+
+    base = IRStatute(
+        statute_id="ee/test",
+        title="Test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="14",
+                    text="Hoiukava koostamise kord",
+                    children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Vana tekst."),),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee/test/op",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "14"),)),
+        payload=IRNode(kind=IRNodeKind.CONTENT, text="Hoiukavad koostab Põllumajandusamet."),
+        source=OperationSource(
+            statute_id="ee/test",
+            raw_text=(
+                "paragrahvi 14 tekst sõnastatakse järgmiselt: "
+                "„Hoiukavad koostab Põllumajandusamet.”;"
+            ),
+        ),
+        provenance_tags=(
+            "paragrahvi 14 tekst sõnastatakse järgmiselt: „Hoiukavad koostab Põllumajandusamet.”;",
+        ),
+    )
+
+    updated = apply_ee_ops(base, [op])
+    section = updated.body.children[0]
+    assert section.text == "Hoiukava koostamise kord"
+    assert [(child.label, child.text) for child in section.children] == [
+        ("1", "Hoiukavad koostab Põllumajandusamet.")
+    ]
 
 
 def test_parse_ee_amendment_ops_uses_direct_html_intro_for_single_target_regulation() -> None:
@@ -2734,6 +2848,45 @@ def test_extract_ee_ops_splits_title_and_text_global_text_replace_pairs() -> Non
         and "ee_global_title_text_rewrite_no_payload_composition" in op.provenance_tags
         for op in ops
     )
+
+
+def test_extract_ee_ops_fans_out_mixed_repeal_item_targets() -> None:
+    text = (
+        "paragrahvi 3 punktid 7 ja 8, § 5 lõike 4 punkt 1, "
+        "§ 6 lõike 1 punktid 2–4, § 7 punkt 6 ning § 13 "
+        "tunnistatakse kehtetuks;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPEAL, (("section", "3"), ("item", "7"))),
+        (StructuralAction.REPEAL, (("section", "3"), ("item", "8"))),
+        (StructuralAction.REPEAL, (("section", "5"), ("subsection", "4"), ("item", "1"))),
+        (StructuralAction.REPEAL, (("section", "6"), ("subsection", "1"), ("item", "2"))),
+        (StructuralAction.REPEAL, (("section", "6"), ("subsection", "1"), ("item", "3"))),
+        (StructuralAction.REPEAL, (("section", "6"), ("subsection", "1"), ("item", "4"))),
+        (StructuralAction.REPEAL, (("section", "7"), ("item", "6"))),
+        (StructuralAction.REPEAL, (("section", "13"),)),
+    ]
+
+
+def test_extract_ee_ops_lowers_chapter_heading_insert_after_section() -> None:
+    text = (
+        "määrust täiendatakse pärast § 14 peatüki pealkirjaga "
+        "järgmises sõnastuses: „4. peatükk RAKENDUSSÄTE”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.INSERT
+    assert op.target.path == (("chapter", "4"),)
+    assert op.payload is not None
+    assert op.payload.text == "4. peatükk RAKENDUSSÄTE"
+    assert op.payload.attrs["insert_after_section"] == "14"
+    assert op.witness_rule_id == "ee_chapter_heading_insert_after_section"
 
 
 def test_extract_ee_ops_marks_combined_section_heading_text_replace_as_heading_special() -> None:
