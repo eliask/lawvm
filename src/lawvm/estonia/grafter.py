@@ -5947,7 +5947,7 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
 
         if not next_word:
             return False
-        if next_word == "kohustatud":
+        if next_word in {"kohustatud", "nimetatakse"}:
             return False
         if joiner and not (
             len(semantic_next_words) >= 2

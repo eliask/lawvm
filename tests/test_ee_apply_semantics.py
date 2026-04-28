@@ -2989,6 +2989,19 @@ def test_global_case_inflected_text_replace_handles_ambiguous_genitive_phrase_co
     assert "töötleva üksuse taotlusel" in subsection.text
 
 
+def test_case_inflected_payload_composition_keeps_nom_subject_before_nimetatakse() -> None:
+    text = "Kaitseväelane või reservis olev isik nimetatakse sõjaaja ametikohale."
+
+    updated = _ee_apply_text_replace_value(
+        text,
+        "reservväelane",
+        "reservis olev isik",
+        case_inflected=True,
+    )
+
+    assert updated == text
+
+
 def test_global_case_inflected_text_replace_handles_taotlusel_after_finite_verb() -> None:
     body = _body_with_section_and_subsection(
         "23",
