@@ -46,6 +46,14 @@ _INSTITUTIONAL_NAME_PROJECTIONS: tuple[tuple[str, str], ...] = (
     ("Veeteede Amet", "Transpordiamet"),
     ("Veeteede Ameti", "Transpordiameti"),
 )
+_SYMBOL_PLACEHOLDER_TRANSLATION = str.maketrans(
+    {
+        "≤": "?",
+        "β": "?",
+        "α": "?",
+        "σ": "?",
+    }
+)
 
 
 def _address_to_string(address: Any) -> str:
@@ -396,6 +404,43 @@ def _classify_institutional_name_projection(divergences: list[dict[str, Any]]) -
         divergence["open_current"] = 0
 
 
+def _symbol_placeholder_projection(text: str) -> str:
+    projected = text.translate(_SYMBOL_PLACEHOLDER_TRANSLATION)
+    projected = " ".join(projected.split())
+    return projected.replace(" ?", "?")
+
+
+def _classify_symbol_placeholder_projection(divergences: list[dict[str, Any]]) -> None:
+    """Close exact rows where RT carries placeholder question marks for symbols.
+
+    Some RT comparison surfaces expose mathematical signs or Greek variables as
+    literal ``?`` while the source/replay text carries the actual symbol. This is
+    classification metadata only: replay remains source-faithful.
+    """
+    for divergence in divergences:
+        if divergence.get("residual_bucket"):
+            continue
+        replay_text = divergence.get("replay_text")
+        oracle_text = divergence.get("oracle_text")
+        if replay_text is None or oracle_text is None:
+            continue
+        replay_projected = _symbol_placeholder_projection(str(replay_text))
+        oracle_projected = _symbol_placeholder_projection(str(oracle_text))
+        if replay_projected != oracle_projected:
+            continue
+        if str(replay_text) == str(oracle_text):
+            continue
+        divergence["residual_bucket"] = "source_oracle_drift"
+        divergence["residual_evidence"] = (
+            "Exact symbol-placeholder projection makes replay and Riigi Teataja "
+            "text equal for this section. RT carries '?' where the source/replay "
+            "surface carries mathematical or Greek symbols such as <=, beta, "
+            "alpha, or sigma. This is classified as source/oracle surface drift "
+            "for publication triage; replay output is not mutated."
+        )
+        divergence["open_current"] = 0
+
+
 def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     base_id = row["base_id"].strip()
     oracle_id = row["oracle_id"].strip()
@@ -513,6 +558,7 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
         comparison_class=result.comparison_class,
     )
     _classify_institutional_name_projection(divergences)
+    _classify_symbol_placeholder_projection(divergences)
     _classify_address_alignment_shadows(divergences)
     pair["browser_divergence_count"] = len(divergences)
     pair["browser_open_current_divergence_count"] = sum(1 for divergence in divergences if divergence["open_current"])

@@ -587,6 +587,37 @@ def test_ee_publication_db_classifies_exact_institutional_name_projection() -> N
     assert divergences[1]["open_current"] == 1
 
 
+def test_ee_publication_db_classifies_exact_symbol_placeholder_projection() -> None:
+    divergences = [
+        {
+            "address": "chapter:3/section:220",
+            "replay_text": "CCRM j puhul; β=1,4. Tsoon > 1 ≤ 5 aastat.",
+            "oracle_text": "CCRM j puhul; ?=1,4. Tsoon > 1? 5 aastat.",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+        {
+            "address": "chapter:3/section:310",
+            "replay_text": "sisuline tekst β=1,4 ja veel midagi",
+            "oracle_text": "sisuline teine tekst ?=1,4 ja veel midagi",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+    ]
+
+    ee_publication_db._classify_symbol_placeholder_projection(divergences)
+
+    assert divergences[0]["residual_bucket"] == "source_oracle_drift"
+    assert divergences[0]["open_current"] == 0
+    assert "symbol-placeholder projection" in divergences[0]["residual_evidence"]
+    assert divergences[1]["residual_bucket"] is None
+    assert divergences[1]["open_current"] == 1
+
+
 def test_ee_publication_db_classifies_noncommensurable_pair_surface() -> None:
     divergences = [
         {
