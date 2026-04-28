@@ -91,6 +91,7 @@ def _create_schema(con: sqlite3.Connection) -> None:
             oracle_text_hash TEXT,
             residual_bucket TEXT,
             residual_evidence TEXT,
+            alignment_peer_addresses TEXT,
             open_current INTEGER NOT NULL DEFAULT 1,
             FOREIGN KEY(pair_key) REFERENCES pairs(pair_key)
         );
@@ -199,6 +200,121 @@ def _section_agreement_metrics(
     return metrics
 
 
+def _address_alignment_peer_addresses(
+    divergence: dict[str, Any],
+    *,
+    replay_hash_addresses: dict[str, set[str]],
+    oracle_hash_addresses: dict[str, set[str]],
+) -> tuple[str, ...]:
+    """Return opposite-side addresses carrying the same full section text.
+
+    This is publication/adjudication metadata only. It does not repair replay,
+    rewrite addresses, or assert which address is legally correct.
+    """
+    address = str(divergence["address"])
+    peers: set[str] = set()
+    replay_text = str(divergence.get("replay_text") or "")
+    oracle_text = str(divergence.get("oracle_text") or "")
+    if len(oracle_text) >= 40:
+        oracle_hash = _text_hash(oracle_text)
+        peers.update(peer for peer in replay_hash_addresses.get(oracle_hash, set()) if peer != address)
+    if len(replay_text) >= 40:
+        replay_hash = _text_hash(replay_text)
+        peers.update(peer for peer in oracle_hash_addresses.get(replay_hash, set()) if peer != address)
+    return tuple(sorted(peers))
+
+
+def _classify_address_alignment_shadows(divergences: list[dict[str, Any]]) -> None:
+    """Mark exact cross-address text shadows as non-open publication rows.
+
+    A section can be text-identical to the opposite side at a different address
+    when a source/oracle surface shifts labels or omits an insertion that moves
+    the visible address sequence. Those rows are useful for diagnosing address
+    alignment, but they should not pollute the default current content-diff
+    queue as independent substantive text divergences.
+    """
+    replay_hash_addresses: dict[str, set[str]] = {}
+    oracle_hash_addresses: dict[str, set[str]] = {}
+    for divergence in divergences:
+        replay_text = str(divergence.get("replay_text") or "")
+        oracle_text = str(divergence.get("oracle_text") or "")
+        if replay_text:
+            replay_hash_addresses.setdefault(_text_hash(replay_text), set()).add(str(divergence["address"]))
+        if oracle_text:
+            oracle_hash_addresses.setdefault(_text_hash(oracle_text), set()).add(str(divergence["address"]))
+
+    for divergence in divergences:
+        if divergence.get("residual_bucket"):
+            divergence["alignment_peer_addresses"] = ""
+            continue
+        peers = _address_alignment_peer_addresses(
+            divergence,
+            replay_hash_addresses=replay_hash_addresses,
+            oracle_hash_addresses=oracle_hash_addresses,
+        )
+        if not peers:
+            divergence["alignment_peer_addresses"] = ""
+            continue
+        divergence["residual_bucket"] = "address_alignment_shadow"
+        divergence["residual_evidence"] = (
+            "The full section text appears verbatim on the opposite comparison "
+            f"side at another address: {', '.join(peers)}. This classifies the "
+            "row as an address-alignment shadow for publication triage; it does "
+            "not decide whether replay or Riigi Teataja has the legally correct address."
+        )
+        divergence["alignment_peer_addresses"] = ", ".join(peers)
+        divergence["open_current"] = 0
+
+
+def _classify_replay_coverage_gaps(
+    divergences: list[dict[str, Any]],
+    *,
+    amendments_failed: list[str],
+) -> None:
+    """Mark rows whose amendment chain did not fully compile as non-candidates.
+
+    Failed amendment refs mean replay did not have a complete executable source
+    program for the pair. The resulting differences may still be useful for
+    frontend coverage work, but they are not publication-side candidate
+    divergences.
+    """
+    if not amendments_failed:
+        return
+    failed = ", ".join(amendments_failed)
+    evidence = (
+        "LawVM did not compile a complete amendment chain for this pair; "
+        f"failed amendment refs: {failed}. Treat these rows as replay/source "
+        "coverage debt, not as Riigi Teataja candidate divergences."
+    )
+    for divergence in divergences:
+        if divergence.get("residual_bucket"):
+            continue
+        divergence["residual_bucket"] = "replay_coverage_gap"
+        divergence["residual_evidence"] = evidence
+        divergence["open_current"] = 0
+
+
+def _classify_noncommensurable_pair_surface(
+    divergences: list[dict[str, Any]],
+    *,
+    comparison_class: str,
+) -> None:
+    """Close rows for pair classes that are not direct current deltas."""
+    if comparison_class == "commensurable_delta":
+        return
+    evidence = (
+        f"The pair is classified as {comparison_class}, not as a direct "
+        "commensurable current-version delta. Keep these rows for source-surface "
+        "diagnostics, but do not treat them as current Riigi Teataja candidate divergences."
+    )
+    for divergence in divergences:
+        if divergence.get("residual_bucket"):
+            continue
+        divergence["residual_bucket"] = "pair_surface_classification"
+        divergence["residual_evidence"] = evidence
+        divergence["open_current"] = 0
+
+
 def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     base_id = row["base_id"].strip()
     oracle_id = row["oracle_id"].strip()
@@ -272,8 +388,8 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
     for divergence, address in zip(result.divergences, raw_divergence_addresses):
         if not _is_browser_detail_address(address):
             continue
-        replay_text = divergence.ops_text or ""
-        oracle_text = divergence.consolidated_text or ""
+        replay_text = divergence.ops_text
+        oracle_text = divergence.consolidated_text
         if replay_text == oracle_text:
             continue
         residual_record = (
@@ -296,9 +412,19 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
                 "oracle_text": oracle_text,
                 "residual_bucket": residual_record.bucket if residual_record else None,
                 "residual_evidence": residual_record.evidence if residual_record else None,
+                "alignment_peer_addresses": "",
                 "open_current": 0 if residual_record else 1,
             }
         )
+    _classify_replay_coverage_gaps(
+        divergences,
+        amendments_failed=list(getattr(result, "amendments_failed", ())),
+    )
+    _classify_noncommensurable_pair_surface(
+        divergences,
+        comparison_class=result.comparison_class,
+    )
+    _classify_address_alignment_shadows(divergences)
     pair["browser_divergence_count"] = len(divergences)
     pair["browser_open_current_divergence_count"] = sum(1 for divergence in divergences if divergence["open_current"])
     return pair, divergences
@@ -430,8 +556,8 @@ def build_ee_publication_db(
             for divergence in divergences:
                 replay_text = divergence["replay_text"]
                 oracle_text = divergence["oracle_text"]
-                replay_hash = _text_hash(replay_text) if replay_text else None
-                oracle_hash = _text_hash(oracle_text) if oracle_text else None
+                replay_hash = _text_hash(replay_text) if replay_text is not None else None
+                oracle_hash = _text_hash(oracle_text) if oracle_text is not None else None
                 if replay_hash is not None:
                     text_rows[replay_hash] = replay_text
                 if oracle_hash is not None:
@@ -448,6 +574,7 @@ def build_ee_publication_db(
                         oracle_hash,
                         divergence["residual_bucket"],
                         divergence["residual_evidence"],
+                        divergence["alignment_peer_addresses"],
                         divergence["open_current"],
                     )
                 )
@@ -460,8 +587,9 @@ def build_ee_publication_db(
                 INSERT INTO divergences(
                     pair_key, base_id, oracle_id, section_address, address, divergence_type,
                     replay_text_hash, oracle_text_hash, residual_bucket, residual_evidence,
+                    alignment_peer_addresses,
                     open_current
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 divergence_rows,
             )

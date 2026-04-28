@@ -23,6 +23,10 @@ _EE_HYPHEN_SPACING_RE = re.compile(
 _EE_EN_DASH_DIGIT_SPACE_RE = re.compile(r"(?<=\d)[–‒]\s+(?=\d)")
 _EE_FIGURE_DASH_RE = re.compile(r"‒")
 _EE_NUMERIC_RANGE_HYPHEN_RE = re.compile(r"(?<=\d)-(?=\d)")
+_EE_NUMERIC_RANGE_DASH_SPACING_RE = re.compile(r"(?<=\d)\s+[–‒-]\s*(?=\d)")
+_EE_EURO_SUFFIX_SPACING_RE = re.compile(r"(?<=\d)(?=eurot\b)")
+_EE_HTML_SECTION_SIGN_ENTITY_RE = re.compile(r"&#167;")
+_EE_HTML_QUOTE_ENTITY_RE = re.compile(r"&#(?:171|187);")
 _EE_SLASH_SPACING_RE = re.compile(r"(?<=\S)\s+/\s*(?=\S)")
 _EE_DEGREE_SPACING_RE = re.compile(r"(?<=\d)\s+(?=º)")
 _EE_SINGLE_LETTER_FORMULA_SUBSCRIPT_RE = re.compile(
@@ -127,6 +131,38 @@ _EE_NORMALIZATION_RULES = (
         description="Normalize hyphen-minus to en dash between digits for range-like comparison surfaces.",
         pattern=_EE_NUMERIC_RANGE_HYPHEN_RE,
         replacement="–",
+    ),
+    EENormalizationRule(
+        name="numeric_range_dash_spacing",
+        rule_class=EENormalizationRuleClass.punctuation,
+        kind="regex",
+        description="Collapse editorial spaces around numeric range dashes.",
+        pattern=_EE_NUMERIC_RANGE_DASH_SPACING_RE,
+        replacement="–",
+    ),
+    EENormalizationRule(
+        name="euro_suffix_spacing",
+        rule_class=EENormalizationRuleClass.encoding_layout,
+        kind="regex",
+        description="Restore a missing space before the euro amount suffix.",
+        pattern=_EE_EURO_SUFFIX_SPACING_RE,
+        replacement=" ",
+    ),
+    EENormalizationRule(
+        name="html_section_sign_entity",
+        rule_class=EENormalizationRuleClass.encoding_layout,
+        kind="regex",
+        description="Decode a leaked HTML section-sign entity on the comparison surface.",
+        pattern=_EE_HTML_SECTION_SIGN_ENTITY_RE,
+        replacement="§",
+    ),
+    EENormalizationRule(
+        name="html_angle_quote_entities",
+        rule_class=EENormalizationRuleClass.encoding_layout,
+        kind="regex",
+        description="Decode leaked HTML guillemet entities to the quote comparison surface.",
+        pattern=_EE_HTML_QUOTE_ENTITY_RE,
+        replacement='"',
     ),
     EENormalizationRule(
         name="slash_spacing",
