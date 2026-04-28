@@ -69,6 +69,16 @@ def _build_ee_explain_payload(base_id: str, oracle_id: str, verbose: bool = Fals
         oracle_id=result.oracle_id,
         divergence_addresses=divergence_addresses,
     )
+    residual_inventory = None
+    if residual_summary is not None:
+        residual_inventory = {
+            "residual_count": residual_summary.residual_count,
+            "bucket_counts": residual_summary.bucket_counts,
+            "matched_current_divergence_count": residual_summary.matched_current_divergence_count,
+            "matched_current_bucket_counts": residual_summary.matched_current_bucket_counts,
+            "unknown_current_divergence_count": residual_summary.unknown_current_divergence_count,
+            "unknown_current_divergence_addresses": residual_summary.unknown_current_divergence_addresses,
+        }
 
     # Get source amendment info from the pair plan
     applied_amendments = []
@@ -135,7 +145,7 @@ def _build_ee_explain_payload(base_id: str, oracle_id: str, verbose: bool = Fals
         "applied_amendments": applied_amendments,
         "bucket_groups": bucket_groups,
         "divergences": divergences,
-        "residual_inventory": None,
+        "residual_inventory": residual_inventory,
     }
 
 
