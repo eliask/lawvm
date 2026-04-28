@@ -2248,6 +2248,33 @@ def test_global_case_inflected_text_replace_rewrites_estonian_case_forms() -> No
     assert "täienduskoolitusasutuste ja nende tegevuse üle" in subsection.text
 
 
+def test_global_case_inflected_text_replace_rewrites_nik_partitive() -> None:
+    body = _body_with_section_and_subsection(
+        "21",
+        "3",
+        "Väljasaadetav teavitab eelnevalt migratsioonijärelevalveametnikku.",
+    )
+    op = LegalOperation(
+        op_id="ee_test_case_inflected_nik_replace",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=()),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="kinnipidamiskeskuse ametnik",
+            attrs={
+                "old_text": "migratsioonijärelevalveametnik",
+                "case_inflected": True,
+            },
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    subsection = result.children[0].children[0].children[0]
+
+    assert subsection.text == "Väljasaadetav teavitab eelnevalt kinnipidamiskeskuse ametnikku."
+
+
 def test_global_case_inflected_text_replace_consumes_waist_instruction(monkeypatch) -> None:
     body = _body_with_section_and_subsection(
         "3",
