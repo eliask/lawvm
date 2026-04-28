@@ -638,6 +638,34 @@ def test_replay_ee_to_pit_honors_mixed_global_replace_exclusions_in_mahepollumaj
     assert result.divergences == []
 
 
+def test_replay_ee_to_pit_honors_generic_ministry_reorganization_exception_for_kalapuugiseadus() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "111112022002",
+        "2023-07-01",
+        archive=archive,
+        oracle_id="130062023023",
+    )
+
+    assert result.error is None
+    assert result.replayed is not None
+    assert not any(
+        str(div.address) == "chapter:7/section:90_2/subsection:2"
+        for div in result.divergences
+    )
+    chapter = next(
+        child for child in result.replayed.body.children if child.kind == IRNodeKind.CHAPTER and child.label == "7"
+    )
+    section = next(child for child in chapter.children if child.kind == IRNodeKind.SECTION and child.label == "90_2")
+    subsection = next(child for child in section.children if child.kind == IRNodeKind.SUBSECTION and child.label == "2")
+    assert "Maaeluministeeriumile" in subsection.text
+    assert "Regionaal-ja Põllumajandusministeeriumile" not in subsection.text
+
+
 def test_replay_ee_to_pit_handles_elukaaslane_comma_insert_after_family_in_perekonnaseadus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit

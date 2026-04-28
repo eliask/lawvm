@@ -857,12 +857,8 @@ def test_get_ee_residual_inventory_kalapuugiseadus_2023() -> None:
     assert inventory is not None
     assert inventory.statute_title == "Kalapüügiseadus"
     assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 3
-    assert any(
-        record.address == "chapter:7/section:90_2/subsection:2"
-        and "Maaeluministeerium" in record.evidence
-        for record in inventory.residuals
-    )
+    assert len(inventory.residuals) == 2
+    assert not any(record.address == "chapter:7/section:90_2/subsection:2" for record in inventory.residuals)
 
 
 def test_generated_shortened_section_family_matches_kalapuugiseadus_ministry_drift_cluster() -> None:
@@ -874,19 +870,13 @@ def test_generated_shortened_section_family_matches_kalapuugiseadus_ministry_dri
                 "mentioning 'Kliimaministeerium'. Oracle carries 'Keskkonnaministeerium' "
                 "— another ministry rename drift.",
             ),
-            (
-                "chapter:7/section:90_2/subsection:2",
-                "Source act 130062023001 rewrites § 90^2(2) with replay-side text "
-                "mentioning 'Regionaal-ja Põllumajandusministeerium'. Oracle carries "
-                "'Maaeluministeerium' — ministry rename drift in the opposite direction.",
-            ),
         ),
     )
 
     inventory = get_ee_residual_inventory("111112022002", "130062023023")
 
     assert inventory is not None
-    assert len(generated) == 2
+    assert len(generated) == 1
     assert [
         (record.address, record.bucket, record.evidence)
         for record in inventory.residuals[1:]
@@ -895,7 +885,6 @@ def test_generated_shortened_section_family_matches_kalapuugiseadus_ministry_dri
         for record in generated
     ]
     assert generated[0].address == "chapter:7/section:90_2/subsection:1"
-    assert generated[-1].address == "chapter:7/section:90_2/subsection:2"
     assert all(record.bucket == "source_oracle_drift" for record in generated)
 
 
