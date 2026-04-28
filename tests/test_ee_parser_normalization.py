@@ -288,6 +288,46 @@ def test_extract_ee_ops_marks_heading_insert_after_as_heading_special() -> None:
     assert ops[0].target == LegalAddress(path=(("section", "96"),), special=FacetKind.HEADING)
 
 
+def test_extract_ee_ops_marks_plain_heading_reword_as_heading_special() -> None:
+    text = "paragrahvi 6 pealkiri sõnastatakse järgmiselt: „§ 6. Asfalt- ja mustkattega tee”;"
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target == LegalAddress(path=(("section", "6"),), special=FacetKind.HEADING)
+    assert ops[0].payload is not None
+    assert ops[0].payload.text == "§ 6. Asfalt- ja mustkattega tee"
+
+
+def test_extract_ee_ops_splits_text_replace_plus_last_sentence_insert() -> None:
+    text = (
+        "paragrahvi 6 lõikes 7 asendatakse tekstiosa „±0,5%” tekstiosaga „±1,0%” "
+        "ning täiendatakse viimase lause järel lausega „Ühelgi juhul ei tohi "
+        "teepeenra põikkalle olla väiksem kui tee põikkalle.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.TEXT_REPLACE, (("section", "6"), ("subsection", "7"))),
+        (StructuralAction.INSERT, (("section", "6"), ("subsection", "7"))),
+    ]
+    replace_payload = _payload(ops[0])
+    assert replace_payload.attrs["old_text"] == "±0,5%"
+    assert replace_payload.text == "±1,0%"
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "±0,5%"
+    assert ops[0].text_patch.replacement == "±1,0%"
+
+    insert_payload = _payload(ops[1])
+    assert insert_payload.text == "Ühelgi juhul ei tohi teepeenra põikkalle olla väiksem kui tee põikkalle."
+    sentence_meta = read_sentence_target_meta(insert_payload)
+    assert sentence_meta is not None
+    assert sentence_meta.mode == "insert_after"
+    assert sentence_meta.sentence_indexes == (1_000_000,)
+
+
 def test_parse_ee_amendment_ops_supports_plaintext_old_format_omnibus_target_section() -> None:
     archive = open_rt_archive()
     base = parse_ee_statute(fetch_rt_xml("104112016005", archive), "ee/104112016005")

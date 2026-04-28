@@ -2267,6 +2267,45 @@ def test_replay_ee_to_pit_records_jalitustegevus_pending_source_act_commencement
     )
 
 
+def test_replay_ee_to_pit_preserves_tee_section_body_for_heading_and_sentence_mix() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "120112020003",
+        "2024-11-29",
+        archive=archive,
+        oracle_id="126112024003",
+    )
+
+    assert result.error is None
+    divergence_addresses = {
+        "/".join(f"{kind}:{label}" for kind, label in divergence.address.path)
+        for divergence in result.divergences
+    }
+    assert "chapter:2/section:6" not in divergence_addresses
+    assert "chapter:2/section:6/subsection:7" not in divergence_addresses
+
+    def find_section(node: IRNode, label: str) -> IRNode | None:
+        if node.kind == IRNodeKind.SECTION and node.label == label:
+            return node
+        for child in node.children:
+            found = find_section(child, label)
+            if found is not None:
+                return found
+        return None
+
+    assert result.replayed is not None
+    section = find_section(result.replayed.body, "6")
+    assert section is not None
+    subsection_7 = next(
+        child for child in section.children if child.kind == IRNodeKind.SUBSECTION and child.label == "7"
+    )
+    assert "±1,0%" in (subsection_7.text or "")
+    assert "Ühelgi juhul ei tohi teepeenra põikkalle olla väiksem" in (subsection_7.text or "")
+
+
 def test_replay_ee_to_pit_recovers_exact_target_source_typo_for_matusetoetus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit

@@ -334,6 +334,7 @@ def parse_target(text: str) -> Optional[LegalAddress]:
         and re.search(r'\bpealkir(?:i|ja(?:s|st)?)\b', t_lower)
         and (
             'muudetakse' in t_lower
+            or 'sõnastatakse' in t_lower
             or 'asendatakse' in t_lower
             or 'jäetakse' in t_lower
             or 'täiendatakse' in t_lower
@@ -1171,6 +1172,37 @@ def _extract_text_replace_pairs(text: str) -> List[Tuple[str, str]]:
                 if quotes[i] and quotes[i + 1]
             ]
     return []
+
+
+def _extract_mixed_text_replace_sentence_insert(text: str) -> tuple[str, str, str] | None:
+    """Extract OLD→NEW plus same-target sentence insertion from one clause."""
+    if not (
+        re.search(r'\basendatakse\b', text, re.IGNORECASE)
+        and re.search(r'\bt[aä]iendatakse\b', text, re.IGNORECASE)
+        and re.search(r'\blause(?:ga)?\b', text, re.IGNORECASE)
+    ):
+        return None
+
+    normalized = html.unescape(text)
+    if not re.search(
+        r'\basendatakse\b.+?\b(?:ning|ja)\s+t[aä]iendatakse\b',
+        normalized,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        return None
+
+    for pat in (
+        r'\u201e(.*?)(?:\u201c|\u201d|")',
+        r'\u201d(.*?)\u201d',
+        r'\u201c(.*?)\u201c',
+        r'\u02ee(.*?)\u02ee',
+        r'\u00ab(.*?)\u00bb',
+        r'"(.*?)"',
+    ):
+        quotes = [q.strip() for q in re.findall(pat, normalized, re.DOTALL) if q.strip()]
+        if len(quotes) >= 3:
+            return quotes[0], quotes[1], quotes[2]
+    return None
 
 
 def _extract_mixed_delete_replace_segments(text: str) -> List[tuple[str, str, str]]:
@@ -2169,6 +2201,14 @@ def _set_sentence_insert_payload_attrs(payload: IRNode, clean: str) -> IRNode:
         attrs["sentence_target_meta"] = make_sentence_target_meta(
             sentence_indexes=(1,),
             mode="insert_before",
+        )
+        return replace(payload, attrs=attrs)
+
+    if re.search(r"\bviimase\s+lause\s+j[aä]rel\s+lausega\b", clean.lower()):
+        attrs = dict(payload.attrs)
+        attrs["sentence_target_meta"] = make_sentence_target_meta(
+            sentence_indexes=(1_000_000,),
+            mode="insert_after",
         )
         return replace(payload, attrs=attrs)
 
@@ -3883,6 +3923,42 @@ def extract_ee_ops(
                     provenance_tags=(segment_text[:200],),
                 ))
                 seq += 1
+            return ops
+
+    if action == "text_replace":
+        mixed_text_replace_insert = _extract_mixed_text_replace_sentence_insert(clean)
+        if mixed_text_replace_insert is not None:
+            replacement_old, replacement_new, inserted_sentence = mixed_text_replace_insert
+            replace_payload = IRNode(kind=IRNodeKind.CONTENT, text=replacement_new)
+            replace_payload, _replace_witness = _set_text_replace_payload_attrs(
+                replace_payload,
+                clean,
+                replacement_old,
+                replacement_new,
+            )
+            ops.append(LegalOperation(
+                op_id=f"ee-text_replace-then-insert-{str(target)}-{seq}-{source.statute_id}",
+                sequence=seq,
+                action=_to_structural_action("text_replace"),
+                target=target,
+                payload=replace_payload,
+                text_patch=_typed_text_replace_patch(replacement_old, replacement_new),
+                source=source,
+                provenance_tags=(clean[:200],),
+            ))
+            seq += 1
+
+            insert_payload = IRNode(kind=IRNodeKind.CONTENT, text=inserted_sentence)
+            insert_payload = _set_sentence_insert_payload_attrs(insert_payload, clean)
+            ops.append(LegalOperation(
+                op_id=f"ee-insert-sentence-after-text_replace-{str(target)}-{seq}-{source.statute_id}",
+                sequence=seq,
+                action=_to_structural_action("insert"),
+                target=target,
+                payload=insert_payload,
+                source=source,
+                provenance_tags=(clean[:200],),
+            ))
             return ops
 
     if action == "text_replace":
