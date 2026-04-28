@@ -6463,6 +6463,54 @@ def test_structural_textosa_heading_relabel_resolves_duplicate_chapter_by_headin
     ]
 
 
+def test_insert_lauseosa_append_is_idempotent_when_target_already_contains_phrase() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="16",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.ITEM,
+                                label="1",
+                                text=(
+                                    "lapse sünnitunnistus, kui selle kohta ei ole kantud "
+                                    "andmed rahvastikuregistrisse;"
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee-lauseosa-idempotent",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "16"), ("subsection", "1"), ("item", "1"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text=", kui selle kohta ei ole kantud andmed rahvastikuregistrisse",
+            attrs={"source_family": "ee_targeted_lauseosa_append"},
+        ),
+        provenance_tags=("paragrahvi 16 lõike 1 punkti 1 täiendatakse lauseosaga",),
+    )
+
+    result = _ee_apply_op(body, op)
+    item = result.children[0].children[0].children[0]
+
+    assert item.text == (
+        "lapse sünnitunnistus, kui selle kohta ei ole kantud "
+        "andmed rahvastikuregistrisse;"
+    )
+
+
 def test_apply_ee_ops_records_unresolved_target_and_noop() -> None:
     statute = IRStatute(
         statute_id="ee/test",

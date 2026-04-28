@@ -7396,6 +7396,8 @@ def _ee_apply_op(
                     full_path = _ee_resolve_full_path(body, path)
                     target_node = tree_ops.resolve(body, full_path) if full_path is not None else None
                     if full_path is not None and target_node is not None:
+                        if raw_ins.strip() and raw_ins.strip() in (target_node.text or ""):
+                            return body
                         base_text = target_node.text.rstrip()
                         if base_text.endswith("."):
                             base_text = base_text[:-1].rstrip()
