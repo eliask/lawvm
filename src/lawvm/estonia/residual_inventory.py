@@ -721,31 +721,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     ),
                 ),
             ),
-            EEResidualRecord(
-                address="section:10_1/subsection:1/item:4",
-                bucket="source_pathology",
-                evidence=(
-                    "No applied in-range amendment touches § 10^1(1) p 4. Replay preserves "
-                    "the malformed base fragment '--6)', while oracle 131012012006 silently "
-                    "drops it."
-                ),
-            ),
-            EEResidualRecord(
-                address="section:12/subsection:6",
-                bucket="source_pathology",
-                evidence=(
-                    "No applied in-range amendment touches § 12(6). Replay preserves the "
-                    "orphan base fragment '§-d 121–13', while oracle 131012012006 omits it."
-                ),
-            ),
-            EEResidualRecord(
-                address="section:16/subsection:1",
-                bucket="source_pathology",
-                evidence=(
-                    "No applied in-range amendment touches § 16(1). Replay preserves the "
-                    "malformed base residue '–(3)', while oracle 131012012006 omits it."
-                ),
-            ),
         ),
     ),
     ("119032013007", "112072014164"): EEPairResidualInventory(
