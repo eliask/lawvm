@@ -2108,6 +2108,7 @@ def test_get_ee_residual_inventory_riigiloivuseadus() -> None:
     assert inventory.comparison_class == "forward_looking_oracle"
     assert len(inventory.residuals) == 48
     assert {record.bucket for record in inventory.residuals} == {
+        "appendix_display_pathology",
         "source_oracle_drift",
         "source_pathology",
     }
@@ -2128,6 +2129,12 @@ def test_get_ee_residual_inventory_riigiloivuseadus() -> None:
         and record.bucket == "source_oracle_drift"
         and "113032014003" in record.evidence
         and "2018-01-01" in record.evidence
+        for record in inventory.residuals
+    )
+    assert any(
+        record.address == "part:5/chapter:20/section:357/subsection:3"
+        and record.bucket == "appendix_display_pathology"
+        and "lisaViide lane" in record.evidence
         for record in inventory.residuals
     )
 
