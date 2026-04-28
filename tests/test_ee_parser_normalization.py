@@ -132,6 +132,38 @@ def test_extract_ee_ops_accepts_left_right_curly_quote_viide_pairs() -> None:
     ]
 
 
+def test_extract_ee_ops_keeps_targets_after_first_quote_in_mixed_same_section_pairs() -> None:
+    text = (
+        "paragrahvi 21 lõike 1 punktis 3 asendatakse tekstiosa „§ 4 punktis 4” "
+        "tekstiosaga „§ 4 lõike 1 punktis 4” ja lõikes 4 asendatakse tekstiosa "
+        "„lähevad lepingust” tekstiosaga „lähevad jõustunud lepingust”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.target.path, _payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        ((("section", "21"), ("subsection", "1"), ("item", "3")), "§ 4 punktis 4", "§ 4 lõike 1 punktis 4"),
+        ((("section", "21"), ("subsection", "4")), "lähevad lepingust", "lähevad jõustunud lepingust"),
+    ]
+
+
+def test_extract_ee_ops_keeps_section_target_with_normalized_section_sign_dash() -> None:
+    text = (
+        "paragrahvi 11 lõikes 2, §-s 78 ning § 80 lõigetes 1 ja 3 "
+        "asendatakse sõnad „kindlustuskohustuse täitmine” sõnadega "
+        "„liikluskindlustuse olemasolu” vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [op.target.path for op in ops] == [
+        (("section", "11"), ("subsection", "2")),
+        (("section", "78"),),
+        (("section", "80"), ("subsection", "1")),
+        (("section", "80"), ("subsection", "3")),
+    ]
+
+
 def test_extract_ee_ops_keeps_heading_pair_before_subsection_pair() -> None:
     text = (
         "paragrahvi 42 pealkirjas asendatakse sõna “eesvoolu” sõnaga “eesvoolule” "
