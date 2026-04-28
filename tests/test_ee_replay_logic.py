@@ -2164,6 +2164,20 @@ def test_replay_ee_to_pit_replays_headerless_old_format_omnibus_paragraph_for_et
     assert result.error is None
     assert result.oracle_id == "129112010007"
     divergence_addresses = tuple(str(div.address) for div in result.divergences)
+    assert "chapter:3/section:18/subsection:2" not in divergence_addresses
+    assert "chapter:3/section:18/subsection:3" not in divergence_addresses
+    assert "chapter:3/section:18/subsection:7/item:2" not in divergence_addresses
+    assert "chapter:3/section:19/subsection:1" not in divergence_addresses
+    assert any(
+        adjudication.kind == "ee_pending_amendment_text_precompose"
+        and adjudication.detail["earlier_amendment"] == "13310847"
+        and adjudication.detail["later_amendment"] == "129112010003"
+        and adjudication.detail["target"] == "section:19/subsection:1"
+        and adjudication.detail["match_text"] == "2 miljardit krooni"
+        and adjudication.detail["replacement"] == "128 miljonit eurot"
+        and adjudication.detail["mode"] == "added_final_target_op"
+        for adjudication in result.adjudications
+    )
     residual_summary = build_ee_residual_summary(
         base_id="129112010006",
         oracle_id="129112010007",
@@ -2544,7 +2558,66 @@ def test_precompose_pending_amendment_text_patch_requires_exact_old_format_item(
     assert patched[0].witness_rule_id == "ee_pending_amendment_text_precompose"
     assert patched[1].payload is not None
     assert "§ 59 või 60" in patched[1].payload.text
-    assert len(adjudications) == 1
+    assert sum(
+        1
+        for adjudication in adjudications
+        if adjudication.detail.get("amendment_section") == "97"
+        and adjudication.detail.get("amendment_item") == "18"
+    ) == 1
+
+
+def test_precompose_pending_amendment_applies_final_target_meta_euro_conversions() -> None:
+    from lawvm.estonia.fetch import fetch_rt_xml, open_rt_archive
+    from lawvm.estonia.grafter import parse_ee_amendment_ops
+
+    archive = open_rt_archive(readonly=True)
+    refs = (
+        _ref("13310847", "2010-04-22", "2011-01-01"),
+        _ref("129112010003", "2010-11-11", "2011-01-01"),
+    )
+    amendment_xml_by_ref = {ref.aktViide: fetch_rt_xml(ref.aktViide, archive) for ref in refs}
+    ops = parse_ee_amendment_ops(
+        amendment_xml_by_ref["13310847"],
+        "ee/13310847",
+        target_title="Ettevõtluse toetamise ja laenude riikliku tagamise seadus",
+        ref_effective="2011-01-01",
+    )
+
+    patched, adjudications = _ee_precompose_pending_amendment_text_patches(
+        ops,
+        refs=refs,
+        amendment_xml_by_ref=amendment_xml_by_ref,
+    )
+
+    section_18_sub2 = next(op for op in patched if str(op.target) == "section:18/subsection:2")
+    assert section_18_sub2.text_patch is not None
+    assert section_18_sub2.payload is not None
+    assert section_18_sub2.text_patch.replacement == "2 miljonit eurot"
+    assert section_18_sub2.payload.text == "2 miljonit eurot"
+    assert section_18_sub2.witness_rule_id == "ee_pending_amendment_text_precompose"
+
+    section_18_item_2 = next(op for op in patched if str(op.target) == "section:18/subsection:7/item:2")
+    assert section_18_item_2.payload is not None
+    assert section_18_item_2.payload.text == "2) 2 300 000 eurot."
+
+    added_section_19 = [
+        op
+        for op in patched
+        if str(op.target) == "section:19/subsection:1"
+        and op.text_patch is not None
+        and op.text_patch.selector.match_text == "2 miljardit krooni"
+    ]
+    assert len(added_section_19) == 1
+    assert added_section_19[0].source is not None
+    assert added_section_19[0].source.statute_id == "ee/129112010003"
+    assert added_section_19[0].text_patch is not None
+    assert added_section_19[0].text_patch.replacement == "128 miljonit eurot"
+    assert any(
+        adjudication.kind == "ee_pending_amendment_text_precompose"
+        and adjudication.detail["target"] == "section:19/subsection:1"
+        and adjudication.detail["mode"] == "added_final_target_op"
+        for adjudication in adjudications
+    )
 
 
 def test_precompose_pending_source_act_commencement_defers_future_effective_act(monkeypatch) -> None:
