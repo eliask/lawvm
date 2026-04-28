@@ -5707,6 +5707,21 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
             for old_form, new_form in special_pairs.items():
                 if old_form not in variants:
                     variants[old_form] = new_form
+        if (
+            old == "Euroopa Komisjoni arengukoostööprojekt"
+            and new == "Euroopa Komisjoni arengukoostöö- ja humanitaarabiprojekt"
+        ):
+            special_pairs = {
+                "Euroopa Komisjoni arengukoostööprojekti": (
+                    "Euroopa Komisjoni arengukoostöö- ja humanitaarabiprojekti"
+                ),
+                "Euroopa Komisjoni arengukoostööprojektide": (
+                    "Euroopa Komisjoni arengukoostöö- ja humanitaarabiprojektide"
+                ),
+            }
+            for old_form, new_form in special_pairs.items():
+                if old_form not in variants:
+                    variants[old_form] = new_form
         if old == "veekogu" and new == "meri":
             special_pairs = {
                 "süvendatakse veekogu": "süvendatakse merd",
