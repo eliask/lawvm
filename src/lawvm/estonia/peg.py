@@ -1647,6 +1647,43 @@ def _extract_same_section_extra_subsection_repeals_after_items(
     return results
 
 
+def _extract_same_section_extra_item_repeals_after_items(
+    clean: str,
+    sect_label: str,
+) -> List[tuple[str, str, str]]:
+    """Extract same-section item repeals after a leading singular item target.
+
+    Example:
+      ``paragrahvi 8 1 lõike 6 punkt 1, lõike 8 punkt 5 ja lõige 12
+      tunnistatakse kehtetuks``
+    """
+    _NUM_PAT = r'\d+(?:\s+\d+)?'
+    next_section = re.search(r'(?:\bning\b|\bja\b|,)\s+§(?:-d)?\s+\d', clean, re.IGNORECASE)
+    local_clean = clean[: next_section.start()] if next_section else clean
+    results: List[tuple[str, str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for match in re.finditer(
+        r'(?:,\s*|\b(?:ning|ja)\b\s+)l[oõ]ike(?:te|tes|st|s|t|ga)?\s+('
+        + _NUM_PAT
+        + r')\s+punkt(?:id|ide|ides|i|is)?\s+('
+        + _NUM_PAT
+        + r')'
+        r'(?=\s*(?:\bning\b|\bja\b|,|;|tunnistatakse\b|$))',
+        local_clean,
+        re.IGNORECASE,
+    ):
+        item = (
+            sect_label,
+            _normalize_num(match.group(1).strip()),
+            _normalize_num(match.group(2).strip()),
+        )
+        if item in seen:
+            continue
+        seen.add(item)
+        results.append(item)
+    return results
+
+
 def _extract_same_section_extra_subsection_label_ranges_after_items(
     clean: str,
     sect_label: str,
@@ -4126,6 +4163,32 @@ def extract_ee_ops(
             and target.path[-1][0] == "item"
         ):
             sect_label = target.path[0][1]
+            seen_item_paths = {
+                op.target.path
+                for op in ops
+                if op.target.path
+                and len(op.target.path) >= 3
+                and op.target.path[0][0] == "section"
+                and op.target.path[1][0] == "subsection"
+                and op.target.path[2][0] == "item"
+            }
+            for extra_sect, extra_sub, extra_item in _extract_same_section_extra_item_repeals_after_items(
+                clean,
+                sect_label,
+            ):
+                item_path = (("section", extra_sect), ("subsection", extra_sub), ("item", extra_item))
+                if item_path in seen_item_paths:
+                    continue
+                ops.append(LegalOperation(
+                    op_id=f"ee-repeal-item-{extra_sect}-{extra_sub}-{extra_item}-{source.statute_id}",
+                    sequence=seq,
+                    action=_to_structural_action("repeal"),
+                    target=LegalAddress(path=item_path),
+                    source=source,
+                    provenance_tags=(clean[:200],),
+                ))
+                seen_item_paths.add(item_path)
+                seq += 1
             for extra_sect, extra_sub in _extract_same_section_extra_subsection_repeals_after_items(
                 clean,
                 sect_label,

@@ -584,6 +584,29 @@ def test_replay_ee_to_pit_covers_live_superscript_section_inside_plain_repeal_ra
     )
 
 
+def test_replay_ee_to_pit_recovers_same_section_companion_item_repeal() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "119032013003",
+        "2025-12-31",
+        archive=archive,
+        oracle_id="131122025003",
+    )
+
+    assert result.error is None
+    divergence_addresses = {str(div.address) for div in result.divergences}
+    assert "chapter:2/section:8_1/subsection:8/item:5" not in divergence_addresses
+    assert not any(
+        address.startswith("chapter:2/section:8_1")
+        for address in divergence_addresses
+    )
+    assert "chapter:2/section:7/subsection:7_1/item:1" in divergence_addresses
+
+
 def test_replay_ee_to_pit_treats_kehtetu_child_section_heading_as_empty_in_parent_comparison() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit

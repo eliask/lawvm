@@ -1377,6 +1377,19 @@ def test_extract_ee_ops_keeps_trailing_same_section_subsection_repeal_after_item
     ]
 
 
+def test_extract_ee_ops_keeps_trailing_same_section_item_repeal_after_item_repeal() -> None:
+    ops = extract_ee_ops(
+        "paragrahvi 8 1 lõike 6 punkt 1, lõike 8 punkt 5 ja lõige 12 tunnistatakse kehtetuks;",
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPEAL, (("section", "8_1"), ("subsection", "6"), ("item", "1"))),
+        (StructuralAction.REPEAL, (("section", "8_1"), ("subsection", "8"), ("item", "5"))),
+        (StructuralAction.REPEAL, (("section", "8_1"), ("subsection", "12"))),
+    ]
+
+
 def test_extract_ee_ops_keeps_plain_subsections_before_same_section_item_targets_in_text_replace() -> None:
     ops = extract_ee_ops(
         (
