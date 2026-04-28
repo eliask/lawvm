@@ -1049,6 +1049,12 @@ def test_replay_ee_to_pit_keeps_subsection_intro_text_replace_local_in_maagaasis
         "chapter:3/section:26_7/subsection:2",
         "chapter:3/section:26_7/subsection:2/item:6",
     }.issubset(divergence_addresses)
+    ambiguity = [
+        record for record in result.adjudications if record.kind == "ee_ambiguous_single_occurrence_text_replace"
+    ]
+    assert len(ambiguity) == 1
+    assert ambiguity[0].detail["target"] == "section:26_7/subsection:1"
+    assert ambiguity[0].detail["match_count"] == "2"
 
 
 def test_replay_ee_to_pit_applies_case_inflected_protocol_compound_rewrite() -> None:
