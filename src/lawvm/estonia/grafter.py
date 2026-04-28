@@ -4221,6 +4221,7 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "sg_part": word + "it",
             "sg_ine": stem + "s",
             "sg_ela": stem + "st",
+            "sg_ill": word + "isse",
             "sg_all": stem + "le",
             "sg_ade": stem + "l",
             "sg_abl": stem + "lt",

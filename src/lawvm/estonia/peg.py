@@ -1523,8 +1523,8 @@ def _strip_leading_quoted_act_reference(text: str) -> str:
     """Drop explicit act-title prefix before a structural target list."""
     return re.sub(
         r"^[A-ZÜÕÖÄ][^\n]{0,260}?\b(?:seaduse|seaduses|seadustiku|koodeksi|määruse|määruses)\b"
-        r"(?:\s+nr\.?\s*[\w./-]+)?\s+[„\"“][^„”\"]+[”\"]\s+"
-        r"(?=(?:§|paragrahv))",
+        r"(?:\s+nr\.?\s*[\w./-]+)?\s+[„\"“][^„”“\"]+[”“\"]\s+"
+        r"(?=(?:§|paragrahv|asendatakse|muudetakse|täiendatakse|tunnistatakse|jäetakse))",
         "",
         text,
         count=1,
@@ -2394,7 +2394,9 @@ def extract_ee_ops(
 
     # Strip leading "N) " item marker
     clean = re.sub(r'^\(?\d+\)\s*', '', op_text.strip())
+    clean_before_act_ref_strip = clean
     clean = _strip_leading_quoted_act_reference(clean)
+    stripped_explicit_act_reference = clean != clean_before_act_ref_strip
     instruction_scope = _instruction_preamble(clean)
     local_effective = _extract_clause_local_effective_date(instruction_scope)
     if local_effective:
@@ -4020,6 +4022,32 @@ def extract_ee_ops(
     # Try to parse the provision target
     target = parse_target(clean)
     if target is None:
+        if action == "text_replace" and stripped_explicit_act_reference:
+            old_t, new_t = _normalize_text_replace_args(
+                clean,
+                *_extract_text_replace_args(clean),
+            )
+            if old_t is not None or new_t is not None:
+                rule_id = "ee_direct_title_global_text_replace"
+                payload = IRNode(kind=IRNodeKind.CONTENT, text=new_t or "")
+                payload, _rewrite_witness = _set_text_replace_payload_attrs(
+                    payload,
+                    clean,
+                    old_t,
+                    new_t,
+                )
+                ops.append(LegalOperation(
+                    op_id=f"ee-global-text_replace-direct-title-{seq}-{source.statute_id}",
+                    sequence=seq,
+                    action=_to_structural_action("text_replace"),
+                    target=LegalAddress(path=()),
+                    payload=payload,
+                    text_patch=_typed_text_replace_patch(old_t, new_t),
+                    source=source,
+                    provenance_tags=(clean_before_act_ref_strip[:200], rule_id),
+                    witness_rule_id=rule_id,
+                ))
+                return ops
         # Could not identify a provision target — return unknown op for diagnostics
         ops.append(LegalOperation(
             op_id=f"ee-unknown-{seq}-{source.statute_id}",
