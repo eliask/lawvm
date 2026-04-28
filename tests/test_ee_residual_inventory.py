@@ -64,11 +64,12 @@ def test_get_ee_residual_inventory_maagaasiseadus() -> None:
     assert inventory.comparison_class == "commensurable_delta"
     assert len(inventory.residuals) == 2
     assert {record.bucket for record in inventory.residuals} == {
+        "source_ambiguity",
         "source_oracle_drift",
-        "source_pathology",
     }
     assert any(
         record.address == "chapter:3/section:26_7/subsection:1"
+        and record.bucket == "source_ambiguity"
         and "two occurrences of 'gaasivaru'" in record.evidence
         and "does not say 'läbivalt'" in record.evidence
         for record in inventory.residuals
