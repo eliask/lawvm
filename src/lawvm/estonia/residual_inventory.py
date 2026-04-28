@@ -2270,53 +2270,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
-    ("106052020038", "127092023012"): EEPairResidualInventory(
-        base_id="106052020038",
-        oracle_id="127092023012",
-        statute_title="Taimekaitseseadus",
-        comparison_class="commensurable_delta",
-        residuals=(
-            *_lower_generated_residual_records(
-                build_shortened_section_family(
-                    records=(
-                        (
-                            "chapter:2",
-                            "The chapter-level mismatch is fully induced by the oracle-side blanking of "
-                            "§ 41(1^1); replay preserves the base/source child text, so the aggregate "
-                            "chapter serialization diverges even though no separate amendment targets the "
-                            "chapter container.",
-                        ),
-                        (
-                            "chapter:2/division:6",
-                            "The division-level mismatch is fully induced by the oracle-side blanking of "
-                            "§ 41(1^1); replay preserves the base/source child text, so the aggregate "
-                            "division serialization diverges even though no separate amendment targets the "
-                            "division container.",
-                        ),
-                        (
-                            "chapter:2/division:6/section:41",
-                            "The section-level mismatch is fully induced by the oracle-side blanking of "
-                            "§ 41(1^1); replay preserves the base/source child text, so the aggregate "
-                            "section serialization diverges even though no separate amendment rewrites "
-                            "§ 41 outside that child subsection.",
-                        ),
-                        (
-                            "chapter:2/division:5/section:33/subsection:2",
-                            "No parsed amendment in the checked 2020-2023 chain rewrites or repeals "
-                            "§ 33(2); replay preserves the base/source text, while the oracle keeps "
-                            "the subsection node but blanks its text.",
-                        ),
-                        (
-                            "chapter:2/division:6/section:41/subsection:1_1",
-                            "No parsed amendment in the checked 2020-2023 chain rewrites or repeals "
-                            "§ 41(1^1); replay preserves the base/source text, while the oracle keeps "
-                            "the subsection node but blanks its text.",
-                        ),
-                    ),
-                ),
-            ),
-        ),
-    ),
     ("193936", "13336397"): EEPairResidualInventory(
         base_id="193936",
         oracle_id="13336397",

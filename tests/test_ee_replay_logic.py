@@ -605,12 +605,7 @@ def test_replay_ee_to_pit_does_not_reapply_whole_mixed_commencement_act_on_later
 
     assert result.error is None
     assert result.oracle_id == "127092023012"
-    assert {str(div.address) for div in result.divergences} == {
-        "chapter:2",
-        "chapter:2/division:6",
-        "chapter:2/division:6/section:41",
-        "chapter:2/division:6/section:41/subsection:1_1",
-    }
+    assert result.divergences == []
 
 
 def test_replay_ee_to_pit_honors_mixed_global_replace_exclusions_in_mahepollumajandus() -> None:

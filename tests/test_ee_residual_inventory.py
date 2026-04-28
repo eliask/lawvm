@@ -2167,70 +2167,7 @@ def test_get_ee_residual_inventory_kommertspandiseadus() -> None:
 def test_get_ee_residual_inventory_taimekaitseseadus() -> None:
     inventory = get_ee_residual_inventory("106052020038", "127092023012")
 
-    assert inventory is not None
-    assert inventory.statute_title == "Taimekaitseseadus"
-    assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 5
-    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
-    assert all("45_1" not in record.address for record in inventory.residuals)
-
-
-def test_generated_shortened_section_family_matches_taimekaitseseadus_cluster() -> None:
-    generated = build_shortened_section_family(
-        records=(
-            (
-                "chapter:2",
-                "The chapter-level mismatch is fully induced by the oracle-side blanking of "
-                "§ 41(1^1); replay preserves the base/source child text, so the aggregate "
-                "chapter serialization diverges even though no separate amendment targets the "
-                "chapter container.",
-            ),
-            (
-                "chapter:2/division:6",
-                "The division-level mismatch is fully induced by the oracle-side blanking of "
-                "§ 41(1^1); replay preserves the base/source child text, so the aggregate "
-                "division serialization diverges even though no separate amendment targets the "
-                "division container.",
-            ),
-            (
-                "chapter:2/division:6/section:41",
-                "The section-level mismatch is fully induced by the oracle-side blanking of "
-                "§ 41(1^1); replay preserves the base/source child text, so the aggregate "
-                "section serialization diverges even though no separate amendment rewrites "
-                "§ 41 outside that child subsection.",
-            ),
-            (
-                "chapter:2/division:5/section:33/subsection:2",
-                "No parsed amendment in the checked 2020-2023 chain rewrites or repeals "
-                "§ 33(2); replay preserves the base/source text, while the oracle keeps "
-                "the subsection node but blanks its text.",
-            ),
-            (
-                "chapter:2/division:6/section:41/subsection:1_1",
-                "No parsed amendment in the checked 2020-2023 chain rewrites or repeals "
-                "§ 41(1^1); replay preserves the base/source text, while the oracle keeps "
-                "the subsection node but blanks its text.",
-            ),
-        ),
-    )
-
-    inventory = get_ee_residual_inventory("106052020038", "127092023012")
-
-    assert inventory is not None
-    assert len(generated) == 5
-    assert generated[0].address == "chapter:2"
-    assert generated[1].address == "chapter:2/division:6"
-    assert generated[2].address == "chapter:2/division:6/section:41"
-    assert generated[3].address == "chapter:2/division:5/section:33/subsection:2"
-    assert generated[4].address == "chapter:2/division:6/section:41/subsection:1_1"
-    assert all(record.bucket == "source_oracle_drift" for record in generated)
-    assert [
-        (record.address, record.bucket, record.evidence)
-        for record in inventory.residuals[0:5]
-    ] == [
-        (record.address, record.bucket, record.evidence)
-        for record in generated
-    ]
+    assert inventory is None
 
 
 def test_get_ee_residual_inventory_riigiloivuseadus() -> None:
@@ -2822,7 +2759,7 @@ def test_list_known_ee_residual_inventories_contains_active_non_zero_pairs() -> 
     assert ("121052014030", "121052014031") in pairs
     assert ("130042024004", "112122024004") not in pairs
     assert ("119032013007", "112072014164") in pairs
-    assert ("106052020038", "127092023012") in pairs
+    assert ("106052020038", "127092023012") not in pairs
     assert ("193936", "13336397") in pairs
     assert ("111112025007", "130122025006") not in pairs
     assert ("108072025061", "107012026021") in pairs
