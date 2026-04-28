@@ -2318,6 +2318,22 @@ def test_replay_ee_to_pit_preserves_tee_section_body_for_heading_and_sentence_mi
     assert "teisendatud võrreldavaks" in (subsection_10.text or "")
 
 
+def test_replay_ee_to_pit_preserves_insert_after_sentence_start_capitalization() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "102122014005",
+        "2015-01-01",
+        archive=archive,
+        oracle_id="102122014006",
+    )
+
+    assert result.error is None
+    assert not result.divergences
+
+
 def test_replay_ee_to_pit_applies_kaitsevagi_case_inflected_global_rewrite() -> None:
     from lawvm.estonia.fetch import open_rt_archive
 

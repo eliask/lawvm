@@ -278,6 +278,16 @@ def test_insert_after_text_replace_preserves_acronym_prefix_suffix_case() -> Non
 
     assert replaced == "võrreldud LOADMAN-või INSPECTOR-tüüpi seadmega"
 
+    sentence_start = _ee_apply_text_replace_value(
+        "Kauba ebaseadusliku toimetamise eest",
+        "kauba",
+        "kauba teadvalt",
+        mode="insert_after",
+        case_inflected=False,
+    )
+
+    assert sentence_start == "Kauba teadvalt ebaseadusliku toimetamise eest"
+
 
 def test_text_replace_with_typed_rewrite_mode_insert_after() -> None:
     body = _body_with_section_and_subsection("1", "1", "Määrus sisaldab kuni 100 trahviühikut ja seda rakendatakse.")

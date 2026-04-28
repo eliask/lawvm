@@ -5492,9 +5492,10 @@ def _ee_apply_text_replace_value(
                 def _repl(match: re.Match[str], *, idx: int = idx, new_variant: str = new_variant) -> str:
                     token = f"\x00ee-after-{idx}-{len(placeholders)}\x00"
                     normalized_new_variant = _ee_normalize_text_replace_surface(new_variant)
+                    normalized_old_variant = _ee_normalize_text_replace_surface(old_variant)
                     replacement = (
-                        normalized_new_variant
-                        if normalized_new_variant.lower().startswith(match.group(0).lower())
+                        match.group(0) + normalized_new_variant[len(normalized_old_variant):]
+                        if normalized_new_variant.lower().startswith(normalized_old_variant.lower())
                         else _ee_case_preserved_replacement(
                             match,
                             normalized_new_variant,
@@ -5516,9 +5517,10 @@ def _ee_apply_text_replace_value(
             if match is None:
                 continue
             normalized_new_variant = _ee_normalize_text_replace_surface(new_variant)
+            normalized_old_variant = _ee_normalize_text_replace_surface(old_variant)
             replacement = (
-                normalized_new_variant
-                if normalized_new_variant.lower().startswith(match.group(0).lower())
+                match.group(0) + normalized_new_variant[len(normalized_old_variant):]
+                if normalized_new_variant.lower().startswith(normalized_old_variant.lower())
                 else _ee_case_preserved_replacement(
                     match,
                     normalized_new_variant,
