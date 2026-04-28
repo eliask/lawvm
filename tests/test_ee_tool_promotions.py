@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from lawvm.tools import (
     bench_regression_guard,
     cli,
+    ee_bench,
     ee_chain_quality,
     ee_corpus,
     ee_publication_db,
@@ -50,8 +51,18 @@ def test_cli_parser_accepts_promoted_ee_tools() -> None:
     assert args.ee_corpus_command == "current"
     assert args.laws_only is False
 
+    args = parser.parse_args(["bench", "-j", "ee"])
+    assert args.command == "bench"
+    assert args.jurisdiction == "ee"
+    assert args.include_decrees is True
+    assert args.ee_corpus is None
+
+    args = parser.parse_args(["bench", "-j", "ee", "--laws-only"])
+    assert args.include_decrees is False
+
     args = parser.parse_args(["ee-publication-db", "--limit", "10", "--workers", "2"])
     assert args.command == "ee-publication-db"
+    assert args.corpus == "data/estonia/current_replayable_corpus.csv"
     assert args.limit == 10
     assert args.workers == 2
 
@@ -61,6 +72,10 @@ def test_cli_parser_accepts_promoted_ee_tools() -> None:
     assert args.command == "bench-regression-guard"
     assert args.baseline == "old"
     assert args.current == "new"
+
+
+def test_ee_bench_defaults_to_current_replayable_corpus() -> None:
+    assert ee_bench._CORPUS_CSV.name == "current_replayable_corpus.csv"
 
 
 def test_ee_chain_quality_run_chain_prints_totals(capsys, monkeypatch) -> None:

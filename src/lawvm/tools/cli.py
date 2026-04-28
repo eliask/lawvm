@@ -4580,7 +4580,7 @@ def _build_parser() -> argparse.ArgumentParser:
         description=(
             "Replay current/latest Estonia corpus pairs and store pair metadata "
             "plus replay-vs-Riigi-Teataja divergences in a browser-friendly "
-            "SQLite DB. Use this with ee-corpus current, not the small benchmark corpus."
+            "SQLite DB. Use this with ee-corpus current, not the legacy 343-case slice."
         ),
         parents=_P,
     )
@@ -4757,7 +4757,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "ee-corpus",
         help="Estonia corpus acquisition and curation helpers",
         description=(
-            "Acquire RT XMLs into the EE archive or curate a reproducible EE bench corpus CSV from the archive."
+            "Acquire RT XMLs into the EE archive or curate reproducible EE corpus CSVs from the archive."
         ),
         parents=_P,
     )
@@ -4783,7 +4783,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     ee_corpus_curate_p = ee_corpus_sub.add_parser(
         "curate",
-        help="build a reproducible EE bench corpus CSV from the archive",
+        help="build the legacy small EE bench corpus CSV from the archive",
     )
     ee_corpus_curate_p.add_argument(
         "--db", default="data/ee_riigiteataja.farchive", metavar="PATH", help="Farchive DB path"

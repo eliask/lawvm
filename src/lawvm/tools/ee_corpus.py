@@ -604,8 +604,8 @@ def _write_replayable_notes(
 3. 2+ structured tervikteksts per group.
 4. Pair selection: every consecutive consolidated-version pair by `kehtivuseAlgus`.
 
-This corpus is for exhaustive replay/publication review. The smaller
-`bench_corpus.csv` remains the release benchmark slice.
+This corpus is for historical adjacent-version replay review. The public
+current divergence surface should use `current_replayable_corpus.csv`.
 
 ## Exclusion Stats
 
