@@ -3971,6 +3971,24 @@ def test_case_inflected_text_replace_handles_cmr_toxic_agent_singular_genitive()
     )
 
 
+def test_case_inflected_text_replace_handles_eu_development_project_phrase_forms() -> None:
+    genitive = _ee_apply_text_replace_value(
+        "Euroopa Komisjoni arengukoostööprojekti omafinantseering",
+        "Euroopa Komisjoni arengukoostööprojekt",
+        "Euroopa Komisjoni arengukoostöö- ja humanitaarabiprojekt",
+        case_inflected=True,
+    )
+    plural = _ee_apply_text_replace_value(
+        "Euroopa Komisjoni arengukoostööprojektide kaasrahastamine",
+        "Euroopa Komisjoni arengukoostööprojekt",
+        "Euroopa Komisjoni arengukoostöö- ja humanitaarabiprojekt",
+        case_inflected=True,
+    )
+
+    assert genitive == "Euroopa Komisjoni arengukoostöö- ja humanitaarabiprojekti omafinantseering"
+    assert plural == "Euroopa Komisjoni arengukoostöö- ja humanitaarabiprojektide kaasrahastamine"
+
+
 def test_case_inflected_text_replace_handles_elukaaslane_genitive_family() -> None:
     text = (
         "Ühe abikaasa poolt eraldi esitatud maksejõuetusavalduse korral tuleb "
