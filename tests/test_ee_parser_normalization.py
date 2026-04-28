@@ -464,6 +464,26 @@ def test_extract_ee_ops_recovers_missing_closing_quote_in_replacement_payload() 
     assert _payload(ops[0]).text == "§ 18 lõike 1 punktis 1"
 
 
+def test_parse_ee_amendment_ops_splits_plaintext_single_target_regulation_body() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("114032018001", archive),
+        "ee/114032018001",
+        target_title=(
+            "Riigi eelarvestrateegia ja ministeeriumi valitsemisala eelarve projekti "
+            "koostamise ning riigieelarve vahendite ülekandmise kord"
+        ),
+    )
+
+    assert len(ops) >= 40
+    assert any(
+        op.action == StructuralAction.REPLACE
+        and op.target.path == (("section", "22"), ("subsection", "1"))
+        for op in ops
+    )
+    assert not any(op.action == StructuralAction.REPEAL and op.target.path == (("section", "2"),) for op in ops)
+
+
 def test_parse_ee_amendment_ops_recovers_unstructured_single_clause_body() -> None:
     archive = open_rt_archive(readonly=True)
     ops = parse_ee_amendment_ops(
