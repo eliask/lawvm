@@ -4103,6 +4103,36 @@ def test_extract_ee_ops_splits_mixed_multi_target_insert_after_and_replace() -> 
     assert third_sentence_meta.sentence_indexes == (2,)
 
 
+def test_extract_ee_ops_splits_mixed_insert_after_and_delete_same_target() -> None:
+    text = (
+        "paragrahvi 35 lõike 4 punkti 10 1 esimest lauset täiendatakse pärast "
+        "sõna „mille” sõnadega „taotluses esitatud” ning punkti mõlemast "
+        "lausest jäetakse välja sõnad „tegevusaasta kohta”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 2
+    assert [op.action for op in ops] == [StructuralAction.TEXT_REPLACE, StructuralAction.TEXT_REPLACE]
+    assert [op.target.path for op in ops] == [
+        (("section", "35"), ("subsection", "4"), ("item", "10_1")),
+        (("section", "35"), ("subsection", "4"), ("item", "10_1")),
+    ]
+    assert [(_payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        ("mille", "mille taotluses esitatud"),
+        ("tegevusaasta kohta", ""),
+    ]
+    assert [_payload(op).attrs["rewrite_mode"] for op in ops] == ["insert_after", "delete"]
+    assert all(
+        _payload(op).attrs["source_family"] == "ee_mixed_insert_after_and_delete_same_target"
+        for op in ops
+    )
+    assert all(op.witness_rule_id == "ee_mixed_insert_after_and_delete_same_target" for op in ops)
+    sentence_meta = read_sentence_target_meta(_payload(ops[0]))
+    assert sentence_meta is not None
+    assert sentence_meta.sentence_indexes == (0,)
+
+
 def test_extract_ee_ops_treats_insert_after_arvu_as_text_replace_without_spacing_gap() -> None:
     ops = extract_ee_ops(
         'paragrahvi 16 lõiget 2 täiendatakse pärast arvu "15²" tekstiosaga "–15⁵".',
@@ -4133,6 +4163,29 @@ def test_extract_ee_ops_treats_insert_after_sonu_as_insert_after_mode() -> None:
     assert ops[0].payload.attrs["old_text"] == "teenuse korralduse,"
     assert ops[0].payload.attrs.get("rewrite_mode") == "insert_after"
     assert ops[0].payload.text == "teenuse korralduse, terrorismiohvrile,"
+
+
+def test_extract_ee_ops_preserves_nested_quote_in_insert_after_payload() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 21 lõike 1 punkti 1 täiendatakse pärast sõna "
+            "„dokumendid” tekstiosaga „, või elektrooniliselt "
+            "„Välissuhtlemisseaduse” § 9 lõike 14 alusel selleks loodud "
+            "Eesti arengukoostöö andmekogus”;"
+        ),
+        OperationSource(statute_id="109082017005", raw_text="test"),
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "21"), ("subsection", "1"), ("item", "1"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.attrs["old_text"] == "dokumendid"
+    assert ops[0].payload.attrs["rewrite_mode"] == "insert_after"
+    assert ops[0].payload.text == (
+        "dokumendid, või elektrooniliselt „Välissuhtlemisseaduse” § 9 "
+        "lõike 14 alusel selleks loodud Eesti arengukoostöö andmekogus"
+    )
 
 
 def test_extract_ee_ops_emits_appendix_table_update_for_section_79_clause() -> None:
