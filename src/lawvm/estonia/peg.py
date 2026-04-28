@@ -2091,6 +2091,13 @@ def _set_text_replace_payload_attrs(
         rewrite_mode == "insert_after" and case_inflected
     ):
         attrs["all_occurrences"] = True
+    if (
+        rewrite_mode == "insert_after"
+        and re.search(r"\blõikeid\b", clean, re.IGNORECASE)
+        and re.search(r"\bpärast\s+sõnu\b", clean, re.IGNORECASE)
+    ):
+        attrs["all_occurrences"] = True
+        attrs["source_family"] = "ee_plural_subsection_insert_after_each_surface"
     if case_inflected:
         attrs["case_inflected"] = True
     if scope_chapters:

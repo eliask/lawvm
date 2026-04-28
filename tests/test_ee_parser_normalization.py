@@ -219,6 +219,27 @@ def test_extract_ee_ops_marks_case_inflected_insert_after_as_all_occurrences() -
     assert ops[0].payload.attrs["all_occurrences"] is True
 
 
+def test_extract_ee_ops_marks_plural_subsection_insert_after_as_all_occurrences() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 16 lõikeid 2 ja 3 täiendatakse pärast sõnu "
+            "„täielik aadress“ sõnadega „ja soovitatavalt e-posti aadress“;"
+        ),
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert len(ops) == 2
+    assert [op.target.path for op in ops] == [
+        (("section", "16"), ("subsection", "2")),
+        (("section", "16"), ("subsection", "3")),
+    ]
+    for op in ops:
+        assert op.payload is not None
+        assert op.payload.attrs["rewrite_mode"] == "insert_after"
+        assert op.payload.attrs["all_occurrences"] is True
+        assert op.payload.attrs["source_family"] == "ee_plural_subsection_insert_after_each_surface"
+
+
 def test_extract_ee_ops_preserves_intro_only_subsection_scope_and_item_targets() -> None:
     ops = extract_ee_ops(
         (
