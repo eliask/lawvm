@@ -2186,6 +2186,22 @@ def _extract_global_text_replace_exclusions(text: str) -> List[tuple[tuple[str, 
     return sorted(deduped, key=lambda path: (len(path), path))
 
 
+def _extract_global_text_replace_heading_exclusions(text: str) -> List[tuple[tuple[str, str], ...]]:
+    """Extract heading-only exclusions from statute-wide replace clauses."""
+    m = re.search(r'\bvälja\s+arvatud\s+(.+?)\s*,\s*asendatakse\b', text, re.IGNORECASE)
+    if not m:
+        return []
+    excluded_clause = m.group(1).strip()
+    paths: list[tuple[tuple[str, str], ...]] = []
+    for section_heading_match in re.finditer(
+        r'§(?:-s)?\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+pealkirja(?:s|st)?\b',
+        excluded_clause,
+        re.IGNORECASE,
+    ):
+        paths.append((("section", _normalize_num(section_heading_match.group(1))),))
+    return sorted(set(paths), key=lambda path: (len(path), path))
+
+
 def _normalize_text_replace_args(
     text: str,
     old_text: str | None,
@@ -2616,6 +2632,7 @@ def extract_ee_ops(
         rf'\b{statute_ref}\s+kogu\s+teksti[s]?\s+asendatakse'
         rf'|\b{statute_ref}\s+asendatakse\s+läbivalt'
         rf'|\b{statute_ref}\s+teksti[s]?\s+asendatakse'
+        rf'|\b{statute_ref}\s+teksti[s]?\s*,\s*välja\s+arvatud\s+[^.]+?\s+asendatakse'
         rf'|\b{statute_ref}\s+pealkirjas\s+ja\s+teksti[s]?\s+asendatakse(?:\s+läbivalt)?'
         rf'|\b{statute_ref}\s*,\s*välja\s+arvatud\s+[^.]+?\s+asendatakse\s+(?:sõna[a-z]*|sõnu|arv[a-z]*|aastaarv[a-z]*|tekstiosa[a-z]*|lauseosa[a-z]*|number[a-z]*)'
         rf'|\b{statute_ref}\s+\d+[^§]*peatüki[s]?\s+(?:pealkirjas\s+)?asendatakse'
@@ -2663,6 +2680,7 @@ def extract_ee_ops(
             payload = IRNode(kind=IRNodeKind.CONTENT, text=new_t or "")
             scope_chapters = _extract_global_text_replace_chapter_scope(clean)
             exclusions = _extract_global_text_replace_exclusions(clean)
+            heading_exclusions = _extract_global_text_replace_heading_exclusions(clean)
             payload, _rewrite_witness = _set_text_replace_payload_attrs(
                 payload,
                 clean,
@@ -2678,6 +2696,14 @@ def extract_ee_ops(
                         **payload.attrs,
                         "compose_future_payloads": False,
                         "rewrite_scope_surface": "title_and_text",
+                    },
+                )
+            if heading_exclusions:
+                payload = replace(
+                    payload,
+                    attrs={
+                        **payload.attrs,
+                        "exclude_heading_paths": heading_exclusions,
                     },
                 )
             ops.append(LegalOperation(

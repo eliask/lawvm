@@ -2850,6 +2850,23 @@ def test_extract_ee_ops_splits_title_and_text_global_text_replace_pairs() -> Non
     )
 
 
+def test_extract_ee_ops_emits_global_text_replace_with_heading_exclusion() -> None:
+    text = (
+        "määruse tekstis, välja arvatud § 4 pealkirjas, asendatakse "
+        "läbivalt sõna „karusloom“ sõnaga „tšintšilja“ vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == ()
+    assert op.payload is not None
+    assert op.payload.attrs["old_text"] == "karusloom"
+    assert op.payload.attrs["exclude_heading_paths"] == ((("section", "4"),),)
+
+
 def test_extract_ee_ops_fans_out_mixed_repeal_item_targets() -> None:
     text = (
         "paragrahvi 3 punktid 7 ja 8, § 5 lõike 4 punkt 1, "
