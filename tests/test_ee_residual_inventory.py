@@ -1919,19 +1919,11 @@ def test_get_ee_residual_inventory_eesti_territooriumi_haldusjaotuse_seadus() ->
     assert inventory is not None
     assert inventory.statute_title == "Eesti territooriumi haldusjaotuse seadus"
     assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 2
-    assert {record.bucket for record in inventory.residuals} == {
-        "source_oracle_drift",
-        "source_pathology",
-    }
+    assert len(inventory.residuals) == 1
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
     assert any(
         record.address == "chapter:2/section:7/subsection:7_1/item:1"
         and "terminal punctuation" in record.evidence
-        for record in inventory.residuals
-    )
-    assert any(
-        record.address == "chapter:2/section:8_1/subsection:8/item:5"
-        and "No parsed amendment in the applied chain removes § 8^1(8) p 5" in record.evidence
         for record in inventory.residuals
     )
 

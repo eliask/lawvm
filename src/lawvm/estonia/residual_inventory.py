@@ -2532,14 +2532,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     "differs only by dropping it."
                 ),
             ),
-            EEResidualRecord(
-                address="chapter:2/section:8_1/subsection:8/item:5",
-                bucket="source_pathology",
-                evidence=(
-                    "No parsed amendment in the applied chain removes § 8^1(8) p 5 "
-                    "('tehtud uuringute tulemused'), but oracle 131122025003 omits it."
-                ),
-            ),
         ),
     ),
     ("106082022030", "131122024023"): EEPairResidualInventory(
