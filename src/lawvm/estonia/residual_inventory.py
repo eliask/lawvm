@@ -81,6 +81,47 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         )),
     ),
+    ("128092013010", "128062014175"): EEPairResidualInventory(
+        base_id="128092013010",
+        oracle_id="128062014175",
+        statute_title="Kinnipidamiskeskuse sisekorraeeskirja kehtestamine",
+        comparison_class="commensurable_delta",
+        residuals=cast(tuple[EEResidualRecord, ...], (
+            EEResidualRecord(
+                address="chapter:2/section:5/subsection:1",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Source act 128062014035 § 2 item 3 explicitly repeals § 5. "
+                    "Replay therefore materializes § 5 as a repeal tombstone. Oracle "
+                    "128062014175 nevertheless preserves the old § 5 heading as a "
+                    "title-only subsection, without visible source text reactivating "
+                    "the provision body."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:6/section:19/subsection:1",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Source act 128062014035 § 2 item 5 explicitly repeals § 19. "
+                    "Replay therefore materializes § 19 as a repeal tombstone. Oracle "
+                    "128062014175 nevertheless preserves the old § 19 heading as a "
+                    "title-only subsection, without visible source text reactivating "
+                    "the provision body."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:6/section:21/subsection:3",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "The base § 21(3) text ends without a terminal period. Source act "
+                    "128062014035 only applies the case-inflected global term rewrite "
+                    "'migratsioonijärelevalveametnik' -> 'kinnipidamiskeskuse ametnik'. "
+                    "Replay applies that rewrite and preserves the source punctuation; "
+                    "oracle 128062014175 additionally appends a final period."
+                ),
+            ),
+        )),
+    ),
     ("108072011074", "127062017011"): EEPairResidualInventory(
         base_id="108072011074",
         oracle_id="127062017011",
