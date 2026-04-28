@@ -4477,6 +4477,110 @@ def test_global_case_inflected_text_replace_handles_line_adjective_forms() -> No
     assert "liiduvälisesse riiki" in subsection.text
 
 
+def test_global_case_inflected_text_replace_handles_liit_genitive_family() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="2",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="1",
+                                text=(
+                                    "Euroopa Ühenduse tolliterritooriumi suhtes kohaldatakse "
+                                    "ühenduse tollimaksuvabastuse süsteemi."
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_yhendus_liit_case",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=()),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="liit",
+            attrs={"old_text": "ühendus", "case_inflected": True},
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    subsection = result.children[0].children[0].children[0]
+
+    assert "Euroopa Liidu tolliterritooriumi" in subsection.text
+    assert "liidu tollimaksuvabastuse" in subsection.text
+
+
+def test_global_case_inflected_text_replace_honors_augmented_exclusions_with_witness() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="2",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="1_1",
+                                text="ühenduse tolliseadustiku artiklites 36a ja 182a",
+                            ),
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="2",
+                                text="Euroopa Ühenduse tolliterritoorium",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_augmented_exclusion_witness",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=()),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="liit",
+            attrs={
+                "old_text": "ühendus",
+                "case_inflected": True,
+                "exclude_paths": [((("section", "2"), ("subsection", "1_1")))],
+                "rewrite_witness": EETextRewriteWitness(
+                    source_text="asendatakse läbivalt sõna „ühendus” sõnaga „liit” vastavas käändes",
+                    rewrite=EETextRewrite(
+                        old_surface="ühendus",
+                        new_surface="liit",
+                        case_inflected=True,
+                    ),
+                ),
+            },
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    section = result.children[0].children[0]
+
+    assert section.children[0].text == "ühenduse tolliseadustiku artiklites 36a ja 182a"
+    assert section.children[1].text == "Euroopa Liidu tolliterritoorium"
+
+
 def test_case_preserving_replace_keeps_lowercase_common_noun_mid_sentence() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,

@@ -202,6 +202,23 @@ def read_payload_rewrite_meta(payload: IRNode | None) -> EEPayloadRewriteMeta:
         if isinstance(payload_witness, EETextRewriteWitness)
         else None
     )
+    if rewrite_witness is not None and rewrite is not None:
+        witness_rewrite = rewrite_witness.rewrite
+        rewrite_witness = replace(
+            rewrite_witness,
+            rewrite=replace(
+                witness_rewrite,
+                old_surface=rewrite.old_surface or witness_rewrite.old_surface,
+                new_surface=rewrite.new_surface if rewrite.old_surface else witness_rewrite.new_surface,
+                mode=rewrite.mode if rewrite.mode is not EETextReplaceMode.unknown else witness_rewrite.mode,
+                case_inflected=rewrite.case_inflected or witness_rewrite.case_inflected,
+                scope_chapters=rewrite.scope_chapters or witness_rewrite.scope_chapters,
+                exclude_paths=rewrite.exclude_paths or witness_rewrite.exclude_paths,
+                generic_minister_plural=rewrite.generic_minister_plural or witness_rewrite.generic_minister_plural,
+                old_titles=rewrite.old_titles or witness_rewrite.old_titles,
+                source_family=rewrite.source_family or witness_rewrite.source_family,
+            ),
+        )
     return EEPayloadRewriteMeta(
         rewrite=rewrite,
         rewrite_witness=rewrite_witness,

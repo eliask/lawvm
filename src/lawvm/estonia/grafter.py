@@ -1355,10 +1355,13 @@ def parse_ee_amendment_ops(
         )
 
     def _augment_global_text_replace_exclusions(ops: List[LegalOperation]) -> None:
+        def _action_name(op: LegalOperation) -> str:
+            return op.action.value if hasattr(op.action, "value") else str(op.action)
+
         global_text_ops = [
             op
             for op in ops
-            if op.action == "text_replace"
+            if _action_name(op) == "text_replace"
             and not op.target.path
             and op.payload is not None
             and read_payload_rewrite_meta(op.payload).rewrite is not None
@@ -1376,6 +1379,7 @@ def parse_ee_amendment_ops(
             old_text = rewrite.old_surface.strip()
             if not old_text:
                 continue
+            old_text_norm = old_text.casefold()
             excluded_paths = [
                 tuple((str(kind), str(label)) for kind, label in raw_path)
                 for raw_path in rewrite.exclude_paths
@@ -1383,14 +1387,14 @@ def parse_ee_amendment_ops(
             ]
             seen_paths = set(excluded_paths)
             for op in ops:
-                if op is global_op or op.action != "text_replace" or not op.target.path or op.payload is None:
+                if op is global_op or _action_name(op) != "text_replace" or not op.target.path or op.payload is None:
                     continue
                 other_meta = read_payload_rewrite_meta(op.payload)
                 other_rewrite = other_meta.rewrite
                 other_old_text = other_rewrite.old_surface.strip() if other_rewrite is not None else ""
                 if not other_old_text or len(other_old_text) <= len(old_text):
                     continue
-                if old_text not in other_old_text:
+                if old_text_norm not in other_old_text.casefold():
                     continue
                 path = tuple((str(kind), str(label)) for kind, label in op.target.path)
                 if path and path not in seen_paths:
@@ -1411,6 +1415,79 @@ def parse_ee_amendment_ops(
                     if op is global_op:
                         ops[idx] = updated_op
                         break
+
+    def _compose_global_text_replaces_into_later_payloads(ops: List[LegalOperation]) -> List[LegalOperation]:
+        """Apply same-source statute-wide lexical replacements to later payload text.
+
+        Estonian amendments can first say that a word is replaced throughout the
+        regulation and later replace a provision with payload text copied from
+        the pre-composition wording. The later operation's target matching must
+        still use the old live text, but replacement/insert payload text should
+        materialize under the earlier statute-wide lexical instruction.
+        """
+
+        def _action_name(op: LegalOperation) -> str:
+            return op.action.value if hasattr(op.action, "value") else str(op.action)
+
+        def _rewrite_node(node: IRNode, *, old: str, new: str, case_inflected: bool) -> IRNode:
+            new_text = _ee_apply_text_replace_value(
+                node.text,
+                old,
+                new,
+                case_inflected=case_inflected,
+            )
+            new_children = tuple(
+                _rewrite_node(child, old=old, new=new, case_inflected=case_inflected)
+                for child in node.children
+            )
+            if new_text == node.text and new_children == node.children:
+                return node
+            return replace(
+                node,
+                text=new_text,
+                children=new_children,
+            )
+
+        active_rewrites: list[tuple[str, str, bool]] = []
+        composed: list[LegalOperation] = []
+        for op in ops:
+            action = _action_name(op)
+            payload = op.payload
+            updated_op = op
+            if payload is not None and action in {"replace", "insert"}:
+                updated_payload = payload
+                for old, new, case_inflected in active_rewrites:
+                    updated_payload = _rewrite_node(
+                        updated_payload,
+                        old=old,
+                        new=new,
+                        case_inflected=case_inflected,
+                    )
+                if updated_payload is not payload:
+                    updated_op = replace(
+                        op,
+                        payload=updated_payload,
+                        provenance_tags=(
+                            *op.provenance_tags,
+                            "ee_source_local_global_text_replace_payload_composition",
+                        ),
+                    )
+            composed.append(updated_op)
+            if action != "text_replace" or op.target.path or payload is None:
+                continue
+            if not payload.attrs.get("all_occurrences"):
+                continue
+            rewrite = read_payload_rewrite_meta(payload).rewrite
+            if rewrite is None or not rewrite.old_surface:
+                continue
+            active_rewrites.append(
+                (
+                    rewrite.old_surface,
+                    rewrite.new_surface,
+                    rewrite.case_inflected,
+                )
+            )
+        return composed
 
     def _merge_frontloaded_ops(
         leading_ops: List[LegalOperation],
@@ -1496,6 +1573,7 @@ def parse_ee_amendment_ops(
             fallback_effective=ref_effective,
         )
     _augment_global_text_replace_exclusions(parsed_ops)
+    parsed_ops = _compose_global_text_replaces_into_later_payloads(parsed_ops)
     leading_ops = [*generic_minister_ops, *generic_ministry_ops]
     if leading_ops:
         return _merge_frontloaded_ops(leading_ops, parsed_ops)
@@ -3789,6 +3867,35 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "sg_com": stem + "ga",
             "pl_nom": stem + "d",
             "pl_gen": stem + "de",
+        }
+    if lower == "liit":
+        gen_stem = word[:-1] + "du"
+        part_stem = word[:-1] + "tu"
+        plural_stem = word[:-1] + "tude"
+        return {
+            "sg_nom": word,
+            "sg_gen": gen_stem,
+            "sg_part": part_stem,
+            "sg_ine": gen_stem + "s",
+            "sg_ela": gen_stem + "st",
+            "sg_ill": part_stem,
+            "sg_all": gen_stem + "le",
+            "sg_ade": gen_stem + "l",
+            "sg_abl": gen_stem + "lt",
+            "sg_trn": gen_stem + "ks",
+            "sg_ter": gen_stem + "ni",
+            "sg_ess": gen_stem + "na",
+            "sg_abe": gen_stem + "ta",
+            "sg_com": gen_stem + "ga",
+            "pl_nom": gen_stem + "d",
+            "pl_gen": plural_stem,
+            "pl_part": word[:-1] + "te",
+            "pl_ine": plural_stem + "s",
+            "pl_ela": plural_stem + "st",
+            "pl_all": plural_stem + "le",
+            "pl_ade": plural_stem + "l",
+            "pl_abl": plural_stem + "lt",
+            "pl_trn": plural_stem + "ks",
         }
     if lower == "merematke":
         base = word[:-1]
