@@ -378,6 +378,8 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
     ):
         preamble = re.sub(pat, ' ', preamble, flags=re.DOTALL)
     preamble = _strip_embedded_reference_wrapper(preamble)
+    preamble = re.sub(r"§\s*[–‒‑-]\s*s\b", "§-s", preamble, flags=re.IGNORECASE)
+    preamble = re.sub(r"§\s*[–‒‑-]\s*d\b", "§-d", preamble, flags=re.IGNORECASE)
     preamble = re.sub(r"\bl[oõ]igetest\b", "lõigetes", preamble, flags=re.IGNORECASE)
     preamble = re.sub(r'\s+', ' ', preamble).strip()
     chunks = re.split(
@@ -4219,7 +4221,7 @@ def extract_ee_ops(
     if action == "text_replace":
         target_pairs = _extract_text_replace_pairs(clean)
         if len(target_pairs) > 1:
-            explicit_targets = _extract_multiple_explicit_targets(_clean_preamble)
+            explicit_targets = _extract_multiple_explicit_targets(clean)
             heading_targets = _extract_explicit_heading_targets(clean)
             missing_heading_targets = [
                 heading_target
