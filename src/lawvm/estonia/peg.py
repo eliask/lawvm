@@ -1506,6 +1506,19 @@ def _strip_leading_clause_wrapper(text: str) -> str:
     return re.sub(r'^§\s*\d[\d\s_]*\.\s+(?=[A-ZÕÄÖÜŠŽ])', '', text)
 
 
+def _strip_leading_quoted_act_reference(text: str) -> str:
+    """Drop explicit act-title prefix before a structural target list."""
+    return re.sub(
+        r"^[A-ZÜÕÖÄ][^\n]{0,260}?\b(?:seaduse|seaduses|seadustiku|koodeksi|määruse|määruses)\b"
+        r"(?:\s+nr\.?\s*[\w./-]+)?\s+[„\"“][^„”\"]+[”\"]\s+"
+        r"(?=(?:§|paragrahv))",
+        "",
+        text,
+        count=1,
+        flags=re.IGNORECASE,
+    ).strip()
+
+
 def _extract_secondary_subsection_repeals(clean: str) -> List[tuple[str, str]]:
     """Extract subsection repeals that appear after a leading section list.
 
@@ -1534,38 +1547,36 @@ def _extract_secondary_subsection_repeal_groups(
         + _NUM_PAT
         + r'(?:\s*[' + _EE_DASH_CLASS + r']\s*'
         + _NUM_PAT
-        + r')?)*(?:\s+ja\s+'
+        + r')?)*(?:\s+(?:ja|ning)\s+'
         + _NUM_PAT
         + r'(?:\s*[' + _EE_DASH_CLASS + r']\s*'
         + _NUM_PAT
         + r')?)?'
     )
-    m = re.search(
+    groups: list[tuple[str, tuple[str, ...], tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]] = []
+    for m in re.finditer(
         r'(?:\bning\b|\bja\b|,)\s+§\s+(' + _NUM_PAT + r')\s+'
         r'l[oõ]iked\s+(' + _SUB_LIST_PAT + r')'
         r'(?:\s+ja\s+l[oõ]ige\s+(' + _NUM_PAT + r'))?',
         clean,
         re.IGNORECASE,
-    )
-    if not m:
-        return []
-    sect_label = _normalize_num(m.group(1).strip())
-    raw_subs = m.group(2).strip()
-    labels = _expand_ee_numeric_list(raw_subs)
-    if m.group(3):
-        labels.append(_normalize_num(m.group(3).strip()))
-    deduped: list[str] = []
-    for label in labels:
-        if label not in deduped:
-            deduped.append(label)
-    return [
-        (
+    ):
+        sect_label = _normalize_num(m.group(1).strip())
+        raw_subs = m.group(2).strip()
+        labels = _expand_ee_numeric_list(raw_subs)
+        if m.group(3):
+            labels.append(_normalize_num(m.group(3).strip()))
+        deduped: list[str] = []
+        for label in labels:
+            if label not in deduped:
+                deduped.append(label)
+        groups.append((
             sect_label,
             tuple(deduped),
             _plain_numeric_ranges(raw_subs),
             _ee_label_ranges(raw_subs),
-        )
-    ]
+        ))
+    return groups
 
 
 def _extract_trailing_section_subsection_repeals(clean: str) -> List[tuple[str, str]]:
@@ -2370,6 +2381,7 @@ def extract_ee_ops(
 
     # Strip leading "N) " item marker
     clean = re.sub(r'^\(?\d+\)\s*', '', op_text.strip())
+    clean = _strip_leading_quoted_act_reference(clean)
     instruction_scope = _instruction_preamble(clean)
     local_effective = _extract_clause_local_effective_date(instruction_scope)
     if local_effective:

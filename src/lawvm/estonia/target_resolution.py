@@ -183,6 +183,17 @@ def extract_intro_statute_fragment(text: str) -> str:
         year_prefix = year_match.group(1)
         text = text[year_match.end():]
     fragment = ""
+    fragment_from_quoted_title = False
+    quoted_title_match = re.match(
+        r"^[A-ZÜÕÖÄ][^\n]{0,240}?\b(?:seaduse|seaduses|seadustiku|koodeksi|määruse|määruses)\b"
+        r"(?:\s+nr\.?\s*[\w./-]+)?\s+[„\"“](?P<title>[^„”\"]+)[”\"]"
+        r"\s+(?:§|paragrahv|\btehakse\b|\bmuudetakse\b|\btunnistatakse\b|\btäiendatakse\b|\bjäetakse\b)",
+        text,
+        re.IGNORECASE,
+    )
+    if quoted_title_match:
+        fragment = quoted_title_match.group("title").strip()
+        fragment_from_quoted_title = True
     section_scoped_match = re.match(
         r"^([A-ZÜÕÖÄ][^\n.]{4,180}?\b(?:seadus|seaduse|seadust|"
         r"seadustik|seadustiku|seadustikku|koodeks|koodeksi|koodeksit|"
@@ -192,11 +203,11 @@ def extract_intro_statute_fragment(text: str) -> str:
         text,
         re.IGNORECASE,
     )
-    if section_scoped_match:
+    if not fragment and section_scoped_match:
         fragment = section_scoped_match.group(1).strip()
         if section_scoped_match.group(3).lower() == "jäetakse" and section_scoped_match.group(2):
             fragment = f"{fragment}{section_scoped_match.group(2)}"
-    else:
+    elif not fragment:
         direct_match = re.match(
             r"^([A-ZÜÕÖÄ][^\n.]{4,180}?)"
             r"(?:tehakse|tehtakse|asendatakse|tunnistatakse|täiendatakse|jäetakse)",
@@ -209,7 +220,7 @@ def extract_intro_statute_fragment(text: str) -> str:
         return ""
     if year_prefix:
         fragment = f"{year_prefix}{fragment}".strip()
-    if not any(
+    if not fragment_from_quoted_title and not any(
         token in fragment.lower()
         for token in (
             "seadus",
@@ -555,7 +566,7 @@ def filter_direct_target_clause_op_texts(
         return list(op_texts)
 
     stat_fragment = extract_intro_statute_fragment(first_tava)
-    if not para_title and stat_fragment and title_matches_para(target_title, stat_fragment):
+    if stat_fragment and title_matches_para(target_title, stat_fragment):
         return list(op_texts)
 
     filtered_op_texts: list[str] = []
@@ -1884,6 +1895,17 @@ def extract_intro_statute_fragment(text: str) -> str:  # noqa: F811
         year_prefix = year_match.group(1)
         text = text[year_match.end():]
     fragment = ""
+    fragment_from_quoted_title = False
+    quoted_title_match = re.match(
+        r"^[A-ZÜÕÖÄ][^\n]{0,240}?\b(?:seaduse|seaduses|seadustiku|koodeksi|määruse|määruses)\b"
+        r"(?:\s+nr\.?\s*[\w./-]+)?\s+[„\"“](?P<title>[^„”\"]+)[”\"]"
+        r"\s+(?:§|paragrahv|\btehakse\b|\bmuudetakse\b|\btunnistatakse\b|\btäiendatakse\b|\bjäetakse\b)",
+        text,
+        re.IGNORECASE,
+    )
+    if quoted_title_match:
+        fragment = quoted_title_match.group("title").strip()
+        fragment_from_quoted_title = True
     section_scoped_match = re.match(
         r"^([A-ZÜÕÖÄ][^\n.]{4,180}?\b(?:seadus|seaduse|seadust|"
         r"seadustik|seadustiku|seadustikku|koodeks|koodeksi|koodeksit|"
@@ -1893,11 +1915,11 @@ def extract_intro_statute_fragment(text: str) -> str:  # noqa: F811
         text,
         re.IGNORECASE,
     )
-    if section_scoped_match:
+    if not fragment and section_scoped_match:
         fragment = section_scoped_match.group(1).strip()
         if section_scoped_match.group(3).lower() == "jäetakse" and section_scoped_match.group(2):
             fragment = f"{fragment}{section_scoped_match.group(2)}"
-    else:
+    elif not fragment:
         direct_match = re.match(
             r"^([A-ZÜÕÖÄ][^\n.]{4,180}?)"
             r"(?:tehakse|tehtakse|asendatakse|tunnistatakse|täiendatakse|jäetakse)",
@@ -1910,7 +1932,7 @@ def extract_intro_statute_fragment(text: str) -> str:  # noqa: F811
         return ""
     if year_prefix:
         fragment = f"{year_prefix}{fragment}".strip()
-    if not any(
+    if not fragment_from_quoted_title and not any(
         token in fragment.lower()
         for token in (
             "seadus",
@@ -2209,6 +2231,19 @@ def parse_preambul_single_target_ops(
     if not pre_tava:
         return []
     stat_fragment = extract_intro_statute_fragment(pre_tava)
+    direct_sisu_blocks = [child for child in list(sisu) if child.tag == _ns(ns_str, "sisuTekst")]
+    intro_tava = pre_tava
+    if not stat_fragment:
+        for child in direct_sisu_blocks:
+            for text_el in child.findall(_ns(ns_str, "tavatekst")):
+                candidate = tavatekst_text(text_el, ns_str)
+                candidate_fragment = extract_intro_statute_fragment(candidate)
+                if candidate_fragment:
+                    stat_fragment = candidate_fragment
+                    intro_tava = candidate
+                    break
+            if stat_fragment:
+                break
     registry_record = lookup_act_identity(akt_viide=source_id, title=stat_fragment, alias=target_title)
     if registry_record is None:
         if not (stat_fragment and title_matcher(target_title, stat_fragment)):
@@ -2222,11 +2257,10 @@ def parse_preambul_single_target_ops(
             if not (stat_fragment and title_matcher(target_title, stat_fragment)):
                 return []
 
-    direct_sisu_blocks = [child for child in list(sisu) if child.tag == _ns(ns_str, "sisuTekst")]
     if not direct_sisu_blocks:
         return extract_ee_ops(
-            pre_tava,
-            OperationSource(statute_id=source_id, title=target_title, raw_text=pre_tava),
+            intro_tava,
+            OperationSource(statute_id=source_id, title=target_title, raw_text=intro_tava),
         )
 
     synthetic_root = ET.Element(root.tag)
@@ -2237,7 +2271,7 @@ def parse_preambul_single_target_ops(
 
     first_st = ET.SubElement(synthetic_para, _ns(ns_str, "sisuTekst"))
     first_t = ET.SubElement(first_st, _ns(ns_str, "tavatekst"))
-    first_t.text = pre_tava
+    first_t.text = intro_tava
     for child in direct_sisu_blocks:
         synthetic_para.append(ET.fromstring(ET.tostring(child, encoding="utf-8")))
     return parse_muutmisseadus_ops(synthetic_root, source_id, ns_str, target_title)
