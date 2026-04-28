@@ -1002,11 +1002,26 @@ def _extract_payload_after_marker(text: str) -> Optional[str]:
     return payload.strip() or None
 
 
+def _marker_payload_starts_with_right_quote(text: str) -> bool:
+    """Old RT HTML sometimes uses U+201D as both payload opener and closer."""
+    marker = re.search(
+        r'(?:järgmises\s+sõnastuses|järgmiselt)\s*:\s*',
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if marker is None:
+        return False
+    return text[marker.end():].lstrip().startswith("\u201d")
+
+
 def _extract_quoted_content(text: str) -> Optional[str]:
     """Extract quoted payload text, joining multiple payload blocks when present."""
     matches = _extract_quoted_contents(text)
     if not matches:
         return _extract_payload_after_marker(text)
+    marker_payload = _extract_payload_after_marker(text)
+    if marker_payload and len(matches) > 1 and _marker_payload_starts_with_right_quote(text):
+        return marker_payload
     return " ".join(matches)
 
 
