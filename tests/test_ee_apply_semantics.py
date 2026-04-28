@@ -7752,3 +7752,24 @@ def test_replace_sentence_note_preserves_other_sentences_for_sixth_sentence() ->
     assert subsection.text == (
         "Üldkoosolek protokollitakse. Vana teine lause. Kolmas lause. Neljas lause. Viies lause. Uus kuues lause."
     )
+
+
+def test_replace_sentence_note_targets_last_sentence() -> None:
+    body = _body_with_section_and_subsection(
+        "20",
+        "2",
+        "Esimene lause. Vana viimane lause.",
+    )
+    op = LegalOperation(
+        op_id="ee_test_replace_last_sentence",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "20"), ("subsection", "2"))),
+        payload=IRNode(kind=IRNodeKind.CONTENT, text="Uus viimane lause."),
+        provenance_tags=("paragrahvi 20 lõike 2 viimane lause muudetakse ja sõnastatakse järgmiselt",),
+    )
+
+    result = _ee_apply_op(body, op)
+    subsection = result.children[0].children[0].children[0]
+
+    assert subsection.text == "Esimene lause. Uus viimane lause."
