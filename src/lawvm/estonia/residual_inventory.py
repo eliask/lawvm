@@ -3264,6 +3264,7 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
 
 _SOLVED_EE_RESIDUALS: set[tuple[str, str]] = {
     ("109042021007", "114032025016"),
+    ("106122012015", "104122014005"),
 }
 
 

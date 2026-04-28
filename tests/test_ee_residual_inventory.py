@@ -90,19 +90,7 @@ def test_get_ee_residual_inventory_ehitusseadustiku_ja_planeerimisseaduse_rakend
 def test_get_ee_residual_inventory_riikliku_matusetoetuse_seadus() -> None:
     inventory = get_ee_residual_inventory("106122012015", "104122014005")
 
-    assert inventory is not None
-    assert inventory.statute_title == "Riikliku matusetoetuse seadus"
-    assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 1
-    assert {record.bucket for record in inventory.residuals} == {
-        "source_pathology",
-    }
-    assert any(
-        record.address == "section:13/subsection:3"
-        and "replace 'pensioniamet' with 'Sotsiaalkindlustusamet'" in record.evidence
-        and "'pensionamet' (without the extra 'i')" in record.evidence
-        for record in inventory.residuals
-    )
+    assert inventory is None
 
 
 def test_get_ee_residual_inventory_saastuse_kompleksse_valtimise_ja_kontrollimise_seadus() -> None:
@@ -792,7 +780,10 @@ def test_generated_first_residual_inventory_preserves_current_output_shape() -> 
         inventory = get_ee_residual_inventory(base_id, oracle_id)
 
         if inventory is None:
-            assert (base_id, oracle_id) == ("109042021007", "114032025016")
+            assert (base_id, oracle_id) in {
+                ("109042021007", "114032025016"),
+                ("106122012015", "104122014005"),
+            }
             continue
         assert inventory is not None
         assert inventory.base_id == legacy_inventory.base_id

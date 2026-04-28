@@ -6,7 +6,12 @@ from types import SimpleNamespace
 
 from lawvm.estonia.fetch import AmendmentRef
 from lawvm.estonia.ee_instruction_waist import make_section_selection_meta
-from lawvm.estonia.grafter import _ee_apply_text_replace_value, apply_ee_ops
+from lawvm.estonia.grafter import (
+    EETextRewriteSpec,
+    _ee_apply_text_replace_value,
+    _ee_typo_tolerant_text_replace,
+    apply_ee_ops,
+)
 from lawvm.estonia.replay import (
     _derive_ee_temporal_expiry_events,
     _ee_filter_cancelled_pending_refs,
@@ -2157,6 +2162,50 @@ def test_replay_ee_to_pit_closes_sihtasutuste_register_cleanup_and_leaves_only_o
         and adjudication.detail["amendment_item"] == "18"
         for adjudication in result.adjudications
     )
+
+
+def test_replay_ee_to_pit_recovers_exact_target_source_typo_for_matusetoetus() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "106122012015",
+        "2015-01-01",
+        archive=archive,
+        oracle_id="104122014005",
+    )
+
+    assert result.error is None
+    assert result.divergences == []
+    assert any(
+        adjudication.kind == "ee_source_typo_text_replace_near_match"
+        and adjudication.detail["target"] == "section:13/subsection:3"
+        and adjudication.detail["source_old_text"] == "pensioniamet"
+        and adjudication.detail["matched_live_text"] == "pensionamet"
+        for adjudication in result.adjudications
+    )
+
+
+def test_typo_tolerant_text_replace_refuses_multiple_near_matches() -> None:
+    node = IRNode(
+        kind=IRNodeKind.SUBSECTION,
+        label="1",
+        text="pensionamet ja pensionamet võivad tegutseda.",
+    )
+
+    replaced, changed, actual_old = _ee_typo_tolerant_text_replace(
+        node,
+        EETextRewriteSpec(
+            old_text="pensioniamet",
+            new_text="Sotsiaalkindlustusamet",
+        ),
+    )
+
+    assert replaced is node
+    assert changed is False
+    assert actual_old == ""
 
 
 def test_precompose_pending_amendment_text_patch_requires_exact_old_format_item() -> None:
