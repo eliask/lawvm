@@ -7240,6 +7240,14 @@ def _ee_apply_op(
                                 children=(div1,),
                             )
                             body = tree_ops.replace_at(body, parent_path, new_parent)
+                        else:
+                            body = _ee_relabel_duplicate_division_suffix_before_insert(
+                                body,
+                                parent_path,
+                                insert_label=label,
+                                op=op,
+                                adjudications_out=adjudications_out,
+                            )
                     return tree_ops.insert_sorted(
                         body,
                         parent_path,
@@ -7888,6 +7896,96 @@ def _append_ee_replay_adjudication(
             detail=detail or {},
         )
     )
+
+
+def _ee_relabel_duplicate_division_suffix_before_insert(
+    body: IRNode,
+    parent_path: tree_ops.Path,
+    *,
+    insert_label: str,
+    op: LegalOperation,
+    adjudications_out: Optional[list[CompileAdjudication]],
+) -> IRNode:
+    """Repair an old-format duplicate jagu run before a high-numbered insert.
+
+    Some RT old-format bases carry duplicate division labels, then a later source
+    inserts a high division number and the consolidated text presents the
+    intervening duplicate/run as a monotone sequence. This recovery is only
+    accepted when the live topology proves a unique suffix shift.
+    """
+    insert_int = _try_parse_int(insert_label)
+    if insert_int is None or insert_int <= 1:
+        return body
+    parent_node = tree_ops.resolve(body, parent_path)
+    if parent_node is None or parent_node.kind != IRNodeKind.CHAPTER:
+        return body
+    if not parent_node.children or any(child.kind != IRNodeKind.DIVISION for child in parent_node.children):
+        return body
+    labels = [_try_parse_int(child.label or "") for child in parent_node.children]
+    if any(label is None for label in labels):
+        return body
+    int_labels = [label for label in labels if label is not None]
+    duplicate_indexes = [
+        idx
+        for idx in range(1, len(int_labels))
+        if int_labels[idx] <= int_labels[idx - 1]
+    ]
+    if len(duplicate_indexes) != 1:
+        return body
+    suffix_start = duplicate_indexes[0]
+    suffix_old = int_labels[suffix_start:]
+    expected_old = list(range(suffix_old[0], suffix_old[0] + len(suffix_old)))
+    if suffix_old != expected_old:
+        return body
+    new_start = int_labels[suffix_start - 1] + 1
+    suffix_new = list(range(new_start, new_start + len(suffix_old)))
+    if suffix_new[-1] != insert_int - 1:
+        return body
+    prefix_labels = set(int_labels[:suffix_start])
+    if prefix_labels.intersection(suffix_new):
+        return body
+
+    relabeled_children: list[IRNode] = []
+    for idx, child in enumerate(parent_node.children):
+        if idx < suffix_start:
+            relabeled_children.append(child)
+            continue
+        new_label = str(suffix_new[idx - suffix_start])
+        relabeled_children.append(
+            IRNode(
+                kind=child.kind,
+                label=new_label,
+                text=child.text,
+                attrs=dict(child.attrs),
+                children=tuple(child.children),
+            )
+        )
+    new_parent = IRNode(
+        kind=parent_node.kind,
+        label=parent_node.label,
+        text=parent_node.text,
+        attrs=dict(parent_node.attrs),
+        children=tuple(relabeled_children),
+    )
+    _append_ee_replay_adjudication(
+        adjudications_out,
+        kind="ee_implicit_division_sequence_relabel_after_high_jagu_insert",
+        message="EE replay relabeled a duplicate division suffix before applying a source-backed high-numbered division insert.",
+        op=op,
+        detail={
+            "parent": "/".join(f"{kind}:{label}" for kind, label in parent_path),
+            "insert_division": insert_label,
+            "old_labels": ",".join(str(label) for label in int_labels),
+            "new_labels": ",".join(
+                str(label)
+                for label in (
+                    *int_labels[:suffix_start],
+                    *suffix_new,
+                )
+            ),
+        },
+    )
+    return tree_ops.replace_at(body, parent_path, new_parent)
 
 
 def _ee_section_snapshot_path(full_path: tree_ops.Path) -> Optional[tree_ops.Path]:
