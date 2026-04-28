@@ -85,6 +85,67 @@ def test_extract_ee_ops_unescapes_html_quote_entities_in_text_replace() -> None:
     assert payload.text == "seitse"
 
 
+def test_extract_ee_ops_accepts_left_right_curly_quote_text_replace() -> None:
+    text = (
+        "paragrahvi 34 lõikes 1 asendatakse sõna “põllumajandusliku” "
+        "tekstiosaga “põllu- ja metsamajandusliku”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "34"), ("subsection", "1"))
+    assert _payload(ops[0]).attrs["old_text"] == "põllumajandusliku"
+    assert _payload(ops[0]).text == "põllu- ja metsamajandusliku"
+
+
+def test_extract_ee_ops_accepts_left_right_curly_quote_heading_delete() -> None:
+    text = 'Paragrahvi 18 pealkirjast jäetakse välja sõnad “ja projekteerimisnormid”;'
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "18"),)
+    assert ops[0].target.special is FacetKind.HEADING
+    assert _payload(ops[0]).attrs["old_text"] == "ja projekteerimisnormid"
+    assert _payload(ops[0]).text == ""
+
+
+def test_extract_ee_ops_accepts_left_right_curly_quote_viide_pairs() -> None:
+    text = (
+        "paragrahvi 10 lõikes 2 asendatakse viide lisa tabelitele “6, 7 ja 8” "
+        "viitega lisa tabelitele “5, 6 ja 7” ning viide lisa tabelile “9” "
+        "viitega lisa tabelile “8”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.TEXT_REPLACE, (("section", "10"), ("subsection", "2"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "10"), ("subsection", "2"))),
+    ]
+    assert [(_payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        ("6, 7 ja 8", "5, 6 ja 7"),
+        ("9", "8"),
+    ]
+
+
+def test_extract_ee_ops_keeps_heading_pair_before_subsection_pair() -> None:
+    text = (
+        "paragrahvi 42 pealkirjas asendatakse sõna “eesvoolu” sõnaga “eesvoolule” "
+        "ja lõikes 1 asendatakse sõna “Eesvoolu” sõnaga “Eesvoolule”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.target.path, op.target.special, _payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        ((("section", "42"),), FacetKind.HEADING, "eesvoolu", "eesvoolule"),
+        ((("section", "42"), ("subsection", "1")), None, "Eesvoolu", "Eesvoolule"),
+    ]
+
+
 def test_extract_ee_ops_preserves_multiple_sentence_targets_in_text_replace_meta() -> None:
     ops = extract_ee_ops(
         "paragrahvi 155 lõike 1 esimest ja teist lauset täiendatakse pärast "

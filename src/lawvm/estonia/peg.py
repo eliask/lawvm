@@ -369,7 +369,9 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
         flags=re.DOTALL | re.IGNORECASE,
     )
     for pat in (
+        r'\u201c.*?\u201d',
         r'\u201e.*?\u201d',
+        r'\u201e.*?\u201c',
         r'\u02ee.*?\u02ee',
         r'\u00ab.*?\u00bb',
         r'".*?"',
@@ -686,6 +688,8 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
             continue
         dedup_seen.add(key)
         deduped.append(target)
+    if _heading_mention_precedes_child_target(text):
+        deduped.sort(key=lambda target: 0 if target.special is FacetKind.HEADING else 1)
     return deduped
 
 
@@ -803,6 +807,19 @@ def _extract_explicit_heading_targets(text: str) -> List[LegalAddress]:
     return sorted(targets, key=lambda target: (len(target.path), target.path))
 
 
+def _heading_mention_precedes_child_target(text: str) -> bool:
+    preamble = _strip_embedded_reference_wrapper(_instruction_preamble(text))
+    heading_match = re.search(r'\bpealkir(?:i|ja(?:s|st)?)\b', preamble, re.IGNORECASE)
+    if heading_match is None:
+        return False
+    child_match = re.search(
+        r'\bl[oõ]ike(?:d|te|tes|s|st|t|ga|id)?\b|\bpunkt(?:id|ide|ides|i|is|ist|iga)?\b',
+        preamble,
+        re.IGNORECASE,
+    )
+    return child_match is None or heading_match.start() < child_match.start()
+
+
 # ---------------------------------------------------------------------------
 # Verb / action extraction
 # ---------------------------------------------------------------------------
@@ -832,7 +849,7 @@ def _classify_verb(text: str) -> str:
     # ... sõna „X” sõnaga „Y”".
     if re.search(
         r'asendatakse\b.{0,240}?\b(?:läbivalt\s+)?'
-        r'(?:sõna[a-z]*|arv[a-z]*|aastaarv[a-z]*|tekstiosa[a-z]*|lauseosa[a-z]*|number[a-z]*)',
+        r'(?:sõna[a-z]*|arv[a-z]*|aastaarv[a-z]*|tekstiosa[a-z]*|lauseosa[a-z]*|number[a-z]*|viide[a-z]*)',
         t,
         re.DOTALL,
     ):
@@ -966,6 +983,9 @@ def _extract_balanced_quoted_contents(text: str, open_quote: str, close_quote: s
 
 def _extract_quoted_contents(text: str) -> List[str]:
     """Extract one or more payload blocks between quotation marks."""
+    balanced_left_right = _extract_balanced_quoted_contents(text, '\u201c', '\u201d')
+    if balanced_left_right:
+        return balanced_left_right
     balanced_estonian_left_close = _extract_balanced_quoted_contents(text, '\u201e', '\u201c')
     if balanced_estonian_left_close:
         return balanced_estonian_left_close
@@ -976,9 +996,11 @@ def _extract_quoted_contents(text: str) -> List[str]:
     if balanced_french:
         return balanced_french
     for pat in (
+        r'\u201c(.*?)\u201d',
         r'\u201e(.*?)\u201c',
         r'\u201e(.*?)\u201d',
         r'\u201d(.*?)\u201d',
+        r'\u201c(.*?)\u201c',
         r'\u02ee(.*?)\u02ee',
         r'\u00ab(.*?)\u00bb',
         r'"(.*?)"',
@@ -1141,7 +1163,7 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
     # (non-standard pairing), so we also try " " (U+201D...U+201D).
     text = html.unescape(text)
     nested_delete = re.search(
-        r"\bj[aä]etakse\s+v[aä]lja\s+tekstiosa\s+\u201e(.+)[\u201c\u201d\"]\s*[.;]?\s*$",
+        r"\bj[aä]etakse\s+v[aä]lja\s+(?:sõn(?:a|ad)|tekstiosa)\s+[„\"“](.+?)[”“\"]\s*[.;]?\s*$",
         text,
         re.IGNORECASE | re.DOTALL,
     )
@@ -1149,7 +1171,7 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
         return nested_delete.group(1).strip(), ""
     missing_new_close = re.search(
         r"\basendatakse\b.+?[„\"“](?P<old>[^„”“\"]+)[”“\"]\s+"
-        r"(?:sõn(?:a|ad|adega|aga)|tekstiosa(?:ga)?|arvu|lauseosa(?:ga)?)\s+"
+        r"(?:sõn(?:a|ad|adega|aga)|tekstiosa(?:ga)?|arvu|lauseosa(?:ga)?|viite(?:ga|le|ks)?)\s+"
         r"[„\"“](?P<new>[^„”“\"]+?)\s*[.;]?\s*$",
         text,
         re.IGNORECASE | re.DOTALL,
@@ -1158,6 +1180,7 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
         return missing_new_close.group("old").strip(), missing_new_close.group("new").strip()
     for pat in (
         r'\u201e(.*?)(?:\u201c|\u201d|")',   # Estonian „ open, common RT closes, or ASCII close
+        r'\u201c(.*?)\u201d',          # RT HTML CDATA: “…” (left/right curly quote pair)
         r'\u201d(.*?)\u201d',          # RT HTML CDATA: ”…” (both U+201D, right double quote)
         r'\u201c(.*?)\u201c',          # RT HTML CDATA: “…” (both U+201C, left double quote)
         r'\u02ee(.*?)\u02ee',          # RT quote prime: ˮ…ˮ
@@ -1177,6 +1200,7 @@ def _extract_text_replace_pairs(text: str) -> List[Tuple[str, str]]:
     text = html.unescape(text)
     for pat in (
         r'\u201e(.*?)(?:\u201c|\u201d|")',
+        r'\u201c(.*?)\u201d',
         r'\u201d(.*?)\u201d',
         r'\u201c(.*?)\u201c',
         r'\u02ee(.*?)\u02ee',
@@ -4204,7 +4228,9 @@ def extract_ee_ops(
             ]
             if missing_heading_targets:
                 combined_targets = explicit_targets + missing_heading_targets
-                if all(target.special is FacetKind.HEADING for target in combined_targets):
+                if all(target.special is FacetKind.HEADING for target in combined_targets) or (
+                    _heading_mention_precedes_child_target(clean)
+                ):
                     explicit_targets = missing_heading_targets + explicit_targets
                 else:
                     explicit_targets.extend(missing_heading_targets)
@@ -4279,7 +4305,9 @@ def extract_ee_ops(
             ]
             if missing_heading_targets:
                 combined_targets = explicit_targets + missing_heading_targets
-                if all(target.special is FacetKind.HEADING for target in combined_targets):
+                if all(target.special is FacetKind.HEADING for target in combined_targets) or (
+                    _heading_mention_precedes_child_target(clean)
+                ):
                     explicit_targets = missing_heading_targets + explicit_targets
                 else:
                     explicit_targets.extend(missing_heading_targets)
