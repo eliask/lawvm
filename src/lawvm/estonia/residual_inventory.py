@@ -1119,20 +1119,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     ),
                 ),
             ),
-            build_shortened_section_family(
-                bucket="source_pathology",
-                records=(
-                    (
-                        "chapter:3/section:52/subsection:1/item:1",
-                        "None of the applied in-range amendments directly target § 52(1) p 1. "
-                        "The 2023 statute-wide rewrites replace singular target phrases like "
-                        "'teabevaldaja' and 'asutus, põhiseaduslik institutsioon ...', but do "
-                        "not emit the oracle's plural coordinated surface 'töötlevate üksuste' "
-                        "for this item. Oracle 103022026013 therefore carries an unsupported "
-                        "target-local rewrite relative to the visible source chain.",
-                    ),
-                ),
-            ),
         ),
     ),
     ("107032012004", "101062013014"): EEPairResidualInventory(
@@ -3413,20 +3399,6 @@ def _generated_ee_residual_records(base_id: str, oracle_id: str) -> tuple[EEResi
                             "Replay preserves the source-side terminal semicolon in "
                             "§ 48(3) p 4, while oracle 103022026013 drops it. This is a "
                             "bounded terminal punctuation oracle-surface drift.",
-                        ),
-                    ),
-                ),
-                build_shortened_section_family(
-                    bucket="source_pathology",
-                    records=(
-                        (
-                            "chapter:3/section:52/subsection:1/item:1",
-                            "None of the applied in-range amendments directly target § 52(1) p 1. "
-                            "The 2023 statute-wide rewrites replace singular target phrases like "
-                            "'teabevaldaja' and 'asutus, põhiseaduslik institutsioon ...', but do "
-                            "not emit the oracle's plural coordinated surface 'töötlevate üksuste' "
-                            "for this item. Oracle 103022026013 therefore carries an unsupported "
-                            "target-local rewrite relative to the visible source chain.",
                         ),
                     ),
                 ),
