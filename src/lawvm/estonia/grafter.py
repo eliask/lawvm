@@ -5491,11 +5491,16 @@ def _ee_apply_text_replace_value(
             if all_occurrences:
                 def _repl(match: re.Match[str], *, idx: int = idx, new_variant: str = new_variant) -> str:
                     token = f"\x00ee-after-{idx}-{len(placeholders)}\x00"
-                    replacement = _ee_case_preserved_replacement(
-                        match,
-                        _ee_normalize_text_replace_surface(new_variant),
-                        capitalize_sentence_start=capitalize_sentence_start,
-                        preserve_match_capital=preserve_match_capital,
+                    normalized_new_variant = _ee_normalize_text_replace_surface(new_variant)
+                    replacement = (
+                        normalized_new_variant
+                        if normalized_new_variant.lower().startswith(match.group(0).lower())
+                        else _ee_case_preserved_replacement(
+                            match,
+                            normalized_new_variant,
+                            capitalize_sentence_start=capitalize_sentence_start,
+                            preserve_match_capital=preserve_match_capital,
+                        )
                     )
                     replacement = _ee_trim_overlapping_replacement_tail(
                         replacement,
@@ -5510,11 +5515,16 @@ def _ee_apply_text_replace_value(
             match = pattern.search(working)
             if match is None:
                 continue
-            replacement = _ee_case_preserved_replacement(
-                match,
-                _ee_normalize_text_replace_surface(new_variant),
-                capitalize_sentence_start=capitalize_sentence_start,
-                preserve_match_capital=preserve_match_capital,
+            normalized_new_variant = _ee_normalize_text_replace_surface(new_variant)
+            replacement = (
+                normalized_new_variant
+                if normalized_new_variant.lower().startswith(match.group(0).lower())
+                else _ee_case_preserved_replacement(
+                    match,
+                    normalized_new_variant,
+                    capitalize_sentence_start=capitalize_sentence_start,
+                    preserve_match_capital=preserve_match_capital,
+                )
             )
             replacement = _ee_trim_overlapping_replacement_tail(
                 replacement,
@@ -7593,7 +7603,11 @@ def _ee_apply_op(
                                 children=tuple(replaced_children),
                             )
                             return tree_ops.replace_at(body, full_path, replaced_node)
-                    if sentence_indexes and node.kind == IRNodeKind.SUBSECTION and node.text:
+                    if (
+                        sentence_indexes
+                        and node.kind in {IRNodeKind.SUBSECTION, IRNodeKind.ITEM}
+                        and node.text
+                    ):
                         parsed_instructions = to_ee_parsed_instructions(
                             [op],
                             source_rule="estonia/grafter:_ee_apply_op",
@@ -7617,6 +7631,8 @@ def _ee_apply_op(
                         sentences = _split_ee_sentences(node.text)
                         sentence_changed = False
                         for sentence_index in sentence_indexes:
+                            if sentence_index == 1_000_000 and sentences:
+                                sentence_index = len(sentences) - 1
                             if sentence_index >= len(sentences):
                                 continue
                             replaced_sentence = _ee_apply_text_replace_spec(

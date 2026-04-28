@@ -181,12 +181,13 @@ def sentence_indexes_from_notes(note_text: str) -> list[int]:
     ordinal_patterns = [
         (r"esime(?:ne|se|ses|st|sest)", 0),
         (r"tei(?:ne|se|ses|st|sest)", 1),
-        (r"kolma(?:s|st|ndas|ndast)", 2),
+        (r"kolma(?:s|st|ndat|ndas|ndast)", 2),
         (r"nelja(?:s|nda|ndat|ndas|ndast)", 3),
         (r"vii(?:es|enda|endat|endas|endast)", 4),
         (r"kuu(?:es|enda|endat|endas|endast)", 5),
         (r"seitsme(?:s|nda|ndat|ndas|ndast)", 6),
         (r"kaheks(?:as|anda|andat|andas|andast)", 7),
+        (r"viima(?:ne|se|st|ses|sest)", 1_000_000),
     ]
     for (left_pat, left_idx), (right_pat, right_idx) in zip(ordinal_patterns, ordinal_patterns[1:]):
         if re.search(
