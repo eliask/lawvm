@@ -2286,6 +2286,10 @@ def test_replay_ee_to_pit_preserves_tee_section_body_for_heading_and_sentence_mi
     }
     assert "chapter:2/section:6" not in divergence_addresses
     assert "chapter:2/section:6/subsection:7" not in divergence_addresses
+    assert "chapter:2/section:5/subsection:2/item:4" not in divergence_addresses
+    assert "chapter:3/section:12/subsection:10" not in divergence_addresses
+    assert "chapter:3/section:13/subsection:12/item:7" not in divergence_addresses
+    assert "chapter:3/section:23/subsection:4" not in divergence_addresses
 
     def find_section(node: IRNode, label: str) -> IRNode | None:
         if node.kind == IRNodeKind.SECTION and node.label == label:
@@ -2304,6 +2308,14 @@ def test_replay_ee_to_pit_preserves_tee_section_body_for_heading_and_sentence_mi
     )
     assert "±1,0%" in (subsection_7.text or "")
     assert "Ühelgi juhul ei tohi teepeenra põikkalle olla väiksem" in (subsection_7.text or "")
+
+    section_12 = find_section(result.replayed.body, "12")
+    assert section_12 is not None
+    subsection_10 = next(
+        child for child in section_12.children if child.kind == IRNodeKind.SUBSECTION and child.label == "10"
+    )
+    assert "LOADMAN-või INSPECTOR-tüüpi" in (subsection_10.text or "")
+    assert "teisendatud võrreldavaks" in (subsection_10.text or "")
 
 
 def test_replay_ee_to_pit_applies_kaitsevagi_case_inflected_global_rewrite() -> None:

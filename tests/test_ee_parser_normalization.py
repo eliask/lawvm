@@ -3704,6 +3704,55 @@ def test_extract_ee_ops_treats_insert_after_tekstiosa_as_text_replace() -> None:
     assert ops[0].payload.attrs.get("rewrite_mode") == "insert_after"
 
 
+def test_extract_ee_ops_splits_mixed_multi_target_insert_after_and_replace() -> None:
+    text = (
+        "paragrahvi 5 lõike 2 punkti 4 viimast lauset, § 12 lõiget 10, "
+        "§ 13 lõike 12 punkti 7 viiendat lauset ja § 23 lõike 4 kolmandat "
+        "lauset täiendatakse tekstiosa „LOADMAN-” järel tekstiosaga "
+        "„või INSPECTOR-” ja asendatakse sõnad „korrutatud üleminekuteguriga” "
+        "sõnadega „teisendatud võrreldavaks”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.TEXT_REPLACE, (("section", "5"), ("subsection", "2"), ("item", "4"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "5"), ("subsection", "2"), ("item", "4"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "12"), ("subsection", "10"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "12"), ("subsection", "10"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "13"), ("subsection", "12"), ("item", "7"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "13"), ("subsection", "12"), ("item", "7"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "23"), ("subsection", "4"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "23"), ("subsection", "4"))),
+    ]
+    assert [_payload(op).attrs["old_text"] for op in ops[:2]] == [
+        "LOADMAN-",
+        "korrutatud üleminekuteguriga",
+    ]
+    assert [_payload(op).text for op in ops[:2]] == [
+        "LOADMAN- või INSPECTOR-",
+        "teisendatud võrreldavaks",
+    ]
+    assert [_payload(op).attrs["rewrite_mode"] for op in ops[:2]] == [
+        "insert_after",
+        "replace",
+    ]
+    assert all(
+        _payload(op).attrs.get("source_family")
+        == "ee_mixed_multi_target_insert_after_and_replace"
+        for op in ops
+    )
+    last_sentence_meta = read_sentence_target_meta(_payload(ops[0]))
+    fifth_sentence_meta = read_sentence_target_meta(_payload(ops[4]))
+    third_sentence_meta = read_sentence_target_meta(_payload(ops[6]))
+    assert last_sentence_meta is not None
+    assert fifth_sentence_meta is not None
+    assert third_sentence_meta is not None
+    assert last_sentence_meta.sentence_indexes == (1_000_000,)
+    assert fifth_sentence_meta.sentence_indexes == (4,)
+    assert third_sentence_meta.sentence_indexes == (2,)
+
+
 def test_extract_ee_ops_treats_insert_after_arvu_as_text_replace_without_spacing_gap() -> None:
     ops = extract_ee_ops(
         'paragrahvi 16 lõiget 2 täiendatakse pärast arvu "15²" tekstiosaga "–15⁵".',

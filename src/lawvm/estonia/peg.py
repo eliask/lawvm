@@ -1205,6 +1205,27 @@ def _extract_mixed_text_replace_sentence_insert(text: str) -> tuple[str, str, st
     return None
 
 
+def _extract_mixed_insert_after_and_replace_pairs(text: str) -> list[tuple[str, str]]:
+    """Extract paired text rewrites from clauses that mix insertion and replacement."""
+    if not (
+        re.search(r'\bt[aä]iendatakse\b', text, re.IGNORECASE)
+        and re.search(
+            r'\b(?:sõn[au]|tekstiosa|lauseosa|arvu)\b[^.;]{0,120}'
+            r'\b(?:j[aä]rel|p[aä]rast)\b[^.;]{0,120}'
+            r'\b(?:sõn(?:a|adega)|tekstiosaga|arvuga)\b',
+            text,
+            re.IGNORECASE,
+        )
+        and re.search(r'\basendatakse\b', text, re.IGNORECASE)
+    ):
+        return []
+
+    pairs = _extract_text_replace_pairs(text)
+    if len(pairs) < 2:
+        return []
+    return pairs
+
+
 def _extract_mixed_delete_replace_segments(text: str) -> List[tuple[str, str, str]]:
     """Extract segment-local pairs from clauses that mix delete and replace verbs."""
     if not (
@@ -2004,8 +2025,18 @@ def _normalize_text_replace_args(
     if (old_text is not None and new_text is not None
             and re.search(r'\benne\s+(?:sõn[au]|tekstiosa|lauseosa)\b', text, re.IGNORECASE)):
         return old_text, f"{new_text} {old_text}"
-    if (old_text is not None and new_text is not None
-            and re.search(r'\bpärast\s+(?:sõn[au]|tekstiosa|lauseosa)\b', text, re.IGNORECASE)):
+    if (
+        old_text is not None
+        and new_text is not None
+        and (
+            re.search(r'\bpärast\s+(?:sõn[au]|tekstiosa|lauseosa)\b', text, re.IGNORECASE)
+            or re.search(
+                r'\b(?:sõn[au]|tekstiosa|lauseosa)\s+[„"«”][^.;]{0,120}[”"»“]\s+j[aä]rel\b',
+                text,
+                re.IGNORECASE,
+            )
+        )
+    ):
         return old_text, f"{old_text} {new_text}"
     return old_text, new_text
 
@@ -2021,7 +2052,14 @@ def _infer_text_replace_mode(
     if old_text and new_text:
         if re.search(r'\benne\s+(?:sõn[au][a-z]*|tekstiosa|lauseosa|arvu)\b', text, re.IGNORECASE):
             return "insert_before"
-        if re.search(r'\bpärast\s+(?:sõn[au][a-z]*|tekstiosa|lauseosa|arvu)\b', text, re.IGNORECASE):
+        if (
+            re.search(r'\bpärast\s+(?:sõn[au][a-z]*|tekstiosa|lauseosa|arvu)\b', text, re.IGNORECASE)
+            or re.search(
+                r'\b(?:sõn[au][a-z]*|tekstiosa|lauseosa|arvu)\s+[„"«”][^.;]{0,120}[”"»“]\s+j[aä]rel\b',
+                text,
+                re.IGNORECASE,
+            )
+        ):
             return "insert_after"
     return "replace"
 
@@ -3897,6 +3935,69 @@ def extract_ee_ops(
     payload: Optional[IRNode] = None
     old_text: Optional[str] = None
     _rewrite_witness: object | None = None
+
+    mixed_insert_replace_pairs = _extract_mixed_insert_after_and_replace_pairs(clean)
+    if mixed_insert_replace_pairs:
+        explicit_targets = _extract_multiple_explicit_targets(clean)
+        if explicit_targets:
+            rule_id = "ee_mixed_multi_target_insert_after_and_replace"
+            for explicit_target in explicit_targets:
+                for pair_index, (pair_old, pair_new) in enumerate(mixed_insert_replace_pairs):
+                    if pair_index == 0:
+                        old_t, new_t = _normalize_text_replace_args(clean, pair_old, pair_new)
+                        pair_source_text = clean
+                    else:
+                        old_t, new_t = pair_old, pair_new
+                        pair_source_text = (
+                            f'asendatakse sõnad „{pair_old}” sõnadega „{pair_new}”'
+                        )
+                    pair_payload = IRNode(kind=IRNodeKind.CONTENT, text=new_t or "")
+                    pair_payload, _rewrite_witness = _set_text_replace_payload_attrs(
+                        pair_payload,
+                        pair_source_text,
+                        old_t,
+                        new_t,
+                        source_family=rule_id,
+                    )
+                    local_sentence_indexes = _target_local_sentence_indexes(clean, explicit_target)
+                    if local_sentence_indexes:
+                        from lawvm.estonia.ee_instruction_waist import make_sentence_target_meta
+
+                        pair_payload = replace(
+                            pair_payload,
+                            attrs={
+                                **pair_payload.attrs,
+                                "sentence_target_meta": make_sentence_target_meta(
+                                    sentence_indexes=local_sentence_indexes,
+                                ),
+                            },
+                        )
+                    sentence_source = (
+                        clean
+                        if local_sentence_indexes
+                        else pair_source_text
+                    )
+                    pair_payload = _sentence_scoped_text_replace_payload_for_target(
+                        pair_payload,
+                        sentence_source,
+                        explicit_target,
+                        target_count=len(explicit_targets),
+                    )
+                    ops.append(LegalOperation(
+                        op_id=(
+                            f"ee-mixed-insert-replace-text_replace-"
+                            f"{str(explicit_target)}-{seq}-{source.statute_id}"
+                        ),
+                        sequence=seq,
+                        action=_to_structural_action("text_replace"),
+                        target=explicit_target,
+                        payload=pair_payload,
+                        text_patch=_typed_text_replace_patch(old_t, new_t),
+                        source=source,
+                        provenance_tags=(rule_id, clean[:200]),
+                    ))
+                    seq += 1
+            return ops
 
     if (
         action == "text_replace"

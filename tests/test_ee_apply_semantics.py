@@ -267,6 +267,18 @@ def test_insert_after_text_replace_rewrites_only_first_match() -> None:
     )
 
 
+def test_insert_after_text_replace_preserves_acronym_prefix_suffix_case() -> None:
+    replaced = _ee_apply_text_replace_value(
+        "võrreldud LOADMAN-tüüpi seadmega",
+        "LOADMAN-",
+        "LOADMAN- või INSPECTOR-",
+        mode="insert_after",
+        case_inflected=False,
+    )
+
+    assert replaced == "võrreldud LOADMAN-või INSPECTOR-tüüpi seadmega"
+
+
 def test_text_replace_with_typed_rewrite_mode_insert_after() -> None:
     body = _body_with_section_and_subsection("1", "1", "Määrus sisaldab kuni 100 trahviühikut ja seda rakendatakse.")
     op = LegalOperation(
