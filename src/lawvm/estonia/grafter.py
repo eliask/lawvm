@@ -2394,6 +2394,60 @@ def _extract_old_format_commencement_effects(
     """Read commencement clauses that assign dates to amendment-act sections/items."""
     item_effects: dict[tuple[str, str], str] = {}
     section_effects: dict[str, str] = {}
+
+    def _plain_html_text(raw_html: str) -> str:
+        text = _html.unescape(raw_html).replace("\xa0", " ")
+        text = re.sub(r"<[^>]+>", " ", text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    def _record_commencement_clause(sentence: str, whole_act_effective: str = "") -> str:
+        if "jõustu" not in sentence.lower():
+            return whole_act_effective
+        effective = _old_format_commencement_date(sentence)
+        if (
+            effective
+            and re.search(r"\bKäesolev\s+(?:seadus|määrus)\s+jõustub\b", sentence, re.IGNORECASE)
+            and "§" not in sentence
+        ):
+            whole_act_effective = effective
+        if not effective and "üldises korras" in sentence.lower():
+            effective = whole_act_effective
+        if not effective:
+            effective = fallback_effective
+        if not effective:
+            return whole_act_effective
+        item_spans: list[tuple[int, int]] = []
+        for match in re.finditer(
+            r"§\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+"
+            r"punkt(?:id|i)?\s+(.+?)"
+            r"(?=(?:\s+(?:ning|ja)\s+§|\s*,\s*§|\s+jõustu(?:b|vad)\b|$))",
+            sentence,
+            re.IGNORECASE | re.DOTALL,
+        ):
+            section_label = _normalize_num(match.group(1))
+            item_labels = _parse_commencement_item_labels(match.group(2))
+            for item_label in item_labels:
+                item_effects[(section_label, item_label)] = effective
+            item_spans.append(match.span())
+        section_sentence = sentence
+        for start, end in reversed(item_spans):
+            section_sentence = section_sentence[:start] + section_sentence[end:]
+        for section_label in _iter_commencement_section_label_groups(section_sentence):
+            section_effects[section_label] = effective
+        return whole_act_effective
+
+    def _whole_act_effective_from_clauses(clauses: list[str]) -> str:
+        for sentence in clauses:
+            explicit_date = _old_format_commencement_date(sentence)
+            if (
+                explicit_date
+                and re.search(r"\bKäesolev\s+(?:seadus|määrus)\s+jõustub\b", sentence, re.IGNORECASE)
+                and "§" not in sentence
+            ):
+                return explicit_date
+        return ""
+
+    saw_structured_commencement = False
     for para in root.iter():
         tag = para.tag.split("}")[-1] if "}" in para.tag else para.tag
         if tag != "paragrahv":
@@ -2411,53 +2465,42 @@ def _extract_old_format_commencement_effects(
         para_text = _strip_ee_quoted_payload_spans(para_text)
         if "jõustum" not in title.lower() and "jõustu" not in para_text.lower():
             continue
+        saw_structured_commencement = True
         clauses = re.findall(
-            r"((?:Käesolev seadus|Käesoleva seaduse)\b.+?jõustu(?:b|vad)\b.+?)"
-            r"(?=(?:\s+(?:Käesolev seadus|Käesoleva seaduse)\b|$))",
+            r"((?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b.+?"
+            r"jõustu(?:b|vad)\b.+?)"
+            r"(?=(?:\s+(?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b|$))",
             para_text,
             re.IGNORECASE | re.DOTALL,
         )
-        whole_act_effective = ""
+        whole_act_effective = _whole_act_effective_from_clauses([clause.strip() for clause in clauses])
         for sentence in clauses:
-            sentence = sentence.strip()
-            if "jõustu" not in sentence.lower():
-                continue
-            explicit_date = _old_format_commencement_date(sentence)
-            if (
-                explicit_date
-                and re.search(r"\bKäesolev seadus jõustub\b", sentence, re.IGNORECASE)
-                and "§" not in sentence
-            ):
-                whole_act_effective = explicit_date
-        for sentence in clauses:
-            sentence = sentence.strip()
-            if "jõustu" not in sentence.lower():
-                continue
-            effective = _old_format_commencement_date(sentence)
-            if not effective and "üldises korras" in sentence.lower():
-                effective = whole_act_effective
-            if not effective:
-                effective = fallback_effective
-            if not effective:
-                continue
-            item_spans: list[tuple[int, int]] = []
-            for match in re.finditer(
-                r"§\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+"
-                r"punkt(?:id|i)?\s+(.+?)"
-                r"(?=(?:\s+(?:ning|ja)\s+§|\s*,\s*§|\s+jõustu(?:b|vad)\b|$))",
-                sentence,
-                re.IGNORECASE | re.DOTALL,
-            ):
-                section_label = _normalize_num(match.group(1))
-                item_labels = _parse_commencement_item_labels(match.group(2))
-                for item_label in item_labels:
-                    item_effects[(section_label, item_label)] = effective
-                item_spans.append(match.span())
-            section_sentence = sentence
-            for start, end in reversed(item_spans):
-                section_sentence = section_sentence[:start] + section_sentence[end:]
-            for section_label in _iter_commencement_section_label_groups(section_sentence):
-                section_effects[section_label] = effective
+            whole_act_effective = _record_commencement_clause(sentence.strip(), whole_act_effective)
+
+    if saw_structured_commencement:
+        return item_effects, section_effects
+
+    html_texts: list[str] = []
+    for el in root.iter():
+        tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+        if tag != "HTMLKonteiner" or not el.text:
+            continue
+        plain = _plain_html_text(el.text)
+        if "jõustu" in plain.lower():
+            html_texts.append(_strip_ee_quoted_payload_spans(plain))
+    if not html_texts:
+        return item_effects, section_effects
+    html_text = " ".join(html_texts)
+    clauses = re.findall(
+        r"((?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b.+?"
+        r"jõustu(?:b|vad)\b.+?)"
+        r"(?=(?:\s+(?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b|$))",
+        html_text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    whole_act_effective = _whole_act_effective_from_clauses([clause.strip() for clause in clauses])
+    for sentence in clauses:
+        whole_act_effective = _record_commencement_clause(sentence.strip(), whole_act_effective)
     return item_effects, section_effects
 
 
