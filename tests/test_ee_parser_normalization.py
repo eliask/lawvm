@@ -5218,6 +5218,63 @@ def test_old_format_section_with_act_name_outside_bold_does_not_leak_neighbor_se
     assert ops == []
 
 
+def test_old_format_embedded_specific_regulation_header_routes_target_section() -> None:
+    xml = """
+    <oigusakt xmlns="muutmismaarus_1_10.02.2010">
+      <sisuTekst>
+        <HTMLKonteiner><![CDATA[
+          <p><b>§ 1.</b> Siseministri määruse nr 1 „Võõrmäärus” muutmine</p>
+          <p><b>7)</b> määruse lisas asendatakse tekst. </p>
+          <p><b>§ 2. </b><b>Siseministri 1. jaanuari 2004. a määruse „Sihtmäärus” muutmine</b></p>
+          <p>Sihtmääruses tehakse järgmised muudatused:</p>
+          <p><b>1)</b> paragrahvi 4 lõige 2 tunnistatakse kehtetuks;</p>
+          <p><b>§ 3.</b> Siseministri määruse nr 3 „Muu määrus” muutmine</p>
+          <p><b>1)</b> paragrahvi 9 lõige 1 tunnistatakse kehtetuks;</p>
+        ]]></HTMLKonteiner>
+      </sisuTekst>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Sihtmäärus")
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPEAL, (("section", "4"), ("subsection", "2"))),
+    ]
+    assert "old_format_amendment_section:2" in ops[0].provenance_tags
+    assert "old_format_amendment_item:1" in ops[0].provenance_tags
+
+
+def test_old_format_html_commencement_assigns_embedded_section_item_dates() -> None:
+    xml = """
+    <oigusakt xmlns="muutmismaarus_1_10.02.2010">
+      <sisuTekst>
+        <HTMLKonteiner><![CDATA[
+          <p><b>§ 1.</b> Siseministri määruse nr 1 „Võõrmäärus” muutmine</p>
+          <p><b>7)</b> määruse lisas asendatakse tekst. </p>
+          <p><b>§ 2. </b><b>Siseministri 1. jaanuari 2004. a määruse „Sihtmäärus” muutmine</b></p>
+          <p>Sihtmääruses tehakse järgmised muudatused:</p>
+          <p><b>1)</b> paragrahvi 4 lõige 2 tunnistatakse kehtetuks;</p>
+          <p><b>2)</b> paragrahvi 5 lõige 1 tunnistatakse kehtetuks;</p>
+          <p><b>§ 3.</b> Määruse jõustumine</p>
+          <p>Määruse § 2 punkt 2 jõustub 2014. aasta 1. oktoobril.</p>
+        ]]></HTMLKonteiner>
+      </sisuTekst>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Sihtmäärus")
+    effective_by_item = {
+        next(
+            tag.split(":", 1)[1]
+            for tag in op.provenance_tags
+            if tag.startswith("old_format_amendment_item:")
+        ): (op.source.effective if op.source is not None else "")
+        for op in ops
+    }
+
+    assert effective_by_item == {"1": "", "2": "2014-10-01"}
+
+
 def test_muutmisseadus_untitled_omnibus_paragraph_keeps_matching_tavatekst_target() -> None:
     xml = """
     <oigusakt xmlns="tyviseadus_1_10.02.2010">

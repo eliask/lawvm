@@ -1465,6 +1465,8 @@ def _old_format_header_names_specific_act(header_text: str) -> bool:
         return False
     if re.search(r"\bmäärus(?:t|e|es)?\s+nr\b", text):
         return True
+    if re.search(r"\b(?:määrus|määruse|määrust|seadus|seaduse|seadust)\s+[„\"“]", text):
+        return True
     return bool(
         re.search(rf"\b[a-zäöõüšž]{{3,}}{act_noun_p}\b", text)
         or re.search(rf"\b[a-zäöõüšž]{{3,}}\s+{act_noun_p}\b", text)
