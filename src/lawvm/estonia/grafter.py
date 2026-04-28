@@ -7014,39 +7014,41 @@ def _ee_apply_op(
         full_path = _ee_resolve_full_path(body, path)
         if full_path is not None:
             target_node = tree_ops.resolve(body, full_path)
+            def _repealed_container_stub(node: IRNode) -> IRNode:
+                stub_children: list[IRNode] = []
+                for descendant in node.children:
+                    if descendant.kind == IRNodeKind.SECTION:
+                        stub_children.append(
+                            IRNode(
+                                kind=IRNodeKind.SECTION,
+                                label=descendant.label,
+                                text=descendant.text,
+                                attrs={**dict(descendant.attrs), "kehtetu": True},
+                                children=(),
+                            )
+                        )
+                    elif descendant.kind in (
+                        IRNodeKind.PART,
+                        IRNodeKind.CHAPTER,
+                        IRNodeKind.DIVISION,
+                    ):
+                        stub_children.append(_repealed_container_stub(descendant))
+                return IRNode(
+                    kind=node.kind,
+                    label=node.label,
+                    text=node.text,
+                    attrs=dict(node.attrs),
+                    children=tuple(stub_children),
+                )
+
+            if target_node is not None and target_node.kind == IRNodeKind.PART:
+                return tree_ops.replace_at(body, full_path, _repealed_container_stub(target_node))
             if target_node is not None and target_node.kind == IRNodeKind.CHAPTER:
                 # Chapter-level repeal: "N. peatükk tunnistatakse kehtetuks".
                 # RT keeps chapter/division boundary headings as presentation
                 # stubs.  Provision bodies under the repealed chapter become
                 # empty kehtetu stubs, but container hierarchy remains visible
                 # for tree-structured publication diffs.
-                def _repealed_container_stub(node: IRNode) -> IRNode:
-                    stub_children: list[IRNode] = []
-                    for descendant in node.children:
-                        if descendant.kind == IRNodeKind.SECTION:
-                            stub_children.append(
-                                IRNode(
-                                    kind=IRNodeKind.SECTION,
-                                    label=descendant.label,
-                                    text=descendant.text,
-                                    attrs={**dict(descendant.attrs), "kehtetu": True},
-                                    children=(),
-                                )
-                            )
-                        elif descendant.kind in (
-                            IRNodeKind.PART,
-                            IRNodeKind.CHAPTER,
-                            IRNodeKind.DIVISION,
-                        ):
-                            stub_children.append(_repealed_container_stub(descendant))
-                    return IRNode(
-                        kind=node.kind,
-                        label=node.label,
-                        text=node.text,
-                        attrs=dict(node.attrs),
-                        children=tuple(stub_children),
-                    )
-
                 new_children = []
                 for child in target_node.children:
                     if child.kind == IRNodeKind.SECTION:

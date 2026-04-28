@@ -1599,6 +1599,56 @@ def test_repeal_division_preserves_child_section_stubs() -> None:
     ]
 
 
+def test_repeal_part_preserves_container_and_child_section_stubs() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="3",
+                text="Kolmas osa",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="13",
+                        text="Peatükk",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SECTION,
+                                label="128",
+                                text="Mõisted",
+                                children=(
+                                    IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Elav tekst."),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_part_repeal_stubs",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("part", "3"),)),
+    )
+
+    result = _ee_apply_op(body, op)
+    part = result.children[0]
+    chapter = part.children[0]
+    section = chapter.children[0]
+
+    assert part.kind is IRNodeKind.PART
+    assert part.text == "Kolmas osa"
+    assert chapter.kind is IRNodeKind.CHAPTER
+    assert chapter.text == "Peatükk"
+    assert section.kind is IRNodeKind.SECTION
+    assert section.text == "Mõisted"
+    assert section.attrs["kehtetu"] is True
+    assert section.children == ()
+
+
 def test_repeal_subdivision_marks_only_matching_jaotis_sections_kehtetu() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,

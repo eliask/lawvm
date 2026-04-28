@@ -201,6 +201,15 @@ def parse_target(text: str) -> Optional[LegalAddress]:
         ch_num = _normalize_num(m_part_ch.group(2))
         return LegalAddress(path=(("part", part_num), ("chapter", ch_num)), special=FacetKind.HEADING)
 
+    m_part = re.search(
+        r'(?:seaduse|seadustiku|määruse|akti)?\s*'
+        r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s*[.]\s*osa\b',
+        text,
+        re.IGNORECASE,
+    )
+    if m_part:
+        return LegalAddress(path=(("part", _normalize_num(m_part.group(1))),))
+
     # Division title: "N. peatüki M. jao pealkiri"
     m_div = re.search(
         r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s*[.]\s*peatük[k]?i\s+'
