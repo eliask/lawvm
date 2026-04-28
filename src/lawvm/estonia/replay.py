@@ -29,7 +29,7 @@ from lawvm.core.compile_result import (
 )
 from lawvm.core.temporal import TemporalScope
 from lawvm.replay_adjudication import CompileAdjudication, SourceAdjudication
-from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource
+from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.core.timeline import compile_timelines, materialize_pit
 from lawvm.core.timeline_consistency import ingest_consolidated, verify_consistency
 from lawvm.estonia.grafter import (
@@ -574,10 +574,10 @@ def _ee_precompose_pending_amendment_text_patches(
     """Apply explicit amendments to not-yet-live amendment payloads.
 
     Estonia sometimes amends a pending amendment act before that earlier act's
-    own target-law mutation has taken effect. This pass only composes exact
-    text-replace operations against earlier old-format amendment items when the
-    later source targets the earlier act by title and the earlier emitted op
-    carries matching amendment-section/amendment-item provenance.
+    own target-law mutation has taken effect. This pass composes source-backed
+    text replacements against earlier old-format amendment items, final-target
+    operations already owned by the earlier pending amendment, and sibling
+    text replacements introduced on an already-owned final target.
     """
     updated_ops = list(ops)
     adjudications: list[CompileAdjudication] = []
@@ -589,6 +589,8 @@ def _ee_precompose_pending_amendment_text_patches(
         if later_xml is None:
             continue
         for earlier_ref in sorted_refs[:later_index]:
+            if earlier_ref.aktViide == later_ref.aktViide:
+                continue
             earlier_xml = amendment_xml_by_ref.get(earlier_ref.aktViide)
             if earlier_xml is None:
                 continue
@@ -608,36 +610,86 @@ def _ee_precompose_pending_amendment_text_patches(
                     parsed = []
                 parsed_meta_ops[meta_key] = tuple(parsed)
             for meta_op in parsed_meta_ops[meta_key]:
-                target_parts = _ee_pending_patch_target_parts(meta_op)
-                if target_parts is None or meta_op.text_patch is None:
+                if meta_op.text_patch is None:
                     continue
+                target_parts = _ee_pending_patch_target_parts(meta_op)
                 match_text = meta_op.text_patch.selector.match_text
                 replacement = meta_op.text_patch.replacement
                 if not match_text or replacement is None:
                     continue
-                target_section, target_item = target_parts
+                patched_candidate = False
+                if target_parts is not None:
+                    target_section, target_item = target_parts
+                    for index, candidate in enumerate(updated_ops):
+                        if candidate.source is None or candidate.source.statute_id != f"ee/{earlier_ref.aktViide}":
+                            continue
+                        if _ee_old_format_tag_value(candidate, "old_format_amendment_section:") != target_section:
+                            continue
+                        if _ee_old_format_tag_value(candidate, "old_format_amendment_item:") != target_item:
+                            continue
+                        if candidate.payload is None or match_text not in candidate.payload.text:
+                            continue
+                        patched_payload = replace(
+                            candidate.payload,
+                            text=candidate.payload.text.replace(match_text, replacement),
+                        )
+                        patched_op = replace(
+                            candidate,
+                            payload=patched_payload,
+                            witness_rule_id=_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE,
+                            provenance_tags=(
+                                *candidate.provenance_tags,
+                                (
+                                    f"{_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE}:"
+                                    f"{later_ref.aktViide}:{target_section}:{target_item}"
+                                ),
+                            ),
+                        )
+                        updated_ops[index] = patched_op
+                        adjudications.append(
+                            CompileAdjudication(
+                                kind=_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE,
+                                message=(
+                                    "Applied source-backed text replacement to a pending "
+                                    "amendment payload before replaying it into the target statute."
+                                ),
+                                source_statute=f"ee/{later_ref.aktViide}",
+                                op_id=candidate.op_id,
+                                detail={
+                                    "earlier_amendment": earlier_ref.aktViide,
+                                    "later_amendment": later_ref.aktViide,
+                                    "amendment_section": target_section,
+                                    "amendment_item": target_item,
+                                    "match_text": match_text,
+                                    "replacement": replacement,
+                                },
+                            )
+                        )
+                        patched_candidate = True
+                        break
+                    if patched_candidate:
+                        continue
                 for index, candidate in enumerate(updated_ops):
                     if candidate.source is None or candidate.source.statute_id != f"ee/{earlier_ref.aktViide}":
                         continue
-                    if _ee_old_format_tag_value(candidate, "old_format_amendment_section:") != target_section:
+                    if candidate.target != meta_op.target:
                         continue
-                    if _ee_old_format_tag_value(candidate, "old_format_amendment_item:") != target_item:
+                    if candidate.text_patch is None or candidate.payload is None:
                         continue
-                    if candidate.payload is None or match_text not in candidate.payload.text:
+                    if candidate.text_patch.selector.match_text != match_text:
                         continue
-                    patched_payload = replace(
-                        candidate.payload,
-                        text=candidate.payload.text.replace(match_text, replacement),
-                    )
+                    patched_payload = replace(candidate.payload, text=replacement)
+                    patched_patch = replace(candidate.text_patch, replacement=replacement)
                     patched_op = replace(
                         candidate,
                         payload=patched_payload,
+                        text_patch=patched_patch,
                         witness_rule_id=_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE,
                         provenance_tags=(
                             *candidate.provenance_tags,
                             (
                                 f"{_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE}:"
-                                f"{later_ref.aktViide}:{target_section}:{target_item}"
+                                f"{later_ref.aktViide}:target:{str(candidate.target)}"
                             ),
                         ),
                     )
@@ -647,17 +699,107 @@ def _ee_precompose_pending_amendment_text_patches(
                             kind=_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE,
                             message=(
                                 "Applied source-backed text replacement to a pending "
-                                "amendment payload before replaying it into the target statute."
+                                "amendment payload by matching the final target address."
                             ),
                             source_statute=f"ee/{later_ref.aktViide}",
                             op_id=candidate.op_id,
                             detail={
                                 "earlier_amendment": earlier_ref.aktViide,
                                 "later_amendment": later_ref.aktViide,
-                                "amendment_section": target_section,
-                                "amendment_item": target_item,
+                                "target": str(candidate.target),
                                 "match_text": match_text,
                                 "replacement": replacement,
+                            },
+                        )
+                    )
+                    patched_candidate = True
+                    break
+                if patched_candidate:
+                    continue
+                owns_same_final_target = any(
+                    candidate.source is not None
+                    and candidate.source.statute_id == f"ee/{earlier_ref.aktViide}"
+                    and candidate.target == meta_op.target
+                    and candidate.text_patch is not None
+                    for candidate in updated_ops
+                )
+                if target_parts is None and meta_op.target.path and owns_same_final_target:
+                    sequence = max((op.sequence for op in updated_ops), default=0) + 1
+                    appended_op = replace(
+                        meta_op,
+                        sequence=sequence,
+                        source=OperationSource(
+                            statute_id=f"ee/{later_ref.aktViide}",
+                            title=meta_op.source.title if meta_op.source else "",
+                            enacted=later_ref.passed,
+                            effective=later_ref.joustumine,
+                            raw_text=meta_op.source.raw_text if meta_op.source else "",
+                        ),
+                        witness_rule_id=_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE,
+                        provenance_tags=(
+                            *meta_op.provenance_tags,
+                            (
+                                f"{_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE}:"
+                                f"{later_ref.aktViide}:added-target:{str(meta_op.target)}"
+                            ),
+                        ),
+                    )
+                    updated_ops.append(appended_op)
+                    adjudications.append(
+                        CompileAdjudication(
+                            kind=_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE,
+                            message=(
+                                "Added a source-backed pending amendment text replacement "
+                                "introduced by a later amendment to the amendment act."
+                            ),
+                            source_statute=f"ee/{later_ref.aktViide}",
+                            op_id=appended_op.op_id,
+                            detail={
+                                "earlier_amendment": earlier_ref.aktViide,
+                                "later_amendment": later_ref.aktViide,
+                                "target": str(meta_op.target),
+                                "match_text": match_text,
+                                "replacement": replacement,
+                                "mode": "added_final_target_op",
+                            },
+                        )
+                    )
+            for meta_op in parsed_meta_ops[meta_key]:
+                if meta_op.action is not StructuralAction.REPLACE or meta_op.payload is None:
+                    continue
+                for index, candidate in enumerate(updated_ops):
+                    if candidate.source is None or candidate.source.statute_id != f"ee/{earlier_ref.aktViide}":
+                        continue
+                    if candidate.action is not StructuralAction.REPLACE:
+                        continue
+                    if candidate.target != meta_op.target or candidate.payload is None:
+                        continue
+                    patched_op = replace(
+                        candidate,
+                        payload=meta_op.payload,
+                        witness_rule_id=_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE,
+                        provenance_tags=(
+                            *candidate.provenance_tags,
+                            (
+                                f"{_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE}:"
+                                f"{later_ref.aktViide}:target:{str(candidate.target)}"
+                            ),
+                        ),
+                    )
+                    updated_ops[index] = patched_op
+                    adjudications.append(
+                        CompileAdjudication(
+                            kind=_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE,
+                            message=(
+                                "Applied source-backed replacement to a pending "
+                                "amendment payload by matching the final target address."
+                            ),
+                            source_statute=f"ee/{later_ref.aktViide}",
+                            op_id=candidate.op_id,
+                            detail={
+                                "earlier_amendment": earlier_ref.aktViide,
+                                "later_amendment": later_ref.aktViide,
+                                "target": str(candidate.target),
                             },
                         )
                     )
