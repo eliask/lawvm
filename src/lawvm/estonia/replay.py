@@ -36,6 +36,7 @@ from lawvm.estonia.grafter import (
     _extract_intro_statute_fragment,
     _first_tavatekst_text,
     _normalize_num,
+    _old_format_commencement_date,
     _strict_title_match_para,
     _title_matches_para,
     apply_ee_ops,
@@ -429,6 +430,7 @@ def _ee_filter_ops_for_ref_slice(
 
 
 _EE_PENDING_AMENDMENT_PRECOMPOSE_RULE = "ee_pending_amendment_text_precompose"
+_EE_PENDING_SOURCE_ACT_COMMENCEMENT_PRECOMPOSE_RULE = "ee_pending_source_act_commencement_precompose"
 
 
 def _ee_old_format_tag_value(op: LegalOperation, prefix: str) -> str:
@@ -449,6 +451,118 @@ def _ee_pending_patch_target_parts(op: LegalOperation) -> tuple[str, str] | None
     if not section or not item:
         return None
     return section, item
+
+
+def _ee_extract_source_act_commencement_replacement(
+    xml_bytes: bytes,
+    *,
+    amended_act_title: str,
+) -> str:
+    """Return a replacement commencement date for ``amended_act_title`` when explicit."""
+    later_title = _ee_extract_act_title(xml_bytes)
+    if not _strict_title_match_para(amended_act_title, later_title):
+        return ""
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return ""
+    ns = _ee_xml_ns(root)
+    for html_container in root.iter(f"{{{ns}}}HTMLKonteiner"):
+        for item_text in parse_html_op_items(html_container.text or ""):
+            item_lower = item_text.lower()
+            if "seaduse jõustumine" not in item_lower:
+                continue
+            if "jõustub" not in item_lower:
+                continue
+            if not re.search(
+                r"\bparagrahv(?:i)?\s+\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s+muudetakse\s+ja\s+sõnastatakse",
+                item_text,
+                re.IGNORECASE,
+            ):
+                continue
+            date_text = _old_format_commencement_date(item_text)
+            if date_text:
+                return date_text
+    return ""
+
+
+def _ee_precompose_pending_source_act_commencements(
+    refs: tuple[AmendmentRef, ...],
+    *,
+    as_of: str,
+    archive: Any,
+) -> tuple[tuple[AmendmentRef, ...], tuple[CompileAdjudication, ...]]:
+    """Apply source-backed commencement amendments to pending source-act refs."""
+    if len(refs) < 2:
+        return refs, ()
+
+    xml_by_ref: dict[str, bytes] = {}
+    title_by_ref: dict[str, str] = {}
+    for ref in refs:
+        try:
+            xml_bytes = fetch_rt_xml(ref.aktViide, archive)
+        except Exception:
+            continue
+        xml_by_ref[ref.aktViide] = xml_bytes
+        title_by_ref[ref.aktViide] = _ee_extract_act_title(xml_bytes)
+
+    overrides: dict[str, tuple[str, AmendmentRef]] = {}
+    adjudications: list[CompileAdjudication] = []
+    for earlier_ref in sorted(refs, key=lambda ref: (ref.passed, ref.joustumine, ref.aktViide)):
+        earlier_title = title_by_ref.get(earlier_ref.aktViide, "")
+        if not earlier_title:
+            continue
+        for later_ref in sorted(refs, key=lambda ref: (ref.passed, ref.joustumine, ref.aktViide)):
+            if later_ref.aktViide == earlier_ref.aktViide:
+                continue
+            if later_ref.passed < earlier_ref.passed:
+                continue
+            later_xml = xml_by_ref.get(later_ref.aktViide)
+            if later_xml is None:
+                continue
+            replacement_date = _ee_extract_source_act_commencement_replacement(
+                later_xml,
+                amended_act_title=earlier_title,
+            )
+            if not replacement_date or replacement_date == earlier_ref.joustumine:
+                continue
+            overrides[earlier_ref.aktViide] = (replacement_date, later_ref)
+            adjudications.append(
+                CompileAdjudication(
+                    kind=_EE_PENDING_SOURCE_ACT_COMMENCEMENT_PRECOMPOSE_RULE,
+                    message=(
+                        "Applied an explicit source-act commencement replacement before "
+                        "deciding whether the pending source act is executable at this PIT date."
+                    ),
+                    source_statute=f"ee/{later_ref.aktViide}",
+                    detail={
+                        "earlier_amendment": earlier_ref.aktViide,
+                        "later_amendment": later_ref.aktViide,
+                        "old_effective": earlier_ref.joustumine,
+                        "new_effective": replacement_date,
+                        "as_of": as_of,
+                        "amended_act_title": earlier_title,
+                    },
+                )
+            )
+            break
+
+    updated_refs: list[AmendmentRef] = []
+    for ref in refs:
+        override = overrides.get(ref.aktViide)
+        if override is None:
+            updated_refs.append(ref)
+            continue
+        replacement_date, _later_ref = override
+        if replacement_date <= as_of:
+            updated_refs.append(
+                AmendmentRef(
+                    aktViide=ref.aktViide,
+                    passed=ref.passed,
+                    joustumine=replacement_date,
+                )
+            )
+    return tuple(sorted(updated_refs, key=_ee_ref_sort_key)), tuple(adjudications)
 
 
 def _ee_precompose_pending_amendment_text_patches(
@@ -711,6 +825,11 @@ def replay_ee_to_pit(
         target_title=base.title,
         archive=_archive,
     )
+    to_apply, commencement_precomposition_adjudications = _ee_precompose_pending_source_act_commencements(
+        tuple(to_apply),
+        as_of=as_of,
+        archive=_archive,
+    )
     to_skip = [
         ref for ref in pair_plan.base_refs if ref.aktViide not in {x.aktViide for x in to_apply}
     ]
@@ -853,7 +972,11 @@ def replay_ee_to_pit(
         result.error = f"Failed to apply ops: {e}"
         return result
 
-    result.adjudications = [*precomposition_adjudications, *adjudications]
+    result.adjudications = [
+        *commencement_precomposition_adjudications,
+        *precomposition_adjudications,
+        *adjudications,
+    ]
     _log(f"Timeline snapshots emitted: {len(lo_ops_out)}")
 
     # ── Step 5b: Timeline-primary — compile timelines + materialize PIT ────

@@ -708,13 +708,13 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     records=(
                         (
                             "section:6/subsection:1/item:6",
-                            "None of the applied in-range amendments (121032011002, 129122011001, "
+                            "None of the executable in-range amendments (129122011001, "
                             "131012012005) touch § 6(1) p 6; replay preserves the base text with "
                             "terminal ';', while oracle 131012012006 normalizes it to '.'.",
                         ),
                         (
                             "section:10_1/subsection:1/item:3",
-                            "None of the applied in-range amendments (121032011002, 129122011001, "
+                            "None of the executable in-range amendments (129122011001, "
                             "131012012005) touch § 10^1(1) p 3; replay preserves the base text with "
                             "terminal ';', while oracle 131012012006 normalizes it to '.'.",
                         ),
