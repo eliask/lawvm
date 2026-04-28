@@ -1464,7 +1464,7 @@ def parse_ee_amendment_ops(
                 seq_start=1,
             )
     target_section_labels = _extract_old_format_target_section_labels(root, target_title)
-    item_effects, section_effects = _extract_old_format_commencement_effects(
+    item_effects, section_effects, _whole_act_effective = _extract_old_format_commencement_effects(
         root,
         fallback_effective=ref_effective,
     )
@@ -1897,7 +1897,7 @@ def _parse_old_format_amendment_ops(
     Otherwise, all sections are parsed (base_act set from section header).
     """
     target_section_labels = _extract_old_format_target_section_labels(root, target_title)
-    item_effects, section_effects = _extract_old_format_commencement_effects(
+    item_effects, section_effects, _whole_act_effective = _extract_old_format_commencement_effects(
         root,
         fallback_effective=ref_effective,
     )
@@ -2420,10 +2420,11 @@ def _extract_old_format_commencement_effects(
     root: ET.Element,
     *,
     fallback_effective: str = "",
-) -> tuple[dict[tuple[str, str], str], dict[str, str]]:
+) -> tuple[dict[tuple[str, str], str], dict[str, str], str]:
     """Read commencement clauses that assign dates to amendment-act sections/items."""
     item_effects: dict[tuple[str, str], str] = {}
     section_effects: dict[str, str] = {}
+    whole_act_effective = ""
 
     def _plain_html_text(raw_html: str) -> str:
         text = _html.unescape(raw_html).replace("\xa0", " ")
@@ -2509,7 +2510,7 @@ def _extract_old_format_commencement_effects(
             whole_act_effective = _record_commencement_clause(sentence.strip(), whole_act_effective)
 
     if saw_structured_commencement:
-        return item_effects, section_effects
+        return item_effects, section_effects, whole_act_effective
 
     html_texts: list[str] = []
     for el in root.iter():
@@ -2520,7 +2521,7 @@ def _extract_old_format_commencement_effects(
         if "jõustu" in plain.lower():
             html_texts.extend(_old_format_html_commencement_blocks(_strip_ee_quoted_payload_spans(plain)))
     if not html_texts:
-        return item_effects, section_effects
+        return item_effects, section_effects, whole_act_effective
     html_text = " ".join(html_texts)
     clauses = re.findall(
         r"((?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b.+?"
@@ -2532,7 +2533,7 @@ def _extract_old_format_commencement_effects(
     whole_act_effective = _whole_act_effective_from_clauses([clause.strip() for clause in clauses])
     for sentence in clauses:
         whole_act_effective = _record_commencement_clause(sentence.strip(), whole_act_effective)
-    return item_effects, section_effects
+    return item_effects, section_effects, whole_act_effective
 
 
 def _old_format_target_has_ref_owned_slice(
@@ -2610,11 +2611,11 @@ def _apply_old_format_commencement_effects(
     fallback_effective: str = "",
 ) -> List[LegalOperation]:
     """Stamp old-format item-local commencement dates onto tagged operations."""
-    item_effects, section_effects = _extract_old_format_commencement_effects(
+    item_effects, section_effects, whole_act_effective = _extract_old_format_commencement_effects(
         root,
         fallback_effective=fallback_effective,
     )
-    if not item_effects and not section_effects:
+    if not item_effects and not section_effects and not whole_act_effective:
         return ops
 
     updated_ops: list[LegalOperation] = []
@@ -2631,6 +2632,14 @@ def _apply_old_format_commencement_effects(
             amendment_section,
             "",
         )
+        if (
+            not effective
+            and fallback_effective
+            and whole_act_effective == fallback_effective
+            and amendment_section
+            and any(section_label == amendment_section for section_label, _item_label in item_effects)
+        ):
+            effective = whole_act_effective
         if not effective:
             updated_ops.append(op)
             continue

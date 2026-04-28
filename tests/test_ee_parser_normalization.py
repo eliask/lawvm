@@ -4708,6 +4708,64 @@ def test_parse_ee_amendment_ops_routes_old_format_general_order_to_whole_act_def
     assert earlier_ops == []
 
 
+def test_parse_ee_amendment_ops_stamps_old_format_whole_act_default_with_same_section_exception() -> None:
+    xml = """
+    <tyviseadus xmlns="tyviseadus_1_10.02.2010">
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>15</paragrahvNr>
+          <paragrahvPealkiri>Võlgade ümberkujundamise ja võlakaitse seaduse muutmine</paragrahvPealkiri>
+          <loige>
+            <sisuTekst>
+              <HTMLKonteiner><![CDATA[
+                <p><b>1)</b> paragrahvi 6 lõikes 1 asendatakse sõna ˮkohtunikuabiˮ sõnaga ˮkohtujuristˮ;</p>
+                <p><b>2)</b> paragrahvi 6 lõiget 3 täiendatakse pärast sõna ˮtühistamiseˮ sõnadega ˮ, samuti tasu määramiseˮ;</p>
+                <p><b>5)</b> seadust täiendatakse §-ga 52 järgmises sõnastuses:</p>
+                <p>ˮ<b>§ 52. Ajutine säte</b></p>
+                <p>(1) Ajutine tekst.ˮ.</p>
+              ]]></HTMLKonteiner>
+            </sisuTekst>
+          </loige>
+        </paragrahv>
+        <paragrahv>
+          <paragrahvNr>17</paragrahvNr>
+          <paragrahvPealkiri>Seaduse jõustumine</paragrahvPealkiri>
+          <loige>
+            <sisuTekst>
+              <tavatekst>Käesolev seadus jõustub 2021. aasta 1. veebruaril.</tavatekst>
+            </sisuTekst>
+          </loige>
+          <loige>
+            <sisuTekst>
+              <tavatekst>Käesoleva seaduse § 15 punkt 5 jõustub Riigi Teatajas avaldamisele järgneval päeval.</tavatekst>
+            </sisuTekst>
+          </loige>
+        </paragrahv>
+      </sisu>
+    </tyviseadus>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Võlgade ümberkujundamise ja võlakaitse seadus",
+        ref_effective="2021-02-01",
+        has_earlier_same_act_slice=True,
+    )
+    effective_by_item = {
+        next(
+            tag.split(":", 1)[1]
+            for tag in op.provenance_tags
+            if tag.startswith("old_format_amendment_item:")
+        ): (op.source.effective if op.source is not None else "")
+        for op in ops
+    }
+
+    assert effective_by_item["1"] == "2021-02-01"
+    assert effective_by_item["2"] == "2021-02-01"
+    assert effective_by_item["5"] == "2021-02-01"
+
+
 def test_parse_ee_amendment_ops_ignores_quoted_old_format_commencement_payloads() -> None:
     xml = """
     <tyviseadus xmlns="tyviseadus_1_10.02.2010">
@@ -6015,6 +6073,22 @@ def test_old_format_commencement_scan_ignores_plain_joustumisest_body_text() -> 
         (StructuralAction.TEXT_REPLACE, (("section", "43_4"),)),
         (StructuralAction.TEXT_REPLACE, (("section", "43_5"),)),
     ]
+
+
+def test_old_format_right_quote_payload_preserves_inner_right_quoted_titles() -> None:
+    archive = open_rt_archive(readonly=True)
+    xml = fetch_rt_xml("121052014003", archive=archive)
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/121052014003",
+        target_title="Euroopa Liidu ühise põllumajanduspoliitika rakendamise seadus",
+    )
+
+    section_116_3 = next(op for op in ops if op.target.path == (("section", "116_3"),))
+    assert section_116_3.payload is not None
+    assert section_116_3.action == StructuralAction.INSERT
+    assert section_116_3.payload.text.count("Eesti maaelu arengukava 2014–2020") == 2
 
 
 def test_extract_ee_ops_stops_at_quote_prime_payload_for_direct_item_text_replace() -> None:
