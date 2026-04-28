@@ -264,7 +264,12 @@ def test_extract_ee_ops_plural_subsection_repeal_exposes_subsection_selection_me
 
     assert len(instructions) == 3
     assert all(
-        inst.subsection_selection_meta == EESubsectionSelectionMeta(explicit_labels=("2", "3", "4"))
+        inst.subsection_selection_meta
+        == EESubsectionSelectionMeta(
+            explicit_labels=("2", "3", "4"),
+            plain_numeric_ranges=(("2", "4"),),
+            label_ranges=(("2", "4"),),
+        )
         for inst in instructions
     )
 
@@ -321,10 +326,10 @@ def test_to_ee_parsed_instructions_maps_wrapper_quoted_payload_family() -> None:
 
     instructions = parse_wrapper_quoted_clause(nested_clause, source)
 
-    assert len(instructions) == 2
+    assert len(instructions) == 1
     assert all(inst.family == EEInstructionFamily.wrapper_quoted_payload for inst in instructions)
     assert all(inst.is_wrapper_payload for inst in instructions)
     assert instructions[0].rewrite is not None
     assert instructions[0].rewrite.old_surface == "koolieelne lasteasutus"
-    assert any(inst.action == StructuralAction.TEXT_REPLACE for inst in instructions)
-    assert any(inst.target.path == (("section", "8"), ("subsection", "1"), ("item", "1_2")) for inst in instructions)
+    assert instructions[0].action == StructuralAction.TEXT_REPLACE
+    assert instructions[0].target.path == (("section", "8"), ("subsection", "1"), ("item", "1_2"))

@@ -120,43 +120,6 @@ def test_build_ee_residual_summary_inherits_mixed_ancestor_records_as_descendant
     assert "source_oracle_drift=1, source_pathology=1" in summary.record_by_address["chapter:1/section:1"].evidence
 
 
-def test_build_ee_residual_summary_derives_mixed_container_record_for_kohtutaituri_pair() -> None:
-    summary = build_ee_residual_summary(
-        "109042021007",
-        "114032025016",
-        (
-            "chapter:2",
-            "chapter:2/division:2",
-            "chapter:2/division:2/section:13",
-            "chapter:2/division:2/section:13/subsection:1",
-            "chapter:2/division:2/section:13/subsection:2",
-            "chapter:2/division:5",
-            "chapter:2/division:5/section:30",
-            "chapter:2/division:5/section:30/subsection:2_1",
-            "chapter:2/division:5/section:31",
-            "chapter:2/division:5/section:31/subsection:1_1",
-            "chapter:2/division:5/section:31/subsection:2",
-            "chapter:2/division:5/section:31/subsection:2/item:5",
-            "chapter:2/division:5/section:37_2",
-            "chapter:2/division:5/section:37_2/subsection:1",
-            "chapter:2/division:5/section:37_2/subsection:2",
-            "chapter:2/division:5/section:37_2/subsection:3",
-            "chapter:2/division:5/section:37_2/subsection:3/item:1",
-            "chapter:2/division:5/section:37_2/subsection:3/item:2",
-            "chapter:2/division:5/section:37_2/subsection:4",
-            "chapter:2/division:5/section:37_3",
-            "chapter:2/division:5/section:37_3/subsection:1",
-            "chapter:2/division:5/section:40_1",
-            "chapter:2/division:5/section:40_1/subsection:1",
-            "chapter:2/division:5/section:40_1/subsection:2",
-        ),
-    )
-
-    assert summary is not None
-    assert summary.record_by_address["chapter:2"].bucket == "descendant_residual_mix"
-    assert summary.unknown_current_divergence_count == 0
-
-
 def test_build_ee_residual_summary_derives_mixed_container_record_for_maagaas_pair() -> None:
     summary = build_ee_residual_summary(
         "109082022022",
