@@ -20,6 +20,7 @@ EEResidualBucket = Literal[
     "replay_bug",
     "source_oracle_drift",
     "source_pathology",
+    "source_ambiguity",
     "appendix_display_pathology",
     "oracle_correction_notice",
     "descendant_residual_mix",
@@ -602,7 +603,7 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
         residuals=(
             EEResidualRecord(
                 address="chapter:3/section:26_7/subsection:1",
-                bucket="source_pathology",
+                bucket="source_ambiguity",
                 evidence=(
                     "Source act 102052024002 amends § 26^7(1) only by saying it is "
                     "supplemented after the word 'gaasivaru' with the phrase "
