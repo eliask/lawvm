@@ -32,6 +32,10 @@ _DEFAULT_DB = _ROOT / "data" / "ee_riigiteataja.farchive"
 _OUT_DIR = _ROOT / "data" / "estonia"
 _OUT_CSV = _OUT_DIR / "bench_corpus.csv"
 _OUT_NOTES = _OUT_DIR / "bench_corpus_notes.md"
+_CURRENT_CSV = _OUT_DIR / "current_replayable_corpus.csv"
+_CURRENT_NOTES = _OUT_DIR / "current_replayable_corpus_notes.md"
+_REPLAYABLE_CSV = _OUT_DIR / "replayable_corpus.csv"
+_REPLAYABLE_NOTES = _OUT_DIR / "replayable_corpus_notes.md"
 
 _UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -283,7 +287,10 @@ def _locator_table_name(conn) -> str:
 def build_index(archive) -> dict[str, _GroupInfo]:
     """Scan RT archive and build group index for corpus curation."""
     conn = archive._conn
-    rows = conn.execute("SELECT locator FROM locator WHERE locator LIKE '%riigiteataja.ee/akt/%.xml'").fetchall()
+    locator_table = _locator_table_name(conn)
+    rows = conn.execute(
+        f"SELECT locator FROM {locator_table} WHERE locator LIKE '%riigiteataja.ee/akt/%.xml'"
+    ).fetchall()
     print(f"Total XML observations: {len(rows)}")
 
     groups: dict[str, _GroupInfo] = {}
@@ -373,6 +380,112 @@ def select_pairs(
     return pairs, excluded
 
 
+def select_current_replayable_pairs(
+    groups: dict[str, _GroupInfo],
+    include_decrees: bool = True,
+) -> tuple[list[tuple[str, str, str, int, str, str, str, int, int, str]], dict[str, int]]:
+    """Select one latest/current replay pair for each amended structured RT group.
+
+    The public Estonia divergence viewer is about current consolidated text, not
+    every historical adjacent version.  A group is replayable here when it has:
+
+    - an allowed schema;
+    - at least one amendment marker;
+    - at least two structured consolidated versions;
+    - a penultimate base and latest oracle version.
+    """
+    allowed = _LAW_SCHEMAS | (_DECREE_SCHEMAS if include_decrees else frozenset())
+    pairs: list[tuple[str, str, str, int, str, str, str, int, int, str]] = []
+    excluded: dict[str, int] = defaultdict(int)
+
+    for gid, group in groups.items():
+        if not group.schemas & allowed:
+            excluded["schema_not_allowed"] += 1
+            continue
+        if group.n_amendments <= 0:
+            excluded["no_amendments"] += 1
+            continue
+        tvs = sorted(group.terviktekst_with_body, key=lambda item: (item[2], item[0]))
+        if len(tvs) < 2:
+            excluded["fewer_than_2_tervikteksts"] += 1
+            continue
+        schema = "unknown"
+        for preferred in ("tyviseadus", "muutmisseadus", "maarus", "muutmismaarus", "juurakt"):
+            if preferred in group.schemas:
+                schema = preferred
+                break
+        base_id, _, base_effective = tvs[-2]
+        oracle_id, _, oracle_effective = tvs[-1]
+        version_count = len(tvs)
+        pairs.append(
+            (
+                gid,
+                base_id,
+                oracle_id,
+                group.n_amendments,
+                schema,
+                base_effective,
+                oracle_effective,
+                version_count - 1,
+                version_count,
+                group.title,
+            )
+        )
+
+    pairs.sort(key=lambda item: (item[4], item[9], item[0]))
+    return pairs, excluded
+
+
+def select_replayable_pairs(
+    groups: dict[str, _GroupInfo],
+    include_decrees: bool = True,
+) -> tuple[list[tuple[str, str, str, int, str, str, str, int, int, str]], dict[str, int]]:
+    """Select every consecutive replayable RT consolidated-version pair.
+
+    This is intentionally broader than the benchmark corpus.  The benchmark
+    selects one latest pair per group; the publication/review corpus needs every
+    adjacent state transition LawVM can replay and compare.
+    """
+    allowed = _LAW_SCHEMAS | (_DECREE_SCHEMAS if include_decrees else frozenset())
+    pairs: list[tuple[str, str, str, int, str, str, str, int, int, str]] = []
+    excluded: dict[str, int] = defaultdict(int)
+
+    for gid, group in groups.items():
+        if not group.schemas & allowed:
+            excluded["schema_not_allowed"] += 1
+            continue
+        tvs = sorted(group.terviktekst_with_body, key=lambda item: (item[2], item[0]))
+        if len(tvs) < 2:
+            excluded["fewer_than_2_tervikteksts"] += 1
+            continue
+        schema = "unknown"
+        for preferred in ("tyviseadus", "muutmisseadus", "maarus", "muutmismaarus", "juurakt"):
+            if preferred in group.schemas:
+                schema = preferred
+                break
+        version_count = len(tvs)
+        for version_index, (base, oracle) in enumerate(zip(tvs, tvs[1:]), start=1):
+            base_id, _, base_effective = base
+            oracle_id, _, oracle_effective = oracle
+            pairs.append(
+                (
+                    gid,
+                    base_id,
+                    oracle_id,
+                    group.n_amendments,
+                    schema,
+                    base_effective,
+                    oracle_effective,
+                    version_index,
+                    version_count,
+                    group.title,
+                )
+            )
+
+    pairs.sort(key=lambda item: (item[0], item[7]))
+    return pairs, excluded
+
+
 def summarize_pairs(
     pairs: list[tuple[str, str, str, int, str]],
 ) -> tuple[dict[str, int], int, int, dict[str, int]]:
@@ -457,6 +570,114 @@ def _write_notes(
     notes_path.write_text(notes, encoding="utf-8")
 
 
+def _write_replayable_notes(
+    pairs: list[tuple[str, str, str, int, str, str, str, int, int, str]],
+    groups: dict[str, _GroupInfo],
+    excluded: dict[str, int],
+    schema_counts: dict[str, int],
+    amend_buckets: dict[str, int],
+    include_decrees: bool,
+    notes_path: Path,
+) -> None:
+    n_law = sum(v for k, v in schema_counts.items() if k in _LAW_SCHEMAS)
+    n_decree = sum(v for k, v in schema_counts.items() if k in _DECREE_SCHEMAS)
+    group_count = len({gid for gid, *_ in pairs})
+    notes = f"""# EE Replayable Corpus Notes
+
+**Date**: {time.strftime("%Y-%m-%d")}
+**Archive**: data/ee_riigiteataja.farchive
+
+## Summary
+
+- Source: Riigi Teataja Farchive — {len(groups)} unique terviktekstiGrupiID groups
+- **Replayable corpus: {len(pairs)} consecutive (base, oracle) version-comparison cases**
+- Groups represented: {group_count}
+- Laws (tyviseadus/muutmisseadus pairs): {n_law}
+- Decrees (maarus/muutmismaarus/juurakt pairs): {n_decree}
+
+## Selection Criteria
+
+1. Schema filter.
+   {"Laws + decrees included." if include_decrees else "Laws only (tyviseadus/muutmisseadus)."}
+2. Body content: each terviktekst must contain `<peatykk>` or `<paragrahv>` elements and
+   be at least {_MIN_BODY_BYTES} bytes.
+3. 2+ structured tervikteksts per group.
+4. Pair selection: every consecutive consolidated-version pair by `kehtivuseAlgus`.
+
+This corpus is for exhaustive replay/publication review. The smaller
+`bench_corpus.csv` remains the release benchmark slice.
+
+## Exclusion Stats
+
+| Reason | Count |
+|--------|-------|
+"""
+    for reason, count in sorted(excluded.items(), key=lambda item: -item[1]):
+        notes += f"| {reason} | {count} |\n"
+    notes += "\n## Distribution by Schema\n\n| Schema | Count |\n|--------|-------|\n"
+    for schema, count in sorted(schema_counts.items(), key=lambda item: -item[1]):
+        notes += f"| {schema} | {count} |\n"
+    notes += "\n## Distribution by Amendment Count\n\n| Bucket | Count |\n|--------|-------|\n"
+    for bucket in ["0", "1", "2-3", "4-10", "11-50", "51+"]:
+        if bucket in amend_buckets:
+            notes += f"| {bucket} | {amend_buckets[bucket]} |\n"
+    notes_path.write_text(notes, encoding="utf-8")
+
+
+def _write_current_replayable_notes(
+    pairs: list[tuple[str, str, str, int, str, str, str, int, int, str]],
+    groups: dict[str, _GroupInfo],
+    excluded: dict[str, int],
+    schema_counts: dict[str, int],
+    amend_buckets: dict[str, int],
+    include_decrees: bool,
+    notes_path: Path,
+) -> None:
+    n_law = sum(v for k, v in schema_counts.items() if k in _LAW_SCHEMAS)
+    n_decree = sum(v for k, v in schema_counts.items() if k in _DECREE_SCHEMAS)
+    notes = f"""# EE Current Replayable Corpus Notes
+
+**Date**: {time.strftime("%Y-%m-%d")}
+**Archive**: data/ee_riigiteataja.farchive
+
+## Summary
+
+- Source: Riigi Teataja Farchive — {len(groups)} unique terviktekstiGrupiID groups
+- **Current replayable corpus: {len(pairs)} latest-version comparison cases**
+- Laws (tyviseadus/muutmisseadus pairs): {n_law}
+- Decrees (maarus/muutmismaarus/juurakt pairs): {n_decree}
+
+## Selection Criteria
+
+1. Schema filter.
+   {"Laws + decrees included." if include_decrees else "Laws only (tyviseadus/muutmisseadus)."}
+2. Amendment history: group must have at least one `<muutmismarge>`.
+3. Body content: each terviktekst must contain `<peatykk>` or `<paragrahv>` elements and
+   be at least {_MIN_BODY_BYTES} bytes.
+4. 2+ structured tervikteksts per group.
+5. Pair selection: penultimate structured consolidated version as base, latest
+   structured consolidated version as current oracle, by `kehtivuseAlgus`.
+
+This corpus is the public Estonia divergence browser input. It intentionally
+does not expose every historical adjacent version pair.
+
+## Exclusion Stats
+
+| Reason | Count |
+|--------|-------|
+"""
+    for reason, count in sorted(excluded.items(), key=lambda item: -item[1]):
+        notes += f"| {reason} | {count} |\n"
+    notes += "\n## Distribution by Schema\n\n| Schema | Count |\n|--------|-------|\n"
+    for schema, count in sorted(schema_counts.items(), key=lambda item: -item[1]):
+        notes += f"| {schema} | {count} |\n"
+    notes += "\n## Distribution by Amendment Count\n\n| Bucket | Count |\n|--------|-------|\n"
+    for bucket in ["0", "1", "2-3", "4-10", "11-50", "51+"]:
+        if bucket in amend_buckets:
+            notes += f"| {bucket} | {amend_buckets[bucket]} |\n"
+    notes_path.write_text(notes, encoding="utf-8")
+
+
 def run_acquire(args: "argparse.Namespace") -> None:
     parts = [part.strip() for part in args.parts.split(",") if part.strip()]
     db_path = Path(args.db)
@@ -509,6 +730,132 @@ def run_curate(args: "argparse.Namespace") -> None:
     print(f"\nWritten: {csv_path}")
 
     _write_notes(
+        pairs,
+        groups,
+        excluded,
+        schema_counts,
+        amend_buckets,
+        include_decrees=include_decrees,
+        notes_path=notes_path,
+    )
+    print(f"Written: {notes_path}")
+
+
+def run_replayable(args: "argparse.Namespace") -> None:
+    db_path = Path(args.db)
+    if not db_path.exists():
+        print(f"ERROR: archive not found: {db_path}", file=sys.stderr)
+        raise SystemExit(1)
+
+    csv_path = Path(getattr(args, "output_csv", "") or _REPLAYABLE_CSV)
+    notes_path = Path(getattr(args, "output_notes", "") or _REPLAYABLE_NOTES)
+    include_decrees = not getattr(args, "laws_only", False)
+
+    archive = open_rt_archive(db_path)
+    try:
+        groups = build_index(archive)
+        print(f"\nSelecting all consecutive replayable pairs (include_decrees={include_decrees})...")
+        pairs, excluded = select_replayable_pairs(groups, include_decrees=include_decrees)
+        print(f"Selected: {len(pairs)} replayable pairs")
+        print("Excluded:")
+        for reason, count in sorted(excluded.items(), key=lambda item: -item[1]):
+            print(f"  {reason}: {count}")
+    finally:
+        archive.close()
+
+    schema_counts, n_laws, n_decrees, amend_buckets = summarize_pairs(
+        [(gid, bid, oid, na, schema) for gid, bid, oid, na, schema, *_ in pairs]
+    )
+    print("\nBy schema:")
+    for schema, count in sorted(schema_counts.items(), key=lambda item: -item[1]):
+        print(f"  {schema}: {count}")
+    print(f"Laws: {n_laws}, Decrees: {n_decrees}")
+
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            [
+                "grupi_id",
+                "base_id",
+                "oracle_id",
+                "n_amendments",
+                "schema",
+                "base_effective",
+                "oracle_effective",
+                "version_index",
+                "version_count",
+                "title",
+            ]
+        )
+        for row in pairs:
+            writer.writerow(row)
+    print(f"\nWritten: {csv_path}")
+
+    _write_replayable_notes(
+        pairs,
+        groups,
+        excluded,
+        schema_counts,
+        amend_buckets,
+        include_decrees=include_decrees,
+        notes_path=notes_path,
+    )
+    print(f"Written: {notes_path}")
+
+
+def run_current(args: "argparse.Namespace") -> None:
+    db_path = Path(args.db)
+    if not db_path.exists():
+        print(f"ERROR: archive not found: {db_path}", file=sys.stderr)
+        raise SystemExit(1)
+
+    csv_path = Path(getattr(args, "output_csv", "") or _CURRENT_CSV)
+    notes_path = Path(getattr(args, "output_notes", "") or _CURRENT_NOTES)
+    include_decrees = not getattr(args, "laws_only", False)
+
+    archive = open_rt_archive(db_path)
+    try:
+        groups = build_index(archive)
+        print(f"\nSelecting current replayable amended pairs (include_decrees={include_decrees})...")
+        pairs, excluded = select_current_replayable_pairs(groups, include_decrees=include_decrees)
+        print(f"Selected: {len(pairs)} current replayable pairs")
+        print("Excluded:")
+        for reason, count in sorted(excluded.items(), key=lambda item: -item[1]):
+            print(f"  {reason}: {count}")
+    finally:
+        archive.close()
+
+    schema_counts, n_laws, n_decrees, amend_buckets = summarize_pairs(
+        [(gid, bid, oid, na, schema) for gid, bid, oid, na, schema, *_ in pairs]
+    )
+    print("\nBy schema:")
+    for schema, count in sorted(schema_counts.items(), key=lambda item: -item[1]):
+        print(f"  {schema}: {count}")
+    print(f"Laws: {n_laws}, Decrees: {n_decrees}")
+
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            [
+                "grupi_id",
+                "base_id",
+                "oracle_id",
+                "n_amendments",
+                "schema",
+                "base_effective",
+                "oracle_effective",
+                "version_index",
+                "version_count",
+                "title",
+            ]
+        )
+        for row in pairs:
+            writer.writerow(row)
+    print(f"\nWritten: {csv_path}")
+
+    _write_current_replayable_notes(
         pairs,
         groups,
         excluded,
@@ -611,6 +958,12 @@ def main(args: "argparse.Namespace") -> None:
         return
     if command == "curate":
         run_curate(args)
+        return
+    if command == "current":
+        run_current(args)
+        return
+    if command == "replayable":
+        run_replayable(args)
         return
     if command == "stats":
         run_stats(args)

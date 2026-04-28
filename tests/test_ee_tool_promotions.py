@@ -9,6 +9,7 @@ from lawvm.tools import (
     cli,
     ee_chain_quality,
     ee_corpus,
+    ee_publication_db,
     ee_pair_status,
 )
 
@@ -38,6 +39,21 @@ def test_cli_parser_accepts_promoted_ee_tools() -> None:
     assert args.command == "ee-corpus"
     assert args.ee_corpus_command == "curate"
     assert args.laws_only is True
+
+    args = parser.parse_args(["ee-corpus", "replayable", "--laws-only"])
+    assert args.command == "ee-corpus"
+    assert args.ee_corpus_command == "replayable"
+    assert args.laws_only is True
+
+    args = parser.parse_args(["ee-corpus", "current"])
+    assert args.command == "ee-corpus"
+    assert args.ee_corpus_command == "current"
+    assert args.laws_only is False
+
+    args = parser.parse_args(["ee-publication-db", "--limit", "10", "--workers", "2"])
+    assert args.command == "ee-publication-db"
+    assert args.limit == 10
+    assert args.workers == 2
 
     args = parser.parse_args(
         ["bench-regression-guard", "--baseline", "old", "--current", "new"]
@@ -188,6 +204,183 @@ def test_ee_corpus_run_curate_writes_csv_and_notes(tmp_path, monkeypatch, capsys
     rows = list(csv.DictReader(csv_path.open()))
     assert rows[0]["grupi_id"] == "g1"
     assert rows[0]["schema"] == "tyviseadus"
+
+
+def test_ee_corpus_select_replayable_pairs_uses_all_consecutive_versions() -> None:
+    groups = {
+        "g1": ee_corpus._GroupInfo(
+            grupi_id="g1",
+            terviktekst_with_body=[
+                ("a3", 3000, "2022-01-01"),
+                ("a1", 3000, "2020-01-01"),
+                ("a2", 3000, "2021-01-01"),
+            ],
+            n_amendments=3,
+            schemas={"tyviseadus"},
+            title="Test Act",
+        ),
+        "g2": ee_corpus._GroupInfo(
+            grupi_id="g2",
+            terviktekst_with_body=[("b1", 3000, "2020-01-01")],
+            n_amendments=1,
+            schemas={"tyviseadus"},
+        ),
+    }
+
+    pairs, excluded = ee_corpus.select_replayable_pairs(groups, include_decrees=False)
+
+    assert excluded == {"fewer_than_2_tervikteksts": 1}
+    assert [(row[1], row[2], row[7], row[8]) for row in pairs] == [
+        ("a1", "a2", 1, 3),
+        ("a2", "a3", 2, 3),
+    ]
+    assert pairs[0][5:7] == ("2020-01-01", "2021-01-01")
+
+
+def test_ee_corpus_select_current_replayable_pairs_uses_latest_pair_only() -> None:
+    groups = {
+        "g1": ee_corpus._GroupInfo(
+            grupi_id="g1",
+            terviktekst_with_body=[
+                ("a1", 3000, "2020-01-01"),
+                ("a2", 3000, "2021-01-01"),
+                ("a3", 3000, "2022-01-01"),
+            ],
+            n_amendments=3,
+            schemas={"tyviseadus"},
+            title="Test Act",
+        ),
+        "g2": ee_corpus._GroupInfo(
+            grupi_id="g2",
+            terviktekst_with_body=[
+                ("b1", 3000, "2020-01-01"),
+                ("b2", 3000, "2021-01-01"),
+            ],
+            n_amendments=0,
+            schemas={"tyviseadus"},
+            title="Unamended Act",
+        ),
+        "g3": ee_corpus._GroupInfo(
+            grupi_id="g3",
+            terviktekst_with_body=[("c1", 3000, "2020-01-01")],
+            n_amendments=1,
+            schemas={"tyviseadus"},
+            title="Single Version",
+        ),
+    }
+
+    pairs, excluded = ee_corpus.select_current_replayable_pairs(groups, include_decrees=False)
+
+    assert excluded == {"no_amendments": 1, "fewer_than_2_tervikteksts": 1}
+    assert [(row[1], row[2], row[7], row[8], row[9]) for row in pairs] == [
+        ("a2", "a3", 2, 3, "Test Act"),
+    ]
+
+
+def test_ee_publication_db_builds_sqlite_from_replayable_corpus(tmp_path, monkeypatch) -> None:
+    from lawvm.core.ir import IRNode, IRStatute, LegalAddress
+    from lawvm.core.semantic_types import IRNodeKind
+    from lawvm.core.timeline import ConsistencyDivergence
+
+    corpus = tmp_path / "replayable.csv"
+    corpus.write_text(
+        "\n".join(
+            [
+                "grupi_id,base_id,oracle_id,n_amendments,schema,base_effective,oracle_effective,version_index,version_count,title",
+                "g1,b1,o1,2,tyviseadus,2020-01-01,2021-01-01,1,2,Test Act",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "ee.db"
+    archive_path = tmp_path / "archive.farchive"
+    archive_path.write_bytes(b"stub")
+
+    class _Archive:
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(ee_publication_db, "open_rt_archive", lambda path, readonly=True: _Archive())
+    monkeypatch.setattr(ee_publication_db, "fetch_rt_xml", lambda oracle_id, archive=None: b"<xml/>")
+    monkeypatch.setattr(ee_publication_db, "extract_effective_date", lambda xml: "2021-01-01")
+    monkeypatch.setattr(
+        ee_publication_db,
+        "replay_ee_to_pit",
+        lambda **kwargs: SimpleNamespace(
+            error="",
+            replayed=IRStatute(
+                statute_id="b1",
+                title="Test Act",
+                body=IRNode(
+                    IRNodeKind.BODY,
+                    children=(
+                        IRNode(IRNodeKind.SECTION, label="1", text="replay"),
+                        IRNode(IRNodeKind.SECTION, label="2", text="same"),
+                    ),
+                ),
+            ),
+            oracle=IRStatute(
+                statute_id="o1",
+                title="Test Act",
+                body=IRNode(
+                    IRNodeKind.BODY,
+                    children=(
+                        IRNode(IRNodeKind.SECTION, label="1", text="oracle"),
+                        IRNode(IRNodeKind.SECTION, label="2", text="same"),
+                    ),
+                ),
+            ),
+            source_basis="pairwise_terviktekst_delta",
+            comparison_class="commensurable_delta",
+            source_adjudication=SimpleNamespace(oracle_suspect=""),
+            n_ops=1,
+            n_mismatch=1,
+            n_ops_missing=0,
+            n_con_missing=0,
+            as_of="2021-01-01",
+            divergences=[
+                ConsistencyDivergence(
+                    address=LegalAddress(path=(("section", "1"),)),
+                    divergence_type="MISMATCH",
+                    ops_text="replay",
+                    consolidated_text="oracle",
+                )
+            ],
+        ),
+    )
+
+    stats = ee_publication_db.build_ee_publication_db(
+        corpus_path=corpus,
+        output_path=output,
+        archive_path=archive_path,
+        workers=1,
+    )
+
+    assert stats == {"pairs": 1, "errors": 0, "divergences": 1, "open_divergences": 1}
+    import sqlite3
+
+    con = sqlite3.connect(output)
+    try:
+        pair = con.execute(
+            """
+            SELECT base_id, oracle_id, divergence_count, section_total_count,
+                   section_identical_count, section_divergent_count,
+                   section_text_total_chars, section_text_identical_chars
+            FROM pairs
+            """
+        ).fetchone()
+        divergence = con.execute(
+            """
+            SELECT d.address, rt.text, ot.text
+            FROM divergences d
+            LEFT JOIN text_blobs rt ON rt.text_hash = d.replay_text_hash
+            LEFT JOIN text_blobs ot ON ot.text_hash = d.oracle_text_hash
+            """
+        ).fetchone()
+    finally:
+        con.close()
+    assert pair == ("b1", "o1", 1, 2, 1, 1, 10, 4)
+    assert divergence == ("section:1", "replay", "oracle")
 
 
 def test_bench_regression_guard_run_guard_pass_and_fail(tmp_path, monkeypatch, capsys) -> None:

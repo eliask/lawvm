@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estonia replay divergences</title>
+<link rel="stylesheet" href="estonia-divergences.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.13.0/sql-wasm.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/diff_match_patch/20121119/diff_match_patch.js"></script>
+</head>
+<body>
+<div id="loading">
+  <h1>Estonia replay divergences</h1>
+  <div class="progress"><div id="progress-bar"></div></div>
+  <div id="load-status">Loading SQLite database…</div>
+</div>
+
+<header id="topbar" hidden>
+  <div>
+    <h1>Estonia replay divergences</h1>
+    <p>LawVM replay compared with Riigi Teataja consolidated versions.</p>
+  </div>
+  <div id="stats" class="stats"></div>
+</header>
+
+<main id="app" hidden>
+  <aside id="sidebar">
+    <div class="filters">
+      <input id="search" type="search" placeholder="Search act, ID, section…">
+      <select id="mode-filter">
+        <option value="signal">Current differences</option>
+        <option value="replay">Replay evidence candidates</option>
+        <option value="alignment">Address alignment shadows</option>
+        <option value="coverage">Compiler coverage debt</option>
+        <option value="all">All divergences</option>
+      </select>
+      <select id="class-filter">
+        <option value="">All comparison classes</option>
+      </select>
+      <select id="bucket-filter">
+        <option value="">All residual buckets</option>
+        <option value="open">Open only</option>
+      </select>
+    </div>
+    <div id="case-count" class="count"></div>
+    <div id="case-list"></div>
+  </aside>
+
+  <section id="detail">
+    <div class="empty">Select a comparison case.</div>
+  </section>
+</main>
+
+<script type="module" src="estonia-divergences.js"></script>
+</body>
+</html>
