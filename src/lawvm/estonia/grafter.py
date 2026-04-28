@@ -2574,7 +2574,7 @@ def _iter_commencement_section_label_groups(sentence: str) -> tuple[str, ...]:
 
 def _old_format_commencement_date(text: str) -> str:
     """Extract ``YYYY-MM-DD`` from a sentence like ``jõustub 2019. aasta 1. jaanuaril``."""
-    commencement_match = re.search(r"\bjõustu(?:b|vad)\b", text, re.IGNORECASE)
+    commencement_match = re.search(r"\b(?:jõustu(?:b|vad)|rakendatakse)\b", text, re.IGNORECASE)
     if commencement_match is not None:
         text = text[commencement_match.start():]
     month_prefixes = (
@@ -2676,7 +2676,11 @@ def _extract_old_format_commencement_effects(
 
     def _record_commencement_clause(sentence: str, whole_act_effective: str = "") -> str:
         sentence_lower = sentence.lower()
-        if not re.search(r"\bjõustu(?:b|vad)\b", sentence_lower) and "üldises korras" not in sentence_lower:
+        if (
+            not re.search(r"\bjõustu(?:b|vad)\b", sentence_lower)
+            and "rakendatakse" not in sentence_lower
+            and "üldises korras" not in sentence_lower
+        ):
             return whole_act_effective
         effective = _old_format_commencement_date(sentence)
         if (
@@ -2694,7 +2698,7 @@ def _extract_old_format_commencement_effects(
         item_spans: list[tuple[int, int]] = []
         for match in re.finditer(
             r"§\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+"
-            r"punkt(?:id|i)?\s+(.+?)"
+            r"punkt(?:id|i|e)?\s+(.+?)"
             r"(?=(?:\s+(?:ning|ja)\s+§|\s*,\s*§|\s+jõustu(?:b|vad)\b|$))",
             sentence,
             re.IGNORECASE | re.DOTALL,
@@ -2743,9 +2747,11 @@ def _extract_old_format_commencement_effects(
             continue
         saw_structured_commencement = True
         clauses = re.findall(
-            r"((?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b.+?"
-            r"jõustu(?:b|vad)\b.+?)"
-            r"(?=(?:\s+(?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b|$))",
+            r"((?:\(\d+\)\s*)?"
+            r"(?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b.+?"
+            r"(?:jõustu(?:b|vad)|rakendatakse)\b.+?)"
+            r"(?=(?:\s+(?:\(\d+\)\s*)?"
+            r"(?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b|$))",
             para_text,
             re.IGNORECASE | re.DOTALL,
         )
@@ -2768,9 +2774,11 @@ def _extract_old_format_commencement_effects(
         return item_effects, section_effects, whole_act_effective
     html_text = " ".join(html_texts)
     clauses = re.findall(
-        r"((?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b.+?"
-        r"jõustu(?:b|vad)\b.+?)"
-        r"(?=(?:\s+(?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b|$))",
+        r"((?:\(\d+\)\s*)?"
+        r"(?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b.+?"
+        r"(?:jõustu(?:b|vad)|rakendatakse)\b.+?)"
+        r"(?=(?:\s+(?:\(\d+\)\s*)?"
+        r"(?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b|$))",
         html_text,
         re.IGNORECASE | re.DOTALL,
     )

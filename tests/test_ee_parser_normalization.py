@@ -13,6 +13,7 @@ from lawvm.estonia.ee_instruction_waist import (
     read_subsection_text_scope_meta,
 )
 from lawvm.estonia.grafter import (
+    _extract_old_format_commencement_effects,
     _extract_intro_statute_fragment,
     _is_omnibus_amendment,
     _parse_generic_minister_rename_ops,
@@ -39,6 +40,21 @@ def _source_witness(op):
     witness = op.payload.attrs.get("rewrite_witness")
     assert witness is not None
     return witness
+
+
+def test_extract_old_format_commencement_effects_handles_retroactive_application_clause() -> None:
+    archive = open_rt_archive(readonly=True)
+    root = ET.fromstring(fetch_rt_xml("118022016001", archive))
+
+    item_effects, section_effects, whole_act_effective = _extract_old_format_commencement_effects(
+        root,
+        fallback_effective="2016-02-21",
+    )
+
+    assert whole_act_effective == ""
+    assert item_effects[("6", "2")] == "2016-01-01"
+    assert item_effects[("8", "1")] == "2016-07-01"
+    assert section_effects["7"] == "2016-01-01"
 
 
 def test_extract_ee_ops_keeps_rewrite_witness_on_payload_sidecar_only() -> None:
