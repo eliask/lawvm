@@ -2309,8 +2309,12 @@ def _parse_commencement_item_labels(raw: str) -> tuple[str, ...]:
             part,
         )
         if range_match:
-            start = int(_normalize_num(range_match.group(1)).replace("_", ""))
-            end = int(_normalize_num(range_match.group(2)).replace("_", ""))
+            start_label = _normalize_num(range_match.group(1))
+            end_label = _normalize_num(range_match.group(2))
+            if not re.fullmatch(r"\d+", start_label) or not re.fullmatch(r"\d+", end_label):
+                continue
+            start = int(start_label)
+            end = int(end_label)
             if start <= end:
                 labels.extend(str(value) for value in range(start, end + 1))
                 continue
@@ -2386,6 +2390,32 @@ def _strip_ee_quoted_payload_spans(text: str) -> str:
     return re.sub(r"\s+", " ", stripped).strip()
 
 
+def _old_format_html_commencement_blocks(text: str) -> tuple[str, ...]:
+    """Return flat-HTML section blocks that are themselves commencement provisions."""
+    blocks = re.split(
+        r"(?=\s*§\s+\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\.\s+)",
+        text,
+    )
+    selected: list[str] = []
+    for block in blocks:
+        candidate = block.strip()
+        if not candidate:
+            continue
+        lower = candidate.lower()
+        if "jõustu" not in lower:
+            continue
+        if re.search(
+            r"^\s*§\s+\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\.\s+(?:seaduse|määruse)\s+jõustumine\b",
+            candidate,
+            re.IGNORECASE,
+        ):
+            selected.append(candidate)
+            continue
+        if re.search(r"^\s*Käesolev\s+(?:seadus|määrus)\s+jõustub\b", candidate, re.IGNORECASE):
+            selected.append(candidate)
+    return tuple(selected)
+
+
 def _extract_old_format_commencement_effects(
     root: ET.Element,
     *,
@@ -2401,7 +2431,8 @@ def _extract_old_format_commencement_effects(
         return re.sub(r"\s+", " ", text).strip()
 
     def _record_commencement_clause(sentence: str, whole_act_effective: str = "") -> str:
-        if "jõustu" not in sentence.lower():
+        sentence_lower = sentence.lower()
+        if not re.search(r"\bjõustu(?:b|vad)\b", sentence_lower) and "üldises korras" not in sentence_lower:
             return whole_act_effective
         effective = _old_format_commencement_date(sentence)
         if (
@@ -2463,7 +2494,7 @@ def _extract_old_format_commencement_effects(
         para_text = re.sub(r"<[^>]+>", " ", para_text)
         para_text = re.sub(r"\s+", " ", para_text).strip()
         para_text = _strip_ee_quoted_payload_spans(para_text)
-        if "jõustum" not in title.lower() and "jõustu" not in para_text.lower():
+        if "jõustum" not in title.lower():
             continue
         saw_structured_commencement = True
         clauses = re.findall(
@@ -2487,7 +2518,7 @@ def _extract_old_format_commencement_effects(
             continue
         plain = _plain_html_text(el.text)
         if "jõustu" in plain.lower():
-            html_texts.append(_strip_ee_quoted_payload_spans(plain))
+            html_texts.extend(_old_format_html_commencement_blocks(_strip_ee_quoted_payload_spans(plain)))
     if not html_texts:
         return item_effects, section_effects
     html_text = " ".join(html_texts)
