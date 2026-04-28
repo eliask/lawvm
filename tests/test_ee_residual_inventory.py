@@ -418,30 +418,6 @@ def test_generated_inserted_note_omission_family_matches_inventory() -> None:
     ]
 
 
-def test_generated_inserted_item_omission_family_matches_inventory() -> None:
-    generated = build_inserted_item_omission_family(
-        item_address="part:6/chapter:24/section:235/subsection:1",
-        source_act_id="130122025001",
-        oracle_id="130122025006",
-        item_labels=("7^11", "7^12"),
-    )
-
-    inventory = get_ee_residual_inventory("111112025007", "130122025006")
-
-    assert inventory is not None
-    assert len(generated) == 2
-    assert generated[0].address == "part:6/chapter:24/section:235/subsection:1/item:7_11"
-    assert generated[1].address == "part:6/chapter:24/section:235/subsection:1/item:7_12"
-    assert all(record.bucket == "source_pathology" for record in generated)
-    assert [
-        (record.address, record.bucket, record.evidence)
-        for record in inventory.residuals[3:5]
-    ] == [
-        (record.address, record.bucket, record.evidence)
-        for record in generated
-    ]
-
-
 def test_generated_inserted_item_omission_family_matches_vaarteomenetluse_inventory() -> None:
     generated = build_inserted_item_omission_family(
         item_address="chapter:5/section:31_6/subsection:5",
@@ -501,44 +477,6 @@ def test_generated_shortened_section_family_matches_ringhaalinguseadus_editorial
     assert [
         (record.address, record.bucket, record.evidence)
         for record in inventory.residuals
-    ] == [
-        (record.address, record.bucket, record.evidence)
-        for record in generated
-    ]
-
-
-def test_generated_shortened_section_family_matches_inventory() -> None:
-    generated = build_shortened_section_family(
-        records=(
-            (
-                "part:6/chapter:25/section:237_30/subsection:2",
-                "Source act 130122025001 already emits the replay-side sanction text; oracle shortens it.",
-            ),
-            (
-                "part:6/chapter:25/section:237_38/subsection:2",
-                "Source act 130122025001 already emits the replay-side sanction text; oracle shortens it.",
-            ),
-            (
-                "part:6/chapter:25/section:237_39/subsection:2",
-                "Source act 130122025001 already emits the replay-side sanction text; oracle shortens it.",
-            ),
-            (
-                "part:6/chapter:25/section:237_40/subsection:2",
-                "Source act 130122025001 already emits the replay-side sanction text; oracle reshapes the ordering and shortens part of it.",
-            ),
-        ),
-    )
-
-    inventory = get_ee_residual_inventory("111112025007", "130122025006")
-
-    assert inventory is not None
-    assert len(generated) == 4
-    assert generated[0].address == "part:6/chapter:25/section:237_30/subsection:2"
-    assert generated[-1].address == "part:6/chapter:25/section:237_40/subsection:2"
-    assert all(record.bucket == "source_oracle_drift" for record in generated)
-    assert [
-        (record.address, record.bucket, record.evidence)
-        for record in inventory.residuals[5:9]
     ] == [
         (record.address, record.bucket, record.evidence)
         for record in generated
@@ -2172,6 +2110,7 @@ def test_get_ee_residual_inventory_sihtasutuste_seadus() -> None:
     assert inventory.comparison_class == "commensurable_delta"
     assert len(inventory.residuals) == 2
     assert {record.bucket for record in inventory.residuals} == {
+        "replay_bug",
         "source_oracle_drift",
     }
     assert any(
@@ -2182,7 +2121,9 @@ def test_get_ee_residual_inventory_sihtasutuste_seadus() -> None:
     )
     assert any(
         record.address == "chapter:6/section:57_1/subsection:1"
-        and "§ 59 või 60" in record.evidence
+        and record.bucket == "replay_bug"
+        and "123122022002 § 7 p 6" in record.evidence
+        and "amendment-to-amendment" in record.evidence
         for record in inventory.residuals
     )
 
@@ -2190,123 +2131,7 @@ def test_get_ee_residual_inventory_sihtasutuste_seadus() -> None:
 def test_get_ee_residual_inventory_relvaseadus() -> None:
     inventory = get_ee_residual_inventory("130042024004", "112122024004")
 
-    assert inventory is not None
-    assert inventory.statute_title == "Relvaseadus"
-    assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 12
-    assert {record.bucket for record in inventory.residuals} == {
-        "source_pathology",
-    }
-    assert any(
-        record.address == "chapter:7/section:52/subsection:3/item:5"
-        and "new § 52(3) item list" in record.evidence
-        for record in inventory.residuals
-    )
-    assert any(
-        record.address == "chapter:14/section:91/subsection:48"
-        and "paper accounting-book retention text" in record.evidence
-        for record in inventory.residuals
-    )
-
-
-def test_generated_shortened_section_family_matches_relvaseadus_item_cluster() -> None:
-    generated = build_shortened_section_family(
-        bucket="source_pathology",
-        records=(
-            (
-                "chapter:7/section:52/subsection:3/item:1",
-                "The applied 2025 source chain contains no amendment inserting the "
-                "new § 52(3) item list, but oracle 112122024004 contains it.",
-            ),
-            (
-                "chapter:7/section:52/subsection:3/item:2",
-                "The applied 2025 source chain contains no amendment inserting the "
-                "new § 52(3) item list, but oracle 112122024004 contains it.",
-            ),
-            (
-                "chapter:7/section:52/subsection:3/item:3",
-                "The applied 2025 source chain contains no amendment inserting the "
-                "new § 52(3) item list, but oracle 112122024004 contains it.",
-            ),
-            (
-                "chapter:7/section:52/subsection:3/item:4",
-                "The applied 2025 source chain contains no amendment inserting the "
-                "new § 52(3) item list, but oracle 112122024004 contains it.",
-            ),
-            (
-                "chapter:7/section:52/subsection:3/item:5",
-                "The applied 2025 source chain contains no amendment inserting the "
-                "new § 52(3) item list, but oracle 112122024004 contains it.",
-            ),
-        ),
-    )
-
-    inventory = get_ee_residual_inventory("130042024004", "112122024004")
-
-    assert inventory is not None
-    assert len(generated) == 5
-    assert generated[0].address == "chapter:7/section:52/subsection:3/item:1"
-    assert generated[-1].address == "chapter:7/section:52/subsection:3/item:5"
-    assert all(record.bucket == "source_pathology" for record in generated)
-
-
-def test_generated_shortened_section_family_matches_relvaseadus_registry_rewrite_cluster() -> None:
-    generated = build_shortened_section_family(
-        bucket="source_pathology",
-        records=(
-            (
-                "chapter:7/section:52/subsection:2",
-                "None of the applied 2025 source acts (112122024001, 129062024003, "
-                "130122024001) mention § 52, 'relvaraamat', or the registry rewrite; "
-                "oracle 112122024004 carries unsourced replacement text.",
-            ),
-            (
-                "chapter:7/section:52/subsection:3",
-                "None of the applied 2025 source acts (112122024001, 129062024003, "
-                "130122024001) mention § 52, 'relvaraamat', or the registry rewrite; "
-                "oracle 112122024004 carries unsourced replacement text.",
-            ),
-            (
-                "chapter:7/section:52/subsection:4",
-                "None of the applied 2025 source acts (112122024001, 129062024003, "
-                "130122024001) mention § 52, 'relvaraamat', or the registry rewrite; "
-                "oracle 112122024004 carries unsourced replacement text.",
-            ),
-            (
-                "chapter:7/section:52/subsection:5",
-                "None of the applied 2025 source acts (112122024001, 129062024003, "
-                "130122024001) mention § 52, 'relvaraamat', or the registry rewrite; "
-                "oracle 112122024004 carries unsourced replacement text.",
-            ),
-            (
-                "chapter:7/section:52/subsection:6",
-                "None of the applied 2025 source acts (112122024001, 129062024003, "
-                "130122024001) mention § 52, 'relvaraamat', or the registry rewrite; "
-                "oracle 112122024004 carries unsourced replacement text.",
-            ),
-            (
-                "chapter:7/section:52/subsection:7",
-                "None of the applied 2025 source acts (112122024001, 129062024003, "
-                "130122024001) mention § 52, 'relvaraamat', or the registry rewrite; "
-                "oracle 112122024004 carries unsourced replacement text.",
-            ),
-        ),
-    )
-
-    inventory = get_ee_residual_inventory("130042024004", "112122024004")
-
-    assert inventory is not None
-    assert len(generated) == 6
-    assert [
-        (record.address, record.bucket, record.evidence)
-        for record in inventory.residuals[1:7]
-    ] == [
-        (record.address, record.bucket, record.evidence)
-        for record in generated
-    ]
-    assert generated[0].address == "chapter:7/section:52/subsection:2"
-    assert generated[-1].address == "chapter:7/section:52/subsection:7"
-    assert all(record.bucket == "source_pathology" for record in generated)
+    assert inventory is None
 
 
 def test_get_ee_residual_inventory_uhistranspordiseadus() -> None:
@@ -2478,19 +2303,7 @@ def test_generated_shortened_section_family_matches_riigiloivuseadus_registry_cl
 def test_get_ee_residual_inventory_vaartpaberituru() -> None:
     inventory = get_ee_residual_inventory("111112025007", "130122025006")
 
-    assert inventory is not None
-    assert inventory.statute_title == "Väärtpaberituru seadus"
-    assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 10
-    assert {record.bucket for record in inventory.residuals} == {
-        "source_oracle_drift",
-        "source_pathology",
-    }
-    assert any(
-        record.address == "part:6/chapter:24/section:235/subsection:1/item:7_11"
-        and record.bucket == "source_pathology"
-        for record in inventory.residuals
-    )
+    assert inventory is None
 
 
 def test_get_ee_residual_inventory_kaibemaksuseadus() -> None:
@@ -3007,11 +2820,11 @@ def test_list_known_ee_residual_inventories_contains_active_non_zero_pairs() -> 
     assert ("109042021007", "114032025016") not in pairs
     assert ("106052020036", "103022026013") in pairs
     assert ("121052014030", "121052014031") in pairs
-    assert ("130042024004", "112122024004") in pairs
+    assert ("130042024004", "112122024004") not in pairs
     assert ("119032013007", "112072014164") in pairs
     assert ("106052020038", "127092023012") in pairs
     assert ("193936", "13336397") in pairs
-    assert ("111112025007", "130122025006") in pairs
+    assert ("111112025007", "130122025006") not in pairs
     assert ("108072025061", "107012026021") in pairs
     assert ("104122024013", "128012026005") in pairs
     assert ("121122010026", "121122010027") in pairs
@@ -3050,10 +2863,10 @@ def test_ee_residual_inventory_main_prints_summary(capsys) -> None:
 
 
 def test_ee_residual_inventory_main_emits_json(capsys) -> None:
-    ee_residual_inventory.main(Namespace(base_id="111112025007", oracle_id="130122025006", json=True))
+    ee_residual_inventory.main(Namespace(base_id="193936", oracle_id="13336397", json=True))
 
     out = capsys.readouterr().out
-    assert '"base_id": "111112025007"' in out
-    assert '"oracle_id": "130122025006"' in out
-    assert '"residual_count": 10' in out
-    assert '"source_pathology": 3' in out
+    assert '"base_id": "193936"' in out
+    assert '"oracle_id": "13336397"' in out
+    assert '"residual_count": 7' in out
+    assert '"appendix_display_pathology": 1' in out

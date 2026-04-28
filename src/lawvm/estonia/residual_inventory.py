@@ -882,108 +882,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
-    ("130042024004", "112122024004"): EEPairResidualInventory(
-        base_id="130042024004",
-        oracle_id="112122024004",
-        statute_title="Relvaseadus",
-        comparison_class="commensurable_delta",
-        residuals=(
-            EEResidualRecord(
-                address="chapter:14/section:91/subsection:48",
-                bucket="source_pathology",
-                evidence=(
-                    "None of the applied 2025 source acts (112122024001, 129062024003, "
-                    "130122024001) mention § 91 or the paper accounting-book retention text, "
-                    "but oracle 112122024004 contains the extra subsection."
-                ),
-            ),
-            *(
-                EEResidualRecord(
-                    address=record.address,
-                    bucket=cast(EEResidualBucket, record.bucket),
-                    evidence=record.evidence,
-                )
-                for record in build_shortened_section_family(
-                    bucket="source_pathology",
-                    records=(
-                        (
-                            "chapter:7/section:52/subsection:2",
-                            "None of the applied 2025 source acts (112122024001, 129062024003, "
-                            "130122024001) mention § 52, 'relvaraamat', or the registry rewrite; "
-                            "oracle 112122024004 carries unsourced replacement text.",
-                        ),
-                        (
-                            "chapter:7/section:52/subsection:3",
-                            "None of the applied 2025 source acts (112122024001, 129062024003, "
-                            "130122024001) mention § 52, 'relvaraamat', or the registry rewrite; "
-                            "oracle 112122024004 carries unsourced replacement text.",
-                        ),
-                        (
-                            "chapter:7/section:52/subsection:4",
-                            "None of the applied 2025 source acts (112122024001, 129062024003, "
-                            "130122024001) mention § 52, 'relvaraamat', or the registry rewrite; "
-                            "oracle 112122024004 carries unsourced replacement text.",
-                        ),
-                        (
-                            "chapter:7/section:52/subsection:5",
-                            "None of the applied 2025 source acts (112122024001, 129062024003, "
-                            "130122024001) mention § 52, 'relvaraamat', or the registry rewrite; "
-                            "oracle 112122024004 carries unsourced replacement text.",
-                        ),
-                        (
-                            "chapter:7/section:52/subsection:6",
-                            "None of the applied 2025 source acts (112122024001, 129062024003, "
-                            "130122024001) mention § 52, 'relvaraamat', or the registry rewrite; "
-                            "oracle 112122024004 carries unsourced replacement text.",
-                        ),
-                        (
-                            "chapter:7/section:52/subsection:7",
-                            "None of the applied 2025 source acts (112122024001, 129062024003, "
-                            "130122024001) mention § 52, 'relvaraamat', or the registry rewrite; "
-                            "oracle 112122024004 carries unsourced replacement text.",
-                        ),
-                    ),
-                )
-            ),
-            *(
-                EEResidualRecord(
-                    address=record.address,
-                    bucket=cast(EEResidualBucket, record.bucket),
-                    evidence=record.evidence,
-                )
-                for record in build_shortened_section_family(
-                    bucket="source_pathology",
-                    records=(
-                        (
-                            "chapter:7/section:52/subsection:3/item:1",
-                            "The applied 2025 source chain contains no amendment inserting "
-                            "the new § 52(3) item list, but oracle 112122024004 contains it.",
-                        ),
-                        (
-                            "chapter:7/section:52/subsection:3/item:2",
-                            "The applied 2025 source chain contains no amendment inserting "
-                            "the new § 52(3) item list, but oracle 112122024004 contains it.",
-                        ),
-                        (
-                            "chapter:7/section:52/subsection:3/item:3",
-                            "The applied 2025 source chain contains no amendment inserting "
-                            "the new § 52(3) item list, but oracle 112122024004 contains it.",
-                        ),
-                        (
-                            "chapter:7/section:52/subsection:3/item:4",
-                            "The applied 2025 source chain contains no amendment inserting "
-                            "the new § 52(3) item list, but oracle 112122024004 contains it.",
-                        ),
-                        (
-                            "chapter:7/section:52/subsection:3/item:5",
-                            "The applied 2025 source chain contains no amendment inserting "
-                            "the new § 52(3) item list, but oracle 112122024004 contains it.",
-                        ),
-                    ),
-                )
-            ),
-        ),
-    ),
     ("109042021007", "114032025016"): EEPairResidualInventory(
         base_id="109042021007",
         oracle_id="114032025016",
@@ -2483,84 +2381,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
-    ("111112025007", "130122025006"): EEPairResidualInventory(
-        base_id="111112025007",
-        oracle_id="130122025006",
-        statute_title="Väärtpaberituru seadus",
-        comparison_class="commensurable_delta",
-        residuals=(
-            EEResidualRecord(
-                address="part:2/chapter:3/section:15/subsection:1",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 130122025001 already emits the replay-side replacement text; "
-                    "oracle reshapes it to a shorter and materially different prospect regime."
-                ),
-            ),
-            EEResidualRecord(
-                address="part:2/chapter:3/section:15/subsection:6",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 130122025001 rewrites the range to 'vähemalt 1 000 000 eurot, "
-                    "kuid vähem kui 12 000 000 eurot'; oracle keeps the older "
-                    "'1 000 000–8 000 000 eurot' shape."
-                ),
-            ),
-            EEResidualRecord(
-                address="part:6/chapter:24/section:235/subsection:1/item:1_1",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 130122025001 already emits the longer replay-side text for item 1^1; "
-                    "oracle shortens it."
-                ),
-            ),
-            *(
-                EEResidualRecord(
-                    address=record.address,
-                    bucket=cast(EEResidualBucket, record.bucket),
-                    evidence=record.evidence,
-                )
-                for record in build_inserted_item_omission_family(
-                    item_address="part:6/chapter:24/section:235/subsection:1",
-                    source_act_id="130122025001",
-                    oracle_id="130122025006",
-                    item_labels=("7^11", "7^12"),
-                )
-            ),
-            *(
-                EEResidualRecord(
-                    address=record.address,
-                    bucket=cast(EEResidualBucket, record.bucket),
-                    evidence=record.evidence,
-                )
-                for record in build_shortened_section_family(
-                    records=(
-                        (
-                            "part:6/chapter:25/section:237_30/subsection:2",
-                            "Source act 130122025001 already emits the replay-side sanction text; oracle shortens it.",
-                        ),
-                        (
-                            "part:6/chapter:25/section:237_38/subsection:2",
-                            "Source act 130122025001 already emits the replay-side sanction text; oracle shortens it.",
-                        ),
-                        (
-                            "part:6/chapter:25/section:237_39/subsection:2",
-                            "Source act 130122025001 already emits the replay-side sanction text; oracle shortens it.",
-                        ),
-                        (
-                            "part:6/chapter:25/section:237_40/subsection:2",
-                            "Source act 130122025001 already emits the replay-side sanction text; oracle reshapes the ordering and shortens part of it.",
-                        ),
-                    ),
-                )
-            ),
-            EEResidualRecord(
-                address="part:7/chapter:26/section:272_11_58",
-                bucket="source_pathology",
-                evidence=("Source act 130122025001 emits § 272^11^58; oracle omits it entirely."),
-            ),
-        ),
-    ),
     ("127122013026", "129102014007"): EEPairResidualInventory(
         base_id="127122013026",
         oracle_id="129102014007",
@@ -2892,11 +2712,16 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
             EEResidualRecord(
                 address="chapter:6/section:57_1/subsection:1",
-                bucket="source_oracle_drift",
+                bucket="replay_bug",
                 evidence=(
-                    "Source act 105052022001 inserts § 57^1(1) with the replay-side "
-                    "reference 'äriregistri seaduse § 59 või 60', while oracle "
-                    "123122022031 carries '§ 61 või 62' instead."
+                    "Source act 105052022001 § 97 p 18 inserts Sihtasutuste seadus "
+                    "§ 57^1(1) with 'äriregistri seaduse § 59 või 60'. Before that "
+                    "insert takes effect, source act 123122022002 § 7 p 6 amends the "
+                    "pending insertion by replacing '§ 59 või 60' with '§ 61 või 62' "
+                    "inside Äriregistri seadus § 97 p 18. Oracle 123122022031 carries "
+                    "the amended '§ 61 või 62' text. LawVM does not yet precompose this "
+                    "amendment-to-amendment path into the later Sihtasutuste insertion, "
+                    "so this is replay frontend debt rather than oracle-side drift."
                 ),
             ),
         ),
@@ -3581,39 +3406,6 @@ def _generated_ee_residual_records(base_id: str, oracle_id: str) -> tuple[EEResi
                             "'Põllumajandusministeerium' -> 'Maaeluministeerium' rename for the "
                             "whole statute. Replay updates § 23(4) accordingly, while oracle "
                             "101092015036 keeps 'Põllumajandusministeerium'.",
-                        ),
-                    ),
-                ),
-            )
-        case ("130042024004", "112122024004"):
-            return _lower_generated_residual_records(
-                build_shortened_section_family(
-                    bucket="source_pathology",
-                    records=(
-                        (
-                            "chapter:7/section:52/subsection:3/item:1",
-                            "The applied 2025 source chain contains no amendment inserting "
-                            "the new § 52(3) item list, but oracle 112122024004 contains it.",
-                        ),
-                        (
-                            "chapter:7/section:52/subsection:3/item:2",
-                            "The applied 2025 source chain contains no amendment inserting "
-                            "the new § 52(3) item list, but oracle 112122024004 contains it.",
-                        ),
-                        (
-                            "chapter:7/section:52/subsection:3/item:3",
-                            "The applied 2025 source chain contains no amendment inserting "
-                            "the new § 52(3) item list, but oracle 112122024004 contains it.",
-                        ),
-                        (
-                            "chapter:7/section:52/subsection:3/item:4",
-                            "The applied 2025 source chain contains no amendment inserting "
-                            "the new § 52(3) item list, but oracle 112122024004 contains it.",
-                        ),
-                        (
-                            "chapter:7/section:52/subsection:3/item:5",
-                            "The applied 2025 source chain contains no amendment inserting "
-                            "the new § 52(3) item list, but oracle 112122024004 contains it.",
                         ),
                     ),
                 ),
@@ -4507,35 +4299,6 @@ def _generated_ee_residual_records(base_id: str, oracle_id: str) -> tuple[EEResi
                             "Source act 123122013001 yields the replay-side final wording "
                             "'vandetõlgi tehtud eestikeelse tõlkega'; oracle keeps "
                             "'vandetõlgi tehtud või notari kinnitatud eestikeelse tõlkega'.",
-                        ),
-                    ),
-                ),
-            )
-        case ("111112025007", "130122025006"):
-            return _lower_generated_residual_records(
-                build_inserted_item_omission_family(
-                    item_address="part:6/chapter:24/section:235/subsection:1",
-                    source_act_id="130122025001",
-                    oracle_id="130122025006",
-                    item_labels=("7^11", "7^12"),
-                ),
-                build_shortened_section_family(
-                    records=(
-                        (
-                            "part:6/chapter:25/section:237_30/subsection:2",
-                            "Source act 130122025001 already emits the replay-side sanction text; oracle shortens it.",
-                        ),
-                        (
-                            "part:6/chapter:25/section:237_38/subsection:2",
-                            "Source act 130122025001 already emits the replay-side sanction text; oracle shortens it.",
-                        ),
-                        (
-                            "part:6/chapter:25/section:237_39/subsection:2",
-                            "Source act 130122025001 already emits the replay-side sanction text; oracle shortens it.",
-                        ),
-                        (
-                            "part:6/chapter:25/section:237_40/subsection:2",
-                            "Source act 130122025001 already emits the replay-side sanction text; oracle reshapes the ordering and shortens part of it.",
                         ),
                     ),
                 ),
