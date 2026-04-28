@@ -1174,13 +1174,18 @@ def split_old_format_wrapper_blocks(section_html: str) -> list[str]:
         return []
 
     wrapper_pat = re.compile(r"^§\s*\d+\.", re.IGNORECASE)
+
+    def _current_has_unclosed_payload_quote() -> bool:
+        text = "\n".join(current)
+        return text.count("„") > text.count("“")
+
     blocks: list[str] = []
     current: list[str] = []
     saw_wrapper = False
 
     for para in paras:
         plain = strip_old_format_html_text(para)
-        if wrapper_pat.match(plain):
+        if wrapper_pat.match(plain) and not _current_has_unclosed_payload_quote():
             if current:
                 blocks.append("\n".join(current))
             current = [para]

@@ -79,6 +79,7 @@ _EE_DASH_CHARS = "".join(
     for cp in range(sys.maxunicode + 1)
     if unicodedata.category(chr(cp)) == "Pd"
 )
+_EE_DASH_CHARS += "\u2212"
 _EE_DASH_CLASS = re.escape(_EE_DASH_CHARS)
 _EE_NUM_ATOM = r"\d+(?:\s+\d+|[" + _EE_SUPERSCRIPT_DIGIT_CLASS + r"]+)?"
 _EE_ZS_NON_ASCII_SPACES = frozenset(
@@ -995,7 +996,9 @@ def _extract_payload_after_marker(text: str) -> Optional[str]:
         return None
     payload = m.group(1).strip()
     payload = re.sub(r'^[\u201c\u201e\u201d"\u00ab\u00bb]\s*', '', payload)
-    payload = re.sub(r'\s*[\u201c\u201e\u201d"\u00ab\u00bb]\s*[.;]?\s*$', '', payload)
+    payload = re.sub(r'\s*[.;]\s*$', '', payload)
+    if not re.search(r'[\u201e\u00ab"]', payload):
+        payload = re.sub(r'\s*[\u201c\u201d\u00bb"]\s*$', '', payload)
     return payload.strip() or None
 
 
@@ -4278,6 +4281,51 @@ def extract_ee_ops(
     elif action in ("replace", "insert"):
         content = _extract_quoted_content(clean)
         if content:
+            if action == "replace":
+                split_sections = _split_plural_section_replace_payload(content)
+                explicit_targets = _extract_multiple_explicit_targets(clean)
+                if (
+                    split_sections is not None
+                    and explicit_targets
+                    and len(explicit_targets) == len(split_sections)
+                ):
+                    for explicit_target in explicit_targets:
+                        section_label = next(
+                            (
+                                label
+                                for kind, label in explicit_target.path
+                                if kind == "section"
+                            ),
+                            "",
+                        )
+                        payload_text = split_sections.get(section_label)
+                        if not payload_text:
+                            continue
+                        payload = IRNode(
+                            kind=IRNodeKind.CONTENT,
+                            text=payload_text,
+                            attrs={"source_family": "ee_mixed_multi_section_replace_payload_split"},
+                        )
+                        payload = _set_sentence_replace_payload_attrs(payload, clean)
+                        ops.append(LegalOperation(
+                            op_id=(
+                                f"ee-mixed-section-replace-{section_label}-{seq}-"
+                                f"{source.statute_id}"
+                            ),
+                            sequence=seq,
+                            action=_to_structural_action("replace"),
+                            target=explicit_target,
+                            payload=payload,
+                            source=source,
+                            provenance_tags=(
+                                clean[:200],
+                                "ee_mixed_multi_section_replace_payload_split",
+                            ),
+                            witness_rule_id="ee_mixed_multi_section_replace_payload_split",
+                        ))
+                        seq += 1
+                    if ops:
+                        return ops
             payload = IRNode(kind=IRNodeKind.CONTENT, text=content)
             if action == "replace":
                 payload = _set_sentence_replace_payload_attrs(payload, clean)

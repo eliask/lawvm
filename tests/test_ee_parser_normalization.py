@@ -5905,6 +5905,101 @@ def test_extract_ee_ops_fans_out_mixed_section_and_direct_item_text_replace_targ
     }
 
 
+def test_extract_ee_ops_preserves_nested_closing_quote_in_unbalanced_payload() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 95 tekst sõnastatakse järgmiselt: "
+            "„E-portaalis valitakse päritoluametiks Eesti või vormi MM2 "
+            "andmeväljale 1 märgitakse „Estonia“;"
+        ),
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "95"),)
+    assert ops[0].payload is not None
+    assert ops[0].payload.text.endswith("„Estonia“")
+
+
+def test_extract_ee_ops_splits_mixed_multi_section_replace_payload() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahv 107 ning § 108 pealkiri ja lõige 1 sõnastatakse järgmiselt: "
+            "„§ 107. Kinnitamine ja allakirjutamine päritoluameti poolt\x01 "
+            "Vormi MM2 kasutamise puhul lisab Patendiamet taotlusele oma kinnituse "
+            "ja allkirja. E-taotluse puhul on päritoluameti kinnitus elektrooniline. "
+            "§ 108. Lõivude arvestus\x01 (1) Vormi MM2 kasutamise puhul peab lõivude "
+            "arvestuse lehel olema märgitud luba.“;"
+        ),
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert [(op.action, op.target.path, op.target.special) for op in ops] == [
+        (StructuralAction.REPLACE, (("section", "107"),), None),
+        (StructuralAction.REPLACE, (("section", "108"), ("subsection", "1")), None),
+    ]
+    assert all(op.witness_rule_id == "ee_mixed_multi_section_replace_payload_split" for op in ops)
+    assert ops[0].payload is not None
+    assert ops[0].payload.text.startswith("§ 107.")
+    assert ops[1].payload is not None
+    assert ops[1].payload.text.startswith("§ 108.")
+
+
+def test_extract_ee_ops_expands_plural_subsection_range_with_minus_sign() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 101 lõiked 3−5 sõnastatakse järgmiselt: "
+            "„(3) Kolmas. (4) Neljas. (5) Viies.“;"
+        ),
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPLACE, (("section", "101"), ("subsection", "3"))),
+        (StructuralAction.REPLACE, (("section", "101"), ("subsection", "4"))),
+        (StructuralAction.REPLACE, (("section", "101"), ("subsection", "5"))),
+    ]
+    assert [op.payload.text for op in ops if op.payload is not None] == [
+        "(3) Kolmas.",
+        "(4) Neljas.",
+        "(5) Viies.",
+    ]
+
+
+def test_old_format_wrapper_split_keeps_quoted_embedded_section_payload_together() -> None:
+    xml = """
+    <oigusakt xmlns="tyviseadus_1_10.02.2010">
+      <sisu>
+        <sisuTekst>
+          <HTMLKonteiner><![CDATA[
+            <p><strong>§ 5.</strong> Justiitsministri määruse nr 12 „Kaubamärgimäärus“ muutmine</p>
+            <p><strong>45)</strong> paragrahv 107 ning § 108 pealkiri ja lõige 1 sõnastatakse järgmiselt:</p>
+            <p>„<strong>§ 107. Kinnitamine ja allakirjutamine päritoluameti poolt</strong></p>
+            <p>Vormi MM2 kasutamise puhul lisab Patendiamet taotlusele oma kinnituse ja allkirja.</p>
+            <p><strong>§ 108. Lõivude arvestus</strong></p>
+            <p>(1) Vormi MM2 kasutamise puhul peab lõivude arvestuse lehel olema märgitud luba.“;</p>
+            <p><strong>46)</strong> paragrahvi 108 lõiget 2 täiendatakse enne sõnu „Lõivude arvestuse lehele“ sõnadega „Vormi MM2“;</p>
+          ]]></HTMLKonteiner>
+        </sisuTekst>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Kaubamärgimäärus")
+
+    targets = [(op.action, op.target.path, op.witness_rule_id) for op in ops]
+    assert (
+        StructuralAction.REPLACE,
+        (("section", "107"),),
+        "ee_mixed_multi_section_replace_payload_split",
+    ) in targets
+    assert (
+        StructuralAction.REPLACE,
+        (("section", "108"), ("subsection", "1")),
+        "ee_mixed_multi_section_replace_payload_split",
+    ) in targets
+
+
 def test_extract_ee_ops_stops_at_quote_prime_payload_for_direct_item_text_replace() -> None:
     ops = extract_ee_ops(
         (
