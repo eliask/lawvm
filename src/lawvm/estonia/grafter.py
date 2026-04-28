@@ -3909,6 +3909,15 @@ def _ee_path_is_excluded(
     return False
 
 
+def _ee_heading_text_is_excluded(
+    current_path: tuple[tuple[str, str], ...],
+    excluded_heading_paths: Any,
+    node: IRNode,
+) -> bool:
+    """Return True when only this section heading is excluded from a rewrite."""
+    return node.kind == IRNodeKind.SECTION and _ee_path_is_excluded(current_path, excluded_heading_paths)
+
+
 def _ee_global_text_replace(
     body: IRNode,
     old: str,
@@ -4291,6 +4300,61 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_nom": word + "ud",
             "pl_gen": plural_stem,
             "pl_part": word + "e",
+            "pl_ine": plural_stem + "s",
+            "pl_ela": plural_stem + "st",
+            "pl_all": plural_stem + "le",
+            "pl_ade": plural_stem + "l",
+            "pl_abl": plural_stem + "lt",
+            "pl_trn": plural_stem + "ks",
+        }
+    if lower.endswith("loom"):
+        stem = word + "a"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": stem,
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_ill": stem + "sse",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": stem + "d",
+            "pl_gen": stem + "de",
+            "pl_part": word + "i",
+            "pl_ine": stem + "des",
+            "pl_ela": stem + "dest",
+            "pl_all": stem + "dele",
+            "pl_ade": stem + "del",
+            "pl_abl": stem + "delt",
+            "pl_trn": stem + "deks",
+        }
+    if lower.endswith("tšintšilja"):
+        stem = word
+        plural_stem = word + "de"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": stem + "t",
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_ill": stem + "sse",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": stem + "d",
+            "pl_gen": plural_stem,
+            "pl_part": stem + "sid",
             "pl_ine": plural_stem + "s",
             "pl_ela": plural_stem + "st",
             "pl_all": plural_stem + "le",
@@ -6297,7 +6361,18 @@ def _ee_apply_text_replace_value(
             and new_forms.get("sg_part")
             and new_forms["sg_gen"] != new_forms["sg_part"]
         ):
-            pass
+            if old == "karusloom" and new == "tšintšilja":
+                def _karusloom_partitive_repl(match: re.Match[str]) -> str:
+                    matched = match.group(0)
+                    return "Tšintšiljat" if matched and matched[0].isupper() else "tšintšiljat"
+
+                replaced = re.sub(
+                    r"(?<![A-Za-zÄÖÕÜäöõüŠŽšž-])karuslooma"
+                    r"(?=\s+(?:peab|ei\s+tohi|peetakse|harjutatakse)\b)",
+                    _karusloom_partitive_repl,
+                    replaced,
+                    flags=re.IGNORECASE,
+                )
     variants = _ee_text_replace_variants(
         old,
         new,
@@ -6969,6 +7044,7 @@ def _ee_apply_op(
         if old:
             scope_chapters = parsed_rewrite.scope_chapters or None
             excluded_paths = parsed_rewrite.exclude_paths or None
+            excluded_heading_paths = payload.attrs.get("exclude_heading_paths") if payload is not None else None
             if rewrite_spec.case_inflected:
 
                 def _walk(
@@ -6984,7 +7060,13 @@ def _ee_apply_op(
                         node_path = current_path + ((str(node.kind), node.label),)
                     if _ee_path_is_excluded(node_path, excluded_paths):
                         return node
-                    skip_title = node.kind == IRNodeKind.SECTION and bool(node.attrs.get("kehtetu"))
+                    skip_title = (
+                        node.kind == IRNodeKind.SECTION
+                        and (
+                            bool(node.attrs.get("kehtetu"))
+                            or _ee_heading_text_is_excluded(node_path, excluded_heading_paths, node)
+                        )
+                    )
                     in_scope = scope_chapters is None or _ee_chapter_in_scope(chapter_label, scope_chapters)
                     if node.text and not skip_title and in_scope:
                         new_text = _ee_apply_text_replace_spec(
@@ -7021,7 +7103,13 @@ def _ee_apply_op(
                     node_path = current_path
                     if node.label is not None:
                         node_path = current_path + ((str(node.kind), node.label),)
-                    skip_title = node.kind == IRNodeKind.SECTION and bool(node.attrs.get("kehtetu"))
+                    skip_title = (
+                        node.kind == IRNodeKind.SECTION
+                        and (
+                            bool(node.attrs.get("kehtetu"))
+                            or _ee_heading_text_is_excluded(node_path, excluded_heading_paths, node)
+                        )
+                    )
                     in_scope = _ee_chapter_in_scope(chapter_label, scope_chapters)
                     if scope_chapters is None:
                         in_scope = True

@@ -487,6 +487,31 @@ def test_case_inflected_replace_matches_mang_and_korraldaja_forms() -> None:
     )
 
 
+def test_case_inflected_replace_matches_loom_to_tsintsilja_forms() -> None:
+    cases = {
+        "Karuslooma pidamise ruum.": "Tšintšilja pidamise ruum.",
+        "Karusloomale peab olema tagatud vesi.": "Tšintšiljale peab olema tagatud vesi.",
+        "Karusloomaga kokkupuutuv vahend.": "Tšintšiljaga kokkupuutuv vahend.",
+        "Karuslooma peab olema võimalik välja viia.": "Tšintšiljat peab olema võimalik välja viia.",
+        "Karuslooma ei tohi pidada alaliselt pimedas.": "Tšintšiljat ei tohi pidada alaliselt pimedas.",
+        "Võõrutatud karuslooma peetakse emast kaugemal.": "Võõrutatud tšintšiljat peetakse emast kaugemal.",
+        "Karuslooma harjutatakse inimese lähedusega.": "Tšintšiljat harjutatakse inimese lähedusega.",
+        "põgenenud karuslooma püüdmiseks kasutatakse lõksu.": "põgenenud tšintšilja püüdmiseks kasutatakse lõksu.",
+    }
+
+    for source, expected in cases.items():
+        assert (
+            _ee_apply_text_replace_value(
+                source,
+                "karusloom",
+                "tšintšilja",
+                case_inflected=True,
+                all_occurrences=True,
+            )
+            == expected
+        )
+
+
 def test_apply_ee_ops_expands_plain_section_repeal_ranges_over_live_superscript_sections() -> None:
     base = IRStatute(
         statute_id="ee/test",
