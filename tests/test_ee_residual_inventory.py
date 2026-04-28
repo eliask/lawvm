@@ -1175,9 +1175,9 @@ def test_get_ee_residual_inventory_rahvusvahelise_sojalise_koostoo_seadus() -> N
         bucket="source_oracle_drift",
         evidence=(
             "The only visible pair-delta amendment between 107032012004 and "
-            "101062013014 is source act 101062013001, which emits only three "
-            "ops: one Liiklusseadus replacement, one new third sentence in "
-            "§ 21(2), and one text insertion in § 23(2). It emits no generic "
+            "101062013014 is source act 101062013001, which emits only two "
+            "target ops for this statute: one new third sentence in § 21(2) "
+            "and one text insertion in § 23(2). It emits no generic "
             "'kaitseminister' -> 'valdkonna eest vastutav minister' rewrite "
             "family for Rahvusvahelise sõjalise koostöö seadus, so oracle "
             "101062013014 carries a broader forward-looking minister-title "
@@ -1240,11 +1240,11 @@ def test_get_ee_residual_inventory_politsei_ja_piirivalve_same_chain_insertions(
         bucket="source_oracle_drift",
         evidence=(
             "Base 123102025002 and oracle 123102025003 expose the same visible "
-            "amendment chain, including future source act 123102025001, but replay "
-            "emits no same-chain operations for this comparison. Oracle 123102025003 "
-            "nevertheless carries the new divisions 2^5 and 2^6 with §§ 7^65–7^68, "
-            "so these insertions are treated as same-chain oracle-side drift rather "
-            "than open replay-core work."
+            "amendment chain. The new divisions 2^5 and 2^6 with §§ 7^65–7^68 "
+            "are source-backed by shared-chain source act 111032023004, but there "
+            "is no new pair-delta amendment between these two consolidated versions. "
+            "These insertions are therefore treated as same-chain/base-surface drift "
+            "rather than open replay-core work."
         ),
     )
     inventory = get_ee_residual_inventory("123102025002", "123102025003")
@@ -1704,6 +1704,7 @@ def test_get_ee_residual_inventory_kutseoppeasutuse_seadus_same_chain_editorial_
     assert any(
         record.address == "chapter:7/section:40"
         and "21 identical amendment references" in record.evidence
+        and "107012026003" in record.evidence
         and "teacher pay subsections" in record.evidence
         for record in inventory.residuals
     )

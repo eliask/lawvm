@@ -354,11 +354,11 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                 bucket="source_oracle_drift",
                 evidence=(
                     "Base 123102025002 and oracle 123102025003 expose the same visible "
-                    "amendment chain, including future source act 123102025001, but replay "
-                    "emits no same-chain operations for this comparison. Oracle 123102025003 "
-                    "nevertheless carries the new divisions 2^5 and 2^6 with §§ 7^65–7^68, "
-                    "so these insertions are treated as same-chain oracle-side drift rather "
-                    "than open replay-core work."
+                    "amendment chain. The new divisions 2^5 and 2^6 with §§ 7^65–7^68 "
+                    "are source-backed by shared-chain source act 111032023004, but there "
+                    "is no new pair-delta amendment between these two consolidated versions. "
+                    "These insertions are therefore treated as same-chain/base-surface drift "
+                    "rather than open replay-core work."
                 ),
             )
         ),
@@ -547,13 +547,12 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                 bucket="source_oracle_drift",
                 evidence=(
                     "Base 120052025002 and oracle 120052025003 expose the same visible "
-                    "amendment chain with 45 identical amendment references, but replay "
-                    "emits no same-chain operations for this comparison. Oracle "
-                    "120052025003 nevertheless rewrites § 5(2) from the earlier "
-                    "'välismaalane ... kes:' wording to the condensed "
-                    "'kodakondsuseta isik ...' form and omits § 5^1 entirely without a "
-                    "same-chain amendment witness, so these differences are treated as "
-                    "same-chain oracle-side drift."
+                    "amendment chain with 45 identical amendment references. The § 5(2) "
+                    "rewrite from the earlier 'välismaalane ... kes:' wording to the "
+                    "condensed 'kodakondsuseta isik ...' form, and the omission of § 5^1, "
+                    "are source-backed by shared-chain source act 120052025001 rather than "
+                    "by a new pair-delta amendment between these consolidated versions. "
+                    "These differences are treated as same-chain/base-surface drift."
                 ),
             )
         ),
@@ -1155,9 +1154,9 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                 bucket="source_oracle_drift",
                 evidence=(
                     "The only visible pair-delta amendment between 107032012004 and "
-                    "101062013014 is source act 101062013001, which emits only three "
-                    "ops: one Liiklusseadus replacement, one new third sentence in "
-                    "§ 21(2), and one text insertion in § 23(2). It emits no generic "
+                    "101062013014 is source act 101062013001, which emits only two "
+                    "target ops for this statute: one new third sentence in § 21(2) "
+                    "and one text insertion in § 23(2). It emits no generic "
                     "'kaitseminister' -> 'valdkonna eest vastutav minister' rewrite "
                     "family for Rahvusvahelise sõjalise koostöö seadus, so oracle "
                     "101062013014 carries a broader forward-looking minister-title "
@@ -1501,12 +1500,12 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                 bucket="source_oracle_drift",
                 evidence=(
                     "Base 107012026014 and oracle 107012026015 expose the same visible "
-                    "amendment chain with 21 identical amendment references, but replay "
-                    "emits no same-chain operations for this comparison. Oracle "
-                    "107012026015 nevertheless inserts the new teacher career-stage "
-                    "subsections in § 38 and the teacher pay subsections in § 40 without "
-                    "a same-chain amendment witness, so these differences are treated as "
-                    "same-chain oracle-side drift."
+                    "amendment chain with 21 identical amendment references. The new "
+                    "teacher career-stage subsections in § 38 and the teacher pay "
+                    "subsections in § 40 are source-backed by shared-chain source act "
+                    "107012026003 rather than by a new pair-delta amendment between "
+                    "these consolidated versions. These differences are treated as "
+                    "same-chain/base-surface drift."
                 ),
             )
         ),
