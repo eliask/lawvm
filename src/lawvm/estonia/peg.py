@@ -1787,6 +1787,46 @@ def _extract_division_repeals(clean: str) -> List[tuple[str, str]]:
     return seen
 
 
+def _extract_section_repeals_before_chapter_repeal(clean: str) -> list[str]:
+    """Extract section repeals coordinated with a chapter repeal.
+
+    Example:
+      ``paragrahv 17 ja seaduse 6. peatükk tunnistatakse kehtetuks``
+    """
+    clean = _normalize_ee_parse_text(clean)
+    _NUM_PAT = _EE_NUM_ATOM
+    _LIST_PAT = (
+        _NUM_PAT
+        + r'(?:\s*[' + _EE_DASH_CLASS + r']\s*'
+        + _NUM_PAT
+        + r')?(?:\s*,\s*'
+        + _NUM_PAT
+        + r'(?:\s*[' + _EE_DASH_CLASS + r']\s*'
+        + _NUM_PAT
+        + r')?)*(?:\s+(?:ja|ning)\s+'
+        + _NUM_PAT
+        + r'(?:\s*[' + _EE_DASH_CLASS + r']\s*'
+        + _NUM_PAT
+        + r')?)*'
+    )
+    match = re.search(
+        r'\bparagrahv(?:id|i)?\s+('
+        + _LIST_PAT
+        + r')\s+(?:ja|ning)\s+(?:seaduse\s+)?'
+        + _LIST_PAT
+        + r'\s*[.]?\s*peatükk\w*(?=.*\btunnistatakse\s+kehtetuks\b)',
+        clean,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if match is None:
+        return []
+    seen: list[str] = []
+    for label in _expand_ee_numeric_list(match.group(1).strip()):
+        if label not in seen:
+            seen.append(label)
+    return seen
+
+
 def _extract_appendix_table_categories(text: str) -> List[str]:
     """Extract appendix table category labels from a clause like B- ja BE-kategooria."""
     m = re.search(r'\bmuudetakse\s+(.+?)\s+veerg\b', text, re.IGNORECASE)
@@ -2385,6 +2425,17 @@ def extract_ee_ops(
                 if label not in _ch_repeal_labels:
                     _ch_repeal_labels.append(label)
         if _ch_repeal_labels:
+            for sect_label in _extract_section_repeals_before_chapter_repeal(clean):
+                ops.append(LegalOperation(
+                    op_id=f"ee-repeal-sect-{sect_label}-{source.statute_id}",
+                    sequence=seq,
+                    action=_to_structural_action("repeal"),
+                    target=LegalAddress(path=(("section", sect_label),)),
+                    payload=None,
+                    source=source,
+                    provenance_tags=(clean[:200],),
+                ))
+                seq += 1
             for ch_label in _ch_repeal_labels:
                 ops.append(LegalOperation(
                     op_id=f"ee-repeal-chapter-{ch_label}-{source.statute_id}",

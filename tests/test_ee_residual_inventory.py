@@ -197,26 +197,13 @@ def test_get_ee_residual_inventory_tarbijakaitseseadus_same_chain_editorial_drif
     )
 
 
-def test_get_ee_residual_inventory_tooturumeetmete_seadus_same_chain_editorial_drift() -> None:
+def test_get_ee_residual_inventory_tooturumeetmete_seadus_compound_repeal_is_closed() -> None:
     inventory = get_ee_residual_inventory("112062025015", "112062025016")
 
     assert inventory is not None
     assert inventory.statute_title == "Tööturumeetmete seadus"
     assert inventory.comparison_class == "same_chain_editorial_drift"
-    assert {record.address for record in inventory.residuals} == {
-        "chapter:5",
-        "chapter:5/section:17",
-        "chapter:5/section:17/subsection:1",
-    }
-    assert {record.bucket for record in inventory.residuals} == {
-        "source_oracle_drift",
-    }
-    assert any(
-        record.address == "chapter:5/section:17"
-        and "repeals chapter 6" in record.evidence
-        and "does not repeal chapter 5 § 17" in record.evidence
-        for record in inventory.residuals
-    )
+    assert inventory.residuals == ()
 
 
 def test_get_ee_residual_inventory_riikliku_pensionikindlustuse_seadus_same_chain_editorial_drift() -> None:
@@ -283,13 +270,11 @@ def test_get_ee_residual_inventory_krediidiandjate_seadus_same_chain_editorial_d
         "chapter:1/section:2/subsection:6/item:1",
         "chapter:1/section:2/subsection:6/item:2",
     }
-    assert {record.bucket for record in inventory.residuals} == {
-        "source_oracle_drift",
-    }
+    assert {record.bucket for record in inventory.residuals} == {"replay_bug"}
     assert any(
         record.address == "chapter:1/section:2/subsection:6"
-        and "16 identical amendment references" in record.evidence
-        and "hoiu-laenuühistu carve-out" in record.evidence
+        and "kehtib kuni 2029. aasta 31. märtsini" in record.evidence
+        and "temporal replay debt" in record.evidence
         for record in inventory.residuals
     )
 
@@ -674,17 +659,13 @@ def test_get_ee_residual_inventory_jalitustegevuse_seadus() -> None:
     )
 
 
-def test_get_ee_residual_inventory_ohvriabi_seadus_normitehniline_markus() -> None:
+def test_get_ee_residual_inventory_ohvriabi_seadus_normitehniline_markus_is_closed() -> None:
     inventory = get_ee_residual_inventory("104112016005", "104012019016")
 
     assert inventory is not None
     assert inventory.statute_title == "Ohvriabi seadus"
     assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 1
-    assert inventory.residuals[0].address == "chapter:2/section:6_1 5"
-    assert inventory.residuals[0].bucket == "source_oracle_drift"
-    assert "104012019012" in inventory.residuals[0].evidence
-    assert "normitehniline märkus" in inventory.residuals[0].evidence
+    assert inventory.residuals == ()
 
 
 def test_get_ee_residual_inventory_finantskriisi_duplicate_subsection_label_pathology() -> None:
@@ -1360,34 +1341,12 @@ def test_get_ee_residual_inventory_reklaamiseadus_same_chain_editorial_drift() -
     assert inventory.residuals[0].bucket == "source_oracle_drift"
 
 
-def test_get_ee_residual_inventory_atmosfaariohu_same_chain_unsourced_subsection() -> None:
-    generated = build_address_list_family(
-        addresses=(
-            "chapter:7",
-            "chapter:7/division:1",
-            "chapter:7/division:1/section:156",
-            "chapter:7/division:1/section:156/subsection:5_1",
-        ),
-        bucket="source_oracle_drift",
-        evidence=(
-            "The shared same-chain source act 102102025001 repeals § 156(2)–(5), "
-            "inserts and then repeals § 156(5^2), edits § 156(6), and adds "
-            "§ 156(7)–(10). It emits no clause creating § 156(5^1), yet oracle "
-            "102102025018 carries a new § 156(5^1) sentence and the matching "
-            "container drift at chapter 7 / division 1 / § 156."
-        ),
-    )
+def test_get_ee_residual_inventory_atmosfaariohu_same_chain_range_endpoint_superscript_is_closed() -> None:
     inventory = get_ee_residual_inventory("102102025017", "102102025018")
 
     assert inventory is not None
     assert inventory.comparison_class == "same_chain_editorial_drift"
-    assert len(inventory.residuals) == 4
-    assert all(record.bucket == "source_oracle_drift" for record in inventory.residuals)
-    assert [
-        (record.address, record.bucket, record.evidence) for record in inventory.residuals
-    ] == [
-        (record.address, record.bucket, record.evidence) for record in generated
-    ]
+    assert inventory.residuals == ()
 
 
 def test_get_ee_residual_inventory_politsei_ja_piirivalve_same_chain_insertions() -> None:
@@ -2356,16 +2315,15 @@ def test_get_ee_residual_inventory_uhistranspordiseadus() -> None:
     assert inventory is not None
     assert inventory.statute_title == "Ühistranspordiseadus"
     assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 2
+    assert len(inventory.residuals) == 1
     assert {record.bucket for record in inventory.residuals} == {
         "source_oracle_drift",
     }
     assert [record.address for record in inventory.residuals] == [
-        "chapter:10/section:53_5/subsection:1_1",
         "chapter:10/section:53_5/subsection:2",
     ]
-    assert "inserts § 53^5(1^1)" in inventory.residuals[0].evidence
-    assert "replaces § 53^5(2)" in inventory.residuals[1].evidence
+    assert "113032014004 replaces chapter 10 effective 2014-07-01" in inventory.residuals[0].evidence
+    assert "without the terminal period" in inventory.residuals[0].evidence
 
 
 def test_get_ee_residual_inventory_kommertspandiseadus() -> None:
@@ -2387,16 +2345,9 @@ def test_get_ee_residual_inventory_taimekaitseseadus() -> None:
     assert inventory is not None
     assert inventory.statute_title == "Taimekaitseseadus"
     assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 10
-    assert {record.bucket for record in inventory.residuals} == {
-        "source_oracle_drift",
-        "source_pathology",
-    }
-    assert any(
-        record.address == "chapter:2/division:6/section:45_1"
-        and record.bucket == "source_pathology"
-        for record in inventory.residuals
-    )
+    assert len(inventory.residuals) == 5
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert all("45_1" not in record.address for record in inventory.residuals)
 
 
 def test_generated_shortened_section_family_matches_taimekaitseseadus_cluster() -> None:

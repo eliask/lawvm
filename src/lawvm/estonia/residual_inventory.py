@@ -281,24 +281,7 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
         oracle_id="102102025018",
         statute_title="Atmosfääriõhu kaitse seadus",
         comparison_class="same_chain_editorial_drift",
-        residuals=_lower_generated_residual_records(
-            build_address_list_family(
-                addresses=(
-                    "chapter:7",
-                    "chapter:7/division:1",
-                    "chapter:7/division:1/section:156",
-                    "chapter:7/division:1/section:156/subsection:5_1",
-                ),
-                bucket="source_oracle_drift",
-                evidence=(
-                    "The shared same-chain source act 102102025001 repeals § 156(2)–(5), "
-                    "inserts and then repeals § 156(5^2), edits § 156(6), and adds "
-                    "§ 156(7)–(10). It emits no clause creating § 156(5^1), yet oracle "
-                    "102102025018 carries a new § 156(5^1) sentence and the matching "
-                    "container drift at chapter 7 / division 1 / § 156."
-                ),
-            )
-        ),
+        residuals=(),
     ),
     ("131122013007", "131122013008"): EEPairResidualInventory(
         base_id="131122013007",
@@ -588,14 +571,14 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     "chapter:1/section:2/subsection:6/item:1",
                     "chapter:1/section:2/subsection:6/item:2",
                 ),
-                bucket="source_oracle_drift",
+                bucket="replay_bug",
                 evidence=(
-                    "Base 113022026005 and oracle 113022026006 expose the same visible "
-                    "amendment chain with 16 identical amendment references, but replay "
-                    "emits no same-chain operations for this comparison. Oracle "
-                    "113022026006 nevertheless omits the hoiu-laenuühistu carve-out in "
-                    "§ 2(6) and its two condition items without a same-chain amendment "
-                    "witness, so these differences are treated as same-chain "
+                    "Source act 113022026001 inserts the temporal clause '§ 2 lõige 6 "
+                    "kehtib kuni 2029. aasta 31. märtsini.' Oracle 113022026006 marks "
+                    "§ 2(6) and its two condition items repealed from 2029-04-01. LawVM "
+                    "currently parses that clause as a commencement provision insert "
+                    "under § 114(2), but does not yet execute the source-backed expiry "
+                    "against § 2(6), so this is temporal replay debt rather than "
                     "oracle-side drift."
                 ),
             )
@@ -606,40 +589,7 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
         oracle_id="112062025016",
         statute_title="Tööturumeetmete seadus",
         comparison_class="same_chain_editorial_drift",
-        residuals=cast(tuple[EEResidualRecord, ...], (
-            EEResidualRecord(
-                address="chapter:5",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Same-chain source act 103062025001 changes chapter 5 heading only by "
-                    "dropping the words 'ja töötutoetuse' and separately repeals chapter 6. "
-                    "It does not repeal chapter 5 § 17. Replay therefore keeps chapter 5 with "
-                    "both § 16 and § 17, while oracle 112062025016 omits § 17 entirely."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:5/section:17",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 103062025001 contains no operation deleting § 17. The only "
-                    "nearby structural repeal is item 13, which repeals chapter 6, while item "
-                    "12 merely shortens chapter 5 heading text by removing 'ja töötutoetuse' "
-                    "and does not repeal chapter 5 § 17. "
-                    "Oracle 112062025016 nevertheless drops § 17 'Töötutoetuse rahastamine'."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:5/section:17/subsection:1",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Replay preserves source-backed § 17(1) text "
-                    "'Töötutoetust rahastatakse riigieelarvest sihtotstarbelise eraldisena "
-                    "töötukassa eelarvesse eraldatud vahenditest.', because same-chain source "
-                    "act 103062025001 does not amend or repeal that subsection. Oracle "
-                    "112062025016 omits it without a source witness."
-                ),
-            ),
-        )),
+        residuals=(),
     ),
     ("112062025011", "112062025012"): EEPairResidualInventory(
         base_id="112062025011",
@@ -708,14 +658,7 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
         oracle_id="104012019016",
         statute_title="Ohvriabi seadus",
         comparison_class="commensurable_delta",
-        residuals=_lower_generated_residual_records(
-            build_inserted_note_omission_family(
-                note_address="chapter:2/section:6_1 5",
-                note_symbol="§ 6^1 5",
-                source_act_id="104012019012",
-                oracle_id="104012019016",
-            ),
-        ),
+        residuals=(),
     ),
     ("111102024005", "111112025017"): EEPairResidualInventory(
         base_id="111102024005",
@@ -839,22 +782,13 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
         comparison_class="commensurable_delta",
         residuals=(
             EEResidualRecord(
-                address="chapter:10/section:53_5/subsection:1_1",
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Source act 113032014128 inserts § 53^5(1^1) with the replay-side "
-                    "Tarbijakaitseamet wording, but oracle 112072014164 omits that "
-                    "inserted subsection entirely and instead keeps the inserted text "
-                    "under § 53^5(2)."
-                ),
-            ),
-            EEResidualRecord(
                 address="chapter:10/section:53_5/subsection:2",
                 bucket="source_oracle_drift",
                 evidence=(
-                    "Source act 113032014128 replaces § 53^5(2) with the replay-side "
-                    "järelevalveametnik text, but oracle 112072014164 instead retains "
-                    "the inserted § 53^5(1^1) Tarbijakaitseamet wording at that address."
+                    "Source act 113032014004 replaces chapter 10 effective 2014-07-01 "
+                    "and carries § 53^5(2) with a terminal period. Replay preserves that "
+                    "source punctuation, while oracle 112072014164 has the same subsection "
+                    "text without the terminal period."
                 ),
             ),
         ),
@@ -2482,34 +2416,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                         ),
                     ),
                 ),
-            ),
-            EEResidualRecord(
-                address="chapter:2/division:6/section:45_1",
-                bucket="source_pathology",
-                evidence=(
-                    "Source act 130062020007 emits inserted § 45^1 cleanly; oracle omits the "
-                    "entire section under the otherwise present division 7 regime."
-                ),
-            ),
-            EEResidualRecord(
-                address="chapter:2/division:6/section:45_1/subsection:1",
-                bucket="source_pathology",
-                evidence=("Source act 130062020007 emits § 45^1(1) cleanly; oracle omits it."),
-            ),
-            EEResidualRecord(
-                address="chapter:2/division:6/section:45_1/subsection:1/item:1",
-                bucket="source_pathology",
-                evidence=("Source act 130062020007 emits § 45^1(1) p 1 cleanly; oracle omits it."),
-            ),
-            EEResidualRecord(
-                address="chapter:2/division:6/section:45_1/subsection:1/item:2",
-                bucket="source_pathology",
-                evidence=("Source act 130062020007 emits § 45^1(1) p 2 cleanly; oracle omits it."),
-            ),
-            EEResidualRecord(
-                address="chapter:2/division:6/section:45_1/subsection:2",
-                bucket="source_pathology",
-                evidence=("Source act 130062020007 emits § 45^1(2) cleanly; oracle omits it."),
             ),
         ),
     ),

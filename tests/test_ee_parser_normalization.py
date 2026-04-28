@@ -2272,6 +2272,18 @@ def test_extract_ee_ops_handles_mixed_division_section_and_subsection_repeal_cla
     )
 
 
+def test_extract_ee_ops_handles_section_and_chapter_compound_repeal() -> None:
+    ops = extract_ee_ops(
+        "paragrahv 17 ja seaduse 6. peatükk tunnistatakse kehtetuks;",
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPEAL, (("section", "17"),)),
+        (StructuralAction.REPEAL, (("chapter", "6"),)),
+    ]
+
+
 def test_extract_ee_ops_preserves_division_context_for_multi_section_insert() -> None:
     ops = extract_ee_ops(
         (
@@ -4205,6 +4217,46 @@ def test_parse_ee_amendment_ops_assigns_old_format_commencement_dates_when_sente
     assert effective_by_item["4"] == "2025-10-12"
     assert effective_by_item["5"] == "2025-10-12"
     assert effective_by_item["6"] == ""
+
+
+def test_parse_ee_amendment_ops_assigns_old_format_commencement_after_item_clause_gap() -> None:
+    xml = """
+    <oigusakt xmlns="muutmisseadus_1_10.02.2010">
+      <aktinimi><nimi><pealkiri>Testseaduse muutmise seadus</pealkiri></nimi></aktinimi>
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>164</paragrahvNr>
+          <paragrahvPealkiri>Testseaduse muutmine</paragrahvPealkiri>
+          <sisuTekst>
+            <HTMLKonteiner><![CDATA[
+              <p>Testseaduse 10. peatükk muudetakse ja sõnastatakse järgmiselt:</p>
+              <p>„10. peatükk Uus peatükk § 53. Test (1) Test.”;</p>
+            ]]></HTMLKonteiner>
+          </sisuTekst>
+        </paragrahv>
+        <paragrahv>
+          <paragrahvNr>169</paragrahvNr>
+          <paragrahvPealkiri>Seaduse jõustumine</paragrahvPealkiri>
+          <sisuTekst>
+            <tavatekst>Korrakaitseseadus ja käesoleva seaduse §-d 1–99, § 100 punktid 1–5 ja 8–12 ning §-d 101–168 jõustuvad 2014. aasta 1. juulil.</tavatekst>
+          </sisuTekst>
+        </paragrahv>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Testseadus",
+        ref_effective="2014-07-01",
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("chapter", "10"),)
+    assert ops[0].source is not None
+    assert ops[0].source.effective == "2014-07-01"
 
 
 def test_parse_ee_amendment_ops_routes_old_format_general_order_to_whole_act_default() -> None:

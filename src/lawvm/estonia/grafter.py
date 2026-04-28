@@ -2169,6 +2169,20 @@ def _parse_commencement_section_labels(raw: str) -> tuple[str, ...]:
     return _parse_commencement_item_labels(cleaned)
 
 
+def _iter_commencement_section_label_groups(sentence: str) -> tuple[str, ...]:
+    """Return section labels from each ``§``/``§-d`` group in a commencement sentence."""
+    labels: list[str] = []
+    for match in re.finditer(
+        r"§(?:-d)?\s+(.+?)(?=(?:\s*(?:,|\bja\b|\bning\b)?\s*§(?:-d)?\s+"
+        r"|\s+jõustu(?:b|vad)\b|$))",
+        sentence,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        for section_label in _parse_commencement_section_labels(match.group(1)):
+            labels.append(section_label)
+    return tuple(dict.fromkeys(labels))
+
+
 def _old_format_commencement_date(text: str) -> str:
     """Extract ``YYYY-MM-DD`` from a sentence like ``jõustub 2019. aasta 1. jaanuaril``."""
     match = re.search(
@@ -2284,14 +2298,8 @@ def _extract_old_format_commencement_effects(
             section_sentence = sentence
             for start, end in reversed(item_spans):
                 section_sentence = section_sentence[:start] + section_sentence[end:]
-            for match in re.finditer(
-                r"§(?:-d)?\s+(.+?)(?=(?:\s+jõustu(?:b|vad)\b|$))",
-                section_sentence,
-                re.IGNORECASE | re.DOTALL,
-            ):
-                section_labels = _parse_commencement_section_labels(match.group(1))
-                for section_label in section_labels:
-                    section_effects[section_label] = effective
+            for section_label in _iter_commencement_section_label_groups(section_sentence):
+                section_effects[section_label] = effective
     return item_effects, section_effects
 
 
@@ -2457,14 +2465,8 @@ def _extract_new_format_default_slice_ownership(
             section_sentence = sentence
             for start, end in reversed(item_spans):
                 section_sentence = section_sentence[:start] + section_sentence[end:]
-            for match in re.finditer(
-                r"§(?:-d)?\s+(.+?)(?=(?:\s+jõustu(?:b|vad)\b|$))",
-                section_sentence,
-                re.IGNORECASE | re.DOTALL,
-            ):
-                section_labels = _parse_commencement_section_labels(match.group(1))
-                for section_label in section_labels:
-                    general_order_sections.add(section_label)
+            for section_label in _iter_commencement_section_label_groups(section_sentence):
+                general_order_sections.add(section_label)
     return whole_act_effective, general_order_items, general_order_sections
 
 
@@ -6126,22 +6128,19 @@ def _ee_apply_op(body: IRNode, op: LegalOperation) -> IRNode:
                                 label_key = tree_ops._default_sort_key(label)
                                 if start_key <= label_key <= end_key:
                                     implied_labels_set.add(label)
-                        explicit_plain_bases = {
-                            str(label)
-                            for start, end in selection_meta.plain_numeric_ranges
-                            if str(start).isdigit() and str(end).isdigit()
-                            for label in range(int(start), int(end) + 1)
-                        }
-                        for child in parent_node.children:
-                            if child.kind != IRNodeKind.SUBSECTION or child.label is None:
+                        for start, end in selection_meta.plain_numeric_ranges:
+                            if not (str(start).isdigit() and str(end).isdigit()):
                                 continue
-                            if child.label in implied_labels_set:
-                                continue
-                            if "_" not in child.label:
-                                continue
-                            base_raw = child.label.split("_", 1)[0]
-                            if base_raw in explicit_plain_bases:
-                                implied_labels_set.add(child.label)
+                            start_key = tree_ops._default_sort_key(str(start))
+                            end_key = tree_ops._default_sort_key(str(end))
+                            if start_key > end_key:
+                                start_key, end_key = end_key, start_key
+                            for label in live_subsection_labels:
+                                if label in implied_labels_set:
+                                    continue
+                                label_key = tree_ops._default_sort_key(label)
+                                if start_key <= label_key <= end_key:
+                                    implied_labels_set.add(label)
                         implied_labels = sorted(implied_labels_set, key=tree_ops._default_sort_key)
                     else:
                         implied_labels = []

@@ -819,6 +819,71 @@ def test_apply_ee_ops_plain_subsection_repeal_range_prefers_typed_selection_meta
     ]
 
 
+def test_apply_ee_ops_plain_subsection_repeal_range_excludes_endpoint_superscript() -> None:
+    statute = IRStatute(
+        statute_id="ee/test",
+        title="Test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="7",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="156",
+                            text="Tasuta eraldamine",
+                            children=(
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="Kaks."),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="Kolm."),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="4", text="Neli."),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="5", text="Viis."),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="5_1", text="Viis üks."),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="6", text="Kuus."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    source = OperationSource(statute_id="102102025001")
+    ops = [
+        LegalOperation(
+            op_id=f"ee_test_repeal_156_{label}",
+            sequence=sequence,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "156"), ("subsection", label))),
+            source=source,
+            payload=IRNode(
+                kind=IRNodeKind.CONTENT,
+                text="",
+                attrs={
+                    "subsection_selection_meta": make_subsection_selection_meta(
+                        explicit_labels=("2", "3", "4", "5"),
+                        plain_numeric_ranges=(("2", "5"),),
+                        label_ranges=(("2", "5"),),
+                    )
+                },
+            ),
+        )
+        for sequence, label in enumerate(("2", "3", "4", "5"), start=1)
+    ]
+
+    result = apply_ee_ops(statute, ops)
+    section = result.body.children[0].children[0]
+
+    assert [(child.label, child.text) for child in section.children] == [
+        ("2", ""),
+        ("3", ""),
+        ("4", ""),
+        ("5", ""),
+        ("5_1", "Viis üks."),
+        ("6", "Kuus."),
+    ]
+
+
 def test_apply_ee_ops_superscript_subsection_repeal_typed_selection_does_not_clear_plain_base() -> None:
     statute = IRStatute(
         statute_id="ee/test",
