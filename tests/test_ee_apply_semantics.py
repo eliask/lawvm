@@ -7478,6 +7478,33 @@ def test_case_inflected_rewrite_handles_vagi_genitive_family() -> None:
     assert replaced == "Kaitseväe juhataja vastutab Kaitseväe mobilisatsiooniplaanide eest."
 
 
+def test_case_inflected_rewrite_handles_ik_plural_forms() -> None:
+    replaced = _ee_apply_text_replace_value(
+        "reservväelasi vastavalt vajadusele ja reservväelastest üksuste koosseisus",
+        "reservväelane",
+        "reservis olev isik",
+        case_inflected=True,
+        all_occurrences=True,
+    )
+
+    assert replaced == (
+        "reservis olevaid isikuid vastavalt vajadusele ja "
+        "reservis olevatest isikutest üksuste koosseisus"
+    )
+
+
+def test_case_inflected_rewrite_preserves_passive_object_nominative() -> None:
+    replaced = _ee_apply_text_replace_value(
+        "Mobilisatsiooni korral kutsutakse reservväelane teenistusse.",
+        "reservväelane",
+        "reservis olev isik",
+        case_inflected=True,
+        all_occurrences=True,
+    )
+
+    assert replaced == "Mobilisatsiooni korral kutsutakse reservis olev isik teenistusse."
+
+
 def test_case_inflected_rewrite_matches_normalized_inflected_hyphen_spacing() -> None:
     assert (
         _ee_apply_text_replace_value(
