@@ -405,6 +405,30 @@ def test_parse_ee_amendment_ops_recovers_old_format_regulation_section_items() -
     )
 
 
+def test_parse_ee_amendment_ops_excludes_later_scoped_old_text_from_global_lexical_replace() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("121042016001", archive),
+        "ee/121042016001",
+        target_title="Täiendavad juhised kauba sisenemis- ja väljumisformaalsuste teostamiseks",
+    )
+
+    global_op = next(op for op in ops if op.target.path == () and _payload(op).attrs.get("old_text") == "ühendus")
+    rewrite = read_payload_rewrite_meta(global_op.payload).rewrite_witness
+
+    assert rewrite is not None
+    assert (("section", "2"), ("subsection", "1_1")) in rewrite.rewrite.exclude_paths
+    assert (("section", "19"),) in rewrite.rewrite.exclude_paths
+    item_5_replace = next(
+        op
+        for op in ops
+        if op.target.path == (("section", "1"), ("subsection", "5"), ("item", "5"))
+    )
+    assert item_5_replace.payload is not None
+    assert "liidu tollimaksuvabastuse süsteem" in (item_5_replace.payload.text or "")
+    assert "ee_source_local_global_text_replace_payload_composition" in item_5_replace.provenance_tags
+
+
 def test_parse_ee_amendment_ops_recovers_unstructured_single_clause_body() -> None:
     archive = open_rt_archive(readonly=True)
     ops = parse_ee_amendment_ops(
