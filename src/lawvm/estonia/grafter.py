@@ -2866,6 +2866,93 @@ def _replace_text_in_subtree_with_spec(
     return node, False
 
 
+_EE_SOURCE_TYPO_TEXT_REPLACE_RULE = "ee_source_typo_text_replace_near_match"
+
+
+def _ee_levenshtein_distance_at_most_one(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    if abs(len(left) - len(right)) > 1:
+        return False
+    if len(left) == len(right):
+        return sum(a != b for a, b in zip(left, right)) == 1
+    if len(left) > len(right):
+        left, right = right, left
+    mismatch_seen = False
+    i = 0
+    j = 0
+    while i < len(left) and j < len(right):
+        if left[i] == right[j]:
+            i += 1
+            j += 1
+            continue
+        if mismatch_seen:
+            return False
+        mismatch_seen = True
+        j += 1
+    return True
+
+
+def _ee_typo_tolerant_text_replace(
+    node: IRNode,
+    spec: EETextRewriteSpec,
+) -> tuple[IRNode, bool, str]:
+    """Recover a one-character typo in source old-text only under the exact target."""
+    old = _ee_normalize_text_replace_surface(spec.old_text)
+    new = _ee_normalize_text_replace_surface(spec.new_text)
+    if len(old) < 8 or not old.isalpha() or not new:
+        return node, False, ""
+
+    candidate_pattern = re.compile(r"[A-Za-zÄÖÕÜäöõüŠŽšž-]+")
+    matches: list[tuple[tuple[int, ...], str]] = []
+
+    def _collect(current: IRNode, path: tuple[int, ...] = ()) -> None:
+        for match in candidate_pattern.finditer(current.text or ""):
+            candidate = match.group(0)
+            candidate_norm = _ee_normalize_text_replace_surface(candidate)
+            if candidate_norm.lower() == old.lower():
+                continue
+            if abs(len(candidate_norm) - len(old)) > 1:
+                continue
+            if _ee_levenshtein_distance_at_most_one(candidate_norm.lower(), old.lower()):
+                matches.append((path, candidate))
+        for idx, child in enumerate(current.children):
+            _collect(child, (*path, idx))
+
+    _collect(node)
+    unique_candidates = {candidate for _, candidate in matches}
+    if len(matches) != 1 or len(unique_candidates) != 1:
+        return node, False, ""
+    target_path, actual_old = matches[0]
+
+    def _replace(current: IRNode, path: tuple[int, ...] = ()) -> IRNode:
+        if path == target_path:
+            pattern = re.compile(
+                _ee_wrap_word_boundaries(_ee_surface_pattern(actual_old), actual_old),
+                re.IGNORECASE,
+            )
+            replaced_text = pattern.sub(new, current.text or "", count=1)
+            return IRNode(
+                kind=current.kind,
+                label=current.label,
+                text=replaced_text,
+                attrs=dict(current.attrs),
+                children=tuple(current.children),
+            )
+        children = tuple(_replace(child, (*path, idx)) for idx, child in enumerate(current.children))
+        if children == current.children:
+            return current
+        return IRNode(
+            kind=current.kind,
+            label=current.label,
+            text=current.text,
+            attrs=dict(current.attrs),
+            children=children,
+        )
+
+    return _replace(node), True, actual_old
+
+
 def _extract_subsection_text(payload_text: str, label: str) -> str:
     """Extract the text for a specific subsection from a multi-subsection payload.
 
@@ -5591,7 +5678,11 @@ def _ee_resolve_parent_path(body: IRNode, path: tree_ops.Path) -> Optional[tree_
     return full
 
 
-def _ee_apply_op(body: IRNode, op: LegalOperation) -> IRNode:
+def _ee_apply_op(
+    body: IRNode,
+    op: LegalOperation,
+    adjudications_out: Optional[list[CompileAdjudication]] = None,
+) -> IRNode:
     """Apply one LegalOperation to the body IRNode, returning an updated tree.
 
     Pure functional — returns a new body; the input is not mutated.
@@ -7298,6 +7389,27 @@ def _ee_apply_op(body: IRNode, op: LegalOperation) -> IRNode:
                     )
                     if changed:
                         return tree_ops.replace_at(body, full_path, replaced_node)
+                    typo_node, typo_changed, actual_old = _ee_typo_tolerant_text_replace(
+                        node,
+                        rewrite_spec,
+                    )
+                    if typo_changed:
+                        _append_ee_replay_adjudication(
+                            adjudications_out,
+                            kind=_EE_SOURCE_TYPO_TEXT_REPLACE_RULE,
+                            message=(
+                                "EE replay applied an exact-target one-character source typo "
+                                "recovery for a text replacement."
+                            ),
+                            op=op,
+                            detail={
+                                "target": str(op.target),
+                                "source_old_text": rewrite_spec.old_text,
+                                "matched_live_text": actual_old,
+                                "replacement": rewrite_spec.new_text,
+                            },
+                        )
+                        return tree_ops.replace_at(body, full_path, typo_node)
                     return body
                 else:
                     return body
@@ -7471,7 +7583,7 @@ def apply_ee_ops(
             continue
 
         pre_op_body = body
-        new_body = _ee_apply_op(body, op)
+        new_body = _ee_apply_op(body, op, adjudications_out=adjudications_out)
         changed = new_body is not body
         body = new_body
 
