@@ -4330,6 +4330,13 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "sg_com": stem + "ga",
             "pl_nom": word + "ud",
             "pl_gen": word + "ute",
+            "pl_part": word + "uid",
+            "pl_ine": word + "utes",
+            "pl_ela": word + "utest",
+            "pl_all": word + "utele",
+            "pl_ade": word + "utel",
+            "pl_abl": word + "utelt",
+            "pl_trn": word + "uteks",
         }
     if lower.endswith("line"):
         stem = word[:-4] + "se"
@@ -4369,6 +4376,13 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "sg_com": stem + "ga",
             "pl_nom": word + "ud",
             "pl_gen": word + "ute",
+            "pl_part": word + "uid",
+            "pl_ine": word + "utes",
+            "pl_ela": word + "utest",
+            "pl_all": word + "utele",
+            "pl_ade": word + "utel",
+            "pl_abl": word + "utelt",
+            "pl_trn": word + "uteks",
         }
     if lower.endswith("uk"):
         stem = word + "i"
@@ -5245,6 +5259,8 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
         if preceding_word == "on":
             return False
         if preceding_word == "arvates":
+            return False
+        if preceding_word.endswith(nonfinite_suffixes):
             return False
         if _looks_like_finite_verb(preceding_word):
             return False

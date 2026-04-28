@@ -2326,6 +2326,13 @@ def test_replay_ee_to_pit_applies_kaitsevagi_case_inflected_global_rewrite() -> 
     assert "chapter:1/section:1/subsection:2" not in divergence_addresses
     assert "chapter:1/section:1/subsection:3" not in divergence_addresses
     assert "chapter:1/section:6/subsection:1/item:1" not in divergence_addresses
+    assert "chapter:3/section:17/subsection:2" not in divergence_addresses
+    assert "chapter:5/section:26/subsection:2/item:3" not in divergence_addresses
+    assert divergence_addresses == {
+        "chapter:6",
+        "chapter:6/section:27",
+        "chapter:6/section:27/subsection:1",
+    }
 
 
 def test_replay_ee_to_pit_recovers_exact_target_source_typo_for_matusetoetus() -> None:
