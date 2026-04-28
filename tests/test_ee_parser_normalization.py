@@ -429,6 +429,41 @@ def test_parse_ee_amendment_ops_excludes_later_scoped_old_text_from_global_lexic
     assert "ee_source_local_global_text_replace_payload_composition" in item_5_replace.provenance_tags
 
 
+def test_parse_ee_amendment_ops_uses_direct_html_intro_for_single_target_regulation() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("115122020002", archive),
+        "ee/115122020002",
+        target_title="Kohustusliku pensionifondi osakute kord",
+    )
+
+    assert len(ops) >= 20
+    assert any(
+        op.action == StructuralAction.INSERT
+        and op.target.path == (("section", "2"), ("item", "10"))
+        for op in ops
+    )
+    assert any(
+        op.action == StructuralAction.INSERT
+        and op.target.path == (("section", "13_1"),)
+        for op in ops
+    )
+
+
+def test_extract_ee_ops_recovers_missing_closing_quote_in_replacement_payload() -> None:
+    text = (
+        "paragrahvi 9 lõikes 2 asendatakse tekstiosa „§ 18 punktis 1“ "
+        "tekstiosaga „§ 18 lõike 1 punktis 1;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "9"), ("subsection", "2"))
+    assert _payload(ops[0]).attrs["old_text"] == "§ 18 punktis 1"
+    assert _payload(ops[0]).text == "§ 18 lõike 1 punktis 1"
+
+
 def test_parse_ee_amendment_ops_recovers_unstructured_single_clause_body() -> None:
     archive = open_rt_archive(readonly=True)
     ops = parse_ee_amendment_ops(
@@ -5554,6 +5589,15 @@ def test_extract_intro_statute_fragment_handles_quoted_regulation_title_intro() 
         _extract_intro_statute_fragment(text)
         == "Täiendavad juhised kauba sisenemis- ja väljumisformaalsuste teostamiseks"
     )
+
+
+def test_extract_intro_statute_fragment_handles_left_double_quote_as_closer() -> None:
+    text = (
+        "Rahandusministri 20. septembri 2005. a määruses nr 64 "
+        "„Kohustusliku pensionifondi osakute kord“ tehakse järgmised muudatused:"
+    )
+
+    assert _extract_intro_statute_fragment(text) == "Kohustusliku pensionifondi osakute kord"
 
 
 def test_extract_intro_statute_fragment_handles_quoted_regulation_title_section_scope() -> None:

@@ -1143,6 +1143,15 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
     )
     if nested_delete is not None:
         return nested_delete.group(1).strip(), ""
+    missing_new_close = re.search(
+        r"\basendatakse\b.+?[„\"“](?P<old>[^„”“\"]+)[”“\"]\s+"
+        r"(?:sõn(?:a|ad|adega|aga)|tekstiosa(?:ga)?|arvu|lauseosa(?:ga)?)\s+"
+        r"[„\"“](?P<new>[^„”“\"]+?)\s*[.;]?\s*$",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if missing_new_close is not None:
+        return missing_new_close.group("old").strip(), missing_new_close.group("new").strip()
     for pat in (
         r'\u201e(.*?)(?:\u201c|\u201d|")',   # Estonian „ open, common RT closes, or ASCII close
         r'\u201d(.*?)\u201d',          # RT HTML CDATA: ”…” (both U+201D, right double quote)
@@ -3378,7 +3387,7 @@ def extract_ee_ops(
             for num in expanded
         ]
         if action == "text_replace":
-            explicit_targets = _extract_multiple_explicit_targets(clean)
+            explicit_targets = _extract_multiple_explicit_targets(_clean_preamble)
             if len(explicit_targets) > len(target_addrs):
                 target_addrs = explicit_targets
         content = _extract_quoted_content(clean)
@@ -3692,7 +3701,7 @@ def extract_ee_ops(
         old_t, new_t = _extract_text_replace_args(clean) if action == "text_replace" else (None, None)
         if action == "text_replace":
             old_t, new_t = _normalize_text_replace_args(clean, old_t, new_t)
-            explicit_targets = _extract_multiple_explicit_targets(clean)
+            explicit_targets = _extract_multiple_explicit_targets(_clean_preamble)
             if len(explicit_targets) > len(target_addrs):
                 target_addrs = explicit_targets
         for addr in target_addrs:
@@ -4025,7 +4034,7 @@ def extract_ee_ops(
 
     mixed_insert_replace_pairs = _extract_mixed_insert_after_and_replace_pairs(clean)
     if mixed_insert_replace_pairs:
-        explicit_targets = _extract_multiple_explicit_targets(clean)
+        explicit_targets = _extract_multiple_explicit_targets(_clean_preamble)
         if explicit_targets:
             rule_id = "ee_mixed_multi_target_insert_after_and_replace"
             for explicit_target in explicit_targets:
@@ -4152,7 +4161,7 @@ def extract_ee_ops(
     if action == "text_replace":
         target_pairs = _extract_text_replace_pairs(clean)
         if len(target_pairs) > 1:
-            explicit_targets = _extract_multiple_explicit_targets(clean)
+            explicit_targets = _extract_multiple_explicit_targets(_clean_preamble)
             heading_targets = _extract_explicit_heading_targets(clean)
             missing_heading_targets = [
                 heading_target
@@ -4227,7 +4236,7 @@ def extract_ee_ops(
             payload, _rewrite_witness = _set_text_replace_payload_attrs(payload, clean, old_text, new_text)
             payload = _attach_subsection_text_scope_meta(payload, clean, target)
 
-            explicit_targets = _extract_multiple_explicit_targets(clean)
+            explicit_targets = _extract_multiple_explicit_targets(_clean_preamble)
             heading_targets = _extract_explicit_heading_targets(clean)
             missing_heading_targets = [
                 heading_target
@@ -4310,7 +4319,7 @@ def extract_ee_ops(
         if content:
             if action == "replace":
                 split_sections = _split_plural_section_replace_payload(content)
-                explicit_targets = _extract_multiple_explicit_targets(clean)
+                explicit_targets = _extract_multiple_explicit_targets(_clean_preamble)
                 if (
                     split_sections is not None
                     and explicit_targets
