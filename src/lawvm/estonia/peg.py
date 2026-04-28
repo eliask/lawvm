@@ -425,6 +425,7 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
             remainder = chunk[m_same_section_mixed.end():]
             mixed_targets: List[LegalAddress] = []
             mixed_seen: set[tuple[tuple[str, str], ...]] = set()
+            subsection_intro_item_spans: list[tuple[int, int]] = []
 
             for intro_item_ref in re.finditer(
                 r'lõike(?:te|tes|st|s|t|ga)?\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
@@ -434,6 +435,7 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
                 remainder,
                 re.IGNORECASE,
             ):
+                subsection_intro_item_spans.append(intro_item_ref.span())
                 sub_label = _normalize_num(intro_item_ref.group(1))
                 subsection_path = (("section", sect_label), ("subsection", sub_label))
                 if subsection_path not in mixed_seen:
@@ -457,6 +459,11 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
                 remainder,
                 re.IGNORECASE,
             ):
+                if any(
+                    start <= section_intro_item_ref.start() < end
+                    for start, end in subsection_intro_item_spans
+                ):
+                    continue
                 section_path = (("section", sect_label),)
                 if section_path not in mixed_seen:
                     mixed_seen.add(section_path)
@@ -538,12 +545,15 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
                         mixed_seen.add(path_tuple)
                         mixed_targets.append(LegalAddress(path=path_tuple))
 
+            plain_item_remainder = remainder
+            for start, end in reversed(subsection_intro_item_spans):
+                plain_item_remainder = plain_item_remainder[:start] + " " + plain_item_remainder[end:]
             plain_item_remainder = re.sub(
                 r'lõike(?:te|tes|st|s|t|ga)?\s+\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s+'
                 r'punkt(?:id|ide|ides|idest|i|is|ist|iga)?\s+'
                 r'\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*(?:\s*(?:,|ja|–|‒|-)\s*\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)*',
                 ' ',
-                remainder,
+                plain_item_remainder,
                 flags=re.IGNORECASE,
             )
             plain_item_remainder = re.sub(
