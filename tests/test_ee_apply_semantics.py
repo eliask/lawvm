@@ -6407,6 +6407,62 @@ def test_apply_ee_ops_renumbers_existing_section_before_inserting_new_same_label
     assert chapter.children[1].children[1].children[0].label == "1"
 
 
+def test_structural_textosa_heading_relabel_resolves_duplicate_chapter_by_heading() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(kind=IRNodeKind.CHAPTER, label="2", text="OMAVAHENDID"),
+            IRNode(kind=IRNodeKind.CHAPTER, label="3", text="KAPITALI ADEKVAATSUS"),
+            IRNode(kind=IRNodeKind.CHAPTER, label="2", text="RISKIDE KONTROLL"),
+            IRNode(kind=IRNodeKind.CHAPTER, label="4", text="ARUANDLUS"),
+        ),
+    )
+    relabel_risk = LegalOperation(
+        op_id="ee-heading-relabel-risk",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("chapter", "2"),)),
+        destination=LegalAddress(path=(("chapter", "4"),)),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="RISKIDE KONTROLL",
+            attrs={
+                "rule_id": "ee_structural_textosa_heading_relabel",
+                "old_heading": "RISKIDE KONTROLL",
+                "new_heading": "RISKIDE KONTROLL",
+                "allow_occupied_destination": True,
+            },
+        ),
+    )
+    relabel_reports = LegalOperation(
+        op_id="ee-heading-relabel-reports",
+        sequence=2,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("chapter", "4"),)),
+        destination=LegalAddress(path=(("chapter", "6"),)),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="ARUANDLUS",
+            attrs={
+                "rule_id": "ee_structural_textosa_heading_relabel",
+                "old_heading": "ARUANDLUS",
+                "new_heading": "ARUANDLUS",
+                "allow_occupied_destination": True,
+            },
+        ),
+    )
+
+    after_risk = _ee_apply_op(body, relabel_risk)
+    after_reports = _ee_apply_op(after_risk, relabel_reports)
+
+    assert [(child.label, child.text) for child in after_reports.children] == [
+        ("2", "OMAVAHENDID"),
+        ("3", "KAPITALI ADEKVAATSUS"),
+        ("4", "RISKIDE KONTROLL"),
+        ("6", "ARUANDLUS"),
+    ]
+
+
 def test_apply_ee_ops_records_unresolved_target_and_noop() -> None:
     statute = IRStatute(
         statute_id="ee/test",

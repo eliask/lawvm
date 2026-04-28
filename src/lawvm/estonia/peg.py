@@ -2352,6 +2352,56 @@ def extract_ee_ops(
 
     action = _classify_verb(clean)
 
+    def _chapter_heading_parts(raw: str) -> tuple[str, str] | None:
+        match = re.match(
+            r"\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s*[.]\s*peatükk\s+(.+?)\s*$",
+            raw,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if match is None:
+            return None
+        return _normalize_num(match.group(1)), re.sub(r"\s+", " ", match.group(2)).strip()
+
+    heading_relabel = re.search(
+        r"\btekstiosa[a-z]*\s+[„\"“](?P<old>[^”\"]+)[”\"]\s+"
+        r"asendatakse\s+tekstiosaga\s+[„\"“](?P<new>[^”\"]+)[”\"]",
+        clean,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if heading_relabel is not None:
+        old_heading = re.sub(r"\s+", " ", heading_relabel.group("old")).strip()
+        new_heading = re.sub(r"\s+", " ", heading_relabel.group("new")).strip()
+        old_parts = _chapter_heading_parts(old_heading)
+        new_parts = _chapter_heading_parts(new_heading)
+        if old_parts is not None and new_parts is not None:
+            old_label, old_title = old_parts
+            new_label, new_title = new_parts
+            payload = IRNode(
+                kind=IRNodeKind.CONTENT,
+                text=new_title,
+                attrs={
+                    "rule_id": "ee_structural_textosa_heading_relabel",
+                    "old_heading": old_title,
+                    "new_heading": new_title,
+                    "old_heading_full": old_heading,
+                    "new_heading_full": new_heading,
+                    "allow_occupied_destination": True,
+                },
+            )
+            return [
+                LegalOperation(
+                    op_id=f"ee-structural-textosa-heading-relabel-{old_label}-{new_label}-{source.statute_id}",
+                    sequence=seq,
+                    action=_to_structural_action("renumber"),
+                    target=LegalAddress(path=(("chapter", old_label),)),
+                    destination=LegalAddress(path=(("chapter", new_label),)),
+                    payload=payload,
+                    source=source,
+                    provenance_tags=(clean[:200], "ee_structural_textosa_heading_relabel"),
+                    witness_rule_id="ee_structural_textosa_heading_relabel",
+                )
+            ]
+
     # Statute-wide text replacement: "seaduse kogu tekstis asendatakse sõna X sõnadega Y"
     # Also: "seaduses asendatakse läbivalt number X numbriga Y"
     # Also: "seaduse tekstis asendatakse ..." (without "kogu")
