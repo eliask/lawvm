@@ -441,6 +441,27 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
                     mixed_seen.add(item_path)
                     mixed_targets.append(LegalAddress(path=item_path))
 
+            for section_intro_item_ref in re.finditer(
+                r'sissejuhatava(?:t\s+lauseosa|s\s+lauseosas|st\s+lauseosast)(?:\s*,\s*|\s+(?:ning|ja)\s+)'
+                r'punkt(?:id|e|ide|ides|i|is|ist|iga)?\s+'
+                r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*(?:\s*(?:,|ja|–|‒|-)\s*\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)*)',
+                remainder,
+                re.IGNORECASE,
+            ):
+                section_path = (("section", sect_label),)
+                if section_path not in mixed_seen:
+                    mixed_seen.add(section_path)
+                    mixed_targets.append(LegalAddress(path=section_path))
+                for item_label in _expand_ee_numeric_list(section_intro_item_ref.group(1).strip()):
+                    item_path = (
+                        ("section", sect_label),
+                        ("item", _normalize_num(item_label)),
+                    )
+                    if item_path in mixed_seen:
+                        continue
+                    mixed_seen.add(item_path)
+                    mixed_targets.append(LegalAddress(path=item_path))
+
             m_sub_and_item = re.search(
                 r'lõike(?:s|st|ga|t)?\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+ja\s+'
                 r'lõike(?:s|st|ga|t)?\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
@@ -675,6 +696,7 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
             and target.special is not FacetKind.HEADING
             and target.path[0][0] == "section"
             and target.path[0][1] in child_sections
+            and target.path not in intro_only_subsections
         )
         and not (
             len(target.path) == 2
@@ -723,7 +745,11 @@ def _extract_intro_only_subsection_paths(text: str) -> set[tuple[tuple[str, str]
                     ("subsection", _normalize_num(sub_ref.group(1))),
                 )
             )
-        if re.search(r'\bteksti\s+sissejuhatavas\s+lauseosas\b', section_span, re.IGNORECASE):
+        if re.search(
+            r'\b(?:teksti\s+)?sissejuhatava(?:t\s+lauseosa|s\s+lauseosas|st\s+lauseosast)\b',
+            section_span,
+            re.IGNORECASE,
+        ):
             intro_only_paths.add((("section", sect_label),))
     return intro_only_paths
 

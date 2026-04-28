@@ -3989,6 +3989,71 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_nom": stem + "d",
             "pl_gen": stem + "de",
         }
+    if lower == "aine":
+        stem = word
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": stem + "t",
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": stem + "d",
+            "pl_gen": stem + "te",
+            "pl_part": stem + "id",
+            "pl_ine": stem + "tes",
+            "pl_ela": stem + "test",
+            "pl_all": stem + "tele",
+            "pl_ade": stem + "tel",
+            "pl_abl": stem + "telt",
+            "pl_trn": stem + "teks",
+        }
+    if lower == "ained":
+        stem = word[:-1]
+        return {
+            "pl_nom": word,
+            "pl_gen": stem + "te",
+            "pl_part": stem + "id",
+            "pl_ine": stem + "tes",
+            "pl_ela": stem + "test",
+            "pl_all": stem + "tele",
+            "pl_ade": stem + "tel",
+            "pl_abl": stem + "telt",
+            "pl_trn": stem + "teks",
+        }
+    if lower.endswith("geen"):
+        stem = word + "i"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": stem,
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": word + "id",
+            "pl_gen": word + "ide",
+            "pl_part": word[:-1] + "e",
+            "pl_ine": word + "ides",
+            "pl_ela": word + "idest",
+            "pl_all": word + "idele",
+            "pl_ade": word + "idel",
+            "pl_abl": word + "idelt",
+            "pl_trn": word + "ideks",
+        }
     if lower.endswith("vägi"):
         prefix = word[:-4]
         gen_stem = prefix + "väe"
@@ -5190,6 +5255,19 @@ def _ee_phrase_forms(text: str) -> dict[str, str] | None:
         return _ee_declension_forms(text)
 
     def _ee_modifier_forms(token: str) -> dict[str, str] | None:
+        if token.endswith("sed"):
+            stem = token[:-3]
+            return {
+                "pl_nom": token,
+                "pl_gen": stem + "ste",
+                "pl_part": stem + "si",
+                "pl_ine": stem + "stes",
+                "pl_ela": stem + "stest",
+                "pl_all": stem + "stele",
+                "pl_ade": stem + "stel",
+                "pl_abl": stem + "stelt",
+                "pl_trn": stem + "steks",
+            }
         if token.endswith("ikud"):
             base = token[:-2]
             return {
@@ -5569,6 +5647,45 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
             special_pairs = {
                 "Kaitseväe kaudu": "Kaitseministeeriumi valitsemisala valitsusasutuse kaudu",
                 "Kaitseväge": "Kaitseministeeriumi valitsemisala valitsusasutust",
+            }
+            for old_form, new_form in special_pairs.items():
+                if old_form not in variants:
+                    variants[old_form] = new_form
+        if (
+            old == "kantserogeenid või mutageenid"
+            and new == "kantserogeenid, mutageenid või reproduktiivtoksilised ained"
+        ):
+            special_pairs = {
+                "kantserogeenide või mutageenidega": (
+                    "kantserogeenide, mutageenide või reproduktiivtoksiliste ainetega"
+                ),
+            }
+            for old_form, new_form in special_pairs.items():
+                if old_form not in variants:
+                    variants[old_form] = new_form
+        if (
+            old == "kantserogeenid ja mutageenid"
+            and new == "kantserogeenid, mutageenid ja reproduktiivtoksilised ained"
+        ):
+            special_pairs = {
+                "kantserogeenide ja mutageenidega": (
+                    "kantserogeenide, mutageenide ja reproduktiivtoksiliste ainetega"
+                ),
+            }
+            for old_form, new_form in special_pairs.items():
+                if old_form not in variants:
+                    variants[old_form] = new_form
+        if (
+            old == "kantserogeen või mutageen"
+            and new == "kantserogeen, mutageen või reproduktiivtoksiline aine"
+        ):
+            special_pairs = {
+                "kantserogeeni või mutageeni": (
+                    "kantserogeeni, mutageeni või reproduktiivtoksilise aine"
+                ),
+                "kantserogeeni või mutageeniga": (
+                    "kantserogeeni, mutageeni või reproduktiivtoksilise ainega"
+                ),
             }
             for old_form, new_form in special_pairs.items():
                 if old_form not in variants:
