@@ -5198,6 +5198,10 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
             return True
         return False
 
+    def _has_active_finite_verb_since_sentence_start(prefix_text: str) -> bool:
+        clause = re.split(r"[.!?;:]", prefix_text)[-1]
+        return any(_looks_like_finite_verb(word) for word in _next_words(clause))
+
     def _genitive_context(prefix_text: str, suffix_text: str) -> bool:
         joiner, next_word = _next_word_and_prefix(suffix_text)
         if next_word in {"poolt", "taotlusel"}:
@@ -5248,6 +5252,12 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
 
         stripped_prefix = prefix_text.rstrip()
         if joiner == "ja" and stripped_prefix.endswith((",", ";", ":")):
+            return False
+        if (
+            stripped_prefix.endswith(",")
+            and next_word == "käskkirjaga"
+            and _has_active_finite_verb_since_sentence_start(prefix_text)
+        ):
             return False
         if stripped_prefix.endswith((",", ";", ":")):
             return True

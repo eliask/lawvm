@@ -2221,6 +2221,25 @@ def test_replay_ee_to_pit_closes_sihtasutuste_register_cleanup_and_leaves_only_o
     )
 
 
+def test_replay_ee_to_pit_keeps_kalapuugiseadus_minister_subject_nominative_before_kaskkirjaga() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "108112012002",
+        "2014-07-13",
+        archive=archive,
+        oracle_id="103072014023",
+    )
+
+    assert result.error is None
+    divergence_addresses = {str(div.address) for div in result.divergences}
+    assert "chapter:3/section:19/subsection:6_3" not in divergence_addresses
+    assert all("valdkonna eest vastutava ministri käskkirjaga" not in div.ops_text for div in result.divergences)
+
+
 def test_replay_ee_to_pit_recovers_exact_target_source_typo_for_matusetoetus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
