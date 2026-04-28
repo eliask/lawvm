@@ -80,6 +80,47 @@ def test_text_replace_on_section_target_rewrites_descendant_text() -> None:
     )
 
 
+def test_text_replace_capitalized_source_surface_does_not_rewrite_lowercase_occurrence() -> None:
+    body = _body_with_section_and_subsection(
+        "42",
+        "1",
+        "Eesvoolu projekteeritakse vähkide urupuiste eesvoolu nõlvakattena.",
+    )
+    text = (
+        "paragrahvi 42 lõikes 1 asendatakse sõna “Eesvoolu” "
+        "sõnaga “Eesvoolule”;"
+    )
+    op = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))[0]
+
+    result = _ee_apply_op(body, op)
+    subsection = result.children[0].children[0].children[0]
+
+    assert subsection.text == (
+        "Eesvoolule projekteeritakse vähkide urupuiste eesvoolu nõlvakattena."
+    )
+
+
+def test_text_replace_exact_target_recovers_one_character_source_typo_in_phrase() -> None:
+    body = _body_with_section_and_subsection(
+        "38",
+        "2",
+        "Põhjavall projekteeritakse 70–80? nurgaga.",
+    )
+    text = (
+        "paragrahvi 38 lõikes 2 asendatakse tekstiosa “70–90? nurgaga” "
+        "tekstiosaga “eesvoolu teljest 70–80 º nurga all”;"
+    )
+    op = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))[0]
+    adjudications: list[CompileAdjudication] = []
+
+    result = _ee_apply_op(body, op, adjudications_out=adjudications)
+    subsection = result.children[0].children[0].children[0]
+
+    assert subsection.text == "Põhjavall projekteeritakse eesvoolu teljest 70–80 º nurga all."
+    assert [finding.kind for finding in adjudications] == ["ee_source_typo_text_replace_near_match"]
+    assert adjudications[0].detail["matched_live_text"] == "70–80? nurgaga"
+
+
 def test_insert_subsection_prefers_typed_insert_before_second_sentence() -> None:
     body = _body_with_section_and_subsection(
         "3",
@@ -6879,6 +6920,201 @@ def test_insert_subsection_shifts_down_after_collapsed_repealed_range() -> None:
         ("3", "Kolmas."),
         ("4", "–(5)"),
         ("5", "Uus ametikoolituse lõige."),
+    ]
+
+
+def test_insert_superscript_subsection_strips_duplicate_payload_label() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="4",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="22",
+                        children=(
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="6", text="Olemasolev kuues lõige."),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_insert_superscript_subsection_label_strip",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "22"), ("subsection", "6_1"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="(6) 1 Mootorsõiduk peab vastama tehnonõuetele.",
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    section = result.children[0].children[0]
+
+    assert [(child.label, child.text) for child in section.children] == [
+        ("6", "Olemasolev kuues lõige."),
+        ("6_1", "Mootorsõiduk peab vastama tehnonõuetele."),
+    ]
+
+
+def test_insert_superscript_subsection_strips_duplicate_payload_bare_label() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="4",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="22",
+                        children=(
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="6", text="Olemasolev kuues lõige."),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_insert_superscript_subsection_bare_label_strip",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "22"), ("subsection", "6_1"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="6 1 Mootorsõiduk peab vastama tehnonõuetele.",
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    section = result.children[0].children[0]
+
+    assert [(child.label, child.text) for child in section.children] == [
+        ("6", "Olemasolev kuues lõige."),
+        ("6_1", "Mootorsõiduk peab vastama tehnonõuetele."),
+    ]
+
+
+def test_insert_superscript_subsection_strips_mismatched_parenthesized_payload_base() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="5",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="23",
+                        children=(
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="Olemasolev kolmas lõige."),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_insert_superscript_subsection_mismatched_base_label_strip",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "23"), ("subsection", "3_1"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="(1) 1 Metsamaal projekteeritakse umbtee lõppu tagasipööramise koht.",
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    section = result.children[0].children[0]
+
+    assert [(child.label, child.text) for child in section.children] == [
+        ("3", "Olemasolev kolmas lõige."),
+        ("3_1", "Metsamaal projekteeritakse umbtee lõppu tagasipööramise koht."),
+    ]
+
+
+def test_insert_superscript_subsection_strips_duplicate_payload_suffix_only() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="4",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="22",
+                        children=(
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="6", text="Olemasolev kuues lõige."),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_insert_superscript_subsection_suffix_label_strip",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "22"), ("subsection", "6_1"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="1 Mootorsõiduk peab vastama tehnonõuetele.",
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    section = result.children[0].children[0]
+
+    assert [(child.label, child.text) for child in section.children] == [
+        ("6", "Olemasolev kuues lõige."),
+        ("6_1", "Mootorsõiduk peab vastama tehnonõuetele."),
+    ]
+
+
+def test_insert_plain_subsection_does_not_strip_unparenthesized_leading_number() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="4",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="22",
+                        children=(
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="5", text="Olemasolev viies lõige."),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_insert_plain_subsection_no_unparenthesized_label_strip",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "22"), ("subsection", "6"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="6 aasta jooksul tuleb nõue täita.",
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    section = result.children[0].children[0]
+
+    assert [(child.label, child.text) for child in section.children] == [
+        ("5", "Olemasolev viies lõige."),
+        ("6", "6 aasta jooksul tuleb nõue täita."),
     ]
 
 

@@ -3198,13 +3198,29 @@ def _ee_text_replace_match_spans(text: str | None, spec: EETextRewriteSpec) -> t
     for old_variant, _new_variant in variants:
         pattern = re.compile(
             _ee_wrap_word_boundaries(_ee_surface_pattern(old_variant), old_variant),
-            re.IGNORECASE,
+            _ee_text_replace_regex_flags(old_variant, case_inflected=spec.case_inflected),
         )
         for match in pattern.finditer(text):
             span = match.span()
             if span not in spans:
                 spans.append(span)
     return tuple(sorted(spans))
+
+
+def _ee_text_replace_regex_flags(old: str, *, case_inflected: bool) -> int:
+    """Return regex flags for source-owned text rewrites.
+
+    Non-inflected uppercase source surfaces are case-significant: a source
+    instruction quoting ``Eesvoolu`` must not also rewrite lowercase
+    ``eesvoolu`` in the same target. Lowercase source surfaces still match a
+    sentence-initial capitalized occurrence, with capitalization handled by the
+    replacement routine.
+    """
+    if case_inflected:
+        return re.IGNORECASE
+    if any(char.isupper() for char in old):
+        return 0
+    return re.IGNORECASE
 
 
 def _ee_repeated_single_occurrence_rewrite_match_count(node: IRNode, spec: EETextRewriteSpec) -> int:
@@ -3252,15 +3268,23 @@ def _ee_typo_tolerant_text_replace(
     """Recover a one-character typo in source old-text only under the exact target."""
     old = _ee_normalize_text_replace_surface(spec.old_text)
     new = _ee_normalize_text_replace_surface(spec.new_text)
-    if len(old) < 8 or not old.isalpha() or not new:
+    if len(old) < 8 or not new:
         return node, False, ""
-
-    candidate_pattern = re.compile(r"[A-Za-zÄÖÕÜäöõüŠŽšž-]+")
     matches: list[tuple[tuple[int, ...], str]] = []
 
-    def _collect(current: IRNode, path: tuple[int, ...] = ()) -> None:
-        for match in candidate_pattern.finditer(current.text or ""):
-            candidate = match.group(0)
+    def _collect_phrase_candidates(current: IRNode, path: tuple[int, ...]) -> None:
+        old_tokens = old.split()
+        if len(old_tokens) < 2 or len(old_tokens) > 8:
+            return
+        text = current.text or ""
+        tokens = list(re.finditer(r"\S+", text))
+        for idx in range(0, len(tokens) - len(old_tokens) + 1):
+            start = tokens[idx].start()
+            end = tokens[idx + len(old_tokens) - 1].end()
+            raw_candidate = text[start:end]
+            candidate = raw_candidate.rstrip(".,;:")
+            if not candidate:
+                continue
             candidate_norm = _ee_normalize_text_replace_surface(candidate)
             if candidate_norm.lower() == old.lower():
                 continue
@@ -3268,6 +3292,21 @@ def _ee_typo_tolerant_text_replace(
                 continue
             if _ee_levenshtein_distance_at_most_one(candidate_norm.lower(), old.lower()):
                 matches.append((path, candidate))
+
+    def _collect(current: IRNode, path: tuple[int, ...] = ()) -> None:
+        if old.isalpha():
+            candidate_pattern = re.compile(r"[A-Za-zÄÖÕÜäöõüŠŽšž-]+")
+            for match in candidate_pattern.finditer(current.text or ""):
+                candidate = match.group(0)
+                candidate_norm = _ee_normalize_text_replace_surface(candidate)
+                if candidate_norm.lower() == old.lower():
+                    continue
+                if abs(len(candidate_norm) - len(old)) > 1:
+                    continue
+                if _ee_levenshtein_distance_at_most_one(candidate_norm.lower(), old.lower()):
+                    matches.append((path, candidate))
+        else:
+            _collect_phrase_candidates(current, path)
         for idx, child in enumerate(current.children):
             _collect(child, (*path, idx))
 
@@ -3333,6 +3372,56 @@ def _extract_subsection_text(payload_text: str, label: str) -> str:
             part_num = re.sub(r"\s+", " ", m.group(1).strip())
             if part_num == marker_num:
                 return m.group(2).strip()
+
+    # ee_duplicate_inserted_subsection_payload_label:
+    # Old RT amendment payload HTML can expose an inserted subsection label as
+    # parenthesized base plus bare suffix ("(6) 1 Body"), bare leading text
+    # ("6 1 Body"), or just superscript suffix ("1 Body") while the target path
+    # already owns the structured label "6_1".
+    if _is_inserted_numbered_label(label):
+        label_parts = label.split("_")
+        marker_pattern = r"\s+".join(re.escape(part) for part in label_parts)
+        parenthesized_base_pattern = rf"\({re.escape(label_parts[0])}\)\s+{re.escape(label_parts[1])}"
+        parenthesized_base_stripped = re.sub(
+            rf"^{parenthesized_base_pattern}\s+",
+            "",
+            payload_text.strip(),
+            count=1,
+        )
+        if parenthesized_base_stripped != payload_text.strip():
+            return parenthesized_base_stripped.strip()
+
+        # Some old RT payloads carry a mismatched parenthesized base while the
+        # operative target owns the real superscript label, e.g. target
+        # "lõikega 3 1" but payload "(1) 1 Body". Strip only the duplicate
+        # visible suffix; preserve the target-derived identity.
+        parenthesized_any_base_stripped = re.sub(
+            rf"^\(\d[\d\s_]*\)\s+{re.escape(label_parts[1])}\s+",
+            "",
+            payload_text.strip(),
+            count=1,
+        )
+        if parenthesized_any_base_stripped != payload_text.strip():
+            return parenthesized_any_base_stripped.strip()
+
+        full_marker_stripped = re.sub(
+            rf"^{marker_pattern}\s+",
+            "",
+            payload_text.strip(),
+            count=1,
+        )
+        if full_marker_stripped != payload_text.strip():
+            return full_marker_stripped.strip()
+
+        suffix_marker = re.escape(label.rsplit("_", 1)[1])
+        suffix_marker_stripped = re.sub(
+            rf"^{suffix_marker}\s+",
+            "",
+            payload_text.strip(),
+            count=1,
+        )
+        if suffix_marker_stripped != payload_text.strip():
+            return suffix_marker_stripped.strip()
 
     # Fallback: strip the leading "(N)" if present
     return re.sub(r"^\(\d[\d\s_]*\)\s*", "", payload_text.strip())
@@ -5757,7 +5846,7 @@ def _ee_apply_text_replace_value(
         for idx, (old_variant, new_variant) in enumerate(variants):
             pattern = re.compile(
                 _ee_wrap_word_boundaries(_ee_surface_pattern(old_variant), old_variant),
-                re.IGNORECASE,
+                _ee_text_replace_regex_flags(old_variant, case_inflected=case_inflected),
             )
             if all_occurrences:
                 def _repl(match: re.Match[str], *, idx: int = idx, new_variant: str = new_variant) -> str:
@@ -5818,7 +5907,7 @@ def _ee_apply_text_replace_value(
         for idx, (old_variant, new_variant) in enumerate(variants):
             pattern = re.compile(
                 _ee_wrap_word_boundaries(_ee_surface_pattern(old_variant), old_variant),
-                re.IGNORECASE,
+                _ee_text_replace_regex_flags(old_variant, case_inflected=case_inflected),
             )
 
             def _repl(match: re.Match[str], *, idx: int = idx, new_variant: str = new_variant) -> str:
