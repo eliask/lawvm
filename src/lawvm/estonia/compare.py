@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
+from typing import Callable, cast
 
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
@@ -21,6 +22,7 @@ _EE_HYPHEN_SPACING_RE = re.compile(
 )
 _EE_EN_DASH_DIGIT_SPACE_RE = re.compile(r"(?<=\d)[–‒]\s+(?=\d)")
 _EE_FIGURE_DASH_RE = re.compile(r"‒")
+_EE_NUMERIC_RANGE_HYPHEN_RE = re.compile(r"(?<=\d)-(?=\d)")
 _EE_POST_PERIOD_JA_SPACE_RE = re.compile(r"(?<=\d\.)ja(?=\s+\d)")
 _EE_RT_BRACKET_SPACE_RE = re.compile(r"\[\s+RT")
 _EE_MISSING_JA_SPACE_RE = re.compile(r"(?<=\d)ja(?=\s+\d)")
@@ -38,6 +40,17 @@ _EE_COMMITTEE_DASH_RE = re.compile(
     r"konkursi-ja atesteerimiskomisjon\s*[–-]\s*(?=ministeeriumide\b)",
     re.IGNORECASE,
 )
+_EE_STANDARD_IDENTIFIER_DASH_RE = re.compile(
+    r"(\b(?:EVS|EN|ISO|IEC)(?:-[A-Z]+)*\s+\d+(?:-\d+)?)[‑‒–—−](\d+)"
+)
+_EE_PHRASE_DASH_RE = re.compile(
+    r"(?<=[A-Za-zÕÄÖÜõäöüŠŽšž])\s*[‑‒–—−]\s*(?=[A-Za-zÕÄÖÜõäöüŠŽšž])"
+)
+_EE_QUOTE_STYLE_RE = re.compile(r"[«»“”„]")
+_EE_LEADING_ORPHAN_SUBSECTION_PAREN_RE = re.compile(r"^\)\s+")
+_EE_INLINE_ORPHAN_SUBSECTION_PAREN_RE = re.compile(r"(?<=\.)\s+\)\s+(?=[A-ZÕÄÖÜŠŽ])")
+_EE_SUPERSCRIPT_DIGIT_TRANSLATION = str.maketrans("¹²³⁴⁵⁶⁷⁸⁹⁰", "1234567890")
+_EE_INLINE_SUPERSCRIPT_DIGIT_RE = re.compile(r"(?<=\d)([¹²³⁴⁵⁶⁷⁸⁹⁰])")
 
 
 class EENormalizationRuleClass(str, Enum):
@@ -55,7 +68,7 @@ class EENormalizationRule:
     kind: str
     description: str
     pattern: re.Pattern[str] | None = None
-    replacement: str = ""
+    replacement: str | Callable[[re.Match[str]], str] = ""
     old_text: str = ""
     new_text: str = ""
 
@@ -99,6 +112,62 @@ _EE_NORMALIZATION_RULES = (
         description="Unify figure dash and en dash surfaces.",
         pattern=_EE_FIGURE_DASH_RE,
         replacement="–",
+    ),
+    EENormalizationRule(
+        name="numeric_range_hyphen",
+        rule_class=EENormalizationRuleClass.punctuation,
+        kind="regex",
+        description="Normalize hyphen-minus to en dash between digits for range-like comparison surfaces.",
+        pattern=_EE_NUMERIC_RANGE_HYPHEN_RE,
+        replacement="–",
+    ),
+    EENormalizationRule(
+        name="standard_identifier_dash",
+        rule_class=EENormalizationRuleClass.punctuation,
+        kind="regex",
+        description="Normalize dash variants inside standards identifiers such as EVS-EN 16798-1.",
+        pattern=_EE_STANDARD_IDENTIFIER_DASH_RE,
+        replacement=r"\1-\2",
+    ),
+    EENormalizationRule(
+        name="alnum_phrase_dash",
+        rule_class=EENormalizationRuleClass.punctuation,
+        kind="regex",
+        description="Normalize editorial dash glyph/spacing variants between alphanumeric tokens.",
+        pattern=_EE_PHRASE_DASH_RE,
+        replacement="-",
+    ),
+    EENormalizationRule(
+        name="quote_style",
+        rule_class=EENormalizationRuleClass.punctuation,
+        kind="regex",
+        description="Normalize typographic quote styles to the plain quote comparison surface.",
+        pattern=_EE_QUOTE_STYLE_RE,
+        replacement='"',
+    ),
+    EENormalizationRule(
+        name="inline_superscript_digit_spacing",
+        rule_class=EENormalizationRuleClass.encoding_layout,
+        kind="regex",
+        description="Normalize RT XML/HTML section suffix surfaces such as 45¹ and 45 1.",
+        pattern=_EE_INLINE_SUPERSCRIPT_DIGIT_RE,
+        replacement=lambda match: " " + match.group(1).translate(_EE_SUPERSCRIPT_DIGIT_TRANSLATION),
+    ),
+    EENormalizationRule(
+        name="leading_orphan_subsection_parenthesis",
+        rule_class=EENormalizationRuleClass.encoding_layout,
+        kind="regex",
+        description="Drop a leading orphan ')' that remains after a displayed subsection number.",
+        pattern=_EE_LEADING_ORPHAN_SUBSECTION_PAREN_RE,
+        replacement="",
+    ),
+    EENormalizationRule(
+        name="inline_orphan_subsection_parenthesis",
+        rule_class=EENormalizationRuleClass.encoding_layout,
+        kind="regex",
+        description="Drop an orphan ')' between materialized subsection texts.",
+        pattern=_EE_INLINE_ORPHAN_SUBSECTION_PAREN_RE,
+        replacement=" ",
     ),
     EENormalizationRule(
         name="en_dash_digit_spacing",
@@ -316,7 +385,7 @@ def normalize_ee_comparison_text(text: str) -> str:
             normalized = normalized.replace(rule.old_text, rule.new_text)
         elif rule.kind == "placeholder" and rule.pattern is not None:
             if rule.pattern.fullmatch(normalized.strip()):
-                return rule.replacement
+                return cast(str, rule.replacement)
     if normalized.strip() == "–":
         return ""
     return normalized

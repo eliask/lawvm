@@ -11,7 +11,6 @@ from lawvm.estonia.residual_evidence import (
     build_address_list_family,
     build_inserted_item_omission_family,
     build_inserted_note_omission_family,
-    build_inserted_section_omission_family,
     build_shortened_section_family,
 )
 from lawvm.tools import cli, ee_residual_inventory
@@ -357,62 +356,56 @@ def test_get_ee_residual_inventory_sotsiaalmaksuseadus() -> None:
     assert inventory.residuals[0].bucket == "source_oracle_drift"
 
 
-def test_generated_inserted_section_omission_family_matches_inventory() -> None:
-    generated_30_1 = build_inserted_section_omission_family(
-        section_address="chapter:2/division:3/section:30_1",
-        section_symbol="§ 30^1",
-        source_act_id="127012023001",
-        later_source_act_id="103022026004",
-        oracle_id="103022026013",
-        subsection_labels=(
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9",
-            "10",
-            "11",
-            "12",
-            "13",
-            "14",
-        ),
-    )
-    generated_34_1 = build_inserted_section_omission_family(
-        section_address="chapter:2/division:3/section:34_1",
-        section_symbol="§ 34^1",
-        source_act_id="108072025007",
-        oracle_id="103022026013",
-        subsection_labels=("1", "2"),
+def test_generated_riigisaladus_current_residual_family_matches_inventory() -> None:
+    generated = (
+        tuple(
+            build_shortened_section_family(
+                bucket="source_oracle_drift",
+                records=(
+                    (
+                        "chapter:2/division:1/section:8/subsection:1/item:8",
+                        "Source act 107032023002 rewrites § 8 p 8 and replay preserves the "
+                        "source-side terminal period after the final sentence; oracle "
+                        "103022026013 keeps a trailing semicolon instead. This is a bounded "
+                        "terminal punctuation oracle-surface drift, not a replay omission.",
+                    ),
+                    (
+                        "chapter:2/division:3/section:48/subsection:3/item:4",
+                        "Replay preserves the source-side terminal semicolon in "
+                        "§ 48(3) p 4, while oracle 103022026013 drops it. This is a "
+                        "bounded terminal punctuation oracle-surface drift.",
+                    ),
+                ),
+            )
+        )
+        + tuple(
+            build_shortened_section_family(
+                bucket="source_pathology",
+                records=(
+                    (
+                        "chapter:3/section:52/subsection:1/item:1",
+                        "None of the applied in-range amendments directly target § 52(1) p 1. "
+                        "The 2023 statute-wide rewrites replace singular target phrases like "
+                        "'teabevaldaja' and 'asutus, põhiseaduslik institutsioon ...', but do "
+                        "not emit the oracle's plural coordinated surface 'töötlevate üksuste' "
+                        "for this item. Oracle 103022026013 therefore carries an unsupported "
+                        "target-local rewrite relative to the visible source chain.",
+                    ),
+                ),
+            )
+        )
     )
 
     inventory = get_ee_residual_inventory("106052020036", "103022026013")
 
     assert inventory is not None
-    assert len(generated_30_1) == 15
-    assert generated_30_1[0].address == "chapter:2/division:3/section:30_1"
-    assert generated_30_1[0].bucket == "source_pathology"
-    assert "oracle 103022026013 still omits" in generated_30_1[0].evidence
-    assert generated_30_1[-1].address == "chapter:2/division:3/section:30_1/subsection:14"
-    assert len(generated_34_1) == 3
-    assert generated_34_1[0].address == "chapter:2/division:3/section:34_1"
-    assert "oracle 103022026013 still omits" in generated_34_1[0].evidence
+    assert len(generated) == 3
     assert [
         (record.address, record.bucket, record.evidence)
-        for record in inventory.residuals[:15]
+        for record in inventory.residuals
     ] == [
         (record.address, record.bucket, record.evidence)
-        for record in generated_30_1
-    ]
-    assert [
-        (record.address, record.bucket, record.evidence)
-        for record in inventory.residuals[15:18]
-    ] == [
-        (record.address, record.bucket, record.evidence)
-        for record in generated_34_1
+        for record in generated
     ]
 
 
@@ -438,46 +431,6 @@ def test_generated_inserted_note_omission_family_matches_inventory() -> None:
         (record.address, record.bucket, record.evidence)
         for record in generated
     ]
-
-
-def test_generated_shortened_section_family_matches_inventory_prefix() -> None:
-    generated = build_shortened_section_family(
-        records=(
-            (
-                "chapter:2/division:2/section:13/subsection:1",
-                "Base 109042021007 cites amendment 109042021001 in its own source refs "
-                "but still preserves the pre-amendment 'täitemenetlusregister' wording; "
-                "oracle 114032025016 carries the 109042021001 'täitmisregister' text.",
-            ),
-            (
-                "chapter:2/division:2/section:13/subsection:2",
-                "Base 109042021007 cites amendment 109042021001 in its own source refs "
-                "but still preserves the pre-amendment 'täitemenetlusregister' wording; "
-                "oracle 114032025016 carries the 109042021001 'täitmisregister' text.",
-            ),
-        ),
-    )
-
-    inventory = get_ee_residual_inventory("109042021007", "114032025016")
-
-    assert inventory is not None
-    assert len(generated) == 2
-    assert generated[0].address == "chapter:2/division:2/section:13/subsection:1"
-    assert generated[0].bucket == "source_oracle_drift"
-    assert "täitemenetlusregister" in generated[0].evidence
-    assert "täitmisregister" in generated[0].evidence
-    assert [
-        (record.address, record.bucket, record.evidence)
-        for record in inventory.residuals[:2]
-    ] == [
-        (record.address, record.bucket, record.evidence)
-        for record in generated
-    ]
-    assert any(
-        record.address == "chapter:2/division:5/section:30/subsection:2_1"
-        and record.bucket == "source_pathology"
-        for record in inventory.residuals[2:]
-    )
 
 
 def test_generated_inserted_item_omission_family_matches_inventory() -> None:
@@ -530,211 +483,12 @@ def test_generated_inserted_item_omission_family_matches_vaarteomenetluse_invent
     assert inventory.residuals[1].address == "chapter:5/section:31_6/subsection:5"
 
 
-def test_generated_shortened_section_family_matches_kohtutaituri_cluster() -> None:
-    generated = build_shortened_section_family(
-        bucket="source_pathology",
-        records=(
-            (
-                "chapter:2/division:5/section:37_2",
-                "Source act 109042021001 emits inserted § 37^2 cleanly, but base 109042021007 "
-                "already cites that act while omitting the entire section. Oracle 114032025016 contains it.",
-            ),
-            (
-                "chapter:2/division:5/section:37_2/subsection:1",
-                "Source act 109042021001 emits § 37^2(1) cleanly, but base 109042021007 "
-                "already cites that act while omitting it. Oracle 114032025016 contains it.",
-            ),
-            (
-                "chapter:2/division:5/section:37_2/subsection:2",
-                "Source act 109042021001 emits § 37^2(2) cleanly, but base 109042021007 "
-                "already cites that act while omitting it. Oracle 114032025016 contains it.",
-            ),
-            (
-                "chapter:2/division:5/section:37_2/subsection:3",
-                "Source act 109042021001 emits § 37^2(3) cleanly, but base 109042021007 "
-                "already cites that act while omitting it. Oracle 114032025016 contains it.",
-            ),
-            (
-                "chapter:2/division:5/section:37_2/subsection:3/item:1",
-                "Source act 109042021001 emits § 37^2(3) p 1 cleanly, but base 109042021007 "
-                "already cites that act while omitting it. Oracle 114032025016 contains it.",
-            ),
-            (
-                "chapter:2/division:5/section:37_2/subsection:3/item:2",
-                "Source act 109042021001 emits § 37^2(3) p 2 cleanly, but base 109042021007 "
-                "already cites that act while omitting it. Oracle 114032025016 contains it.",
-            ),
-            (
-                "chapter:2/division:5/section:37_2/subsection:4",
-                "Source act 109042021001 emits § 37^2(4) cleanly, but base 109042021007 "
-                "already cites that act while omitting it. Oracle 114032025016 contains it.",
-            ),
-        ),
-    )
-
-    inventory = get_ee_residual_inventory("109042021007", "114032025016")
-
-    assert inventory is not None
-    assert len(generated) == 7
-    assert generated[0].address == "chapter:2/division:5/section:37_2"
-    assert generated[-1].address == "chapter:2/division:5/section:37_2/subsection:4"
-    assert all(record.bucket == "source_pathology" for record in generated)
-    assert [
-        (record.address, record.bucket, record.evidence)
-        for record in inventory.residuals[7:14]
-    ] == [
-        (record.address, record.bucket, record.evidence)
-        for record in generated
-    ]
-
-
-def test_generated_shortened_section_family_matches_kohtutaituri_register_wording_cluster() -> None:
-    generated = build_shortened_section_family(
-        records=(
-            (
-                "chapter:2/division:2/section:13/subsection:1",
-                "Base 109042021007 cites amendment 109042021001 in its own source refs "
-                "but still preserves the pre-amendment 'täitemenetlusregister' wording; "
-                "oracle 114032025016 carries the 109042021001 'täitmisregister' text.",
-            ),
-            (
-                "chapter:2/division:2/section:13/subsection:2",
-                "Base 109042021007 cites amendment 109042021001 in its own source refs "
-                "but still preserves the pre-amendment 'täitemenetlusregister' wording; "
-                "oracle 114032025016 carries the 109042021001 'täitmisregister' text.",
-            ),
-            (
-                "chapter:3/division:1/section:78/subsection:1/item:16",
-                "Base 109042021007 cites amendment 109042021001 in its own source refs "
-                "but still preserves the pre-amendment 'täitemenetlusregister' wording; "
-                "oracle 114032025016 carries the 109042021001 'täitmisregister' text.",
-            ),
-            (
-                "chapter:3/division:2/section:92/subsection:1/item:2",
-                "Base 109042021007 cites amendment 109042021001 in its own source refs "
-                "but still preserves the pre-amendment 'täitemenetlusregister' wording; "
-                "oracle 114032025016 carries the 109042021001 'täitmisregister' text.",
-            ),
-        ),
-    )
-
-    inventory = get_ee_residual_inventory("109042021007", "114032025016")
-
-    assert inventory is not None
-    assert len(generated) == 4
-    assert [
-        (record.address, record.bucket, record.evidence)
-        for record in inventory.residuals[:4]
-    ] == [
-        (record.address, record.bucket, record.evidence)
-        for record in generated
-    ]
-    assert all(record.bucket == "source_oracle_drift" for record in generated)
-
-
-def test_generated_shortened_section_family_matches_kohtutaituri_section_40_1_cluster() -> None:
-    generated = build_shortened_section_family(
-        bucket="source_pathology",
-        records=(
-            (
-                "chapter:2/division:5/section:40_1",
-                "Base 109042021007 cites amendment 109042021001 in its own source refs "
-                "but still preserves the pre-amendment heading "
-                "'elektroonilise arestimissüsteemi kaudu'; oracle 114032025016 carries the "
-                "109042021001 'täitmisregistri kaudu' text.",
-            ),
-            (
-                "chapter:2/division:5/section:40_1/subsection:1",
-                "Base 109042021007 cites amendment 109042021001 in its own source refs "
-                "but still preserves the pre-amendment subsection text for § 40^1(1); "
-                "oracle 114032025016 carries the 109042021001 wording.",
-            ),
-            (
-                "chapter:2/division:5/section:40_1/subsection:2",
-                "Base 109042021007 cites amendment 109042021001 in its own source refs "
-                "but still preserves the pre-amendment subsection text for § 40^1(2); "
-                "oracle 114032025016 carries the 109042021001 wording.",
-            ),
-        ),
-    )
-
-    inventory = get_ee_residual_inventory("109042021007", "114032025016")
-
-    assert inventory is not None
-    assert len(generated) == 3
-    assert all(record.bucket == "source_pathology" for record in generated)
-    assert [
-        (record.address, record.bucket, record.evidence)
-        for record in inventory.residuals
-        if record.address == "chapter:2/division:5/section:40_1"
-        or record.address.startswith("chapter:2/division:5/section:40_1/subsection:")
-    ] == [
-        (record.address, record.bucket, record.evidence)
-        for record in generated
-    ]
-    assert generated[0].address == "chapter:2/division:5/section:40_1"
-
-
 def test_generated_shortened_section_family_matches_ringhaalinguseadus_editorial_cluster() -> None:
     generated = build_shortened_section_family(
         bucket="source_oracle_drift",
         records=(
             (
                 "chapter:1/section:1/subsection:1/item:4",
-                "The only in-range amendment between 121122010026 and 121122010027 is 13310847, "
-                "and replay applies only that act at the oracle cutoff 2011-01-01. Its "
-                "Ringhäälinguseadus block compiles only the euro-conversion rewrites in §§ 43^4 "
-                "and 43^5. None of the current divergences are targeted by 13310847; oracle "
-                "121122010027 instead normalizes untouched older text via dash spacing, dash "
-                "glyphs, quote style, or final punctuation at this address."
-            ),
-            (
-                "chapter:6/section:37/subsection:3/item:1",
-                "The only in-range amendment between 121122010026 and 121122010027 is 13310847, "
-                "and replay applies only that act at the oracle cutoff 2011-01-01. Its "
-                "Ringhäälinguseadus block compiles only the euro-conversion rewrites in §§ 43^4 "
-                "and 43^5. None of the current divergences are targeted by 13310847; oracle "
-                "121122010027 instead normalizes untouched older text via dash spacing, dash "
-                "glyphs, quote style, or final punctuation at this address."
-            ),
-            (
-                "chapter:6/section:37/subsection:3/item:2",
-                "The only in-range amendment between 121122010026 and 121122010027 is 13310847, "
-                "and replay applies only that act at the oracle cutoff 2011-01-01. Its "
-                "Ringhäälinguseadus block compiles only the euro-conversion rewrites in §§ 43^4 "
-                "and 43^5. None of the current divergences are targeted by 13310847; oracle "
-                "121122010027 instead normalizes untouched older text via dash spacing, dash "
-                "glyphs, quote style, or final punctuation at this address."
-            ),
-            (
-                "chapter:6/section:37/subsection:3/item:3",
-                "The only in-range amendment between 121122010026 and 121122010027 is 13310847, "
-                "and replay applies only that act at the oracle cutoff 2011-01-01. Its "
-                "Ringhäälinguseadus block compiles only the euro-conversion rewrites in §§ 43^4 "
-                "and 43^5. None of the current divergences are targeted by 13310847; oracle "
-                "121122010027 instead normalizes untouched older text via dash spacing, dash "
-                "glyphs, quote style, or final punctuation at this address."
-            ),
-            (
-                "chapter:6/section:37/subsection:3/item:4",
-                "The only in-range amendment between 121122010026 and 121122010027 is 13310847, "
-                "and replay applies only that act at the oracle cutoff 2011-01-01. Its "
-                "Ringhäälinguseadus block compiles only the euro-conversion rewrites in §§ 43^4 "
-                "and 43^5. None of the current divergences are targeted by 13310847; oracle "
-                "121122010027 instead normalizes untouched older text via dash spacing, dash "
-                "glyphs, quote style, or final punctuation at this address."
-            ),
-            (
-                "chapter:6/section:37/subsection:3/item:5",
-                "The only in-range amendment between 121122010026 and 121122010027 is 13310847, "
-                "and replay applies only that act at the oracle cutoff 2011-01-01. Its "
-                "Ringhäälinguseadus block compiles only the euro-conversion rewrites in §§ 43^4 "
-                "and 43^5. None of the current divergences are targeted by 13310847; oracle "
-                "121122010027 instead normalizes untouched older text via dash spacing, dash "
-                "glyphs, quote style, or final punctuation at this address."
-            ),
-            (
-                "chapter:7/section:42/subsection:2",
                 "The only in-range amendment between 121122010026 and 121122010027 is 13310847, "
                 "and replay applies only that act at the oracle cutoff 2011-01-01. Its "
                 "Ringhäälinguseadus block compiles only the euro-conversion rewrites in §§ 43^4 "
@@ -751,85 +505,13 @@ def test_generated_shortened_section_family_matches_ringhaalinguseadus_editorial
                 "121122010027 instead normalizes untouched older text via dash spacing, dash "
                 "glyphs, quote style, or final punctuation at this address."
             ),
-            (
-                "chapter:8/section:44/subsection:3/item:1",
-                "The only in-range amendment between 121122010026 and 121122010027 is 13310847, "
-                "and replay applies only that act at the oracle cutoff 2011-01-01. Its "
-                "Ringhäälinguseadus block compiles only the euro-conversion rewrites in §§ 43^4 "
-                "and 43^5. None of the current divergences are targeted by 13310847; oracle "
-                "121122010027 instead normalizes untouched older text via dash spacing, dash "
-                "glyphs, quote style, or final punctuation at this address."
-            ),
-            (
-                "chapter:8/section:44/subsection:3/item:2",
-                "The only in-range amendment between 121122010026 and 121122010027 is 13310847, "
-                "and replay applies only that act at the oracle cutoff 2011-01-01. Its "
-                "Ringhäälinguseadus block compiles only the euro-conversion rewrites in §§ 43^4 "
-                "and 43^5. None of the current divergences are targeted by 13310847; oracle "
-                "121122010027 instead normalizes untouched older text via dash spacing, dash "
-                "glyphs, quote style, or final punctuation at this address."
-            ),
-            (
-                "chapter:8/section:44_1/subsection:1_1/item:1",
-                "The only in-range amendment between 121122010026 and 121122010027 is 13310847, "
-                "and replay applies only that act at the oracle cutoff 2011-01-01. Its "
-                "Ringhäälinguseadus block compiles only the euro-conversion rewrites in §§ 43^4 "
-                "and 43^5. None of the current divergences are targeted by 13310847; oracle "
-                "121122010027 instead normalizes untouched older text via dash spacing, dash "
-                "glyphs, quote style, or final punctuation at this address."
-            ),
-            (
-                "chapter:8/section:44_1/subsection:1_1/item:2",
-                "The only in-range amendment between 121122010026 and 121122010027 is 13310847, "
-                "and replay applies only that act at the oracle cutoff 2011-01-01. Its "
-                "Ringhäälinguseadus block compiles only the euro-conversion rewrites in §§ 43^4 "
-                "and 43^5. None of the current divergences are targeted by 13310847; oracle "
-                "121122010027 instead normalizes untouched older text via dash spacing, dash "
-                "glyphs, quote style, or final punctuation at this address."
-            ),
-            (
-                "chapter:8/section:44_1/subsection:2/item:1",
-                "The only in-range amendment between 121122010026 and 121122010027 is 13310847, "
-                "and replay applies only that act at the oracle cutoff 2011-01-01. Its "
-                "Ringhäälinguseadus block compiles only the euro-conversion rewrites in §§ 43^4 "
-                "and 43^5. None of the current divergences are targeted by 13310847; oracle "
-                "121122010027 instead normalizes untouched older text via dash spacing, dash "
-                "glyphs, quote style, or final punctuation at this address."
-            ),
-            (
-                "chapter:8/section:44_1/subsection:2/item:2",
-                "The only in-range amendment between 121122010026 and 121122010027 is 13310847, "
-                "and replay applies only that act at the oracle cutoff 2011-01-01. Its "
-                "Ringhäälinguseadus block compiles only the euro-conversion rewrites in §§ 43^4 "
-                "and 43^5. None of the current divergences are targeted by 13310847; oracle "
-                "121122010027 instead normalizes untouched older text via dash spacing, dash "
-                "glyphs, quote style, or final punctuation at this address."
-            ),
-            (
-                "chapter:8/section:44_1/subsection:2/item:3",
-                "The only in-range amendment between 121122010026 and 121122010027 is 13310847, "
-                "and replay applies only that act at the oracle cutoff 2011-01-01. Its "
-                "Ringhäälinguseadus block compiles only the euro-conversion rewrites in §§ 43^4 "
-                "and 43^5. None of the current divergences are targeted by 13310847; oracle "
-                "121122010027 instead normalizes untouched older text via dash spacing, dash "
-                "glyphs, quote style, or final punctuation at this address."
-            ),
-            (
-                "chapter:8/section:45/subsection:1",
-                "The only in-range amendment between 121122010026 and 121122010027 is 13310847, "
-                "and replay applies only that act at the oracle cutoff 2011-01-01. Its "
-                "Ringhäälinguseadus block compiles only the euro-conversion rewrites in §§ 43^4 "
-                "and 43^5. None of the current divergences are targeted by 13310847; oracle "
-                "121122010027 instead normalizes untouched older text via dash spacing, dash "
-                "glyphs, quote style, or final punctuation at this address."
-            ),
         ),
     )
 
     inventory = get_ee_residual_inventory("121122010026", "121122010027")
 
     assert inventory is not None
-    assert len(generated) == 16
+    assert len(generated) == 2
     assert all(record.bucket == "source_oracle_drift" for record in generated)
     assert [
         (record.address, record.bucket, record.evidence)
@@ -838,146 +520,6 @@ def test_generated_shortened_section_family_matches_ringhaalinguseadus_editorial
         (record.address, record.bucket, record.evidence)
         for record in generated
     ]
-
-
-def test_generated_inserted_section_family_matches_kohtutaituri_sections_15_1_to_15_3() -> None:
-    generated = (
-        tuple(
-            build_inserted_section_omission_family(
-                section_address="chapter:2/division:2/section:15_1",
-                section_symbol="§ 15^1",
-                source_act_id="120062022001",
-                oracle_id="114032025016",
-                subsection_labels=("1", "2", "3", "4", "5", "6"),
-                bucket="source_oracle_drift",
-            )
-        )
-        + tuple(
-            build_inserted_item_omission_family(
-                item_address="chapter:2/division:2/section:15_1/subsection:1",
-                source_act_id="120062022001",
-                oracle_id="114032025016",
-                item_labels=("1", "2", "3", "4", "5"),
-                bucket="source_oracle_drift",
-            )
-        )
-        + tuple(
-            build_inserted_item_omission_family(
-                item_address="chapter:2/division:2/section:15_1/subsection:5",
-                source_act_id="120062022001",
-                oracle_id="114032025016",
-                item_labels=("1", "2", "3", "4", "5", "6"),
-                bucket="source_oracle_drift",
-            )
-        )
-        + tuple(
-            build_inserted_section_omission_family(
-                section_address="chapter:2/division:2/section:15_2",
-                section_symbol="§ 15^2",
-                source_act_id="120062022001",
-                oracle_id="114032025016",
-                subsection_labels=("1", "2", "3", "4"),
-                bucket="source_oracle_drift",
-            )
-        )
-        + tuple(
-            build_inserted_item_omission_family(
-                item_address="chapter:2/division:2/section:15_2/subsection:2",
-                source_act_id="120062022001",
-                oracle_id="114032025016",
-                item_labels=("1", "2", "3", "4"),
-                bucket="source_oracle_drift",
-            )
-        )
-        + tuple(
-            build_inserted_section_omission_family(
-                section_address="chapter:2/division:2/section:15_3",
-                section_symbol="§ 15^3",
-                source_act_id="120062022001",
-                oracle_id="114032025016",
-                subsection_labels=("1", "2", "3", "4"),
-                bucket="source_oracle_drift",
-            )
-        )
-        + tuple(
-            build_inserted_item_omission_family(
-                item_address="chapter:2/division:2/section:15_3/subsection:2",
-                source_act_id="120062022001",
-                oracle_id="114032025016",
-                item_labels=("1", "2", "3", "4", "5"),
-                bucket="source_oracle_drift",
-            )
-        )
-    )
-
-    inventory = get_ee_residual_inventory("109042021007", "114032025016")
-
-    assert inventory is not None
-    assert len(generated) == 37
-    assert generated[0].address == "chapter:2/division:2/section:15_1"
-    assert generated[-1].address == "chapter:2/division:2/section:15_3/subsection:2/item:5"
-    assert all(record.bucket == "source_oracle_drift" for record in generated)
-    assert [
-        (record.address, record.bucket, record.evidence)
-        for record in inventory.residuals[-37:]
-    ] == [
-        (record.address, record.bucket, record.evidence)
-        for record in generated
-    ]
-
-
-def test_generated_shortened_section_family_matches_eesti_territooriumi_transition_cluster() -> None:
-    generated = build_shortened_section_family(
-        bucket="source_pathology",
-        records=(
-            (
-                "chapter:3/section:14_1/subsection:4_2",
-                "No direct target-statute amendment in the applied 2014-2025 chain inserts "
-                "§ 14^1(4^2); oracle 131122025003 contains the subsection, while the related "
-                "2016 reform act 121062016001 states analogous rules in its own provisions "
-                "instead of amending § 14^1.",
-            ),
-            (
-                "chapter:3/section:14_1/subsection:4_3",
-                "No direct target-statute amendment in the applied chain inserts § 14^1(4^3); "
-                "oracle 131122025003 contains the subsection, while the related 2016 reform "
-                "act states analogous transition rules outside § 14^1.",
-            ),
-            (
-                "chapter:3/section:14_1/subsection:4_4",
-                "No direct target-statute amendment in the applied chain inserts § 14^1(4^4); "
-                "oracle 131122025003 contains the subsection, while the related 2016 reform "
-                "act states analogous transition rules outside § 14^1.",
-            ),
-            (
-                "chapter:3/section:14_1/subsection:4_5",
-                "No direct target-statute amendment in the applied chain inserts § 14^1(4^5); "
-                "oracle 131122025003 contains the subsection, while the related 2016 reform "
-                "act states analogous transition rules outside § 14^1.",
-            ),
-        ),
-    )
-
-    inventory = get_ee_residual_inventory("119032013003", "131122025003")
-
-    assert inventory is not None
-    assert len(generated) == 4
-    assert generated[0].address == "chapter:3/section:14_1/subsection:4_2"
-    assert generated[-1].address == "chapter:3/section:14_1/subsection:4_5"
-    assert all(record.bucket == "source_pathology" for record in generated)
-    assert [
-        (record.address, record.bucket, record.evidence)
-        for record in inventory.residuals
-        if record.address.startswith("chapter:3/section:14_1/subsection:4_")
-    ] == [
-        (record.address, record.bucket, record.evidence)
-        for record in generated
-    ]
-    assert any(
-        record.address == "chapter:3/section:14_1/subsection:12"
-        and "comparable staffing-transition text" in record.evidence
-        for record in inventory.residuals
-    )
 
 
 def test_generated_shortened_section_family_matches_inventory() -> None:
@@ -1346,6 +888,9 @@ def test_generated_first_residual_inventory_preserves_current_output_shape() -> 
     for (base_id, oracle_id), legacy_inventory in _KNOWN_EE_RESIDUALS.items():
         inventory = get_ee_residual_inventory(base_id, oracle_id)
 
+        if inventory is None:
+            assert (base_id, oracle_id) == ("109042021007", "114032025016")
+            continue
         assert inventory is not None
         assert inventory.base_id == legacy_inventory.base_id
         assert inventory.oracle_id == legacy_inventory.oracle_id
@@ -1370,13 +915,13 @@ def test_get_ee_residual_inventory_abieluvararegister() -> None:
     assert inventory is not None
     assert inventory.statute_title == "Abieluvararegistri seadus"
     assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 5
+    assert len(inventory.residuals) == 3
     assert {record.bucket for record in inventory.residuals} == {
         "source_oracle_drift",
     }
     assert any(
-        record.address == "chapter:1/section:2/subsection:1_1"
-        and "earlier 2017 wording" in record.evidence
+        record.address == "chapter:1/section:6/subsection:3"
+        and "Registritoimikuga tutvumise loa annab notar" in record.evidence
         for record in inventory.residuals
     )
     assert any(
@@ -1395,10 +940,12 @@ def test_get_ee_residual_inventory_kalapuugiseadus() -> None:
     assert len(inventory.residuals) == 5
     assert {record.bucket for record in inventory.residuals} == {
         "source_oracle_drift",
+        "source_pathology",
     }
     assert any(
         record.address == "chapter:2/section:17_1/subsection:1"
-        and "tegevusluba / majandustegevusteade regime" in record.evidence
+        and record.bucket == "source_pathology"
+        and "nested Kalapüügiseadus clause" in record.evidence
         for record in inventory.residuals
     )
     assert any(
@@ -1434,12 +981,13 @@ def test_get_ee_residual_inventory_audiitortegevuse_seadus() -> None:
     assert inventory.comparison_class == "commensurable_delta"
     assert len(inventory.residuals) == 1
     assert {record.bucket for record in inventory.residuals} == {
-        "source_oracle_drift",
+        "oracle_correction_notice",
     }
     assert any(
         record.address == "chapter:7/division:1/section:95_2/subsection:1"
         and "107012025001" in record.evidence
         and "kestlikkusaruande audiitorkontrolli" in record.evidence
+        and "Riigi Teataja confirmed" in record.evidence
         for record in inventory.residuals
     )
 
@@ -1450,10 +998,10 @@ def test_get_ee_residual_inventory_kalapuugiseadus_2023() -> None:
     assert inventory is not None
     assert inventory.statute_title == "Kalapüügiseadus"
     assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 11
+    assert len(inventory.residuals) == 3
     assert any(
-        record.address == "chapter:3/division:3_1/section:29_1/subsection:3"
-        and "Regionaal-ja Põllumajandusministeerium" in record.evidence
+        record.address == "chapter:7/section:90_2/subsection:2"
+        and "Maaeluministeerium" in record.evidence
         for record in inventory.residuals
     )
 
@@ -1461,41 +1009,6 @@ def test_get_ee_residual_inventory_kalapuugiseadus_2023() -> None:
 def test_generated_shortened_section_family_matches_kalapuugiseadus_ministry_drift_cluster() -> None:
     generated = build_shortened_section_family(
         records=(
-            (
-                "chapter:2/section:10/subsection:7",
-                "Source act 130062023001 rewrites § 10(7) with the replay-side text "
-                "mentioning 'Kliimaministeerium'. Oracle 130062023023 carries "
-                "'Regionaal-ja Põllumajandusministeerium' — a ministry rename not "
-                "introduced by any applied amendment.",
-            ),
-            (
-                "chapter:3/division:2/section:19/subsection:2",
-                "Source act 130062023001 rewrites § 19(2) with replay-side text "
-                "mentioning 'Kliimaministeerium'. Oracle carries "
-                "'Regionaal-ja Põllumajandusministeerium' — ministry rename drift.",
-            ),
-            (
-                "chapter:3/division:2/section:19/subsection:3",
-                "Source act 130062023001 rewrites § 19(3) with replay-side text "
-                "mentioning 'Kliimaministeerium'. Oracle carries ministry rename drift.",
-            ),
-            (
-                "chapter:3/division:2/section:19/subsection:4",
-                "Source act 130062023001 rewrites § 19(4) with replay-side text "
-                "mentioning 'Kliimaministeerium'. Oracle carries ministry rename drift.",
-            ),
-            (
-                "chapter:3/division:2/section:20/subsection:3",
-                "Source act 130062023001 rewrites § 20(3) with replay-side text "
-                "mentioning 'Kliimaministeerium'. Oracle carries ministry rename drift.",
-            ),
-            (
-                "chapter:3/division:3_1/section:29_1/subsection:3",
-                "Source act 130062023001 rewrites § 29^1(3) with replay-side text "
-                "mentioning 'Kliimaministeerium'. Oracle carries "
-                "'Regionaal-ja Põllumajandusministeerium' instead, continuing the same "
-                "ministry rename drift family already present elsewhere in this row.",
-            ),
             (
                 "chapter:7/section:90_2/subsection:1",
                 "Source act 130062023001 rewrites § 90^2(1) with replay-side text "
@@ -1514,73 +1027,21 @@ def test_generated_shortened_section_family_matches_kalapuugiseadus_ministry_dri
     inventory = get_ee_residual_inventory("111112022002", "130062023023")
 
     assert inventory is not None
-    assert len(generated) == 8
+    assert len(generated) == 2
     assert [
         (record.address, record.bucket, record.evidence)
-        for record in [inventory.residuals[1], *inventory.residuals[3:8], *inventory.residuals[9:11]]
+        for record in inventory.residuals[1:]
     ] == [
         (record.address, record.bucket, record.evidence)
         for record in generated
     ]
-    assert generated[0].address == "chapter:2/section:10/subsection:7"
+    assert generated[0].address == "chapter:7/section:90_2/subsection:1"
     assert generated[-1].address == "chapter:7/section:90_2/subsection:2"
     assert all(record.bucket == "source_oracle_drift" for record in generated)
 
 
-def test_get_ee_residual_inventory_kohtutaituri() -> None:
-    inventory = get_ee_residual_inventory("109042021007", "114032025016")
-
-    assert inventory is not None
-    assert inventory.statute_title == "Kohtutäituri seadus"
-    assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 55
-    assert {record.bucket for record in inventory.residuals} == {
-        "source_oracle_drift",
-        "source_pathology",
-    }
-    assert [
-        (record.address, record.bucket, record.evidence)
-        for record in inventory.residuals[:4]
-    ] == [
-        (
-            "chapter:2/division:2/section:13/subsection:1",
-            "source_oracle_drift",
-            "Base 109042021007 cites amendment 109042021001 in its own source refs "
-            "but still preserves the pre-amendment 'täitemenetlusregister' wording; "
-            "oracle 114032025016 carries the 109042021001 'täitmisregister' text.",
-        ),
-        (
-            "chapter:2/division:2/section:13/subsection:2",
-            "source_oracle_drift",
-            "Base 109042021007 cites amendment 109042021001 in its own source refs "
-            "but still preserves the pre-amendment 'täitemenetlusregister' wording; "
-            "oracle 114032025016 carries the 109042021001 'täitmisregister' text.",
-        ),
-        (
-            "chapter:3/division:1/section:78/subsection:1/item:16",
-            "source_oracle_drift",
-            "Base 109042021007 cites amendment 109042021001 in its own source refs "
-            "but still preserves the pre-amendment 'täitemenetlusregister' wording; "
-            "oracle 114032025016 carries the 109042021001 'täitmisregister' text.",
-        ),
-        (
-            "chapter:3/division:2/section:92/subsection:1/item:2",
-            "source_oracle_drift",
-            "Base 109042021007 cites amendment 109042021001 in its own source refs "
-            "but still preserves the pre-amendment 'täitemenetlusregister' wording; "
-            "oracle 114032025016 carries the 109042021001 'täitmisregister' text.",
-        ),
-    ]
-    assert any(
-        record.address == "chapter:2/division:5/section:37_2"
-        and "already cites that act while omitting the entire section" in record.evidence
-        for record in inventory.residuals
-    )
-    assert any(
-        record.address == "chapter:2/division:5/section:37_3/subsection:1"
-        and "nested amendment wrapper" in record.evidence
-        for record in inventory.residuals
-    )
+def test_get_ee_residual_inventory_kohtutaituri_solved_pair_is_not_published() -> None:
+    assert get_ee_residual_inventory("109042021007", "114032025016") is None
 
 
 def test_generated_shortened_section_family_matches_loomatauditorje_divisions() -> None:
@@ -1674,21 +1135,11 @@ def test_get_ee_residual_inventory_riigisaladuse_ja_salastatud_valisteabe() -> N
     assert inventory is not None
     assert inventory.statute_title == "Riigisaladuse ja salastatud välisteabe seadus"
     assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 21
+    assert len(inventory.residuals) == 3
     assert {record.bucket for record in inventory.residuals} == {
         "source_oracle_drift",
         "source_pathology",
     }
-    assert any(
-        record.address == "chapter:2/division:3/section:30_1"
-        and "127012023001 inserts § 30^1 cleanly" in record.evidence
-        for record in inventory.residuals
-    )
-    assert any(
-        record.address == "chapter:2/division:3/section:34_1/subsection:2"
-        and "108072025007 inserts § 34^1 cleanly" in record.evidence
-        for record in inventory.residuals
-    )
     assert any(
         record.address == "chapter:2/division:1/section:8/subsection:1/item:8"
         and record.bucket == "source_oracle_drift"
@@ -2147,10 +1598,8 @@ def test_get_ee_residual_inventory_taiskasvanute_koolituse_forward_looking_mixed
 
     assert inventory is not None
     assert inventory.comparison_class == "forward_looking_oracle"
-    assert len(inventory.residuals) == 13
-    assert {
-        record.bucket for record in inventory.residuals
-    } == {"replay_bug", "source_oracle_drift"}
+    assert len(inventory.residuals) == 9
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
     assert [
         (record.address, record.bucket) for record in inventory.residuals
     ] == [
@@ -2160,10 +1609,6 @@ def test_get_ee_residual_inventory_taiskasvanute_koolituse_forward_looking_mixed
         ("chapter:2/section:6/subsection:1/item:3", "source_oracle_drift"),
         ("chapter:2/section:6_1", "source_oracle_drift"),
         ("chapter:2/section:6_1/subsection:2", "source_oracle_drift"),
-        ("chapter:4", "replay_bug"),
-        ("chapter:4/section:13", "replay_bug"),
-        ("chapter:4/section:13/subsection:5_1", "replay_bug"),
-        ("chapter:4/section:13/subsection:5_2", "replay_bug"),
         ("chapter:5", "source_oracle_drift"),
         ("chapter:5/section:16_1", "source_oracle_drift"),
         ("chapter:5/section:16_1/subsection:4", "source_oracle_drift"),
@@ -2645,100 +2090,8 @@ def test_generated_shortened_section_family_matches_elp_rakendamise_spillover_cl
     assert all(record.bucket == "source_pathology" for record in generated)
 
 
-def test_get_ee_residual_inventory_loomade_kauplemise_ja_impordi_ekspordi_seadus() -> None:
-    inventory = get_ee_residual_inventory("116062016016", "128122018040")
-
-    assert inventory is not None
-    assert inventory.statute_title == "Loomade ja loomsete saadustega kauplemise ning nende impordi ja ekspordi seadus"
-    assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 24
-    assert {record.bucket for record in inventory.residuals} == {
-        "source_oracle_drift",
-    }
-    assert any(
-        record.address == "chapter:1/section:5"
-        and "128122018035 explicitly rewrites" in record.evidence
-        for record in inventory.residuals
-    )
-    assert any(
-        record.address == "chapter:3/division:3/section:36/subsection:2"
-        and "lowercase 'tolliseadustiku'" in record.evidence
-        for record in inventory.residuals
-    )
-    assert any(
-        record.address == "chapter:3/division:3/section:40/subsection:4"
-        and "116062017001 explicitly removes ', vabaladu'" in record.evidence
-        for record in inventory.residuals
-    )
-
-
-def test_generated_address_list_family_matches_loomade_kauplemise_cluster() -> None:
-    generated_veterinaarjarelevalve = build_address_list_family(
-        addresses=(
-            "chapter:1/section:5",
-            "chapter:1/section:5/subsection:1",
-            "chapter:1/section:6",
-            "chapter:1/section:6/subsection:1",
-            "chapter:2/division:1/section:10/subsection:2",
-        ),
-        evidence=(
-            "Source act 128122018035 explicitly rewrites "
-            "'veterinaar- ja zootehniline järelevalve' to "
-            "'veterinaarjärelevalve' in the affected § 5, § 6, and § 10 "
-            "targets. Replay follows that source-backed wording, while oracle "
-            "128122018040 keeps the older broader supervision phrasing."
-        ),
-    )
-    generated_vabaladu = build_address_list_family(
-        addresses=(
-            "chapter:1/section:7/subsection:1/item:3",
-            "chapter:3/division:3/section:37",
-            "chapter:3/division:3/section:37/subsection:1",
-            "chapter:3/division:3/section:37/subsection:6",
-            "chapter:3/division:3/section:37/subsection:7",
-            "chapter:3/division:3/section:38",
-            "chapter:3/division:3/section:38/subsection:1",
-            "chapter:3/division:3/section:38/subsection:1/item:2",
-            "chapter:3/division:3/section:38/subsection:3",
-            "chapter:3/division:3/section:38/subsection:4",
-            "chapter:3/division:3/section:40",
-            "chapter:3/division:3/section:40/subsection:1",
-            "chapter:3/division:3/section:40/subsection:2",
-            "chapter:3/division:3/section:40/subsection:4",
-            "chapter:8/section:62",
-            "chapter:8/section:62/subsection:1",
-            "chapter:9/section:72/subsection:1",
-            "chapter:9/section:72/subsection:2",
-        ),
-        evidence=(
-            "Source act 116062017001 explicitly removes ', vabaladu' across the "
-            "affected § 7, §§ 37–40, § 62, and § 72 targets. Replay follows that "
-            "source-backed narrower 'vabatsoon ... või tolliladu' wording, while "
-            "oracle 128122018040 still retains the older 'vabaladu' text."
-        ),
-    )
-
-    inventory = get_ee_residual_inventory("116062016016", "128122018040")
-
-    assert inventory is not None
-    assert len(generated_veterinaarjarelevalve) == 5
-    assert len(generated_vabaladu) == 18
-    assert [
-        (record.address, record.bucket, record.evidence)
-        for record in inventory.residuals[:5]
-    ] == [
-        (record.address, record.bucket, record.evidence)
-        for record in generated_veterinaarjarelevalve
-    ]
-    assert inventory.residuals[5].address == "chapter:3/division:3/section:36/subsection:2"
-    assert "lowercase 'tolliseadustiku'" in inventory.residuals[5].evidence
-    assert [
-        (record.address, record.bucket, record.evidence)
-        for record in inventory.residuals[6:]
-    ] == [
-        (record.address, record.bucket, record.evidence)
-        for record in generated_vabaladu
-    ]
+def test_get_ee_residual_inventory_omits_solved_loomade_kauplemise_case() -> None:
+    assert get_ee_residual_inventory("116062016016", "128122018040") is None
 
 
 def test_get_ee_residual_inventory_eesti_territooriumi_haldusjaotuse_seadus() -> None:
@@ -2747,7 +2100,7 @@ def test_get_ee_residual_inventory_eesti_territooriumi_haldusjaotuse_seadus() ->
     assert inventory is not None
     assert inventory.statute_title == "Eesti territooriumi haldusjaotuse seadus"
     assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 24
+    assert len(inventory.residuals) == 2
     assert {record.bucket for record in inventory.residuals} == {
         "source_oracle_drift",
         "source_pathology",
@@ -2758,13 +2111,8 @@ def test_get_ee_residual_inventory_eesti_territooriumi_haldusjaotuse_seadus() ->
         for record in inventory.residuals
     )
     assert any(
-        record.address == "chapter:3/section:14_1/subsection:4_2"
-        and "No direct target-statute amendment" in record.evidence
-        for record in inventory.residuals
-    )
-    assert any(
-        record.address == "chapter:3/section:70_3"
-        and "121062016001 both inserts and immediately rewrites § 70^3" in record.evidence
+        record.address == "chapter:2/section:8_1/subsection:8/item:5"
+        and "No parsed amendment in the applied chain removes § 8^1(8) p 5" in record.evidence
         for record in inventory.residuals
     )
 
@@ -3490,12 +2838,12 @@ def test_get_ee_residual_inventory_ringhaalinguseadus() -> None:
     assert inventory is not None
     assert inventory.statute_title == "Ringhäälinguseadus"
     assert inventory.comparison_class == "commensurable_delta"
-    assert len(inventory.residuals) == 16
+    assert len(inventory.residuals) == 2
     assert {record.bucket for record in inventory.residuals} == {
         "source_oracle_drift",
     }
     assert any(
-        record.address == "chapter:6/section:37/subsection:3/item:3"
+        record.address == "chapter:7_1/section:43_5/subsection:1"
         and "13310847" in record.evidence
         and "dash spacing, dash glyphs, quote style, or final punctuation" in record.evidence
         for record in inventory.residuals
@@ -3711,7 +3059,7 @@ def test_list_known_ee_residual_inventories_contains_active_non_zero_pairs() -> 
     assert ("126042013006", "111042014003") in pairs
     assert ("105122014039", "114032025013") in pairs
     assert ("108112012002", "103072014023") in pairs
-    assert ("109042021007", "114032025016") in pairs
+    assert ("109042021007", "114032025016") not in pairs
     assert ("106052020036", "103022026013") in pairs
     assert ("121052014030", "121052014031") in pairs
     assert ("130042024004", "112122024004") in pairs

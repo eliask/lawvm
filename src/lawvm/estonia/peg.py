@@ -43,7 +43,10 @@ Actionables
 """
 from __future__ import annotations
 
+import html
 import re
+import sys
+import unicodedata
 from dataclasses import replace
 from typing import List, Optional, Tuple
 
@@ -59,6 +62,45 @@ from lawvm.core.ir import (
     TextSelector,
 )
 from lawvm.core.semantic_types import FacetKind
+
+
+_EE_SUPERSCRIPT_DIGITS = "".join(
+    chr(cp)
+    for cp in range(sys.maxunicode + 1)
+    if "SUPERSCRIPT" in unicodedata.name(chr(cp), "")
+    and unicodedata.digit(chr(cp), None) is not None
+)
+_EE_SUPERSCRIPT_DIGIT_CLASS = re.escape(_EE_SUPERSCRIPT_DIGITS)
+_EE_SUPERSCRIPT_DIGIT_TRANSLATION = {
+    ord(ch): str(unicodedata.digit(ch)) for ch in _EE_SUPERSCRIPT_DIGITS
+}
+_EE_DASH_CHARS = "".join(
+    chr(cp)
+    for cp in range(sys.maxunicode + 1)
+    if unicodedata.category(chr(cp)) == "Pd"
+)
+_EE_DASH_CLASS = re.escape(_EE_DASH_CHARS)
+_EE_NUM_ATOM = r"\d+(?:\s+\d+|[" + _EE_SUPERSCRIPT_DIGIT_CLASS + r"]+)?"
+_EE_ZS_NON_ASCII_SPACES = frozenset(
+    chr(cp)
+    for cp in range(sys.maxunicode + 1)
+    if cp != 0x20 and unicodedata.category(chr(cp)) == "Zs"
+)
+_EE_CF_FORMAT_CHARS = frozenset(
+    chr(cp)
+    for cp in range(sys.maxunicode + 1)
+    if unicodedata.category(chr(cp)) == "Cf"
+)
+_EE_PARSE_TRANSLATION_TABLE = {
+    **{ord(ch): " " for ch in _EE_ZS_NON_ASCII_SPACES},
+    **{ord(ch): "\u2013" for ch in _EE_DASH_CHARS},
+    **{ord(ch): "" for ch in _EE_CF_FORMAT_CHARS},
+}
+
+
+def _normalize_ee_parse_text(text: str) -> str:
+    """Normalize Estonian text for structural parsing only."""
+    return text.translate(_EE_PARSE_TRANSLATION_TABLE)
 
 
 
@@ -88,18 +130,19 @@ def _to_structural_action(action: str) -> StructuralAction:
 # "71_1" so they're a usable string label.
 def _normalize_num(raw: str) -> str:
     """Collapse superscript digit sequences: '71 1' → '71_1', '1' → '1'."""
-    superscript_map = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")
+    raw = _normalize_ee_parse_text(raw)
     normalized = re.sub(
-        r"(?<=\d)([⁰¹²³⁴⁵⁶⁷⁸⁹]+)",
-        lambda match: "_" + match.group(1).translate(superscript_map),
+        r"(?<=\d)([" + _EE_SUPERSCRIPT_DIGIT_CLASS + r"]+)",
+        lambda match: "_" + match.group(1).translate(_EE_SUPERSCRIPT_DIGIT_TRANSLATION),
         raw.strip(),
-    ).translate(superscript_map)
+    ).translate(_EE_SUPERSCRIPT_DIGIT_TRANSLATION)
     # Handle "N digits" patterns (superscript encodings)
     return re.sub(r'(\d)\s+(\d)', r'\1_\2', normalized)
 
 
 def _instruction_preamble(text: str) -> str:
     """Return the instruction part before quoted replacement payload begins."""
+    text = _normalize_ee_parse_text(text)
     preamble_end = len(text)
     for marker in ('\u201e', '\u02ee', '\u00ab', 'järgmises sõnastuses:', 'järgmiselt:'):
         idx = text.find(marker)
@@ -317,6 +360,12 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
     instruction preamble are considered.
     """
     preamble = text
+    preamble = re.sub(
+        r'\btekstiosa\s+\u201e\u201e[^\u201d]+[\u201c\u201d][^\u201d]*[\u201c\u201d]',
+        'tekstiosa ',
+        preamble,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
     for pat in (
         r'\u201e.*?\u201d',
         r'\u02ee.*?\u02ee',
@@ -325,6 +374,7 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
     ):
         preamble = re.sub(pat, ' ', preamble, flags=re.DOTALL)
     preamble = _strip_embedded_reference_wrapper(preamble)
+    preamble = re.sub(r"\bl[oõ]igetest\b", "lõigetes", preamble, flags=re.IGNORECASE)
     preamble = re.sub(r'\s+', ' ', preamble).strip()
     chunks = re.split(
         r'(?:,\s*|\s+(?:ning|ja)\s+)'
@@ -363,7 +413,7 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
 
             for intro_item_ref in re.finditer(
                 r'lõike(?:te|tes|st|s|t|ga)?\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
-                r'sissejuhatavat\s+lauseosa(?:\s*,\s*|\s+(?:ning|ja)\s+)'
+                r'sissejuhatava(?:t\s+lauseosa|s\s+lauseosas|st\s+lauseosast)(?:\s*,\s*|\s+(?:ning|ja)\s+)'
                 r'punkt(?:id|e|ide|ides|i|is|ist|iga)?\s+'
                 r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*(?:\s*(?:,|ja|–|‒|-)\s*\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)*)',
                 remainder,
@@ -412,9 +462,30 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
                     mixed_targets.append(LegalAddress(path=item_path))
 
             if m_sub_and_item is None:
+                for item_pair_ref in re.finditer(
+                    r'lõike(?:te|tes|st|s|t|ga)?\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+                    r'punkt(?:id|ide|ides|idest|i|is|ist|iga)?\s+'
+                    r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+                    r'(?:ning|ja)\s+punkt(?:i|is|ist)?\s+'
+                    r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+                    r'(?:esime(?:sest|ne)|tei(?:sest|ne)|kolma(?:ndast|s)|nelja(?:ndast|s))\s+lausest',
+                    remainder,
+                    re.IGNORECASE,
+                ):
+                    sub_label = _normalize_num(item_pair_ref.group(1))
+                    for item_label in (item_pair_ref.group(2), item_pair_ref.group(3)):
+                        path_tuple = (
+                            ("section", sect_label),
+                            ("subsection", sub_label),
+                            ("item", _normalize_num(item_label)),
+                        )
+                        if path_tuple in mixed_seen:
+                            continue
+                        mixed_seen.add(path_tuple)
+                        mixed_targets.append(LegalAddress(path=path_tuple))
                 for item_ref in re.finditer(
                     r'lõike(?:te|tes|st|s|t|ga)?\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
-                    r'punkt(?:id|ide|ides|i|is|ist|iga)?\s+'
+                    r'punkt(?:id|ide|ides|idest|i|is|ist|iga)?\s+'
                     r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*(?:\s*(?:,|ja|–|‒|-)\s*\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)*)',
                     remainder,
                     re.IGNORECASE,
@@ -433,10 +504,18 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
 
             plain_item_remainder = re.sub(
                 r'lõike(?:te|tes|st|s|t|ga)?\s+\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s+'
-                r'punkt(?:id|ide|ides|i|is|ist|iga)?\s+'
+                r'punkt(?:id|ide|ides|idest|i|is|ist|iga)?\s+'
                 r'\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*(?:\s*(?:,|ja|–|‒|-)\s*\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)*',
                 ' ',
                 remainder,
+                flags=re.IGNORECASE,
+            )
+            plain_item_remainder = re.sub(
+                r'(?:ning|ja)\s+punkt(?:i|is|ist)?\s+'
+                r'\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s+'
+                r'(?:esime(?:sest|ne)|tei(?:sest|ne)|kolma(?:ndast|s)|nelja(?:ndast|s))\s+lausest',
+                ' ',
+                plain_item_remainder,
                 flags=re.IGNORECASE,
             )
             if not re.search(
@@ -532,7 +611,7 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
     )
     _same_section_item_pat = (
         r'lõike(?:te|tes|st|s|t|ga)?\s+\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s+'
-        r'punkt(?:id|ide|ides|i|is|ist|iga)?\s+'
+        r'punkt(?:id|ide|ides|idest|i|is|ist|iga)?\s+'
         r'\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*(?:\s*(?:,|ja|–|‒|-)\s*\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)*'
     )
     for idx, section_ref in enumerate(section_refs):
@@ -573,6 +652,15 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
         for path in (target.path for target in targets)
         if len(path) >= 2 and path[0][0] == "section"
     }
+    child_subsections = {
+        path[:2]
+        for path in (target.path for target in targets)
+        if len(path) >= 3
+        and path[0][0] == "section"
+        and path[1][0] == "subsection"
+        and path[2][0] == "item"
+    }
+    intro_only_subsections = _extract_intro_only_subsection_paths(text)
     filtered = [
         target
         for target in targets
@@ -581,6 +669,11 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
             and target.special is not FacetKind.HEADING
             and target.path[0][0] == "section"
             and target.path[0][1] in child_sections
+        )
+        and not (
+            len(target.path) == 2
+            and target.path in child_subsections
+            and target.path not in intro_only_subsections
         )
     ]
     deduped: list[LegalAddress] = []
@@ -611,7 +704,8 @@ def _extract_intro_only_subsection_paths(text: str) -> set[tuple[tuple[str, str]
         span_end = section_refs[idx + 1].start() if idx + 1 < len(section_refs) else len(preamble)
         section_span = preamble[span_start:span_end]
         for sub_ref in re.finditer(
-            r'lõike(?:te|tes|st|s|t|ga)?\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+sissejuhatavat\s+lauseosa',
+            r'lõike(?:te|tes|st|s|t|ga)?\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+            r'sissejuhatava(?:t\s+lauseosa|s\s+lauseosas|st\s+lauseosast)',
             section_span,
             re.IGNORECASE,
         ):
@@ -621,6 +715,8 @@ def _extract_intro_only_subsection_paths(text: str) -> set[tuple[tuple[str, str]
                     ("subsection", _normalize_num(sub_ref.group(1))),
                 )
             )
+        if re.search(r'\bteksti\s+sissejuhatavas\s+lauseosas\b', section_span, re.IGNORECASE):
+            intro_only_paths.add((("section", sect_label),))
     return intro_only_paths
 
 
@@ -629,7 +725,10 @@ def _attach_subsection_text_scope_meta(
     clean: str,
     target: LegalAddress,
 ) -> IRNode:
-    if len(target.path) != 2 or target.path[0][0] != "section" or target.path[1][0] != "subsection":
+    if not (
+        (len(target.path) == 1 and target.path[0][0] == "section")
+        or (len(target.path) == 2 and target.path[0][0] == "section" and target.path[1][0] == "subsection")
+    ):
         return payload
     if target.path not in _extract_intro_only_subsection_paths(clean):
         return payload
@@ -753,8 +852,10 @@ def _classify_verb(text: str) -> str:
             return "text_replace"
         return "repeal"
 
-    # Structural replace: muudetakse (ja sõnastatakse) OR sõnastatakse järgmiselt
-    if 'sõnastatakse järgmiselt' in t or ('muudetakse' in t and 'sõnastatakse' in t):
+    # Structural replace. _instruction_preamble() strips "järgmiselt:" before
+    # payload parsing, so bare "sõnastatakse" in the preamble is the operative
+    # replacement verb.
+    if 'sõnastatakse' in t:
         return "replace"
 
     # Simple amend with no explicit new text phrasing → still a replace
@@ -905,6 +1006,21 @@ def _extract_quoted_content(text: str) -> Optional[str]:
     return " ".join(matches)
 
 
+def _unwrap_nested_statute_insert_payload(content: str) -> str:
+    """Strip an amendment-point wrapper around an inner section-insert payload."""
+    if not re.search(
+        r'^\s*\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰_]*\)\s+'
+        r'(?:seadust|seadustikku|määrust)\s+täiendatakse\s+§[‑–‒-]ga\b',
+        content,
+        re.IGNORECASE,
+    ):
+        return content
+    inner = _extract_quoted_content(content)
+    if inner and re.match(r'^\s*§\s*\d', inner):
+        return inner
+    return content
+
+
 def _split_plural_subsection_replace_payload(content: str) -> Optional[dict[str, str]]:
     """Split a shared replace payload into subsection-specific payloads.
 
@@ -1000,9 +1116,18 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
     # This handles both "„OLD" „NEW"" and "„OLD" „NEW"" patterns.
     # RT HTML (CDATA) sometimes uses " (U+201D) for BOTH opening and closing
     # (non-standard pairing), so we also try " " (U+201D...U+201D).
+    text = html.unescape(text)
+    nested_delete = re.search(
+        r"\bj[aä]etakse\s+v[aä]lja\s+tekstiosa\s+\u201e(.+)[\u201c\u201d\"]\s*[.;]?\s*$",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if nested_delete is not None:
+        return nested_delete.group(1).strip(), ""
     for pat in (
-        r'\u201e(.*?)(?:\u201d|")',   # Estonian „ open, either typographic or ASCII close
+        r'\u201e(.*?)(?:\u201c|\u201d|")',   # Estonian „ open, common RT closes, or ASCII close
         r'\u201d(.*?)\u201d',          # RT HTML CDATA: ”…” (both U+201D, right double quote)
+        r'\u201c(.*?)\u201c',          # RT HTML CDATA: “…” (both U+201C, left double quote)
         r'\u02ee(.*?)\u02ee',          # RT quote prime: ˮ…ˮ
         r'\u00ab(.*?)\u00bb',          # French «…»
         r'"(.*?)"',                    # plain ASCII "…"
@@ -1017,9 +1142,11 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
 
 def _extract_text_replace_pairs(text: str) -> List[Tuple[str, str]]:
     """Extract all quoted OLD→NEW pairs from a text_replace clause."""
+    text = html.unescape(text)
     for pat in (
-        r'\u201e(.*?)(?:\u201d|")',
+        r'\u201e(.*?)(?:\u201c|\u201d|")',
         r'\u201d(.*?)\u201d',
+        r'\u201c(.*?)\u201c',
         r'\u02ee(.*?)\u02ee',
         r'\u00ab(.*?)\u00bb',
         r'"(.*?)"',
@@ -1158,103 +1285,119 @@ def _extract_sd_section_nums(clean: str) -> List[str]:
     7_1 and 33. It also covers the singular form "ning § 85 7".
     This function returns normalized labels for those secondary sections only.
     """
-    _NUM_PAT = r'\d+(?:\s+\d+)?'
-    _SEC_LIST_PAT = (
-        _NUM_PAT
-        + r'(?:\s*[–‒\-]\s*'
-        + _NUM_PAT
-        + r')?(?:\s*,\s*'
-        + _NUM_PAT
-        + r'(?:\s*[–‒\-]\s*'
-        + _NUM_PAT
-        + r')?)*(?:\s+ja\s+'
-        + _NUM_PAT
-        + r'(?:\s*[–‒\-]\s*'
-        + _NUM_PAT
-        + r')?)*'
-    )
-    matches = list(re.finditer(
-        r'(?:\bning\b|\bja\b|,)\s+§(?:-d)?\s+('
-        + _SEC_LIST_PAT
-        + r')(?!\s+l[oõ]ik)(?=\s*(?:\bning\b|\bja\b|,|;|tunnistatakse\b|$))',
+    clean = _normalize_ee_parse_text(clean)
+    _NUM_PAT = _EE_NUM_ATOM
+    result: List[str] = []
+    for match in re.finditer(
+        r'(?:\bning\b|\bja\b|,)\s+§[' + _EE_DASH_CLASS + r']d\s+(.+?)(?=(?:\s+(?:\bning\b|\bja\b)\s+|,\s*)§|\s+tunnistatakse\b|;|$)',
         clean,
         re.IGNORECASE,
-    ))
-    if not matches:
-        return []
-    result: List[str] = []
-    for match in matches:
-        for raw in _expand_ee_numeric_list(match.group(1).strip()):
-            if raw:
+    ):
+        raw_group = match.group(1).strip(" ,;")
+        if re.search(r'\bl[oõ]ik', raw_group, re.IGNORECASE):
+            continue
+        for raw in _expand_ee_numeric_list(raw_group):
+            if raw and raw not in result:
                 result.append(raw)
+    for match in re.finditer(
+        r'(?:\bning\b|\bja\b|,)\s+§\s+('
+        + _NUM_PAT
+        + r')\s+(?=(?:\bning\b|\bja\b)\s+§\s+'
+        + _NUM_PAT
+        + r'\s+l[oõ]iked\b)',
+        clean,
+        re.IGNORECASE,
+    ):
+        label = _normalize_num(match.group(1).strip())
+        if label not in result:
+            result.append(label)
+    for match in re.finditer(
+        r'(?:\bning\b|\bja\b|,)\s+§\s+(' + _NUM_PAT + r')'
+        r'(?!\s+l[oõ]ik)(?=\s*(?:\bning\b|\bja\b|,|;|tunnistatakse\b|$))',
+        clean,
+        re.IGNORECASE,
+    ):
+        label = _normalize_num(match.group(1).strip())
+        if label not in result:
+            result.append(label)
     return result
 
 
 def _expand_ee_numeric_list(raw_group: str) -> List[str]:
     """Expand a bounded numeric list with commas, `ja`, and en-dash ranges."""
-    _NUM_PAT = r'\d+(?:\s+\d+)?'
+    raw_group = _normalize_ee_parse_text(raw_group)
+    _NUM_PAT = _EE_NUM_ATOM
     expanded: List[str] = []
+
+    def _range_labels(start: str, end: str) -> list[str]:
+        if start == end:
+            return [start]
+        if start.isdigit() and end.isdigit():
+            return [str(num) for num in range(int(start), int(end) + 1)]
+        if "_" in start and end.isdigit():
+            start_base, _start_suffix = start.split("_", 1)
+            if start_base.isdigit() and int(start_base) < int(end):
+                return [start, *[str(num) for num in range(int(start_base) + 1, int(end) + 1)]]
+            return [start, end]
+        if start.isdigit() and "_" in end:
+            end_base, end_suffix = end.split("_", 1)
+            if end_base.isdigit() and end_suffix.isdigit():
+                labels = [str(num) for num in range(int(start), int(end_base) + 1)]
+                if start == end_base:
+                    labels = [start]
+                labels.extend(f"{end_base}_{suffix}" for suffix in range(1, int(end_suffix) + 1))
+                return labels
+            return [start, end]
+        if "_" in start and "_" in end:
+            start_base, start_suffix = start.split("_", 1)
+            end_base, end_suffix = end.split("_", 1)
+            if (
+                start_base.isdigit()
+                and start_suffix.isdigit()
+                and end_base.isdigit()
+                and end_suffix.isdigit()
+            ):
+                if start_base == end_base:
+                    return [
+                        f"{start_base}_{suffix}"
+                        for suffix in range(int(start_suffix), int(end_suffix) + 1)
+                    ]
+                if int(start_base) < int(end_base):
+                    labels = [start]
+                    labels.extend(str(num) for num in range(int(start_base) + 1, int(end_base) + 1))
+                    labels.extend(f"{end_base}_{suffix}" for suffix in range(1, int(end_suffix) + 1))
+                    return labels
+            return [start, end]
+        return [start, end]
+
     for raw_part in re.split(r'\s*,\s*|\s+(?:ja|ning)\s+', raw_group.strip()):
-        raw_part = raw_part.strip()
+        raw_part = raw_part.strip().strip(";")
         if not raw_part:
             continue
         m_range = re.match(
-            r'^(' + _NUM_PAT + r')\s*[–‒\-]\s*(' + _NUM_PAT + r')$',
+            r'^(' + _NUM_PAT + r')\s*[.]?\s*[' + _EE_DASH_CLASS + r']\s*(' + _NUM_PAT + r')\s*[.]?$',
             raw_part,
         )
         if m_range:
             start = _normalize_num(m_range.group(1).strip())
             end = _normalize_num(m_range.group(2).strip())
-            if start.isdigit() and end.isdigit():
-                for num in range(int(start), int(end) + 1):
-                    expanded.append(str(num))
-            elif start.isdigit() and "_" in end:
-                end_base, end_suffix = end.split("_", 1)
-                if end_base.isdigit() and end_suffix.isdigit() and start == end_base:
-                    expanded.append(start)
-                    for suffix in range(1, int(end_suffix) + 1):
-                        expanded.append(f"{start}_{suffix}")
-                else:
-                    expanded.extend([start, end])
-            elif "_" in start and end.isdigit():
-                start_base, _start_suffix = start.split("_", 1)
-                if start_base.isdigit():
-                    expanded.append(start)
-                    for num in range(int(start_base) + 1, int(end) + 1):
-                        expanded.append(str(num))
-                else:
-                    expanded.extend([start, end])
-            elif "_" in start and "_" in end:
-                start_base, start_suffix = start.split("_", 1)
-                end_base, end_suffix = end.split("_", 1)
-                if (
-                    start_base.isdigit()
-                    and end_base.isdigit()
-                    and start_base == end_base
-                    and start_suffix.isdigit()
-                    and end_suffix.isdigit()
-                ):
-                    for suffix in range(int(start_suffix), int(end_suffix) + 1):
-                        expanded.append(f"{start_base}_{suffix}")
-                else:
-                    expanded.extend([start, end])
-            else:
-                expanded.extend([start, end])
+            expanded.extend(_range_labels(start, end))
             continue
-        expanded.append(_normalize_num(raw_part))
+        expanded.append(_normalize_num(raw_part.strip(".")))
     return expanded
 
 
 def _plain_numeric_ranges(raw_group: str) -> tuple[tuple[str, str], ...]:
     """Return plain integer ranges from a section-list witness string."""
-    _NUM_PAT = r'\d+(?:\s+\d+)?'
+    raw_group = _normalize_ee_parse_text(raw_group)
+    _NUM_PAT = _EE_NUM_ATOM
     ranges: list[tuple[str, str]] = []
     for raw_part in re.split(r'\s*,\s*|\s+(?:ja|ning)\s+', raw_group.strip()):
         raw_part = raw_part.strip()
         if not raw_part:
             continue
         m_range = re.match(
-            r'^(' + _NUM_PAT + r')\s*[–‒\-]\s*(' + _NUM_PAT + r')$',
+            r'^(' + _NUM_PAT + r')\s*[' + _EE_DASH_CLASS + r']\s*(' + _NUM_PAT + r')$',
             raw_part,
         )
         if not m_range:
@@ -1263,6 +1406,27 @@ def _plain_numeric_ranges(raw_group: str) -> tuple[tuple[str, str], ...]:
         end = _normalize_num(m_range.group(2).strip())
         if start.isdigit() and end.isdigit():
             ranges.append((start, end))
+    return tuple(ranges)
+
+
+def _ee_label_ranges(raw_group: str) -> tuple[tuple[str, str], ...]:
+    """Return normalized start/end labels from any explicit numeric range."""
+    raw_group = _normalize_ee_parse_text(raw_group)
+    ranges: list[tuple[str, str]] = []
+    for raw_part in re.split(r'\s*,\s*|\s+(?:ja|ning)\s+', raw_group.strip()):
+        raw_part = raw_part.strip().strip(";")
+        if not raw_part:
+            continue
+        m_range = re.match(
+            r'^(' + _EE_NUM_ATOM + r')\s*[.]?\s*[' + _EE_DASH_CLASS + r']\s*(' + _EE_NUM_ATOM + r')\s*[.]?$',
+            raw_part,
+        )
+        if not m_range:
+            continue
+        ranges.append((
+            _normalize_num(m_range.group(1).strip()),
+            _normalize_num(m_range.group(2).strip()),
+        ))
     return tuple(ranges)
 
 
@@ -1278,18 +1442,19 @@ def _extract_secondary_subsection_repeals(clean: str) -> List[tuple[str, str]]:
       ``paragrahvid 39 ja 40, § 41 lõiked 1–2 ja lõige 8, §-d 41 1, 43 ja 44
       tunnistatakse kehtetuks``
     """
-    _NUM_PAT = r'\d+(?:\s+\d+)?'
+    clean = _normalize_ee_parse_text(clean)
+    _NUM_PAT = _EE_NUM_ATOM
     _SUB_LIST_PAT = (
         _NUM_PAT
-        + r'(?:\s*[–‒\-]\s*'
+        + r'(?:\s*[' + _EE_DASH_CLASS + r']\s*'
         + _NUM_PAT
         + r')?(?:\s*,\s*'
         + _NUM_PAT
-        + r'(?:\s*[–‒\-]\s*'
+        + r'(?:\s*[' + _EE_DASH_CLASS + r']\s*'
         + _NUM_PAT
         + r')?)*(?:\s+ja\s+'
         + _NUM_PAT
-        + r'(?:\s*[–‒\-]\s*'
+        + r'(?:\s*[' + _EE_DASH_CLASS + r']\s*'
         + _NUM_PAT
         + r')?)?'
     )
@@ -1315,7 +1480,8 @@ def _extract_secondary_subsection_repeals(clean: str) -> List[tuple[str, str]]:
 
 def _extract_trailing_section_subsection_repeals(clean: str) -> List[tuple[str, str]]:
     """Extract mixed repeal tails like ``§ 27 ja § 28 lõige 2``."""
-    _NUM_PAT = r'\d+(?:\s+\d+)?'
+    clean = _normalize_ee_parse_text(clean)
+    _NUM_PAT = _EE_NUM_ATOM
     results: List[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for match in re.finditer(
@@ -1462,6 +1628,39 @@ def _extract_same_section_extra_subsection_repeals_after_items(
     return results
 
 
+def _extract_same_section_extra_subsection_label_ranges_after_items(
+    clean: str,
+    sect_label: str,
+) -> tuple[tuple[str, str, str], ...]:
+    """Extract label ranges from subsection repeals after a plural-item repeal."""
+    _NUM_PAT = _EE_NUM_ATOM
+    clean = _normalize_ee_parse_text(clean)
+    next_section = re.search(r'(?:\bning\b|\bja\b|,)\s+§(?:[' + _EE_DASH_CLASS + r']d)?\s+\d', clean, re.IGNORECASE)
+    local_clean = clean[: next_section.start()] if next_section else clean
+    ranges: list[tuple[str, str, str]] = []
+    for match in re.finditer(
+        r'(?:\bning\b|\bja\b|,)\s+l[oõ]iked\s+('
+        + _NUM_PAT
+        + r'(?:\s*[.]?\s*[' + _EE_DASH_CLASS + r']\s*'
+        + _NUM_PAT
+        + r'\s*[.]?)?(?:\s*,\s*'
+        + _NUM_PAT
+        + r'(?:\s*[.]?\s*[' + _EE_DASH_CLASS + r']\s*'
+        + _NUM_PAT
+        + r'\s*[.]?)?)*(?:\s+ja\s+'
+        + _NUM_PAT
+        + r'(?:\s*[.]?\s*[' + _EE_DASH_CLASS + r']\s*'
+        + _NUM_PAT
+        + r'\s*[.]?)?)?'
+        + r')(?=\s*(?:\bning\b|\bja\b|,|§|;|tunnistatakse\b|$))',
+        local_clean,
+        re.IGNORECASE,
+    ):
+        for start, end in _ee_label_ranges(match.group(1).strip()):
+            ranges.append((sect_label, start, end))
+    return tuple(ranges)
+
+
 def _extract_secondary_sentence_and_subsection_repeals(
     clean: str,
 ) -> tuple[List[tuple[str, str, str]], List[tuple[str, str]]]:
@@ -1558,19 +1757,33 @@ def _extract_sentence_repeal_note(clean: str) -> Optional[str]:
 
 def _extract_division_repeals(clean: str) -> List[tuple[str, str]]:
     """Extract repealed chapter/division pairs from repeal clauses."""
-    _NUM_PAT = r'\d+(?:\s+\d+)?'
+    clean = _normalize_ee_parse_text(clean)
+    _NUM_PAT = _EE_NUM_ATOM
+    _LIST_PAT = (
+        _NUM_PAT
+        + r'\s*[.]?(?:\s*[' + _EE_DASH_CLASS + r']\s*'
+        + _NUM_PAT
+        + r'\s*[.]?)?(?:\s*,\s*'
+        + _NUM_PAT
+        + r'\s*[.]?(?:\s*[' + _EE_DASH_CLASS + r']\s*'
+        + _NUM_PAT
+        + r'\s*[.]?)?)*(?:\s+(?:ja|ning)\s+'
+        + _NUM_PAT
+        + r'\s*[.]?(?:\s*[' + _EE_DASH_CLASS + r']\s*'
+        + _NUM_PAT
+        + r'\s*[.]?)?)*'
+    )
     seen: list[tuple[str, str]] = []
     for match in re.finditer(
-        r'\b(?:seaduse\s+)?(' + _NUM_PAT + r')\s*[.]\s*peatüki\s+(' + _NUM_PAT + r')\s*[.]\s*jagu\b',
+        r'\b(?:seaduse\s+)?(' + _NUM_PAT + r')\s*[.]\s*peatüki\s+(' + _LIST_PAT + r')\s*jagu\b',
         clean,
         re.IGNORECASE,
     ):
-        pair = (
-            _normalize_num(match.group(1).strip()),
-            _normalize_num(match.group(2).strip()),
-        )
-        if pair not in seen:
-            seen.append(pair)
+        ch_label = _normalize_num(match.group(1).strip())
+        for div_label in _expand_ee_numeric_list(match.group(2).strip()):
+            pair = (ch_label, div_label)
+            if pair not in seen:
+                seen.append(pair)
     return seen
 
 
@@ -1700,7 +1913,7 @@ def _set_text_replace_payload_attrs(
     """Populate text-replace payload attrs and a typed rewrite witness."""
     from lawvm.estonia.ee_instruction_waist import make_sentence_target_meta
     from lawvm.estonia.ee_instruction_waist import make_text_rewrite_witness
-    from lawvm.estonia.text_morphology import sentence_index_from_notes
+    from lawvm.estonia.text_morphology import sentence_indexes_from_notes
 
     attrs = dict(payload.attrs)
     if old_text:
@@ -1740,10 +1953,103 @@ def _set_text_replace_payload_attrs(
     )
     attrs["rewrite_witness"] = witness
     sentence_note_scope = _instruction_preamble(clean).lower()
-    sentence_index = sentence_index_from_notes(sentence_note_scope)
-    if sentence_index is not None:
-        attrs["sentence_target_meta"] = make_sentence_target_meta(sentence_indexes=(sentence_index,))
+    sentence_indexes = tuple(sentence_indexes_from_notes(sentence_note_scope))
+    if sentence_indexes:
+        attrs["sentence_target_meta"] = make_sentence_target_meta(sentence_indexes=sentence_indexes)
     return replace(payload, attrs=attrs), witness
+
+
+def _sentence_scoped_text_replace_payload_for_target(
+    payload: IRNode,
+    clean: str,
+    target: LegalAddress,
+    *,
+    target_count: int,
+) -> IRNode:
+    """Keep sentence scope only when the sentence phrase belongs to this target."""
+    if target_count <= 1 or "sentence_target_meta" not in payload.attrs:
+        return payload
+    attrs = dict(payload.attrs)
+    sentence_indexes = _target_local_sentence_indexes(clean, target)
+    if sentence_indexes:
+        from lawvm.estonia.ee_instruction_waist import make_sentence_target_meta
+
+        attrs["sentence_target_meta"] = make_sentence_target_meta(sentence_indexes=sentence_indexes)
+        attrs.pop("suppress_sentence_target_meta", None)
+    else:
+        attrs.pop("sentence_target_meta", None)
+        attrs["suppress_sentence_target_meta"] = True
+    return replace(payload, attrs=attrs)
+
+
+def _target_local_sentence_indexes(clean: str, target: LegalAddress) -> tuple[int, ...]:
+    """Return sentence indexes carried by this target's own text span."""
+    from lawvm.estonia.text_morphology import sentence_indexes_from_notes
+
+    if not target.path or target.path[0][0] != "section":
+        return ()
+    target_section_label = target.path[0][1]
+    section_label = re.escape(target_section_label.replace("_", " "))
+    leaf_kind, leaf_label_raw = target.path[-1]
+    leaf_label = re.escape(leaf_label_raw.replace("_", " "))
+    preamble = _normalize_ee_parse_text(_instruction_preamble(clean)).lower()
+    section_spans = _target_section_instruction_spans(preamble, target_section_label)
+    search_spans = section_spans or (preamble,)
+    if leaf_kind == "section":
+        mention_patterns = (rf"(?:paragrahvi|§)\s+{section_label}\b",)
+    elif leaf_kind == "subsection" and len(target.path) >= 2:
+        subsection_label = re.escape(target.path[1][1].replace("_", " "))
+        for span in search_spans:
+            for group_match in re.finditer(
+                r"\bl[oõ]igete\w*\s+"
+                r"(?P<labels>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*(?:\s*(?:,|ja|ning|–|‒|-)\s*\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)*)"
+                r"\s+(?P<tail>[^,;§]{0,80})",
+                span,
+                re.IGNORECASE,
+            ):
+                labels = tuple(_normalize_num(label) for label in _expand_ee_numeric_list(group_match.group("labels")))
+                if target.path[1][1] not in labels:
+                    continue
+                indexes = sentence_indexes_from_notes(group_match.group("tail"))
+                if indexes:
+                    return tuple(indexes)
+        mention_patterns = (
+            rf"(?:paragrahvi|§)\s+{section_label}\s+l[oõ]ike\w*\s+{subsection_label}\b",
+            rf"\bl[oõ]ike\w*\s+{subsection_label}\b",
+        )
+    elif leaf_kind == "item":
+        mention_patterns = (
+            rf"\bpunkt\w*\s+{leaf_label}\b",
+        )
+    else:
+        return ()
+    for span in search_spans:
+        for pattern in mention_patterns:
+            for match in re.finditer(pattern, span, re.IGNORECASE):
+                local_tail = span[match.end(): match.end() + 100]
+                local_tail = re.split(
+                    r"\s*(?:,\s*|ning\s+|ja\s+)(?=(?:§|paragrahvi|l[oõ]ike|punkt))",
+                    local_tail,
+                    maxsplit=1,
+                )[0]
+                indexes = sentence_indexes_from_notes(local_tail)
+                if indexes:
+                    return tuple(indexes)
+    return ()
+
+
+def _target_section_instruction_spans(preamble: str, target_section_label: str) -> tuple[str, ...]:
+    """Return preamble spans governed by this section before the next section ref."""
+    section_refs = list(re.finditer(r"(?:paragrahvi|§)\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\b", preamble))
+    if not section_refs:
+        return ()
+    spans: list[str] = []
+    for index, match in enumerate(section_refs):
+        if _normalize_num(match.group(1)) != target_section_label:
+            continue
+        end = section_refs[index + 1].start() if index + 1 < len(section_refs) else len(preamble)
+        spans.append(preamble[match.start():end])
+    return tuple(spans)
 
 
 def _set_sentence_insert_payload_attrs(payload: IRNode, clean: str) -> IRNode:
@@ -2054,29 +2360,30 @@ def extract_ee_ops(
     # Also: "N. ja M. peatükk tunnistatakse kehtetuks" (no "seaduse" prefix)
     # Handles ranges: "4. ja 5. peatükk", "4.–5. peatükk", "4. peatükk"
     if action == "repeal":
-        _NUM_CH = r'\d+(?:\s+\d+)?'
+        _NUM_CH = _EE_NUM_ATOM
         _ch_repeal_labels: List[str] = []
-        # Try range form first (more specific): "N.–M. peatükk tunnistatakse kehtetuks"
-        m_ch_range = re.search(
-            r'\b(' + _NUM_CH + r')\s*[.]?\s*[–\-]\s*(' + _NUM_CH + r')\s*[.]\s*peatükk\w*\s+tunnistatakse\s+kehtetuks',
-            clean, re.IGNORECASE
+        _CH_LIST_PAT = (
+            _NUM_CH
+            + r'\s*[.]?(?:\s*[' + _EE_DASH_CLASS + r']\s*'
+            + _NUM_CH
+            + r'\s*[.]?)?(?:\s*,\s*'
+            + _NUM_CH
+            + r'\s*[.]?(?:\s*[' + _EE_DASH_CLASS + r']\s*'
+            + _NUM_CH
+            + r'\s*[.]?)?)*(?:\s+(?:ja|ning)\s+'
+            + _NUM_CH
+            + r'\s*[.]?(?:\s*[' + _EE_DASH_CLASS + r']\s*'
+            + _NUM_CH
+            + r'\s*[.]?)?)*'
         )
-        if m_ch_range:
-            s_label = _normalize_num(m_ch_range.group(1).strip())
-            e_label = _normalize_num(m_ch_range.group(2).strip())
-            _ch_repeal_labels = [str(n) for n in range(int(s_label), int(e_label) + 1)] if (
-                s_label.isdigit() and e_label.isdigit()
-            ) else [s_label, e_label]
-        else:
-            # "ja" list or single: "N. [ja M.] peatükk tunnistatakse kehtetuks"
-            m_ch_repeal = re.search(
-                r'\b(' + _NUM_CH + r')\s*[.]\s*(?:ja\s+(' + _NUM_CH + r')\s*[.]\s*)?peatükk\w*\s+tunnistatakse\s+kehtetuks',
-                clean, re.IGNORECASE
-            )
-            if m_ch_repeal:
-                _ch_repeal_labels = [_normalize_num(m_ch_repeal.group(1).strip())]
-                if m_ch_repeal.group(2):
-                    _ch_repeal_labels.append(_normalize_num(m_ch_repeal.group(2).strip()))
+        for m_ch_repeal in re.finditer(
+            r'\b(' + _CH_LIST_PAT + r')\s*peatükk\w*(?=.*\btunnistatakse\s+kehtetuks\b)',
+            _normalize_ee_parse_text(clean),
+            re.IGNORECASE | re.DOTALL,
+        ):
+            for label in _expand_ee_numeric_list(m_ch_repeal.group(1).strip()):
+                if label not in _ch_repeal_labels:
+                    _ch_repeal_labels.append(label)
         if _ch_repeal_labels:
             for ch_label in _ch_repeal_labels:
                 ops.append(LegalOperation(
@@ -2301,6 +2608,9 @@ def extract_ee_ops(
         or re.search(r'\b(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)[a-z\s\d.]*peatük[k]?[i]+\s+täiendatakse\s+§[‑–‒-](?:de)?ga', clean, re.IGNORECASE)
         # Also: "seaduse N. peatüki M. jagu täiendatakse §-ga K" (division-qualified section insert)
         or re.search(r'\bjag[u-z]*\s+täiendatakse\s+§[‑–‒-](?:de)?ga', clean, re.IGNORECASE)
+        # Also: "alljaotist täiendatakse §-dega 34^1 ja 34^2"; the shared
+        # IR currently flattens jaotis/alljaotis under the owning jagu.
+        or re.search(r'\balljaotis\w*\s+täiendatakse\s+§[‑–‒-](?:de)?ga', clean, re.IGNORECASE)
         # Also: "seaduse N. peatüki M. jagu täiendatakse K. jaotisega ..."
         or re.search(r'\bjag[u-z]*\s+täiendatakse\s+\d[\d\s]*[.]\s*jaotisega', clean, re.IGNORECASE)
         # Also: "seaduse N. peatükki täiendatakse N. jaoga järgmises sõnastuses: „N. jagu ... § K ..."
@@ -2343,6 +2653,14 @@ def extract_ee_ops(
             clean,
             re.IGNORECASE,
         )
+        if not m_div_qualified_insert:
+            m_div_qualified_insert = re.search(
+                r'seaduse\s+(' + _NUM_PAT + r')\s*[.]\s*peatüki\s+(' + _NUM_PAT + r')\s*[.]\s*jao\s+'
+                r'\d[\d\s]*\s*[.]\s*jaotise\s+\d[\d\s]*\s*[.]\s*alljaotis\w*\s+'
+                r'täiendatakse\s+§[‑–‒-](?:de)?ga',
+                clean,
+                re.IGNORECASE,
+            )
         if m_div_qualified_insert:
             container_prefix = (
                 ("chapter", _normalize_num(m_div_qualified_insert.group(1).strip())),
@@ -2369,6 +2687,8 @@ def extract_ee_ops(
                 clean, re.IGNORECASE
             )
         content = _extract_quoted_content(clean)
+        if content:
+            content = _unwrap_nested_statute_insert_payload(content)
         payload = IRNode(kind=IRNodeKind.CONTENT, text=content or "") if content else None
 
         # Division-qualified subdivision insert:
@@ -2609,15 +2929,23 @@ def extract_ee_ops(
                     expanded.extend([s_norm, e_norm])
                 else:
                     expanded.append(_normalize_num(raw_part))
+            section_payloads = (
+                _split_plural_section_replace_payload(content or "")
+                if content and len(expanded) > 1
+                else None
+            )
             # Each expanded section label is a separate insert op
             for num in expanded:
                 addr = LegalAddress(path=container_prefix + (("section", num),))
+                op_payload = payload
+                if section_payloads is not None and num in section_payloads:
+                    op_payload = IRNode(kind=IRNodeKind.CONTENT, text=section_payloads[num])
                 ops.append(LegalOperation(
                     op_id=f"ee-insert-sect-{num}-{source.statute_id}",
                     sequence=seq,
                     action=_to_structural_action("insert"),
                     target=addr,
-                    payload=payload,
+                    payload=op_payload,
                     source=source,
                     provenance_tags=(clean[:200],),
                 ))
@@ -2633,7 +2961,7 @@ def extract_ee_ops(
     # Search only in preamble (before „ or järgmiselt:) to avoid matching cross-references
     # inside replacement body text like "sotsiaalmaksuseaduse § 10 lõigetes 1–3 ja 4".
     _clean_preamble = _instruction_preamble(clean)
-    _NUM_PAT_SUB = r'\d+(?:\s+\d+)?'
+    _NUM_PAT_SUB = _EE_NUM_ATOM
     sentence_note = _extract_sentence_repeal_note(_clean_preamble)
     if action == "repeal" and sentence_note:
         explicit_targets = _extract_multiple_explicit_targets(clean)
@@ -2747,24 +3075,14 @@ def extract_ee_ops(
     m_plural_sub = re.search(
         r'(?:\bparagrahvi[s]?\s+|§\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
         r'(?:(?:pealkiri)\s+(?:ning|ja)\s+)?'
-        r'(?:l[oõ]iked|l[oõ]igetes)\s+(' + _NUM_PAT_SUB + r'(?:\s*[,–‒\-]\s*' + _NUM_PAT_SUB +
+        r'(?:l[oõ]iked|l[oõ]igetes)\s+(' + _NUM_PAT_SUB + r'(?:\s*(?:,|[' + _EE_DASH_CLASS + r'])\s*' + _NUM_PAT_SUB +
         r')*(?:\s+ja\s+' + _NUM_PAT_SUB + r')?)',
         _clean_preamble, re.IGNORECASE
     )
     if m_plural_sub and action in ("repeal", "replace", "text_replace"):
         sect_label = _normalize_num(m_plural_sub.group(1))
         raw_subs = m_plural_sub.group(2).strip()
-        # Expand en-dash ranges: "2–4" → "2", "3", "4"
-        expanded: list[str] = []
-        for part in re.split(r'[,]\s*|\s+ja\s+', raw_subs):
-            part = part.strip()
-            m_range = re.match(r'(\d+)\s*[–‒\-]\s*(\d+)', part)
-            if m_range:
-                start, end = int(m_range.group(1)), int(m_range.group(2))
-                for n in range(start, end + 1):
-                    expanded.append(str(n))
-            elif part:
-                expanded.append(_normalize_num(part))
+        expanded = _expand_ee_numeric_list(raw_subs)
         target_addrs = [
             LegalAddress(path=(("section", sect_label), ("subsection", num)))
             for num in expanded
@@ -2786,13 +3104,23 @@ def extract_ee_ops(
         if action == "repeal":
             from lawvm.estonia.ee_instruction_waist import make_subsection_selection_meta
 
-            subsection_selection_meta = make_subsection_selection_meta(explicit_labels=expanded)
+            subsection_selection_meta = make_subsection_selection_meta(
+                explicit_labels=expanded,
+                plain_numeric_ranges=_plain_numeric_ranges(raw_subs),
+                label_ranges=_ee_label_ranges(raw_subs),
+            )
         for addr in target_addrs:
             payload = None
             _rewrite_witness = None
             if action == "text_replace" and new_t:
                 payload = IRNode(kind=IRNodeKind.CONTENT, text=new_t)
                 payload, _rewrite_witness = _set_text_replace_payload_attrs(payload, clean, old_t, new_t)
+                payload = _sentence_scoped_text_replace_payload_for_target(
+                    payload,
+                    clean,
+                    addr,
+                    target_count=len(target_addrs),
+                )
             elif action == "replace" and content:
                 num = addr.path[-1][1]
                 payload_text = split_content[num] if split_content is not None else content
@@ -2863,6 +3191,28 @@ def extract_ee_ops(
                         provenance_tags=(clean[:200],),
                     ))
                     seq += 1
+                seen_sub_paths = {
+                    op.target.path
+                    for op in ops
+                    if op.target.path
+                    and len(op.target.path) >= 2
+                    and op.target.path[0][0] == "section"
+                    and op.target.path[1][0] == "subsection"
+                }
+                for extra_sect, extra_sub in _extract_secondary_subsection_repeals(clean):
+                    sub_path = (("section", extra_sect), ("subsection", extra_sub))
+                    if sub_path in seen_sub_paths:
+                        continue
+                    ops.append(LegalOperation(
+                        op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
+                        sequence=seq,
+                        action=_to_structural_action("repeal"),
+                        target=LegalAddress(path=sub_path),
+                        source=source,
+                        provenance_tags=(clean[:200],),
+                    ))
+                    seen_sub_paths.add(sub_path)
+                    seq += 1
                 seen_item_paths = {
                     op.target.path
                     for op in ops
@@ -2916,6 +3266,37 @@ def extract_ee_ops(
                 target=LegalAddress(path=(("section", sect_label), ("subsection", sub_label), ("item", item_label))),
                 source=source,
                 provenance_tags=(clean[:200],),
+            ))
+            seq += 1
+        return ops
+
+    m_item_and_section_subsection_repeal = re.search(
+        r'(?:\bparagrahvi[s]?\s+|§\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+        r'l[oõ]ike[s]?\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+        r'punkt(?:i|is)?\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+        r'(?:ja|ning)\s+§\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+        r'l[oõ]ige\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+        r'tunnistatakse\s+kehtetuks',
+        _clean_preamble,
+        re.IGNORECASE,
+    )
+    if m_item_and_section_subsection_repeal and action == "repeal":
+        first_sect = _normalize_num(m_item_and_section_subsection_repeal.group(1))
+        first_sub = _normalize_num(m_item_and_section_subsection_repeal.group(2))
+        first_item = _normalize_num(m_item_and_section_subsection_repeal.group(3))
+        second_sect = _normalize_num(m_item_and_section_subsection_repeal.group(4))
+        second_sub = _normalize_num(m_item_and_section_subsection_repeal.group(5))
+        for target in (
+            LegalAddress(path=(("section", first_sect), ("subsection", first_sub), ("item", first_item))),
+            LegalAddress(path=(("section", second_sect), ("subsection", second_sub))),
+        ):
+            ops.append(LegalOperation(
+                op_id=f"ee-repeal-compound-item-subsection-{target}-{source.statute_id}",
+                sequence=seq,
+                action=_to_structural_action("repeal"),
+                target=target,
+                source=source,
+                provenance_tags=(clean[:200], "ee_compound_section_item_subsection_repeal"),
             ))
             seq += 1
         return ops
@@ -3011,6 +3392,12 @@ def extract_ee_ops(
             if action == "text_replace" and new_t:
                 payload = IRNode(kind=IRNodeKind.CONTENT, text=new_t)
                 payload, _ = _set_text_replace_payload_attrs(payload, clean, old_t, new_t)
+                payload = _sentence_scoped_text_replace_payload_for_target(
+                    payload,
+                    clean,
+                    addr,
+                    target_count=len(target_addrs),
+                )
             elif action in ("replace", "insert") and content:
                 item_label = addr.path[-1][1] if addr.path else ""
                 payload_text = split_content[item_label] if split_content is not None else content
@@ -3058,6 +3445,15 @@ def extract_ee_ops(
                     labels = extra_same_section_labels_by_section.setdefault(extra_sect, [])
                     if extra_sub not in labels:
                         labels.append(extra_sub)
+                extra_same_section_ranges_by_section: dict[str, list[tuple[str, str]]] = {}
+                for extra_sect, start, end in _extract_same_section_extra_subsection_label_ranges_after_items(
+                    clean,
+                    sect_label,
+                ):
+                    ranges = extra_same_section_ranges_by_section.setdefault(extra_sect, [])
+                    range_item = (start, end)
+                    if range_item not in ranges:
+                        ranges.append(range_item)
                 for extra_sect, extra_sub in extra_same_section_sub_repeals:
                     ops.append(LegalOperation(
                         op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
@@ -3069,7 +3465,8 @@ def extract_ee_ops(
                             text="",
                             attrs={
                                 "subsection_selection_meta": make_subsection_selection_meta(
-                                    explicit_labels=extra_same_section_labels_by_section.get(extra_sect, ())
+                                    explicit_labels=extra_same_section_labels_by_section.get(extra_sect, ()),
+                                    label_ranges=extra_same_section_ranges_by_section.get(extra_sect, ()),
                                 )
                             },
                         ),
@@ -3377,6 +3774,12 @@ def extract_ee_ops(
             for pair_target, (old_t, new_t) in zip(pair_targets, target_pairs):
                 pair_payload = IRNode(kind=IRNodeKind.CONTENT, text=new_t or "")
                 pair_payload, _rewrite_witness = _set_text_replace_payload_attrs(pair_payload, clean, old_t, new_t)
+                pair_payload = _sentence_scoped_text_replace_payload_for_target(
+                    pair_payload,
+                    clean,
+                    pair_target,
+                    target_count=len(pair_targets),
+                )
                 pair_payload = _attach_subsection_text_scope_meta(pair_payload, clean, pair_target)
                 ops.append(LegalOperation(
                     op_id=f"ee-text_replace-{str(pair_target)}-{seq}-{source.statute_id}",
@@ -3437,6 +3840,12 @@ def extract_ee_ops(
                         text=payload.text,
                         attrs=dict(payload.attrs),
                     )
+                    target_payload = _sentence_scoped_text_replace_payload_for_target(
+                        target_payload,
+                        clean,
+                        explicit_target,
+                        target_count=len(explicit_targets),
+                    )
                     target_payload = _attach_subsection_text_scope_meta(target_payload, clean, explicit_target)
                     ops.append(LegalOperation(
                         op_id=f"ee-text_replace-{str(explicit_target)}-{seq}-{source.statute_id}",
@@ -3467,6 +3876,10 @@ def extract_ee_ops(
                             sect_label = explicit_target.path[0][1]
                             if sect_label in seen_heading_sections:
                                 continue
+                            preamble_lower = _normalize_ee_parse_text(_instruction_preamble(clean)).lower()
+                            section_spans = _target_section_instruction_spans(preamble_lower, sect_label)
+                            if not any(re.search(r'\bpealkir', span, re.IGNORECASE) for span in section_spans):
+                                continue
                             heading_payload = IRNode(
                                 kind=IRNodeKind.CONTENT,
                                 text=payload.text,
@@ -3495,48 +3908,18 @@ def extract_ee_ops(
                 payload = _set_sentence_insert_payload_attrs(payload, clean)
 
     # Handle lõige-range insert: "täiendatakse lõigetega 4 ja 5 järgmises sõnastuses:"
-    # Also handles en-dash ranges: "täiendatakse lõigetega 3–5" or
+    # Also handles dash ranges: "täiendatakse lõigetega 3–5" or
     # superscript ranges: "täiendatakse lõigetega 5 2–5 9".
-    _NUM_PAT = r'\d+(?:\s+\d+)?'
+    _NUM_PAT = r'\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*'
     if action == "insert" and 'lõigetega' in clean.lower():
         m_range = re.search(
-            r'lõigetega?\s+(' + _NUM_PAT + r'(?:\s*[–\-]\s*' + _NUM_PAT + r'|(?:\s+ja\s+' + _NUM_PAT + r'))*)',
+            r'lõigetega?\s+(' + _NUM_PAT + r'(?:\s*(?:,|ja|ning|–|‒|-)\s*' + _NUM_PAT + r')*)',
             clean, re.IGNORECASE
         )
         if m_range:
             content = _extract_quoted_content(clean)
             raw_group = m_range.group(1).strip()
-            # Split on "ja" separators, then expand any en-dash ranges within each part
-            raw_parts = re.split(r'\s+ja\s+', raw_group)
-            expanded: list[str] = []
-            for raw_part in raw_parts:
-                raw_part = raw_part.strip()
-                # Check for en-dash range: "N–M" or "N 1–N 2" (superscript)
-                m_endash = re.match(r'^(\d+(?:\s+\d)?)\s*[–\-]\s*(\d+(?:\s+\d)?)$', raw_part)
-                if m_endash:
-                    start_raw = m_endash.group(1).strip()
-                    end_raw = m_endash.group(2).strip()
-                    start_norm = _normalize_num(start_raw)
-                    end_norm = _normalize_num(end_raw)
-                    # Check if both have the same base (superscript range: "5_2" to "5_9")
-                    if '_' in start_norm and '_' in end_norm:
-                        start_base, start_suf = start_norm.rsplit('_', 1)
-                        end_base, end_suf = end_norm.rsplit('_', 1)
-                        if start_base == end_base and start_suf.isdigit() and end_suf.isdigit():
-                            for suf in range(int(start_suf), int(end_suf) + 1):
-                                expanded.append(f"{start_base}_{suf}")
-                            continue
-                    # Simple numeric range: "3–5" → "3", "4", "5"
-                    if start_norm.isdigit() and end_norm.isdigit():
-                        for n in range(int(start_norm), int(end_norm) + 1):
-                            expanded.append(str(n))
-                        continue
-                    # Fallback: treat as two separate labels
-                    expanded.append(start_norm)
-                    if end_norm != start_norm:
-                        expanded.append(end_norm)
-                else:
-                    expanded.append(_normalize_num(raw_part))
+            expanded = _expand_ee_numeric_list(raw_group)
 
             sect_label = target.path[0][1] if target.path else "?"
             for num in expanded:
@@ -3751,9 +4134,14 @@ def parse_html_op_items(html_cdata: str) -> List[str]:
     # Allow optional HTML entities (e.g. &#8239; narrow no-break space) inside
     # <b>N)...</b> — some RT HTML uses <b>1)&#8239;</b> where the entity is
     # inside the tag before </b>.
+    item_tag = r"(?:b|strong)"
     blocks = re.split(
-        r'(?=<[pb][^>]*>\s*<b>\(?\d+\)\s*[^<]*</b>|<b>\(?\d+\)\s*[^<]*</b>)',
+        r"(?="
+        r"<[pb]\b[^>]*>\s*<" + item_tag + r"\b[^>]*>\s*\(?\d+\)\s*[^<]*</" + item_tag + r">"
+        r"|<" + item_tag + r"\b[^>]*>\s*\(?\d+\)\s*[^<]*</" + item_tag + r">"
+        r")",
         html_cdata,
+        flags=re.IGNORECASE,
     )
 
     result = []
@@ -3778,7 +4166,12 @@ def parse_html_op_items(html_cdata: str) -> List[str]:
             if '§' in inner_plain:
                 return inner_plain + _SECT_TITLE_BOUNDARY
             return inner  # not a section title — keep original (tags will be stripped later)
-        block = re.sub(r'<b>(.*?)</b>', _b_sentinel, block, flags=re.DOTALL)
+        block = re.sub(
+            r'<(?:b|strong)\b[^>]*>(.*?)</(?:b|strong)>',
+            _b_sentinel,
+            block,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
         # Strip HTML tags
         text = re.sub(r'<[^>]+>', ' ', block)
         # Decode HTML entities (old-format maarus CDATA uses &auml; etc.)

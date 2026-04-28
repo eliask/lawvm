@@ -69,6 +69,8 @@ class EESentenceTargetMeta:
 @dataclass(frozen=True)
 class EESubsectionSelectionMeta:
     explicit_labels: tuple[str, ...] = ()
+    plain_numeric_ranges: tuple[tuple[str, str], ...] = ()
+    label_ranges: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -272,9 +274,30 @@ def read_section_selection_meta(payload: IRNode | None) -> Optional[EESectionSel
     return None
 
 
-def make_subsection_selection_meta(*, explicit_labels: Sequence[str]) -> EESubsectionSelectionMeta:
+def make_subsection_selection_meta(
+    *,
+    explicit_labels: Sequence[str],
+    plain_numeric_ranges: Sequence[Sequence[str]] = (),
+    label_ranges: Sequence[Sequence[str]] = (),
+) -> EESubsectionSelectionMeta:
+    normalized_ranges: list[tuple[str, str]] = []
+    for raw_range in plain_numeric_ranges:
+        if not isinstance(raw_range, (list, tuple)) or len(raw_range) != 2:
+            continue
+        start, end = str(raw_range[0]), str(raw_range[1])
+        if start and end:
+            normalized_ranges.append((start, end))
+    normalized_label_ranges: list[tuple[str, str]] = []
+    for raw_range in label_ranges:
+        if not isinstance(raw_range, (list, tuple)) or len(raw_range) != 2:
+            continue
+        start, end = str(raw_range[0]), str(raw_range[1])
+        if start and end:
+            normalized_label_ranges.append((start, end))
     return EESubsectionSelectionMeta(
-        explicit_labels=tuple(str(label) for label in explicit_labels if str(label))
+        explicit_labels=tuple(str(label) for label in explicit_labels if str(label)),
+        plain_numeric_ranges=tuple(normalized_ranges),
+        label_ranges=tuple(normalized_label_ranges),
     )
 
 
@@ -285,8 +308,18 @@ def read_subsection_selection_meta(payload: IRNode | None) -> Optional[EESubsect
     if isinstance(raw_meta, EESubsectionSelectionMeta):
         return raw_meta
     raw_labels = payload.attrs.get("subsection_explicit_labels")
-    if isinstance(raw_labels, (list, tuple)):
-        return make_subsection_selection_meta(explicit_labels=raw_labels)
+    raw_ranges = payload.attrs.get("subsection_plain_numeric_ranges")
+    raw_label_ranges = payload.attrs.get("subsection_label_ranges")
+    if (
+        isinstance(raw_labels, (list, tuple))
+        or isinstance(raw_ranges, (list, tuple))
+        or isinstance(raw_label_ranges, (list, tuple))
+    ):
+        return make_subsection_selection_meta(
+            explicit_labels=raw_labels if isinstance(raw_labels, (list, tuple)) else (),
+            plain_numeric_ranges=raw_ranges if isinstance(raw_ranges, (list, tuple)) else (),
+            label_ranges=raw_label_ranges if isinstance(raw_label_ranges, (list, tuple)) else (),
+        )
     return None
 
 

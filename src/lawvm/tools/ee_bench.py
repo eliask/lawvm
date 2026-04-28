@@ -23,7 +23,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional, cast
 
-from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.estonia.compare import irnode_to_ee_comparison_text
+from lawvm.estonia.compare import normalize_ee_comparison_text
 from lawvm.estonia.fetch import extract_effective_date, fetch_rt_xml, open_rt_archive
 from lawvm.estonia.replay import replay_ee_to_pit
 from lawvm.estonia.residual_reporting import build_ee_residual_summary
@@ -193,11 +194,11 @@ def _index_corpus(archive: Any, include_decrees: bool = False) -> tuple[list[tup
 
 
 def _get_sections(body) -> dict[str, str]:
-    """Extract {address: text} for all sections in a body IRNode."""
+    """Extract {address: comparison text} for all sections in a body IRNode."""
     if body is None:
         return {}
     return {
-        key: irnode_to_text(section)
+        key: normalize_ee_comparison_text(irnode_to_ee_comparison_text(section))
         for key, section in extract_ir_sections(body).items()
     }
 
@@ -251,7 +252,12 @@ def _score_one_pair(gid: str, base_id: str, oracle_id: str, title: str, archive:
             status = "EMPTY_ORACLE"
             sec_match = 0.0
         else:
-            matching = sum(1 for k in o_secs if k in r_secs and r_secs[k] == o_secs[k])
+            matching = sum(
+                1
+                for key, oracle_text in o_secs.items()
+                if (key in r_secs and r_secs[key] == oracle_text)
+                or (key not in r_secs and oracle_text == "")
+            )
             sec_match = matching / len(o_secs)
             status = "OK" if not r.error else "ERR"
         reporting_summary = build_ee_benchmark_reporting_summary(r.source_basis, r.comparison_class)
@@ -261,14 +267,15 @@ def _score_one_pair(gid: str, base_id: str, oracle_id: str, title: str, archive:
             oracle_id=oracle_id,
             divergence_addresses=("/".join(f"{kind}:{label}" for kind, label in d.address.path) for d in r.divergences),
         )
-        residual_count = residual_summary.residual_count if residual_summary is not None else 0
+        residual_count = 0
         matched_current = 0
         bucket_counts = ""
         unknown_current = len(r.divergences)
         if residual_summary is not None:
             matched_current = residual_summary.matched_current_divergence_count
+            residual_count = matched_current
             bucket_counts = ",".join(
-                f"{bucket}={count}" for bucket, count in sorted(residual_summary.bucket_counts.items())
+                f"{bucket}={count}" for bucket, count in sorted(residual_summary.matched_current_bucket_counts.items())
             )
             unknown_current = residual_summary.unknown_current_divergence_count
 

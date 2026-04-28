@@ -58,6 +58,119 @@ def test_extract_ee_ops_keeps_rewrite_witness_on_payload_sidecar_only() -> None:
     assert witness.rewrite.old_surface == "Veterinaar- ja Toiduamet"
 
 
+def test_extract_ee_ops_accepts_estonian_left_quote_close_in_text_replace() -> None:
+    ops = extract_ee_ops(
+        'paragrahvi 2 1 lõikes 1 asendatakse sõna „kaheksa“ sõnaga „seitse“;',
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert len(ops) == 1
+    assert str(ops[0].target) == "section:2_1/subsection:1"
+    payload = _payload(ops[0])
+    assert payload.attrs["old_text"] == "kaheksa"
+    assert payload.text == "seitse"
+    assert ops[0].text_patch is not None
+
+
+def test_extract_ee_ops_unescapes_html_quote_entities_in_text_replace() -> None:
+    ops = extract_ee_ops(
+        "paragrahvi 2 1 lõikes 1 asendatakse sõna &#8222;kaheksa&#8220; "
+        "sõnaga &#8222;seitse&#8220;;",
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert len(ops) == 1
+    payload = _payload(ops[0])
+    assert payload.attrs["old_text"] == "kaheksa"
+    assert payload.text == "seitse"
+
+
+def test_extract_ee_ops_preserves_multiple_sentence_targets_in_text_replace_meta() -> None:
+    ops = extract_ee_ops(
+        "paragrahvi 155 lõike 1 esimest ja teist lauset täiendatakse pärast "
+        "sõnu „lapsendaja abikaasa” sõnadega „või registreeritud elukaaslane”;",
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert len(ops) == 1
+    assert str(ops[0].target) == "section:155/subsection:1"
+    payload = _payload(ops[0])
+    meta = read_sentence_target_meta(payload)
+    assert meta is not None
+    assert meta.sentence_indexes == (0, 1)
+
+
+def test_extract_ee_ops_keeps_grouped_sentence_scope_inside_own_section_span() -> None:
+    ops = extract_ee_ops(
+        "paragrahvi 21 lõigete 2 ja 4 esimesest lausest ja lõike 5 "
+        "sissejuhatavast lauseosast, § 22 lõikest 1 ja lõike 4 teisest "
+        "lausest ning § 25 lõikest 2 jäetakse välja sõna „kirjalikult”;",
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    meta_by_target = {
+        str(op.target): read_sentence_target_meta(_payload(op))
+        for op in ops
+        if str(op.target) in {"section:21/subsection:4", "section:22/subsection:4"}
+    }
+
+    assert meta_by_target["section:21/subsection:4"] is not None
+    assert meta_by_target["section:21/subsection:4"].sentence_indexes == (0,)
+    assert meta_by_target["section:22/subsection:4"] is not None
+    assert meta_by_target["section:22/subsection:4"].sentence_indexes == (1,)
+
+
+def test_extract_ee_ops_recovers_nested_quote_tekstiosa_delete() -> None:
+    text = (
+        "paragrahvi 8 lõike 1 punktist 8 jäetakse välja tekstiosa "
+        "„„Toiduseaduse” § 10 lõike 1 alusel tunnustatud”;"
+    )
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].target == LegalAddress(path=(("section", "8"), ("subsection", "1"), ("item", "8")))
+    assert _payload(ops[0]).attrs["old_text"] == "„Toiduseaduse” § 10 lõike 1 alusel tunnustatud"
+    assert _payload(ops[0]).text == ""
+
+
+def test_extract_ee_ops_recovers_compound_item_and_subsection_repeal() -> None:
+    text = "§ 4 lõike 3 punkt 7 ja § 4 1 lõige 8 tunnistatakse kehtetuks."
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target) for op in ops] == [
+        (
+            StructuralAction.REPEAL,
+            LegalAddress(path=(("section", "4"), ("subsection", "3"), ("item", "7"))),
+        ),
+        (
+            StructuralAction.REPEAL,
+            LegalAddress(path=(("section", "4_1"), ("subsection", "8"))),
+        ),
+    ]
+    assert all("ee_compound_section_item_subsection_repeal" in op.provenance_tags for op in ops)
+
+
+def test_extract_ee_ops_recovers_coordinated_item_targets_with_elided_subsection() -> None:
+    text = (
+        "paragrahvi 11 lõikest 1, § 16 lõike 1 punktidest 3 ja 6 ning "
+        "lõike 3 punktist 1 ja punkti 3 esimesest lausest, § 28 lõike 2 "
+        "esimesest lausest ning § 32 lõike 1 punktidest 1 ja 2 jäetakse välja "
+        "sõnad „volitatud veterinaararst või”;"
+    )
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert {op.target for op in ops} == {
+        LegalAddress(path=(("section", "11"), ("subsection", "1"))),
+        LegalAddress(path=(("section", "16"), ("subsection", "1"), ("item", "3"))),
+        LegalAddress(path=(("section", "16"), ("subsection", "1"), ("item", "6"))),
+        LegalAddress(path=(("section", "16"), ("subsection", "3"), ("item", "1"))),
+        LegalAddress(path=(("section", "16"), ("subsection", "3"), ("item", "3"))),
+        LegalAddress(path=(("section", "28"), ("subsection", "2"))),
+        LegalAddress(path=(("section", "32"), ("subsection", "1"), ("item", "1"))),
+        LegalAddress(path=(("section", "32"), ("subsection", "1"), ("item", "2"))),
+    }
+
+
 def test_extract_ee_ops_keeps_singular_item_delete_at_item_granularity() -> None:
     ops = extract_ee_ops(
         "paragrahvi 56 lõike 1 punktist 4 jäetakse läbivalt välja sõnad „ja kõlblikud kohustused” vastavas käändes;",
@@ -132,6 +245,24 @@ def test_extract_ee_ops_preserves_intro_only_subsection_scope_and_item_targets()
     assert scope_meta.intro_only is True
 
 
+def test_extract_ee_ops_keeps_sentence_scope_target_local_for_mixed_text_delete() -> None:
+    text = (
+        "paragrahvi 14 2 lõike 4 teisest lausest ja lõikest 5 jäetakse "
+        "välja sõnad „või kohalik omavalitsus”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    by_target = {str(op.target): op for op in ops}
+    scoped_payload = _payload(by_target["section:14_2/subsection:4"])
+    bare_payload = _payload(by_target["section:14_2/subsection:5"])
+    scoped_meta = read_sentence_target_meta(scoped_payload)
+    assert scoped_meta is not None
+    assert scoped_meta.sentence_indexes == (1,)
+    assert read_sentence_target_meta(bare_payload) is None
+    assert bare_payload.attrs["suppress_sentence_target_meta"] is True
+
+
 def test_extract_ee_ops_does_not_mark_plain_subsection_text_replace_as_intro_only() -> None:
     ops = extract_ee_ops(
         (
@@ -170,6 +301,68 @@ def test_parse_ee_amendment_ops_supports_plaintext_old_format_omnibus_target_sec
         op.target == LegalAddress(path=(("section", "6_3"), ("subsection", "2")))
         for op in ops
     )
+
+
+def test_parse_ee_amendment_ops_recovers_old_format_regulation_section_items() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("128062014060", archive),
+        "ee/128062014060",
+        target_title="Marutaudi tõrje eeskiri",
+    )
+
+    assert [(op.action, op.target) for op in ops] == [
+        (
+            StructuralAction.TEXT_REPLACE,
+            LegalAddress(path=(("section", "2"), ("subsection", "1"))),
+        ),
+        (
+            StructuralAction.REPLACE,
+            LegalAddress(path=(("section", "4"), ("subsection", "1"))),
+        ),
+        (
+            StructuralAction.REPLACE,
+            LegalAddress(path=(("section", "7"), ("subsection", "6"))),
+        ),
+        (
+            StructuralAction.REPLACE,
+            LegalAddress(path=(("section", "15"), ("subsection", "5"))),
+        ),
+        (
+            StructuralAction.REPLACE,
+            LegalAddress(path=(("section", "18"), ("subsection", "2"), ("item", "1"))),
+        ),
+        (
+            StructuralAction.TEXT_REPLACE,
+            LegalAddress(path=(("section", "20_1"),)),
+        ),
+    ]
+    assert all("old_format_amendment_section:2" in op.provenance_tags for op in ops)
+    assert all(
+        any(tag.startswith("base_act: ") and "Marutaudi tõrje eeskiri" in tag for tag in op.provenance_tags)
+        for op in ops
+    )
+
+
+def test_parse_ee_amendment_ops_recovers_unstructured_single_clause_body() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("110052016001", archive),
+        "ee/110052016001",
+        target_title="Newcastle’i haiguse tõrje eeskiri",
+    )
+
+    assert [(op.action, op.target) for op in ops] == [
+        (
+            StructuralAction.REPEAL,
+            LegalAddress(path=(("section", "4"), ("subsection", "3"), ("item", "7"))),
+        ),
+        (
+            StructuralAction.REPEAL,
+            LegalAddress(path=(("section", "4_1"), ("subsection", "8"))),
+        ),
+    ]
+    assert all("ee_unstructured_single_clause_amendment_body" in op.provenance_tags for op in ops)
 
 
 def test_parse_ee_amendment_ops_preserves_intro_only_item_fanout_in_maagaasiseadus() -> None:
@@ -401,6 +594,71 @@ def test_extract_ee_ops_keeps_nested_french_quotes_inside_payload() -> None:
     assert ops[0].action is StructuralAction.REPLACE
     assert ops[0].target.path == (("section", "16"),)
     assert ops[0].payload is not None
+
+
+def test_extract_ee_ops_classifies_bare_sonastatakse_as_replace() -> None:
+    ops = extract_ee_ops(
+        'paragrahvi 1 tekst sõnastatakse järgmiselt: „(1) Uus tekst.”',
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "1"),)
+    assert ops[0].payload is not None
+
+
+def test_extract_ee_ops_classifies_bare_sonastatakse_subsection_as_replace() -> None:
+    ops = extract_ee_ops(
+        'paragrahvi 13 2 lõige 5 sõnastatakse järgmiselt: „(5) Uus tekst.”',
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "13_2"), ("subsection", "5"))
+    assert ops[0].payload is not None
+
+
+def test_extract_ee_ops_expands_mixed_superscript_repeal_ranges() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 2 lõiked 1, 2, 6, 8¹–13, 15, 16–18¹ ja 20, "
+            "2. peatüki 1.–3. jagu, § 13¹ ja § 13² lõiked 1–4 ja 6 "
+            "tunnistatakse kehtetuks;"
+        ),
+        OperationSource(statute_id="ee/test"),
+    )
+    targets = {op.target.path for op in ops if op.action is StructuralAction.REPEAL}
+
+    assert (("chapter", "2"), ("division", "1")) in targets
+    assert (("chapter", "2"), ("division", "2")) in targets
+    assert (("chapter", "2"), ("division", "3")) in targets
+    assert (("section", "2"), ("subsection", "8_1")) in targets
+    assert (("section", "2"), ("subsection", "13")) in targets
+    assert (("section", "2"), ("subsection", "18_1")) in targets
+    assert (("section", "13_1"),) in targets
+    assert (("section", "13_2"), ("subsection", "1")) in targets
+    assert (("section", "13_2"), ("subsection", "4")) in targets
+    assert (("section", "13_2"), ("subsection", "6")) in targets
+    assert len(targets) == 24
+
+
+def test_extract_ee_ops_expands_mixed_chapter_superscript_repeal_ranges() -> None:
+    ops = extract_ee_ops(
+        "4.–6. ja 7¹.–8¹. peatükk ning määruse lisad 1, 3 ja 4 tunnistatakse kehtetuks.",
+        OperationSource(statute_id="ee/test"),
+    )
+    targets = [op.target.path for op in ops if op.action is StructuralAction.REPEAL]
+
+    assert targets == [
+        (("chapter", "4"),),
+        (("chapter", "5"),),
+        (("chapter", "6"),),
+        (("chapter", "7_1"),),
+        (("chapter", "8"),),
+        (("chapter", "8_1"),),
+    ]
 
 
 def test_text_merge_signature_prefers_typed_text_patch() -> None:
@@ -1275,6 +1533,10 @@ def test_parse_ee_amendment_ops_recurses_into_nested_muutmispunkt_wrapper() -> N
               <p><b>1)</b> paragrahvi 2 täiendatakse muutmispunktiga 13<sup>1</sup> järgmises sõnastuses:</p>
               <p>„<b>13<sup>1</sup>)</b> paragrahvi 37<sup>1</sup> täiendatakse lõikega 5 järgmises sõnastuses:</p>
               <p>„(5) Välisriigist laekuva elatise vahendamise tasu maksmise täpsemad tingimused ja korra kehtestab valdkonna eest vastutav minister määrusega.”;”;</p>
+              <p><b>2)</b> paragrahvi 2 täiendatakse muutmispunktiga 14<sup>1</sup> järgmises sõnastuses:</p>
+              <p>„<b>14<sup>1</sup>)</b> seadust täiendatakse §-ga 37<sup>3</sup> järgmises sõnastuses:</p>
+              <p>„§ 37<sup>3</sup>. Riigi makstava tasu väljamaksmine</p>
+              <p>Käesoleva seaduse §-des 37<sup>1</sup> ja 37<sup>2</sup> nimetatud tasu väljamaksmist kohtutäituritele korraldab koda.”;”;</p>
             ]]></HTMLKonteiner>
           </sisuTekst>
         </paragrahv>
@@ -1286,11 +1548,17 @@ def test_parse_ee_amendment_ops_recurses_into_nested_muutmispunkt_wrapper() -> N
 
     assert [(op.action, op.target.path) for op in ops] == [
         (StructuralAction.INSERT, (("section", "37_1"), ("subsection", "5"))),
+        (StructuralAction.INSERT, (("section", "37_3"),)),
     ]
     assert ops[0].payload is not None
     assert ops[0].payload.text == (
         "(5) Välisriigist laekuva elatise vahendamise tasu maksmise täpsemad "
         "tingimused ja korra kehtestab valdkonna eest vastutav minister määrusega."
+    )
+    assert ops[1].payload is not None
+    assert ops[1].payload.text == (
+        "§ 37 3 . Riigi makstava tasu väljamaksmine Käesoleva seaduse §-des "
+        "37 1 ja 37 2 nimetatud tasu väljamaksmist kohtutäituritele korraldab koda."
     )
 
 
@@ -1391,6 +1659,56 @@ def test_parse_ee_statute_flattens_jaotis_sections_under_parent_division() -> No
         (IRNodeKind.SECTION, "97_1", "Metoodikakomisjon"),
         (IRNodeKind.SECTION, "97_2", "Metoodikakomisjoni pädevus"),
     ]
+
+
+def test_parse_ee_statute_flattens_alljaotis_sections_under_parent_division() -> None:
+    xml = """
+    <tyviseadus xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
+      <aktinimi>
+        <nimi>
+          <pealkiri>Testseadus</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <peatykk>
+          <peatykkNr>2</peatykkNr>
+          <peatykkPealkiri>Koda</peatykkPealkiri>
+          <jagu>
+            <jaguNr>5</jaguNr>
+            <jaguPealkiri>Tasud</jaguPealkiri>
+            <jaotis>
+              <jaotisNr>3</jaotisNr>
+              <jaotisPealkiri>Riigi tasu</jaotisPealkiri>
+              <alljaotis>
+                <alljaotisNr ylaIndeks="1">2</alljaotisNr>
+                <alljaotisPealkiri>Väljamaksmine</alljaotisPealkiri>
+                <paragrahv>
+                  <paragrahvNr ylaIndeks="3">37</paragrahvNr>
+                  <kuvatavNr><![CDATA[§ 37<sup>3</sup>. ]]></kuvatavNr>
+                  <paragrahvPealkiri>Riigi makstava tasu väljamaksmine</paragrahvPealkiri>
+                  <loige>
+                    <loigeNr>1</loigeNr>
+                    <sisuTekst>
+                      <tavatekst>Koda korraldab väljamaksmist.</tavatekst>
+                    </sisuTekst>
+                  </loige>
+                </paragrahv>
+              </alljaotis>
+            </jaotis>
+          </jagu>
+        </peatykk>
+      </sisu>
+    </tyviseadus>
+    """.encode("utf-8")
+
+    statute = parse_ee_statute(xml, "ee/test")
+    section = statute.body.children[0].children[0].children[0]
+
+    assert section.kind == IRNodeKind.SECTION
+    assert section.label == "37_3"
+    assert section.text == "Riigi makstava tasu väljamaksmine"
+    assert section.attrs["jaotis"] == "3"
+    assert section.attrs["alljaotis"] == "2"
 
 
 def test_parse_section_payload_keeps_superscript_item_label_together() -> None:
@@ -1631,6 +1949,21 @@ def test_parse_html_op_items_splits_parenthesized_old_format_markers() -> None:
     assert items == [
         "(8) Paragrahv 73 tunnistatakse kehtetuks.",
         "(9) Paragrahv 74 39 tunnistatakse kehtetuks.",
+    ]
+
+
+def test_parse_html_op_items_splits_uppercase_old_format_markers() -> None:
+    items = parse_html_op_items(
+        (
+            "<P><b> 1) </b> paragrahvi 2 lõikes 1 asendatakse sõna „a” sõnaga „b”;</P>"
+            "<P><strong> 2) </strong> paragrahvi 3 lõige 1 sõnastatakse järgmiselt:</P>"
+            "<P>„(1) Uus tekst.”;</P>"
+        )
+    )
+
+    assert items == [
+        "1) paragrahvi 2 lõikes 1 asendatakse sõna „a” sõnaga „b”;",
+        "2) paragrahvi 3 lõige 1 sõnastatakse järgmiselt: „(1) Uus tekst.”;",
     ]
 
 
@@ -1955,6 +2288,28 @@ def test_extract_ee_ops_preserves_division_context_for_multi_section_insert() ->
         (StructuralAction.INSERT, (("chapter", "3"), ("division", "1"), ("section", "47_2"))),
         (StructuralAction.INSERT, (("chapter", "3"), ("division", "1"), ("section", "47_3"))),
     ]
+
+
+def test_extract_ee_ops_splits_alljaotis_multi_section_insert_payloads() -> None:
+    ops = extract_ee_ops(
+        (
+            "seaduse 2. peatüki 3. jao 3. jaotise 1. alljaotist täiendatakse "
+            "§-dega 34 1 ja 34 2 järgmises sõnastuses: "
+            "„§ 34 1 . Riigisaladuse töötlemise lubatavus (1) Esimene. "
+            "§ 34 2 . Riigisaladuse elektroonilise töötlemise lubatavus (1) Teine.”"
+        ),
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.INSERT, (("chapter", "2"), ("division", "3"), ("section", "34_1"))),
+        (StructuralAction.INSERT, (("chapter", "2"), ("division", "3"), ("section", "34_2"))),
+    ]
+    assert ops[0].payload is not None
+    assert ops[1].payload is not None
+    assert "§ 34 1" in ops[0].payload.text
+    assert "§ 34 2" not in ops[0].payload.text
+    assert "§ 34 2" in ops[1].payload.text
 
 
 def test_extract_ee_ops_targets_division_heading() -> None:
@@ -2906,6 +3261,68 @@ def test_extract_ee_ops_expands_plural_subsection_replace_figure_dash_range() ->
     assert all(op.action is StructuralAction.REPLACE for op in ops)
     assert ops[1].payload is not None
     assert ops[1].payload.text.startswith("(2) Asustusüksused on asulad")
+
+
+def test_extract_ee_ops_expands_plural_subsection_insert_figure_dash_ranges() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 14 1 täiendatakse lõigetega 4 1‒4 5 ja 11‒14 "
+            "järgmises sõnastuses: „(4 1) esimene. (14) viimane.”;"
+        ),
+        OperationSource(statute_id="121062016001", raw_text="test"),
+    )
+
+    assert [op.target.path for op in ops] == [
+        (("section", "14_1"), ("subsection", "4_1")),
+        (("section", "14_1"), ("subsection", "4_2")),
+        (("section", "14_1"), ("subsection", "4_3")),
+        (("section", "14_1"), ("subsection", "4_4")),
+        (("section", "14_1"), ("subsection", "4_5")),
+        (("section", "14_1"), ("subsection", "11")),
+        (("section", "14_1"), ("subsection", "12")),
+        (("section", "14_1"), ("subsection", "13")),
+        (("section", "14_1"), ("subsection", "14")),
+    ]
+    assert all(op.action is StructuralAction.INSERT for op in ops)
+
+
+def test_extract_ee_ops_fans_out_elative_plural_subsection_text_delete_targets() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 7 lõike 1 punktist 3, § 37 pealkirjast, lõike 1 "
+            "sissejuhatavast lauseosast ning lõigetest 6 ja 7, § 38 pealkirjast, "
+            "lõike 1 sissejuhatavast lauseosast ja punktist 2 ning lõigetest 3 ja 4, "
+            "§ 40 pealkirjast ning lõigetest 1, 2 ja 4, § 62 pealkirjast ja lõikest 1 "
+            "ning § 72 lõigetest 1 ja 2 jäetakse välja tekstiosa „, vabaladu” "
+            "vastavas käändes;"
+        ),
+        OperationSource(statute_id="116062017001", raw_text="test"),
+    )
+
+    assert [(op.action, op.target.path, op.target.special) for op in ops] == [
+        (StructuralAction.TEXT_REPLACE, (("section", "7"), ("subsection", "1"), ("item", "3")), None),
+        (StructuralAction.TEXT_REPLACE, (("section", "37"), ("subsection", "1")), None),
+        (StructuralAction.TEXT_REPLACE, (("section", "38"), ("subsection", "1")), None),
+        (StructuralAction.TEXT_REPLACE, (("section", "38"), ("subsection", "1"), ("item", "2")), None),
+        (StructuralAction.TEXT_REPLACE, (("section", "62"), ("subsection", "1")), None),
+        (StructuralAction.TEXT_REPLACE, (("section", "72"), ("subsection", "1")), None),
+        (StructuralAction.TEXT_REPLACE, (("section", "72"), ("subsection", "2")), None),
+        (StructuralAction.TEXT_REPLACE, (("section", "37"),), FacetKind.HEADING),
+        (StructuralAction.TEXT_REPLACE, (("section", "37"), ("subsection", "6")), None),
+        (StructuralAction.TEXT_REPLACE, (("section", "37"), ("subsection", "7")), None),
+        (StructuralAction.TEXT_REPLACE, (("section", "38"),), FacetKind.HEADING),
+        (StructuralAction.TEXT_REPLACE, (("section", "38"), ("subsection", "3")), None),
+        (StructuralAction.TEXT_REPLACE, (("section", "38"), ("subsection", "4")), None),
+        (StructuralAction.TEXT_REPLACE, (("section", "40"), ("subsection", "1")), None),
+        (StructuralAction.TEXT_REPLACE, (("section", "40"), ("subsection", "2")), None),
+        (StructuralAction.TEXT_REPLACE, (("section", "40"), ("subsection", "4")), None),
+        (StructuralAction.TEXT_REPLACE, (("section", "62"),), FacetKind.HEADING),
+        (StructuralAction.TEXT_REPLACE, (("section", "40"),), FacetKind.HEADING),
+    ]
+    assert all(op.payload is not None and op.payload.attrs.get("case_inflected") is True for op in ops)
+    section_38_intro = next(op for op in ops if op.target.path == (("section", "38"), ("subsection", "1")))
+    assert section_38_intro.payload is not None
+    assert section_38_intro.payload.attrs["subsection_text_scope_meta"].intro_only is True
 
 
 def test_extract_ee_ops_fans_out_numeric_text_replace_with_rt_quote_prime() -> None:

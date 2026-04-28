@@ -756,7 +756,13 @@ def test_apply_ee_ops_plain_subsection_repeal_range_prefers_typed_selection_meta
             payload=IRNode(
                 kind=IRNodeKind.CONTENT,
                 text="",
-                attrs={"subsection_selection_meta": make_subsection_selection_meta(explicit_labels=("2", "3", "4"))},
+                attrs={
+                    "subsection_selection_meta": make_subsection_selection_meta(
+                        explicit_labels=("2", "3", "4"),
+                        plain_numeric_ranges=(("2", "4"),),
+                        label_ranges=(("2", "4"),),
+                    )
+                },
             ),
             provenance_tags=("paragrahvi 14 lõige 2 tunnistatakse kehtetuks;",),
         ),
@@ -769,7 +775,13 @@ def test_apply_ee_ops_plain_subsection_repeal_range_prefers_typed_selection_meta
             payload=IRNode(
                 kind=IRNodeKind.CONTENT,
                 text="",
-                attrs={"subsection_selection_meta": make_subsection_selection_meta(explicit_labels=("2", "3", "4"))},
+                attrs={
+                    "subsection_selection_meta": make_subsection_selection_meta(
+                        explicit_labels=("2", "3", "4"),
+                        plain_numeric_ranges=(("2", "4"),),
+                        label_ranges=(("2", "4"),),
+                    )
+                },
             ),
             provenance_tags=("paragrahvi 14 lõige 3 tunnistatakse kehtetuks;",),
         ),
@@ -782,7 +794,13 @@ def test_apply_ee_ops_plain_subsection_repeal_range_prefers_typed_selection_meta
             payload=IRNode(
                 kind=IRNodeKind.CONTENT,
                 text="",
-                attrs={"subsection_selection_meta": make_subsection_selection_meta(explicit_labels=("2", "3", "4"))},
+                attrs={
+                    "subsection_selection_meta": make_subsection_selection_meta(
+                        explicit_labels=("2", "3", "4"),
+                        plain_numeric_ranges=(("2", "4"),),
+                        label_ranges=(("2", "4"),),
+                    )
+                },
             ),
             provenance_tags=("paragrahvi 14 lõige 4 tunnistatakse kehtetuks;",),
         ),
@@ -866,6 +884,119 @@ def test_apply_ee_ops_superscript_subsection_repeal_typed_selection_does_not_cle
         ("2_1", ""),
         ("2_2", ""),
         ("3", "Kolmas."),
+    ]
+
+
+def test_apply_ee_ops_plain_subsection_repeal_list_does_not_clear_same_base_superscripts() -> None:
+    statute = IRStatute(
+        statute_id="ee/test",
+        title="Test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="2",
+                            text="Mõisted",
+                            children=(
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Esimene."),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="1_1", text="Üks üks."),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="Teine."),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="Kolmas."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_plain_list_no_superscript_clear",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("section", "2"), ("subsection", "1"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="",
+            attrs={
+                "subsection_selection_meta": make_subsection_selection_meta(
+                    explicit_labels=("1", "2"),
+                )
+            },
+        ),
+    )
+
+    result = apply_ee_ops(statute, [op])
+    section = result.body.children[0].children[0]
+
+    assert [(child.label, child.text) for child in section.children] == [
+        ("1", ""),
+        ("1_1", "Üks üks."),
+        ("2", ""),
+        ("3", "Kolmas."),
+    ]
+
+
+def test_apply_ee_ops_subsection_repeal_range_includes_live_intervening_superscripts() -> None:
+    statute = IRStatute(
+        statute_id="ee/test",
+        title="Test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="2",
+                            text="Mõisted",
+                            children=(
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="16", text="Kuusteist."),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="17", text="Seitseteist."),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="17_1", text="Seitseteist üks."),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="18", text="Kaheksateist."),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="18_1", text="Kaheksateist üks."),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="19", text="Üheksateist."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_subsection_label_range",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("section", "2"), ("subsection", "16"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="",
+            attrs={
+                "subsection_selection_meta": make_subsection_selection_meta(
+                    explicit_labels=("16", "17", "18", "18_1"),
+                    label_ranges=(("16", "18_1"),),
+                )
+            },
+        ),
+    )
+
+    result = apply_ee_ops(statute, [op])
+    section = result.body.children[0].children[0]
+
+    assert [(child.label, child.text) for child in section.children] == [
+        ("16", ""),
+        ("17", ""),
+        ("17_1", ""),
+        ("18", ""),
+        ("18_1", ""),
+        ("19", "Üheksateist."),
     ]
 
 
@@ -2608,6 +2739,44 @@ def test_case_inflected_text_replace_handles_i_and_ist_phrase_forms() -> None:
     )
 
 
+def test_case_inflected_text_replace_handles_protocol_compound_forms() -> None:
+    text = (
+        "Õde täidab vereülekandeprotokolli ning kleebib etiketi "
+        "vereülekandeprotokolli."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "vereülekandeprotokoll",
+        "transfusiooniprotokoll",
+        case_inflected=True,
+    )
+
+    assert replaced == (
+        "Õde täidab transfusiooniprotokolli ning kleebib etiketi "
+        "transfusiooniprotokolli."
+    )
+
+
+def test_case_inflected_text_replace_handles_register_compound_forms() -> None:
+    text = (
+        "Andmed on täitemenetlusregistris. "
+        "Kanne eemaldatakse täitemenetlusregistrist."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "täitemenetlusregister",
+        "täitmisregister",
+        case_inflected=True,
+    )
+
+    assert replaced == (
+        "Andmed on täitmisregistris. "
+        "Kanne eemaldatakse täitmisregistrist."
+    )
+
+
 def test_case_inflected_text_replace_handles_o_family_phrase_forms() -> None:
     text = (
         "Käesoleva paragrahvi lõikes 1 nimetatud sotsiaaltoetus makstakse "
@@ -2875,6 +3044,7 @@ def test_case_inflected_text_replace_handles_ametikoht_phrase_forms() -> None:
         "1",
         (
             "Isik, kes töötab ametikohal, millel töötamise eeltingimuseks on nõutava loa omamine. "
+            "Kui isik soovib asuda ametikohale, millel töötamise eeltingimuseks on juurdepääsuõigus. "
             "Loetelus on ametikohad, millel töötamise eeltingimuseks on juurdepääsuõigus."
         ),
     )
@@ -2897,6 +3067,7 @@ def test_case_inflected_text_replace_handles_ametikoht_phrase_forms() -> None:
     subsection = result.children[0].children[0].children[0]
 
     assert "töö- või ametikohal, mille ülesannete täitmise" in subsection.text
+    assert "töö- või ametikohale, mille ülesannete täitmise" in subsection.text
     assert "töö- või ametikohad, mille ülesannete täitmise" in subsection.text
 
 
@@ -2904,7 +3075,11 @@ def test_case_inflected_text_replace_handles_kaitsevagi_genitive_through() -> No
     body = _body_with_section_and_subsection(
         "51",
         "1",
-        "Käesoleva seaduse § 30 1 lõikes 1 nimetatud isik esitab dokumendid Kaitseväe kaudu julgeolekukontrolli teostavale asutusele.",
+        (
+            "Käesoleva seaduse § 30 1 lõikes 1 nimetatud isik esitab dokumendid "
+            "Kaitseväe kaudu julgeolekukontrolli teostavale asutusele. "
+            "Asutus teavitab viivitamata Kaitseväge juurdepääsuõiguse andmisest."
+        ),
     )
     op = LegalOperation(
         op_id="ee_test_kaitsevagi_genitive_through",
@@ -2925,6 +3100,7 @@ def test_case_inflected_text_replace_handles_kaitsevagi_genitive_through() -> No
     subsection = result.children[0].children[0].children[0]
 
     assert "Kaitseministeeriumi valitsemisala valitsusasutuse kaudu" in subsection.text
+    assert "Kaitseministeeriumi valitsemisala valitsusasutust juurdepääsuõiguse andmisest" in subsection.text
 
 
 def test_global_case_inflected_text_replace_handles_plural_a_noun_phrase_forms() -> None:
@@ -3288,6 +3464,33 @@ def test_targeted_text_replace_can_extend_shadowed_teabevaldajale_phrase() -> No
     )
 
 
+def test_targeted_text_replace_can_extend_shadowed_teabevaldaja_subject_phrase() -> None:
+    body = _body_with_section_and_subsection(
+        "25",
+        "1",
+        "Töötlev üksus on kohustatud enne riigisaladusele juurdepääsu andmist kontrollima luba.",
+    )
+    op = LegalOperation(
+        op_id="ee_test_shadowed_teabevaldaja_subject_phrase",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "25"), ("subsection", "1"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="töötlev üksus ja juurdepääsuõigusega füüsiline isik",
+            attrs={"old_text": "teabevaldaja"},
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    subsection = result.children[0].children[0].children[0]
+
+    assert subsection.text == (
+        "Töötlev üksus ja juurdepääsuõigusega füüsiline isik on kohustatud "
+        "enne riigisaladusele juurdepääsu andmist kontrollima luba."
+    )
+
+
 def test_global_case_inflected_text_replace_handles_genitive_before_poolt() -> None:
     body = _body_with_section_and_subsection(
         "52",
@@ -3492,7 +3695,7 @@ def test_case_inflected_text_replace_does_not_genitivize_inside_allative_phrase_
     assert updated == "Koolitusasutus esitab selle Põllumajandus- ja Toiduametile heakskiitmiseks."
 
 
-def test_sentence_scoped_text_replace_uses_note_indexes_when_broader_than_payload_meta() -> None:
+def test_sentence_scoped_text_replace_applies_multiple_typed_sentence_indexes() -> None:
     body = _body_with_section_and_subsection(
         "155",
         "1",
@@ -3512,7 +3715,7 @@ def test_sentence_scoped_text_replace_uses_note_indexes_when_broader_than_payloa
             attrs={
                 "old_text": "lapsendaja abikaasa",
                 "rewrite_mode": "replace",
-                "sentence_target_meta": make_sentence_target_meta(sentence_indexes=(0,)),
+                "sentence_target_meta": make_sentence_target_meta(sentence_indexes=(0, 1)),
             },
         ),
         provenance_tags=(
@@ -4201,6 +4404,42 @@ def test_case_inflected_phrase_deletion_handles_inflected_old_forms() -> None:
     subsection = result.children[0].children[0].children[0]
 
     assert subsection.text == "Tööinspektoril on õigus teha ettekirjutus."
+
+
+def test_case_inflected_text_replace_delete_handles_vabaladu_forms() -> None:
+    text = (
+        "toimetamist ühendusevälisest riigist Euroopa Liidu territooriumil "
+        "asuvasse vabatsooni, vabalattu või tollilattu; "
+        "kaubasaadetis paigutatakse vabatsoonis, vabalaos või tollilaos ning "
+        "eemaldatakse vabatsoonist, vabalaost või tollilaost."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        ", vabaladu",
+        "",
+        case_inflected=True,
+    )
+
+    assert replaced == (
+        "toimetamist ühendusevälisest riigist Euroopa Liidu territooriumil "
+        "asuvasse vabatsooni või tollilattu; "
+        "kaubasaadetis paigutatakse vabatsoonis või tollilaos ning "
+        "eemaldatakse vabatsoonist või tollilaost."
+    )
+
+
+def test_text_replace_delete_without_case_inflection_keeps_vabaladu_forms() -> None:
+    text = "toimetamist vabatsooni, vabalattu või tollilattu."
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        ", vabaladu",
+        "",
+        case_inflected=False,
+    )
+
+    assert replaced == text
 
 
 def test_text_replace_handles_inflected_paragraph_marker_citations() -> None:
@@ -5223,6 +5462,73 @@ def test_text_replace_scoped_to_first_sentence_recognizes_esimeses_lauses_note()
     )
 
 
+def test_text_replace_scoped_to_first_sentence_does_not_fallback_to_second_sentence() -> None:
+    body = _body_with_section_and_subsection(
+        "99",
+        "1",
+        (
+            "Esimene lause jääb alles. Teises lauses kustutatav tekst jääks alles, "
+            "kui allikas nimetab esimese lause."
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_text_replace_first_sentence_no_broader_fallback",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "99"), ("subsection", "1"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="",
+            attrs={"old_text": "kustutatav tekst"},
+        ),
+        source=OperationSource(statute_id="ee/test"),
+        provenance_tags=("paragrahvi 99 lõike 1 esimesest lausest jäetakse välja tekstiosa",),
+    )
+
+    result = _ee_apply_op(body, op)
+    subsection = result.children[0].children[0].children[0]
+
+    assert subsection.text == (
+        "Esimene lause jääb alles. Teises lauses kustutatav tekst jääks alles, "
+        "kui allikas nimetab esimese lause."
+    )
+
+
+def test_text_replace_scoped_to_first_sentence_ignores_ordinal_periods() -> None:
+    body = _body_with_section_and_subsection(
+        "12",
+        "2",
+        (
+            "Vajaduse korral tellitakse hindamine kehtiv 7. taseme hindaja kutsega "
+            "isikult või selgitab väärtuse välja Maa-amet. Teine lause jääb alles."
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_text_replace_first_sentence_ordinal_period",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "12"), ("subsection", "2"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="Maa- ja Ruumiamet",
+            attrs={
+                "old_text": "Maa-amet",
+                "sentence_target_meta": make_sentence_target_meta(sentence_indexes=(0,)),
+            },
+        ),
+        source=OperationSource(statute_id="ee/test"),
+        provenance_tags=("paragrahvi 12 lõike 2 esimeses lauses asendatakse tekstiosa",),
+    )
+
+    result = _ee_apply_op(body, op)
+    subsection = result.children[0].children[0].children[0]
+
+    assert subsection.text == (
+        "Vajaduse korral tellitakse hindamine kehtiv 7. taseme hindaja kutsega "
+        "isikult või selgitab väärtuse välja Maa- ja Ruumiamet. Teine lause jääb alles."
+    )
+
+
 def test_text_replace_scoped_to_first_sentence_prefers_typed_sentence_target_meta_over_note_text() -> None:
     body = _body_with_section_and_subsection(
         "20",
@@ -5461,6 +5767,71 @@ def test_repeal_division_collapses_to_rt_boundary_stubs() -> None:
     ]
 
 
+def test_repeal_chapter_preserves_division_boundary_stubs() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="8",
+                text="BILANSIVASTUTUS",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.DIVISION,
+                        label="1",
+                        text="Bilansihalduse korraldus",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SECTION,
+                                label="48",
+                                text="Bilansihaldur",
+                                children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Kustub."),),
+                            ),
+                        ),
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.DIVISION,
+                        label="2",
+                        text="Bilansi selgitamine",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SECTION,
+                                label="51",
+                                text="Üldsätted",
+                                children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Kustub ka."),),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_repeal_chapter_stubs",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("chapter", "8"),)),
+    )
+
+    result = _ee_apply_op(body, op)
+    chapter = result.children[0]
+
+    assert chapter.kind == IRNodeKind.CHAPTER
+    assert chapter.label == "8"
+    assert [(child.kind, child.label, child.text) for child in chapter.children] == [
+        (IRNodeKind.DIVISION, "1", "Bilansihalduse korraldus"),
+        (IRNodeKind.DIVISION, "2", "Bilansi selgitamine"),
+    ]
+    assert [
+        (section.label, section.text, section.attrs.get("kehtetu"), section.children)
+        for division in chapter.children
+        for section in division.children
+    ] == [
+        ("48", "Bilansihaldur", True, ()),
+        ("51", "Üldsätted", True, ()),
+    ]
+
+
 def test_replace_division_heading_updates_only_division_title() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,
@@ -5651,6 +6022,86 @@ def test_apply_ee_ops_sorts_same_source_text_replace_run_by_specificity() -> Non
     subsection = result.body.children[0].children[0].children[0]
 
     assert subsection.text == ("Erinevused võivad olla ohtlikud rahvastiku tervisele ja vähendada rahvastiku ohutust.")
+
+
+def test_apply_ee_ops_prefers_explicit_target_law_replace_over_generic_ministry_reorg_same_old_text() -> None:
+    statute = IRStatute(
+        statute_id="ee/test",
+        title="Kalapüügiseadus",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="10",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.SUBSECTION,
+                                    label="7",
+                                    text="Loa annab Keskkonnaministeerium.",
+                                ),
+                            ),
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="90_2",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.SUBSECTION,
+                                    label="1",
+                                    text="Andmed esitati Keskkonnaministeeriumile.",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    source = OperationSource(statute_id="ee/130062023001")
+    generic_op = LegalOperation(
+        op_id="ee-generic-ministry-reorg",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=()),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="Kliimaministeerium",
+            attrs={
+                "old_text": "Keskkonnaministeerium",
+                "case_inflected": True,
+                "source_family": "generic_ministry_reorganization",
+            },
+        ),
+        source=source,
+    )
+    explicit_op = LegalOperation(
+        op_id="ee-target-law-ministry-replace",
+        sequence=2,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=()),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="Regionaal- ja Põllumajandusministeerium",
+            attrs={
+                "old_text": "Keskkonnaministeerium",
+                "case_inflected": True,
+                "exclude_paths": [((("section", "90_2"), ("subsection", "1")))],
+            },
+        ),
+        source=source,
+    )
+
+    result = apply_ee_ops(statute, [generic_op, explicit_op])
+
+    section_10 = result.body.children[0].children[0]
+    section_90_2 = result.body.children[0].children[1]
+    assert section_10.children[0].text == "Loa annab Regionaal- ja Põllumajandusministeerium."
+    assert section_90_2.children[0].text == "Andmed esitati Kliimaministeeriumile."
 
 
 def test_apply_ee_ops_records_unsupported_action() -> None:
@@ -6748,6 +7199,108 @@ def test_text_morphology_sentence_indexes_from_notes_supports_notes() -> None:
     assert match is not None
     assert case_preserved_replacement(match, "asutus") == "Asutus"
     assert replace_case_preserving("Amet on siin.", "amet", "asutus") == "Asutus on siin."
+
+
+def test_case_inflected_rewrite_preserves_nominative_in_kohustatud_subject_context() -> None:
+    old = "Veterinaar- ja Toiduameti kohalik asutus"
+    new = "Veterinaar- ja Toiduamet"
+
+    assert (
+        _ee_apply_text_replace_value(
+            "Veterinaar- ja Toiduameti kohalik asutus kohustatud määrama",
+            old,
+            new,
+            case_inflected=True,
+        )
+        == "Veterinaar- ja Toiduamet kohustatud määrama"
+    )
+    assert (
+        _ee_apply_text_replace_value(
+            "Veterinaar- ja Toiduameti kohaliku asutuse määratud ametnik",
+            old,
+            new,
+            case_inflected=True,
+        )
+        == "Veterinaar- ja Toiduameti määratud ametnik"
+    )
+
+
+def test_case_inflected_rewrite_preserves_nominative_before_coordinated_tud_modifier() -> None:
+    assert (
+        _ee_apply_text_replace_value(
+            "järelevalveametnik või volitatud veterinaararst peab kontrollima",
+            "järelevalveametnik",
+            "veterinaarjärelevalveametnik",
+            case_inflected=True,
+        )
+        == "veterinaarjärelevalveametnik või volitatud veterinaararst peab kontrollima"
+    )
+
+
+def test_case_inflected_rewrite_preserves_nominative_after_arvates_temporal_phrase() -> None:
+    text = (
+        "Volitatud laboratooriumina tegutsemiseks volituse andmise otsuse teeb "
+        "20 tööpäeva jooksul laboratooriumi kirjaliku taotluse saamisest arvates "
+        "Veterinaar- ja Toiduamet."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "Veterinaar- ja Toiduamet",
+        "Põllumajandus-ja Toiduamet",
+        case_inflected=True,
+    )
+
+    assert replaced == (
+        "Volitatud laboratooriumina tegutsemiseks volituse andmise otsuse teeb "
+        "20 tööpäeva jooksul laboratooriumi kirjaliku taotluse saamisest arvates "
+        "Põllumajandus-ja Toiduamet."
+    )
+
+
+def test_case_inflected_rewrite_handles_plural_id_to_jad_family() -> None:
+    text = (
+        "Pedagoogidele, kelle palgad kaetakse riigieelarvest, nähakse tööalaseks "
+        "koolituseks ette vahendid riigieelarves pedagoogide tööalaseks "
+        "koolituseks ettenähtud vahenditest."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "pedagoogid",
+        "õpetajad",
+        case_inflected=True,
+    )
+
+    assert replaced == (
+        "Õpetajatele, kelle palgad kaetakse riigieelarvest, nähakse tööalaseks "
+        "koolituseks ette vahendid riigieelarves õpetajate tööalaseks "
+        "koolituseks ettenähtud vahenditest."
+    )
+
+
+def test_case_inflected_rewrite_matches_normalized_inflected_hyphen_spacing() -> None:
+    assert (
+        _ee_apply_text_replace_value(
+            "Veterinaar-ja Toiduameti kohaliku asutuse juhi määratud ametnik",
+            "Veterinaar- ja Toiduameti kohaliku asutuse juht",
+            "Veterinaar- ja Toiduamet",
+            case_inflected=True,
+        )
+        == "Veterinaar-ja Toiduameti määratud ametnik"
+    )
+
+
+def test_nested_quote_delete_matches_guillemet_source_text() -> None:
+    assert (
+        _ee_apply_text_replace_value(
+            "otse «Toiduseaduse» § 10 lõike 1 alusel tunnustatud käitlemisettevõttesse",
+            "„Toiduseaduse” § 10 lõike 1 alusel tunnustatud",
+            "",
+            case_inflected=False,
+        )
+        == "otse käitlemisettevõttesse"
+    )
 
 
 def test_replace_sentence_note_preserves_other_sentences_for_sixth_sentence() -> None:

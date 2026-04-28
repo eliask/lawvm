@@ -52,6 +52,38 @@ def test_normalize_ee_comparison_text_unifies_figure_dash_with_en_dash() -> None
     assert normalize_ee_comparison_text("§ 36 lõigetes 2‒4") == "§ 36 lõigetes 2–4"
 
 
+def test_normalize_ee_comparison_text_normalizes_numeric_range_hyphen() -> None:
+    assert normalize_ee_comparison_text("punktid 3-6 ja vastuvõttu 80-100 protsendi") == (
+        "punktid 3–6 ja vastuvõttu 80–100 protsendi"
+    )
+
+
+def test_normalize_ee_comparison_text_normalizes_standard_identifier_dash() -> None:
+    assert normalize_ee_comparison_text("standardi EVS 906 ja EVS-EN 16798–1 nõudeid") == (
+        "standardi EVS 906 ja EVS-EN 16798-1 nõudeid"
+    )
+
+
+def test_normalize_ee_comparison_text_normalizes_alphanumeric_phrase_dash_surfaces() -> None:
+    assert normalize_ee_comparison_text("juhul – ringhäälinguloa") == "juhul-ringhäälinguloa"
+    assert normalize_ee_comparison_text("ja-programmide") == "ja-programmide"
+
+
+def test_normalize_ee_comparison_text_normalizes_quote_style_surfaces() -> None:
+    assert normalize_ee_comparison_text('Riigiettevõtte «Eesti Telekommunikatsioonid»') == (
+        'Riigiettevõtte "Eesti Telekommunikatsioonid"'
+    )
+
+
+def test_normalize_ee_comparison_text_normalizes_inline_superscript_section_suffixes() -> None:
+    assert normalize_ee_comparison_text("§-des 45¹–45³ sätestatud") == "§-des 45 1–45 3 sätestatud"
+
+
+def test_normalize_ee_comparison_text_drops_leading_orphan_subsection_parenthesis() -> None:
+    assert normalize_ee_comparison_text(") Lisaks sellele") == "Lisaks sellele"
+    assert normalize_ee_comparison_text("Eelmine lause. ) Lisaks sellele") == "Eelmine lause. Lisaks sellele"
+
+
 def test_normalize_ee_comparison_text_normalizes_ascii_one_third_list_fraction() -> None:
     assert normalize_ee_comparison_text("rakendatakse 33 1/3-list protsendimäära") == (
         "rakendatakse 33 ⅓-list protsendimäära"

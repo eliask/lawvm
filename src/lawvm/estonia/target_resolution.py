@@ -12,7 +12,7 @@ from typing import Callable, Iterable, Sequence, cast
 import xml.etree.ElementTree as ET
 import html as html_lib
 
-from lawvm.core.ir import LegalOperation, OperationSource
+from lawvm.core.ir import LegalOperation, OperationSource, StructuralAction
 
 from lawvm.estonia.act_identity_registry import (
     EEActIdentityRecord,
@@ -1389,7 +1389,7 @@ def old_format_extract_op_texts(content_block: str, block_header_text: str) -> l
 def old_format_extract_section_header_text(section_html: str) -> str:
     """Extract and normalize the first section header text from an old-format section block."""
     sect_p = r"(?:§|&sect;)"
-    bold_open_p = r"<(?:b|strong)>"
+    bold_open_p = r"<(?:b|strong)\b[^>]*>"
     bold_close_p = r"</(?:b|strong)>"
 
     first_para_m = re.match(r"\s*(<p\b[^>]*>.*?</p>)", section_html, re.DOTALL | re.IGNORECASE)
@@ -1435,6 +1435,42 @@ def old_format_make_source(*, source_id: str, base_act_name: str, work_header_te
     )
 
 
+def _old_format_header_names_specific_act(header_text: str) -> bool:
+    """Return True when an old-format section header names a specific act.
+
+    Generic wrappers such as ``§ 2. Seadust täiendatakse ...`` inherit the
+    surrounding roman statute header; they must not split into standalone act
+    sections merely because they contain the word ``seadust``.
+    """
+    text = re.sub(r"^\s*(?:§|&sect;)\s*\d+\.?\s*", "", header_text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+", " ", text).strip().lower()
+    act_noun_p = (
+        r"(?:seadus|seaduse|seadust|seadustik|seadustiku|seadustikku|"
+        r"koodeks|koodeksi|koodeksit|määrus|määruse|määrust|määruses)"
+    )
+    generic = {
+        "seadus",
+        "seaduse",
+        "seadust",
+        "seadustiku",
+        "seadustikku",
+        "koodeksi",
+        "koodeksit",
+        "määruse",
+        "määrust",
+        "määruses",
+    }
+    first_word = text.split(" ", 1)[0].strip(".,;:()")
+    if first_word in generic:
+        return False
+    if re.search(r"\bmäärus(?:t|e|es)?\s+nr\b", text):
+        return True
+    return bool(
+        re.search(rf"\b[a-zäöõüšž]{{3,}}{act_noun_p}\b", text)
+        or re.search(rf"\b[a-zäöõüšž]{{3,}}\s+{act_noun_p}\b", text)
+    )
+
+
 def old_format_split_sections(full_html: str) -> list[str]:
     """Split old-format amendment HTML into act-targeting sections.
 
@@ -1445,29 +1481,60 @@ def old_format_split_sections(full_html: str) -> list[str]:
     """
     sect_p = r"(?:§|&sect;)"
     rt_ref_p = r"\(RT\s+[IV]+[\s,]"
-    bold_open_p = r"<(?:b|strong)>"
+    bold_open_p = r"<(?:b|strong)\b[^>]*>"
     bold_close_p = r"</(?:b|strong)>"
+    # Prefer the outer paragraph boundary when old-format headers are encoded
+    # as <p><b>§ ...</b>. Matching both <p> and the nested <b> creates orphan
+    # paragraph fragments that can merge unrelated statutes into one section.
+    header_start_p = r"(?:<p\b[^>]*>\s*" + bold_open_p + r"|(?<!>)" + bold_open_p + r")"
+    header_terms_p = (
+        r"(?:seadus|seaduse|seadust|seadustik|seadustiku|seadustikku|"
+        r"koodeks|koodeksi|koodeksit|määrus|määruse|määrust|määruses)\b"
+    )
 
     sections = re.split(
-        r"(?=" + bold_open_p + r"\s*" + sect_p + r"\s*\d+[^<]*?" + bold_close_p + r"\s*" + rt_ref_p + r")",
+        r"(?="
+        + header_start_p
+        + r"\s*"
+        + sect_p
+        + r"\s*\d+[^<]*?"
+        + bold_close_p
+        + r"\s*"
+        + rt_ref_p
+        + r")",
         full_html,
+        flags=re.IGNORECASE,
     )
     if len(sections) == 1:
         candidates = re.split(
-            r"(?=" + bold_open_p + r"\s*" + sect_p + r"\s*\d+[^<]*?" + bold_close_p + r")",
+            r"(?="
+            + header_start_p
+            + r"\s*"
+            + sect_p
+            + r"\s*\d+[^<]*?"
+            + bold_close_p
+            + r")",
             full_html,
+            flags=re.IGNORECASE,
         )
         if len(candidates) > 1:
             filtered = [candidates[0]]
             for sec in candidates[1:]:
                 m = re.match(
-                    bold_open_p + r"\s*" + sect_p + r"\s*\d+[^<]*?" + bold_close_p,
+                    header_start_p + r"\s*" + sect_p + r"\s*\d+[^<]*?" + bold_close_p,
                     sec,
+                    flags=re.IGNORECASE,
                 )
                 if m:
-                    hdr = re.sub(r"<[^>]+>", "", m.group(0))
-                    hdr = re.sub(r"&\w+;", " ", hdr).lower()
-                    if "seaduse" in hdr or "seadustiku" in hdr or "koodeksi" in hdr:
+                    first_para_m = re.match(
+                        r"\s*(<p\b[^>]*>.*?</p>)",
+                        sec,
+                        flags=re.DOTALL | re.IGNORECASE,
+                    )
+                    header_probe = first_para_m.group(1) if first_para_m is not None else sec[: m.end()]
+                    hdr = re.sub(r"<[^>]+>", " ", header_probe)
+                    hdr = html_lib.unescape(hdr).lower()
+                    if re.search(header_terms_p, hdr) and _old_format_header_names_specific_act(hdr):
                         filtered.append(sec)
                         continue
                 filtered[-1] += sec
@@ -1574,6 +1641,15 @@ def old_format_lower_op_texts(
             last_sect_raw = last_section.replace("_", " ")
             effective = f"paragrahvi {last_sect_raw}, {op_text}"
         ops = extract_ee_ops(effective, source, seq_start=global_seq)
+        ops = [
+            op
+            for op in ops
+            if not (
+                op.action == StructuralAction.META
+                and op.payload is None
+                and op.op_id.startswith("ee-unknown-")
+            )
+        ]
         sect = old_format_section_from_ops(ops)
         if sect:
             last_section = sect

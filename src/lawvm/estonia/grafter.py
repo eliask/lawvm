@@ -1002,11 +1002,24 @@ def _parse_division(el: ET.Element, ns_str: str, phantoms: AbstractSet = frozens
     nr = _extract_superscript_label(el, ns_str) or _text(_find(el, ns_str, "jaguNr"))
     title = _text(_find(el, ns_str, "jaguPealkiri"))
     children: List[IRNode] = []
+
+    def _append_section(para_el: ET.Element, *, jaotis_label: str = "", alljaotis_label: str = "") -> None:
+        if para_el in phantoms:
+            return
+        section = _parse_section(para_el, ns_str)
+        attrs = dict(section.attrs)
+        if jaotis_label:
+            attrs["jaotis"] = _normalize_num(jaotis_label)
+        if alljaotis_label:
+            attrs["alljaotis"] = _normalize_num(alljaotis_label)
+        if attrs != section.attrs:
+            section = replace(section, attrs=attrs)
+        children.append(section)
+
     for child in el:
         local_tag = child.tag.split("}")[-1]
         if local_tag == "paragrahv":
-            if child not in phantoms:
-                children.append(_parse_section(child, ns_str))
+            _append_section(child)
         elif local_tag == "jaotis":
             # EE jaotis sits below jagu, but the current shared IR has no
             # dedicated subdivision layer. Flatten jaotis-contained sections
@@ -1014,17 +1027,17 @@ def _parse_division(el: ET.Element, ns_str: str, phantoms: AbstractSet = frozens
             # section labels/titles that the oracle exposes (e.g. § 97^1, § 97^2).
             jaotis_label = _extract_superscript_label(child, ns_str) or _text(_find(child, ns_str, "jaotisNr"))
             for para_el in child.findall(_ns(ns_str, "paragrahv")):
-                if para_el not in phantoms:
-                    section = _parse_section(para_el, ns_str)
-                    if jaotis_label:
-                        section = replace(
-                            section,
-                            attrs={
-                                **section.attrs,
-                                "jaotis": _normalize_num(jaotis_label),
-                            },
-                        )
-                    children.append(section)
+                _append_section(para_el, jaotis_label=jaotis_label)
+            for alljaotis_el in child.findall(_ns(ns_str, "alljaotis")):
+                alljaotis_label = _extract_superscript_label(alljaotis_el, ns_str) or _text(
+                    _find(alljaotis_el, ns_str, "alljaotisNr")
+                )
+                for para_el in alljaotis_el.findall(_ns(ns_str, "paragrahv")):
+                    _append_section(
+                        para_el,
+                        jaotis_label=jaotis_label,
+                        alljaotis_label=alljaotis_label,
+                    )
     return IRNode(kind=IRNodeKind.DIVISION, label=nr, text=title, children=tuple(children))
 
 
@@ -1718,6 +1731,7 @@ def _parse_old_format_amendment_ops(
     )
 
     def _parse_plaintext_old_format_sections() -> List[LegalOperation]:
+        local_ns = _detect_ns(root)
         plain_blocks: list[str] = []
         for el in root.iter():
             tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
@@ -1759,6 +1773,76 @@ def _parse_old_format_amendment_ops(
                 plain = re.sub(r"\s+", " ", plain).strip()
                 if "§ 1." in plain and "muutmine" in plain.lower():
                     plain_blocks.append(plain)
+        if not plain_blocks and not raw_sections and target_title:
+            act_title = ""
+            aktinimi = root.find(_ns(local_ns, "aktinimi"))
+            if aktinimi is not None:
+                nimi = aktinimi.find(_ns(local_ns, "nimi"))
+                if nimi is not None:
+                    pealkiri = nimi.find(_ns(local_ns, "pealkiri"))
+                    act_title = _text(pealkiri)
+            if act_title and (
+                _title_matches_para(target_title, act_title)
+                or _tr_old_format_section_matches_target(target_title, act_title)
+            ):
+                direct_texts: list[str] = []
+                sisu = root.find(_ns(local_ns, "sisu"))
+                direct_children = list(sisu) if sisu is not None else []
+                for child in direct_children:
+                    child_tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+                    if child_tag != "sisuTekst":
+                        continue
+                    for text_el in child.iter():
+                        text_tag = text_el.tag.split("}")[-1] if "}" in text_el.tag else text_el.tag
+                        if text_tag != "tavatekst":
+                            continue
+                        plain = " ".join(part for part in text_el.itertext())
+                        plain = plain.replace("\xa0", " ")
+                        plain = re.sub(r"\s+", " ", plain).strip()
+                        if plain:
+                            direct_texts.append(plain)
+                direct_text = " ".join(direct_texts).strip()
+                if direct_text and (
+                    any(
+                        kw in direct_text.lower()
+                        for kw in (
+                            "paragrahvi",
+                            "paragrahvist",
+                            "lõiget",
+                            "lõikest",
+                            "lõikes",
+                            "muudetakse",
+                            "täiendatakse",
+                            "tunnistatakse",
+                            "asendatakse",
+                            "jäetakse välja",
+                            "lisatakse",
+                        )
+                    )
+                    or re.search(r"§\s*\d", direct_text)
+                ):
+                    source = OperationSource(
+                        statute_id=source_id,
+                        title=target_title,
+                        raw_text=direct_text[:200],
+                    )
+                    direct_instruction = direct_text
+                    if target_title.lower() in direct_text.lower():
+                        first_structural_target = re.search(r"§\s*\d", direct_text)
+                        if first_structural_target is not None:
+                            direct_instruction = direct_text[first_structural_target.start():].strip()
+                    ops = extract_ee_ops(direct_instruction, source, seq_start=1)
+                    return [
+                        replace(
+                            op,
+                            provenance_tags=(
+                                *op.provenance_tags,
+                                "ee_unstructured_single_clause_amendment_body",
+                                f"base_act: {_tr_paragrahv_to_act_id(act_title)}",
+                            ),
+                        )
+                        for op in ops
+                    ]
         if not plain_blocks and not raw_sections:
             return []
 
@@ -1790,6 +1874,57 @@ def _parse_old_format_amendment_ops(
             section_ops = extract_ee_ops(content_text, source, seq_start=seq)
             all_ops.extend(section_ops)
             seq += len(section_ops)
+        if not all_ops and target_title:
+            act_title = ""
+            aktinimi = root.find(_ns(local_ns, "aktinimi"))
+            if aktinimi is not None:
+                nimi = aktinimi.find(_ns(local_ns, "nimi"))
+                if nimi is not None:
+                    pealkiri = nimi.find(_ns(local_ns, "pealkiri"))
+                    act_title = _text(pealkiri)
+            if act_title and (
+                _title_matches_para(target_title, act_title)
+                or _tr_old_format_section_matches_target(target_title, act_title)
+            ):
+                direct_texts: list[str] = []
+                sisu = root.find(_ns(local_ns, "sisu"))
+                direct_children = list(sisu) if sisu is not None else []
+                for child in direct_children:
+                    child_tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+                    if child_tag != "sisuTekst":
+                        continue
+                    for text_el in child.iter():
+                        text_tag = text_el.tag.split("}")[-1] if "}" in text_el.tag else text_el.tag
+                        if text_tag != "tavatekst":
+                            continue
+                        plain = " ".join(part for part in text_el.itertext())
+                        plain = plain.replace("\xa0", " ")
+                        plain = re.sub(r"\s+", " ", plain).strip()
+                        if plain:
+                            direct_texts.append(plain)
+                direct_text = " ".join(direct_texts).strip()
+                if direct_text:
+                    direct_instruction = direct_text
+                    if target_title.lower() in direct_text.lower():
+                        first_structural_target = re.search(r"§\s*\d", direct_text)
+                        if first_structural_target is not None:
+                            direct_instruction = direct_text[first_structural_target.start():].strip()
+                    source = OperationSource(
+                        statute_id=source_id,
+                        title=target_title,
+                        raw_text=direct_text[:200],
+                    )
+                    all_ops = [
+                        replace(
+                            op,
+                            provenance_tags=(
+                                *op.provenance_tags,
+                                "ee_unstructured_single_clause_amendment_body",
+                                f"base_act: {_tr_paragrahv_to_act_id(act_title)}",
+                            ),
+                        )
+                        for op in extract_ee_ops(direct_instruction, source, seq_start=seq)
+                    ]
         if has_earlier_same_act_slice and not _old_format_target_has_ref_owned_slice(
             target_section_labels=target_section_labels,
             item_effects=item_effects,
@@ -1968,14 +2103,12 @@ def _op_sentence_indexes(payload: IRNode, note_text: str) -> list[int]:
     """Resolve sentence targets, preferring explicit note coverage when broader."""
     from lawvm.estonia.ee_instruction_waist import read_sentence_target_meta
 
+    if payload.attrs.get("suppress_sentence_target_meta"):
+        return []
     sentence_meta = read_sentence_target_meta(payload)
-    meta_indexes = list(sentence_meta.sentence_indexes) if sentence_meta is not None else []
-    note_indexes = _sentence_indexes_from_notes(note_text)
-    if len(note_indexes) > len(meta_indexes):
-        return note_indexes
-    if meta_indexes:
-        return meta_indexes
-    return note_indexes
+    if sentence_meta is not None:
+        return list(sentence_meta.sentence_indexes)
+    return _sentence_indexes_from_notes(note_text)
 
 
 def _parse_commencement_item_labels(raw: str) -> tuple[str, ...]:
@@ -3323,6 +3456,19 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_abl": stem + "telt",
             "pl_trn": stem + "teks",
         }
+    if lower.endswith("id"):
+        stem = word[:-2]
+        return {
+            "pl_nom": word,
+            "pl_gen": stem + "ide",
+            "pl_part": stem + "e",
+            "pl_ine": stem + "ides",
+            "pl_ela": stem + "idest",
+            "pl_all": stem + "idele",
+            "pl_ade": stem + "idel",
+            "pl_abl": stem + "idelt",
+            "pl_trn": stem + "ideks",
+        }
     if lower.endswith("used"):
         stem = word[:-2]
         return {
@@ -3919,6 +4065,26 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_nom": word + "id",
             "pl_gen": word + "ite",
         }
+    if lower.endswith("ladu"):
+        stem = word[:-4] + "lao"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": word,
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_ill": word[:-2] + "ttu",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": word + "d",
+            "pl_gen": stem + "de",
+        }
     if lower.endswith("ve"):
         # e.g. järelevalve, haldusjärelevalve: gen=X, part=Xt, ine=Xs
         stem = word
@@ -3991,6 +4157,61 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_ade": word + "idel",
             "pl_abl": word + "idelt",
             "pl_trn": word + "ideks",
+        }
+    if lower.endswith("oll"):
+        # protocol/kontroll-family compounds: protokoll -> protokolli,
+        # transfusiooniprotokoll -> transfusiooniprotokolli.
+        stem = word + "i"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": stem,
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": word + "id",
+            "pl_gen": word + "ide",
+            "pl_part": word + "e",
+            "pl_ine": word + "ides",
+            "pl_ela": word + "idest",
+            "pl_all": word + "idele",
+            "pl_ade": word + "idel",
+            "pl_abl": word + "idelt",
+            "pl_trn": word + "ideks",
+        }
+    if lower.endswith("register"):
+        # register-family compounds: täitemenetlusregister -> täitemenetlusregistri.
+        stem = word[:-2] + "ri"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": word + "it",
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": word + "id",
+            "pl_gen": word + "ite",
+            "pl_part": word + "eid",
+            "pl_ine": word + "ites",
+            "pl_ela": word + "itest",
+            "pl_all": word + "itele",
+            "pl_ade": word + "itel",
+            "pl_abl": word + "itelt",
+            "pl_trn": word + "iteks",
         }
     if lower.endswith("i"):
         stem = word
@@ -4338,6 +4559,11 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         new_norm = _ee_normalize_text_replace_surface(new)
         if old_norm and old_norm not in variants:
             variants[old_norm] = new_norm
+        if any(char in old for char in "„“”"):
+            guillemet_old = old.replace("„", "«").replace("“", "«").replace("”", "»")
+            guillemet_new = new.replace("„", "«").replace("“", "«").replace("”", "»")
+            if guillemet_old and guillemet_old not in variants:
+                variants[guillemet_old] = guillemet_new
     citation_match = re.fullmatch(r"§\s+(.+)", old.strip())
     new_citation_match = re.fullmatch(r"§\s+(.+)", new.strip())
     if citation_match is not None and new_citation_match is not None:
@@ -4350,6 +4576,13 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
     if old == "teabevaldajale" and new == "töötlevale üksusele ja juurdepääsuõigusega füüsilisele isikule":
         special_pairs = {
             "töötlevale üksusele": new,
+        }
+        for old_form, new_form in special_pairs.items():
+            if old_form not in variants:
+                variants[old_form] = new_form
+    if old == "teabevaldaja" and new == "töötlev üksus ja juurdepääsuõigusega füüsiline isik":
+        special_pairs = {
+            "töötlev üksus": new,
         }
         for old_form, new_form in special_pairs.items():
             if old_form not in variants:
@@ -4424,6 +4657,11 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
                 new_form = new_forms.get(key)
                 if old_form and new_form and old_form not in variants:
                     variants[old_form] = new_form
+                if old_form and new_form:
+                    old_form_norm = _ee_normalize_text_replace_surface(old_form)
+                    new_form_norm = _ee_normalize_text_replace_surface(new_form)
+                    if old_form_norm and old_form_norm not in variants:
+                        variants[old_form_norm] = new_form_norm
         if (
             old == "rahvusvaheline konventsioon tsiviilvastutusest naftareostuskahjude eest, 1969"
             and new
@@ -4500,6 +4738,7 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
             special_pairs = {
                 "ametikohad, millel töötamise": "töö- või ametikohad, mille ülesannete täitmise",
                 "ametikohal, millel töötamise": "töö- või ametikohal, mille ülesannete täitmise",
+                "ametikohale, millel töötamise": "töö- või ametikohale, mille ülesannete täitmise",
             }
             for old_form, new_form in special_pairs.items():
                 if old_form not in variants:
@@ -4507,6 +4746,7 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         if old == "Kaitsevägi" and new == "Kaitseministeeriumi valitsemisala valitsusasutus":
             special_pairs = {
                 "Kaitseväe kaudu": "Kaitseministeeriumi valitsemisala valitsusasutuse kaudu",
+                "Kaitseväge": "Kaitseministeeriumi valitsemisala valitsusasutust",
             }
             for old_form, new_form in special_pairs.items():
                 if old_form not in variants:
@@ -4635,12 +4875,12 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
         return match.group(1).lower()
 
     def _next_word_and_prefix(suffix_text: str) -> tuple[str, str]:
-        match = re.match(r"\s*(?:(või|ja|ning)\s+)?([A-Za-zÄÖÕÜäöõüŠŽšž-]+)", suffix_text, re.IGNORECASE)
-        if match is None:
+        words = _next_words(suffix_text)
+        if not words:
             return "", ""
-        joiner = (match.group(1) or "").lower()
-        next_word = match.group(2).lower()
-        return joiner, next_word
+        if words[0] in {"või", "ja", "ning"} and len(words) >= 2:
+            return words[0], words[1]
+        return "", words[0]
 
     def _next_words(suffix_text: str) -> tuple[str, ...]:
         return tuple(
@@ -4665,10 +4905,15 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
         joiner, next_word = _next_word_and_prefix(suffix_text)
         if next_word in {"poolt", "taotlusel"}:
             return True
+        if suffix_text.lstrip().startswith(","):
+            return False
 
         preceding_word = _preceding_word(prefix_text)
         next_words = _next_words(suffix_text)
+        semantic_next_words = next_words[1:] if joiner and next_words else next_words
         if preceding_word == "on":
+            return False
+        if preceding_word == "arvates":
             return False
         if _looks_like_finite_verb(preceding_word):
             return False
@@ -4681,15 +4926,24 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
 
         if not next_word:
             return False
+        if next_word == "kohustatud":
+            return False
+        if joiner and not (
+            len(semantic_next_words) >= 2
+            and re.fullmatch(r"[A-Za-zÄÖÕÜäöõüŠŽšž-]+se", semantic_next_words[0])
+            and semantic_next_words[1] not in {"ja", "ning", "või"}
+            and not _looks_like_finite_verb(semantic_next_words[1])
+        ):
+            return False
         if _looks_like_finite_verb(next_word):
             return False
         if not prefix_text.strip() and len(next_words) == 1:
             return True
         if (
-            len(next_words) >= 2
-            and re.fullmatch(r"[A-Za-zÄÖÕÜäöõüŠŽšž-]+se", next_words[0])
-            and next_words[1] not in {"ja", "ning", "või"}
-            and not _looks_like_finite_verb(next_words[1])
+            len(semantic_next_words) >= 2
+            and re.fullmatch(r"[A-Za-zÄÖÕÜäöõüŠŽšž-]+se", semantic_next_words[0])
+            and semantic_next_words[1] not in {"ja", "ning", "või"}
+            and not _looks_like_finite_verb(semantic_next_words[1])
         ):
             return True
         if re.match(r"[A-Za-zÄÖÕÜäöõüŠŽšž-]*(?:v|va|vas|vast|vate|vaks|vasse|tud|dud)$", next_word):
@@ -4846,6 +5100,7 @@ def _ee_apply_text_replace_value(
                 old_forms["sg_nom"],
                 new_forms["sg_nom"],
             )
+            and not (old == "veekogu" and new == "meri")
         ):
             replaced = _ee_replace_ambiguous_genitive_phrase(
                 replaced,
@@ -5686,12 +5941,37 @@ def _ee_apply_op(body: IRNode, op: LegalOperation) -> IRNode:
             target_node = tree_ops.resolve(body, full_path)
             if target_node is not None and target_node.kind == IRNodeKind.CHAPTER:
                 # Chapter-level repeal: "N. peatükk tunnistatakse kehtetuks".
-                # Oracle keeps chapter stubs with muutmismarge and empty section
-                # placeholders.  Replace all sections within the chapter with
-                # empty placeholders (kehtetu marker) and clear chapter children
-                # down to those stubs.  The bench compares section-level content
-                # so only section stubs matter; intermediate divisions/items are
-                # not individually compared.
+                # RT keeps chapter/division boundary headings as presentation
+                # stubs.  Provision bodies under the repealed chapter become
+                # empty kehtetu stubs, but container hierarchy remains visible
+                # for tree-structured publication diffs.
+                def _repealed_container_stub(node: IRNode) -> IRNode:
+                    stub_children: list[IRNode] = []
+                    for descendant in node.children:
+                        if descendant.kind == IRNodeKind.SECTION:
+                            stub_children.append(
+                                IRNode(
+                                    kind=IRNodeKind.SECTION,
+                                    label=descendant.label,
+                                    text=descendant.text,
+                                    attrs={**dict(descendant.attrs), "kehtetu": True},
+                                    children=(),
+                                )
+                            )
+                        elif descendant.kind in (
+                            IRNodeKind.PART,
+                            IRNodeKind.CHAPTER,
+                            IRNodeKind.DIVISION,
+                        ):
+                            stub_children.append(_repealed_container_stub(descendant))
+                    return IRNode(
+                        kind=node.kind,
+                        label=node.label,
+                        text=node.text,
+                        attrs=dict(node.attrs),
+                        children=tuple(stub_children),
+                    )
+
                 new_children = []
                 for child in target_node.children:
                     if child.kind == IRNodeKind.SECTION:
@@ -5705,23 +5985,12 @@ def _ee_apply_op(body: IRNode, op: LegalOperation) -> IRNode:
                             )
                         )
                     elif child.kind in (IRNodeKind.DIVISION, IRNodeKind.PART):
-                        # Flatten sections inside divisions to stubs
-                        for grandchild in child.children:
-                            if grandchild.kind == IRNodeKind.SECTION:
-                                new_children.append(
-                                    IRNode(
-                                        kind=IRNodeKind.SECTION,
-                                        label=grandchild.label,
-                                        text=grandchild.text,
-                                        attrs={**dict(grandchild.attrs), "kehtetu": True},
-                                        children=(),
-                                    )
-                                )
-                    # Skip non-section children (they disappear in oracle)
+                        new_children.append(_repealed_container_stub(child))
                 new_chapter = IRNode(
                     kind=IRNodeKind.CHAPTER,
                     label=target_node.label,
                     text=target_node.text,
+                    attrs=dict(target_node.attrs),
                     children=tuple(new_children),
                 )
                 return tree_ops.replace_at(body, full_path, new_chapter)
@@ -5827,10 +6096,27 @@ def _ee_apply_op(body: IRNode, op: LegalOperation) -> IRNode:
                             for label in selection_meta.explicit_labels
                             if label
                         }
+                        live_subsection_labels = [
+                            child.label
+                            for child in parent_node.children
+                            if child.kind == IRNodeKind.SUBSECTION and child.label is not None
+                        ]
+                        for start, end in selection_meta.label_ranges:
+                            if start not in live_subsection_labels or end not in live_subsection_labels:
+                                continue
+                            start_key = tree_ops._default_sort_key(start)
+                            end_key = tree_ops._default_sort_key(end)
+                            if start_key > end_key:
+                                start_key, end_key = end_key, start_key
+                            for label in live_subsection_labels:
+                                label_key = tree_ops._default_sort_key(label)
+                                if start_key <= label_key <= end_key:
+                                    implied_labels_set.add(label)
                         explicit_plain_bases = {
-                            label
-                            for label in selection_meta.explicit_labels
-                            if label and "_" not in label
+                            str(label)
+                            for start, end in selection_meta.plain_numeric_ranges
+                            if str(start).isdigit() and str(end).isdigit()
+                            for label in range(int(start), int(end) + 1)
                         }
                         for child in parent_node.children:
                             if child.kind != IRNodeKind.SUBSECTION or child.label is None:
@@ -6910,6 +7196,43 @@ def _ee_apply_op(body: IRNode, op: LegalOperation) -> IRNode:
                                 children=tuple(node.children),
                             )
                             return tree_ops.replace_at(body, full_path, replaced_node)
+                    if (
+                        node.kind == IRNodeKind.SECTION
+                        and subsection_text_scope_meta is not None
+                        and subsection_text_scope_meta.intro_only
+                    ):
+                        replaced_children: list[IRNode] = []
+                        changed_intro = False
+                        for child in node.children:
+                            if not changed_intro and child.kind == IRNodeKind.SUBSECTION and child.text:
+                                replaced_intro = _ee_apply_text_replace_spec(
+                                    child.text,
+                                    rewrite_spec,
+                                    case_inflected=rewrite_spec.case_inflected,
+                                    capitalize_sentence_start=True,
+                                )
+                                if replaced_intro is not None and replaced_intro != child.text:
+                                    replaced_children.append(
+                                        IRNode(
+                                            kind=child.kind,
+                                            label=child.label,
+                                            text=replaced_intro,
+                                            attrs=dict(child.attrs),
+                                            children=tuple(child.children),
+                                        )
+                                    )
+                                    changed_intro = True
+                                    continue
+                            replaced_children.append(child)
+                        if changed_intro:
+                            replaced_node = IRNode(
+                                kind=node.kind,
+                                label=node.label,
+                                text=node.text,
+                                attrs=dict(node.attrs),
+                                children=tuple(replaced_children),
+                            )
+                            return tree_ops.replace_at(body, full_path, replaced_node)
                     if sentence_indexes and node.kind == IRNodeKind.SUBSECTION and node.text:
                         parsed_instructions = to_ee_parsed_instructions(
                             [op],
@@ -6931,9 +7254,7 @@ def _ee_apply_op(body: IRNode, op: LegalOperation) -> IRNode:
                                 mode=parsed_rewrite.mode.value,
                                 case_inflected=parsed_rewrite.case_inflected,
                             )
-                        sentences = [
-                            part.strip() for part in re.split(r"(?<=\.)\s+", node.text.strip()) if part.strip()
-                        ]
+                        sentences = _split_ee_sentences(node.text)
                         sentence_changed = False
                         for sentence_index in sentence_indexes:
                             if sentence_index >= len(sentences):
@@ -6955,6 +7276,7 @@ def _ee_apply_op(body: IRNode, op: LegalOperation) -> IRNode:
                                 children=tuple(node.children),
                             )
                             return tree_ops.replace_at(body, full_path, replaced_node)
+                        return body
                     replaced_node, changed = _replace_text_in_subtree_with_spec(
                         node,
                         rewrite_spec,
@@ -7025,7 +7347,7 @@ def _ee_section_snapshot_path(full_path: tree_ops.Path) -> Optional[tree_ops.Pat
     return full_path
 
 
-def _ee_text_replace_run_sort_key(op: LegalOperation) -> tuple[int, int, int]:
+def _ee_text_replace_run_sort_key(op: LegalOperation) -> tuple[int, int, int, int]:
     """Sort same-source text_replace runs: longer old_text first, then by scope.
 
     Primary key: longer old_text (more specific) runs first.  This ensures
@@ -7038,14 +7360,22 @@ def _ee_text_replace_run_sort_key(op: LegalOperation) -> tuple[int, int, int]:
     right relative order (A→B global before B→C global) when both have the
     same old_text length.
 
-    Tertiary key: original sequence number as tiebreaker.
+    Tertiary key: explicit target-law replacements before synthetic generic
+    ministry-reorganization replacements for the same old_text.  This prevents
+    an inferred generic all-laws rename from consuming text before a source
+    paragraph for the target statute can apply its own scoped exception.
+
+    Final key: original sequence number as tiebreaker.
     """
     old_text = ""
+    generic_ministry_rank = 0
     if op.payload is not None:
         payload_meta = read_payload_rewrite_meta(op.payload)
         old_text = payload_meta.rewrite.old_surface if payload_meta.rewrite is not None else ""
+        if op.payload.attrs.get("source_family") == "generic_ministry_reorganization":
+            generic_ministry_rank = 1
     scope_rank = 0 if not op.target.path else 1  # global=0, scoped=1
-    return (-len(old_text), scope_rank, op.sequence)
+    return (-len(old_text), scope_rank, generic_ministry_rank, op.sequence)
 
 
 def apply_ee_ops(
