@@ -2087,18 +2087,16 @@ def _uk_oracle_corpus_statute_ids() -> List[str]:
 def _ee_oracle_corpus_pairs() -> List[tuple[str, str]]:
     """Return (base_id, oracle_id) pairs for EE live review.
 
-    Uses the curated EE law-pair corpus used for benchmarking and evidence
-    review. Broad RT-archive pair enumeration is intentionally not exposed
-    here until the EE archive indexer is upgraded to the actual farchive
-    schema used on disk.
+    Uses the current/latest EE replayable corpus used for publication and
+    evidence review.
     """
     from lawvm.tools.ee_bench import _CORPUS_CSV, _load_corpus_csv
 
     if not _CORPUS_CSV.exists():
         raise RuntimeError(
-            "EE evidence-review oracle corpus requires the curated EE law-pair corpus CSV"
+            "EE evidence-review oracle corpus requires the current EE replayable corpus CSV"
         )
-    pairs, _ = _load_corpus_csv(_CORPUS_CSV, include_decrees=False)
+    pairs, _ = _load_corpus_csv(_CORPUS_CSV, include_decrees=True)
     return [(str(base_id), str(oracle_id)) for _, base_id, oracle_id in pairs]
 
 

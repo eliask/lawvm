@@ -151,7 +151,8 @@ uv run lawvm oracle-check 2002/738
 uv run lawvm -j ee replay <STATUTE_ID> --as-of 2024-01-01
 uv run lawvm verify-consistency --jurisdiction ee --base <BASE_ID> --consolidated <ID>
 uv run lawvm ee-corpus current
-uv run lawvm ee-publication-db --limit 100
+uv run lawvm bench -j ee --label ee_current
+uv run lawvm ee-publication-db
 
 # UK
 uv run lawvm uk-replay <STATUTE_ID> --pit-date 2024-01-01
@@ -161,6 +162,12 @@ uv run lawvm uk-fetch-affecting <STATUTE_ID>
 uv run lawvm no-index
 uv run lawvm sweden --help
 ```
+
+`ee-corpus current` writes the broad current/latest Estonia corpus
+(`data/estonia/current_replayable_corpus.csv`, currently 2203 comparison
+cases). That corpus is the default for Estonia bench and publication DB
+tooling; the smaller `data/estonia/bench_corpus.csv` is only a legacy
+curated slice.
 
 Full Finland replay workflows require local archived sources under
 `data/*.farchive`. Use `uv run lawvm import-zip` with the public Finlex

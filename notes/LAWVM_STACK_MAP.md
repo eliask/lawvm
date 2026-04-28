@@ -130,7 +130,7 @@ JurisdictionPack pattern from the archived universal frontend model.
 ## 7. Current Accuracy
 
 - **FI: 98.61%** (N=3545, full corpus, `LAWVM_CORPUS_STORE=transparent`)
-- **EE: 95.6%** (N=343)
+- **EE: current replayable corpus** (N=2203 latest-version comparison cases; 343-case slice retained only as legacy release slice)
 - **UK: 86.2%** (N=329 curated)
 
 FI remaining failures: invariant-heavy mixed cases, not broad replay bugs.

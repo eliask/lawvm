@@ -6,7 +6,7 @@ accuracy. Results are saved for regression tracking.
 
 Usage:
     lawvm ee-bench --label v1
-    lawvm ee-bench --label v2 --include-decrees
+    lawvm ee-bench --label v2 --laws-only
     lawvm ee-bench --show v1
     lawvm ee-bench --compare v1 v2
 """
@@ -34,7 +34,12 @@ from lawvm.tools.section_keys import extract_ir_sections
 _DEFAULT_DB = Path(__file__).parent.parent.parent.parent / "data" / "ee_riigiteataja.farchive"
 _BENCH_DIR = Path(__file__).parent.parent.parent.parent / "data" / "ee_bench_runs"
 _HISTORY_CSV = Path(__file__).parent.parent.parent.parent / "data" / "ee_benchmark_history.csv"
-_CORPUS_CSV = Path(__file__).parent.parent.parent.parent / "data" / "estonia" / "bench_corpus.csv"
+_CORPUS_CSV = (
+    Path(__file__).parent.parent.parent.parent
+    / "data"
+    / "estonia"
+    / "current_replayable_corpus.csv"
+)
 
 # Module-level state for worker processes (set before spawning ProcessPoolExecutor).
 _WORKER_DB_PATH: str = ""
@@ -55,9 +60,9 @@ def _load_corpus_csv(
     csv_path: Path,
     include_decrees: bool = True,
 ) -> tuple[list[tuple[str, str, str]], dict[str, tuple[int, str]]]:
-    """Load (grupi_id, base_id, oracle_id) pairs and meta from curated corpus CSV.
+    """Load (grupi_id, base_id, oracle_id) pairs and meta from a corpus CSV.
 
-    CSV format (written by scripts/curate_ee_corpus.py):
+    CSV format:
       grupi_id, base_id, oracle_id, n_amendments, schema
 
     Returns same types as _index_corpus:

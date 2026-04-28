@@ -2412,14 +2412,21 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
     bench_p.add_argument(
         "--include-decrees",
         action="store_true",
+        default=True,
         dest="include_decrees",
-        help="[-j ee] include decree groups in addition to laws",
+        help="[-j ee] include decree groups in addition to laws (default)",
+    )
+    bench_p.add_argument(
+        "--laws-only",
+        action="store_false",
+        dest="include_decrees",
+        help="[-j ee] restrict Estonia corpus loading to law schemas",
     )
     bench_p.add_argument(
         "--ee-corpus",
         metavar="CSV_PATH",
         dest="ee_corpus",
-        help="[-j ee] path to curated corpus CSV (default: data/estonia/bench_corpus.csv)",
+        help="[-j ee] path to corpus CSV (default: data/estonia/current_replayable_corpus.csv)",
     )
     bench_p.add_argument(
         "--reindex",
