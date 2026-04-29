@@ -59,6 +59,57 @@ def _lower_generated_residual_records(
 
 
 _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
+    ("117052024008", "104042025010"): EEPairResidualInventory(
+        base_id="117052024008",
+        oracle_id="104042025010",
+        statute_title="Õli- ja kiudtaimede seemne kategooriad ning õli- ja kiudtaimede seemne tootmise ja turustamise nõuded",
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "chapter:5_1",
+                    "chapter:5_1/section:23_1",
+                    "chapter:5_1/section:23_1/subsection:1",
+                    "chapter:6",
+                    "chapter:6/section:23_1",
+                    "chapter:6/section:23_1/subsection:1",
+                    "chapter:6/section:24",
+                    "chapter:6/section:24/subsection:1",
+                    "chapter:6/section:24/subsection:2",
+                    "chapter:6/section:24/subsection:3",
+                    "chapter:6/section:24/subsection:4",
+                    "chapter:7",
+                    "chapter:7/section:24",
+                    "chapter:7/section:24/subsection:1",
+                    "chapter:7/section:24/subsection:2",
+                    "chapter:7/section:24/subsection:3",
+                    "chapter:7/section:24/subsection:4",
+                    "chapter:7/section:25",
+                    "chapter:7/section:25/subsection:1",
+                    "chapter:7/section:25/subsection:2",
+                    "chapter:7/section:26",
+                    "chapter:7/section:26/subsection:1",
+                    "chapter:8",
+                    "chapter:8/section:25",
+                    "chapter:8/section:25/subsection:1",
+                    "chapter:8/section:25/subsection:2",
+                    "chapter:8/section:26",
+                    "chapter:8/section:26/subsection:1",
+                ),
+                evidence=(
+                    "The sole source act between 117052024008 and 104042025010 is "
+                    "104042025006. Its § 4 block for this target amends only the "
+                    "normitehniline märkus and replaces lisa 6; it contains no "
+                    "instruction to renumber or move chapters 5^1, 6, 7, or 8. "
+                    "The remaining divergences are a whole-tail chapter/section "
+                    "address projection difference between replay and oracle, so "
+                    "they are classified as source/oracle structural drift rather "
+                    "than replay-core mutation debt."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("129052012009", "128032013017"): EEPairResidualInventory(
         base_id="129052012009",
         oracle_id="128032013017",
