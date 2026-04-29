@@ -1444,9 +1444,14 @@ def _extract_flat_sectionless_singleton_subsection_ops(
 ) -> list[LegalOperation]:
     """Recover clauses that name a subsection/item but omit the singleton section."""
     preamble = _instruction_preamble(clean)
-    if not re.search(r"^\s*l[oõ]i(?:ke|ge)(?:t|s|st|ga|le|)\s+\d", preamble, re.IGNORECASE):
+    if not re.search(
+        r"^\s*(?:(?:määruse|seaduse)\s+)?l[oõ]i(?:ke|ge)(?:t|s|st|ga|le|)\s+\d",
+        preamble,
+        re.IGNORECASE,
+    ):
         return []
-    scoped_clean = f"paragrahvi 1 {clean}"
+    scoped_body = re.sub(r"^\s*(?:määruse|seaduse)\s+", "", clean, count=1, flags=re.IGNORECASE)
+    scoped_clean = f"paragrahvi 1 {scoped_body}"
     scoped_ops = extract_ee_ops(scoped_clean, source, seq_start=seq)
     if not scoped_ops:
         return []
@@ -4987,6 +4992,10 @@ def extract_ee_ops(
 
     # Try to parse the provision target
     target = parse_target(clean)
+    if target is not None and not target.path:
+        flat_subsection_ops = _extract_flat_sectionless_singleton_subsection_ops(clean, source, seq)
+        if flat_subsection_ops:
+            return flat_subsection_ops
     if target is None:
         flat_subsection_ops = _extract_flat_sectionless_singleton_subsection_ops(clean, source, seq)
         if flat_subsection_ops:
