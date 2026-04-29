@@ -50,6 +50,7 @@ from lawvm.core.ir import (
     TextSelector,
 )
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.statute_facets import is_statute_title_address, replace_statute_title
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core import tree_ops
 from lawvm.estonia.act_identity_registry import lookup_ee_act_identity
@@ -11180,6 +11181,7 @@ def apply_ee_ops(
     """
     # The shared IR is frozen; replay can use the baseline body directly and
     # let tree_ops return new nodes for each change.
+    replayed = statute
     body = statute.body
     sorted_ops = sorted(ops, key=lambda o: o.sequence)
     reordered_ops: list[LegalOperation] = []
@@ -11213,6 +11215,30 @@ def apply_ee_ops(
         reordered_ops.extend(persistent_postpass_ops)
     for op in reordered_ops:
         action = op.action.value if hasattr(op.action, "value") else op.action
+        if is_statute_title_address(op.target):
+            if action != "replace" or op.payload is None:
+                _append_ee_replay_adjudication(
+                    adjudications_out,
+                    kind="ee_replay_unsupported_statute_title_action",
+                    message="EE replay skipped unsupported statute title operation.",
+                    op=op,
+                    detail={"action": action, "target": str(op.target)},
+                )
+                continue
+            old_title = replayed.title
+            new_title = op.payload.text.replace("\x01", "").strip()
+            replayed = replace_statute_title(replayed, new_title)
+            if blame_map is not None:
+                blame_map["/heading"] = op
+            if not new_title or new_title == old_title:
+                _append_ee_replay_adjudication(
+                    adjudications_out,
+                    kind="ee_replay_statute_title_noop",
+                    message="EE replay emitted no-op for statute title replacement.",
+                    op=op,
+                    detail={"action": action, "target": str(op.target)},
+                )
+            continue
         if action not in ("replace", "repeal", "insert", "renumber", "text_replace"):
             _append_ee_replay_adjudication(
                 adjudications_out,
@@ -11384,9 +11410,9 @@ def apply_ee_ops(
                             )
 
     return IRStatute(
-        statute_id=statute.statute_id,
-        title=statute.title,
+        statute_id=replayed.statute_id,
+        title=replayed.title,
         body=body,
-        supplements=list(statute.supplements),
-        metadata=dict(statute.metadata),
+        supplements=list(replayed.supplements),
+        metadata=dict(replayed.metadata),
     )

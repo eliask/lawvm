@@ -8849,7 +8849,7 @@ def test_parse_ee_amendment_ops_collects_xml_alampunkt_items_for_new_format_omni
     )
 
     assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.META, ()),
+        (StructuralAction.REPLACE, ()),
         (StructuralAction.META, ()),
         (StructuralAction.REPLACE, (("section", "1"),)),
         (StructuralAction.TEXT_REPLACE, (("section", "2"), ("item", "2"))),
@@ -8860,7 +8860,9 @@ def test_parse_ee_amendment_ops_collects_xml_alampunkt_items_for_new_format_omni
         (StructuralAction.REPEAL, (("section", "3"),)),
         (StructuralAction.META, ()),
     ]
-    assert _payload(ops[0]).attrs["source_family"] == "ee_title_clause_non_body"
+    assert ops[0].target.special is FacetKind.HEADING
+    assert _payload(ops[0]).attrs["source_family"] == "ee_statute_title_replace"
+    assert _payload(ops[0]).text == "Püsiva töövõimetuse ekspertiisiks vajalike dokumentide loetelu ja vormid"
     assert _payload(ops[1]).attrs["source_family"] == "ee_preamble_clause_non_body"
     assert _payload(ops[9]).attrs["source_family"] == "ee_out_of_body_appendix_clause_not_section_scoped"
     assert _payload(ops[3]).attrs["old_text"] == "kutsehaigestumise raport"

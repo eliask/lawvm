@@ -86,6 +86,29 @@ def test_text_replace_on_section_target_rewrites_descendant_text() -> None:
     )
 
 
+def test_apply_ee_ops_replaces_statute_title_facet_without_touching_body() -> None:
+    body = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Body"),))
+    statute = IRStatute(statute_id="ee/title", title="Old title", body=body)
+    op = LegalOperation(
+        op_id="ee_title_replace",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(), special=FacetKind.HEADING),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="New title",
+            attrs={"source_family": "ee_statute_title_replace"},
+        ),
+        witness_rule_id="ee_statute_title_replace",
+    )
+
+    updated = apply_ee_ops(statute, [op])
+
+    assert updated.title == "New title"
+    assert updated.body is body
+    assert statute.title == "Old title"
+
+
 def test_case_inflected_text_replace_handles_ettevote_forms() -> None:
     replaced = _ee_apply_text_replace_value(
         "Ettevõttes on ettevõtte territoorium.",

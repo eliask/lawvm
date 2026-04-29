@@ -19,7 +19,7 @@ from lawvm.estonia.act_identity_registry import (
     act_identity_matches_title,
     lookup_ee_act_identity,
 )
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.estonia.peg import _extract_quoted_content, _normalize_num, extract_ee_ops, parse_html_op_items
 
 _EE_DIRECT_TARGET_PREFIX_STRIP_RULE = "ee_direct_target_title_prefix_stripped_for_structural_repeal"
@@ -28,7 +28,8 @@ _EE_OLD_FORMAT_WRAPPER_SCOPE_INHERITED_RULE = "ee_old_format_wrapper_scope_inher
 _EE_OLD_FORMAT_DIRECT_HEADER_TARGET_SECTION_RULE = "ee_old_format_direct_header_target_section"
 _EE_OLD_FORMAT_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_old_format_preamble_clause_non_body"
 _EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
-_EE_TITLE_CLAUSE_NON_BODY_RULE = "ee_title_clause_non_body"
+_EE_STATUTE_TITLE_REPLACE_RULE = "ee_statute_title_replace"
+_EE_TITLE_CLAUSE_UNRESOLVED_NON_BODY_RULE = "ee_title_clause_unresolved_non_body"
 _EE_OLD_FORMAT_OUT_OF_BODY_APPENDIX_CLAUSE_RULE = "ee_old_format_out_of_body_appendix_clause_not_section_scoped"
 _EE_OUT_OF_BODY_APPENDIX_CLAUSE_RULE = "ee_out_of_body_appendix_clause_not_section_scoped"
 _EE_NEW_FORMAT_TARGET_ACT_HEADER_NOT_WRAPPER_RULE = "ee_new_format_target_act_header_not_wrapper_instruction"
@@ -87,6 +88,29 @@ def _non_body_meta_op(
         source=replace(source, raw_text=source_text[:200]),
         provenance_tags=(source_text[:200], rule_id),
         witness_rule_id=rule_id,
+    )
+
+
+def _statute_title_replace_op(
+    *,
+    source: OperationSource,
+    source_text: str,
+    sequence: int,
+) -> LegalOperation:
+    title = _extract_quoted_content(source_text).strip()
+    return LegalOperation(
+        op_id=f"ee-statute-title-replace-{sequence}-{source.statute_id}",
+        sequence=sequence,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(), special=FacetKind.HEADING),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text=title,
+            attrs={"source_family": _EE_STATUTE_TITLE_REPLACE_RULE},
+        ),
+        source=replace(source, raw_text=source_text[:200]),
+        provenance_tags=(source_text[:200], _EE_STATUTE_TITLE_REPLACE_RULE),
+        witness_rule_id=_EE_STATUTE_TITLE_REPLACE_RULE,
     )
 
 
@@ -775,14 +799,23 @@ def new_format_lower_op_texts(
 
         effective = re.sub(r'^\(?\d[\d\s_]*\)\s*', '', op_text).strip()
         if _is_title_clause_non_body(original_op_text):
-            lowered.append(
-                _non_body_meta_op(
-                    source=source,
-                    source_text=original_op_text,
-                    sequence=global_seq,
-                    rule_id=_EE_TITLE_CLAUSE_NON_BODY_RULE,
+            if _extract_quoted_content(original_op_text).strip():
+                lowered.append(
+                    _statute_title_replace_op(
+                        source=source,
+                        source_text=original_op_text,
+                        sequence=global_seq,
+                    )
                 )
-            )
+            else:
+                lowered.append(
+                    _non_body_meta_op(
+                        source=source,
+                        source_text=original_op_text,
+                        sequence=global_seq,
+                        rule_id=_EE_TITLE_CLAUSE_UNRESOLVED_NON_BODY_RULE,
+                    )
+                )
             global_seq += 1
             continue
         if _is_preamble_clause_non_body(original_op_text):

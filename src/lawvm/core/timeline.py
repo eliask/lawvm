@@ -32,6 +32,8 @@ from lawvm.core.ir import (
 from lawvm.core.ir_helpers import irnode_content_hash
 from lawvm.core.provenance import MigrationEvent
 from lawvm.core.semantic_types import StructuralAction
+from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.statute_facets import is_statute_title_address, statute_title_address
 from lawvm.core.temporal import TemporalEvent
 from lawvm.core.timeline_addresses import (
     _address_prefix_matches,
@@ -296,6 +298,23 @@ def compile_timelines(
             )
         )
         timelines[address] = tl
+    title_address = _norm_addr(statute_title_address())
+    title_node = IRNode(
+        kind=IRNodeKind.CONTENT,
+        text=base.title,
+        attrs={"facet": "statute_title"},
+    )
+    timelines[title_address] = ProvisionTimeline(
+        address=title_address,
+        versions=[
+            ProvisionVersion(
+                effective=effective_base,
+                enacted=effective_base,
+                content=title_node,
+                content_hash=irnode_content_hash(title_node),
+            )
+        ],
+    )
 
     # Exact-address lookup only: callers must provide the canonical source
     # address they intend to modify. Renumber destinations are the one exception
@@ -469,7 +488,7 @@ def compile_timelines(
                 latest_substantive_version_at_or_before=_latest_substantive_version_at_or_before,
             )
             standalone_index += 1
-        if op.target.special is not None:
+        if op.target.special is not None and not is_statute_title_address(op.target):
             _src_id = op.source.statute_id if op.source else "?"
             _record_timeline_issue(
                 issue_sink,
@@ -972,6 +991,12 @@ def materialize_pit_ex(
         migration_events,
         as_of=as_of,
     )
+    title_address = statute_title_address()
+    title = base.title if base else ""
+    title_content = active.pop(title_address, None)
+    active_versions.pop(title_address, None)
+    if title_content is not None:
+        title = title_content.text
     ambiguous_addresses = list(ambiguous_address_tuple)
     issues: List[TimelineIssue] = [
         TimelineIssue(
@@ -1195,7 +1220,6 @@ def materialize_pit_ex(
     )
 
     statute_id = base.statute_id if base else "unknown/unknown"
-    title = base.title if base else ""
     metadata: Dict[str, Any] = dict(base.metadata) if base else {}
     metadata["materialized_as_of"] = as_of
     status: Literal["materialized", "degraded_missing_scope"] = "materialized"

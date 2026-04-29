@@ -50,6 +50,7 @@ from lawvm.core.duplicate_child_classification import (
     collect_duplicate_child_findings,
 )
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
+from lawvm.core.statute_facets import is_statute_title_address
 from lawvm.core.timeline import (
     current_address_from_migration_events,
     compile_timelines,
@@ -1391,9 +1392,11 @@ def test_select_active_version_at_far_future(statute: IRStatute) -> None:
 @given(base_statute())
 @settings(max_examples=50)
 def test_all_addresses_have_nonempty_path(statute: IRStatute) -> None:
-    """All addresses from compile_timelines have non-empty paths."""
+    """All body addresses from compile_timelines have non-empty paths."""
     timelines = compile_timelines(statute, [])
     for addr in timelines:
+        if is_statute_title_address(addr):
+            continue
         assert len(addr.path) > 0, f"Address with empty path: {addr}"
         for kind, label in addr.path:
             assert isinstance(kind, str) and kind, f"Empty kind in {addr}"

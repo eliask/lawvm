@@ -1593,6 +1593,10 @@ def test_replay_ee_to_pit_closes_new_format_xml_alampunkt_omnibus_items() -> Non
 
     assert result.error is None
     assert result.n_ops == 10
+    assert result.replayed is not None
+    assert result.oracle is not None
+    assert result.replayed.title == "Püsiva töövõimetuse ekspertiisiks vajalike dokumentide loetelu ja vormid"
+    assert result.replayed.title == result.oracle.title
     assert result.divergences == []
 
 
