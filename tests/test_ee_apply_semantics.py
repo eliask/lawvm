@@ -19,6 +19,7 @@ from lawvm.estonia.ee_instruction_waist import (
     EEParsedInstruction,
     EETextRewrite,
     EETextRewriteWitness,
+    make_item_selection_meta,
     make_sentence_target_meta,
     make_subsection_selection_meta,
     make_subsection_text_scope_meta,
@@ -854,6 +855,122 @@ def test_missing_labels_from_plural_item_replace_remove_tail_items() -> None:
     assert [(item.label, item.text) for item in items] == [
         ("11", "old eleven;"),
         ("12", "new twelve."),
+    ]
+
+
+def test_plural_item_replace_range_removes_omitted_inserted_item_labels() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="6",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="10",
+                                children=(
+                                    IRNode(kind=IRNodeKind.ITEM, label="7", text="old seven;"),
+                                    IRNode(kind=IRNodeKind.ITEM, label="12", text="old twelve;"),
+                                    IRNode(kind=IRNodeKind.ITEM, label="12_1", text="old twelve one;"),
+                                    IRNode(kind=IRNodeKind.ITEM, label="13", text="old thirteen;"),
+                                    IRNode(kind=IRNodeKind.ITEM, label="13_1", text="old thirteen one;"),
+                                    IRNode(kind=IRNodeKind.ITEM, label="15", text="old fifteen."),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    statute = IRStatute(statute_id="ee/test", title="Test", body=body)
+    ops = [
+        LegalOperation(
+            op_id="ee-test-replace-7",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "6"), ("subsection", "10"), ("item", "7"))),
+            payload=IRNode(
+                kind=IRNodeKind.CONTENT,
+                text="7) new seven;",
+                attrs={
+                    "item_selection_meta": make_item_selection_meta(
+                        explicit_labels=tuple(str(label) for label in range(7, 16)),
+                        plain_numeric_ranges=(("7", "15"),),
+                        label_ranges=(("7", "15"),),
+                    ),
+                    "item_selection_rule": "ee_plural_item_replace_range_omits_inserted_labels",
+                },
+            ),
+            source=OperationSource(statute_id="ee/source"),
+        )
+    ]
+    adjudications: list[CompileAdjudication] = []
+
+    result = apply_ee_ops(statute, ops, adjudications_out=adjudications)
+    items = result.body.children[0].children[0].children[0].children
+
+    assert [(item.label, item.text) for item in items] == [
+        ("7", "new seven;"),
+        ("12", "old twelve;"),
+        ("13", "old thirteen;"),
+        ("15", "old fifteen."),
+    ]
+    assert [item.kind for item in adjudications] == ["ee_plural_item_replace_range_omits_inserted_labels"]
+    assert adjudications[0].detail["omitted_inserted_item_labels"] == "12_1,13_1"
+
+
+def test_plural_item_replace_range_keeps_omitted_inserted_item_without_typed_rule() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="6",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="10",
+                        children=(
+                            IRNode(kind=IRNodeKind.ITEM, label="7", text="old seven;"),
+                            IRNode(kind=IRNodeKind.ITEM, label="12_1", text="old twelve one."),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    statute = IRStatute(statute_id="ee/test", title="Test", body=body)
+    op = LegalOperation(
+        op_id="ee-test-replace-7",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "6"), ("subsection", "10"), ("item", "7"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="7) new seven;",
+            attrs={
+                "item_selection_meta": make_item_selection_meta(
+                    explicit_labels=tuple(str(label) for label in range(7, 16)),
+                    plain_numeric_ranges=(("7", "15"),),
+                    label_ranges=(("7", "15"),),
+                ),
+            },
+        ),
+        source=OperationSource(statute_id="ee/source"),
+    )
+
+    result = apply_ee_ops(statute, [op])
+    items = result.body.children[0].children[0].children
+
+    assert [(item.label, item.text) for item in items] == [
+        ("7", "new seven;"),
+        ("12_1", "old twelve one."),
     ]
 
 

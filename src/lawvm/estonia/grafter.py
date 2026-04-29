@@ -62,6 +62,7 @@ from lawvm.estonia.peg import (
     extract_ee_ops,
     parse_html_op_items,
 )
+from lawvm.estonia.ee_instruction_waist import read_item_selection_meta
 from lawvm.estonia.ee_instruction_waist import read_payload_rewrite_meta
 from lawvm.estonia.ee_instruction_waist import to_ee_parsed_instructions
 from lawvm.estonia.target_resolution import (
@@ -4625,6 +4626,7 @@ _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE = "ee_explicit_item_replacement_term
 _EE_LABELLED_ITEM_REPLACEMENT_PAYLOAD_SELECTION_RULE = "ee_labelled_item_replacement_payload_selection"
 _EE_INLINE_ITEM_PARENTHESES_MARKER_GUARD_RULE = "ee_inline_item_parentheses_marker_guard"
 _EE_PLURAL_ITEM_REPLACE_MISSING_LABEL_REPEAL_RULE = "ee_plural_item_replace_missing_label_repeal"
+_EE_PLURAL_ITEM_REPLACE_RANGE_OMITS_INSERTED_LABELS_RULE = "ee_plural_item_replace_range_omits_inserted_labels"
 _EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE = "ee_plural_subsection_replace_extra_payload_label"
 _EE_INLINE_ITEM_REPLACE_SINGLETON_SUBSECTION_RULE = "ee_inline_item_replace_singleton_subsection"
 _EE_TEXT_REPLACE_UNIQUE_DESCENDANT_ITEM_RULE = "ee_text_replace_unique_descendant_item_by_old_text"
@@ -4636,6 +4638,85 @@ _EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
 _EE_PARENTHESIZED_TARGET_HTML_BLOCK_RULE = "ee_parenthesized_target_html_block_sliced"
 _EE_OUT_OF_BODY_APPENDIX_OR_NOTE_RULE = "ee_out_of_body_appendix_or_note_clause"
 _EE_INSERT_AFTER_TERMINAL_PUNCTUATION_RULE = "ee_insert_after_terminal_punctuation_boundary"
+
+
+def _ee_remove_omitted_inserted_item_labels_from_replace_range(
+    body: IRNode,
+    parent_path: tree_ops.Path,
+    payload: IRNode | None,
+    op: LegalOperation,
+    adjudications_out: Optional[list[CompileAdjudication]],
+) -> IRNode:
+    """Remove live inserted item labels covered by an explicit plural replacement range."""
+    if payload is None:
+        return body
+    if payload.attrs.get("item_selection_rule") != _EE_PLURAL_ITEM_REPLACE_RANGE_OMITS_INSERTED_LABELS_RULE:
+        return body
+    selection_meta = read_item_selection_meta(payload)
+    if (
+        selection_meta is None
+        or not selection_meta.explicit_labels
+        or not selection_meta.plain_numeric_ranges
+    ):
+        return body
+    parent_node = tree_ops.resolve(body, parent_path) if parent_path else None
+    if parent_node is None:
+        return body
+
+    explicit_labels = set(selection_meta.explicit_labels)
+    omitted_labels: list[str] = []
+    for child in parent_node.children:
+        if child.kind != IRNodeKind.ITEM or child.label is None:
+            continue
+        if child.label in explicit_labels or not _is_inserted_numbered_label(child.label):
+            continue
+        child_key = tree_ops._default_sort_key(child.label)
+        for start, end in selection_meta.plain_numeric_ranges:
+            if not (str(start).isdigit() and str(end).isdigit()):
+                continue
+            start_key = tree_ops._default_sort_key(str(start))
+            end_key = tree_ops._default_sort_key(str(end))
+            if start_key > end_key:
+                start_key, end_key = end_key, start_key
+            if start_key <= child_key <= end_key:
+                omitted_labels.append(child.label)
+                break
+    if not omitted_labels:
+        return body
+
+    omitted_label_set = set(omitted_labels)
+    new_children = [
+        child
+        for child in parent_node.children
+        if not (
+            child.kind == IRNodeKind.ITEM
+            and child.label is not None
+            and child.label in omitted_label_set
+        )
+    ]
+    new_parent = IRNode(
+        kind=parent_node.kind,
+        label=parent_node.label,
+        text=parent_node.text,
+        attrs=dict(parent_node.attrs),
+        children=tuple(_normalize_item_list_terminals(new_children)),
+    )
+    _append_ee_replay_adjudication(
+        adjudications_out,
+        kind=_EE_PLURAL_ITEM_REPLACE_RANGE_OMITS_INSERTED_LABELS_RULE,
+        message=(
+            "EE replay removed live inserted item labels omitted by an explicit "
+            "plural item replacement range payload."
+        ),
+        op=op,
+        detail={
+            "target": str(op.target),
+            "omitted_inserted_item_labels": ",".join(
+                sorted(omitted_labels, key=tree_ops._default_sort_key)
+            ),
+        },
+    )
+    return tree_ops.replace_at(body, parent_path, new_parent)
 
 
 def _ee_levenshtein_distance_at_most_one(left: str, right: str) -> bool:
@@ -10595,6 +10676,14 @@ def _ee_apply_op(
                                 sibling,
                                 sort_key_fn=tree_ops._default_sort_key,
                             )
+                if target_node.kind == IRNodeKind.ITEM:
+                    updated_body = _ee_remove_omitted_inserted_item_labels_from_replace_range(
+                        updated_body,
+                        full_path[:-1],
+                        payload,
+                        op,
+                        adjudications_out,
+                    )
                 return updated_body
 
     elif action == "insert":

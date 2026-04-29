@@ -7,6 +7,7 @@ import pytest
 from lawvm.estonia.fetch import fetch_rt_xml, open_rt_archive
 from lawvm.estonia.ee_instruction_waist import (
     read_payload_rewrite_meta,
+    read_item_selection_meta,
     read_section_selection_meta,
     read_sentence_target_meta,
     read_subsection_selection_meta,
@@ -4401,6 +4402,29 @@ def test_extract_ee_ops_splits_plural_item_insert_payloads_by_label() -> None:
     assert ops[0].payload.text == "7 9) nõuda kellelt tahes positsiooni või riskipositsiooni suuruse vähendamist;"
     assert ops[1].payload is not None
     assert ops[1].payload.text == "7 10) piirata kelle tahes õigust kaubatuletisinstrumentidesse investeerida;"
+
+
+def test_extract_ee_ops_marks_plural_item_replace_range_selection_meta() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 6 lõike 10 punktid 7–15 sõnastatakse järgmiselt: "
+            "„7) seitse; 8) kaheksa; 9) üheksa; 10) kümme; 11) üksteist; "
+            "12) kaksteist; 13) kolmteist; 14) neliteist; 15) viisteist.“"
+        ),
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert [op.target.path[-1][1] for op in ops] == [str(label) for label in range(7, 16)]
+    assert all(op.action == StructuralAction.REPLACE for op in ops)
+    selection_meta = read_item_selection_meta(_payload(ops[0]))
+    assert selection_meta is not None
+    assert selection_meta.explicit_labels == tuple(str(label) for label in range(7, 16))
+    assert selection_meta.plain_numeric_ranges == (("7", "15"),)
+    assert selection_meta.label_ranges == (("7", "15"),)
+    assert (
+        _payload(ops[0]).attrs["item_selection_rule"]
+        == "ee_plural_item_replace_range_omits_inserted_labels"
+    )
 
 
 def test_extract_ee_ops_strips_plural_item_wrapper_quote_after_terminal_punctuation() -> None:
