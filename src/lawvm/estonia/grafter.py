@@ -6287,6 +6287,12 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
             for old_form, new_form in special_pairs.items():
                 if old_form not in variants:
                     variants[old_form] = new_form
+        for old_form, new_form in tuple(variants.items()):
+            if "-ja " not in old_form:
+                continue
+            compact_old_form = old_form.replace("-ja ", "-ja")
+            if compact_old_form and compact_old_form not in variants:
+                variants[compact_old_form] = new_form
         if old == "veekogu" and new == "meri":
             special_pairs = {
                 "süvendatakse veekogu": "süvendatakse merd",

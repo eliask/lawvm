@@ -49,6 +49,29 @@ _EE_ACT_IDENTITY_REGISTRY: tuple[EEActIdentityRecord, ...] = (
             "while consolidated bases from 129102025003 onward expose the renamed põhimäärus title.",
         ),
     ),
+    EEActIdentityRecord(
+        akt_viide="ee/106102022005",
+        grupi_id="1043094",
+        canonical_title="Põllu- ja metsamajanduse taristu arendamise ning hoiu investeeringutoetus",
+        title_variants=(
+            "Põllu- ja metsamajanduse taristu arendamise ning hoiu investeeringutoetus",
+        ),
+        aliases=(
+            "Põllu- ja metsamajanduse taristu arendamise ning hoiu investeeringutoetus "
+            "Maaeluministeeriumi valitsemisala riigiasutustele",
+            "Põllu- ja metsamajanduse taristu arendamise ning hoiu investeeringutoetus "
+            "Regionaal- ja Põllumajandusministeeriumi valitsemisala riigiasutustele",
+        ),
+        source_family="title_relabel_alias",
+        effective_from="2025-01-01",
+        notes=(
+            "Source act 128122024013 targets the Regionaal- ja Põllumajandusministeeriumi "
+            "title surface, while the replay pair starts from the older Maaeluministeeriumi "
+            "surface and the oracle exposes the shorter final title.",
+            "The similarly named 2015 act uses 'ja hoiu' rather than 'ning hoiu' and is not "
+            "an alias for this record.",
+        ),
+    ),
 )
 
 
@@ -74,6 +97,19 @@ def _normalize_identity_surface(text: str) -> str:
     return normalized
 
 
+def _identity_surfaces(text: str) -> tuple[str, ...]:
+    """Return exact-match surfaces carried by a statute title or wrapper header."""
+    surfaces: list[str] = []
+    direct = _normalize_identity_surface(text)
+    if direct:
+        surfaces.append(direct)
+    for match in re.finditer(r'[„"“]([^„”“"]{4,260})[”“"]', text or ""):
+        quoted = _normalize_identity_surface(match.group(1))
+        if quoted and quoted not in surfaces:
+            surfaces.append(quoted)
+    return tuple(surfaces)
+
+
 def _record_titles(record: EEActIdentityRecord) -> tuple[str, ...]:
     return (
         record.canonical_title,
@@ -84,14 +120,15 @@ def _record_titles(record: EEActIdentityRecord) -> tuple[str, ...]:
 
 def act_identity_matches_title(record: EEActIdentityRecord, title: str) -> bool:
     """Return True if the registry record supports the given title string."""
-    normalized_title = _normalize_identity_surface(title)
-    if not normalized_title:
+    normalized_titles = _identity_surfaces(title)
+    if not normalized_titles:
         return False
-    return any(
-        _normalize_identity_surface(candidate) == normalized_title
+    record_surfaces = {
+        _normalize_identity_surface(candidate)
         for candidate in _record_titles(record)
         if candidate
-    )
+    }
+    return any(surface in record_surfaces for surface in normalized_titles)
 
 
 def lookup_ee_act_identity(

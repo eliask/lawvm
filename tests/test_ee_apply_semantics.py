@@ -3913,6 +3913,19 @@ def test_case_inflected_text_replace_keeps_nominative_before_k2esoleva_law_refer
     assert updated == text
 
 
+def test_case_inflected_text_replace_handles_compact_coordinated_agency_spacing() -> None:
+    text = "Põllumajandus-jaToiduameti toetatavad tegevused."
+
+    updated = _ee_apply_text_replace_value(
+        text,
+        "Põllumajandus- ja Toiduamet",
+        "Maa- ja Ruumiamet",
+        case_inflected=True,
+    )
+
+    assert updated == "Maa-ja Ruumiameti toetatavad tegevused."
+
+
 def test_case_inflected_text_replace_keeps_nominative_in_comma_coordination_list() -> None:
     text = (
         "Karistusseadustiku § 218 lõigetes 1 ja 2, §-s 275 ning § 325 lõikes 1 "

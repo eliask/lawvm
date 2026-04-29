@@ -22,6 +22,14 @@ from lawvm.estonia.act_identity_registry import (
 from lawvm.estonia.peg import _extract_quoted_content, _normalize_num, extract_ee_ops, parse_html_op_items
 
 _EE_DIRECT_TARGET_PREFIX_STRIP_RULE = "ee_direct_target_title_prefix_stripped_for_structural_repeal"
+_EE_OLD_FORMAT_WRAPPER_SCOPE_INHERITED_RULE = "ee_old_format_wrapper_scope_inherited"
+
+
+def _registry_record_matches_all(record: object, *surfaces: str) -> bool:
+    """Return True only when every non-empty surface belongs to the same registry record."""
+    narrowed_record = cast(EEActIdentityRecord, record)
+    checked = [surface for surface in surfaces if surface]
+    return bool(checked) and all(act_identity_matches_title(narrowed_record, surface) for surface in checked)
 
 
 @dataclass(frozen=True)
@@ -51,10 +59,7 @@ def title_matches_para(target_title: str, para_title: str) -> bool:
     if not para_title:
         return False
     registry_record = lookup_ee_act_identity(title=target_title, alias=para_title)
-    if registry_record is not None and (
-        act_identity_matches_title(registry_record, target_title)
-        or act_identity_matches_title(registry_record, para_title)
-    ):
+    if registry_record is not None and _registry_record_matches_all(registry_record, target_title, para_title):
         return True
     # Normalize: strip "muutmine", convert genitive endings
     para_norm = re.sub(r'\s+muutmine\s*$', '', para_title.strip(), flags=re.IGNORECASE)
@@ -98,10 +103,7 @@ def strict_title_match_para(target: str, para: str) -> bool:
     if not para or not target:
         return False
     registry_record = lookup_ee_act_identity(title=target, alias=para)
-    if registry_record is not None and (
-        act_identity_matches_title(registry_record, target)
-        or act_identity_matches_title(registry_record, para)
-    ):
+    if registry_record is not None and _registry_record_matches_all(registry_record, target, para):
         return True
 
     def _normalize_word(word: str) -> str:
@@ -149,10 +151,7 @@ def strict_title_match_para(target: str, para: str) -> bool:
 def matches_target_statute_header(target_title: str, para_title: str) -> bool:
     """Match statute-targeting paragraph headers without overfitting to nominative form."""
     registry_record = lookup_ee_act_identity(title=para_title, alias=target_title)
-    if registry_record is not None and (
-        act_identity_matches_title(registry_record, target_title)
-        or act_identity_matches_title(registry_record, para_title)
-    ):
+    if registry_record is not None and _registry_record_matches_all(registry_record, target_title, para_title):
         return True
     return strict_title_match_para(target_title, para_title) or title_matches_para(target_title, para_title)
 
@@ -286,10 +285,10 @@ def direct_target_clause_matches_registry(
     if not is_specific_direct_target_fragment(fragment):
         return False
     registry_record = lookup_act_identity(alias=fragment or "")
-    if registry_record is not None and act_identity_matches_title(cast(EEActIdentityRecord, registry_record), target_title):
+    if registry_record is not None and _registry_record_matches_all(registry_record, target_title, fragment):
         return True
     registry_record = lookup_act_identity(title=fragment, alias=target_title)
-    if registry_record is not None and act_identity_matches_title(cast(EEActIdentityRecord, registry_record), target_title):
+    if registry_record is not None and _registry_record_matches_all(registry_record, target_title, fragment):
         return True
     return title_matcher(target_title, fragment)
 
@@ -311,10 +310,7 @@ def intro_fragment_matches_target(
     if source_id:
         lookup_kwargs["akt_viide"] = source_id
     registry_record = lookup_act_identity(**lookup_kwargs)
-    if registry_record is not None and (
-        act_identity_matches_title(cast(EEActIdentityRecord, registry_record), target_title)
-        or act_identity_matches_title(cast(EEActIdentityRecord, registry_record), stat_fragment)
-    ):
+    if registry_record is not None and _registry_record_matches_all(registry_record, target_title, stat_fragment):
         return True
     return title_matches_para(target_title, stat_fragment)
 
@@ -337,12 +333,8 @@ def registry_supports_target_statute(
     return bool(
         registry_record is not None
         and (
-            act_identity_matches_title(cast(EEActIdentityRecord, registry_record), target_title)
-            or (
-                stat_fragment
-                and act_identity_matches_title(cast(EEActIdentityRecord, registry_record), stat_fragment)
-            )
-            or (para_title and act_identity_matches_title(cast(EEActIdentityRecord, registry_record), para_title))
+            _registry_record_matches_all(registry_record, target_title, stat_fragment)
+            or _registry_record_matches_all(registry_record, target_title, para_title)
         )
     )
 
@@ -628,8 +620,7 @@ def new_format_lower_op_texts(
                     alias=stat_fragment,
                 )
                 if registry_record is not None and (
-                    act_identity_matches_title(cast(EEActIdentityRecord, registry_record), target_title)
-                    or act_identity_matches_title(cast(EEActIdentityRecord, registry_record), stat_fragment)
+                    _registry_record_matches_all(registry_record, target_title, stat_fragment)
                 ):
                     pass
                 elif normalize_act_id(stat_fragment) == normalize_act_id(target_title):
@@ -1084,8 +1075,7 @@ def old_format_section_matches_target(
 
     registry_record = lookup_act_identity(title=target, alias=header)
     if registry_record is not None:
-        narrowed_record = cast(EEActIdentityRecord, registry_record)
-        if act_identity_matches_title(narrowed_record, target) or act_identity_matches_title(narrowed_record, header):
+        if _registry_record_matches_all(registry_record, target, header):
             return True
 
     def _normalize_word(word: str) -> str:
@@ -1400,8 +1390,10 @@ def old_format_section_from_intro_context(content_block: str) -> str | None:
         re.IGNORECASE,
     )
     labels: list[str] = []
-    for para in paras:
+    for idx, para in enumerate(paras):
         plain = strip_old_format_html_text(para)
+        if idx == 0 and old_format_is_section_header_text(plain):
+            continue
         if item_start.match(plain):
             break
         for match in re.finditer(
@@ -1449,7 +1441,20 @@ def old_format_extract_op_texts(content_block: str, block_header_text: str) -> l
     instruction from the stripped block body, mirroring the legacy fallback in
     ``grafter.py``.
     """
-    op_texts = parse_html_op_items(content_block)
+    item_source_block = content_block
+    if _old_format_header_names_specific_act(block_header_text):
+        first_para_m = re.match(r"\s*(<p\b[^>]*>.*?</p>)", content_block, re.DOTALL | re.IGNORECASE)
+        if first_para_m is not None:
+            rest = content_block[first_para_m.end():]
+            rest_first_para_m = re.match(r"\s*(<p\b[^>]*>.*?</p>)", rest, re.DOTALL | re.IGNORECASE)
+            rest_first_plain = (
+                strip_old_format_html_text(rest_first_para_m.group(1))
+                if rest_first_para_m is not None
+                else ""
+            )
+            if not old_format_is_section_header_text(rest_first_plain):
+                item_source_block = rest
+    op_texts = parse_html_op_items(item_source_block)
     if op_texts:
         return op_texts
 
@@ -1789,6 +1794,7 @@ def old_format_lower_op_texts(
     for op_text in op_texts:
         amendment_item_label = old_format_item_label(op_text)
         effective = op_text
+        inherited_wrapper_scope = False
         is_container_heading_relabel = bool(
             re.search(r"\btekstiosa[a-z]*\s+[„\"“][^”\"]*?\bpeatükk\b", op_text, re.IGNORECASE)
             and re.search(r"\basendatakse\s+tekstiosaga\b", op_text, re.IGNORECASE)
@@ -1797,6 +1803,14 @@ def old_format_lower_op_texts(
             last_sect_raw = last_section.replace("_", " ")
             item_body = old_format_strip_item_label(op_text)
             effective = f"paragrahvi {last_sect_raw} {item_body}"
+        elif (
+            not last_section
+            and not old_format_has_section_ref(op_text)
+            and re.match(r"^\(?\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s*asendatakse\b|^asendatakse\b", op_text.strip(), re.IGNORECASE)
+        ):
+            item_body = old_format_strip_item_label(op_text)
+            effective = f"määruses {item_body}"
+            inherited_wrapper_scope = True
         ops = extract_ee_ops(effective, source, seq_start=global_seq)
         ops = [
             op
@@ -1819,7 +1833,12 @@ def old_format_lower_op_texts(
                 tags.append(f"old_format_amendment_item:{amendment_item_label}")
             if base_act_name:
                 tags.append(f"base_act: {base_act_name}")
-            tagged_ops.append(replace(op, provenance_tags=tuple(tags)))
+            witness_rule_id = op.witness_rule_id
+            if inherited_wrapper_scope:
+                tags.append(_EE_OLD_FORMAT_WRAPPER_SCOPE_INHERITED_RULE)
+                if op.action is not StructuralAction.META and witness_rule_id is None:
+                    witness_rule_id = _EE_OLD_FORMAT_WRAPPER_SCOPE_INHERITED_RULE
+            tagged_ops.append(replace(op, provenance_tags=tuple(tags), witness_rule_id=witness_rule_id))
         ops = tagged_ops
         lowered.extend(ops)
         global_seq += len(ops)
@@ -2128,13 +2147,11 @@ def direct_target_clause_matches_registry(  # noqa: F811
         return False
     registry_record = lookup_act_identity(alias=fragment or "")
     if registry_record is not None:
-        narrowed_record = cast(EEActIdentityRecord, registry_record)
-        if act_identity_matches_title(narrowed_record, target_title):
+        if _registry_record_matches_all(registry_record, target_title, fragment):
             return True
     registry_record = lookup_act_identity(title=fragment, alias=target_title)
     if registry_record is not None:
-        narrowed_record = cast(EEActIdentityRecord, registry_record)
-        if act_identity_matches_title(narrowed_record, target_title):
+        if _registry_record_matches_all(registry_record, target_title, fragment):
             return True
     return title_matcher(target_title, fragment)
 
@@ -2276,11 +2293,9 @@ def is_omnibus_amendment(
         if not is_statute_specific:
             continue
         if registry_record is not None:
-            narrowed_record = cast(EEActIdentityRecord, registry_record)
             if (
-                act_identity_matches_title(narrowed_record, target_title)
-                or (stat_fragment and act_identity_matches_title(narrowed_record, stat_fragment))
-                or (ptitle and act_identity_matches_title(narrowed_record, ptitle))
+                _registry_record_matches_all(registry_record, target_title, stat_fragment)
+                or _registry_record_matches_all(registry_record, target_title, ptitle)
             ):
                 continue
         if not strict_title_matcher(target_title, candidate_title):
@@ -2327,11 +2342,7 @@ def parse_constitutional_review_ops(
         if not title_matcher(target_title, statute_fragment):
             return []
     else:
-        narrowed_record = cast(EEActIdentityRecord, registry_record)
-        if not (
-            act_identity_matches_title(narrowed_record, target_title)
-            or act_identity_matches_title(narrowed_record, statute_fragment)
-        ):
+        if not _registry_record_matches_all(registry_record, target_title, statute_fragment):
             if not title_matcher(target_title, statute_fragment):
                 return []
 
@@ -2412,11 +2423,7 @@ def parse_preambul_single_target_ops(
         if not (stat_fragment and title_matcher(target_title, stat_fragment)):
             return []
     else:
-        narrowed_record = cast(EEActIdentityRecord, registry_record)
-        if not (
-            act_identity_matches_title(narrowed_record, target_title)
-            or (stat_fragment and act_identity_matches_title(narrowed_record, stat_fragment))
-        ):
+        if not _registry_record_matches_all(registry_record, target_title, stat_fragment):
             if not (stat_fragment and title_matcher(target_title, stat_fragment)):
                 return []
 

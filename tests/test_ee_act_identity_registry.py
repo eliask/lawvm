@@ -161,7 +161,7 @@ def test_registry_evidence_wins_for_strict_title_match_when_heuristics_fail(
         aliases=("Ehitusseadus",),
         source_family="strict_title_match",
     )
-    monkeypatch.setattr(grafter, "lookup_ee_act_identity", lambda **_kwargs: record)
+    monkeypatch.setattr(target_resolution, "lookup_ee_act_identity", lambda **_kwargs: record)
 
     assert grafter._strict_title_match_para(
         "Ehitusseadus",
@@ -176,7 +176,7 @@ def test_registry_evidence_wins_for_old_format_section_header_when_heuristics_fa
         akt_viide="ee/test/old_format_section_header",
         canonical_title="§ 1. Määrus X seaduses",
         title_variants=("§ 1. Määrus X seaduses",),
-        aliases=("§ 1. Määrus X seaduses",),
+        aliases=("§ 1. Määrus X seaduses", "Ehitusseadus"),
         source_family="old_format_section_header",
     )
     monkeypatch.setattr(grafter, "lookup_ee_act_identity", lambda **_kwargs: record)
@@ -201,6 +201,52 @@ def test_registry_evidence_wins_for_old_format_section_header_when_heuristics_fa
     assert len(ops) == 1
     assert dict(ops[0].target.path)["section"] == "5"
     assert ops[0].action.value == "replace"
+
+
+def test_registry_evidence_does_not_admit_unrelated_old_format_header() -> None:
+    target = (
+        "Põllu- ja metsamajanduse taristu arendamise ning hoiu investeeringutoetus "
+        "Maaeluministeeriumi valitsemisala riigiasutustele"
+    )
+
+    assert target_resolution.old_format_section_matches_target(
+        target,
+        "§ 1. Keskkonnaministri 16. juuni 2021. a määruse nr 32 "
+        "„Aadressiandmete süsteem” muutmine",
+    ) is False
+    assert target_resolution.old_format_section_matches_target(
+        target,
+        "§ 26. Maaeluministri 7. mai 2018. a määruse nr 26 "
+        "„Põllu- ja metsamajanduse taristu arendamise ning hoiu investeeringutoetus "
+        "Regionaal- ja Põllumajandusministeeriumi valitsemisala riigiasutustele” muutmine",
+    ) is True
+    assert target_resolution.old_format_section_matches_target(
+        target,
+        "§ 25. Maaeluministri 29. juuli 2015. a määruse nr 76 "
+        "„Põllu- ja metsamajanduse taristu arendamise ja hoiu investeeringutoetus” muutmine",
+    ) is False
+
+
+def test_old_format_title_alias_routes_only_target_section_for_2024_013() -> None:
+    from lawvm.estonia.fetch import fetch_rt_xml, open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+    source_xml = fetch_rt_xml("128122024013", archive=archive)
+    target = (
+        "Põllu- ja metsamajanduse taristu arendamise ning hoiu investeeringutoetus "
+        "Maaeluministeeriumi valitsemisala riigiasutustele"
+    )
+
+    ops = parse_ee_amendment_ops(source_xml, "ee/128122024013", target_title=target)
+
+    assert len(ops) == 2
+    assert all("old_format_amendment_section:26" in op.provenance_tags for op in ops)
+    assert all("old_format_amendment_section:25" not in op.provenance_tags for op in ops)
+    assert ops[0].witness_rule_id == "ee_statute_title_text_delete"
+    assert ops[1].witness_rule_id == "ee_old_format_wrapper_scope_inherited"
+    assert ops[1].target.path == ()
+    assert ops[1].payload is not None
+    assert ops[1].payload.attrs["old_text"] == "Põllumajandus- ja Toiduamet"
 
 
 def test_registry_evidence_wins_for_title_match_when_heuristics_fail(
