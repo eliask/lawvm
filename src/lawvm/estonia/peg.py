@@ -4134,14 +4134,30 @@ def extract_ee_ops(
                 explicit_labels=expanded_nums,
                 plain_numeric_ranges=_plain_numeric_ranges(raw_section_group),
             )
-        for num in expanded_nums:
-            addr = LegalAddress(path=(("section", num),))
+        target_addrs = [LegalAddress(path=(("section", num),)) for num in expanded_nums]
+        if action == "text_replace":
+            for explicit_target in _extract_multiple_explicit_targets(section_clean):
+                if explicit_target not in target_addrs:
+                    target_addrs.append(explicit_target)
+        multi_target_text_replace_rule = (
+            "ee_plural_section_text_replace_preserve_later_explicit_targets"
+            if action == "text_replace" and len(target_addrs) > len(expanded_nums)
+            else ""
+        )
+        for addr in target_addrs:
             payload = None
             _rewrite_witness = None
             if action == "text_replace" and new_t:
                 payload = IRNode(kind=IRNodeKind.CONTENT, text=new_t)
-                payload, _rewrite_witness = _set_text_replace_payload_attrs(payload, clean, old_t, new_t)
+                payload, _rewrite_witness = _set_text_replace_payload_attrs(
+                    payload,
+                    clean,
+                    old_t,
+                    new_t,
+                    source_family=multi_target_text_replace_rule,
+                )
             elif action == "replace" and content:
+                num = addr.path[0][1]
                 payload_text = split_content.get(num) if split_content is not None else content
                 if payload_text:
                     payload = IRNode(kind=IRNodeKind.CONTENT, text=payload_text)
@@ -4153,14 +4169,18 @@ def extract_ee_ops(
                     attrs={"section_selection_meta": section_selection_meta},
                 )
             ops.append(LegalOperation(
-                op_id=f"ee-{action}-sect-{num}-{source.statute_id}",
+                op_id=f"ee-{action}-sect-{addr.path[-1][1]}-{source.statute_id}",
                 sequence=seq,
                 action=_to_structural_action(action),
                 target=addr,
                 payload=payload,
                 text_patch=_typed_text_replace_patch(old_t, new_t) if action == "text_replace" else None,
                 source=source,
-                provenance_tags=(clean[:200],),
+                provenance_tags=(
+                    clean[:200],
+                    *((multi_target_text_replace_rule,) if multi_target_text_replace_rule else ()),
+                ),
+                witness_rule_id=multi_target_text_replace_rule or None,
             ))
             seq += 1
         if action == "repeal":

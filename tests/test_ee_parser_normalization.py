@@ -179,6 +179,26 @@ def test_extract_ee_ops_splits_bare_later_section_in_coordinated_text_replace_ta
     assert all(op.payload is not None and op.payload.attrs["case_inflected"] is True for op in ops)
 
 
+def test_extract_ee_ops_preserves_later_explicit_targets_after_plural_section_text_replace() -> None:
+    text = (
+        "paragrahvides 2 ja 3, § 16 punktides 4 ja 6 ning §-s 17 "
+        "asendatakse sõna „põllumajandusminister” sõnadega "
+        "„valdkonna eest vastutav minister” vastavas käändes."
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [op.target.path for op in ops] == [
+        (("section", "2"),),
+        (("section", "3"),),
+        (("section", "16"), ("item", "4")),
+        (("section", "16"), ("item", "6")),
+        (("section", "17"),),
+    ]
+    assert all(op.witness_rule_id == "ee_plural_section_text_replace_preserve_later_explicit_targets" for op in ops)
+    assert all(op.payload is not None and op.payload.attrs["case_inflected"] is True for op in ops)
+
+
 def test_extract_ee_ops_splits_mixed_subsection_and_item_replace_payload() -> None:
     text = (
         "paragrahvi 26 lõige 2 ja lõike 2 punkt 1 sõnastatakse järgmiselt: "
