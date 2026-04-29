@@ -601,6 +601,55 @@ def test_text_replace_with_intro_only_subsection_scope_preserves_items() -> None
     ]
 
 
+def test_replace_with_section_intro_scope_updates_first_subsection_and_preserves_items() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="2",
+                text="Toetuse andmise eesmärk",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        text="Vana sissejuhatav lauseosa, mille tulemusena:",
+                        children=(
+                            IRNode(kind=IRNodeKind.ITEM, label="1", text="esimene tulemus;"),
+                            IRNode(kind=IRNodeKind.ITEM, label="2", text="teine tulemus."),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_replace_section_intro_scope",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "2"),)),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="Uus sissejuhatav lauseosa, mille tulemusena:",
+            attrs={
+                "subsection_text_scope_meta": make_subsection_text_scope_meta(intro_only=True),
+                "source_family": "ee_section_intro_replace_to_first_subsection",
+            },
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    section = result.children[0]
+    subsection = section.children[0]
+
+    assert section.text == "Toetuse andmise eesmärk"
+    assert subsection.text == "Uus sissejuhatav lauseosa, mille tulemusena:"
+    assert [child.text for child in subsection.children] == [
+        "esimene tulemus;",
+        "teine tulemus.",
+    ]
+
+
 def test_insert_after_text_replace_can_rewrite_all_matches_when_marked_labivalt() -> None:
     replaced = _ee_apply_text_replace_value(
         "abikaasade ühine avaldus ja abikaasade suhtes tehtud otsustus",

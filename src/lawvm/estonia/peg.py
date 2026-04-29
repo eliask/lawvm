@@ -65,6 +65,7 @@ from lawvm.core.semantic_types import FacetKind
 
 
 _EE_OPTIONAL_TARGET_LABEL_SPACE_RULE = "ee_optional_target_label_space"
+_EE_SECTION_INTRO_REPLACE_TO_FIRST_SUBSECTION_RULE = "ee_section_intro_replace_to_first_subsection"
 _EE_SUPERSCRIPT_DIGITS = "".join(
     chr(cp)
     for cp in range(sys.maxunicode + 1)
@@ -795,7 +796,7 @@ def _extract_intro_only_subsection_paths(text: str) -> set[tuple[tuple[str, str]
         section_span = preamble[span_start:span_end]
         for sub_ref in re.finditer(
             r'lõike(?:te|tes|st|s|t|ga)?\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
-            r'sissejuhatava(?:t\s+lauseosa|s\s+lauseosas|st\s+lauseosast)',
+            r'sissejuhatav(?:\s+lauseosa|at\s+lauseosa|as\s+lauseosas|ast\s+lauseosast)',
             section_span,
             re.IGNORECASE,
         ):
@@ -806,7 +807,7 @@ def _extract_intro_only_subsection_paths(text: str) -> set[tuple[tuple[str, str]
                 )
             )
         if re.search(
-            r'\b(?:teksti\s+)?sissejuhatava(?:t\s+lauseosa|s\s+lauseosas|st\s+lauseosast)\b',
+            r'\b(?:teksti\s+)?sissejuhatav(?:\s+lauseosa|at\s+lauseosa|as\s+lauseosas|ast\s+lauseosast)\b',
             section_span,
             re.IGNORECASE,
         ):
@@ -830,6 +831,8 @@ def _attach_subsection_text_scope_meta(
 
     attrs = dict(payload.attrs)
     attrs["subsection_text_scope_meta"] = make_subsection_text_scope_meta(intro_only=True)
+    if len(target.path) == 1 and target.path[0][0] == "section":
+        attrs.setdefault("source_family", _EE_SECTION_INTRO_REPLACE_TO_FIRST_SUBSECTION_RULE)
     return replace(payload, attrs=attrs)
 
 
@@ -5804,6 +5807,7 @@ def extract_ee_ops(
             payload = IRNode(kind=IRNodeKind.CONTENT, text=content, attrs=payload_attrs)
             if action == "replace":
                 payload = _set_sentence_replace_payload_attrs(payload, clean)
+                payload = _attach_subsection_text_scope_meta(payload, clean, target)
             elif action == "insert":
                 payload = _set_sentence_insert_payload_attrs(payload, clean)
             if action == "insert":
@@ -5957,8 +5961,11 @@ def extract_ee_ops(
         payload=payload,
         text_patch=standard_text_patch,
         source=source,
-        provenance_tags=(clean[:200],) + ((target_label_space_rule,) if target_label_space_rule else ()),
-        witness_rule_id=target_label_space_rule,
+        provenance_tags=(clean[:200],)
+        + ((target_label_space_rule,) if target_label_space_rule else ())
+        + ((str(payload.attrs["source_family"]),) if payload is not None and payload.attrs.get("source_family") else ()),
+        witness_rule_id=target_label_space_rule
+        or (str(payload.attrs["source_family"]) if payload is not None and payload.attrs.get("source_family") else None),
     ))
     seq += 1
     if (
