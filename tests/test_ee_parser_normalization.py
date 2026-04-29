@@ -122,6 +122,48 @@ def test_extract_ee_ops_expands_multi_target_sentence_part_insert() -> None:
         assert op.witness_rule_id == "ee_insert_multi_explicit_targets"
 
 
+def test_extract_ee_ops_splits_bare_later_section_in_coordinated_text_replace_targets() -> None:
+    text = (
+        "paragrahvi 13 lõikes 6, § 15 lõike 1 punktides 5 ja 6 ning "
+        "18 lõike 3 punktis 3 asendatakse sõnad „kasu saav” sõnadega "
+        "„muu kasu saav” vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [op.target.path for op in ops] == [
+        (("section", "13"), ("subsection", "6")),
+        (("section", "15"), ("subsection", "1"), ("item", "5")),
+        (("section", "15"), ("subsection", "1"), ("item", "6")),
+        (("section", "18"), ("subsection", "3"), ("item", "3")),
+    ]
+    assert all(op.payload is not None and op.payload.attrs["case_inflected"] is True for op in ops)
+
+
+def test_extract_ee_ops_splits_mixed_subsection_and_item_replace_payload() -> None:
+    text = (
+        "paragrahvi 26 lõige 2 ja lõike 2 punkt 1 sõnastatakse järgmiselt: "
+        "„(2) Lisaks lõikes 1 sätestatule on rakendusüksusel õigus tunnistada "
+        "taotluse rahuldamise otsuse kehtetuks, kui esineb vähemalt üks järgmistest asjaoludest:\n"
+        "1) toetuse saaja ei ole ehitustegevust sisaldava projekti puhul teinud "
+        "§ 5 lõikes 6 nimetatud ehitustööde ettevalmistavaid töid;“;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPLACE, (("section", "26"), ("subsection", "2"))),
+        (StructuralAction.REPLACE, (("section", "26"), ("subsection", "2"), ("item", "1"))),
+    ]
+    assert ops[0].payload is not None
+    assert ops[0].payload.text.startswith("Lisaks lõikes 1 sätestatule")
+    assert ops[0].payload.attrs["ee_replace_subsection_intro_only"] is True
+    assert ops[0].witness_rule_id == "ee_compound_subsection_intro_and_item_replace"
+    assert ops[1].payload is not None
+    assert ops[1].payload.text.startswith("1) toetuse saaja")
+    assert ops[1].witness_rule_id == "ee_compound_subsection_intro_and_item_replace"
+
+
 def test_extract_ee_ops_accepts_estonian_left_quote_close_in_text_replace() -> None:
     ops = extract_ee_ops(
         'paragrahvi 2 1 lõikes 1 asendatakse sõna „kaheksa“ sõnaga „seitse“;',

@@ -266,9 +266,16 @@ def _append_sentence_part(text: str, inserted: str) -> str:
     tail = inserted.strip()
     if not base or not tail:
         return text
-    if base.endswith((".", ";")):
-        return f"{base[:-1]}{tail}"
-    return f"{base}{tail}"
+    preserve_semicolon = base.endswith(";")
+    if tail.startswith(",") and base.endswith(".;"):
+        appended = f"{base[:-2]}{tail}"
+    elif base.endswith((".", ";")):
+        appended = f"{base[:-1]}{tail}"
+    else:
+        appended = f"{base}{tail}"
+    if preserve_semicolon and appended.endswith("."):
+        return f"{appended[:-1]};"
+    return appended
 
 
 _EE_APPENDIX_TABLE_CATEGORY_ORDER = [
@@ -6201,6 +6208,8 @@ def _ee_phrase_forms(text: str) -> dict[str, str] | None:
     parts = text.split()
     head_forms = _ee_declension_forms(parts[-1])
     if head_forms is None:
+        head_forms = _ee_modifier_forms(parts[-1])
+    if head_forms is None:
         return None
     if len(parts) == 1:
         return head_forms
@@ -9161,15 +9170,26 @@ def _ee_apply_op(
                                     children=tuple(target_node.children),
                                 )
                                 return tree_ops.replace_at(body, full_path, new_target)
+                            if sentence_meta is not None and sentence_meta.mode == "append_sentence_part":
+                                appended = _append_sentence_part(base_text, raw_ins)
+                                new_target = IRNode(
+                                    kind=target_node.kind,
+                                    label=target_node.label,
+                                    text=appended,
+                                    attrs=dict(target_node.attrs),
+                                    children=tuple(target_node.children),
+                                )
+                                return tree_ops.replace_at(body, full_path, new_target)
                             terminal = ";"
                             if base_text.endswith(";"):
                                 base_text = base_text[:-1].rstrip()
                                 if base_text and not base_text.endswith("."):
                                     base_text = f"{base_text}."
-                            elif not base_text.endswith("."):
-                                terminal = ""
                             else:
-                                terminal = "."
+                                if not base_text.endswith("."):
+                                    terminal = ""
+                                else:
+                                    terminal = "."
                             appended = f"{base_text} {raw_ins.lstrip()}".strip()
                             if terminal == ";" and appended.endswith("."):
                                 appended = appended[:-1] + ";"
