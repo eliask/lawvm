@@ -868,6 +868,23 @@ def test_extract_ee_ops_marks_taotlusvoor_coordination_case_family() -> None:
     assert ops[0].payload.attrs["source_family"] == "ee_case_inflected_taotlusvoor_coordination_forms"
 
 
+def test_extract_ee_ops_marks_kysk_abbreviation_case_family() -> None:
+    text = (
+        "paragrahvi 25 lõike 2 punktis 4 ja lõike 3 punktis 9 ning §-des 27 ja 29 "
+        "asendatakse sõna „KÜSK” sõnadega „Riigi Tugiteenuste Keskus” vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert ops
+    assert all(op.payload is not None for op in ops)
+    assert all(_payload(op).attrs["case_inflected"] is True for op in ops)
+    assert all(
+        _payload(op).attrs["source_family"] == "ee_case_inflected_kysk_riigi_tugiteenuste_keskus_forms"
+        for op in ops
+    )
+
+
 def test_new_format_omnibus_does_not_route_payload_cross_reference_to_target() -> None:
     xml = """
     <oigusakt xmlns="muutmismaarus_1_10.02.2010">

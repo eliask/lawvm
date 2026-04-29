@@ -4465,6 +4465,46 @@ def test_case_inflected_text_replace_handles_neto_omavahend_prefix_forms() -> No
     )
 
 
+def test_case_inflected_text_replace_handles_kysk_abbreviation_forms() -> None:
+    text = (
+        "Maakondliku arendusorganisatsiooni ja KÜSKi vastutus. "
+        "Maakondlik arendusorganisatsioon ja KÜSK vastutavad. "
+        "Teavitama KÜSKi istungitest ning saada KÜSKilt nõu."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "KÜSK",
+        "Riigi Tugiteenuste Keskus",
+        case_inflected=True,
+        all_occurrences=True,
+    )
+
+    assert replaced == (
+        "Maakondliku arendusorganisatsiooni ja Riigi Tugiteenuste Keskuse vastutus. "
+        "Maakondlik arendusorganisatsioon ja Riigi Tugiteenuste Keskus vastutavad. "
+        "Teavitama Riigi Tugiteenuste Keskust istungitest ning saada Riigi Tugiteenuste Keskuselt nõu."
+    )
+
+
+def test_case_inflected_kysk_rewrite_keeps_subject_before_riigivastutuse_reference() -> None:
+    replaced = _ee_apply_text_replace_value(
+        (
+            "Kohustuste täitmata jätmise korral vastutavad maakondlik "
+            "arendusorganisatsioon ja KÜSK riigivastutuse seaduses sätestatud korras."
+        ),
+        "KÜSK",
+        "Riigi Tugiteenuste Keskus",
+        case_inflected=True,
+        all_occurrences=True,
+    )
+
+    assert replaced == (
+        "Kohustuste täitmata jätmise korral vastutavad maakondlik "
+        "arendusorganisatsioon ja Riigi Tugiteenuste Keskus riigivastutuse seaduses sätestatud korras."
+    )
+
+
 def test_delete_text_replace_handles_fraktsioneeritud_source_typo_variant() -> None:
     text = (
         "Pindamiseks kasutatakse fraktsioneeritud killustikke. "

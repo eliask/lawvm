@@ -1016,6 +1016,7 @@ _EE_VOLITATUD_VASTUTAV_FORMS_RULE = "ee_case_inflected_volitatud_vastutav_forms"
 _EE_TAOTLUSVOOR_COORDINATION_FORMS_RULE = "ee_case_inflected_taotlusvoor_coordination_forms"
 _EE_MIXED_ACRONYM_SUFFIX_CASE_REWRITE_RULE = "ee_case_inflected_mixed_acronym_suffix_case"
 _EE_NETO_OMAVAHEND_PREFIX_FORMS_RULE = "ee_case_inflected_neto_omavahend_prefix_forms"
+_EE_KYSK_RTK_FORMS_RULE = "ee_case_inflected_kysk_riigi_tugiteenuste_keskus_forms"
 _EE_INSERT_MULTI_EXPLICIT_TARGETS_PAYLOAD_LABEL_FILTER_RULE = (
     "ee_insert_multi_explicit_targets_payload_label_filter"
 )
@@ -1053,6 +1054,8 @@ def _case_inflected_phrase_source_family(old_text: str | None, new_text: str | N
         return _EE_TAOTLUSVOOR_COORDINATION_FORMS_RULE
     if old_text == "neto-omavahend" and new_text == "omavahend":
         return _EE_NETO_OMAVAHEND_PREFIX_FORMS_RULE
+    if old_text == "KÜSK" and new_text == "Riigi Tugiteenuste Keskus":
+        return _EE_KYSK_RTK_FORMS_RULE
     if new_text and re.fullmatch(r"[A-ZÕÄÖÜŠŽ]{2,}-[a-zäöõüšž]+", new_text.strip()):
         return _EE_MIXED_ACRONYM_SUFFIX_CASE_REWRITE_RULE
     return ""

@@ -4748,6 +4748,7 @@ _EE_LOCAL_KOHTKUTE_SOURCE_SURFACE_DELETE_RULE = "ee_lokaal_kohtkute_source_surfa
 _EE_VOLITATUD_VASTUTAV_FORMS_RULE = "ee_case_inflected_volitatud_vastutav_forms"
 _EE_TAOTLUSVOOR_COORDINATION_FORMS_RULE = "ee_case_inflected_taotlusvoor_coordination_forms"
 _EE_NETO_OMAVAHEND_PREFIX_FORMS_RULE = "ee_case_inflected_neto_omavahend_prefix_forms"
+_EE_KYSK_RTK_FORMS_RULE = "ee_case_inflected_kysk_riigi_tugiteenuste_keskus_forms"
 _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE = "ee_plaintext_numbered_clause_split"
 _EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
 _EE_PARENTHESIZED_TARGET_HTML_BLOCK_RULE = "ee_parenthesized_target_html_block_sliced"
@@ -7839,6 +7840,27 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         for old_form, new_form in form_pairs.items():
             variants.setdefault(old_form, new_form)
 
+    def _add_kysk_riigi_tugiteenuste_keskus_forms() -> None:
+        """Own KÜSK abbreviation expansion with explicit Estonian case forms."""
+        if not case_inflected or old != "KÜSK" or new != "Riigi Tugiteenuste Keskus":
+            return
+        form_pairs = {
+            "KÜSK": "Riigi Tugiteenuste Keskus",
+            "KÜSKi": "Riigi Tugiteenuste Keskuse",
+            "KÜSKit": "Riigi Tugiteenuste Keskust",
+            "KÜSKisse": "Riigi Tugiteenuste Keskusesse",
+            "KÜSKis": "Riigi Tugiteenuste Keskuses",
+            "KÜSKist": "Riigi Tugiteenuste Keskusest",
+            "KÜSKile": "Riigi Tugiteenuste Keskusele",
+            "KÜSKil": "Riigi Tugiteenuste Keskusel",
+            "KÜSKilt": "Riigi Tugiteenuste Keskuselt",
+            "KÜSKiks": "Riigi Tugiteenuste Keskuseks",
+            "KÜSKina": "Riigi Tugiteenuste Keskusena",
+            "KÜSKiga": "Riigi Tugiteenuste Keskusega",
+        }
+        for old_form, new_form in form_pairs.items():
+            variants.setdefault(old_form, new_form)
+
     def _strip_wrapping_quotes(surface: str) -> str | None:
         stripped = surface.strip()
         if len(stripped) < 2:
@@ -7902,6 +7924,7 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         _add_reagent_reaktiiv_forms()
         _add_taotlusvoor_coordination_forms()
         _add_neto_omavahend_prefix_forms()
+        _add_kysk_riigi_tugiteenuste_keskus_forms()
         old_norm = _ee_normalize_text_replace_surface(old)
         new_norm = _ee_normalize_text_replace_surface(new)
         if old_norm and old_norm not in variants:
@@ -8305,8 +8328,11 @@ def _ee_case_preserved_replacement(
     *,
     capitalize_sentence_start: bool = True,
     preserve_match_capital: bool = False,
+    preserve_match_upper: bool = True,
 ) -> str:
     """Compatibility wrapper; migrated to ``lawvm.estonia.text_morphology``."""
+    if not preserve_match_upper and match.group(0).isupper() and new:
+        return new
     replacement = _tm_case_preserved_replacement(
         match,
         new,
@@ -8501,6 +8527,7 @@ def _ee_replace_ambiguous_partitive_object(text: str, genitive: str, partitive: 
         if not (
             re.search(r"\bteavitab\s*$", clause_prefix, re.IGNORECASE)
             or re.search(r"\bteavitada\s*$", clause_prefix, re.IGNORECASE)
+            or re.search(r"\bteavitama\s*$", clause_prefix, re.IGNORECASE)
             or re.search(r"\bhoiule\b", clause_prefix, re.IGNORECASE)
         ):
             return match.group(0)
@@ -8642,6 +8669,9 @@ def _ee_apply_text_replace_value(
         new,
         case_inflected=case_inflected,
     )
+    preserve_match_upper = not (
+        case_inflected and old == "KÜSK" and new == "Riigi Tugiteenuste Keskus"
+    )
     if case_inflected:
         old_forms = _ee_phrase_forms(old)
         new_forms = _ee_phrase_forms(new)
@@ -8726,6 +8756,7 @@ def _ee_apply_text_replace_value(
                             normalized_new_variant,
                             capitalize_sentence_start=capitalize_sentence_start,
                             preserve_match_capital=preserve_match_capital,
+                            preserve_match_upper=preserve_match_upper,
                         )
                     )
                     replacement = _ee_trim_overlapping_replacement_tail(
@@ -8757,6 +8788,7 @@ def _ee_apply_text_replace_value(
                     normalized_new_variant,
                     capitalize_sentence_start=capitalize_sentence_start,
                     preserve_match_capital=preserve_match_capital,
+                    preserve_match_upper=preserve_match_upper,
                 )
             )
             replacement = _ee_trim_overlapping_replacement_tail(
@@ -8806,6 +8838,7 @@ def _ee_apply_text_replace_value(
                     new_variant,
                     capitalize_sentence_start=capitalize_sentence_start,
                     preserve_match_capital=preserve_match_capital,
+                    preserve_match_upper=preserve_match_upper,
                 )
                 if mode == "replace" and new_variant.lower().startswith(old_variant.lower()):
                     replacement = _ee_trim_overlapping_replacement_tail(
@@ -8840,6 +8873,7 @@ def _ee_apply_text_replace_value(
                     new_variant,
                     capitalize_sentence_start=capitalize_sentence_start,
                     preserve_match_capital=preserve_match_capital,
+                    preserve_match_upper=preserve_match_upper,
                 )
                 if (
                     mode == "replace"
@@ -8865,6 +8899,7 @@ def _ee_apply_text_replace_value(
             and new_forms.get("sg_gen")
             and new_forms["sg_nom"] != new_forms["sg_gen"]
             and new_forms["sg_nom"] not in {"laevaliiklusjuht", "vanemlaevaliiklusjuht"}
+            and not (old == "KÜSK" and new == "Riigi Tugiteenuste Keskus")
         ):
             replaced = _ee_replace_ambiguous_genitive_phrase(
                 replaced,
@@ -8885,6 +8920,12 @@ def _ee_apply_text_replace_value(
                 replaced,
                 new_forms["sg_gen"],
                 new_forms["sg_part"],
+            )
+        if old == "KÜSK" and new == "Riigi Tugiteenuste Keskus":
+            replaced = _ee_replace_ambiguous_partitive_object(
+                replaced,
+                "Riigi Tugiteenuste Keskuse",
+                "Riigi Tugiteenuste Keskust",
             )
     if new == "" and text and text[:1].isupper() and replaced:
         replaced = re.sub(
