@@ -23,6 +23,7 @@ from lawvm.estonia.peg import _extract_quoted_content, _normalize_num, extract_e
 
 _EE_DIRECT_TARGET_PREFIX_STRIP_RULE = "ee_direct_target_title_prefix_stripped_for_structural_repeal"
 _EE_OLD_FORMAT_WRAPPER_SCOPE_INHERITED_RULE = "ee_old_format_wrapper_scope_inherited"
+_EE_OLD_FORMAT_DIRECT_HEADER_TARGET_SECTION_RULE = "ee_old_format_direct_header_target_section"
 
 
 def _registry_record_matches_all(record: object, *surfaces: str) -> bool:
@@ -1350,6 +1351,59 @@ def old_format_section_from_header_text(header_text: str) -> str | None:
     return None
 
 
+def old_format_direct_header_target_section_instruction(
+    op_text: str,
+) -> tuple[str, str, bool] | None:
+    """Strip an old-format wrapper section when the header names a direct target section."""
+    marker_match = re.search(r"\b(?:muudetakse|täiendatakse|asendatakse)\b", op_text, re.IGNORECASE)
+    if marker_match is None:
+        return None
+    header = op_text[: marker_match.start()]
+    target_match = re.search(
+        r"§\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)"
+        r"\s*(?:tekst|lõige|lõikes|lõike|punkt|punkti|pealkiri)?\s*$",
+        header,
+        re.IGNORECASE,
+    )
+    if target_match is None:
+        return None
+    wrapper_match = re.match(r"^\s*§\s*\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\.", op_text)
+    if wrapper_match is None:
+        return None
+    target_label = _normalize_num(target_match.group(1))
+    if not target_label:
+        return None
+    payload_markers = list(re.finditer(
+        r"(?:järgmises\s+sõnastuses|järgmiselt)\s*:\s*",
+        op_text,
+        re.IGNORECASE | re.DOTALL,
+    ))
+    if payload_markers:
+        verb_phrase = op_text[marker_match.start() : payload_markers[0].end()].strip()
+        payload_tail = op_text[payload_markers[-1].end():].lstrip()
+        normalized = f"paragrahvi {target_label} {verb_phrase} {payload_tail}".strip()
+    else:
+        payload_tail = ""
+        normalized = f"paragrahvi {target_label} {op_text[marker_match.start():].strip()}"
+    strip_outer_payload_quote = len(payload_tail) >= 2 and payload_tail[0] == "„" and payload_tail[1] == "„"
+    return normalized, _EE_OLD_FORMAT_DIRECT_HEADER_TARGET_SECTION_RULE, strip_outer_payload_quote
+
+
+def _strip_old_format_outer_payload_quote(op: LegalOperation) -> LegalOperation:
+    """Remove one old-format payload wrapper quote while preserving inner legal-title quotes."""
+    if op.payload is None or not op.payload.text:
+        return op
+    payload_text = op.payload.text.strip()
+    if not (
+        payload_text.startswith(("„", '"', "“", "ˮ"))
+        and payload_text.endswith(("“", "”", '"', "ˮ"))
+    ):
+        return op
+    if not any(char in payload_text[1:-1] for char in ("“", "”", '"', "ˮ")):
+        return op
+    return replace(op, payload=replace(op.payload, text=payload_text[:-1].rstrip()))
+
+
 def old_format_act_section_from_header_text(header_text: str) -> str | None:
     """Extract the amendment-act section label from an old-format section header."""
     if not header_text:
@@ -1806,6 +1860,8 @@ def old_format_lower_op_texts(
     for op_text in op_texts:
         amendment_item_label = old_format_item_label(op_text)
         effective = op_text
+        normalization_rule_id: str | None = None
+        strip_outer_payload_quote = False
         inherited_wrapper_scope = False
         is_container_heading_relabel = bool(
             re.search(r"\btekstiosa[a-z]*\s+[„\"“][^”\"]*?\bpeatükk\b", op_text, re.IGNORECASE)
@@ -1823,7 +1879,13 @@ def old_format_lower_op_texts(
             item_body = old_format_strip_item_label(op_text)
             effective = f"määruses {item_body}"
             inherited_wrapper_scope = True
+        else:
+            direct_header_instruction = old_format_direct_header_target_section_instruction(op_text)
+            if direct_header_instruction is not None:
+                effective, normalization_rule_id, strip_outer_payload_quote = direct_header_instruction
         ops = extract_ee_ops(effective, source, seq_start=global_seq)
+        if strip_outer_payload_quote:
+            ops = [_strip_old_format_outer_payload_quote(op) for op in ops]
         ops = [
             op
             for op in ops
@@ -1846,6 +1908,10 @@ def old_format_lower_op_texts(
             if base_act_name:
                 tags.append(f"base_act: {base_act_name}")
             witness_rule_id = op.witness_rule_id
+            if normalization_rule_id is not None:
+                tags.append(normalization_rule_id)
+                if op.action is not StructuralAction.META and witness_rule_id is None:
+                    witness_rule_id = normalization_rule_id
             if inherited_wrapper_scope:
                 tags.append(_EE_OLD_FORMAT_WRAPPER_SCOPE_INHERITED_RULE)
                 if op.action is not StructuralAction.META and witness_rule_id is None:
