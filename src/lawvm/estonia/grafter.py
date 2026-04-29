@@ -1853,6 +1853,17 @@ def parse_ee_amendment_ops(
         if _substantive_op_count(old_format_ops) < _substantive_op_count(preambul_ops):
             return preambul_ops
         if _substantive_op_count(old_format_ops) == _substantive_op_count(preambul_ops):
+            preambul_meta_count = sum(1 for op in preambul_ops if op.action is StructuralAction.META)
+            old_meta_count = sum(1 for op in old_format_ops if op.action is StructuralAction.META)
+            if old_meta_count < preambul_meta_count:
+                return [
+                    replace(
+                        op,
+                        provenance_tags=(*op.provenance_tags, rule_id),
+                        witness_rule_id=op.witness_rule_id or rule_id,
+                    )
+                    for op in old_format_ops
+                ]
             preambul_shape = [(op.action, op.target.path) for op in preambul_ops]
             old_shape = [(op.action, op.target.path) for op in old_format_ops]
             preambul_payload_len = sum(
@@ -1915,17 +1926,29 @@ def parse_ee_amendment_ops(
                 if preambul_ops and old_format_ops
                 else preambul_ops or old_format_ops
             )
-    if has_paragrahv and target_title and (
-        not parsed_ops or all(op.action is StructuralAction.META for op in parsed_ops)
-    ):
+    if has_paragrahv and target_title:
         plain_paragraph_ops = _parse_muutmisseadus_plain_paragraph_item_ops(
             root,
             source_id,
             root_ns,
             target_title=target_title,
         )
-        if plain_paragraph_ops and any(op.action is not StructuralAction.META for op in plain_paragraph_ops):
+        if (
+            plain_paragraph_ops
+            and any(op.action is not StructuralAction.META for op in plain_paragraph_ops)
+            and _substantive_op_count(plain_paragraph_ops) > _substantive_op_count(parsed_ops)
+        ):
             parsed_ops = plain_paragraph_ops
+    if has_paragrahv and target_title and (
+        not parsed_ops or all(op.action is StructuralAction.META for op in parsed_ops)
+    ):
+        parenthesized_target_ops = _parse_parenthesized_target_html_block_ops(
+            root,
+            source_id,
+            target_title,
+        )
+        if parenthesized_target_ops and any(op.action is not StructuralAction.META for op in parenthesized_target_ops):
+            parsed_ops = parenthesized_target_ops
     if not has_paragrahv and target_title and (
         not parsed_ops or all(op.action is StructuralAction.META for op in parsed_ops)
     ):
@@ -2072,6 +2095,136 @@ def _parse_preambul_single_target_ops(
             continue
         normalized_ops.append(op)
     return normalized_ops
+
+
+def _parse_parenthesized_target_html_block_ops(
+    root: ET.Element,
+    source_id: str,
+    target_title: str,
+) -> List[LegalOperation]:
+    """Recover flat HTML blocks whose top-level ``(N)`` slices target different acts."""
+    if not target_title:
+        return []
+
+    def _plain_html(html: str) -> str:
+        text = re.sub(r"<[^>]+>", " ", html)
+        text = _html.unescape(text).replace("\xa0", " ")
+        return re.sub(r"\s+", " ", text).strip()
+
+    def _paragraphs(html: str) -> list[str]:
+        return re.findall(r"<p\b[^>]*>.*?</p>", html, flags=re.IGNORECASE | re.DOTALL)
+
+    def _split_top_blocks(html: str) -> list[list[str]]:
+        blocks: list[list[str]] = []
+        current: list[str] = []
+        saw_top = False
+        for para in _paragraphs(html):
+            plain = _plain_html(para)
+            if re.match(r"^\(\d+\)\s+", plain):
+                if current:
+                    blocks.append(current)
+                current = [para]
+                saw_top = True
+                continue
+            if current:
+                current.append(para)
+        if current:
+            blocks.append(current)
+        return blocks if saw_top else []
+
+    def _is_target_block(first_para: str) -> bool:
+        plain = _plain_html(first_para)
+        header = re.sub(r"^\(\d+\)\s*", "", plain).strip()
+        if not re.search(r"[„\"“][^„”“\"]+[”“\"]", header):
+            return False
+        if not re.search(
+            r"\b(?:tehakse\s+järgmised\s+muudatused|muudetakse\s+järgmiselt)\b",
+            header,
+            re.IGNORECASE,
+        ):
+            return False
+        return _title_matches_para(target_title, header) or _tr_old_format_section_matches_target(
+            target_title,
+            header,
+        )
+
+    def _out_of_body_clause(op_text: str) -> bool:
+        stripped = re.sub(r"^\(?\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s*", "", op_text).strip()
+        lower = stripped.lower()
+        return bool(
+            re.match(r"^määruse\s+(?:kolmas\s+)?normitehnili\w*\s+märkus", lower)
+            or re.match(r"^määruse\s+lisa(?:s|d|ga)?\b", lower)
+        )
+
+    ops: list[LegalOperation] = []
+    global_seq = 1
+    for el in root.iter():
+        tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+        if tag != "HTMLKonteiner" or not el.text:
+            continue
+        for block in _split_top_blocks(el.text):
+            if not block or not _is_target_block(block[0]):
+                continue
+            block_html = "\n".join(block)
+            item_texts = parse_html_op_items(block_html)
+            body_item_texts: list[str] = []
+            meta_ops: list[LegalOperation] = []
+            for item_text in item_texts:
+                if re.match(r"^\(\d+\)\s+", item_text):
+                    continue
+                if _out_of_body_clause(item_text):
+                    meta_ops.append(
+                        LegalOperation(
+                            op_id=f"ee-out-of-body-appendix-or-note-{global_seq}-{source_id}",
+                            sequence=global_seq,
+                            action=StructuralAction.META,
+                            target=LegalAddress(path=()),
+                            payload=IRNode(
+                                kind=IRNodeKind.CONTENT,
+                                text=item_text,
+                                attrs={"source_family": _EE_OUT_OF_BODY_APPENDIX_OR_NOTE_RULE},
+                            ),
+                            source=OperationSource(
+                                statute_id=source_id,
+                                title=target_title,
+                                raw_text=item_text[:200],
+                            ),
+                            provenance_tags=(
+                                item_text[:200],
+                                _EE_OUT_OF_BODY_APPENDIX_OR_NOTE_RULE,
+                            ),
+                            witness_rule_id=_EE_OUT_OF_BODY_APPENDIX_OR_NOTE_RULE,
+                        )
+                    )
+                    global_seq += 1
+                    continue
+                body_item_texts.append(item_text)
+            if not body_item_texts and not meta_ops:
+                continue
+            source = OperationSource(
+                statute_id=source_id,
+                title=target_title,
+                raw_text=_plain_html(block[0])[:200],
+            )
+            lowered, global_seq, _last_section = _tr_old_format_lower_op_texts(
+                body_item_texts,
+                source,
+                seq_start=global_seq,
+                base_act_name=target_title,
+            )
+            tagged = [
+                replace(
+                    op,
+                    provenance_tags=(
+                        *op.provenance_tags,
+                        _EE_PARENTHESIZED_TARGET_HTML_BLOCK_RULE,
+                    ),
+                    witness_rule_id=op.witness_rule_id or _EE_PARENTHESIZED_TARGET_HTML_BLOCK_RULE,
+                )
+                for op in lowered
+            ]
+            ops.extend([*tagged, *meta_ops])
+    return ops
 
 
 _GENERIC_MINISTER_TITLES: tuple[str, ...] = (
@@ -2760,13 +2913,13 @@ def _parse_old_format_amendment_ops(
 
         for section in raw_sections:
             header_match = re.match(
-                r"^(§\s*\d+\.\s*[^§]+?(?:muutmine|täiendamine|kehtetuks tunnistamine))\s+(.*)$",
+                r"^(§\s*\d+\.\s*[^§]+?(?:muutmine|täiendamine|kehtetuks tunnistamine))(?:\s|\x01)+(.*)$",
                 section,
                 re.IGNORECASE | re.DOTALL,
             )
             if header_match is None:
                 continue
-            header_text = re.sub(r"\s+", " ", header_match.group(1)).strip()
+            header_text = re.sub(r"\s+", " ", header_match.group(1).replace("\x01", " ")).strip()
             content_text = re.sub(r"\s+", " ", header_match.group(2)).strip()
             if target_title and not _tr_old_format_section_matches_target(target_title, header_text):
                 continue
@@ -2804,27 +2957,76 @@ def _parse_old_format_amendment_ops(
                             direct_texts.append(plain)
                 direct_text = " ".join(direct_texts).strip()
                 if direct_text:
-                    direct_instruction = direct_text
-                    if target_title.lower() in direct_text.lower():
-                        first_structural_target = re.search(r"§\s*\d", direct_text)
+                    direct_body_text = direct_text
+                    section_boundaries = list(re.finditer(r"(?:^|\s)§\s*\d+\.\x01", direct_body_text))
+                    if len(section_boundaries) > 1:
+                        direct_body_text = direct_body_text[: section_boundaries[1].start()].strip()
+                    direct_instruction = direct_body_text
+                    if target_title.lower() in direct_body_text.lower():
+                        first_structural_target = re.search(r"§\s*\d", direct_body_text)
                         if first_structural_target is not None:
-                            direct_instruction = direct_text[first_structural_target.start():].strip()
+                            direct_instruction = direct_body_text[first_structural_target.start():].strip()
                     source = OperationSource(
                         statute_id=source_id,
                         title=target_title,
                         raw_text=direct_text[:200],
                     )
-                    all_ops = [
-                        replace(
-                            op,
-                            provenance_tags=(
-                                *op.provenance_tags,
-                                "ee_unstructured_single_clause_amendment_body",
-                                f"base_act: {_tr_paragrahv_to_act_id(act_title)}",
-                            ),
-                        )
-                        for op in extract_ee_ops(direct_instruction, source, seq_start=seq)
-                    ]
+                    clause_texts = _tr_split_plaintext_numbered_op_texts(direct_body_text)
+                    if clause_texts:
+                        clause_ops: list[LegalOperation] = []
+                        seq = 1
+                        for clause_text in clause_texts:
+                            clause_source = replace(source, raw_text=clause_text[:200])
+                            if re.match(
+                                r"^\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s+määruse\s+preambul\s+sõnastatakse\b",
+                                clause_text,
+                                re.IGNORECASE,
+                            ):
+                                clause_ops.append(
+                                    LegalOperation(
+                                        op_id=f"ee-preamble-clause-non-body-{seq}-{source_id}",
+                                        sequence=seq,
+                                        action=StructuralAction.META,
+                                        target=LegalAddress(path=()),
+                                        payload=IRNode(
+                                            kind=IRNodeKind.CONTENT,
+                                            text=clause_text,
+                                            attrs={"source_family": _EE_PREAMBLE_CLAUSE_NON_BODY_RULE},
+                                        ),
+                                        source=clause_source,
+                                        provenance_tags=(clause_text[:200], _EE_PREAMBLE_CLAUSE_NON_BODY_RULE),
+                                        witness_rule_id=_EE_PREAMBLE_CLAUSE_NON_BODY_RULE,
+                                    )
+                                )
+                                seq += 1
+                                continue
+                            parsed_clause_ops = extract_ee_ops(clause_text, clause_source, seq_start=seq)
+                            clause_ops.extend(parsed_clause_ops)
+                            seq += len(parsed_clause_ops)
+                        all_ops = [
+                            replace(
+                                op,
+                                provenance_tags=(
+                                    *op.provenance_tags,
+                                    _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE,
+                                    f"base_act: {_tr_paragrahv_to_act_id(act_title)}",
+                                ),
+                                witness_rule_id=op.witness_rule_id or _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE,
+                            )
+                            for op in clause_ops
+                        ]
+                    else:
+                        all_ops = [
+                            replace(
+                                op,
+                                provenance_tags=(
+                                    *op.provenance_tags,
+                                    "ee_unstructured_single_clause_amendment_body",
+                                    f"base_act: {_tr_paragrahv_to_act_id(act_title)}",
+                                ),
+                            )
+                            for op in extract_ee_ops(direct_instruction, source, seq_start=seq)
+                        ]
         if has_earlier_same_act_slice and not _old_format_target_has_ref_owned_slice(
             target_section_labels=target_section_labels,
             item_effects=item_effects,
@@ -3767,7 +3969,8 @@ def _parse_section_payload(text: str, kind: IRNodeKind = IRNodeKind.SECTION) -> 
 
     # Split at subsection markers: (N) at start of subsection
     # Pattern: split on "(N)" where N is 1+ digits, possibly with superscript
-    parts = re.split(r"(?=\(\d[\d\s_]*\)\s*)", stripped)
+    subsection_marker = r"\(\d{1,3}(?:[\s_]\d{1,3})?\)\s*"
+    parts = re.split(rf"(?={subsection_marker})", stripped)
 
     title_part = parts[0].strip() if parts else stripped.strip()
     subsection_parts = parts[1:] if len(parts) > 1 else []
@@ -3806,7 +4009,7 @@ def _parse_section_payload(text: str, kind: IRNodeKind = IRNodeKind.SECTION) -> 
     # Build children from subsection parts
     children: List[IRNode] = []
     for sp in subsection_parts:
-        m = re.match(r"\((\d[\d\s_]*)\)\s*(.*)", sp, re.DOTALL)
+        m = re.match(r"\((\d{1,3}(?:[\s_]\d{1,3})?)\)\s*(.*)", sp, re.DOTALL)
         if m:
             sub_label = re.sub(r"\s+", "_", m.group(1).strip())
             sub_text = _strip_rt_editorial_parentheticals(m.group(2).strip())
@@ -3988,6 +4191,8 @@ _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE = "ee_explicit_item_replacement_term
 _EE_INLINE_ITEM_REPLACE_SINGLETON_SUBSECTION_RULE = "ee_inline_item_replace_singleton_subsection"
 _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE = "ee_plaintext_numbered_clause_split"
 _EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
+_EE_PARENTHESIZED_TARGET_HTML_BLOCK_RULE = "ee_parenthesized_target_html_block_sliced"
+_EE_OUT_OF_BODY_APPENDIX_OR_NOTE_RULE = "ee_out_of_body_appendix_or_note_clause"
 
 
 def _ee_levenshtein_distance_at_most_one(left: str, right: str) -> bool:
@@ -4182,11 +4387,11 @@ def _extract_subsection_text(payload_text: str, label: str) -> str:
     marker_num = label.replace("_", " ")
 
     # Split on all subsection markers
-    parts = re.split(r"(?=\(\d[\d\s_]*\)\s)", payload_text.strip())
+    parts = re.split(r"(?=\(\d{1,3}(?:[\s_]\d{1,3})?\)\s)", payload_text.strip())
 
     # Find the part that starts with the marker matching our label
     for part in parts:
-        m = re.match(r"\((\d[\d\s]*)\)\s*(.*)", part.strip(), re.DOTALL)
+        m = re.match(r"\((\d{1,3}(?:\s\d{1,3})?)\)\s*(.*)", part.strip(), re.DOTALL)
         if m:
             # Normalize the captured number the same way _normalize_num does
             part_num = re.sub(r"\s+", " ", m.group(1).strip())
@@ -4268,10 +4473,10 @@ def _parse_inline_subsection_payload_nodes(raw_text: str) -> List[IRNode]:
     materialize those later blocks as real subsection nodes, so replay must do
     the same instead of discarding everything after the first label.
     """
-    parts = re.split(r"(?=\(\d[\d\s_]*\)\s)", raw_text.strip())
+    parts = re.split(r"(?=\(\d{1,3}(?:[\s_]\d{1,3})?\)\s)", raw_text.strip())
     nodes: List[IRNode] = []
     for part in parts:
-        match = re.match(r"^\((\d[\d\s]*)\)\s*(.*)$", part.strip(), re.DOTALL)
+        match = re.match(r"^\((\d{1,3}(?:\s\d{1,3})?)\)\s*(.*)$", part.strip(), re.DOTALL)
         if match is None:
             continue
         label = _normalize_num(match.group(1))
@@ -4761,6 +4966,33 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "sg_part": stem + "t",
             "sg_ine": stem + "s",
             "sg_ela": stem + "st",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": stem + "d",
+            "pl_gen": stem + "te",
+            "pl_part": stem + "id",
+            "pl_ine": stem + "tes",
+            "pl_ela": stem + "test",
+            "pl_all": stem + "tele",
+            "pl_ade": stem + "tel",
+            "pl_abl": stem + "telt",
+            "pl_trn": stem + "teks",
+        }
+    if lower.endswith("ettevõte"):
+        stem = word[:-1] + "te"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": stem + "t",
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_ill": stem + "sse",
             "sg_all": stem + "le",
             "sg_ade": stem + "l",
             "sg_abl": stem + "lt",

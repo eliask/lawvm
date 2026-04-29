@@ -15,6 +15,7 @@ from lawvm.estonia.ee_instruction_waist import (
 from lawvm.estonia.grafter import (
     _extract_old_format_commencement_effects,
     _extract_intro_statute_fragment,
+    _extract_subsection_text,
     _is_omnibus_amendment,
     _parse_generic_minister_rename_ops,
     _parse_generic_ministry_reorganization_ops,
@@ -8088,3 +8089,88 @@ def test_parse_ee_amendment_ops_splits_plaintext_preamble_and_repeal_range() -> 
     ]
     assert ops[0].witness_rule_id == "ee_preamble_clause_non_body"
     assert _payload(ops[0]).attrs["source_family"] == "ee_preamble_clause_non_body"
+
+
+def test_parse_ee_amendment_ops_slices_parenthesized_multi_regulation_block() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("128032025001", archive),
+        "ee/128032025001",
+        target_title="Lendorava püsielupaikade kaitse alla võtmine ja kaitse-eeskiri",
+    )
+
+    targets = {(op.action, op.target.path) for op in ops}
+    assert (StructuralAction.INSERT, (("section", "1"), ("subsection", "2"))) in targets
+    assert (StructuralAction.INSERT, (("section", "2"), ("subsection", "1"))) in targets
+    assert (StructuralAction.REPLACE, (("section", "2"), ("subsection", "2_2"), ("item", "1"))) in targets
+    assert (StructuralAction.TEXT_REPLACE, (("section", "4"), ("subsection", "9"))) in targets
+    assert (StructuralAction.INSERT, (("section", "5"),)) in targets
+    assert any(
+        op.witness_rule_id == "ee_parenthesized_target_html_block_sliced"
+        for op in ops
+        if op.action is not StructuralAction.META
+    )
+    assert any(
+        _payload(op).attrs.get("source_family") == "ee_out_of_body_appendix_or_note_clause"
+        for op in ops
+        if op.action is StructuralAction.META
+    )
+
+
+def test_extract_subsection_text_does_not_split_habitat_type_codes() -> None:
+    payload = (
+        "(2) Kuuse-Jaani püsielupaigas elupaigatüüpide lamminiidud (6450), "
+        "vanad loodusmetsad (9010*) ja rohundirikkad kuusikud (9050) kaitse, "
+        "Palasi püsielupaigas elupaigatüüpide vanad loodusmetsad (9010*), "
+        "soo-lehtmetsad (9080*) ja rohundirikkad kuusikud (9050) kaitse."
+    )
+
+    extracted = _extract_subsection_text(payload, "2")
+
+    assert "rohundirikkad kuusikud (9050) kaitse, Palasi" in extracted
+    assert extracted.endswith("rohundirikkad kuusikud (9050) kaitse.")
+
+
+def test_parse_ee_amendment_ops_does_not_smuggle_target_act_header_into_items() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("126102023005", archive),
+        "ee/126102023005",
+        target_title="Sigade Aafrika katku ennetamise ja tõrje täpsemad meetmed",
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.TEXT_REPLACE, (("section", "1"),)),
+        (StructuralAction.TEXT_REPLACE, (("section", "2"),)),
+        (StructuralAction.TEXT_REPLACE, (("section", "2"),)),
+        (StructuralAction.TEXT_REPLACE, (("section", "2"),)),
+        (StructuralAction.REPLACE, (("section", "2"), ("item", "1"))),
+        (StructuralAction.INSERT, (("section", "2"), ("item", "1_1"))),
+        (StructuralAction.INSERT, (("section", "2"), ("subsection", "2"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "3"),)),
+        (StructuralAction.TEXT_REPLACE, (("section", "4"),)),
+        (StructuralAction.TEXT_REPLACE, (("section", "5"),)),
+        (StructuralAction.TEXT_REPLACE, (("section", "6"),)),
+    ]
+    assert all(op.target.path != (("section", "1"),) or op.action is StructuralAction.TEXT_REPLACE for op in ops)
+    assert any(
+        "ee_new_format_target_act_header_not_wrapper_instruction" in op.provenance_tags
+        for op in ops
+    )
+
+
+def test_extract_ee_ops_splits_section_heading_and_text_replace_scope() -> None:
+    text = (
+        "paragrahvi 2 pealkirjas ning tekstis asendatakse sõna "
+        "„ettevõte” sõnaga „loomapidamisettevõte” vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.target.path, op.target.special) for op in ops] == [
+        ((("section", "2"),), FacetKind.HEADING),
+        ((("section", "2"),), None),
+    ]
+    assert ops[1].witness_rule_id == "ee_section_heading_and_text_replace_split"

@@ -80,6 +80,17 @@ def test_text_replace_on_section_target_rewrites_descendant_text() -> None:
     )
 
 
+def test_case_inflected_text_replace_handles_ettevote_forms() -> None:
+    replaced = _ee_apply_text_replace_value(
+        "Ettevõttes on ettevõtte territoorium.",
+        "ettevõte",
+        "loomapidamisettevõte",
+        case_inflected=True,
+    )
+
+    assert replaced == "Loomapidamisettevõttes on loomapidamisettevõtte territoorium."
+
+
 def test_text_replace_capitalized_source_surface_does_not_rewrite_lowercase_occurrence() -> None:
     body = _body_with_section_and_subsection(
         "42",
