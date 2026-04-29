@@ -192,6 +192,25 @@ def test_get_ee_residual_inventory_maaparandushoiukava_source_literal_and_punctu
     )
 
 
+def test_get_ee_residual_inventory_fgaas_register_item_terminal_punctuation() -> None:
+    inventory = get_ee_residual_inventory("129052013034", "106052015012")
+
+    assert inventory is not None
+    assert inventory.statute_title.startswith("Fluoritud kasvuhoonegaase")
+    assert inventory.comparison_class == "commensurable_delta"
+    assert len(inventory.residuals) == 3
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert {
+        record.address for record in inventory.residuals
+    } == {
+        "chapter:3/section:10",
+        "chapter:3/section:10/subsection:1",
+        "chapter:3/section:10/subsection:1/item:8",
+    }
+    assert all("106052015005 § 1 item 11" in record.evidence for record in inventory.residuals)
+    assert all("terminal punctuation" in record.evidence for record in inventory.residuals)
+
+
 def test_get_ee_residual_inventory_vabaparda_target_drift() -> None:
     inventory = get_ee_residual_inventory("125012012005", "123092022012")
 
