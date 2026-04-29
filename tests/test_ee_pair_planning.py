@@ -119,6 +119,62 @@ def test_plan_ee_oracle_pair_repairs_impossible_muutmismarge_publication_year(mo
     )
 
 
+def test_plan_ee_oracle_pair_repairs_unfetchable_publication_number_ref(monkeypatch) -> None:
+    base_xml = b"<base/>"
+    oracle_xml = b"""
+    <akt>
+      <muutmismarge>
+        <aktikuupaev>2011-06-06</aktikuupaev>
+        <avaldamismarge>
+          <avaldamismargeTekst>RT I 2011-06-09 1</avaldamismargeTekst>
+          <aktViide>109062011005</aktViide>
+        </avaldamismarge>
+        <joustumine>2011-06-12</joustumine>
+      </muutmismarge>
+    </akt>
+    """
+    bad_ref = AmendmentRef(
+        aktViide="109062011005",
+        passed="2011-06-06",
+        joustumine="2011-06-12",
+    )
+
+    def fake_fetch(akt_viide: str, archive: object = None) -> bytes:
+        if akt_viide == "oracle":
+            return oracle_xml
+        if akt_viide == "109062011001":
+            return b"<amendment/>"
+        raise RuntimeError("missing")
+
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-2")
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
+        lambda grupi_id, as_of, archive: "oracle",
+    )
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", fake_fetch)
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.extract_amendment_refs",
+        lambda xml: [] if xml == base_xml else [bad_ref],
+    )
+
+    planned = plan_ee_oracle_pair(
+        base_id="base",
+        as_of="2011-06-12",
+        base_xml=base_xml,
+        archive=None,
+    )
+
+    assert [ref.aktViide for ref in planned.plan.amendments_to_apply] == ["109062011001"]
+    assert planned.plan.effective_new_amendments == ("109062011001",)
+    assert any(
+        item.get("rule") == "ee_muutmismarge_aktviide_publication_number_repair"
+        and item.get("original_aktViide") == "109062011005"
+        and item.get("repaired_aktViide") == "109062011001"
+        for item in planned.plan.source_adjudication.lineage
+    )
+
+
 def test_plan_ee_oracle_pair_blocks_cross_statute_oracle_group(monkeypatch) -> None:
     base_xml = b"<base/>"
     oracle_xml = b"<oracle/>"
