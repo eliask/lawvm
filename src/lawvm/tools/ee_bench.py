@@ -27,7 +27,11 @@ from lawvm.estonia.compare import irnode_to_ee_comparison_text
 from lawvm.estonia.compare import normalize_ee_comparison_text
 from lawvm.estonia.fetch import extract_effective_date, fetch_rt_xml, open_rt_archive
 from lawvm.estonia.replay import replay_ee_to_pit
-from lawvm.estonia.residual_reporting import build_ee_residual_summary
+from lawvm.estonia.residual_reporting import (
+    build_ee_punctuation_whitespace_record,
+    build_ee_residual_summary,
+    is_ee_punctuation_whitespace_only_difference,
+)
 from lawvm.tools.ee_reporting import build_ee_benchmark_reporting_summary
 from lawvm.tools.section_keys import extract_ir_sections
 
@@ -267,22 +271,47 @@ def _score_one_pair(gid: str, base_id: str, oracle_id: str, title: str, archive:
             status = "OK" if not r.error else "ERR"
         reporting_summary = build_ee_benchmark_reporting_summary(r.source_basis, r.comparison_class)
 
+        divergence_addresses = tuple(
+            "/".join(f"{kind}:{label}" for kind, label in d.address.path)
+            for d in r.divergences
+        )
         residual_summary = build_ee_residual_summary(
             base_id=base_id,
             oracle_id=oracle_id,
-            divergence_addresses=("/".join(f"{kind}:{label}" for kind, label in d.address.path) for d in r.divergences),
+            divergence_addresses=divergence_addresses,
         )
         residual_count = 0
         matched_current = 0
-        bucket_counts = ""
+        matched_bucket_counts: Counter[str] = Counter()
         unknown_current = len(r.divergences)
+        matched_addresses: set[str] = set()
         if residual_summary is not None:
             matched_current = residual_summary.matched_current_divergence_count
             residual_count = matched_current
-            bucket_counts = ",".join(
-                f"{bucket}={count}" for bucket, count in sorted(residual_summary.matched_current_bucket_counts.items())
-            )
+            matched_bucket_counts.update(residual_summary.matched_current_bucket_counts)
             unknown_current = residual_summary.unknown_current_divergence_count
+            matched_addresses = {
+                address
+                for address in divergence_addresses
+                if address in residual_summary.record_by_address
+            }
+        punctuation_records = [
+            build_ee_punctuation_whitespace_record(address)
+            for address, divergence in zip(divergence_addresses, r.divergences)
+            if address not in matched_addresses
+            and is_ee_punctuation_whitespace_only_difference(
+                divergence.ops_text,
+                divergence.consolidated_text,
+            )
+        ]
+        if punctuation_records:
+            matched_current += len(punctuation_records)
+            residual_count += len(punctuation_records)
+            matched_bucket_counts.update(record.bucket for record in punctuation_records)
+            unknown_current = max(0, unknown_current - len(punctuation_records))
+        bucket_counts = ",".join(
+            f"{bucket}={count}" for bucket, count in sorted(matched_bucket_counts.items())
+        )
 
         core_benchmark = r.source_adjudication is not None and not r.source_adjudication.oracle_suspect
         open_current = max(0, len(r.divergences) - matched_current)

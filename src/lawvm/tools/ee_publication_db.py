@@ -6,7 +6,6 @@ import hashlib
 import re
 import sqlite3
 import time
-import unicodedata
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -16,7 +15,10 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.estonia.compare import irnode_to_ee_comparison_text, normalize_ee_comparison_text
 from lawvm.estonia.fetch import extract_effective_date, fetch_rt_xml, open_rt_archive
 from lawvm.estonia.replay import replay_ee_to_pit
-from lawvm.estonia.residual_reporting import build_ee_residual_summary
+from lawvm.estonia.residual_reporting import (
+    build_ee_residual_summary,
+    is_ee_punctuation_whitespace_only_difference,
+)
 from lawvm.tools.ee_reporting import build_ee_benchmark_reporting_summary
 
 if TYPE_CHECKING:
@@ -498,15 +500,6 @@ def _classify_symbol_placeholder_projection(divergences: list[dict[str, Any]]) -
         divergence["open_current"] = 0
 
 
-def _strip_punctuation_and_whitespace(text: str) -> str:
-    return "".join(
-        char
-        for char in text
-        if not char.isspace()
-        and not unicodedata.category(char).startswith(("P", "Z"))
-    )
-
-
 def _classify_punctuation_whitespace_only(divergences: list[dict[str, Any]]) -> None:
     """Close rows whose remaining difference is only punctuation/whitespace.
 
@@ -524,7 +517,7 @@ def _classify_punctuation_whitespace_only(divergences: list[dict[str, Any]]) -> 
         oracle_surface = str(oracle_text)
         if replay_surface == oracle_surface:
             continue
-        if _strip_punctuation_and_whitespace(replay_surface) != _strip_punctuation_and_whitespace(oracle_surface):
+        if not is_ee_punctuation_whitespace_only_difference(replay_surface, oracle_surface):
             continue
         divergence["residual_bucket"] = "presentation_punctuation_whitespace"
         divergence["residual_evidence"] = (

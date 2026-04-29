@@ -195,6 +195,49 @@ def test_score_one_pair_marks_uninventoried_divergences_as_open(monkeypatch) -> 
     assert result.unknown_current_residual_count == 1
     assert result.open_current_divergence_count == 1
 
+
+def test_score_one_pair_adjudicates_punctuation_whitespace_only_divergences(monkeypatch) -> None:
+    monkeypatch.setattr(ee_bench, "fetch_rt_xml", lambda oracle_id, archive=None: b"<xml/>")
+    monkeypatch.setattr(ee_bench, "extract_effective_date", lambda xml_bytes: "2026-03-24")
+    monkeypatch.setattr(
+        ee_bench,
+        "replay_ee_to_pit",
+        lambda *args, **kwargs: SimpleNamespace(
+            n_ops=5,
+            divergences=[
+                ConsistencyDivergence(
+                    address=LegalAddress(path=(("section", "1"), ("subsection", "1"), ("item", "2"))),
+                    divergence_type="MISMATCH",
+                    ops_text="item text;",
+                    consolidated_text="item text.",
+                ),
+                ConsistencyDivergence(
+                    address=LegalAddress(path=(("section", "2"),)),
+                    divergence_type="MISMATCH",
+                    ops_text="real replay text",
+                    consolidated_text="real oracle text",
+                ),
+            ],
+            replayed=SimpleNamespace(body=object()),
+            oracle=SimpleNamespace(body=object()),
+            error="",
+            comparison_class="commensurable_delta",
+            source_basis="pairwise_terviktekst_delta",
+            source_adjudication=SimpleNamespace(oracle_suspect=False),
+        ),
+    )
+    monkeypatch.setattr(ee_bench, "_get_sections", lambda body: {"section:1": "same"})
+
+    result = ee_bench._score_one_pair("g1", "base-open", "oracle-open", "Open Pair", archive=None)
+
+    assert result.status == "OK"
+    assert result.adjudicated_residual_count == 1
+    assert result.matched_current_residual_count == 1
+    assert result.adjudicated_bucket_counts == "presentation_punctuation_whitespace=1"
+    assert result.unknown_current_residual_count == 1
+    assert result.open_current_divergence_count == 1
+
+
 def test_score_one_pair_uses_oracle_effective_date_as_cutoff(monkeypatch) -> None:
     seen: dict[str, str | None] = {}
 
