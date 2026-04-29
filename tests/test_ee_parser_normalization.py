@@ -162,6 +162,36 @@ def test_extract_ee_ops_targets_part_chapter_division_heading() -> None:
     assert _payload(ops[0]).text == "5. jagu Keskkonnaagentuuri toimingud"
 
 
+def test_extract_ee_ops_targets_lahter_text_without_section_replace() -> None:
+    text = (
+        "paragrahvi 3 lahtri 23 tekst sõnastatakse järgmiselt: "
+        "„Märgitakse lahtrisse 22 märgitud välisvaluuta kurss euro suhtes.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "3"),)
+    assert ops[0].witness_rule_id == "ee_lahter_text_replace"
+    assert _payload(ops[0]).attrs["ee_replace_lahter_text"] == "23"
+    assert _payload(ops[0]).text == "Märgitakse lahtrisse 22 märgitud välisvaluuta kurss euro suhtes."
+
+
+def test_extract_ee_ops_targets_bare_chapter_replace_as_chapter() -> None:
+    text = (
+        "3. peatükk sõnastatakse järgmiselt: "
+        "„3. peatükk TOLLIDEKLARATSIOONI ESITAMINE JA AKTSEPTEERIMINE § 6. Tollideklaratsiooni esitamine”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("chapter", "3"),)
+    assert _payload(ops[0]).text.startswith("3. peatükk TOLLIDEKLARATSIOONI")
+
+
 def test_title_registry_matches_konsulaarametnik_renamed_basis() -> None:
     assert _title_matches_para(
         "Konsulaarametniku ametitoimingute ja diplomaatiliste passide andmekogu põhimäärus",
@@ -181,6 +211,20 @@ def test_parse_ee_amendment_ops_admits_konsulaarametnik_pre_rename_title() -> No
 
     assert len(ops) == 10
     assert any(op.target.path == (("section", "16"),) and op.action is StructuralAction.REPLACE for op in ops)
+
+
+def test_old_format_commencement_effects_parse_rakendussatted_item_slice() -> None:
+    archive = open_rt_archive(readonly=True)
+    root = ET.fromstring(fetch_rt_xml("104072013020", archive))
+
+    item_effects, section_effects, whole_act_effective = _extract_old_format_commencement_effects(
+        root,
+        fallback_effective="2014-01-01",
+    )
+
+    assert item_effects == {("1", "1"): "2014-01-01", ("1", "3"): "2014-01-01"}
+    assert section_effects == {}
+    assert whole_act_effective == "2013-09-01"
 
 
 def test_extract_ee_ops_accepts_left_right_curly_quote_heading_delete() -> None:

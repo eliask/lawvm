@@ -114,6 +114,22 @@ def test_get_ee_residual_inventory_proovivotumeetodid_absent_subsection_8() -> N
     )
 
 
+def test_get_ee_residual_inventory_tollideklaratsioon_same_chain_placeholders() -> None:
+    inventory = get_ee_residual_inventory("104072013022", "104072013023")
+
+    assert inventory is not None
+    assert inventory.statute_title.startswith("Täiendavad juhised tollideklaratsiooni")
+    assert inventory.comparison_class == "same_chain_editorial_drift"
+    assert len(inventory.residuals) == 110
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert any(
+        record.address == "chapter:2/section:3/subsection:9"
+        and "empty placeholder children" in record.evidence
+        and "§ 1 items 1 and 3" in record.evidence
+        for record in inventory.residuals
+    )
+
+
 def test_get_ee_residual_inventory_vabariigi_presidendi_tookorra_seadus() -> None:
     inventory = get_ee_residual_inventory("108072011074", "127062017011")
 
