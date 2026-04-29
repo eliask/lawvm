@@ -30,6 +30,9 @@ _EE_OLD_FORMAT_CARRIED_SECTION_SCOPE_RULE = "ee_old_format_carried_section_scope
 _EE_OLD_FORMAT_WRAPPER_SCOPE_INHERITED_RULE = "ee_old_format_wrapper_scope_inherited"
 _EE_OLD_FORMAT_DIRECT_HEADER_TARGET_SECTION_RULE = "ee_old_format_direct_header_target_section"
 _EE_OLD_FORMAT_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_old_format_preamble_clause_non_body"
+_EE_OLD_FORMAT_CONTAINER_HEADING_TARGET_BLOCKS_SECTION_CARRY_RULE = (
+    "ee_old_format_container_heading_target_blocks_section_carry"
+)
 _EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
 _EE_STATUTE_TITLE_REPLACE_RULE = "ee_statute_title_replace"
 _EE_TITLE_CLAUSE_UNRESOLVED_NON_BODY_RULE = "ee_title_clause_unresolved_non_body"
@@ -71,6 +74,25 @@ def _is_title_clause_non_body(text: str) -> bool:
     if re.match(r"^(?:määruse|seaduse)\s+pealkirjas\s+(?:ja|ning)\s+teksti[s]?\b", stripped):
         return False
     return bool(re.match(r"^(?:määruse|seaduse)\s+pealkir(?:i|jas|jast)\b", stripped))
+
+
+def _is_container_heading_target_clause(text: str) -> bool:
+    stripped = _strip_old_format_item_prefix(text).lower()
+    return bool(
+        re.search(
+            r"\b(?:"
+            r"\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*[.]?\s*"
+            r"|esimese\s+|teise\s+|kolmanda\s+|neljanda\s+|viienda\s+|kuuenda\s+|"
+            r"seitsmenda\s+|kaheksanda\s+|üheksanda\s+|kümnenda\s+"
+            r")?peatüki\s+pealkir(?:i|ja(?:s|st)?)\b"
+            r"|\b\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*[.]?\s*osa\s+"
+            r"\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*[.]?\s*peatüki\s+pealkir(?:i|ja(?:s|st)?)\b"
+            r"|\b\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*[.]?\s*peatüki\s+"
+            r"\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*[.]?\s*jao\s+pealkir(?:i|ja(?:s|st)?)\b",
+            stripped,
+            re.IGNORECASE,
+        )
+    )
 
 
 def _non_body_meta_op(
@@ -2152,6 +2174,7 @@ def old_format_lower_op_texts(
         direct_prefix_stripped = False
         inherited_wrapper_scope = False
         carried_section_scope = False
+        container_heading_blocked_section_carry = False
         out_of_body_appendix_or_note_clause = _is_out_of_body_appendix_or_note_clause(op_text)
         if re.match(
             r"^(?:\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s+)?määruse\s+preambul\s+sõnastatakse\b",
@@ -2179,6 +2202,7 @@ def old_format_lower_op_texts(
             re.search(r"\btekstiosa[a-z]*\s+[„\"“][^”\"]*?\bpeatükk\b", op_text, re.IGNORECASE)
             and re.search(r"\basendatakse\s+tekstiosaga\b", op_text, re.IGNORECASE)
         )
+        is_container_heading_target = _is_container_heading_target_clause(op_text)
         effective, section_heading_stripped = _strip_html_amendment_section_heading_wrapper(
             effective,
             target_title or source.title,
@@ -2195,12 +2219,15 @@ def old_format_lower_op_texts(
             last_section
             and not old_format_has_section_ref(effective)
             and not is_container_heading_relabel
+            and not is_container_heading_target
             and not out_of_body_appendix_or_note_clause
         ):
             last_sect_raw = last_section.replace("_", " ")
             item_body = old_format_strip_item_label(effective)
             effective = f"paragrahvi {last_sect_raw} {item_body}"
             carried_section_scope = True
+        elif last_section and not old_format_has_section_ref(effective) and is_container_heading_target:
+            container_heading_blocked_section_carry = True
         elif (
             not last_section
             and not old_format_has_section_ref(effective)
@@ -2252,6 +2279,10 @@ def old_format_lower_op_texts(
                 tags.append(_EE_OLD_FORMAT_CARRIED_SECTION_SCOPE_RULE)
                 if op.action is not StructuralAction.META and witness_rule_id is None:
                     witness_rule_id = _EE_OLD_FORMAT_CARRIED_SECTION_SCOPE_RULE
+            if container_heading_blocked_section_carry:
+                tags.append(_EE_OLD_FORMAT_CONTAINER_HEADING_TARGET_BLOCKS_SECTION_CARRY_RULE)
+                if op.action is not StructuralAction.META and witness_rule_id is None:
+                    witness_rule_id = _EE_OLD_FORMAT_CONTAINER_HEADING_TARGET_BLOCKS_SECTION_CARRY_RULE
             if direct_prefix_stripped:
                 tags.append(_EE_OLD_FORMAT_DIRECT_TARGET_PREFIX_STRIP_BEFORE_CARRY_RULE)
                 if op.action is not StructuralAction.META and witness_rule_id is None:

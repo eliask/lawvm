@@ -350,9 +350,19 @@ def _parse_inline_item_children(
     raw_text: str,
     *,
     require_first_label_one: bool = True,
+    ignored_marker_rules_out: list[str] | None = None,
 ) -> tuple[str, List[IRNode]]:
     """Split inline numbered item lists without breaking compound labels like ``8 1)``."""
-    matches = list(re.finditer(_EE_ITEM_START_PATTERN, raw_text))
+    matches: list[re.Match[str]] = []
+    segment_start = 0
+    for match in re.finditer(_EE_ITEM_START_PATTERN, raw_text):
+        prefix = raw_text[segment_start:match.start()]
+        if prefix.rfind("(") > prefix.rfind(")"):
+            if ignored_marker_rules_out is not None:
+                ignored_marker_rules_out.append(_EE_INLINE_ITEM_PARENTHESES_MARKER_GUARD_RULE)
+            continue
+        matches.append(match)
+        segment_start = match.end()
     if not matches:
         return _strip_rt_editorial_parentheticals(raw_text.strip()), []
 
@@ -4508,6 +4518,7 @@ _EE_AMBIGUOUS_SINGLE_OCCURRENCE_TEXT_REPLACE_RULE = "ee_ambiguous_single_occurre
 _EE_OVERBROAD_CONTAINER_REPLACE_BLOCKED_RULE = "ee_overbroad_container_replace_blocked"
 _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE = "ee_explicit_item_replacement_terminal_preserved"
 _EE_LABELLED_ITEM_REPLACEMENT_PAYLOAD_SELECTION_RULE = "ee_labelled_item_replacement_payload_selection"
+_EE_INLINE_ITEM_PARENTHESES_MARKER_GUARD_RULE = "ee_inline_item_parentheses_marker_guard"
 _EE_PLURAL_ITEM_REPLACE_MISSING_LABEL_REPEAL_RULE = "ee_plural_item_replace_missing_label_repeal"
 _EE_INLINE_ITEM_REPLACE_SINGLETON_SUBSECTION_RULE = "ee_inline_item_replace_singleton_subsection"
 _EE_TEXT_REPLACE_UNIQUE_DESCENDANT_ITEM_RULE = "ee_text_replace_unique_descendant_item_by_old_text"
@@ -9992,10 +10003,23 @@ def _ee_apply_op(
                         )
                         return tree_ops.replace_at(body, full_path, new_node)
                     if target_node.kind == IRNodeKind.ITEM:
+                        ignored_item_marker_rules: list[str] = []
                         _item_intro, item_payload_children = _parse_inline_item_children(
                             raw_text,
                             require_first_label_one=False,
+                            ignored_marker_rules_out=ignored_item_marker_rules,
                         )
+                        for ignored_item_marker_rule in sorted(set(ignored_item_marker_rules)):
+                            _append_ee_replay_adjudication(
+                                adjudications_out,
+                                kind=ignored_item_marker_rule,
+                                message=(
+                                    "EE replay ignored an apparent item marker inside an open "
+                                    "parenthetical while selecting labelled item payload."
+                                ),
+                                op=op,
+                                detail={"source_target": str(op.target)},
+                            )
                         matched_payload_item = next(
                             (
                                 item_child
