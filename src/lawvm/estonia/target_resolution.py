@@ -65,6 +65,8 @@ def _is_preamble_clause_non_body(text: str) -> bool:
 
 def _is_title_clause_non_body(text: str) -> bool:
     stripped = _strip_old_format_item_prefix(text).lower()
+    if re.match(r"^(?:määruse|seaduse)\s+pealkirjas\s+(?:ja|ning)\s+teksti[s]?\b", stripped):
+        return False
     return bool(re.match(r"^(?:määruse|seaduse)\s+pealkir(?:i|jas|jast)\b", stripped))
 
 

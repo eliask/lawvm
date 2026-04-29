@@ -3875,6 +3875,58 @@ def test_extract_ee_ops_splits_title_and_text_global_text_replace_pairs() -> Non
     )
 
 
+def test_parse_ee_amendment_ops_keeps_title_and_text_clause_as_global_text_replace() -> None:
+    xml = """
+    <oigusakt xmlns="muutmisseadus_1_10.02.2010">
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>1</paragrahvNr>
+          <sisuTekst>
+            <HTMLKonteiner><![CDATA[
+              <p><b>1)</b> määruse pealkirjas ja tekstis asendatakse läbivalt
+              sõna „õnnemäng” sõnaga „hasartmäng” vastavas käändes;</p>
+            ]]></HTMLKonteiner>
+          </sisuTekst>
+        </paragrahv>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Testmäärus")
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == ()
+    assert ops[0].target.special is None
+    assert _payload(ops[0]).attrs["old_text"] == "õnnemäng"
+    assert _payload(ops[0]).text == "hasartmäng"
+    assert _payload(ops[0]).attrs["rewrite_scope_surface"] == "title_and_text"
+
+
+def test_parse_ee_amendment_ops_replays_108072015008_title_and_text_global_rewrites() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("108072015008", archive),
+        "ee/108072015008",
+        target_title="Õnnemängu mängimise piirangutega isikute nimekirja asutamine ja põhimääruse kinnitamine",
+    )
+
+    leading_rewrites = [
+        op
+        for op in ops[:2]
+        if op.action is StructuralAction.TEXT_REPLACE
+        and op.target.path == ()
+        and op.target.special is None
+        and op.payload is not None
+        and op.payload.attrs.get("rewrite_scope_surface") == "title_and_text"
+    ]
+    assert {op.payload.attrs["old_text"] for op in leading_rewrites if op.payload is not None} == {
+        "õnnemäng",
+        "õnnemängukorraldaja",
+    }
+
+
 def test_extract_ee_ops_emits_global_text_replace_with_heading_exclusion() -> None:
     text = (
         "määruse tekstis, välja arvatud § 4 pealkirjas, asendatakse "
