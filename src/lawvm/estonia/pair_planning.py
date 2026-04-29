@@ -92,6 +92,7 @@ class EEOraclePairPlan:
     as_of: str
     grupi_id: Optional[str]
     oracle_id: Optional[str]
+    oracle_grupi_id: Optional[str]
     base_is_consolidated: bool
     oracle_is_base: bool
     source_basis: EESourceBasis
@@ -136,13 +137,26 @@ def plan_ee_oracle_pair(
         except Exception:
             oracle_xml = None
 
+    oracle_grupi_id = extract_grupi_id(oracle_xml) if oracle_xml is not None else None
+    group_mismatch = bool(
+        selected_oracle_id
+        and selected_oracle_id != base_id
+        and grupi_id
+        and oracle_grupi_id
+        and oracle_grupi_id != grupi_id
+    )
     base_is_consolidated = extract_tekstiliik(base_xml) == "terviktekst"
     base_effective = extract_effective_date(base_xml) if base_is_consolidated else ""
     base_refs = _dedupe_refs_by_slice(tuple(extract_amendment_refs(base_xml)))
     base_slice_keys = {_ref_slice_key(ref) for ref in base_refs}
     oracle_refs: tuple[AmendmentRef, ...] = ()
 
-    if base_is_consolidated and oracle_xml is not None and selected_oracle_id != base_id:
+    if (
+        base_is_consolidated
+        and oracle_xml is not None
+        and selected_oracle_id != base_id
+        and not group_mismatch
+    ):
         try:
             oracle_refs = _dedupe_refs_by_slice(tuple(extract_amendment_refs(oracle_xml)))
         except Exception:
@@ -190,22 +204,26 @@ def plan_ee_oracle_pair(
     effective_new_amendments = _unique_ref_ids(effective_new_refs)
     future_new_amendments = _unique_ref_ids(future_new_refs)
     same_chain = bool(oracle_refs) and {_ref_slice_key(ref) for ref in oracle_refs} == base_slice_keys
-    comparison_class = classify_ee_oracle_pair(
-        has_oracle=oracle_xml is not None,
-        base_is_consolidated=base_is_consolidated,
-        oracle_matches_base=selected_oracle_id == base_id,
-        effective_new_amendments=effective_new_amendments,
-        future_new_amendments=future_new_amendments,
-        same_chain=same_chain,
-    )
-    source_basis = classify_ee_source_basis(
-        has_oracle=oracle_xml is not None,
-        base_is_consolidated=base_is_consolidated,
-        oracle_matches_base=selected_oracle_id == base_id,
-        effective_new_amendments=effective_new_amendments,
-        future_new_amendments=future_new_amendments,
-        same_chain=same_chain,
-    )
+    if group_mismatch:
+        comparison_class = "cross_statute_oracle_mismatch"
+        source_basis = EESourceBasis.NONCOMMENSURABLE
+    else:
+        comparison_class = classify_ee_oracle_pair(
+            has_oracle=oracle_xml is not None,
+            base_is_consolidated=base_is_consolidated,
+            oracle_matches_base=selected_oracle_id == base_id,
+            effective_new_amendments=effective_new_amendments,
+            future_new_amendments=future_new_amendments,
+            same_chain=same_chain,
+        )
+        source_basis = classify_ee_source_basis(
+            has_oracle=oracle_xml is not None,
+            base_is_consolidated=base_is_consolidated,
+            oracle_matches_base=selected_oracle_id == base_id,
+            effective_new_amendments=effective_new_amendments,
+            future_new_amendments=future_new_amendments,
+            same_chain=same_chain,
+        )
 
     lineage = [
         {
@@ -213,6 +231,9 @@ def plan_ee_oracle_pair(
             "source_basis": source_basis.value,
             "comparison_class": comparison_class,
             "base_is_consolidated": base_is_consolidated,
+            "base_grupi_id": grupi_id or "",
+            "oracle_grupi_id": oracle_grupi_id or "",
+            "rule": "ee_oracle_group_mismatch" if group_mismatch else "",
             "base_amendment_count": len(base_refs),
             "oracle_amendment_count": len(oracle_refs),
             "effective_new_amendments": list(effective_new_amendments),
@@ -242,6 +263,7 @@ def plan_ee_oracle_pair(
             as_of=as_of,
             grupi_id=grupi_id,
             oracle_id=selected_oracle_id,
+            oracle_grupi_id=oracle_grupi_id,
             base_is_consolidated=base_is_consolidated,
             oracle_is_base=selected_oracle_id == base_id,
             source_basis=source_basis,
