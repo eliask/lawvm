@@ -4225,6 +4225,7 @@ _EE_AMBIGUOUS_SINGLE_OCCURRENCE_TEXT_REPLACE_RULE = "ee_ambiguous_single_occurre
 _EE_OVERBROAD_CONTAINER_REPLACE_BLOCKED_RULE = "ee_overbroad_container_replace_blocked"
 _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE = "ee_explicit_item_replacement_terminal_preserved"
 _EE_INLINE_ITEM_REPLACE_SINGLETON_SUBSECTION_RULE = "ee_inline_item_replace_singleton_subsection"
+_EE_TEXT_REPLACE_UNIQUE_DESCENDANT_ITEM_RULE = "ee_text_replace_unique_descendant_item_by_old_text"
 _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE = "ee_plaintext_numbered_clause_split"
 _EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
 _EE_PARENTHESIZED_TARGET_HTML_BLOCK_RULE = "ee_parenthesized_target_html_block_sliced"
@@ -7173,6 +7174,8 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
             return False
         if next_word in {"kohustatud", "nimetatakse", "päeva", "tööpäeva"}:
             return False
+        if next_word.endswith(nonfinite_suffixes):
+            return False
         if next_word == "kava":
             return False
         if re.match(
@@ -7558,6 +7561,13 @@ def _ee_apply_text_replace_value(
                     replacement=new_variant,
                 ):
                     return match.group(0)
+                if (
+                    new_variant == ""
+                    and old.lower().startswith("eeltaotlus")
+                    and re.search(r"\bvõi$", old_variant.strip(), re.IGNORECASE)
+                    and working[:match.start()].rstrip().endswith(",")
+                ):
+                    return match.group(0)
                 token = f"\x00ee-repl-{idx}-{len(placeholders)}\x00"
                 replacement = _ee_case_preserved_replacement(
                     match,
@@ -7627,6 +7637,18 @@ def _ee_apply_text_replace_value(
             r"\1",
             replaced,
         )
+    if new == "":
+        replaced = re.sub(r"^\s*,\s*", "", replaced)
+        replaced = re.sub(r"\b(Kui)\s*,\s+", r"\1 ", replaced)
+        if old.lower().startswith("eeltaotlus"):
+            replaced = re.sub(r",\s+(?=või\b)", " ", replaced, flags=re.IGNORECASE)
+        if text and text[:1].isupper() and replaced:
+            replaced = re.sub(
+                r"^(\s*)([a-zäöõüšž])",
+                lambda m: m.group(1) + m.group(2).upper(),
+                replaced,
+                count=1,
+            )
     if replaced != text:
         replaced = re.sub(r"  +", " ", replaced)
         replaced = re.sub(r" +([.,;:!?)])", r"\1", replaced)
@@ -7820,6 +7842,48 @@ def _ee_resolve_inline_item_singleton_subsection_path(
     if not re.search(rf"(?:^|\s){item_label}\)\s+", subsection.text or ""):
         return None
     return section_path + (("subsection", subsection.label or ""), path[1])
+
+
+def _ee_resolve_unique_descendant_item_by_old_text(
+    body: IRNode,
+    path: tree_ops.Path,
+    rewrite_spec: EETextRewriteSpec,
+) -> Optional[tree_ops.Path]:
+    """Resolve ``section/item`` text rewrites to a unique descendant item witness."""
+    if (
+        len(path) != 2
+        or path[0][0] != "section"
+        or path[1][0] != "item"
+        or not rewrite_spec.old_text
+    ):
+        return None
+    section_path = _ee_resolve_full_path(body, (path[0],))
+    if section_path is None:
+        return None
+    section = tree_ops.resolve(body, section_path)
+    if section is None or section.kind != IRNodeKind.SECTION:
+        return None
+    target_label = path[1][1]
+    matches: list[tree_ops.Path] = []
+
+    def _walk(node: IRNode, node_path: tree_ops.Path) -> None:
+        if node.kind == IRNodeKind.ITEM and node.label == target_label:
+            replacement = _ee_apply_text_replace_spec(
+                node.text or "",
+                rewrite_spec,
+                case_inflected=rewrite_spec.case_inflected,
+            )
+            if replacement is not None and replacement != (node.text or ""):
+                matches.append(node_path)
+        for child in node.children:
+            if child.label is None:
+                continue
+            _walk(child, node_path + ((str(child.kind), child.label),))
+
+    _walk(section, section_path)
+    if len(matches) != 1:
+        return None
+    return matches[0]
 
 
 def _ee_replace_inline_item_in_singleton_subsection(
@@ -9960,21 +10024,45 @@ def _ee_apply_op(
 
     elif action == "text_replace":
         full_path = _ee_resolve_full_path(body, path)
+        if payload is not None:
+            rewrite_spec = _ee_read_text_replace_spec(payload)
+            if rewrite_spec is None:
+                payload_meta = read_payload_rewrite_meta(payload)
+                rewrite = payload_meta.rewrite
+                old = rewrite.old_surface.replace("\x01", "") if rewrite is not None else ""
+                if not old:
+                    return body
+                rewrite_spec = EETextRewriteSpec(
+                    old_text=old,
+                    new_text=payload.text.replace("\x01", ""),
+                    case_inflected=bool(rewrite.case_inflected) if rewrite is not None else False,
+                )
+            recovered_full_path = None
+            if full_path is None:
+                recovered_full_path = _ee_resolve_unique_descendant_item_by_old_text(
+                    body,
+                    path,
+                    rewrite_spec,
+                )
+                if recovered_full_path is not None:
+                    _append_ee_replay_adjudication(
+                        adjudications_out,
+                        kind=_EE_TEXT_REPLACE_UNIQUE_DESCENDANT_ITEM_RULE,
+                        message=(
+                            "EE replay resolved a section-level item text replacement "
+                            "to the unique descendant item containing the source text."
+                        ),
+                        op=op,
+                        detail={
+                            "target": str(op.target),
+                            "resolved_path": "/".join(f"{kind}:{label}" for kind, label in recovered_full_path),
+                            "source_old_text": rewrite_spec.old_text,
+                        },
+                    )
+                full_path = recovered_full_path
         if full_path is not None:
             node = tree_ops.resolve(body, full_path)
             if node is not None and payload is not None:
-                rewrite_spec = _ee_read_text_replace_spec(payload)
-                if rewrite_spec is None:
-                    payload_meta = read_payload_rewrite_meta(payload)
-                    rewrite = payload_meta.rewrite
-                    old = rewrite.old_surface.replace("\x01", "") if rewrite is not None else ""
-                    if not old:
-                        return body
-                    rewrite_spec = EETextRewriteSpec(
-                        old_text=old,
-                        new_text=payload.text.replace("\x01", ""),
-                        case_inflected=bool(rewrite.case_inflected) if rewrite is not None else False,
-                    )
                 if rewrite_spec.old_text:
                     note_text = _op_instruction_note_text(op)
                     from lawvm.estonia.ee_instruction_waist import (
@@ -10437,6 +10525,15 @@ def apply_ee_ops(
                         action == "replace"
                         and _ee_resolve_inline_item_singleton_subsection_path(pre_op_body, target_path)
                         is not None
+                    )
+                    or (
+                        action == "text_replace"
+                        and adjudications_out is not None
+                        and any(
+                            adjudication.op_id == op.op_id
+                            and adjudication.kind == _EE_TEXT_REPLACE_UNIQUE_DESCENDANT_ITEM_RULE
+                            for adjudication in adjudications_out
+                        )
                     )
                 )
         if not target_resolved:

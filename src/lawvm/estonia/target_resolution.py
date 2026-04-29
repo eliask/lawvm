@@ -2616,6 +2616,7 @@ def parse_preambul_single_target_ops(
     stat_fragment = extract_intro_statute_fragment(pre_tava)
     direct_sisu_blocks = [child for child in list(sisu) if child.tag == _ns(ns_str, "sisuTekst")]
     intro_tava = pre_tava
+    intro_from_direct_tavatekst_body = False
     if not stat_fragment:
         for child in direct_sisu_blocks:
             for text_el in child.findall(_ns(ns_str, "tavatekst")):
@@ -2632,6 +2633,7 @@ def parse_preambul_single_target_ops(
                 if candidate_fragment:
                     stat_fragment = candidate_fragment
                     intro_tava = candidate_intro
+                    intro_from_direct_tavatekst_body = True
                     break
             if stat_fragment:
                 break
@@ -2669,9 +2671,10 @@ def parse_preambul_single_target_ops(
     para_title = ET.SubElement(synthetic_para, _ns(ns_str, "paragrahvPealkiri"))
     para_title.text = f"{target_title} muutmine"
 
-    first_st = ET.SubElement(synthetic_para, _ns(ns_str, "sisuTekst"))
-    first_t = ET.SubElement(first_st, _ns(ns_str, "tavatekst"))
-    first_t.text = intro_tava
+    if not intro_from_direct_tavatekst_body:
+        first_st = ET.SubElement(synthetic_para, _ns(ns_str, "sisuTekst"))
+        first_t = ET.SubElement(first_st, _ns(ns_str, "tavatekst"))
+        first_t.text = intro_tava
     for child in direct_sisu_blocks:
         cloned_child = ET.fromstring(ET.tostring(child, encoding="utf-8"))
         for text_el in cloned_child.iter(_ns(ns_str, "tavatekst")):

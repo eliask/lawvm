@@ -940,6 +940,8 @@ _EE_FLAT_SECTIONLESS_SINGLETON_SUBSECTION_SCOPE_RULE = "ee_flat_sectionless_sing
 _EE_PAYLOAD_AFTER_TITLE_QUOTE_RULE = "ee_payload_after_marker_ignores_premarker_title_quote"
 _EE_ASCII_QUOTED_MARKER_PAYLOAD_RULE = "ee_ascii_quoted_marker_payload"
 _EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE = "ee_plural_subsection_insert_payload_split"
+_EE_MULTI_TARGET_TEXT_DELETE_SPLIT_RULE = "ee_multi_target_text_delete_split"
+_EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE = "ee_senine_text_subsection_renumber_before_insert"
 
 
 def _is_textual_invalidation(text: str) -> bool:
@@ -1084,6 +1086,81 @@ def _subsection_renumber_then_insert_ops(
             source=source,
             provenance_tags=(clean[:200], _EE_SUBSECTION_SEQUENCE_RENUMBER_RULE),
             witness_rule_id=_EE_SUBSECTION_SEQUENCE_RENUMBER_RULE,
+        ),
+    )
+
+
+def _senine_text_subsection_renumber_then_insert_ops(
+    clean: str,
+    source: OperationSource,
+    *,
+    seq_start: int,
+) -> tuple[LegalOperation, ...]:
+    """Build ops for ``senine tekst loetakse lõikeks N`` plus a new subsection insert."""
+    match = re.search(
+        r'\bparagrahvi\s+(?P<section>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+        r'senine\s+tekst\s+loetakse\s+lõikeks\s+(?P<new>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+        r'(?:ning|ja)\s+paragrahvi\s+t[aä]iendatakse\s+'
+        r'lõikega\s+(?P<insert>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\b',
+        clean,
+        re.IGNORECASE,
+    )
+    content = _extract_quoted_content(clean)
+    if match is None or not content:
+        return ()
+    section_label = _normalize_num(match.group("section"))
+    new_label = _normalize_num(match.group("new"))
+    insert_label = _normalize_num(match.group("insert"))
+    old_label = "1"
+    insert_payload = IRNode(
+        kind=IRNodeKind.CONTENT,
+        text=content,
+        attrs={"source_family": _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE},
+    )
+    if new_label == old_label:
+        return (
+            LegalOperation(
+                op_id=f"ee-insert-senine-native-subsection-{section_label}-{insert_label}-{source.statute_id}",
+                sequence=seq_start,
+                action=_to_structural_action("insert"),
+                target=LegalAddress(path=(("section", section_label), ("subsection", insert_label))),
+                payload=insert_payload,
+                source=source,
+                provenance_tags=(clean[:200], _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE),
+                witness_rule_id=_EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE,
+            ),
+        )
+    renumber_payload = IRNode(
+        kind=IRNodeKind.CONTENT,
+        text="",
+        attrs={
+            "rule_id": _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE,
+            "source_old_label": old_label,
+            "source_new_label": new_label,
+            "source_scope": "senine_text",
+        },
+    )
+    return (
+        LegalOperation(
+            op_id=f"ee-renumber-senine-subsection-{section_label}-{old_label}-{new_label}-{source.statute_id}",
+            sequence=seq_start,
+            action=_to_structural_action("renumber"),
+            target=LegalAddress(path=(("section", section_label), ("subsection", old_label))),
+            destination=LegalAddress(path=(("section", section_label), ("subsection", new_label))),
+            payload=renumber_payload,
+            source=source,
+            provenance_tags=(clean[:200], _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE),
+            witness_rule_id=_EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE,
+        ),
+        LegalOperation(
+            op_id=f"ee-insert-senine-renumbered-subsection-{section_label}-{insert_label}-{source.statute_id}",
+            sequence=seq_start + 1,
+            action=_to_structural_action("insert"),
+            target=LegalAddress(path=(("section", section_label), ("subsection", insert_label))),
+            payload=insert_payload,
+            source=source,
+            provenance_tags=(clean[:200], _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE),
+            witness_rule_id=_EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE,
         ),
     )
 
@@ -1512,8 +1589,25 @@ def _payload_marker_has_preceding_quoted_title(text: str) -> bool:
     ))
     if not markers:
         return False
+    if re.search(r"\bmuutmispunkt", text[: markers[0].start()], re.IGNORECASE):
+        return False
     marker = markers[-1]
-    return bool(_extract_quoted_contents(text[: marker.start()]))
+    prefix = text[: marker.start()]
+    if len(markers) == 1:
+        return bool(_extract_quoted_contents(prefix))
+    previous_marker = markers[-2]
+    between_markers = text[previous_marker.end(): marker.start()]
+    if re.search(
+        r'[\u201e\u201c"«][^\u201e\u201c\u201d"«»]{3,240}[\u201c\u201d"»]\s+§\s*\d',
+        between_markers,
+        re.DOTALL,
+    ):
+        return True
+    return bool(re.search(
+        r'(?:^|[\s;])\d+\)\s+(?:paragrahvi|§)\s*\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰_]*\b',
+        between_markers,
+        re.IGNORECASE | re.DOTALL,
+    ))
 
 
 def _extract_quoted_content(text: str) -> Optional[str]:
@@ -2014,6 +2108,33 @@ def _extract_mixed_delete_replace_segments(text: str) -> List[tuple[str, str, st
             continue
         segments.append((segment, old_text or "", new_text or ""))
 
+    return segments
+
+
+def _extract_multi_target_text_delete_segments(text: str) -> list[tuple[str, list[LegalAddress], list[str]]]:
+    """Extract grouped multi-target text deletions from one delete clause."""
+    preamble = html.unescape(text)
+    if not re.search(r"\bj[aä]etakse\s+v[aä]lja\s+sõn", preamble, re.IGNORECASE):
+        return []
+    if re.search(r"\b(?:lause|lauses|lausest|lauseosa|lauseosast)\b", preamble, re.IGNORECASE):
+        return []
+    if re.search(r"\bpealkirj", preamble, re.IGNORECASE):
+        return []
+    segments: list[tuple[str, list[LegalAddress], list[str]]] = []
+    for raw_segment in re.split(r",\s+ning\s+(?=(?:§|\bparagrahvi))", preamble, flags=re.IGNORECASE):
+        segment = raw_segment.strip(" ;")
+        marker = re.search(r"\bj[aä]etakse\s+v[aä]lja\s+sõn(?:a|ad)\b", segment, re.IGNORECASE)
+        if marker is None:
+            continue
+        target_text = segment[: marker.start()].strip(" ,")
+        if not re.search(r"(?:§|\bparagrahvi)", target_text, re.IGNORECASE):
+            continue
+        deleted_text = segment[marker.end():].strip()
+        targets = _extract_multiple_explicit_targets(target_text)
+        deleted_terms = [term.strip() for term in _extract_quoted_contents(deleted_text) if term.strip()]
+        if len(targets) < 2 or not deleted_terms:
+            continue
+        segments.append((segment, targets, deleted_terms))
     return segments
 
 
@@ -5024,6 +5145,10 @@ def extract_ee_ops(
     if subsection_renumber_ops:
         return list(subsection_renumber_ops)
 
+    senine_subsection_renumber_ops = _senine_text_subsection_renumber_then_insert_ops(clean, source, seq_start=seq)
+    if senine_subsection_renumber_ops:
+        return list(senine_subsection_renumber_ops)
+
     renumber_ops = _section_renumber_ops(clean, source, seq_start=seq)
     ops.extend(renumber_ops)
     seq += len(renumber_ops)
@@ -5353,6 +5478,40 @@ def extract_ee_ops(
                     witness_rule_id=rule_id,
                 ))
                 seq += 1
+            return ops
+
+    if action == "text_replace":
+        multi_delete_segments = _extract_multi_target_text_delete_segments(clean)
+        if multi_delete_segments:
+            for segment_text, segment_targets, deleted_terms in multi_delete_segments:
+                for segment_target in segment_targets:
+                    for deleted_term in deleted_terms:
+                        segment_payload = IRNode(kind=IRNodeKind.CONTENT, text="")
+                        segment_payload, _segment_witness = _set_text_replace_payload_attrs(
+                            segment_payload,
+                            segment_text,
+                            deleted_term,
+                            "",
+                            source_family=_EE_MULTI_TARGET_TEXT_DELETE_SPLIT_RULE,
+                        )
+                        ops.append(LegalOperation(
+                            op_id=(
+                                f"ee-text_delete-multi-target-{str(segment_target)}-"
+                                f"{seq}-{source.statute_id}"
+                            ),
+                            sequence=seq,
+                            action=_to_structural_action("text_replace"),
+                            target=segment_target,
+                            payload=segment_payload,
+                            text_patch=_typed_text_replace_patch(deleted_term, ""),
+                            source=source,
+                            provenance_tags=(
+                                _EE_MULTI_TARGET_TEXT_DELETE_SPLIT_RULE,
+                                segment_text[:200],
+                            ),
+                            witness_rule_id=_EE_MULTI_TARGET_TEXT_DELETE_SPLIT_RULE,
+                        ))
+                        seq += 1
             return ops
 
     if action == "text_replace":
