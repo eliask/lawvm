@@ -2085,6 +2085,23 @@ def test_extract_ee_ops_fans_out_plural_inessive_section_text_replace_targets() 
     assert all(_payload(op).attrs.get("case_inflected") is True for op in ops)
 
 
+def test_extract_ee_ops_treats_document_type_abbreviation_as_text_replace() -> None:
+    ops = extract_ee_ops(
+        (
+            "§ 7 lõike 2 punktis 1 ja lõike 3 punktis 1 asendatakse "
+            "dokumendiliigi lühend „P” dokumendiliigi lühendiga „PE”."
+        ),
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.TEXT_REPLACE, (("section", "7"), ("subsection", "2"), ("item", "1"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "7"), ("subsection", "3"), ("item", "1"))),
+    ]
+    assert all(_payload(op).attrs.get("old_text") == "P" for op in ops)
+    assert all(_payload(op).text == "PE" for op in ops)
+
+
 def test_extract_ee_ops_fans_out_item_and_subsection_text_replace_targets() -> None:
     ops = extract_ee_ops(
         (
