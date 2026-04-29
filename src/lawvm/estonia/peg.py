@@ -1181,7 +1181,16 @@ def _classify_verb(text: str) -> str:
     # Split at the first Estonian open-quote „ or at "järgmises sõnastuses:"
     # or "järgmiselt:" to isolate the instruction from the payload.
     preamble = _instruction_preamble(text)
-    t = preamble.lower()
+    normalized_text = re.sub(r"\bteksti\s+osaga\b", "tekstiosaga", text, flags=re.IGNORECASE)
+    normalized_text = re.sub(r"\bteksti\s+osa\b", "tekstiosa", normalized_text, flags=re.IGNORECASE)
+    normalized_preamble = re.sub(r"\bteksti\s+osaga\b", "tekstiosaga", preamble, flags=re.IGNORECASE)
+    normalized_preamble = re.sub(
+        r"\bteksti\s+osa\b",
+        "tekstiosa",
+        normalized_preamble,
+        flags=re.IGNORECASE,
+    )
+    t = normalized_preamble.lower()
 
     # Text-level replacement: asendatakse ... sõna/arv/tekstiosa/lauseosa
     # Check BEFORE repeal — payload text often contains "tunnistatakse kehtetuks" for
@@ -1196,7 +1205,7 @@ def _classify_verb(text: str) -> str:
     if re.search(
         r'\b(?:sõn(?:ad|u)|lauseosa[a-z]*|tekstiosa[a-z]*)\b[^.;]{0,240}\basendatakse\b[^.;]{0,120}\b'
         r'(?:sõn(?:a|aga|adega)|tekstiosaga|lauseosaga)\b',
-        text,
+        normalized_text,
         re.IGNORECASE | re.DOTALL,
     ):
         return "text_replace"
@@ -1782,6 +1791,8 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
     # RT HTML (CDATA) sometimes uses " (U+201D) for BOTH opening and closing
     # (non-standard pairing), so we also try " " (U+201D...U+201D).
     text = html.unescape(text)
+    text = re.sub(r"\bteksti\s+osa\b", "tekstiosa", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bteksti\s+osaga\b", "tekstiosaga", text, flags=re.IGNORECASE)
     after_anchor_delete_pair = _extract_after_anchor_text_delete_pair(text)
     if after_anchor_delete_pair is not None:
         return after_anchor_delete_pair

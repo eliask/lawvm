@@ -2102,6 +2102,22 @@ def test_extract_ee_ops_treats_document_type_abbreviation_as_text_replace() -> N
     assert all(_payload(op).text == "PE" for op in ops)
 
 
+def test_extract_ee_ops_treats_spaced_teksti_osa_as_text_replace() -> None:
+    ops = extract_ee_ops(
+        (
+            'paragrahvi 10 lõikes 1 asendatakse teksti osa "15. novembrini" '
+            'teksti osaga "25. novembrini"'
+        ),
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.TEXT_REPLACE, (("section", "10"), ("subsection", "1"))),
+    ]
+    assert _payload(ops[0]).attrs.get("old_text") == "15. novembrini"
+    assert _payload(ops[0]).text == "25. novembrini"
+
+
 def test_extract_ee_ops_fans_out_item_and_subsection_text_replace_targets() -> None:
     ops = extract_ee_ops(
         (
