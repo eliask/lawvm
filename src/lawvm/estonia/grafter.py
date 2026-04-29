@@ -4570,6 +4570,33 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_nom": stem + "d",
             "pl_gen": stem + "de",
         }
+    if lower.endswith("kogu"):
+        stem = word
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": stem,
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_ill": stem + "sse",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": stem + "d",
+            "pl_gen": stem + "de",
+            "pl_part": stem + "sid",
+            "pl_ine": stem + "des",
+            "pl_ela": stem + "dest",
+            "pl_all": stem + "dele",
+            "pl_ade": stem + "del",
+            "pl_abl": stem + "delt",
+            "pl_trn": stem + "deks",
+        }
     if lower.endswith("mäng"):
         stem = word + "u"
         plural_stem = word + "ude"
@@ -5748,6 +5775,20 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
 def _ee_phrase_forms(text: str) -> dict[str, str] | None:
     """Infer bounded case forms for a word or a phrase whose last token inflects."""
     stripped = text.strip()
+
+    def _shared_prefix_coordination_forms(segments: list[str], separator: str) -> dict[str, str] | None:
+        """Handle shared-prefix coordination such as ``linna- või vallavolikogu``."""
+        if len(segments) < 2 or not all(segment.endswith("-") for segment in segments[:-1]):
+            return None
+        tail_forms = _ee_phrase_forms(segments[-1])
+        if tail_forms is None:
+            return None
+        static_prefix = separator.join(segments[:-1])
+        return {
+            key: f"{static_prefix}{separator}{value}"
+            for key, value in tail_forms.items()
+        }
+
     leading_prefix_match = re.match(r"^((?:või|ja|ning|koos)\s+)(.+)$", stripped, re.IGNORECASE)
     if leading_prefix_match is not None:
         prefix = leading_prefix_match.group(1)
@@ -5796,6 +5837,9 @@ def _ee_phrase_forms(text: str) -> dict[str, str] | None:
                         key: " või ".join(forms[key] for forms in segment_forms if forms is not None)
                         for key in shared_keys
                     }
+            static_prefix_forms = _shared_prefix_coordination_forms(segments, " või ")
+            if static_prefix_forms is not None:
+                return static_prefix_forms
     if " ning " in text:
         segments = [segment.strip() for segment in re.split(r"\s+ning\s+", text) if segment.strip()]
         if len(segments) >= 2:
@@ -5807,6 +5851,9 @@ def _ee_phrase_forms(text: str) -> dict[str, str] | None:
                         key: " ning ".join(forms[key] for forms in segment_forms if forms is not None)
                         for key in shared_keys
                     }
+            static_prefix_forms = _shared_prefix_coordination_forms(segments, " ning ")
+            if static_prefix_forms is not None:
+                return static_prefix_forms
     if " ja " in text:
         segments = [segment.strip() for segment in re.split(r"\s+ja\s+", text) if segment.strip()]
         if len(segments) >= 2:
@@ -5818,6 +5865,9 @@ def _ee_phrase_forms(text: str) -> dict[str, str] | None:
                         key: " ja ".join(forms[key] for forms in segment_forms if forms is not None)
                         for key in shared_keys
                     }
+            static_prefix_forms = _shared_prefix_coordination_forms(segments, " ja ")
+            if static_prefix_forms is not None:
+                return static_prefix_forms
     if " " not in text:
         return _ee_declension_forms(text)
 
@@ -6485,14 +6535,14 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
             return False
         if preceding_word == "arvates":
             return False
+        if _looks_like_finite_verb(preceding_word):
+            return False
         if (
             not joiner
             and re.match(r"[A-Za-zÄÖÕÜäöõüŠŽšž-]*(?:v|va|vas|vast|vate|vaks|vasse|tud|dud)$", next_word)
         ):
             return True
         if preceding_word.endswith(nonfinite_suffixes):
-            return False
-        if _looks_like_finite_verb(preceding_word):
             return False
         if joiner and not (
             len(semantic_next_words) >= 2
@@ -6610,16 +6660,15 @@ def _ee_match_inside_existing_replacement(
     candidate = text[match_start:match_end]
     if candidate.lower() == replacement_norm.lower() and candidate != replacement_norm:
         return False
-    lowered_text = text.lower()
-    lowered_replacement = replacement_norm.lower()
-    start = 0
-    while True:
-        found = lowered_text.find(lowered_replacement, start)
-        if found == -1:
-            return False
-        if found <= match_start and match_end <= found + len(lowered_replacement):
-            return True
-        start = found + 1
+    surfaces = tuple(dict.fromkeys((replacement, replacement_norm)))
+    for surface in surfaces:
+        if not surface:
+            continue
+        pattern = re.compile(_ee_surface_pattern(surface), re.IGNORECASE)
+        for found in pattern.finditer(text):
+            if found.start() <= match_start and match_end <= found.end():
+                return True
+    return False
 
 
 def _ee_trim_overlapping_replacement_tail(
