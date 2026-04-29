@@ -138,6 +138,95 @@ def test_text_replace_exact_target_recovers_one_character_source_typo_in_phrase(
     assert adjudications[0].detail["matched_live_text"] == "70–80? nurgaga"
 
 
+def test_text_replace_exact_target_preserves_us_genitive_suffix_recovery() -> None:
+    body = _body_with_section_and_subsection(
+        "6",
+        "4",
+        "",
+    )
+    item = IRNode(
+        kind=IRNodeKind.ITEM,
+        label="1",
+        text="teenistuja kuu palgaarvestuse kohta tööjõukulude arvestusleht",
+    )
+    subsection = body.children[0].children[0].children[0]
+    body = replace(
+        body,
+        children=(
+            replace(
+                body.children[0],
+                children=(
+                    replace(
+                        body.children[0].children[0],
+                        children=(replace(subsection, children=(item,)),),
+                    ),
+                ),
+            ),
+        ),
+    )
+    text = (
+        "paragrahvi 6 lõike 4 punktis 1 asendatakse sõna "
+        "„palgaarvestus” sõnadega „töötasu arvestus”;"
+    )
+    op = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))[0]
+    adjudications: list[CompileAdjudication] = []
+
+    result = _ee_apply_op(body, op, adjudications_out=adjudications)
+    result_item = result.children[0].children[0].children[0].children[0]
+
+    assert result_item.text == "teenistuja kuu töötasu arvestuse kohta tööjõukulude arvestusleht"
+    assert [finding.kind for finding in adjudications] == ["ee_source_case_suffix_text_replace"]
+    assert adjudications[0].detail["matched_live_text"] == "palgaarvestuse"
+
+
+def test_mixed_replace_delete_same_target_cleans_deleted_list_conjunction() -> None:
+    body = _body_with_section_and_subsection(
+        "3",
+        "2",
+        "",
+    )
+    item = IRNode(
+        kind=IRNodeKind.ITEM,
+        label="1",
+        text=(
+            "tegevusi elluviiva töötaja tööjõukulud, sealhulgas põhipalk, "
+            "asendustasu, lisatasu, preemia, puhkusetasu, puhkusetoetus ja "
+            "õppepuhkusetasu, mis vastavad palgatasemega;"
+        ),
+    )
+    subsection = body.children[0].children[0].children[0]
+    body = replace(
+        body,
+        children=(
+            replace(
+                body.children[0],
+                children=(
+                    replace(
+                        body.children[0].children[0],
+                        children=(replace(subsection, children=(item,)),),
+                    ),
+                ),
+            ),
+        ),
+    )
+    text = (
+        "paragrahvi 3 lõike 2 punktis 1 asendatakse sõna „põhipalk” "
+        "sõnaga „töötasu”, jäetakse välja sõnad „asendustasu” ja "
+        "„õppepuhkusetasu” ning asendatakse sõna „palgatasemega” "
+        "sõnaga „töötasuga”;"
+    )
+    result = body
+    for op in extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text)):
+        result = _ee_apply_op(result, op)
+
+    result_item = result.children[0].children[0].children[0].children[0]
+
+    assert result_item.text == (
+        "tegevusi elluviiva töötaja tööjõukulud, sealhulgas töötasu, "
+        "lisatasu, preemia, puhkusetasu, puhkusetoetus, mis vastavad töötasuga;"
+    )
+
+
 def test_insert_subsection_prefers_typed_insert_before_second_sentence() -> None:
     body = _body_with_section_and_subsection(
         "3",

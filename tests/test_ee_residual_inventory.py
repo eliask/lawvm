@@ -34,6 +34,23 @@ def test_get_ee_residual_inventory_liiklusseadus() -> None:
     )
 
 
+def test_get_ee_residual_inventory_technical_assistance_transitional_redaction() -> None:
+    inventory = get_ee_residual_inventory("124112010005", "109062011002")
+
+    assert inventory is not None
+    assert "tehnilise abi toetuse" in inventory.statute_title
+    assert inventory.comparison_class == "commensurable_delta"
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert {
+        record.address for record in inventory.residuals
+    } == {
+        "chapter:3",
+        "chapter:3/section:8",
+        "chapter:3/section:8/subsection:1",
+    }
+    assert all("editorial placeholder" in record.evidence for record in inventory.residuals)
+
+
 def test_get_ee_residual_inventory_leader_punctuation_drift() -> None:
     inventory = get_ee_residual_inventory("123112010049", "122072011005")
 

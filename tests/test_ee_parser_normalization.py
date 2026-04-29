@@ -8698,6 +8698,37 @@ def test_extract_ee_ops_splits_multi_target_text_delete_groups() -> None:
     assert all(op.witness_rule_id == "ee_multi_target_text_delete_split" for op in ops)
 
 
+def test_extract_ee_ops_splits_mixed_replace_and_delete_same_target() -> None:
+    text = (
+        "paragrahvi 3 lõike 2 punktis 1 asendatakse sõna „põhipalk” "
+        "sõnaga „töötasu”, jäetakse välja sõnad „asendustasu” ja "
+        "„õppepuhkusetasu” ning asendatakse sõna „palgatasemega” "
+        "sõnaga „töötasuga”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.target.path, _payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        ((("section", "3"), ("subsection", "2"), ("item", "1")), "põhipalk", "töötasu"),
+        ((("section", "3"), ("subsection", "2"), ("item", "1")), "asendustasu ja õppepuhkusetasu", ""),
+        ((("section", "3"), ("subsection", "2"), ("item", "1")), "asendustasu", ""),
+        ((("section", "3"), ("subsection", "2"), ("item", "1")), "õppepuhkusetasu", ""),
+        ((("section", "3"), ("subsection", "2"), ("item", "1")), "palgatasemega", "töötasuga"),
+    ]
+    assert [_payload(op).attrs["rewrite_mode"] for op in ops] == [
+        "replace",
+        "delete",
+        "delete",
+        "delete",
+        "replace",
+    ]
+    assert all(
+        _payload(op).attrs["source_family"] == "ee_mixed_delete_and_replace_same_target"
+        for op in ops
+    )
+    assert all(op.witness_rule_id == "ee_mixed_delete_and_replace_same_target" for op in ops)
+
+
 def test_parse_ee_amendment_ops_extracts_cross_act_transitional_section_repeals() -> None:
     target_title = "Põllumassiivi kaardi koostamise kord"
     xml = f"""
@@ -8809,3 +8840,18 @@ def test_parse_html_op_items_preserves_words_split_by_inline_style_tags() -> Non
 
     assert "TA asutus" in items[0]
     assert "TA asutu s" not in items[0]
+
+
+def test_extract_ee_ops_treats_kehtestatakse_uues_sonastuses_as_replace() -> None:
+    text = (
+        "paragrahvi 6 lõige 7 kehtestatakse uues sõnastuses järgmiselt: "
+        "„(7) Uus lõike tekst: 1) esimene; 2) teine.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "6"), ("subsection", "7"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.text.startswith("(7) Uus lõike tekst")

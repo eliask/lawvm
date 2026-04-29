@@ -59,6 +59,36 @@ def _lower_generated_residual_records(
 
 
 _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
+    ("124112010005", "109062011002"): EEPairResidualInventory(
+        base_id="124112010005",
+        oracle_id="109062011002",
+        statute_title=(
+            "«Eesti maaelu arengukava 2007–2013» raames antava tehnilise "
+            "abi toetuse saamise nõuded, toetuse taotlemise ja taotluse "
+            "menetlemise kord"
+        ),
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "chapter:3",
+                    "chapter:3/section:8",
+                    "chapter:3/section:8/subsection:1",
+                ),
+                evidence=(
+                    "Base 124112010005 carries § 8(1), a historical transitional "
+                    "repealer of the prior 2007 regulation. Source act "
+                    "109062011001 adds § 8(3) but does not target § 8(1). "
+                    "Replay therefore preserves the base/source text, while "
+                    "oracle 109062011002 presents § 8(1) as the editorial "
+                    "placeholder '[Käesolevast tekstist välja jäetud.]'. This "
+                    "is a same-chain consolidated-surface redaction difference, "
+                    "not an unexplained replay mutation."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("124072014013", "113012015027"): EEPairResidualInventory(
         base_id="124072014013",
         oracle_id="113012015027",
