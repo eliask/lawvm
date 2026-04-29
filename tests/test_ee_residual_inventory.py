@@ -34,6 +34,27 @@ def test_get_ee_residual_inventory_liiklusseadus() -> None:
     )
 
 
+def test_get_ee_residual_inventory_jahitunnistus_label_offset_surface_drift() -> None:
+    inventory = get_ee_residual_inventory("106012015009", "113092017002")
+
+    assert inventory is not None
+    assert inventory.statute_title.startswith("Jahitunnistuse vorm")
+    assert inventory.comparison_class == "commensurable_delta"
+    assert len(inventory.residuals) == 161
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert any(
+        record.address == "chapter:2/section:6"
+        and "113092017001 only replaces lisa 5" in record.evidence
+        and "relabeling body §§ 7-25 to §§ 6-24" in record.evidence
+        for record in inventory.residuals
+    )
+    assert any(
+        record.address == "chapter:4/section:25/subsection:4"
+        and "source-backed base labels" in record.evidence
+        for record in inventory.residuals
+    )
+
+
 def test_get_ee_residual_inventory_vabariigi_presidendi_tookorra_seadus() -> None:
     inventory = get_ee_residual_inventory("108072011074", "127062017011")
 

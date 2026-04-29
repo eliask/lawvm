@@ -1951,6 +1951,23 @@ def test_extract_ee_ops_does_not_emit_unpaired_plural_section_renumber() -> None
     assert ops[0].target.path == (("section", "1"),)
 
 
+def test_extract_ee_ops_does_not_invent_section_renumber_for_appendix_replacement() -> None:
+    text = (
+        "Keskkonnaministri 22. mai 2013. a määruse nr 25 „Jahitunnistuse vorm, "
+        "jahiteooriaeksami ja laskekatse sooritamise ning jahitunnistuse "
+        "taotlemise ja andmise kord, jahindusalasele koolitusele ja koolitajale "
+        "esitatavad nõuded ning koolitamise kord” lisa 5 kehtestatakse uues "
+        "sõnastuses."
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="113092017001", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.META
+    assert ops[0].target.path == ()
+    assert ops[0].payload is None
+
+
 def test_extract_ee_ops_keeps_trailing_same_section_subsection_repeal_after_item_repeal() -> None:
     ops = extract_ee_ops(
         "paragrahvi 14 lõike 1 punkt 7 ja lõige 2 tunnistatakse kehtetuks;",
