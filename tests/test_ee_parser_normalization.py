@@ -8681,3 +8681,86 @@ def test_extract_ee_ops_splits_multi_target_text_delete_groups() -> None:
         ((("section", "14"), ("subsection", "8")), "eeltaotlus või", ""),
     ]
     assert all(op.witness_rule_id == "ee_multi_target_text_delete_split" for op in ops)
+
+
+def test_parse_ee_amendment_ops_extracts_cross_act_transitional_section_repeals() -> None:
+    target_title = "Põllumassiivi kaardi koostamise kord"
+    xml = f"""
+    <akt>
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>13</paragrahvNr>
+          <paragrahvPealkiri>Rakendussätted</paragrahvPealkiri>
+          <loige>
+            <tavatekst>
+              Põllumajandusministri 10. märtsi 2015. a määruse nr 22
+              „{target_title}” §-d 2-4, 6 ja 7 tunnistatakse kehtetuks.
+            </tavatekst>
+          </loige>
+        </paragrahv>
+      </sisu>
+    </akt>
+    """.encode()
+
+    ops = parse_ee_amendment_ops(xml, "ee/test", target_title)
+    repeal_ops = [
+        op
+        for op in ops
+        if op.witness_rule_id == "ee_cross_act_transitional_section_repeal"
+    ]
+
+    assert [(op.action, op.target.path) for op in repeal_ops] == [
+        (StructuralAction.REPEAL, (("section", "2"),)),
+        (StructuralAction.REPEAL, (("section", "3"),)),
+        (StructuralAction.REPEAL, (("section", "4"),)),
+        (StructuralAction.REPEAL, (("section", "6"),)),
+        (StructuralAction.REPEAL, (("section", "7"),)),
+    ]
+    assert all(target_title in (op.source.raw_text if op.source else "") for op in repeal_ops)
+
+
+def test_parse_ee_amendment_ops_does_not_retarget_cross_act_transitional_repeals_without_title() -> None:
+    xml = """
+    <akt>
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>13</paragrahvNr>
+          <paragrahvPealkiri>Rakendussatted</paragrahvPealkiri>
+          <loige>
+            <tavatekst>
+              Teise maaruse nimi &quot;Teine kord&quot; §-d 2-4, 6 ja 7 tunnistatakse kehtetuks.
+            </tavatekst>
+          </loige>
+        </paragrahv>
+      </sisu>
+    </akt>
+    """.encode()
+
+    ops = parse_ee_amendment_ops(xml, "ee/test", "Põllumassiivi kaardi koostamise kord")
+
+    assert all(op.witness_rule_id != "ee_cross_act_transitional_section_repeal" for op in ops)
+
+
+def test_parse_ee_amendment_ops_recovers_2022_2028_transitional_section_repeals() -> None:
+    archive = open_rt_archive(readonly=True)
+    base = parse_ee_statute(fetch_rt_xml("111022022016", archive), "ee/111022022016")
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("122122022028", archive),
+        "ee/122122022028",
+        base.title,
+        ref_effective="2023-01-01",
+    )
+    repeal_ops = [
+        op
+        for op in ops
+        if op.witness_rule_id == "ee_cross_act_transitional_section_repeal"
+    ]
+
+    assert [op.target.path for op in repeal_ops] == [
+        (("section", "2"),),
+        (("section", "3"),),
+        (("section", "4"),),
+        (("section", "6"),),
+        (("section", "7"),),
+    ]
