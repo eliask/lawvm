@@ -8801,3 +8801,46 @@ def test_replace_sentence_note_targets_last_sentence() -> None:
     subsection = result.children[0].children[0].children[0]
 
     assert subsection.text == "Esimene lause. Uus viimane lause."
+
+
+def test_replace_section_item_recovers_inline_singleton_subsection_item() -> None:
+    statute = IRStatute(
+        statute_id="ee/test",
+        title="Inline items",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="Inline list",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "Inline list is: 19) old previous; "
+                                "20) old item; 21) old next."
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_inline_item_replace",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "1"), ("item", "20"))),
+        payload=IRNode(kind=IRNodeKind.CONTENT, text="20) new item;"),
+        source=OperationSource(statute_id="ee/source"),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    result = apply_ee_ops(statute, [op], adjudications_out=adjudications)
+    subsection = result.body.children[0].children[0]
+
+    assert subsection.text == "Inline list is: 19) old previous; 20) new item; 21) old next."
+    assert subsection.attrs["source_family"] == "ee_inline_item_replace_singleton_subsection"
+    assert [item.kind for item in adjudications] == ["ee_inline_item_replace_singleton_subsection"]

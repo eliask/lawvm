@@ -3841,6 +3841,7 @@ _EE_SOURCE_TYPO_TEXT_REPLACE_RULE = "ee_source_typo_text_replace_near_match"
 _EE_AMBIGUOUS_SINGLE_OCCURRENCE_TEXT_REPLACE_RULE = "ee_ambiguous_single_occurrence_text_replace"
 _EE_OVERBROAD_CONTAINER_REPLACE_BLOCKED_RULE = "ee_overbroad_container_replace_blocked"
 _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE = "ee_explicit_item_replacement_terminal_preserved"
+_EE_INLINE_ITEM_REPLACE_SINGLETON_SUBSECTION_RULE = "ee_inline_item_replace_singleton_subsection"
 
 
 def _ee_levenshtein_distance_at_most_one(left: str, right: str) -> bool:
@@ -7375,6 +7376,89 @@ def _ee_resolve_full_path(body: IRNode, path: tree_ops.Path) -> Optional[tree_op
     return None
 
 
+def _ee_resolve_inline_item_singleton_subsection_path(
+    body: IRNode,
+    path: tree_ops.Path,
+) -> Optional[tree_ops.Path]:
+    """Resolve ``section/item`` targets represented inline in a singleton subsection."""
+    if len(path) != 2 or path[0][0] != "section" or path[1][0] != "item":
+        return None
+    section_path = _ee_resolve_full_path(body, (path[0],))
+    if section_path is None:
+        return None
+    section = tree_ops.resolve(body, section_path)
+    if section is None or section.kind != IRNodeKind.SECTION or len(section.children) != 1:
+        return None
+    subsection = section.children[0]
+    if subsection.kind != IRNodeKind.SUBSECTION or subsection.children:
+        return None
+    item_label = re.escape(path[1][1])
+    if not re.search(rf"(?:^|\s){item_label}\)\s+", subsection.text or ""):
+        return None
+    return section_path + (("subsection", subsection.label or ""), path[1])
+
+
+def _ee_replace_inline_item_in_singleton_subsection(
+    body: IRNode,
+    path: tree_ops.Path,
+    payload: IRNode,
+    op: LegalOperation,
+    adjudications_out: Optional[list[CompileAdjudication]],
+) -> IRNode:
+    """Apply an explicit item replacement to an inline item list under subsection 1."""
+    recovered_path = _ee_resolve_inline_item_singleton_subsection_path(body, path)
+    if recovered_path is None:
+        return body
+    subsection_path = recovered_path[:-1]
+    subsection = tree_ops.resolve(body, subsection_path)
+    if subsection is None or subsection.kind != IRNodeKind.SUBSECTION:
+        return body
+    item_label = path[-1][1]
+    item_label_pattern = re.escape(item_label).replace("_", r"\s*")
+    raw_text = payload.text.replace("\x01", "")
+    raw_text = re.sub(rf"^\s*{item_label_pattern}\s*\)\s*", "", raw_text).strip()
+    if not raw_text:
+        return body
+    replacement = f"{item_label.replace('_', ' ')}) {raw_text}"
+    pattern = re.compile(
+        rf"(?P<prefix>(?:^|\s){item_label_pattern}\)\s*)(?P<body>.*?)(?=(?:\s+\d[\d\s_]*\)\s)|$)",
+        re.DOTALL,
+    )
+    current_text = subsection.text or ""
+
+    def _repl(match: re.Match[str]) -> str:
+        leading = " " if match.group("prefix").startswith(" ") else ""
+        return leading + replacement
+
+    new_text, count = pattern.subn(_repl, current_text, count=1)
+    if count != 1 or new_text == current_text:
+        return body
+    _append_ee_replay_adjudication(
+        adjudications_out,
+        kind=_EE_INLINE_ITEM_REPLACE_SINGLETON_SUBSECTION_RULE,
+        message=(
+            "EE replay applied an explicit section/item replacement to an inline item "
+            "inside the section's only subsection."
+        ),
+        op=op,
+        detail={
+            "source_target": str(op.target),
+            "recovered_target": "/".join(f"{kind}:{label}" for kind, label in recovered_path),
+        },
+    )
+    updated_subsection = IRNode(
+        kind=subsection.kind,
+        label=subsection.label,
+        text=new_text,
+        attrs={
+            **dict(subsection.attrs),
+            "source_family": _EE_INLINE_ITEM_REPLACE_SINGLETON_SUBSECTION_RULE,
+        },
+        children=tuple(subsection.children),
+    )
+    return tree_ops.replace_at(body, subsection_path, updated_subsection)
+
+
 def _ee_normalize_heading_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().casefold()
 
@@ -8383,6 +8467,16 @@ def _ee_apply_op(
     elif action == "replace":
         if payload is not None:
             full_path = _ee_resolve_full_path(body, path)
+            if full_path is None and path and path[-1][0] == "item":
+                recovered_body = _ee_replace_inline_item_in_singleton_subsection(
+                    body,
+                    path,
+                    payload,
+                    op,
+                    adjudications_out,
+                )
+                if recovered_body is not body:
+                    return recovered_body
             if full_path is not None:
                 target_node = tree_ops.resolve(body, full_path)
                 if target_node is None:
@@ -9912,7 +10006,15 @@ def apply_ee_ops(
                     _ee_resolve_full_path(pre_op_body, tuple(op.target.path)) is not None and destination_resolved
                 )
             else:
-                target_resolved = _ee_resolve_full_path(pre_op_body, tuple(op.target.path)) is not None
+                target_path = tuple(op.target.path)
+                target_resolved = (
+                    _ee_resolve_full_path(pre_op_body, target_path) is not None
+                    or (
+                        action == "replace"
+                        and _ee_resolve_inline_item_singleton_subsection_path(pre_op_body, target_path)
+                        is not None
+                    )
+                )
         if not target_resolved:
             _append_ee_replay_adjudication(
                 adjudications_out,
