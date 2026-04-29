@@ -906,6 +906,7 @@ def _heading_mention_precedes_child_target(text: str) -> bool:
 
 _EE_TEXTUAL_INVALIDATION_RULE = "ee_textual_invalidation_as_text_delete"
 _EE_SECTION_SEQUENCE_RENUMBER_RULE = "ee_section_sequence_renumber_before_insert"
+_EE_FLAT_SECTIONLESS_SINGLETON_ITEM_INSERT_RULE = "ee_flat_sectionless_singleton_item_insert"
 
 
 def _is_textual_invalidation(text: str) -> bool:
@@ -1224,6 +1225,65 @@ def _extract_payload_after_marker(text: str) -> Optional[str]:
     if not re.search(r'[\u201e\u00ab"]', payload):
         payload = re.sub(r'\s*[\u201c\u201d\u00bb"\u02ee]\s*$', '', payload)
     return payload.strip() or None
+
+
+def _extract_flat_sectionless_singleton_item_insert(
+    clean: str,
+    source: OperationSource,
+    seq: int,
+) -> LegalOperation | None:
+    """Recover old-format singleton-regulation item inserts with no section phrase.
+
+    This handles clauses like ``määrust täiendatakse punktiga 12 ... "12) X"``
+    where the source explicitly owns the item label but omits the only section
+    path. The singleton section/subsection frame is represented explicitly and
+    visibly so replay does not treat the op as whole-act META.
+    """
+    match = re.search(
+        rf"\btäiendatakse\s+punktiga\s+(?P<label>{_EE_NUM_ATOM})\b",
+        clean,
+        re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    label = _normalize_num(match.group("label"))
+    payload_text = _extract_payload_after_marker(clean)
+    if not payload_text:
+        return None
+    payload_match = re.match(
+        rf"^\(?\s*(?P<label>{re.escape(match.group('label'))}|{re.escape(label)})\s*\)\s*(?P<body>.+)$",
+        payload_text,
+        re.DOTALL,
+    )
+    if payload_match is None:
+        return None
+    body = payload_match.group("body").strip()
+    if not body:
+        return None
+    payload = IRNode(
+        kind=IRNodeKind.CONTENT,
+        text=body,
+        attrs={
+            "source_family": _EE_FLAT_SECTIONLESS_SINGLETON_ITEM_INSERT_RULE,
+            "scope_confidence": "inferred_from_live_unique",
+            "source_item_label": label,
+            "inferred_singleton_path": "section:1/subsection:1",
+        },
+    )
+    return LegalOperation(
+        op_id=f"ee-flat-sectionless-item-insert-{label}-{seq}-{source.statute_id}",
+        sequence=seq,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "1"), ("subsection", "1"), ("item", label))),
+        payload=payload,
+        source=source,
+        provenance_tags=(
+            clean[:200],
+            _EE_FLAT_SECTIONLESS_SINGLETON_ITEM_INSERT_RULE,
+            "scope_confidence:inferred_from_live_unique",
+        ),
+        witness_rule_id=_EE_FLAT_SECTIONLESS_SINGLETON_ITEM_INSERT_RULE,
+    )
 
 
 def _marker_payload_starts_with_right_quote(text: str) -> bool:
@@ -4571,6 +4631,9 @@ def extract_ee_ops(
     # Try to parse the provision target
     target = parse_target(clean)
     if target is None:
+        flat_item_insert = _extract_flat_sectionless_singleton_item_insert(clean, source, seq)
+        if flat_item_insert is not None:
+            return [flat_item_insert]
         if (
             action == "insert"
             and re.search(r"\b(?:seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)\s+täiendatakse\s+lisa(?:ga)?\s+\d", clean, re.IGNORECASE)
