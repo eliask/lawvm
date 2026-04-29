@@ -50,7 +50,8 @@ _EE_TEXTIST_VAELJA_JAETUD_RE = re.compile(
 _EE_KEHTETU_MARKER_RE = re.compile(r"\s*\[\s*kehtetu-[^\]]+\]", re.IGNORECASE)
 _EE_RT_CHANGE_NOTE_RE = re.compile(
     r"\s*\[\s*RT\s+[IVX]+\s*,\s*\d{1,2}\.\d{1,2}\.\d{4}\s*,\s*\d+"
-    r"(?:\s*-\s*jõust\.\s*\d{1,2}\.\d{1,2}\.\d{4})?\s*\]",
+    r"(?:\s*-\s*jõust\.\s*\d{1,2}\.\d{1,2}\.\d{4})?"
+    r"(?:\s*,\s*rakendatakse[^\]]*)?\s*\]",
     re.IGNORECASE,
 )
 _EE_KUNI_DASH_RE = re.compile(r"(?<=[A-Za-zÕÄÖÜõäöüŠŽšž])-(?=kuni\b)")

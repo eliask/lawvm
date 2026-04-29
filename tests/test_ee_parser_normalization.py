@@ -2067,6 +2067,24 @@ def test_extract_ee_ops_fans_out_mixed_text_replace_targets() -> None:
     assert all(_payload(op).attrs.get("case_inflected") is True for op in ops)
 
 
+def test_extract_ee_ops_fans_out_plural_inessive_section_text_replace_targets() -> None:
+    ops = extract_ee_ops(
+        (
+            "määruse pealkirjas ning §-des 3 ja 4 asendatakse sõna "
+            "„õppekogunemine” sõnaga „reservteenistus” vastavas käändes;"
+        ),
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.TEXT_REPLACE, (("section", "3"),)),
+        (StructuralAction.TEXT_REPLACE, (("section", "4"),)),
+    ]
+    assert all(_payload(op).attrs.get("old_text") == "õppekogunemine" for op in ops)
+    assert all(_payload(op).text == "reservteenistus" for op in ops)
+    assert all(_payload(op).attrs.get("case_inflected") is True for op in ops)
+
+
 def test_extract_ee_ops_fans_out_item_and_subsection_text_replace_targets() -> None:
     ops = extract_ee_ops(
         (
