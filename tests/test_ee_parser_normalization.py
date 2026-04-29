@@ -5908,6 +5908,41 @@ def test_parse_ee_amendment_ops_accepts_bare_sonastatakse_html_instruction() -> 
     )
 
 
+def test_parse_ee_amendment_ops_recovers_direct_html_plural_subsection_insert() -> None:
+    xml = """
+    <oigusakt xmlns="tyviseadus_1_10.02.2010">
+      <aktinimi>
+        <nimi>
+          <pealkiri>Ajutised püügikitsendused Peipsi, Lämmi- ja Pihkva järvel 2021. aastal muutmine</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <sisuTekst>
+          <HTMLKonteiner><![CDATA[
+            <p>Keskkonnaministri määruse nr 61 „Ajutised püügikitsendused Peipsi, Lämmi- ja Pihkva järvel 2021. aastal“ paragrahvi 3 täiendatakse lõigetega 4 ja 5 järgmises sõnastuses:</p>
+            <p>„(4) Silmasuurus peab pöörinooda pära lõpuosas vähemalt 5 m ulatuses olema vähemalt 104&nbsp;mm.</p>
+            <p>(5) Silmasuurus peab põhjanooda pära lõpuosas vähemalt 5 m ulatuses olema vähemalt 104&nbsp;mm.“.</p>
+          ]]></HTMLKonteiner>
+        </sisuTekst>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/110092021011",
+        target_title="Ajutised püügikitsendused Peipsi, Lämmi- ja Pihkva järvel 2021. aastal",
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.INSERT, (("section", "3"), ("subsection", "4"))),
+        (StructuralAction.INSERT, (("section", "3"), ("subsection", "5"))),
+    ]
+    assert ops[0].payload is not None
+    assert "pöörinooda" in ops[0].payload.text
+    assert ops[0].witness_rule_id == "ee_plural_subsection_insert_payload_split"
+
+
 def test_parse_ee_amendment_ops_strips_html_amendment_section_heading_before_direct_target() -> None:
     xml = """
     <oigusakt xmlns="muutmismaarus_1_10.02.2010">

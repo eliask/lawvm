@@ -2767,7 +2767,30 @@ def _parse_flat_html_plain_paragraph_item_ops(
 
     op_texts = parse_html_op_items(full_html, allow_plain_paragraph_items=True)
     if len(op_texts) < 2:
-        return []
+        direct_text = _html.unescape(re.sub(r"<[^>]+>", " ", full_html))
+        direct_text = direct_text.replace("\xa0", " ")
+        direct_text = re.sub(r"\s+", " ", direct_text).strip()
+        if not direct_text:
+            return []
+        source = OperationSource(
+            statute_id=source_id,
+            title=target_title,
+            raw_text=direct_text[:200],
+        )
+        direct_ops = extract_ee_ops(direct_text, source, seq_start=1)
+        rule_id = "ee_direct_html_single_instruction_body"
+        return [
+            replace(
+                op,
+                provenance_tags=(
+                    *op.provenance_tags,
+                    rule_id,
+                ),
+                witness_rule_id=op.witness_rule_id or rule_id,
+            )
+            for op in direct_ops
+            if op.action is not StructuralAction.META
+        ]
     source = OperationSource(statute_id=source_id, title=target_title)
     ops, _global_seq, _last_section = _tr_old_format_lower_op_texts(
         op_texts,
@@ -2940,9 +2963,14 @@ def _parse_old_format_amendment_ops(
                         continue
                     for text_el in child.iter():
                         text_tag = text_el.tag.split("}")[-1] if "}" in text_el.tag else text_el.tag
-                        if text_tag != "tavatekst":
+                        if text_tag == "tavatekst":
+                            plain = _element_text_with_bold_section_boundaries(text_el)
+                        elif text_tag == "HTMLKonteiner" and text_el.text:
+                            plain = _html.unescape(re.sub(r"<[^>]+>", " ", text_el.text))
+                            plain = plain.replace("\xa0", " ")
+                            plain = re.sub(r"\s+", " ", plain).strip()
+                        else:
                             continue
-                        plain = _element_text_with_bold_section_boundaries(text_el)
                         if plain:
                             direct_texts.append(plain)
                 direct_text = " ".join(direct_texts).strip()
