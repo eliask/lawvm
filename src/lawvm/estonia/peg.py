@@ -160,6 +160,7 @@ def _instruction_preamble(text: str) -> str:
         '\u02ee',
         '\u00ab',
         'järgmises sõnastuses:',
+        'järgnevas sõnastuses:',
         'järgmiselt:',
     ):
         idx = text.find(marker, operative_start)
@@ -937,6 +938,8 @@ _EE_FLAT_SECTIONLESS_SINGLETON_ITEM_INSERT_RULE = "ee_flat_sectionless_singleton
 _EE_FLAT_SECTIONLESS_SINGLETON_ITEM_REPEAL_RULE = "ee_flat_sectionless_singleton_item_repeal"
 _EE_FLAT_SECTIONLESS_SINGLETON_SUBSECTION_SCOPE_RULE = "ee_flat_sectionless_singleton_subsection_scope"
 _EE_PAYLOAD_AFTER_TITLE_QUOTE_RULE = "ee_payload_after_marker_ignores_premarker_title_quote"
+_EE_ASCII_QUOTED_MARKER_PAYLOAD_RULE = "ee_ascii_quoted_marker_payload"
+_EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE = "ee_plural_subsection_insert_payload_split"
 
 
 def _is_textual_invalidation(text: str) -> bool:
@@ -1308,7 +1311,7 @@ def _extract_quoted_contents(text: str) -> List[str]:
 def _extract_payload_after_marker(text: str) -> Optional[str]:
     """Fallback payload extraction when RT nesting leaves an unbalanced open quote."""
     matches = list(re.finditer(
-        r'(?:järgmises\s+sõnastuses|järgmiselt)\s*:\s*',
+        r'(?:järgmises\s+sõnastuses|järgnevas\s+sõnastuses|järgmiselt)\s*:\s*',
         text,
         re.IGNORECASE | re.DOTALL,
     ))
@@ -1316,8 +1319,11 @@ def _extract_payload_after_marker(text: str) -> Optional[str]:
         return None
     marker = matches[-1]
     payload = text[marker.end():].strip()
+    starts_ascii_quote = payload.startswith('"')
     payload = re.sub(r'^[\u201c\u201e\u201d"\u00ab\u00bb\u02ee]\s*', '', payload)
     payload = re.sub(r'\s*[.;]\s*$', '', payload)
+    if starts_ascii_quote:
+        payload = re.sub(r'\s*"\s*$', '', payload)
     if not re.search(r'[\u201e\u00ab"]', payload):
         payload = re.sub(r'\s*[\u201c\u201d\u00bb"\u02ee]\s*$', '', payload)
     return payload.strip() or None
@@ -1476,7 +1482,7 @@ def _extract_flat_sectionless_singleton_subsection_ops(
 def _marker_payload_starts_with_right_quote(text: str) -> bool:
     """Old RT HTML sometimes uses U+201D as both payload opener and closer."""
     marker = re.search(
-        r'(?:järgmises\s+sõnastuses|järgmiselt)\s*:\s*',
+        r'(?:järgmises\s+sõnastuses|järgnevas\s+sõnastuses|järgmiselt)\s*:\s*',
         text,
         re.IGNORECASE | re.DOTALL,
     )
@@ -1485,10 +1491,22 @@ def _marker_payload_starts_with_right_quote(text: str) -> bool:
     return text[marker.end():].lstrip().startswith("\u201d")
 
 
+def _marker_payload_starts_with_ascii_quote(text: str) -> bool:
+    """Return true when an ASCII quote opens the replacement payload."""
+    marker = re.search(
+        r'(?:järgmises\s+sõnastuses|järgnevas\s+sõnastuses|järgmiselt)\s*:\s*',
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if marker is None:
+        return False
+    return text[marker.end():].lstrip().startswith('"')
+
+
 def _payload_marker_has_preceding_quoted_title(text: str) -> bool:
     """Return true when a target-act title quote appears before the payload marker."""
     markers = list(re.finditer(
-        r'(?:järgmises\s+sõnastuses|järgmiselt)\s*:\s*',
+        r'(?:järgmises\s+sõnastuses|järgnevas\s+sõnastuses|järgmiselt)\s*:\s*',
         text,
         re.IGNORECASE | re.DOTALL,
     ))
@@ -1507,6 +1525,13 @@ def _extract_quoted_content(text: str) -> Optional[str]:
     if marker_payload and _payload_marker_has_preceding_quoted_title(text):
         return marker_payload
     if marker_payload and len(matches) > 1 and _marker_payload_starts_with_right_quote(text):
+        return marker_payload
+    if (
+        marker_payload
+        and matches
+        and _marker_payload_starts_with_ascii_quote(text)
+        and not marker_payload.startswith(matches[0])
+    ):
         return marker_payload
     if marker_payload and len(matches) == 1 and matches[0] != marker_payload:
         # If the outer payload opener is Estonian „ and the payload itself
@@ -1540,7 +1565,11 @@ def _unwrap_nested_statute_insert_payload(content: str) -> str:
     return content
 
 
-def _split_plural_subsection_replace_payload(content: str) -> Optional[dict[str, str]]:
+def _split_plural_subsection_replace_payload(
+    content: str,
+    *,
+    expected_labels: set[str] | None = None,
+) -> Optional[dict[str, str]]:
     """Split a shared replace payload into subsection-specific payloads.
 
     Example:
@@ -1557,7 +1586,11 @@ def _split_plural_subsection_replace_payload(content: str) -> Optional[dict[str,
     if not stripped:
         return None
 
-    matches = list(re.finditer(r'\((\d[\d\s_]*)\)\s', stripped))
+    matches = [
+        match
+        for match in re.finditer(r'\((\d[\d\s_]*)\)\s', stripped)
+        if expected_labels is None or _normalize_num(match.group(1).strip()) in expected_labels
+    ]
     if len(matches) < 2:
         return None
 
@@ -1565,7 +1598,7 @@ def _split_plural_subsection_replace_payload(content: str) -> Optional[dict[str,
     chunks: dict[str, str] = {}
     for idx, match in enumerate(matches):
         raw_label = match.group(1).strip()
-        norm_label = re.sub(r'\s+', '_', raw_label)
+        norm_label = _normalize_num(raw_label)
         end = matches[idx + 1].start() if idx + 1 < len(matches) else len(stripped)
         body = stripped[match.end():end].strip()
         piece = f"({raw_label}) {body}".strip()
@@ -5580,11 +5613,11 @@ def extract_ee_ops(
                         seq += 1
                     if ops:
                         return ops
-            payload_attrs = (
-                {"source_family": _EE_PAYLOAD_AFTER_TITLE_QUOTE_RULE}
-                if _payload_marker_has_preceding_quoted_title(clean)
-                else {}
-            )
+            payload_attrs = {}
+            if _payload_marker_has_preceding_quoted_title(clean):
+                payload_attrs["source_family"] = _EE_PAYLOAD_AFTER_TITLE_QUOTE_RULE
+            elif _marker_payload_starts_with_ascii_quote(clean):
+                payload_attrs["source_family"] = _EE_ASCII_QUOTED_MARKER_PAYLOAD_RULE
             payload = IRNode(kind=IRNodeKind.CONTENT, text=content, attrs=payload_attrs)
             if action == "replace":
                 payload = _set_sentence_replace_payload_attrs(payload, clean)
@@ -5625,13 +5658,35 @@ def extract_ee_ops(
             content = _extract_quoted_content(clean)
             raw_group = m_range.group(1).strip()
             expanded = _expand_ee_numeric_list(raw_group)
+            split_payload = _split_plural_subsection_replace_payload(
+                content or "",
+                expected_labels=set(expanded),
+            )
 
             sect_label = target.path[0][1] if target.path else "?"
             for num in expanded:
                 sub_addr = LegalAddress(path=(("section", sect_label), ("subsection", num)))
-                sub_payload = IRNode(kind=IRNodeKind.CONTENT, text=content or "") if content else None
+                payload_text = split_payload.get(num, content or "") if split_payload else (content or "")
+                sub_payload = (
+                    IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text=payload_text,
+                        attrs=(
+                            {"source_family": _EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE}
+                            if split_payload
+                            else {}
+                        ),
+                    )
+                    if payload_text
+                    else None
+                )
                 if sub_payload is not None:
                     sub_payload = _set_sentence_insert_payload_attrs(sub_payload, clean)
+                provenance_tags = (clean[:200],)
+                witness_rule_id = None
+                if split_payload:
+                    provenance_tags = (*provenance_tags, _EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE)
+                    witness_rule_id = _EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE
                 ops.append(LegalOperation(
                     op_id=f"ee-insert-sub-{sect_label}-{num}-{source.statute_id}",
                     sequence=seq,
@@ -5639,7 +5694,8 @@ def extract_ee_ops(
                     target=sub_addr,
                     payload=sub_payload,
                     source=source,
-                    provenance_tags=(clean[:200],),
+                    provenance_tags=provenance_tags,
+                    witness_rule_id=witness_rule_id,
                 ))
                 seq += 1
             return ops
@@ -5984,7 +6040,7 @@ def parse_html_op_items(html_cdata: str, *, allow_plain_paragraph_items: bool = 
         # amendment item boundaries.
         open_quote = False
         for char in text:
-            if char in {"“", "„", "”"}:
+            if char in {'"', "“", "„", "”"}:
                 open_quote = not open_quote
         return open_quote
 
