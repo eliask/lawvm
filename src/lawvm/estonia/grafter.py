@@ -1753,6 +1753,28 @@ def _parse_preambul_single_target_ops(
     target_title: str,
 ) -> List[LegalOperation]:
     """Handle single-target amendment acts expressed as preambul + one content block."""
+    def _parse_synthetic_preambul_target(
+        synthetic_root: ET.Element,
+        synthetic_source_id: str,
+        synthetic_ns_str: str,
+        synthetic_target_title: str,
+    ) -> List[LegalOperation]:
+        default_ops = _parse_muutmisseadus_ops(
+            synthetic_root,
+            synthetic_source_id,
+            synthetic_ns_str,
+            synthetic_target_title,
+        )
+        plain_item_ops = _parse_muutmisseadus_plain_paragraph_item_ops(
+            synthetic_root,
+            synthetic_source_id,
+            synthetic_ns_str,
+            synthetic_target_title,
+        )
+        if len(plain_item_ops) > len(default_ops):
+            return plain_item_ops
+        return default_ops
+
     return _tr_parse_preambul_single_target_ops(
         root,
         source_id,
@@ -1761,7 +1783,7 @@ def _parse_preambul_single_target_ops(
         lookup_act_identity=lookup_ee_act_identity,
         title_matcher=_title_matches_para,
         tavatekst_text=_tavatekst_text,
-        parse_muutmisseadus_ops=_parse_muutmisseadus_ops,
+        parse_muutmisseadus_ops=_parse_synthetic_preambul_target,
     )
 
 
