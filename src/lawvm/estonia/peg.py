@@ -2327,7 +2327,7 @@ def _extract_mixed_replace_and_insert_after_segments(text: str) -> list[tuple[st
     """Extract segment-local rewrites from same-target replace plus insert-after clauses."""
     if not (
         re.search(r'\basendatakse\b', text, re.IGNORECASE)
-        and re.search(r'\bt[aä]iendatakse\b', text, re.IGNORECASE)
+        and re.search(r'\b(?:t[aä]iendatakse|lisatakse)\b', text, re.IGNORECASE)
         and re.search(r'\bp[aä]rast\s+(?:sõn[au]|tekstiosa|lauseosa|arvu)\b', text, re.IGNORECASE)
     ):
         return []
@@ -2336,10 +2336,33 @@ def _extract_mixed_replace_and_insert_after_segments(text: str) -> list[tuple[st
     parts = re.split(
         r'\s+(?:ning|ja)\s+'
         r'(?=(?:(?:§|paragrahvi|lõike(?:s|st|t)?|lõiget|punkti(?:s|st)?|punkt(?:is|ist)?)\s+)?'
-        r'[^.;]{0,120}(?:\basendatakse\b|\bt[aä]iendatakse\b))',
+        r'[^.;]{0,120}(?:\basendatakse\b|\bt[aä]iendatakse\b|\blisatakse\b))',
         normalized,
         flags=re.IGNORECASE,
     )
+    if len(parts) == 1:
+        parts = re.split(
+            r',\s+'
+            r'(?=(?:(?:§|paragrahvi|lõike(?:s|st|t)?|lõiget|punkti(?:s|st)?|punkt(?:is|ist)?)\s+)?'
+            r'[^.;]{0,120}(?:\bt[aä]iendatakse\b|\blisatakse\b))',
+            normalized,
+            flags=re.IGNORECASE,
+        )
+    else:
+        expanded_parts: list[str] = []
+        for part in parts:
+            expanded_parts.extend(
+                segment.strip()
+                for segment in re.split(
+                    r',\s+'
+                    r'(?=(?:(?:§|paragrahvi|lõike(?:s|st|t)?|lõiget|punkti(?:s|st)?|punkt(?:is|ist)?)\s+)?'
+                    r'[^.;]{0,120}(?:\bt[aä]iendatakse\b|\blisatakse\b))',
+                    part,
+                    flags=re.IGNORECASE,
+                )
+                if segment.strip()
+            )
+        parts = expanded_parts
     if len(parts) < 2:
         return []
 
@@ -2347,7 +2370,7 @@ def _extract_mixed_replace_and_insert_after_segments(text: str) -> list[tuple[st
     for segment in (part.strip() for part in parts):
         if not segment:
             continue
-        if re.search(r'\bt[aä]iendatakse\b', segment, re.IGNORECASE):
+        if re.search(r'\b(?:t[aä]iendatakse|lisatakse)\b', segment, re.IGNORECASE):
             old_text, new_text = _normalize_text_replace_args(
                 segment,
                 *_extract_text_replace_args(segment),
@@ -2363,7 +2386,7 @@ def _extract_mixed_replace_and_insert_after_segments(text: str) -> list[tuple[st
     if len(segments) < 2:
         return []
     saw_insert_after = any(
-        re.search(r'\bt[aä]iendatakse\b', segment, re.IGNORECASE)
+        re.search(r'\b(?:t[aä]iendatakse|lisatakse)\b', segment, re.IGNORECASE)
         for segment, _old_text, _new_text in segments
     )
     saw_replace = any(
