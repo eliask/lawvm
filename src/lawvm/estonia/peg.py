@@ -951,6 +951,7 @@ _EE_MULTI_TARGET_TEXT_DELETE_SPLIT_RULE = "ee_multi_target_text_delete_split"
 _EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE = "ee_mixed_delete_and_replace_same_target"
 _EE_MIXED_REPLACE_INSERT_AFTER_SAME_TARGET_RULE = "ee_mixed_replace_and_insert_after_same_target"
 _EE_EXPLICIT_MIXED_STRUCTURAL_REPEAL_LIST_RULE = "ee_explicit_mixed_structural_repeal_list"
+_EE_SUBSECTION_TABLE_ONLY_REPLACE_RULE = "ee_subsection_table_only_replace_preserve_intro"
 _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE = "ee_senine_text_subsection_renumber_before_insert"
 _EE_FRAKTSIONEERITUD_TYPO_DELETE_RULE = "ee_fraktsioneeritud_source_typo_delete_variant"
 
@@ -6171,6 +6172,13 @@ def extract_ee_ops(
                 payload_attrs["source_family"] = _EE_PAYLOAD_AFTER_TITLE_QUOTE_RULE
             elif _marker_payload_starts_with_ascii_quote(clean):
                 payload_attrs["source_family"] = _EE_ASCII_QUOTED_MARKER_PAYLOAD_RULE
+            if (
+                action == "replace"
+                and target.path
+                and target.path[-1][0] == "subsection"
+                and re.search(r"\bl[oõ]ike(?:s|st|t)?\s+\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s+tabel\s+s[oõ]nastatakse\b", clean, re.IGNORECASE)
+            ):
+                payload_attrs["source_family"] = _EE_SUBSECTION_TABLE_ONLY_REPLACE_RULE
             payload = IRNode(kind=IRNodeKind.CONTENT, text=content, attrs=payload_attrs)
             if action == "replace":
                 payload = _set_sentence_replace_payload_attrs(payload, clean)

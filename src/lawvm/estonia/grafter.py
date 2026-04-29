@@ -4477,6 +4477,7 @@ _EE_SOURCE_TYPO_TEXT_REPLACE_RULE = "ee_source_typo_text_replace_near_match"
 _EE_SOURCE_CASE_SUFFIX_TEXT_REPLACE_RULE = "ee_source_case_suffix_text_replace"
 _EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE = "ee_mixed_delete_and_replace_same_target"
 _EE_MIXED_REPLACE_INSERT_AFTER_SAME_TARGET_RULE = "ee_mixed_replace_and_insert_after_same_target"
+_EE_SUBSECTION_TABLE_ONLY_REPLACE_RULE = "ee_subsection_table_only_replace_preserve_intro"
 _EE_AMBIGUOUS_SINGLE_OCCURRENCE_TEXT_REPLACE_RULE = "ee_ambiguous_single_occurrence_text_replace"
 _EE_OVERBROAD_CONTAINER_REPLACE_BLOCKED_RULE = "ee_overbroad_container_replace_blocked"
 _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE = "ee_explicit_item_replacement_terminal_preserved"
@@ -7952,6 +7953,22 @@ def _ee_insert_after_comma_list_replacement(
     return f"{matched},{tail}"
 
 
+def _ee_preserve_subsection_table_intro(target_text: str, replacement_text: str) -> str:
+    """Prepend the live subsection intro when the source targets only its table."""
+    table_marker = "Teenuse nimetus Kood Hind eurodes"
+    if not target_text or not replacement_text:
+        return replacement_text
+    if not replacement_text.lstrip().startswith(table_marker):
+        return replacement_text
+    marker_index = target_text.find(table_marker)
+    if marker_index <= 0:
+        return replacement_text
+    intro = re.sub(r"\s+", " ", target_text[:marker_index]).strip()
+    if not intro or replacement_text.startswith(intro):
+        return replacement_text
+    return f"{intro} {replacement_text}"
+
+
 def _ee_apply_text_replace_value(
     text: str | None,
     old: str,
@@ -10007,6 +10024,26 @@ def _ee_apply_op(
                             raw_text = updated_text
                         elif sentence_index is not None and target_node.kind in (IRNodeKind.SUBSECTION, IRNodeKind.ITEM):
                             raw_text = _replace_sentence(target_node.text, raw_text, sentence_index)
+                        elif (
+                            target_node.kind == IRNodeKind.SUBSECTION
+                            and payload.attrs.get("source_family") == _EE_SUBSECTION_TABLE_ONLY_REPLACE_RULE
+                        ):
+                            preserved_raw_text = _ee_preserve_subsection_table_intro(target_node.text, raw_text)
+                            if preserved_raw_text != raw_text:
+                                _append_ee_replay_adjudication(
+                                    adjudications_out,
+                                    kind=_EE_SUBSECTION_TABLE_ONLY_REPLACE_RULE,
+                                    message=(
+                                        "EE replay preserved existing subsection intro because the "
+                                        "source targets only the subsection table."
+                                    ),
+                                    op=op,
+                                    detail={
+                                        "target": str(op.target),
+                                        "intro_preview": target_node.text[:120],
+                                    },
+                                )
+                                raw_text = preserved_raw_text
                     elif target_node.kind == IRNodeKind.SECTION and sentence_indexes and not raw_text:
                         subsection_one = next(
                             (

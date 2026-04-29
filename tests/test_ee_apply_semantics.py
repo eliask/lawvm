@@ -654,6 +654,41 @@ def test_mixed_replace_insert_after_keeps_insert_before_live_clause_comma() -> N
     )
 
 
+def test_subsection_table_only_replace_preserves_existing_intro() -> None:
+    body = _body_with_section_and_subsection(
+        "13",
+        "4",
+        (
+            "Ühe reanimobiilibrigaadi hind ühe ööpäeva või tunni kohta on järgmine: "
+            "Teenuse nimetus Kood Hind eurodes vana tabel"
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_table_only_replace",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "13"), ("subsection", "4"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="Teenuse nimetus Kood Hind eurodes uus tabel",
+            attrs={"source_family": "ee_subsection_table_only_replace_preserve_intro"},
+        ),
+        source=OperationSource(statute_id="ee/test", raw_text="paragrahvi 13 lõike 4 tabel sõnastatakse"),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    updated = _ee_apply_op(body, op, adjudications)
+    subsection = updated.children[0].children[0].children[0]
+
+    assert subsection.text == (
+        "Ühe reanimobiilibrigaadi hind ühe ööpäeva või tunni kohta on järgmine: "
+        "Teenuse nimetus Kood Hind eurodes uus tabel"
+    )
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "ee_subsection_table_only_replace_preserve_intro"
+    ]
+
+
 def test_insert_after_terminal_semicolon_replaces_live_period_when_marked() -> None:
     replaced = _ee_apply_text_replace_spec(
         "isik on töötanud üle kolme kuu.",

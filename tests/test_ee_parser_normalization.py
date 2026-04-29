@@ -9190,6 +9190,20 @@ def test_extract_ee_ops_preserves_explicit_mixed_structural_repeal_target_list()
     assert all(op.witness_rule_id == "ee_explicit_mixed_structural_repeal_list" for op in ops)
 
 
+def test_extract_ee_ops_marks_subsection_table_only_replacement() -> None:
+    text = (
+        "paragrahvi 13 lõike 4 tabel sõnastatakse järgmiselt: "
+        "Teenuse nimetus Kood Hind eurodes Reanimobiilibrigaadi valve 11202 3163,89"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "13"), ("subsection", "4"))
+    assert _payload(ops[0]).attrs["source_family"] == "ee_subsection_table_only_replace_preserve_intro"
+    assert ops[0].witness_rule_id == "ee_subsection_table_only_replace_preserve_intro"
+
+
 def test_extract_ee_ops_marks_fraktsioneeritud_source_typo_delete_variant() -> None:
     text = 'paragrahvi 14 lõikest 2 jäetakse läbivalt välja sõna „fraktsioneeritud”;'
 
