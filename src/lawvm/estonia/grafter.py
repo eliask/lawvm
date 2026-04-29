@@ -1795,8 +1795,28 @@ def parse_ee_amendment_ops(
     ) -> List[LegalOperation]:
         """Prefer source-section old-format lowering over header-prefixed preambul recovery."""
         rule_id = "ee_old_format_html_section_preferred_over_preambul_plain_body"
-        if _substantive_op_count(old_format_ops) <= _substantive_op_count(preambul_ops):
+        rich_payload_rule_id = "ee_old_format_html_section_richer_payload_preferred"
+        if _substantive_op_count(old_format_ops) < _substantive_op_count(preambul_ops):
             return preambul_ops
+        if _substantive_op_count(old_format_ops) == _substantive_op_count(preambul_ops):
+            preambul_shape = [(op.action, op.target.path) for op in preambul_ops]
+            old_shape = [(op.action, op.target.path) for op in old_format_ops]
+            preambul_payload_len = sum(
+                len(op.payload.text) for op in preambul_ops if op.payload is not None
+            )
+            old_payload_len = sum(
+                len(op.payload.text) for op in old_format_ops if op.payload is not None
+            )
+            if preambul_shape != old_shape or old_payload_len <= preambul_payload_len:
+                return preambul_ops
+            return [
+                replace(
+                    op,
+                    provenance_tags=(*op.provenance_tags, rich_payload_rule_id),
+                    witness_rule_id=op.witness_rule_id or rich_payload_rule_id,
+                )
+                for op in old_format_ops
+            ]
         return [
             replace(
                 op,

@@ -157,6 +157,12 @@ def test_normalize_ee_comparison_text_removes_kehtetu_markers() -> None:
     ) == "finants-ja varahaldustalitus kantselei"
 
 
+def test_normalize_ee_comparison_text_removes_rt_change_note_markers() -> None:
+    assert normalize_ee_comparison_text(
+        "liigitus on järgmine [RT I, 22.11.2024, 1-jõust. 25.11.2024] järgmine lause"
+    ) == "liigitus on järgmine järgmine lause"
+
+
 def test_normalize_ee_comparison_text_empties_bare_dash_placeholder() -> None:
     assert normalize_ee_comparison_text("–") == ""
 

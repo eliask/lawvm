@@ -7979,3 +7979,38 @@ def test_extract_ee_ops_ignores_premarker_title_quote_for_item_replace() -> None
         _payload(ops[0]).attrs["source_family"]
         == "ee_payload_after_marker_ignores_premarker_title_quote"
     )
+
+
+def test_parse_html_op_items_preserves_table_cells_without_paragraph_wrappers() -> None:
+    html = (
+        "<p><b>1)</b> paragrahvi 7 lõige 1 sõnastatakse järgmiselt:</p>"
+        "<p>„(1) Liigitus on järgmine:</p>"
+        "<table><tr><td>T1</td><td>I tasand</td><td>T2</td><td>II tasand</td></tr>"
+        "<tr><td><p>1</p></td><td><p>Territoriaalüksused</p></td></tr></table>"
+        "<p><b>2)</b> paragrahvi 7 lõikes 2 asendatakse sõna „volitatud” sõnaga „vastutaval”.</p>"
+    )
+
+    items = parse_html_op_items(html, allow_plain_paragraph_items=True)
+
+    assert len(items) == 2
+    assert "T1 I tasand T2 II tasand" in items[0]
+    assert "1 Territoriaalüksused" in items[0]
+
+
+def test_parse_ee_amendment_ops_prefers_richer_old_format_table_payload_with_target_title() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("122112024001", archive),
+        "ee/122112024001",
+        target_title="Kohanime vormistamise ja kasutamise kord",
+    )
+
+    replace_op = next(
+        op
+        for op in ops
+        if op.action == StructuralAction.REPLACE
+        and op.target.path == (("section", "7"), ("subsection", "1"))
+    )
+    assert "T1 I tasand T2 II tasand" in _payload(replace_op).text
+    assert "ee_old_format_html_section_richer_payload_preferred" in replace_op.provenance_tags
