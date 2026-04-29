@@ -100,6 +100,23 @@ def test_get_ee_residual_inventory_small_science_infra_source_typo() -> None:
     )
 
 
+def test_get_ee_residual_inventory_algatusruhma_list_continuation_punctuation() -> None:
+    inventory = get_ee_residual_inventory("115112016003", "114052020002")
+
+    assert inventory is not None
+    assert inventory.statute_title == "Algatusrühma koostöötegevused"
+    assert len(inventory.residuals) == 3
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert {
+        record.address for record in inventory.residuals
+    } == {
+        "section:8",
+        "section:8/subsection:2",
+        "section:8/subsection:2/item:3",
+    }
+    assert all("106092019001" in record.evidence for record in inventory.residuals)
+
+
 def test_get_ee_residual_inventory_leader_punctuation_drift() -> None:
     inventory = get_ee_residual_inventory("123112010049", "122072011005")
 
