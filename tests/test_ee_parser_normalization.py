@@ -9262,3 +9262,27 @@ def test_extract_ee_ops_preserves_explicit_plural_item_insert_terminals() -> Non
         _payload(op).attrs["source_family"] == "ee_explicit_item_replacement_terminal_preserved"
         for op in ops
     )
+
+
+def test_parse_ee_amendment_ops_prefers_old_format_carried_section_over_live_unique_scope() -> None:
+    archive = open_rt_archive(readonly=True)
+    base = parse_ee_statute(fetch_rt_xml("130042013015", archive), "ee/130042013015")
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("129072013004", archive),
+        "ee/129072013004",
+        target_title=base.title,
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPLACE, (("section", "11"), ("subsection", "1"))),
+        (StructuralAction.INSERT, (("section", "11"), ("subsection", "1_1"))),
+        (StructuralAction.INSERT, (("section", "11"), ("subsection", "1_2"))),
+        (StructuralAction.REPLACE, (("section", "11"), ("subsection", "5"))),
+        (StructuralAction.INSERT, (("section", "11"), ("subsection", "6"))),
+    ]
+    assert all("ee_old_format_carried_section_scope" in op.provenance_tags for op in ops)
+    assert all(
+        "ee_flat_sectionless_singleton_subsection_scope" not in op.provenance_tags
+        for op in ops
+    )

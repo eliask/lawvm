@@ -23,6 +23,7 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.estonia.peg import _extract_quoted_content, _normalize_num, extract_ee_ops, parse_html_op_items
 
 _EE_DIRECT_TARGET_PREFIX_STRIP_RULE = "ee_direct_target_title_prefix_stripped_for_structural_repeal"
+_EE_OLD_FORMAT_CARRIED_SECTION_SCOPE_RULE = "ee_old_format_carried_section_scope"
 _EE_OLD_FORMAT_WRAPPER_SCOPE_INHERITED_RULE = "ee_old_format_wrapper_scope_inherited"
 _EE_OLD_FORMAT_DIRECT_HEADER_TARGET_SECTION_RULE = "ee_old_format_direct_header_target_section"
 _EE_OLD_FORMAT_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_old_format_preamble_clause_non_body"
@@ -2026,6 +2027,7 @@ def old_format_lower_op_texts(
         normalization_rule_id: str | None = None
         strip_outer_payload_quote = False
         inherited_wrapper_scope = False
+        carried_section_scope = False
         out_of_body_appendix_or_note_clause = _is_out_of_body_appendix_or_note_clause(op_text)
         if re.match(
             r"^(?:\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s+)?määruse\s+preambul\s+sõnastatakse\b",
@@ -2069,6 +2071,7 @@ def old_format_lower_op_texts(
             last_sect_raw = last_section.replace("_", " ")
             item_body = old_format_strip_item_label(effective)
             effective = f"paragrahvi {last_sect_raw} {item_body}"
+            carried_section_scope = True
         elif (
             not last_section
             and not old_format_has_section_ref(effective)
@@ -2116,6 +2119,10 @@ def old_format_lower_op_texts(
                 tags.append(_EE_OLD_FORMAT_WRAPPER_SCOPE_INHERITED_RULE)
                 if op.action is not StructuralAction.META and witness_rule_id is None:
                     witness_rule_id = _EE_OLD_FORMAT_WRAPPER_SCOPE_INHERITED_RULE
+            if carried_section_scope:
+                tags.append(_EE_OLD_FORMAT_CARRIED_SECTION_SCOPE_RULE)
+                if op.action is not StructuralAction.META and witness_rule_id is None:
+                    witness_rule_id = _EE_OLD_FORMAT_CARRIED_SECTION_SCOPE_RULE
             tagged_ops.append(replace(op, provenance_tags=tuple(tags), witness_rule_id=witness_rule_id))
         ops = tagged_ops
         lowered.extend(ops)

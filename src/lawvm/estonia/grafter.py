@@ -1981,6 +1981,23 @@ def parse_ee_amendment_ops(
         if _substantive_op_count(old_format_ops) < _substantive_op_count(preambul_ops):
             return preambul_ops
         if _substantive_op_count(old_format_ops) == _substantive_op_count(preambul_ops):
+            old_has_carried_section_scope = any(
+                "ee_old_format_carried_section_scope" in op.provenance_tags
+                for op in old_format_ops
+            )
+            preambul_uses_live_unique_singleton_scope = any(
+                "ee_flat_sectionless_singleton_subsection_scope" in op.provenance_tags
+                for op in preambul_ops
+            )
+            if old_has_carried_section_scope and preambul_uses_live_unique_singleton_scope:
+                return [
+                    replace(
+                        op,
+                        provenance_tags=(*op.provenance_tags, rule_id),
+                        witness_rule_id=op.witness_rule_id or rule_id,
+                    )
+                    for op in old_format_ops
+                ]
             preambul_meta_count = sum(1 for op in preambul_ops if op.action is StructuralAction.META)
             old_meta_count = sum(1 for op in old_format_ops if op.action is StructuralAction.META)
             if old_meta_count < preambul_meta_count:
@@ -3007,7 +3024,11 @@ def _parse_old_format_amendment_ops(
                 plain = _element_text_with_bold_section_boundaries(el)
                 if "§ 1." in plain and "muutmine" in plain.lower():
                     plain_blocks.append(plain)
-        if not plain_blocks and not raw_sections and target_title:
+        has_direct_html_container = any(
+            (el.tag.split("}")[-1] if "}" in el.tag else el.tag) == "HTMLKonteiner"
+            for el in root.iter()
+        )
+        if not plain_blocks and not raw_sections and target_title and not has_direct_html_container:
             act_title = ""
             aktinimi = root.find(_ns(local_ns, "aktinimi"))
             if aktinimi is not None:
@@ -3065,43 +3086,19 @@ def _parse_old_format_amendment_ops(
                     )
                     clause_texts = _tr_split_plaintext_numbered_op_texts(direct_text)
                     if clause_texts:
-                        clause_ops: list[LegalOperation] = []
-                        seq = 1
-                        for clause_text in clause_texts:
-                            clause_source = replace(source, raw_text=clause_text[:200])
-                            if re.match(
-                                r"^\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s+määruse\s+preambul\s+sõnastatakse\b",
-                                clause_text,
-                                re.IGNORECASE,
-                            ):
-                                clause_ops.append(
-                                    LegalOperation(
-                                        op_id=f"ee-preamble-clause-non-body-{seq}-{source_id}",
-                                        sequence=seq,
-                                        action=StructuralAction.META,
-                                        target=LegalAddress(path=()),
-                                        payload=IRNode(
-                                            kind=IRNodeKind.CONTENT,
-                                            text=clause_text,
-                                            attrs={"source_family": _EE_PREAMBLE_CLAUSE_NON_BODY_RULE},
-                                        ),
-                                        source=clause_source,
-                                        provenance_tags=(clause_text[:200], _EE_PREAMBLE_CLAUSE_NON_BODY_RULE),
-                                        witness_rule_id=_EE_PREAMBLE_CLAUSE_NON_BODY_RULE,
-                                    )
-                                )
-                                seq += 1
-                                continue
-                            parsed_clause_ops = extract_ee_ops(clause_text, clause_source, seq_start=seq)
-                            clause_ops.extend(parsed_clause_ops)
-                            seq += len(parsed_clause_ops)
+                        clause_ops, _seq, _last_section = _tr_old_format_lower_op_texts(
+                            clause_texts,
+                            source,
+                            seq_start=1,
+                            base_act_name=_tr_paragrahv_to_act_id(act_title),
+                            initial_last_section=_old_format_plain_intro_target_section(direct_text),
+                        )
                         return [
                             replace(
                                 op,
                                 provenance_tags=(
                                     *op.provenance_tags,
                                     _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE,
-                                    f"base_act: {_tr_paragrahv_to_act_id(act_title)}",
                                 ),
                                 witness_rule_id=op.witness_rule_id or _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE,
                             )
@@ -3199,43 +3196,19 @@ def _parse_old_format_amendment_ops(
                     )
                     clause_texts = _tr_split_plaintext_numbered_op_texts(direct_body_text)
                     if clause_texts:
-                        clause_ops: list[LegalOperation] = []
-                        seq = 1
-                        for clause_text in clause_texts:
-                            clause_source = replace(source, raw_text=clause_text[:200])
-                            if re.match(
-                                r"^\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s+määruse\s+preambul\s+sõnastatakse\b",
-                                clause_text,
-                                re.IGNORECASE,
-                            ):
-                                clause_ops.append(
-                                    LegalOperation(
-                                        op_id=f"ee-preamble-clause-non-body-{seq}-{source_id}",
-                                        sequence=seq,
-                                        action=StructuralAction.META,
-                                        target=LegalAddress(path=()),
-                                        payload=IRNode(
-                                            kind=IRNodeKind.CONTENT,
-                                            text=clause_text,
-                                            attrs={"source_family": _EE_PREAMBLE_CLAUSE_NON_BODY_RULE},
-                                        ),
-                                        source=clause_source,
-                                        provenance_tags=(clause_text[:200], _EE_PREAMBLE_CLAUSE_NON_BODY_RULE),
-                                        witness_rule_id=_EE_PREAMBLE_CLAUSE_NON_BODY_RULE,
-                                    )
-                                )
-                                seq += 1
-                                continue
-                            parsed_clause_ops = extract_ee_ops(clause_text, clause_source, seq_start=seq)
-                            clause_ops.extend(parsed_clause_ops)
-                            seq += len(parsed_clause_ops)
+                        clause_ops, _seq, _last_section = _tr_old_format_lower_op_texts(
+                            clause_texts,
+                            source,
+                            seq_start=1,
+                            base_act_name=_tr_paragrahv_to_act_id(act_title),
+                            initial_last_section=_old_format_plain_intro_target_section(direct_body_text),
+                        )
                         all_ops = [
                             replace(
                                 op,
                                 provenance_tags=(
                                     *op.provenance_tags,
                                     _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE,
-                                    f"base_act: {_tr_paragrahv_to_act_id(act_title)}",
                                 ),
                                 witness_rule_id=op.witness_rule_id or _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE,
                             )
@@ -3825,6 +3798,31 @@ def _extract_old_format_target_section_labels(
         ):
             labels.append(_normalize_num(para_nr))
     return tuple(dict.fromkeys(labels))
+
+
+def _old_format_plain_intro_target_section(text: str) -> str | None:
+    """Extract carried target section from flat old-format intro prose."""
+    if not text:
+        return None
+    normalized = re.sub(r"\s+", " ", text.replace("\xa0", " ")).strip()
+    first_clause = re.search(
+        r"(?:^|\s)\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s+"
+        r"(?=(?:lõige|lõiked|lõiget|lõike|paragrahvi|paragrahv|§|punkt)\b)",
+        normalized,
+        re.IGNORECASE,
+    )
+    intro = normalized[: first_clause.start()] if first_clause is not None else normalized
+    matches = list(
+        re.finditer(
+            r"(?:§(?:-s|-st|-le|-ga|-des|-dega)?|paragrahvi(?:s|st)?|paragrahv)\s*"
+            r"(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)",
+            intro,
+            re.IGNORECASE,
+        )
+    )
+    if not matches:
+        return None
+    return _normalize_num(matches[-1].group(1))
 
 
 def _apply_old_format_commencement_effects(
