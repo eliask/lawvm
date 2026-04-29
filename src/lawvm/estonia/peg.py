@@ -2033,6 +2033,14 @@ def _extract_many_old_single_new_text_replace_pairs(text: str) -> List[Tuple[str
             re.IGNORECASE | re.DOTALL,
         ):
             return []
+        post = re.split(r'\basendatakse\b', normalized, maxsplit=1, flags=re.IGNORECASE)[-1]
+        destination_markers = re.findall(
+            r'\b(?:sõn(?:aga|adega)|tekstiosaga|lauseosaga)\b',
+            post,
+            flags=re.IGNORECASE,
+        )
+        if len(destination_markers) != 1:
+            return []
         quotes = _extract_quoted_contents(normalized)
         if len(quotes) < 3:
             return []

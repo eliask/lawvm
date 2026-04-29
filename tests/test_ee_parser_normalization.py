@@ -251,6 +251,26 @@ def test_extract_ee_ops_emits_lauseosad_many_old_single_new_text_replaces() -> N
     assert all(_payload(op).attrs["case_inflected"] is True for op in ops)
 
 
+def test_extract_ee_ops_keeps_coordinated_global_text_replace_pairs_separate() -> None:
+    text = (
+        "määruse tekstis asendatakse läbivalt sõna „alamvesikond” "
+        "sõnaga „vesikond” ja sõnad „riigi eesvool” sõnaga "
+        "„riigieesvool” vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.TEXT_REPLACE, ()),
+        (StructuralAction.TEXT_REPLACE, ()),
+    ]
+    assert [(_payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        ("alamvesikond", "vesikond"),
+        ("riigi eesvool", "riigieesvool"),
+    ]
+    assert all(_payload(op).attrs["case_inflected"] is True for op in ops)
+
+
 def test_extract_ee_ops_taiendatakse_punktiga_sonastatakse_is_insert() -> None:
     text = (
         "paragrahvi 19 lõiget 5 täiendatakse punktiga 9 ja sõnastatakse "

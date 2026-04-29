@@ -136,6 +136,27 @@ def test_get_ee_residual_inventory_riiklik_taust_punctuation_after_singleton_ite
     assert any("append-only item insertion" in record.evidence for record in inventory.residuals)
 
 
+def test_get_ee_residual_inventory_maaparandushoiukava_source_literal_and_punctuation() -> None:
+    inventory = get_ee_residual_inventory("124112010012", "128042015015")
+
+    assert inventory is not None
+    assert inventory.statute_title.startswith("Maaparandushoiukava")
+    assert inventory.comparison_class == "commensurable_delta"
+    assert len(inventory.residuals) == 10
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert any(
+        record.address == "chapter:2/section:12/subsection:1/item:5"
+        and "maaparandussüsteemide eesvoolud" in record.evidence
+        and "maaparandussüsteemi eesvoolud" in record.evidence
+        for record in inventory.residuals
+    )
+    assert any(
+        record.address == "chapter:2/section:5_1/subsection:1/item:3"
+        and "terminal punctuation" in record.evidence
+        for record in inventory.residuals
+    )
+
+
 def test_get_ee_residual_inventory_vabaparda_target_drift() -> None:
     inventory = get_ee_residual_inventory("125012012005", "123092022012")
 
