@@ -3131,6 +3131,28 @@ def test_parse_ee_amendment_ops_splits_flat_plain_paragraph_items_for_2013_011()
     assert all("ee_plain_paragraph_html_items_extracted" in op.provenance_tags for op in ops)
 
 
+def test_parse_ee_amendment_ops_prefers_old_format_plain_html_over_preambul_recovery_for_2011_003() -> None:
+    archive = open_rt_archive(readonly=True)
+    target_title = parse_ee_statute(fetch_rt_xml("123112010049", archive)).title
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("122072011003", archive),
+        "ee/122072011003",
+        target_title=target_title,
+    )
+
+    rule_id = "ee_old_format_html_section_preferred_over_preambul_plain_body"
+    by_target = {op.target.path: op for op in ops}
+
+    assert len(ops) == 34
+    assert sum(1 for op in ops if op.action is StructuralAction.META) == 0
+    assert by_target[(("section", "2"), ("subsection", "2"), ("item", "6"))].action is StructuralAction.REPEAL
+    assert by_target[(("section", "9"), ("subsection", "1"))].action is StructuralAction.REPLACE
+    assert by_target[(("section", "18"), ("subsection", "2"), ("item", "9"))].action is StructuralAction.INSERT
+    assert by_target[(("section", "31"), ("subsection", "1"))].payload is not None
+    assert any(rule_id in op.provenance_tags for op in ops)
+    assert all(op.witness_rule_id == rule_id for op in ops if op.action is not StructuralAction.META)
+
+
 def test_extract_ee_ops_records_chapter_scope_for_global_text_replace() -> None:
     ops = extract_ee_ops(
         (
@@ -5091,6 +5113,36 @@ def test_parse_ee_amendment_ops_extracts_real_104112020001_agency_rename() -> No
         for op in agency_ops
     )
     assert all(op.payload.attrs["case_inflected"] is True for op in agency_ops)
+
+
+def test_parse_ee_amendment_ops_slices_old_format_preambul_html_sections_for_2021_012() -> None:
+    archive = open_rt_archive(readonly=True)
+    try:
+        xml = fetch_rt_xml("123122021012", archive)
+    finally:
+        archive.close()
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/123122021012",
+        target_title="Mahepõllumajandusliku tootmise nõuded",
+    )
+
+    by_target = {(op.action, op.target.path) for op in ops}
+    assert (StructuralAction.REPEAL, (("section", "6"),)) in by_target
+    assert (StructuralAction.REPEAL, (("section", "16_1"),)) in by_target
+    assert (StructuralAction.REPEAL, (("section", "22"),)) in by_target
+    assert (StructuralAction.INSERT, (("section", "7"), ("item", "15"))) not in by_target
+    assert all(
+        "ee_plain_paragraph_html_items_extracted" not in op.provenance_tags
+        for op in ops
+    )
+    section_5_subsection_3 = next(
+        op for op in ops
+        if op.target.path == (("section", "5"), ("subsection", "3"))
+    )
+    assert section_5_subsection_3.payload is not None
+    assert not section_5_subsection_3.payload.text.endswith("ˮ")
 
 
 def test_extract_ee_ops_emits_global_text_replace_with_plural_subsection_exclusions() -> None:

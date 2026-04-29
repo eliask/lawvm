@@ -1175,6 +1175,9 @@ def _extract_quoted_contents(text: str) -> List[str]:
     balanced_estonian = _extract_balanced_quoted_contents(text, '\u201e', '\u201d')
     if balanced_estonian:
         return balanced_estonian
+    balanced_estonian_prime = _extract_balanced_quoted_contents(text, '\u201e', '\u02ee')
+    if balanced_estonian_prime:
+        return balanced_estonian_prime
     balanced_french = _extract_balanced_quoted_contents(text, '\u00ab', '\u00bb')
     if balanced_french:
         return balanced_french
@@ -1182,6 +1185,7 @@ def _extract_quoted_contents(text: str) -> List[str]:
         r'\u201c(.*?)\u201d',
         r'\u201e(.*?)\u201c',
         r'\u201e(.*?)\u201d',
+        r'\u201e(.*?)\u02ee',
         r'\u201d(.*?)\u201d',
         r'\u201c(.*?)\u201c',
         r'\u02ee(.*?)\u02ee',
@@ -1204,10 +1208,10 @@ def _extract_payload_after_marker(text: str) -> Optional[str]:
     if not m:
         return None
     payload = m.group(1).strip()
-    payload = re.sub(r'^[\u201c\u201e\u201d"\u00ab\u00bb]\s*', '', payload)
+    payload = re.sub(r'^[\u201c\u201e\u201d"\u00ab\u00bb\u02ee]\s*', '', payload)
     payload = re.sub(r'\s*[.;]\s*$', '', payload)
     if not re.search(r'[\u201e\u00ab"]', payload):
-        payload = re.sub(r'\s*[\u201c\u201d\u00bb"]\s*$', '', payload)
+        payload = re.sub(r'\s*[\u201c\u201d\u00bb"\u02ee]\s*$', '', payload)
     return payload.strip() or None
 
 
