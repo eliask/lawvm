@@ -136,6 +136,24 @@ def test_get_ee_residual_inventory_riiklik_taust_punctuation_after_singleton_ite
     assert any("append-only item insertion" in record.evidence for record in inventory.residuals)
 
 
+def test_get_ee_residual_inventory_justiitsministeerium_url_oracle_drift() -> None:
+    inventory = get_ee_residual_inventory("123012024006", "118092025010")
+
+    assert inventory is not None
+    assert inventory.statute_title.startswith("Maksejõuetusavalduse esitamisel")
+    assert inventory.comparison_class == "commensurable_delta"
+    assert len(inventory.residuals) == 2
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert {
+        record.address for record in inventory.residuals
+    } == {
+        "section:1",
+        "section:1/subsection:1",
+    }
+    assert all("www.just.ee" in record.evidence for record in inventory.residuals)
+    assert all("www.justdigi.ee" in record.evidence for record in inventory.residuals)
+
+
 def test_get_ee_residual_inventory_maaparandushoiukava_source_literal_and_punctuation() -> None:
     inventory = get_ee_residual_inventory("124112010012", "128042015015")
 
