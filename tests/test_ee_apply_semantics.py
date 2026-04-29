@@ -4568,6 +4568,42 @@ def test_replace_blocks_child_payload_from_overwriting_part_container() -> None:
     assert any(finding.kind == "ee_overbroad_container_replace_blocked" for finding in findings)
 
 
+def test_lahter_text_replace_updates_only_field_body_child() -> None:
+    section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="3",
+        text="Tollideklaratsiooni lahtrite täitmine",
+        children=(
+            IRNode(kind=IRNodeKind.SUBSECTION, label="22", text="Lahter 23 «Vahetuskurss»"),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="23", text="Märgitakse euro kurss lahtris 22 märgitud välisvaluuta suhtes."),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="24", text="Lahter 30 «Kauba asukoht»"),
+        ),
+    )
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(IRNode(kind=IRNodeKind.CHAPTER, label="2", text="Chapter", children=(section,)),),
+    )
+    op = LegalOperation(
+        op_id="ee_test_lahter_text_replace",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "3"),)),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="Märgitakse lahtrisse 22 märgitud välisvaluuta kurss euro suhtes.",
+            attrs={"ee_replace_lahter_text": "23", "source_family": "ee_lahter_text_replace"},
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    updated_section = result.children[0].children[0]
+
+    assert updated_section.text == section.text
+    assert updated_section.children[0].text == "Lahter 23 «Vahetuskurss»"
+    assert updated_section.children[1].text == "Märgitakse lahtrisse 22 märgitud välisvaluuta kurss euro suhtes."
+    assert updated_section.children[2].text == "Lahter 30 «Kauba asukoht»"
+
+
 def test_ee_apply_text_replace_handles_ning_coordinated_phrase_inflection() -> None:
     text = "Andmed avalikustatakse Põllumajandusameti ning Veterinaar- ja Toiduameti veebilehel."
 

@@ -2746,7 +2746,11 @@ def _old_format_html_commencement_blocks(text: str) -> tuple[str, ...]:
         ):
             selected.append(candidate)
             continue
-        if re.search(r"^\s*Käesolev\s+(?:seadus|määrus)\s+jõustub\b", candidate, re.IGNORECASE):
+        if re.search(
+            r"^\s*(?:Käesolev\s+(?:seadus|määrus)|Määrus)\s+jõustub\b",
+            candidate,
+            re.IGNORECASE,
+        ):
             selected.append(candidate)
     return tuple(selected)
 
@@ -2777,7 +2781,11 @@ def _extract_old_format_commencement_effects(
         effective = _old_format_commencement_date(sentence)
         if (
             effective
-            and re.search(r"\bKäesolev\s+(?:seadus|määrus)\s+jõustub\b", sentence, re.IGNORECASE)
+            and re.search(
+                r"\b(?:Käesolev\s+(?:seadus|määrus)|Määrus)\s+jõustub\b",
+                sentence,
+                re.IGNORECASE,
+            )
             and "§" not in sentence
         ):
             whole_act_effective = effective
@@ -2812,7 +2820,11 @@ def _extract_old_format_commencement_effects(
             explicit_date = _old_format_commencement_date(sentence)
             if (
                 explicit_date
-                and re.search(r"\bKäesolev\s+(?:seadus|määrus)\s+jõustub\b", sentence, re.IGNORECASE)
+                and re.search(
+                    r"\b(?:Käesolev\s+(?:seadus|määrus)|Määrus)\s+jõustub\b",
+                    sentence,
+                    re.IGNORECASE,
+                )
                 and "§" not in sentence
             ):
                 return explicit_date
@@ -2835,15 +2847,19 @@ def _extract_old_format_commencement_effects(
         para_text = re.sub(r"\s+", " ", para_text).strip()
         para_text = _strip_ee_quoted_payload_spans(para_text)
         title_lower = title.lower()
-        if "jõustum" not in title_lower and "rakendamine" not in title_lower:
+        if (
+            "jõustum" not in title_lower
+            and "rakendamine" not in title_lower
+            and "rakendussätt" not in title_lower
+        ):
             continue
         saw_structured_commencement = True
         clauses = re.findall(
             r"((?:\(\d+\)\s*)?"
-            r"(?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b.+?"
+            r"(?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse|Määrus)\b.+?"
             r"(?:jõustu(?:b|vad)|rakendatakse)\b.+?)"
             r"(?=(?:\s+(?:\(\d+\)\s*)?"
-            r"(?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b|$))",
+            r"(?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse|Määrus)\b|$))",
             para_text,
             re.IGNORECASE | re.DOTALL,
         )
@@ -2867,10 +2883,10 @@ def _extract_old_format_commencement_effects(
     html_text = " ".join(html_texts)
     clauses = re.findall(
         r"((?:\(\d+\)\s*)?"
-        r"(?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b.+?"
+        r"(?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse|Määrus)\b.+?"
         r"(?:jõustu(?:b|vad)|rakendatakse)\b.+?)"
         r"(?=(?:\s+(?:\(\d+\)\s*)?"
-        r"(?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse)\b|$))",
+        r"(?:Käesolev\s+(?:seadus|määrus)|Käesoleva\s+(?:seaduse|määruse)|Määruse|Määrus)\b|$))",
         html_text,
         re.IGNORECASE | re.DOTALL,
     )
@@ -3631,6 +3647,55 @@ def _ee_payload_is_narrower_than_container_replace(target_kind: IRNodeKind, payl
     if target_kind == IRNodeKind.DIVISION:
         return starts_subdivision or starts_section
     return False
+
+
+def _ee_replace_lahter_text_in_section(
+    section: IRNode,
+    *,
+    lahter_label: str,
+    replacement_text: str,
+) -> tuple[IRNode, bool]:
+    """Replace the body text following a ``Lahter N`` heading child."""
+    heading_index: int | None = None
+    heading_pattern = re.compile(
+        rf"^\s*Lahter\s+{re.escape(lahter_label)}\b",
+        re.IGNORECASE,
+    )
+    for idx, child in enumerate(section.children):
+        if child.text and heading_pattern.search(child.text):
+            heading_index = idx
+            break
+    if heading_index is None:
+        return section, False
+    body_index = heading_index + 1
+    if body_index >= len(section.children):
+        return section, False
+    body_child = section.children[body_index]
+    if body_child.kind != IRNodeKind.SUBSECTION:
+        return section, False
+    normalized_replacement = _strip_rt_editorial_parentheticals(
+        replacement_text.replace("\x01", "").strip()
+    )
+    if body_child.text == normalized_replacement:
+        return section, False
+    new_children = list(section.children)
+    new_children[body_index] = IRNode(
+        kind=body_child.kind,
+        label=body_child.label,
+        text=normalized_replacement,
+        attrs=dict(body_child.attrs),
+        children=tuple(body_child.children),
+    )
+    return (
+        IRNode(
+            kind=section.kind,
+            label=section.label,
+            text=section.text,
+            attrs=dict(section.attrs),
+            children=tuple(new_children),
+        ),
+        True,
+    )
 
 
 def _extract_subsection_text(payload_text: str, label: str) -> str:
@@ -7802,6 +7867,16 @@ def _ee_apply_op(
                     )
                     return body
                 if target_node.kind == IRNodeKind.SECTION:
+                    lahter_label = str(payload.attrs.get("ee_replace_lahter_text") or "").strip()
+                    if lahter_label:
+                        new_section, changed = _ee_replace_lahter_text_in_section(
+                            target_node,
+                            lahter_label=lahter_label,
+                            replacement_text=payload.text,
+                        )
+                        if not changed:
+                            return body
+                        return tree_ops.replace_at(body, full_path, new_section)
                     payload_meta = read_payload_rewrite_meta(payload)
                     if (
                         payload_meta.rewrite is not None

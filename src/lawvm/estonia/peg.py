@@ -2981,7 +2981,7 @@ def extract_ee_ops(
         _NUM_CH = r'\d+(?:\s+\d+)?'
         m_ch_replace = re.search(
             r'\b(?:seaduse\s+)?(' + _NUM_CH + r')\s*[.]\s*peatükk\w*'
-            r'\s+muudetakse(?:\s+ja\s+sõnastatakse\s+järgmises\s+sõnastuses)?'
+            r'\s+(?:muudetakse(?:\s+ja\s+sõnastatakse\s+järgmises\s+sõnastuses)?|sõnastatakse)'
             r'(?:\s+järgmises\s+sõnastuses|\s+järgmiselt)?',
             clean,
             re.IGNORECASE,
@@ -3025,7 +3025,39 @@ def extract_ee_ops(
                     source=source,
                     provenance_tags=(clean[:200],),
                 ))
-                return ops
+            return ops
+
+    # Field-text replacement in flattened declaration guidance:
+    # "paragrahvi N lahtri M tekst sõnastatakse järgmiselt".
+    # The XML/parser exposes these fields as section children headed by
+    # "Lahter M ..."; this is not a whole-section replacement.
+    if action == "replace":
+        m_lahter_text = re.search(
+            r'\bparagrahvi\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+            r'lahtri\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+tekst\s+sõnastatakse',
+            clean,
+            re.IGNORECASE,
+        )
+        content = _extract_quoted_content(clean)
+        if m_lahter_text is not None and content:
+            rule_id = "ee_lahter_text_replace"
+            section_label = _normalize_num(m_lahter_text.group(1))
+            field_label = _normalize_num(m_lahter_text.group(2))
+            ops.append(LegalOperation(
+                op_id=f"ee-lahter-text-replace-{section_label}-{field_label}-{source.statute_id}",
+                sequence=seq,
+                action=_to_structural_action("replace"),
+                target=LegalAddress(path=(("section", section_label),)),
+                payload=IRNode(
+                    kind=IRNodeKind.CONTENT,
+                    text=content,
+                    attrs={"ee_replace_lahter_text": field_label, "source_family": rule_id},
+                ),
+                source=source,
+                provenance_tags=(clean[:200], rule_id),
+                witness_rule_id=rule_id,
+            ))
+            return ops
 
     # Chapter-level repeal: "seaduse N. [ja M.] peatükk tunnistatakse kehtetuks"
     # Also: "N. ja M. peatükk tunnistatakse kehtetuks" (no "seaduse" prefix)
