@@ -612,6 +612,7 @@ def new_format_lower_op_texts(
         stripped = re.sub(r"^\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s*", "", text).strip().lower()
         return bool(
             re.match(r"^määruse\s+lisa(?:s|d|ga)?\b", stripped)
+            or re.match(r"^lisa(?:s|d|ga)?\b", stripped)
             or re.match(r"^määruse\s+(?:kolmas\s+)?normitehnili\w*\s+märkus", stripped)
         )
 

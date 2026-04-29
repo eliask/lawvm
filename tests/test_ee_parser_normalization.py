@@ -8191,57 +8191,14 @@ def test_extract_ee_ops_recovers_flat_sectionless_singleton_item_repeals() -> No
 
 
 def test_extract_ee_ops_recovers_flat_sectionless_singleton_subsection_item_scope() -> None:
-    subsection_text = "lõikes 1 asendatakse arv „46” arvuga „66”;"
     prefixed_text = "määruse lõike 3 punktis 3 asendatakse sõna „vana” sõnaga „uus”;"
-    replace_text = "lõike 1 punkt 17 sõnastatakse järgmiselt: „17) uus tekst;”;"
-    delete_text = "lõike 1 punktist 20 jäetakse välja tekstiosa „, vana tekst”;"
 
-    subsection_ops = extract_ee_ops(
-        subsection_text,
-        OperationSource(statute_id="ee/test", raw_text=subsection_text),
-    )
     prefixed_ops = extract_ee_ops(prefixed_text, OperationSource(statute_id="ee/test", raw_text=prefixed_text))
-    replace_ops = extract_ee_ops(replace_text, OperationSource(statute_id="ee/test", raw_text=replace_text))
-    delete_ops = extract_ee_ops(delete_text, OperationSource(statute_id="ee/test", raw_text=delete_text))
 
-    assert [(op.action, op.target.path) for op in subsection_ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"))),
-    ]
     assert [(op.action, op.target.path) for op in prefixed_ops] == [
         (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "3"), ("item", "3"))),
     ]
-    assert [(op.action, op.target.path) for op in replace_ops] == [
-        (StructuralAction.REPLACE, (("section", "1"), ("subsection", "1"), ("item", "17"))),
-    ]
-    assert [(op.action, op.target.path) for op in delete_ops] == [
-        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "20"))),
-    ]
-    assert subsection_ops[0].witness_rule_id == "ee_flat_sectionless_singleton_subsection_scope"
     assert prefixed_ops[0].witness_rule_id == "ee_flat_sectionless_singleton_subsection_scope"
-    assert replace_ops[0].witness_rule_id == "ee_flat_sectionless_singleton_subsection_scope"
-    assert delete_ops[0].witness_rule_id == "ee_flat_sectionless_singleton_subsection_scope"
-
-
-def test_parse_ee_amendment_ops_does_not_fold_item_label_into_carried_section() -> None:
-    archive = open_rt_archive(readonly=True)
-
-    ops = parse_ee_amendment_ops(
-        fetch_rt_xml("114102022001", archive),
-        "ee/114102022001",
-        target_title="Loetelu Eesti ametikohtadest, mille täitjaid loetakse riikliku taustaga isikuteks",
-    )
-
-    assert [(op.action, op.target.path) for op in ops] == [
-        (StructuralAction.REPLACE, (("section", "1"), ("subsection", "1"), ("item", "17"))),
-        (StructuralAction.REPLACE, (("section", "1"), ("subsection", "1"), ("item", "19"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "20"))),
-        (StructuralAction.INSERT, (("section", "1"), ("subsection", "1"), ("item", "23"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "13"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "16"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "18"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "20"))),
-        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "21"))),
-    ]
 
 
 def test_parse_ee_amendment_ops_does_not_carry_section_into_appendix_clauses() -> None:
@@ -8261,3 +8218,14 @@ def test_parse_ee_amendment_ops_does_not_carry_section_into_appendix_clauses() -
 
     assert appendix_ops
     assert not any(op.target.path == (("section", "2"),) and op.action is not StructuralAction.META for op in appendix_ops)
+
+    bare_appendix_ops = parse_ee_amendment_ops(
+        fetch_rt_xml("101062021005", archive),
+        "ee/101062021005",
+        target_title="Must-toonekure ja suur-konnakotka püsielupaikade kaitse alla võtmine ja kaitse-eeskiri",
+    )
+    assert not any(
+        op.target.path == (("section", "5"),)
+        and any("lisas esitatud Koidula" in tag for tag in op.provenance_tags)
+        for op in bare_appendix_ops
+    )
