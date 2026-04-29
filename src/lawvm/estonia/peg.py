@@ -64,6 +64,7 @@ from lawvm.core.ir import (
 from lawvm.core.semantic_types import FacetKind
 
 
+_EE_OPTIONAL_TARGET_LABEL_SPACE_RULE = "ee_optional_target_label_space"
 _EE_SUPERSCRIPT_DIGITS = "".join(
     chr(cp)
     for cp in range(sys.maxunicode + 1)
@@ -342,7 +343,7 @@ def parse_target(text: str) -> Optional[LegalAddress]:
     #   instrumental: lõikega (used in "täiendatakse lõikega N" = insert subsection N)
     #   plural instrumental: lõigetega (handled separately in extract_ee_ops)
     m_sub = re.search(
-        r'\b(?:lõikest|lõike[s]?|lõiget|lõige|lõikega)\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)',
+        r'\b(?:lõikest|lõike[s]?|lõiget|lõige|lõikega)\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)',
         local_scope, re.IGNORECASE
     )
     if m_sub:
@@ -5673,6 +5674,11 @@ def extract_ee_ops(
             str(payload.attrs.get("old_text") or ""),
             payload.text,
         )
+    target_label_space_rule = (
+        _EE_OPTIONAL_TARGET_LABEL_SPACE_RULE
+        if re.search(r"\bl[oõ]ige\d", _instruction_preamble(clean), re.IGNORECASE)
+        else None
+    )
     ops.append(LegalOperation(
         op_id=f"ee-{action}-{str(target)}-{source.statute_id}",
         sequence=seq,
@@ -5681,7 +5687,8 @@ def extract_ee_ops(
         payload=payload,
         text_patch=standard_text_patch,
         source=source,
-        provenance_tags=(clean[:200],),
+        provenance_tags=(clean[:200],) + ((target_label_space_rule,) if target_label_space_rule else ()),
+        witness_rule_id=target_label_space_rule,
     ))
     seq += 1
     if (

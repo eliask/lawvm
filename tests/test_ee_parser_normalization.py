@@ -8297,3 +8297,43 @@ def test_parse_ee_amendment_ops_does_not_carry_old_format_section_into_appendix_
     assert appendix_ops[0].action is StructuralAction.META
     assert appendix_ops[0].witness_rule_id == "ee_out_of_body_appendix_or_note_clause"
     assert not any(op.target.path == (("section", "85_2"),) and op.action is StructuralAction.REPEAL for op in appendix_ops)
+
+
+def test_parse_ee_amendment_ops_keeps_numeric_measure_titles_distinct() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("109032012002", archive),
+        "ee/109032012002",
+        target_title=(
+            "„Euroopa Kalandusfondi 2007–2013 rakenduskava” meetme 3.5 "
+            "„Katseprojektid” raames toetuse andmise ja kasutamise tingimused ja kord"
+        ),
+    )
+
+    amendment_sections = {
+        tag.removeprefix("old_format_amendment_section:")
+        for op in ops
+        for tag in op.provenance_tags
+        if tag.startswith("old_format_amendment_section:")
+    }
+
+    assert amendment_sections == {"12"}
+    assert not any(
+        "meetme 1.3" in tag or "meetme 3.1" in tag or "meetme 3.2" in tag
+        for op in ops
+        for tag in op.provenance_tags
+    )
+
+
+def test_extract_ee_ops_recovers_subsection_target_without_space_after_loige() -> None:
+    ops = extract_ee_ops(
+        "paragrahvi 8 lõige1 sõnastatakse järgmiselt: „(1) Uus tekst.”.",
+        OperationSource(statute_id="ee/test"),
+        1,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "8"), ("subsection", "1"))
+    assert ops[0].witness_rule_id == "ee_optional_target_label_space"

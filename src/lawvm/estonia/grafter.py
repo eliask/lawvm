@@ -79,6 +79,7 @@ from lawvm.estonia.target_resolution import (
     old_format_section_from_ops as _tr_old_format_section_from_ops,
     new_format_collect_all_ops as _tr_new_format_collect_all_ops,
     new_format_collect_op_texts as _tr_new_format_collect_op_texts,
+    numeric_measure_markers_compatible as _tr_numeric_measure_markers_compatible,
     new_format_lower_op_texts as _tr_new_format_lower_op_texts,
     prepare_new_format_gate_flags as _tr_prepare_new_format_gate_flags,
     paragrahv_to_act_id as _tr_paragrahv_to_act_id,
@@ -3116,6 +3117,8 @@ def _parse_old_format_amendment_ops(
                 continue
             para_nr, candidate_title, _first_tava = _candidate_title_from_para(para)
             if not candidate_title:
+                continue
+            if not _tr_numeric_measure_markers_compatible(target_title, candidate_title):
                 continue
             if not (
                 _normalize_candidate(candidate_title) == normalized_target
