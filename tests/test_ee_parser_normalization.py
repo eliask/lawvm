@@ -8188,3 +8188,42 @@ def test_extract_ee_ops_recovers_flat_sectionless_singleton_item_repeals() -> No
         (StructuralAction.REPEAL, (("section", "1"), ("subsection", "1"), ("item", "16"))),
     ]
     assert all(op.witness_rule_id == "ee_flat_sectionless_singleton_item_repeal" for op in ops)
+
+
+def test_extract_ee_ops_recovers_flat_sectionless_singleton_subsection_item_scope() -> None:
+    replace_text = "lõike 1 punkt 17 sõnastatakse järgmiselt: „17) uus tekst;”;"
+    delete_text = "lõike 1 punktist 20 jäetakse välja tekstiosa „, vana tekst”;"
+
+    replace_ops = extract_ee_ops(replace_text, OperationSource(statute_id="ee/test", raw_text=replace_text))
+    delete_ops = extract_ee_ops(delete_text, OperationSource(statute_id="ee/test", raw_text=delete_text))
+
+    assert [(op.action, op.target.path) for op in replace_ops] == [
+        (StructuralAction.REPLACE, (("section", "1"), ("subsection", "1"), ("item", "17"))),
+    ]
+    assert [(op.action, op.target.path) for op in delete_ops] == [
+        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "20"))),
+    ]
+    assert replace_ops[0].witness_rule_id == "ee_flat_sectionless_singleton_subsection_scope"
+    assert delete_ops[0].witness_rule_id == "ee_flat_sectionless_singleton_subsection_scope"
+
+
+def test_parse_ee_amendment_ops_does_not_fold_item_label_into_carried_section() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("114102022001", archive),
+        "ee/114102022001",
+        target_title="Loetelu Eesti ametikohtadest, mille täitjaid loetakse riikliku taustaga isikuteks",
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPLACE, (("section", "1"), ("subsection", "1"), ("item", "17"))),
+        (StructuralAction.REPLACE, (("section", "1"), ("subsection", "1"), ("item", "19"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "20"))),
+        (StructuralAction.INSERT, (("section", "1"), ("subsection", "1"), ("item", "23"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "13"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "16"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "18"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "20"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "21"))),
+    ]

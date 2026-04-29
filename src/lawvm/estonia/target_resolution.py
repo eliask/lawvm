@@ -653,7 +653,8 @@ def new_format_lower_op_texts(
         )
         if last_section and not has_section_ref(original_op_text):
             last_sect_raw = last_section.replace("_", " ")
-            effective = f"paragrahvi {last_sect_raw} {original_op_text}"
+            carried_text = re.sub(r"^\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s*", "", original_op_text)
+            effective = f"paragrahvi {last_sect_raw} {carried_text}"
         ops = extract_ops(effective, source, global_seq)
         sect = section_from_ops(ops)
         if sect:
