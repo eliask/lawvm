@@ -228,6 +228,56 @@ def test_extract_ee_ops_emits_unscoped_many_old_single_new_text_replaces() -> No
     assert all(_payload(op).attrs["case_inflected"] is True for op in ops)
 
 
+def test_extract_ee_ops_emits_lauseosad_many_old_single_new_text_replaces() -> None:
+    text = (
+        "määruse tekstis asendatakse läbivalt lauseosad „sihtasutuse juhatus”, "
+        "„sihtasutuse juhatus või juhatuse liige” ning "
+        "„sihtasutuse juhatuse või juhatuse liikme poolt volitatud isik” "
+        "sõnaga „sihtasutus” vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.TEXT_REPLACE, ()),
+        (StructuralAction.TEXT_REPLACE, ()),
+        (StructuralAction.TEXT_REPLACE, ()),
+    ]
+    assert [(_payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        ("sihtasutuse juhatuse või juhatuse liikme poolt volitatud isik", "sihtasutus"),
+        ("sihtasutuse juhatus või juhatuse liige", "sihtasutus"),
+        ("sihtasutuse juhatus", "sihtasutus"),
+    ]
+    assert all(_payload(op).attrs["case_inflected"] is True for op in ops)
+
+
+def test_extract_ee_ops_taiendatakse_punktiga_sonastatakse_is_insert() -> None:
+    text = (
+        "paragrahvi 19 lõiget 5 täiendatakse punktiga 9 ja sõnastatakse "
+        "järgmiselt: „9) nõukogu liige.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "19"), ("subsection", "5"), ("item", "9"))
+    assert _payload(ops[0]).text == "9) nõukogu liige."
+
+
+def test_extract_ee_ops_punkt_muudetakse_sonastatakse_remains_replace() -> None:
+    text = (
+        "paragrahvi 19 lõike 5 punkt 9 muudetakse ja sõnastatakse "
+        "järgmiselt: „9) nõukogu liige.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "19"), ("subsection", "5"), ("item", "9"))
+
+
 def test_extract_ee_ops_emits_statute_and_annex_global_text_replace_pairs() -> None:
     text = (
         "määruses ja selle lisades asendatakse sõna „Maanteeamet” ja "
@@ -287,6 +337,34 @@ def test_extract_ee_ops_targets_part_chapter_division_heading() -> None:
     assert ops[0].target.path == (("part", "3"), ("chapter", "6"), ("division", "5"))
     assert ops[0].target.special is FacetKind.HEADING
     assert _payload(ops[0]).text == "5. jagu Keskkonnaagentuuri toimingud"
+
+
+def test_extract_ee_ops_targets_section_heading_pealkiri_asendatakse_pealkirjaga() -> None:
+    text = 'paragrahvi 10 pealkiri „Rakendussäte” asendatakse pealkirjaga „Rakendussätted”;'
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "10"),)
+    assert ops[0].target.special is FacetKind.HEADING
+    assert ops[0].witness_rule_id == "ee_section_heading_pealkiri_asendatakse_pealkirjaga"
+    assert _payload(ops[0]).text == "Rakendussätted"
+    assert _payload(ops[0]).attrs["old_heading"] == "Rakendussäte"
+
+
+def test_extract_ee_ops_keeps_single_target_text_to_subsection_insert() -> None:
+    text = (
+        "paragrahvi 10 tekst loetakse lõikeks 1 ning paragrahvi täiendatakse "
+        "lõikega 2 järgmises sõnastuses: „(2) Uus rakendussäte.”"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "10"), ("subsection", "2"))
+    assert _payload(ops[0]).text == "(2) Uus rakendussäte."
 
 
 def test_extract_ee_ops_targets_lahter_text_without_section_replace() -> None:
@@ -5734,6 +5812,55 @@ def test_parse_ee_amendment_ops_keeps_html_direct_body_intro_as_payload_carrier(
         "ehitiste püstitamine;"
     )
     assert "Muudatuse põhjendus" not in ops[0].payload.text
+
+
+def test_parse_ee_amendment_ops_strips_html_amendment_section_heading_before_direct_target() -> None:
+    xml = """
+    <oigusakt xmlns="muutmismaarus_1_10.02.2010">
+      <aktinimi>
+        <nimi>
+          <pealkiri>Sotsiaalministri määruste muutmine</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <preambul>
+          <tavatekst>Määrus kehtestatakse volitusnormi alusel.</tavatekst>
+        </preambul>
+        <sisuTekst>
+          <HTMLKonteiner><![CDATA[
+            <p><b>§ 4. Sotsiaalministri määruse nr 103 „Haigla liikide nõuded” muutmine</b></p>
+            <p>Sotsiaalministri määruse nr 103 „Haigla liikide nõuded” § 1 lõige 4 tunnistatakse kehtetuks.</p>
+          ]]></HTMLKonteiner>
+        </sisuTekst>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Haigla liikide nõuded",
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target.path == (("section", "1"), ("subsection", "4"))
+    assert "ee_direct_target_title_prefix_stripped_for_structural_repeal" in ops[0].provenance_tags
+
+
+def test_parse_ee_amendment_ops_strips_real_html_amendment_section_heading_wrapper() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("129122020040", archive),
+        "ee/129122020040",
+        target_title="Haigla liikide nõuded",
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target.path == (("section", "1"), ("subsection", "4"))
+    assert "ee_html_amendment_section_heading_wrapper_stripped" in ops[0].provenance_tags
+    assert ops[0].witness_rule_id == "ee_html_amendment_section_heading_wrapper_stripped"
 
 
 def test_parse_ee_amendment_ops_keeps_target_header_single_sentence_delete() -> None:

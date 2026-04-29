@@ -1189,7 +1189,7 @@ def _classify_verb(text: str) -> str:
     # replaced word, e.g. "seaduses asendatakse § 8 lõike 4 punktis 2 ja lõikes 5
     # ... sõna „X” sõnaga „Y”".
     if re.search(
-        r'\bsõn(?:ad|u)\b[^.;]{0,240}\basendatakse\b[^.;]{0,120}\b'
+        r'\b(?:sõn(?:ad|u)|lauseosa[a-z]*|tekstiosa[a-z]*)\b[^.;]{0,240}\basendatakse\b[^.;]{0,120}\b'
         r'(?:sõn(?:a|aga|adega)|tekstiosaga|lauseosaga)\b',
         text,
         re.IGNORECASE | re.DOTALL,
@@ -1231,6 +1231,13 @@ def _classify_verb(text: str) -> str:
         if re.search(r'\bvälja\s*(?:sõna[a-z]*|lauseosa|tekstiosa|arv[a-z]*|number)', t):
             return "text_replace"
         return "repeal"
+
+    if (
+        'täiendatakse' in t
+        and 'sõnastatakse' in t
+        and re.search(r'\b(?:punktiga|lõikega|paragrahviga|§-ga)\b', t)
+    ):
+        return "insert"
 
     # Structural replace. _instruction_preamble() strips "järgmiselt:" before
     # payload parsing, so bare "sõnastatakse" in the preamble is the operative
@@ -1958,15 +1965,32 @@ def _pair_ordered_text_replace_quotes(
 def _extract_many_old_single_new_text_replace_pairs(text: str) -> List[Tuple[str, str]]:
     """Extract ``sõnad A, B ja C asendatakse sõnaga D`` as A→D, B→D, C→D."""
     normalized = html.unescape(text)
+
+    def _longest_old_first(pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
+        return sorted(pairs, key=lambda pair: len(pair[0]), reverse=True)
+
     if _extract_after_anchor_text_replace_pair(normalized) is not None:
         return []
     if not re.search(
-        r'\bsõn(?:ad|u)\b[^.;]{0,240}\basendatakse\b[^.;]{0,120}\b'
+        r'\b(?:sõn(?:ad|u)|lauseosa[a-z]*|tekstiosa[a-z]*)\b[^.;]{0,240}\basendatakse\b[^.;]{0,120}\b'
         r'(?:sõn(?:a|aga|adega)|tekstiosaga|lauseosaga)\b',
         normalized,
         re.IGNORECASE | re.DOTALL,
     ):
-        return []
+        if not re.search(
+            r'\basendatakse\b[^.;]{0,120}\b(?:sõn(?:ad|u)|lauseosa[a-z]*|tekstiosa[a-z]*)\b'
+            r'[^.;]{0,240}\b(?:sõn(?:a|aga|adega)|tekstiosaga|lauseosaga)\b',
+            normalized,
+            re.IGNORECASE | re.DOTALL,
+        ):
+            return []
+        quotes = _extract_quoted_contents(normalized)
+        if len(quotes) < 3:
+            return []
+        new_text = quotes[-1].strip()
+        if not new_text:
+            return []
+        return _longest_old_first([(old_text.strip(), new_text) for old_text in quotes[:-1] if old_text.strip()])
 
     pre, post = re.split(r'\basendatakse\b', normalized, maxsplit=1, flags=re.IGNORECASE)
     pre_quotes = _extract_quoted_contents(pre)
@@ -1976,7 +2000,7 @@ def _extract_many_old_single_new_text_replace_pairs(text: str) -> List[Tuple[str
     new_text = post_quotes[0].strip()
     if not new_text:
         return []
-    return [(old_text.strip(), new_text) for old_text in pre_quotes if old_text.strip()]
+    return _longest_old_first([(old_text.strip(), new_text) for old_text in pre_quotes if old_text.strip()])
 
 
 def _extract_mixed_text_replace_sentence_insert(text: str) -> tuple[str, str, str] | None:
@@ -5803,6 +5827,37 @@ def extract_ee_ops(
                         ))
                         seq += 1
                     return ops
+
+    heading_replacement = re.search(
+        r"\bpealkiri\s+[„\"“](?P<old>[^”\"]+)[”\"]\s+"
+        r"asendatakse\s+pealkirjaga\s+[„\"“](?P<new>[^”\"]+)[”\"]",
+        clean,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if target is not None and target.special is FacetKind.HEADING and heading_replacement is not None:
+        rule_id = "ee_section_heading_pealkiri_asendatakse_pealkirjaga"
+        old_heading = re.sub(r"\s+", " ", heading_replacement.group("old")).strip()
+        new_heading = re.sub(r"\s+", " ", heading_replacement.group("new")).strip()
+        return [
+            LegalOperation(
+                op_id=f"ee-section-heading-replace-{seq}-{source.statute_id}",
+                sequence=seq,
+                action=_to_structural_action("replace"),
+                target=target,
+                payload=IRNode(
+                    kind=IRNodeKind.CONTENT,
+                    text=new_heading,
+                    attrs={
+                        "old_heading": old_heading,
+                        "new_heading": new_heading,
+                        "rule_id": rule_id,
+                    },
+                ),
+                source=source,
+                provenance_tags=(clean[:200], rule_id),
+                witness_rule_id=rule_id,
+            )
+        ]
 
     # Handle lõige-range insert: "täiendatakse lõigetega 4 ja 5 järgmises sõnastuses:"
     # Also handles dash ranges: "täiendatakse lõigetega 3–5" or

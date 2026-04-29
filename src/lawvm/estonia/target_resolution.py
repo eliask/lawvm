@@ -28,6 +28,7 @@ _EE_OLD_FORMAT_DIRECT_HEADER_TARGET_SECTION_RULE = "ee_old_format_direct_header_
 _EE_OLD_FORMAT_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_old_format_preamble_clause_non_body"
 _EE_OLD_FORMAT_OUT_OF_BODY_APPENDIX_CLAUSE_RULE = "ee_old_format_out_of_body_appendix_clause_not_section_scoped"
 _EE_NEW_FORMAT_TARGET_ACT_HEADER_NOT_WRAPPER_RULE = "ee_new_format_target_act_header_not_wrapper_instruction"
+_EE_HTML_AMENDMENT_SECTION_HEADING_WRAPPER_STRIPPED_RULE = "ee_html_amendment_section_heading_wrapper_stripped"
 _OP_TEXT_RULE_PREFIX = "\x1eLAWVM_RULE:"
 _OP_TEXT_RULE_SUFFIX = "\x1f"
 
@@ -648,6 +649,37 @@ def filter_direct_target_clause_op_texts(
     return filtered_op_texts
 
 
+def _strip_html_amendment_section_heading_wrapper(
+    op_text: str,
+    target_title: str,
+    *,
+    title_matcher: Callable[[str, str], bool],
+) -> tuple[str, bool]:
+    """Remove a top-level amendment-act section title before the real target clause."""
+    if not target_title:
+        return op_text, False
+    match = re.match(
+        r"^§\s*\d[\d\s_]*\.\s+"
+        r"(?P<header>.{0,500}?\b(?:muutmine|täiendamine|kehtetuks\s+tunnistamine)\b)\s+"
+        r"(?P<body>.+)$",
+        op_text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if match is None:
+        return op_text, False
+    body = match.group("body").strip()
+    if not body:
+        return op_text, False
+    fragment = extract_intro_statute_fragment(body)
+    if (
+        direct_target_clause_matches_registry(fragment=fragment, target_title=target_title)
+        or title_matcher(target_title, body)
+        or (fragment and title_matcher(target_title, fragment))
+    ):
+        return body, True
+    return op_text, False
+
+
 def new_format_lower_op_texts(
     *,
     op_texts: Sequence[str],
@@ -705,6 +737,13 @@ def new_format_lower_op_texts(
                     continue
 
         effective = re.sub(r'^\(?\d[\d\s_]*\)\s*', '', op_text).strip()
+        effective, section_heading_stripped = _strip_html_amendment_section_heading_wrapper(
+            effective,
+            target_title,
+            title_matcher=title_matcher,
+        )
+        if section_heading_stripped:
+            rule_tags.append(_EE_HTML_AMENDMENT_SECTION_HEADING_WRAPPER_STRIPPED_RULE)
         direct_prefix_stripped = False
         effective, direct_prefix_stripped = strip_direct_target_title_prefix(
             effective,
@@ -2005,25 +2044,32 @@ def old_format_lower_op_texts(
             re.search(r"\btekstiosa[a-z]*\s+[„\"“][^”\"]*?\bpeatükk\b", op_text, re.IGNORECASE)
             and re.search(r"\basendatakse\s+tekstiosaga\b", op_text, re.IGNORECASE)
         )
+        effective, section_heading_stripped = _strip_html_amendment_section_heading_wrapper(
+            effective,
+            source.title,
+            title_matcher=title_matches_para,
+        )
+        if section_heading_stripped:
+            normalization_rule_id = _EE_HTML_AMENDMENT_SECTION_HEADING_WRAPPER_STRIPPED_RULE
         if (
             last_section
-            and not old_format_has_section_ref(op_text)
+            and not old_format_has_section_ref(effective)
             and not is_container_heading_relabel
             and not out_of_body_appendix_or_note_clause
         ):
             last_sect_raw = last_section.replace("_", " ")
-            item_body = old_format_strip_item_label(op_text)
+            item_body = old_format_strip_item_label(effective)
             effective = f"paragrahvi {last_sect_raw} {item_body}"
         elif (
             not last_section
-            and not old_format_has_section_ref(op_text)
+            and not old_format_has_section_ref(effective)
             and re.match(r"^\(?\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s*asendatakse\b|^asendatakse\b", op_text.strip(), re.IGNORECASE)
         ):
-            item_body = old_format_strip_item_label(op_text)
+            item_body = old_format_strip_item_label(effective)
             effective = f"määruses {item_body}"
             inherited_wrapper_scope = True
         else:
-            direct_header_instruction = old_format_direct_header_target_section_instruction(op_text)
+            direct_header_instruction = old_format_direct_header_target_section_instruction(effective)
             if direct_header_instruction is not None:
                 effective, normalization_rule_id, strip_outer_payload_quote = direct_header_instruction
         ops = extract_ee_ops(effective, source, seq_start=global_seq)
