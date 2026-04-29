@@ -32,6 +32,23 @@ _EE_ACT_IDENTITY_REGISTRY: tuple[EEActIdentityRecord, ...] = (
         source_family="single_target_preambul",
         notes=("seed registry entry for the first EE act-identity slice",),
     ),
+    EEActIdentityRecord(
+        akt_viide="ee/129102025003",
+        grupi_id="1039676",
+        canonical_title="Konsulaarametniku ametitoimingute ja diplomaatiliste passide andmekogu põhimäärus",
+        title_variants=(
+            "Konsulaarametniku ametitoimingute ja diplomaatiliste passide andmekogu põhimäärus",
+        ),
+        aliases=(
+            "Konsulaarametniku ametitoimingute ja diplomaatiliste passide andmekogu pidamise kord",
+        ),
+        source_family="title_relabel_alias",
+        effective_from="2025-11-01",
+        notes=(
+            "Source act 114012025005, effective 2025-12-09, still targets the pre-rename title "
+            "while consolidated bases from 129102025003 onward expose the renamed põhimäärus title.",
+        ),
+    ),
 )
 
 

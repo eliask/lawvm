@@ -23,6 +23,7 @@ from lawvm.estonia.grafter import (
     _text_merge_signature,
     parse_ee_amendment_ops,
     parse_ee_statute,
+    _title_matches_para,
 )
 from lawvm.core.ir import (
     IRNode,
@@ -159,6 +160,27 @@ def test_extract_ee_ops_targets_part_chapter_division_heading() -> None:
     assert ops[0].target.path == (("part", "3"), ("chapter", "6"), ("division", "5"))
     assert ops[0].target.special is FacetKind.HEADING
     assert _payload(ops[0]).text == "5. jagu Keskkonnaagentuuri toimingud"
+
+
+def test_title_registry_matches_konsulaarametnik_renamed_basis() -> None:
+    assert _title_matches_para(
+        "Konsulaarametniku ametitoimingute ja diplomaatiliste passide andmekogu põhimäärus",
+        "Konsulaarametniku ametitoimingute ja diplomaatiliste passide andmekogu pidamise kord",
+    )
+
+
+def test_parse_ee_amendment_ops_admits_konsulaarametnik_pre_rename_title() -> None:
+    archive = open_rt_archive(readonly=True)
+    source_xml = fetch_rt_xml("114012025005", archive)
+
+    ops = parse_ee_amendment_ops(
+        source_xml,
+        "ee/114012025005",
+        "Konsulaarametniku ametitoimingute ja diplomaatiliste passide andmekogu põhimäärus",
+    )
+
+    assert len(ops) == 10
+    assert any(op.target.path == (("section", "16"),) and op.action is StructuralAction.REPLACE for op in ops)
 
 
 def test_extract_ee_ops_accepts_left_right_curly_quote_heading_delete() -> None:
