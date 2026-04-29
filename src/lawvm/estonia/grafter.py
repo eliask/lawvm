@@ -4524,6 +4524,7 @@ _EE_INLINE_ITEM_REPLACE_SINGLETON_SUBSECTION_RULE = "ee_inline_item_replace_sing
 _EE_TEXT_REPLACE_UNIQUE_DESCENDANT_ITEM_RULE = "ee_text_replace_unique_descendant_item_by_old_text"
 _EE_OLEMASOLEV_TAHKEL_KUTUSEL_PHRASE_FORMS_RULE = "ee_case_inflected_olemasolev_tahkel_kutusel_phrase_forms"
 _EE_LOCAL_KOHTKUTE_SOURCE_SURFACE_DELETE_RULE = "ee_lokaal_kohtkute_source_surface_delete_variant"
+_EE_VOLITATUD_VASTUTAV_FORMS_RULE = "ee_case_inflected_volitatud_vastutav_forms"
 _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE = "ee_plaintext_numbered_clause_split"
 _EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
 _EE_PARENTHESIZED_TARGET_HTML_BLOCK_RULE = "ee_parenthesized_target_html_block_sliced"
@@ -7376,6 +7377,30 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         for old_form, new_form in form_pairs.items():
             variants.setdefault(old_form, new_form)
 
+    def _add_volitatud_vastutav_forms() -> None:
+        """Own RT's 2026 volitatud -> vastutav rewrite with explicit forms."""
+        if not case_inflected or old != "volitatud" or new != "vastutav":
+            return
+        form_pairs = {
+            "volitatud töötlejale": "vastutavale töötlejale",
+            "volitatud töötleja vahelises": "vastutava töötleja vahelises",
+            "Volitatud töötlejal": "Vastutaval töötlejal",
+            "volitatud töötlejal": "vastutaval töötlejal",
+            "volitatud": "vastutav",
+            "volitatu": "vastutava",
+            "volitatut": "vastutavat",
+            "volitatus": "vastutavas",
+            "volitatust": "vastutavast",
+            "volitatule": "vastutavale",
+            "volitatul": "vastutaval",
+            "volitatult": "vastutavalt",
+            "volitatuks": "vastutavaks",
+            "volitatuna": "vastutavana",
+            "volitatuga": "vastutavaga",
+        }
+        for old_form, new_form in form_pairs.items():
+            variants.setdefault(old_form, new_form)
+
     def _strip_wrapping_quotes(surface: str) -> str | None:
         stripped = surface.strip()
         if len(stripped) < 2:
@@ -7435,6 +7460,7 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         _add_vts_operator_forms()
         _add_ametikoht_teenistuskoht_forms()
         _add_olemasolev_tahkel_kutusel_forms()
+        _add_volitatud_vastutav_forms()
         old_norm = _ee_normalize_text_replace_surface(old)
         new_norm = _ee_normalize_text_replace_surface(new)
         if old_norm and old_norm not in variants:
