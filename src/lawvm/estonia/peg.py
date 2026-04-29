@@ -949,6 +949,8 @@ _EE_PLURAL_ITEM_REPLACE_MISSING_LABEL_REPEAL_RULE = "ee_plural_item_replace_miss
 _EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE = "ee_plural_subsection_insert_payload_split"
 _EE_MULTI_TARGET_TEXT_DELETE_SPLIT_RULE = "ee_multi_target_text_delete_split"
 _EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE = "ee_mixed_delete_and_replace_same_target"
+_EE_MIXED_REPLACE_INSERT_AFTER_SAME_TARGET_RULE = "ee_mixed_replace_and_insert_after_same_target"
+_EE_EXPLICIT_MIXED_STRUCTURAL_REPEAL_LIST_RULE = "ee_explicit_mixed_structural_repeal_list"
 _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE = "ee_senine_text_subsection_renumber_before_insert"
 _EE_FRAKTSIONEERITUD_TYPO_DELETE_RULE = "ee_fraktsioneeritud_source_typo_delete_variant"
 
@@ -2201,6 +2203,58 @@ def _extract_mixed_insert_after_and_delete_segments(text: str) -> list[tuple[str
             segments.append((segment, old_text, new_text))
 
     if len(segments) < 2:
+        return []
+    return segments
+
+
+def _extract_mixed_replace_and_insert_after_segments(text: str) -> list[tuple[str, str, str]]:
+    """Extract segment-local rewrites from same-target replace plus insert-after clauses."""
+    if not (
+        re.search(r'\basendatakse\b', text, re.IGNORECASE)
+        and re.search(r'\bt[aä]iendatakse\b', text, re.IGNORECASE)
+        and re.search(r'\bp[aä]rast\s+(?:sõn[au]|tekstiosa|lauseosa|arvu)\b', text, re.IGNORECASE)
+    ):
+        return []
+
+    normalized = html.unescape(text)
+    parts = re.split(
+        r'\s+(?:ning|ja)\s+'
+        r'(?=(?:(?:§|paragrahvi|lõike(?:s|st|t)?|lõiget|punkti(?:s|st)?|punkt(?:is|ist)?)\s+)?'
+        r'[^.;]{0,120}(?:\basendatakse\b|\bt[aä]iendatakse\b))',
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if len(parts) < 2:
+        return []
+
+    segments: list[tuple[str, str, str]] = []
+    for segment in (part.strip() for part in parts):
+        if not segment:
+            continue
+        if re.search(r'\bt[aä]iendatakse\b', segment, re.IGNORECASE):
+            old_text, new_text = _normalize_text_replace_args(
+                segment,
+                *_extract_text_replace_args(segment),
+            )
+            if old_text and new_text:
+                segments.append((segment, old_text, new_text))
+            continue
+        if re.search(r'\basendatakse\b', segment, re.IGNORECASE):
+            for old_text, new_text in _extract_text_replace_pairs(segment):
+                if old_text and new_text:
+                    segments.append((segment, old_text, new_text))
+
+    if len(segments) < 2:
+        return []
+    saw_insert_after = any(
+        re.search(r'\bt[aä]iendatakse\b', segment, re.IGNORECASE)
+        for segment, _old_text, _new_text in segments
+    )
+    saw_replace = any(
+        re.search(r'\basendatakse\b', segment, re.IGNORECASE)
+        for segment, _old_text, _new_text in segments
+    )
+    if not (saw_insert_after and saw_replace):
         return []
     return segments
 
@@ -4939,6 +4993,32 @@ def extract_ee_ops(
             seq += 1
         return ops
 
+    if action == "repeal" and not sentence_note:
+        explicit_targets = _extract_multiple_explicit_targets(_clean_preamble)
+        explicit_section_labels = {
+            target.path[0][1]
+            for target in explicit_targets
+            if target.path and target.path[0][0] == "section"
+        }
+        explicit_kinds = {target.path[-1][0] for target in explicit_targets if target.path}
+        if (
+            len(explicit_targets) >= 3
+            and len(explicit_section_labels) >= 3
+            and explicit_kinds.issubset({"subsection", "item"})
+        ):
+            for target in explicit_targets:
+                ops.append(LegalOperation(
+                    op_id=f"ee-repeal-explicit-mixed-list-{target}-{seq}-{source.statute_id}",
+                    sequence=seq,
+                    action=_to_structural_action("repeal"),
+                    target=target,
+                    source=source,
+                    provenance_tags=(clean[:200], _EE_EXPLICIT_MIXED_STRUCTURAL_REPEAL_LIST_RULE),
+                    witness_rule_id=_EE_EXPLICIT_MIXED_STRUCTURAL_REPEAL_LIST_RULE,
+                ))
+                seq += 1
+            return ops
+
     m_item_and_section_subsection_repeal = re.search(
         r'(?:\bparagrahvi[s]?\s+|§\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
         r'l[oõ]ike[s]?\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
@@ -5682,6 +5762,33 @@ def extract_ee_ops(
                         provenance_tags=(rule_id, clean[:200]),
                     ))
                     seq += 1
+            return ops
+
+    if action == "text_replace":
+        mixed_segments = _extract_mixed_replace_and_insert_after_segments(clean)
+        if mixed_segments:
+            rule_id = _EE_MIXED_REPLACE_INSERT_AFTER_SAME_TARGET_RULE
+            for segment_text, segment_old, segment_new in mixed_segments:
+                segment_payload = IRNode(kind=IRNodeKind.CONTENT, text=segment_new)
+                segment_payload, _segment_witness = _set_text_replace_payload_attrs(
+                    segment_payload,
+                    segment_text,
+                    segment_old,
+                    segment_new,
+                    source_family=rule_id,
+                )
+                ops.append(LegalOperation(
+                    op_id=f"ee-text_replace-mixed-replace-insert-after-{str(target)}-{seq}-{source.statute_id}",
+                    sequence=seq,
+                    action=_to_structural_action("text_replace"),
+                    target=target,
+                    payload=segment_payload,
+                    text_patch=_typed_text_replace_patch(segment_old, segment_new),
+                    source=source,
+                    provenance_tags=(rule_id, segment_text[:200]),
+                    witness_rule_id=rule_id,
+                ))
+                seq += 1
             return ops
 
     if action == "text_replace":

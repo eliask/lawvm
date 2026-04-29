@@ -634,6 +634,26 @@ def test_insert_after_text_replace_preserves_comma_list_separator() -> None:
     )
 
 
+def test_mixed_replace_insert_after_keeps_insert_before_live_clause_comma() -> None:
+    replaced = _ee_apply_text_replace_spec(
+        (
+            "Kui projektitaotluse täies ulatuses rahuldamine ei ole "
+            "põhjendatud, võib PRIA teha otsuse."
+        ),
+        EETextRewriteSpec(
+            old_text="põhjendatud",
+            new_text="põhjendatud taotluses sisalduvate mitteabikõlblike kulude tõttu",
+            mode="insert_after",
+            source_family="ee_mixed_replace_and_insert_after_same_target",
+        ),
+    )
+
+    assert replaced == (
+        "Kui projektitaotluse täies ulatuses rahuldamine ei ole põhjendatud "
+        "taotluses sisalduvate mitteabikõlblike kulude tõttu, võib PRIA teha otsuse."
+    )
+
+
 def test_insert_after_terminal_semicolon_replaces_live_period_when_marked() -> None:
     replaced = _ee_apply_text_replace_spec(
         "isik on töötanud üle kolme kuu.",
