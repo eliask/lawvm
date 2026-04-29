@@ -726,8 +726,10 @@ _EE_DROP_REPEALED_RANGE_RESIDUE_RULE = "ee_drop_repealed_range_residue"
 _EE_SINGLETON_EMPTY_SECTION_LABEL_RULE = "ee_singleton_empty_section_label_to_1"
 _EE_SECTION_LEVEL_INTRO_TO_FIRST_SUBSECTION_RULE = "ee_section_level_intro_attached_to_first_subsection"
 _EE_HTML_TABLE_NUMBERED_ITEMS_RULE = "ee_html_table_numbered_items_materialized"
+_EE_HTML_PARAGRAPH_NUMBERED_ITEMS_RULE = "ee_html_paragraph_numbered_items_materialized"
 _EE_UNLABELED_LOIGE_CONTINUATION_RULE = "ee_unlabeled_loige_continuation_attached_to_previous_subsection"
 _EE_SPACED_SUPERSCRIPT_SUBSECTION_MARKER_RULE = "ee_spaced_superscript_subsection_marker"
+_EE_DROP_LOIKE_TEKST_PLACEHOLDER_RULE = "ee_drop_loike_tekst_placeholder"
 _EE_RT_INLINE_CHANGE_NOTE_RE = re.compile(
     r"\s*\[\s*RT\s+[IVX]+\s*,\s*\d{1,2}\.\d{1,2}\.\d{4}\s*,\s*\d+"
     r"(?:\s*-\s*jõust\.\s*\d{1,2}\.\d{1,2}\.\d{4})?\s*\]",
@@ -852,6 +854,58 @@ def _extract_html_table_item_children(el: ET.Element, ns_str: str) -> list[IRNod
                         )
                     )
     return children
+
+
+def _extract_numbered_html_paragraph_item_children(el: ET.Element, ns_str: str) -> tuple[str, list[IRNode]]:
+    """Materialize ``HTMLKonteiner`` paragraphs that encode numbered item lists.
+
+    Some RT consolidated-current XML surfaces keep the same provisions that old
+    tyviseadus XML exposes as typed ``alampunkt`` children inside a raw
+    ``HTMLKonteiner`` paragraph with ``1) ... <br/> 2) ...`` markers. This is a
+    transport-shape repair: it preserves the legal item labels and records the
+    source cleanup rule on both the host subsection and materialized items.
+    """
+    html_parts: list[str] = []
+    for st in el.findall(_ns(ns_str, "sisuTekst")):
+        for child in st:
+            local = child.tag.split("}")[1] if "}" in child.tag else child.tag
+            if local != "HTMLKonteiner" or not child.text:
+                continue
+            if _extract_appendix_marker(child.text):
+                continue
+            # The existing EE IR does not model table cell bodies as provision
+            # descendants. Drop table payloads here too so this cleanup only
+            # repairs paragraph/list structure and does not invent table nodes.
+            html_without_tables = re.sub(
+                r"<table\b.*?</table>",
+                " ",
+                child.text,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            plain = _html_fragment_plain_text(html_without_tables)
+            plain = _normalize_ee_statute_surface_text(plain)
+            if plain:
+                html_parts.append(plain)
+    if not html_parts:
+        return "", []
+
+    intro_text, item_children = _parse_inline_item_children(
+        " ".join(html_parts),
+        require_first_label_one=True,
+    )
+    if not item_children:
+        return "", []
+    owned_children = [
+        IRNode(
+            kind=item.kind,
+            label=item.label,
+            text=_strip_rt_inline_change_note(item.text),
+            attrs={**dict(item.attrs), "source_cleanup_rule": _EE_HTML_PARAGRAPH_NUMBERED_ITEMS_RULE},
+            children=tuple(item.children),
+        )
+        for item in item_children
+    ]
+    return intro_text, owned_children
 
 
 def _sisuTekst_text_with_appendix_markers(
@@ -1086,10 +1140,22 @@ def _parse_subsection(el: ET.Element, ns_str: str, default_nr: int = 1) -> IRNod
             intro_text = _extract_reavahetus_intro_text(el, ns_str)
             if intro_text:
                 sub_text = intro_text
+    used_html_paragraph_item_children = False
+    if not children:
+        html_intro_text, html_paragraph_item_children = _extract_numbered_html_paragraph_item_children(el, ns_str)
+        if html_paragraph_item_children:
+            children = html_paragraph_item_children
+            if html_intro_text:
+                sub_text = " ".join(part for part in (sub_text, html_intro_text) if part).strip()
+            used_html_paragraph_item_children = True
     used_html_table_item_children = False
     if not children and html_table_item_children:
         children = html_table_item_children
         used_html_table_item_children = True
+    dropped_loike_tekst_placeholder = False
+    if children and sub_text.strip() == "Lõike tekst":
+        sub_text = ""
+        dropped_loike_tekst_placeholder = True
 
     attrs = {}
     if dropped_repealed_residues:
@@ -1099,6 +1165,16 @@ def _parse_subsection(el: ET.Element, ns_str: str, default_nr: int = 1) -> IRNod
         attrs["source_cleanup_rules"] = (
             *tuple(attrs.get("source_cleanup_rules", ())),
             _EE_HTML_TABLE_NUMBERED_ITEMS_RULE,
+        )
+    if used_html_paragraph_item_children:
+        attrs["source_cleanup_rules"] = (
+            *tuple(attrs.get("source_cleanup_rules", ())),
+            _EE_HTML_PARAGRAPH_NUMBERED_ITEMS_RULE,
+        )
+    if dropped_loike_tekst_placeholder:
+        attrs["source_cleanup_rules"] = (
+            *tuple(attrs.get("source_cleanup_rules", ())),
+            _EE_DROP_LOIKE_TEKST_PLACEHOLDER_RULE,
         )
 
     return IRNode(kind=IRNodeKind.SUBSECTION, label=nr, text=sub_text, attrs=attrs, children=tuple(children))
@@ -1350,12 +1426,28 @@ def _parse_section(el: ET.Element, ns_str: str) -> IRNode:
                 )
             )
         else:
+            html_intro_text, html_paragraph_item_children = _extract_numbered_html_paragraph_item_children(
+                el,
+                ns_str,
+            )
             text_parts = []
             for st in el.findall(_ns(ns_str, "sisuTekst")):
                 txt = _sisuTekst_text(st, ns_str)
                 if txt:
                     text_parts.append(txt)
-            if text_parts:
+            if html_intro_text:
+                text_parts.append(html_intro_text)
+            if html_paragraph_item_children:
+                children.append(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        text=" ".join(text_parts),
+                        attrs={"source_cleanup_rules": (_EE_HTML_PARAGRAPH_NUMBERED_ITEMS_RULE,)},
+                        children=tuple(html_paragraph_item_children),
+                    )
+                )
+            elif text_parts:
                 children.append(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text=" ".join(text_parts)))
 
     # Detect already-repealed sections: muutmismarge says "Kehtetu" and there is

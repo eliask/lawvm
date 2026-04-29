@@ -9316,6 +9316,80 @@ def test_parse_ee_statute_html_table_rows_do_not_split_citation_parentheses_as_i
     )
 
 
+def test_parse_ee_statute_materializes_section_level_html_paragraph_items() -> None:
+    statute = parse_ee_statute(
+        """
+        <akt xmlns="tyviseadus_1_10.02.2010">
+          <aktinimi><nimi><pealkiri>Test</pealkiri></nimi></aktinimi>
+          <sisu>
+            <paragrahv>
+              <paragrahvNr>27</paragrahvNr>
+              <sisuTekst><tavatekst>Haritava maa hindamine:</tavatekst></sisuTekst>
+              <sisuTekst>
+                <HTMLKonteiner><![CDATA[
+                  <p>1) esimene punkt;<br/>
+                  2) teine punkt;<br/>
+                  3) kolmas punkt.</p>
+                ]]></HTMLKonteiner>
+              </sisuTekst>
+            </paragrahv>
+          </sisu>
+        </akt>
+        """.encode(),
+        "ee/test",
+    )
+
+    section = statute.body.children[0]
+    subsection = section.children[0]
+
+    assert subsection.text == "Haritava maa hindamine:"
+    assert subsection.attrs["source_cleanup_rules"] == ("ee_html_paragraph_numbered_items_materialized",)
+    assert [(item.label, item.text) for item in subsection.children] == [
+        ("1", "esimene punkt;"),
+        ("2", "teine punkt;"),
+        ("3", "kolmas punkt."),
+    ]
+    assert all(
+        item.attrs["source_cleanup_rule"] == "ee_html_paragraph_numbered_items_materialized"
+        for item in subsection.children
+    )
+
+
+def test_parse_ee_statute_drops_loike_tekst_placeholder_before_items() -> None:
+    statute = parse_ee_statute(
+        """
+        <akt xmlns="tyviseadus_1_10.02.2010">
+          <aktinimi><nimi><pealkiri>Test</pealkiri></nimi></aktinimi>
+          <sisu>
+            <paragrahv>
+              <paragrahvNr>29</paragrahvNr>
+              <sisuTekst><tavatekst>Metsamaa hindamine:</tavatekst></sisuTekst>
+              <loige>
+                <loigeNr>1</loigeNr>
+                <sisuTekst><tavatekst>Lõike tekst</tavatekst></sisuTekst>
+                <alampunkt>
+                  <alampunktNr>1</alampunktNr>
+                  <sisuTekst><tavatekst>metsamaa väärtus;</tavatekst></sisuTekst>
+                </alampunkt>
+              </loige>
+            </paragrahv>
+          </sisu>
+        </akt>
+        """.encode(),
+        "ee/test",
+    )
+
+    section = statute.body.children[0]
+    subsection = section.children[0]
+
+    assert subsection.text == "Metsamaa hindamine:"
+    assert subsection.attrs["source_cleanup_rules"] == (
+        "ee_drop_loike_tekst_placeholder",
+        "ee_section_level_intro_attached_to_first_subsection",
+    )
+    assert [(item.label, item.text) for item in subsection.children] == [("1", "metsamaa väärtus;")]
+
+
 def test_parse_ee_amendment_ops_uses_direct_old_format_header_target_section() -> None:
     archive = open_rt_archive(readonly=True)
 
