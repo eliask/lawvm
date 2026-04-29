@@ -9398,6 +9398,38 @@ def test_extract_ee_ops_splits_same_target_insert_after_then_replace_clause() ->
     assert all(op.witness_rule_id == "ee_mixed_replace_and_insert_after_same_target" for op in ops)
 
 
+def test_extract_ee_ops_splits_same_target_replace_insert_after_replace_clause() -> None:
+    text = (
+        "paragrahvi 4 lõike 3 teises lauses asendatakse sõna "
+        "„Põllumajandusministeeriumi” sõnaga „Maaeluministeeriumi”, "
+        "lisatakse pärast sõna „Siseministeeriumi,” sõna „Sotsiaalministeeriumi,” "
+        "ning asendatakse sõnad „kahe kodanikuühenduse esindajad” sõnadega "
+        "„ühe kodanikuühenduse esindaja”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.target.path, _payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        (
+            (("section", "4"), ("subsection", "3")),
+            "Põllumajandusministeeriumi",
+            "Maaeluministeeriumi",
+        ),
+        (
+            (("section", "4"), ("subsection", "3")),
+            "Siseministeeriumi,",
+            "Siseministeeriumi, Sotsiaalministeeriumi,",
+        ),
+        (
+            (("section", "4"), ("subsection", "3")),
+            "kahe kodanikuühenduse esindajad",
+            "ühe kodanikuühenduse esindaja",
+        ),
+    ]
+    assert [_payload(op).attrs["rewrite_mode"] for op in ops] == ["replace", "insert_after", "replace"]
+    assert all(op.witness_rule_id == "ee_mixed_replace_and_insert_after_same_target" for op in ops)
+
+
 def test_extract_ee_ops_preserves_explicit_mixed_structural_repeal_target_list() -> None:
     text = (
         "paragrahvi 25 lõike 2 punkt 13, § 26 lõige 6, § 27 lõike 1 punkt 6, "
