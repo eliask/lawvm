@@ -59,6 +59,49 @@ def _lower_generated_residual_records(
 
 
 _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
+    ("128052013004", "109052017038"): EEPairResidualInventory(
+        base_id="128052013004",
+        oracle_id="109052017038",
+        statute_title="Proovivõtumeetodid",
+        comparison_class="commensurable_delta",
+        residuals=cast(tuple[EEResidualRecord, ...], (
+            EEResidualRecord(
+                address="chapter:3",
+                bucket="source_ambiguity",
+                evidence=(
+                    "Parent echo of § 10(8). Source act 109052017037 says "
+                    "§ 10 subsections 6, 7 and 8 are rewritten, but base "
+                    "surface 128052013004 exposes § 10 only through subsection "
+                    "7. Replay applies the live § 10(6) and § 10(7) replacements "
+                    "and leaves the explicit absent § 10(8) target unresolved "
+                    "rather than silently converting replace into insert."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:3/section:10",
+                bucket="source_ambiguity",
+                evidence=(
+                    "Parent echo of § 10(8). Source act 109052017037 says "
+                    "§ 10 subsections 6, 7 and 8 are rewritten, but base "
+                    "surface 128052013004 exposes § 10 only through subsection "
+                    "7. Replay applies the live § 10(6) and § 10(7) replacements "
+                    "and leaves the explicit absent § 10(8) target unresolved "
+                    "rather than silently converting replace into insert."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:3/section:10/subsection:8",
+                bucket="source_ambiguity",
+                evidence=(
+                    "Source act 109052017037 includes a payload for § 10(8) in "
+                    "the clause 'paragrahvi 10 lõiked 6, 7 ja 8 sõnastatakse', "
+                    "while base surface 128052013004 has no live § 10(8). "
+                    "Oracle 109052017038 contains the payload as § 10(8); "
+                    "LawVM preserves this as an absent explicit replace target."
+                ),
+            ),
+        )),
+    ),
     ("129032014010", "130042015006"): EEPairResidualInventory(
         base_id="129032014010",
         oracle_id="130042015006",

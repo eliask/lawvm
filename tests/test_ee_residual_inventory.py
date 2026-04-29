@@ -98,6 +98,22 @@ def test_get_ee_residual_inventory_poolloodusliku_koosluse_surface_tails() -> No
     )
 
 
+def test_get_ee_residual_inventory_proovivotumeetodid_absent_subsection_8() -> None:
+    inventory = get_ee_residual_inventory("128052013004", "109052017038")
+
+    assert inventory is not None
+    assert inventory.statute_title == "Proovivõtumeetodid"
+    assert inventory.comparison_class == "commensurable_delta"
+    assert len(inventory.residuals) == 3
+    assert {record.bucket for record in inventory.residuals} == {"source_ambiguity"}
+    assert any(
+        record.address == "chapter:3/section:10/subsection:8"
+        and "paragrahvi 10 lõiked 6, 7 ja 8 sõnastatakse" in record.evidence
+        and "no live § 10(8)" in record.evidence
+        for record in inventory.residuals
+    )
+
+
 def test_get_ee_residual_inventory_vabariigi_presidendi_tookorra_seadus() -> None:
     inventory = get_ee_residual_inventory("108072011074", "127062017011")
 

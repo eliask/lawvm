@@ -4074,6 +4074,60 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
     if not word:
         return None
     lower = word.lower()
+    if lower.endswith("pudel"):
+        stem = word + "i"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": stem + "t",
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_ill": stem + "sse",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": word + "id",
+            "pl_gen": word + "ite",
+            "pl_part": word + "eid",
+            "pl_ine": word + "ites",
+            "pl_ela": word + "itest",
+            "pl_all": word + "itele",
+            "pl_ade": word + "itel",
+            "pl_abl": word + "itelt",
+            "pl_trn": word + "iteks",
+        }
+    if lower.endswith("anum"):
+        stem = word + "a"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": stem + "t",
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_ill": stem + "sse",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": word + "ad",
+            "pl_gen": stem + "te",
+            "pl_part": stem + "id",
+            "pl_ine": stem + "tes",
+            "pl_ela": stem + "test",
+            "pl_all": stem + "tele",
+            "pl_ade": stem + "tel",
+            "pl_abl": stem + "telt",
+            "pl_trn": stem + "teks",
+        }
     if lower == "vorm":
         stem = word + "i"
         return {

@@ -988,8 +988,22 @@ def _classify_verb(text: str) -> str:
     # replaced word, e.g. "seaduses asendatakse § 8 lõike 4 punktis 2 ja lõikes 5
     # ... sõna „X” sõnaga „Y”".
     if re.search(
+        r'\bsõn(?:ad|u)\b[^.;]{0,240}\basendatakse\b[^.;]{0,120}\b'
+        r'(?:sõn(?:a|aga|adega)|tekstiosaga|lauseosaga)\b',
+        text,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        return "text_replace"
+    if re.search(
         r'asendatakse\b.{0,240}?\b(?:läbivalt\s+)?'
         r'(?:sõna[a-z]*|arv[a-z]*|aastaarv[a-z]*|tekstiosa[a-z]*|lauseosa[a-z]*|number[a-z]*|viide[a-z]*)',
+        t,
+        re.DOTALL,
+    ):
+        return "text_replace"
+    if re.search(
+        r'\b(?:sõna[a-z]*|sõnad|sõnu|arv[a-z]*|aastaarv[a-z]*|tekstiosa[a-z]*|lauseosa[a-z]*|number[a-z]*|viide[a-z]*)'
+        r'\b.{0,240}\basendatakse\b',
         t,
         re.DOTALL,
     ):
@@ -1411,6 +1425,28 @@ def _extract_text_replace_pairs(text: str) -> List[Tuple[str, str]]:
                 if quotes[i] and quotes[i + 1]
             ]
     return []
+
+
+def _extract_many_old_single_new_text_replace_pairs(text: str) -> List[Tuple[str, str]]:
+    """Extract ``sõnad A, B ja C asendatakse sõnaga D`` as A→D, B→D, C→D."""
+    normalized = html.unescape(text)
+    if not re.search(
+        r'\bsõn(?:ad|u)\b[^.;]{0,240}\basendatakse\b[^.;]{0,120}\b'
+        r'(?:sõn(?:a|aga|adega)|tekstiosaga|lauseosaga)\b',
+        normalized,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        return []
+
+    pre, post = re.split(r'\basendatakse\b', normalized, maxsplit=1, flags=re.IGNORECASE)
+    pre_quotes = _extract_quoted_contents(pre)
+    post_quotes = _extract_quoted_contents(post)
+    if len(pre_quotes) < 2 or len(post_quotes) != 1:
+        return []
+    new_text = post_quotes[0].strip()
+    if not new_text:
+        return []
+    return [(old_text.strip(), new_text) for old_text in pre_quotes if old_text.strip()]
 
 
 def _extract_mixed_text_replace_sentence_insert(text: str) -> tuple[str, str, str] | None:
@@ -2784,7 +2820,7 @@ def extract_ee_ops(
                     ))
                     seq += 1
             return ops
-        pairs = _extract_text_replace_pairs(clean)
+        pairs = _extract_many_old_single_new_text_replace_pairs(clean) or _extract_text_replace_pairs(clean)
         if not pairs:
             old_t, new_t = _extract_text_replace_args(clean)
             if old_t is not None or new_t is not None:
@@ -4420,6 +4456,32 @@ def extract_ee_ops(
                     witness_rule_id=rule_id,
                 ))
                 return ops
+        if action == "text_replace":
+            unscoped_pairs = _extract_many_old_single_new_text_replace_pairs(clean)
+            if unscoped_pairs:
+                rule_id = "ee_unscoped_many_old_single_new_text_replace"
+                for old_t, new_t in unscoped_pairs:
+                    payload = IRNode(kind=IRNodeKind.CONTENT, text=new_t)
+                    payload, _rewrite_witness = _set_text_replace_payload_attrs(
+                        payload,
+                        clean,
+                        old_t,
+                        new_t,
+                        source_family=rule_id,
+                    )
+                    ops.append(LegalOperation(
+                        op_id=f"ee-global-text_replace-many-old-single-new-{seq}-{source.statute_id}",
+                        sequence=seq,
+                        action=_to_structural_action("text_replace"),
+                        target=LegalAddress(path=()),
+                        payload=payload,
+                        text_patch=_typed_text_replace_patch(old_t, new_t),
+                        source=source,
+                        provenance_tags=(clean[:200], rule_id),
+                        witness_rule_id=rule_id,
+                    ))
+                    seq += 1
+                return ops
         # Could not identify a provision target — return unknown op for diagnostics
         ops.append(LegalOperation(
             op_id=f"ee-unknown-{seq}-{source.statute_id}",
@@ -4646,7 +4708,7 @@ def extract_ee_ops(
             return ops
 
     if action == "text_replace":
-        target_pairs = _extract_text_replace_pairs(clean)
+        target_pairs = _extract_many_old_single_new_text_replace_pairs(clean) or _extract_text_replace_pairs(clean)
         if len(target_pairs) > 1:
             explicit_targets = _extract_multiple_explicit_targets(clean)
             heading_targets = _extract_explicit_heading_targets(clean)
