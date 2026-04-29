@@ -1404,6 +1404,36 @@ def test_replay_ee_to_pit_classifies_vereulekanne_protocol_case_oracle_drift() -
     assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": len(divergence_addresses)}
 
 
+def test_replay_ee_to_pit_adjudicates_jahitunnistus_label_offset_surface_drift() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.residual_reporting import build_ee_residual_summary
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "106012015009",
+        "2017-09-16",
+        archive=archive,
+        oracle_id="113092017002",
+    )
+
+    assert result.error is None
+    assert result.n_ops == 1
+    divergence_addresses = tuple(str(div.address) for div in result.divergences)
+    assert "chapter:2/section:6" in divergence_addresses
+    assert "chapter:4/section:25/subsection:4" in divergence_addresses
+    residual_summary = build_ee_residual_summary(
+        base_id="106012015009",
+        oracle_id="113092017002",
+        divergence_addresses=divergence_addresses,
+    )
+    assert residual_summary is not None
+    assert residual_summary.unknown_current_divergence_count == 0
+    assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
+    assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": len(divergence_addresses)}
+
+
 def test_replay_ee_to_pit_handles_finite_verb_taotlusel_genitive_in_riigisaladus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
