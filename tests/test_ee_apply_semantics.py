@@ -2918,6 +2918,35 @@ def test_replace_subsection_second_sentence_preserves_leading_sentence() -> None
     assert subsection.text == "Esimene lause jääb alles. Uus teine lause."
 
 
+def test_replace_subsection_second_and_third_sentence_removes_old_tail() -> None:
+    body = _body_with_section_and_subsection(
+        "4_2",
+        "5",
+        (
+            "Esimene lause jääb alles. "
+            "Vana teine lause kustub. "
+            "Vana kolmas lause kustub."
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_replace_second_and_third_sentences",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "4_2"), ("subsection", "5"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="Uus teine lause. Uus kolmas lause.",
+            attrs={"sentence_target_meta": make_sentence_target_meta(sentence_indexes=(1, 2))},
+        ),
+        provenance_tags=("paragrahvi 4 2 lõike 5 teine ja kolmas lause sõnastatakse järgmiselt",),
+    )
+
+    result = _ee_apply_op(body, op)
+    subsection = result.children[0].children[0].children[0]
+
+    assert subsection.text == "Esimene lause jääb alles. Uus teine lause. Uus kolmas lause."
+
+
 def test_replace_subsection_prefers_typed_sentence_target_meta_over_note_text() -> None:
     body = _body_with_section_and_subsection(
         "7",

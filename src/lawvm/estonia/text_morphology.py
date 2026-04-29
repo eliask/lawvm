@@ -70,6 +70,32 @@ def replace_sentence(text: str, replacement: str, sentence_index: int) -> str:
     return " ".join(sentences).strip()
 
 
+def replace_sentence_span(text: str, replacement: str, sentence_indexes: list[int]) -> str:
+    """Replace a contiguous span of targeted sentences, preserving the rest."""
+    stripped = (text or "").strip()
+    repl = (replacement or "").strip()
+    if not sentence_indexes:
+        return stripped
+    if len(sentence_indexes) == 1:
+        return replace_sentence(stripped, repl, sentence_indexes[0])
+    sentences = split_ee_sentences(stripped)
+    if not sentences:
+        return repl
+    normalized = sorted(
+        {
+            len(sentences) - 1 if index >= 1_000_000 else index
+            for index in sentence_indexes
+        }
+    )
+    if not normalized or normalized[0] < 0 or normalized[-1] >= len(sentences):
+        return stripped
+    if normalized != list(range(normalized[0], normalized[-1] + 1)):
+        return stripped
+    replacement_sentences = split_ee_sentences(repl) if repl else []
+    sentences[normalized[0] : normalized[-1] + 1] = replacement_sentences
+    return " ".join(sentences).strip()
+
+
 def insert_sentence_after(text: str, inserted: str, sentence_index: int) -> str:
     """Insert one sentence after the targeted sentence index in EE prose."""
     stripped = (text or "").strip()
@@ -233,6 +259,7 @@ __all__ = [
     "replace_first_sentence",
     "replace_case_preserving",
     "replace_sentence",
+    "replace_sentence_span",
     "sentence_index_from_notes",
     "sentence_indexes_from_notes",
     "surface_pattern",
