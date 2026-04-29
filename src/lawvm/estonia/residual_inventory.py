@@ -59,6 +59,51 @@ def _lower_generated_residual_records(
 
 
 _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
+    ("124072014013", "113012015027"): EEPairResidualInventory(
+        base_id="124072014013",
+        oracle_id="113012015027",
+        statute_title="Innovatsiooniosakute toetusmeetme tingimused ja kord",
+        comparison_class="commensurable_delta",
+        residuals=(
+            EEResidualRecord(
+                address="chapter:1/section:4/subsection:1/item:8",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Replay preserves the source/base item terminal punctuation after applying "
+                    "the 2015-01-09 text replacement. Oracle 113012015027 differs only by "
+                    "terminal item punctuation; no amendment in the pair window explicitly "
+                    "changes that terminal mark."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:2/section:5/subsection:3/item:2",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Replay preserves the source/base item terminal punctuation. Oracle "
+                    "113012015027 differs only by terminal item punctuation, without a "
+                    "source operation that owns that textual change."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:3/section:10/subsection:2/item:9",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Replay preserves the source/base item terminal punctuation. Oracle "
+                    "113012015027 differs only by terminal item punctuation, without a "
+                    "source operation that owns that textual change."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:3/section:12/subsection:4/item:9",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Replay preserves the source/base item terminal punctuation. Oracle "
+                    "113012015027 differs only by terminal item punctuation, without a "
+                    "source operation that owns that textual change."
+                ),
+            ),
+        ),
+    ),
     ("117052024008", "104042025010"): EEPairResidualInventory(
         base_id="117052024008",
         oracle_id="104042025010",

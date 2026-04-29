@@ -3047,9 +3047,7 @@ def _set_text_replace_payload_attrs(
     ):
         source_family = "ee_insert_after_source_phrase_surface_variants"
     case_inflected = _should_case_inflect_text_replace(clean, old_text, new_text)
-    if "läbivalt" in _instruction_preamble(clean).lower() or (
-        rewrite_mode == "insert_after" and case_inflected
-    ):
+    if "läbivalt" in _instruction_preamble(clean).lower() or case_inflected:
         attrs["all_occurrences"] = True
     if (
         rewrite_mode == "insert_after"
@@ -6195,8 +6193,12 @@ def parse_html_op_items(html_cdata: str, *, allow_plain_paragraph_items: bool = 
             block,
             flags=re.DOTALL | re.IGNORECASE,
         )
-        # Strip HTML tags
-        text = re.sub(r'<[^>]+>', ' ', block)
+        # Strip inline style tags without forcing a word boundary. RT sometimes
+        # wraps only part of a word, e.g. ``<i>TA&nbsp;asutu</i>s``.
+        text = re.sub(r'</?(?:i|em|u|span)\b[^>]*>', '', block, flags=re.IGNORECASE)
+        text = re.sub(r'<(?:sup|sub)\b[^>]*>', ' ', text, flags=re.IGNORECASE)
+        text = re.sub(r'</(?:sup|sub)>', ' ', text, flags=re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', ' ', text)
         # Decode HTML entities (old-format maarus CDATA uses &auml; etc.)
         text = _html.unescape(text)
         text = text.replace('\xa0', ' ')
