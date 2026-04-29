@@ -9430,6 +9430,38 @@ def test_extract_ee_ops_splits_same_target_replace_insert_after_replace_clause()
     assert all(op.witness_rule_id == "ee_mixed_replace_and_insert_after_same_target" for op in ops)
 
 
+def test_extract_ee_ops_splits_same_target_text_replace_and_sentence_replace_clause() -> None:
+    text = (
+        "paragrahvi 28 lõike 2 punktis 2 asendatakse sõnad „6400 eurot” "
+        "sõnadega „10 000 eurot” ning teine lause asendatakse lausega "
+        "järgmises sõnastuses: „Võrreldavad hinnapakkumised peavad olema "
+        "esitatud kirjalikku taasesitamist võimaldavas vormis.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action.value, op.target.path, _payload(op).text) for op in ops] == [
+        (
+            "text_replace",
+            (("section", "28"), ("subsection", "2"), ("item", "2")),
+            "10 000 eurot",
+        ),
+        (
+            "replace",
+            (("section", "28"), ("subsection", "2"), ("item", "2")),
+            "Võrreldavad hinnapakkumised peavad olema esitatud kirjalikku taasesitamist võimaldavas vormis.",
+        ),
+    ]
+    assert _payload(ops[0]).attrs["old_text"] == "6400 eurot"
+    assert _payload(ops[0]).attrs["rewrite_mode"] == "replace"
+    sentence_meta = read_sentence_target_meta(_payload(ops[1]))
+    assert sentence_meta.sentence_indexes == (1,)
+    assert all(
+        op.witness_rule_id == "ee_mixed_text_replace_and_sentence_replace_same_target"
+        for op in ops
+    )
+
+
 def test_extract_ee_ops_preserves_explicit_mixed_structural_repeal_target_list() -> None:
     text = (
         "paragrahvi 25 lõike 2 punkt 13, § 26 lõige 6, § 27 lõike 1 punkt 6, "
