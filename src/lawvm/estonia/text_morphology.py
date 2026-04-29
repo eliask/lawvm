@@ -116,16 +116,22 @@ def surface_pattern(text: str) -> str:
 
 
 def wrap_word_boundaries(pattern: str, text: str) -> str:
-    """Avoid matching bare-word replacements inside larger compounds."""
+    """Avoid matching bare-word/number replacements inside larger tokens."""
     starts_with_word = bool(re.match(r"[A-Za-zÄÖÕÜäöõüŠŽšž]", text))
     ends_with_word = bool(re.search(r"[A-Za-zÄÖÕÜäöõüŠŽšž]$", text))
-    if not starts_with_word and not ends_with_word:
+    starts_with_digit = bool(re.match(r"\d", text))
+    ends_with_digit = bool(re.search(r"\d$", text))
+    if not starts_with_word and not ends_with_word and not starts_with_digit and not ends_with_digit:
         return pattern
     wrapped = pattern
     if starts_with_word:
         wrapped = r"(?<![A-Za-zÄÖÕÜäöõüŠŽšž-])" + wrapped
+    elif starts_with_digit:
+        wrapped = r"(?<!\d)" + wrapped
     if ends_with_word:
         wrapped = wrapped + r"(?![A-Za-zÄÖÕÜäöõüŠŽšž-])"
+    elif ends_with_digit:
+        wrapped = wrapped + r"(?!\d)"
     return wrapped
 
 

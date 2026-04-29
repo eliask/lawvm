@@ -4908,6 +4908,14 @@ def test_case_inflected_text_replace_handles_a_noun_illative_forms() -> None:
     assert replaced == "Dokumentide Tervisekassasse laekumise päevaks loetakse esitamise päev."
 
 
+def test_numeric_text_replace_does_not_mutate_larger_number_tokens() -> None:
+    text = "Keeld kestab kuni 10. oktoobrini ja silmasuurus on 110 mm."
+
+    replaced = _ee_apply_text_replace_value(text, "10", "21", case_inflected=False)
+
+    assert replaced == "Keeld kestab kuni 21. oktoobrini ja silmasuurus on 110 mm."
+
+
 def test_exact_text_replace_does_not_apply_case_inflected_special_forms() -> None:
     text = "Osakonna juhataja nimetab ametisse ja vabastab ametist ametniku."
 
