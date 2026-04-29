@@ -3764,6 +3764,20 @@ def extract_ee_ops(
                         ))
                         seen_sub_paths.add(sub_path)
                         seq += 1
+                for extra_sect, extra_sub in _extract_trailing_section_subsection_repeals(clean):
+                    sub_path = (("section", extra_sect), ("subsection", extra_sub))
+                    if sub_path in seen_sub_paths:
+                        continue
+                    ops.append(LegalOperation(
+                        op_id=f"ee-repeal-sub-{extra_sect}-{extra_sub}-{source.statute_id}",
+                        sequence=seq,
+                        action=_to_structural_action("repeal"),
+                        target=LegalAddress(path=sub_path),
+                        source=source,
+                        provenance_tags=(clean[:200], "ee_mixed_repeal_trailing_singular_subsection"),
+                    ))
+                    seen_sub_paths.add(sub_path)
+                    seq += 1
                 seen_item_paths = {
                     op.target.path
                     for op in ops
