@@ -5289,6 +5289,26 @@ def test_extract_ee_ops_treats_insert_after_sonu_as_insert_after_mode() -> None:
     assert ops[0].payload.text == "teenuse korralduse, terrorismiohvrile,"
 
 
+def test_extract_ee_ops_marks_insert_after_terminal_punctuation_boundary() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 5 lõike 10 punkti 3 täiendatakse pärast sõnu "
+            "„kolme kuu” tekstiosaga „,välja arvatud juhul, kui seda on tehtud "
+            "Sektoritevahelise mobiilsuse toetusmeetmest ja järgmine projekt on "
+            "eelneva tegevuse edasiarendus;”;"
+        ),
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "5"), ("subsection", "10"), ("item", "3"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.attrs["old_text"] == "kolme kuu"
+    assert ops[0].payload.attrs["source_family"] == "ee_insert_after_terminal_punctuation_boundary"
+    assert ops[0].payload.text.endswith("edasiarendus;")
+
+
 def test_extract_ee_ops_does_not_take_subsection_target_from_insert_after_payload() -> None:
     ops = extract_ee_ops(
         (
