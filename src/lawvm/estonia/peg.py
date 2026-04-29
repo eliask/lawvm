@@ -950,6 +950,7 @@ _EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE = "ee_plural_subsection_insert_p
 _EE_MULTI_TARGET_TEXT_DELETE_SPLIT_RULE = "ee_multi_target_text_delete_split"
 _EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE = "ee_mixed_delete_and_replace_same_target"
 _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE = "ee_senine_text_subsection_renumber_before_insert"
+_EE_FRAKTSIONEERITUD_TYPO_DELETE_RULE = "ee_fraktsioneeritud_source_typo_delete_variant"
 
 
 def _is_textual_invalidation(text: str) -> bool:
@@ -1762,6 +1763,35 @@ def _split_plural_section_replace_payload(content: str) -> Optional[dict[str, st
         if piece:
             chunks[label] = piece
     return chunks or None
+
+
+def _shared_replace_payload_matches_explicit_targets(
+    content: str,
+    targets: list[LegalAddress],
+) -> bool:
+    """Return true when one labelled payload is source-compatible with all targets."""
+    stripped = content.strip()
+    if len(targets) < 2 or not stripped:
+        return False
+    if any(target.special is not None or not target.path for target in targets):
+        return False
+
+    item_match = re.match(r'^(\d[\d\s_]*)\)\s+', stripped)
+    if item_match:
+        label = _normalize_num(item_match.group(1))
+        return all(target.path[-1] == ("item", label) for target in targets)
+
+    subsection_match = re.match(r'^\((\d[\d\s_]*)\)\s+', stripped)
+    if subsection_match:
+        label = _normalize_num(subsection_match.group(1))
+        return all(target.path[-1] == ("subsection", label) for target in targets)
+
+    section_match = re.match(r'^§\s*(\d[\d\s_]*)\s*[.]', stripped)
+    if section_match:
+        label = _normalize_num(section_match.group(1))
+        return all(target.path[-1] == ("section", label) for target in targets)
+
+    return False
 
 
 def _strip_plural_item_payload_outer_quote_tail(piece: str) -> tuple[str, bool]:
@@ -3528,6 +3558,12 @@ def extract_ee_ops(
         clean,
         re.IGNORECASE,
     )
+    statute_and_annex_heading_global = re.search(
+        rf'\b{statute_ref}\s+(?:ning|ja)\s+selle\s+lis[a-z]*'
+        rf'(?:\s+\d[\d\s_]*)?\s+pealkirjas\s+asendatakse(?:\s+läbivalt)?',
+        clean,
+        re.IGNORECASE,
+    )
     title_delete_global = re.search(
         rf'\b{statute_ref}\s+pealkirjast\s+j[äa]etakse\s+välja\s+'
         r'(?:sõna|sõnad|tekstiosa)\s+[„"“](?P<old>[^”"]+)[”"]',
@@ -3569,6 +3605,7 @@ def extract_ee_ops(
         rf'|\b{statute_ref}\s+teksti[s]?\s*,\s*välja\s+arvatud\s+[^.]+?\s+asendatakse'
         rf'|\b{statute_ref}\s+pealkirjas\s+ja\s+teksti[s]?\s+asendatakse(?:\s+läbivalt)?'
         rf'|\b{statute_ref}\s+ja\s+selle\s+lisades\s+asendatakse'
+        rf'|\b{statute_ref}\s+(?:ning|ja)\s+selle\s+lis[a-z]*(?:\s+\d[\d\s_]*)?\s+pealkirjas\s+asendatakse(?:\s+läbivalt)?'
         rf'|\b{statute_ref}\s*,\s*välja\s+arvatud\s+[^.]+?\s+asendatakse\s+(?:sõna[a-z]*|sõnu|arv[a-z]*|aastaarv[a-z]*|tekstiosa[a-z]*|lauseosa[a-z]*|number[a-z]*)'
         rf'|\b{statute_ref}\s+\d+[^§]*peatüki[s]?\s+(?:pealkirjas\s+)?asendatakse'
         rf'|\b{statute_ref}\s+asendatakse\s+(?:sõna[a-z]*|arv[a-z]*|aastaarv[a-z]*|tekstiosa[a-z]*|lauseosa[a-z]*|number[a-z]*)',
@@ -3621,6 +3658,7 @@ def extract_ee_ops(
                 clean,
                 re.IGNORECASE,
             ) is not None
+            statute_and_annex_heading_scope = statute_and_annex_heading_global is not None
             payload, _rewrite_witness = _set_text_replace_payload_attrs(
                 payload,
                 clean,
@@ -3631,6 +3669,8 @@ def extract_ee_ops(
                 source_family=(
                     "ee_global_text_replace_statute_and_annex_scope"
                     if statute_and_annex_scope
+                    else "ee_global_text_replace_statute_and_annex_heading_scope"
+                    if statute_and_annex_heading_scope
                     else ""
                 ),
             )
@@ -3678,10 +3718,17 @@ def extract_ee_ops(
                         if statute_and_annex_scope
                         else ()
                     ),
+                    *(
+                        ("ee_global_text_replace_statute_and_annex_heading_scope",)
+                        if statute_and_annex_heading_scope
+                        else ()
+                    ),
                 ),
                 witness_rule_id=(
                     "ee_global_text_replace_statute_and_annex_scope"
                     if statute_and_annex_scope
+                    else "ee_global_text_replace_statute_and_annex_heading_scope"
+                    if statute_and_annex_heading_scope
                     else None
                 ),
             ))
@@ -5846,6 +5893,13 @@ def extract_ee_ops(
         if new_text is not None or old_text is not None:
             payload = IRNode(kind=IRNodeKind.CONTENT, text=new_text or "")
             source_family = _EE_TEXTUAL_INVALIDATION_RULE if _is_textual_invalidation(clean) else ""
+            if (
+                (old_text or "").casefold() == "fraktsioneeritud"
+                and (new_text or "") == ""
+                and re.search(r"\bläbivalt\b", clean, re.IGNORECASE)
+                and target.path == (("section", "14"), ("subsection", "2"))
+            ):
+                source_family = _EE_FRAKTSIONEERITUD_TYPO_DELETE_RULE
             payload, _rewrite_witness = _set_text_replace_payload_attrs(
                 payload,
                 clean,
@@ -5983,6 +6037,28 @@ def extract_ee_ops(
                         seq += 1
                     if ops:
                         return ops
+                if _shared_replace_payload_matches_explicit_targets(content, explicit_targets):
+                    rule_id = "ee_multi_target_replace_shared_payload"
+                    for explicit_target in explicit_targets:
+                        payload = IRNode(
+                            kind=IRNodeKind.CONTENT,
+                            text=content,
+                            attrs={"source_family": rule_id},
+                        )
+                        payload = _set_sentence_replace_payload_attrs(payload, clean)
+                        payload = _attach_subsection_text_scope_meta(payload, clean, explicit_target)
+                        ops.append(LegalOperation(
+                            op_id=f"ee-replace-multi-target-{str(explicit_target)}-{seq}-{source.statute_id}",
+                            sequence=seq,
+                            action=_to_structural_action("replace"),
+                            target=explicit_target,
+                            payload=payload,
+                            source=source,
+                            provenance_tags=(clean[:200], rule_id),
+                            witness_rule_id=rule_id,
+                        ))
+                        seq += 1
+                    return ops
             payload_attrs = {}
             if _payload_marker_has_preceding_quoted_title(clean):
                 payload_attrs["source_family"] = _EE_PAYLOAD_AFTER_TITLE_QUOTE_RULE

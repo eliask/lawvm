@@ -3729,6 +3729,49 @@ def test_case_inflected_text_replace_handles_register_compound_forms() -> None:
     )
 
 
+def test_case_inflected_text_replace_handles_segu_compound_forms() -> None:
+    text = (
+        "Asfaltbetoonsegu tihendamine. "
+        "Kihi paksuse lubatud vähenemine paigaldatud asfaltbetoonsegudel on 10 mm."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "asfaltbetoonsegu",
+        "asfaltsegu",
+        case_inflected=True,
+        all_occurrences=True,
+    )
+
+    assert replaced == (
+        "Asfaltsegu tihendamine. "
+        "Kihi paksuse lubatud vähenemine paigaldatud asfaltsegudel on 10 mm."
+    )
+
+
+def test_delete_text_replace_handles_fraktsioneeritud_source_typo_variant() -> None:
+    text = (
+        "Pindamiseks kasutatakse fraktsioneeritud killustikke. "
+        "Fraktsioneeeritud killustike omadused on kirjeldatud standardis EVS-EN 13043."
+    )
+
+    replaced = _ee_apply_text_replace_spec(
+        text,
+        EETextRewriteSpec(
+            old_text="fraktsioneeritud",
+            new_text="",
+            mode="delete",
+            all_occurrences=True,
+            source_family="ee_fraktsioneeritud_source_typo_delete_variant",
+        ),
+    )
+
+    assert replaced == (
+        "Pindamiseks kasutatakse killustikke. "
+        "Killustike omadused on kirjeldatud standardis EVS-EN 13043."
+    )
+
+
 def test_case_inflected_text_replace_handles_o_family_phrase_forms() -> None:
     text = (
         "Käesoleva paragrahvi lõikes 1 nimetatud sotsiaaltoetus makstakse "

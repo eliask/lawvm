@@ -708,6 +708,7 @@ _EE_DROP_REPEALED_RANGE_RESIDUE_RULE = "ee_drop_repealed_range_residue"
 _EE_SINGLETON_EMPTY_SECTION_LABEL_RULE = "ee_singleton_empty_section_label_to_1"
 _EE_SECTION_LEVEL_INTRO_TO_FIRST_SUBSECTION_RULE = "ee_section_level_intro_attached_to_first_subsection"
 _EE_HTML_TABLE_NUMBERED_ITEMS_RULE = "ee_html_table_numbered_items_materialized"
+_EE_UNLABELED_LOIGE_CONTINUATION_RULE = "ee_unlabeled_loige_continuation_attached_to_previous_subsection"
 _EE_RT_INLINE_CHANGE_NOTE_RE = re.compile(
     r"\s*\[\s*RT\s+[IVX]+\s*,\s*\d{1,2}\.\d{1,2}\.\d{4}\s*,\s*\d+"
     r"(?:\s*-\s*jõust\.\s*\d{1,2}\.\d{1,2}\.\d{4})?\s*\]",
@@ -1084,6 +1085,35 @@ def _parse_subsection(el: ET.Element, ns_str: str, default_nr: int = 1) -> IRNod
     return IRNode(kind=IRNodeKind.SUBSECTION, label=nr, text=sub_text, attrs=attrs, children=tuple(children))
 
 
+def _loige_has_explicit_label(el: ET.Element, ns_str: str) -> bool:
+    """Return whether an RT ``loige`` carries its own displayed/legal label."""
+    return bool(_extract_superscript_label(el, ns_str) or _text(_find(el, ns_str, "loigeNr")))
+
+
+def _attach_unlabeled_loige_continuation(previous: IRNode, continuation: IRNode) -> IRNode:
+    """Attach an unlabeled in-between ``loige`` to the previous subsection.
+
+    RT XML sometimes serializes formula explanations as a separate ``loige``
+    without ``loigeNr`` between two explicitly numbered subsections. Numbering
+    such a transport fragment by position creates duplicate legal labels.
+    """
+    cleanup_rules = tuple(previous.attrs.get("source_cleanup_rules", ()))
+    attrs = {
+        **dict(previous.attrs),
+        "source_cleanup_rules": (
+            *cleanup_rules,
+            _EE_UNLABELED_LOIGE_CONTINUATION_RULE,
+        ),
+    }
+    continuation_text = (continuation.text or "").strip()
+    return replace(
+        previous,
+        text=" ".join(part for part in (previous.text, continuation_text) if part).strip(),
+        attrs=attrs,
+        children=tuple((*previous.children, *continuation.children)),
+    )
+
+
 def _parse_subsection_nodes(el: ET.Element, ns_str: str, default_nr: int = 1) -> List[IRNode]:
     """Parse one loige into one or more subsection nodes.
 
@@ -1246,8 +1276,24 @@ def _parse_section(el: ET.Element, ns_str: str) -> IRNode:
     children: List[IRNode] = []
     dropped_repealed_residues: list[str] = []
     loige_els = el.findall(_ns(ns_str, "loige"))
+    loige_has_explicit_labels = [
+        _loige_has_explicit_label(loige_el, ns_str)
+        for loige_el in loige_els
+    ]
     for i, loige_el in enumerate(loige_els, start=1):
+        is_unlabeled_between_numbered_subsections = (
+            not loige_has_explicit_labels[i - 1]
+            and bool(children)
+            and any(loige_has_explicit_labels[i:])
+        )
         for node in _parse_subsection_nodes(loige_el, ns_str, default_nr=i):
+            if is_unlabeled_between_numbered_subsections:
+                if node.attrs.get("source_cleanup_rule") == _EE_DROP_REPEALED_RANGE_RESIDUE_RULE:
+                    dropped_repealed_residues.append(str(node.attrs["dropped_repealed_residue"]))
+                    continue
+                if node.text or node.children:
+                    children[-1] = _attach_unlabeled_loige_continuation(children[-1], node)
+                continue
             if node.label or node.text or node.children:
                 children.append(node)
             elif node.attrs.get("source_cleanup_rule") == _EE_DROP_REPEALED_RANGE_RESIDUE_RULE:
@@ -4921,6 +4967,22 @@ def _ee_apply_text_replace_spec(
         replaced = _ee_cleanup_orphan_delete_conjunction(replaced)
     if (
         replaced is not None
+        and mode == "delete"
+        and spec.source_family == "ee_fraktsioneeritud_source_typo_delete_variant"
+    ):
+        replaced = re.sub(
+            r"(?<![A-Za-zÄÖÕÜäöõüŠŽšž-])"
+            r"[Ff]raktsioneeeritud\s+(?=killustik)",
+            "",
+            replaced,
+        )
+        replaced = re.sub(
+            r"(^|[.!?]\s)(killustik)",
+            lambda match: f"{match.group(1)}Killustik",
+            replaced,
+        )
+    if (
+        replaced is not None
         and spec.source_family == _EE_INSERT_AFTER_TERMINAL_PUNCTUATION_RULE
         and mode == "insert_after"
     ):
@@ -5833,7 +5895,7 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_abl": plural_stem + "telt",
             "pl_trn": plural_stem + "teks",
         }
-    if lower == "segu":
+    if lower.endswith("segu"):
         stem = word
         return {
             "sg_nom": word,

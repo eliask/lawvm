@@ -31,6 +31,10 @@ _EE_HTML_SECTION_SIGN_ENTITY_RE = re.compile(r"&#167;")
 _EE_HTML_QUOTE_ENTITY_RE = re.compile(r"&#(?:171|187);")
 _EE_SLASH_SPACING_RE = re.compile(r"(?<=\S)\s+/\s*(?=\S)")
 _EE_DEGREE_SPACING_RE = re.compile(r"(?<=\d)\s+(?=º)")
+_EE_DEGREE_SIGN_RE = re.compile(r"º")
+_EE_SQUARE_METER_RE = re.compile(r"\bm\s*(?:²|2)\b")
+_EE_CUBIC_METER_RE = re.compile(r"\bm\s*(?:³|3)\b")
+_EE_TERMINAL_REDAKTSIOON_PERIOD_RE = re.compile(r"(?<=redaktsiooni)$")
 _EE_SINGLE_LETTER_FORMULA_SUBSCRIPT_RE = re.compile(
     r"(?:\b([A-Za-z])\s+(\d+)(?=/)|(?<=/)([A-Za-z])\s+(\d+)\b)"
 )
@@ -204,6 +208,38 @@ _EE_NORMALIZATION_RULES = (
         description="Collapse editorial spacing before degree-sign formula tokens.",
         pattern=_EE_DEGREE_SPACING_RE,
         replacement="",
+    ),
+    EENormalizationRule(
+        name="degree_sign_glyph",
+        rule_class=EENormalizationRuleClass.punctuation,
+        kind="regex",
+        description="Normalize masculine-ordinal degree glyphs to the degree-sign comparison surface.",
+        pattern=_EE_DEGREE_SIGN_RE,
+        replacement="°",
+    ),
+    EENormalizationRule(
+        name="square_meter_surface",
+        rule_class=EENormalizationRuleClass.encoding_layout,
+        kind="regex",
+        description="Normalize square-meter surfaces such as m², m2, and m 2.",
+        pattern=_EE_SQUARE_METER_RE,
+        replacement="m2",
+    ),
+    EENormalizationRule(
+        name="cubic_meter_surface",
+        rule_class=EENormalizationRuleClass.encoding_layout,
+        kind="regex",
+        description="Normalize cubic-meter surfaces such as m³, m3, and m 3.",
+        pattern=_EE_CUBIC_METER_RE,
+        replacement="m3",
+    ),
+    EENormalizationRule(
+        name="terminal_redaktsioon_period",
+        rule_class=EENormalizationRuleClass.punctuation,
+        kind="regex",
+        description="Normalize a bounded missing terminal period after a redaktsioon sentence ending.",
+        pattern=_EE_TERMINAL_REDAKTSIOON_PERIOD_RE,
+        replacement=".",
     ),
     EENormalizationRule(
         name="single_letter_formula_subscript_spacing",

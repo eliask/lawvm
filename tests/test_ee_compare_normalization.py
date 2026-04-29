@@ -92,8 +92,29 @@ def test_normalize_ee_comparison_text_collapses_formula_slash_spacing() -> None:
 
 def test_normalize_ee_comparison_text_collapses_degree_spacing() -> None:
     assert normalize_ee_comparison_text("eesvoolu teljest 70–80 º nurga all") == (
-        "eesvoolu teljest 70–80º nurga all"
+        "eesvoolu teljest 70–80° nurga all"
     )
+
+
+def test_normalize_ee_comparison_text_normalizes_degree_glyph() -> None:
+    assert normalize_ee_comparison_text("kõrvalekalle vertikaalist ±3º") == (
+        "kõrvalekalle vertikaalist ±3°"
+    )
+
+
+def test_normalize_ee_comparison_text_normalizes_area_and_volume_unit_surfaces() -> None:
+    assert normalize_ee_comparison_text("iga 1500 m³ ja 1000 m² kohta") == (
+        "iga 1500 m3 ja 1000 m2 kohta"
+    )
+    assert normalize_ee_comparison_text("iga 1500 m 3 ja 1000 m2 kohta") == (
+        "iga 1500 m3 ja 1000 m2 kohta"
+    )
+
+
+def test_normalize_ee_comparison_text_normalizes_missing_terminal_period() -> None:
+    assert normalize_ee_comparison_text("redaktsiooni") == "redaktsiooni."
+    assert normalize_ee_comparison_text("redaktsiooni.") == "redaktsiooni."
+    assert normalize_ee_comparison_text("loetelu") == "loetelu"
 
 
 def test_normalize_ee_comparison_text_collapses_single_letter_formula_subscript_spacing() -> None:
