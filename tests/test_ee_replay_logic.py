@@ -3207,6 +3207,24 @@ def test_replay_ee_to_pit_handles_statute_and_annex_institution_rename_in_veesoi
     assert result.divergences == []
 
 
+def test_replay_ee_to_pit_handles_old_format_direct_header_target_section() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "120012011021",
+        "2012-08-01",
+        archive=archive,
+        oracle_id="125072012007",
+    )
+
+    assert result.error is None
+    assert result.oracle_id == "125072012007"
+    assert result.n_ops == 1
+    assert result.divergences == []
+
+
 def test_replay_ee_to_pit_filters_untitled_omnibus_regulation_sections_by_intro_title() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary

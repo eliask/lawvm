@@ -8040,3 +8040,27 @@ def test_parse_ee_statute_materializes_numbered_html_table_rows_as_items() -> No
         item.attrs["source_cleanup_rule"] == "ee_html_table_numbered_items_materialized"
         for item in subsection.children
     )
+
+
+def test_parse_ee_amendment_ops_uses_direct_old_format_header_target_section() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("125072012002", archive),
+        "ee/125072012002",
+        target_title=(
+            "Eesti Haigekassas kindlustuskaitse tekkimiseks, lõppemiseks ja "
+            "peatumiseks vajalike dokumentide loetelu ning nendes sisalduvate "
+            "andmete koosseis"
+        ),
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.REPLACE
+    assert op.target.path == (("section", "4"),)
+    assert op.witness_rule_id == "ee_old_format_direct_header_target_section"
+    assert "ee_old_format_direct_header_target_section" in op.provenance_tags
+    assert "old_format_amendment_section:1" in op.provenance_tags
+    assert _payload(op).text.endswith("kindlustatavate isikute nimekiri.")
+    assert not _payload(op).text.endswith('nimekiri."')
