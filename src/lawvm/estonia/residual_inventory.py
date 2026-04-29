@@ -168,6 +168,136 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         )),
     ),
+    ("117032011030", "120122011010"): EEPairResidualInventory(
+        base_id="117032011030",
+        oracle_id="120122011010",
+        statute_title=(
+            "Investeerimisühingu ja investeerimisühingu konsolideerimisgrupi "
+            "usaldatavusnormatiivide rakendamise, arvutamise ja aruandluse kord "
+            "ning riskijuhtimise, omavahendite ja kapitali adekvaatsuse kohta "
+            "teabe avalikustamise kord"
+        ),
+        comparison_class="commensurable_delta",
+        residuals=cast(tuple[EEResidualRecord, ...], (
+            EEResidualRecord(
+                address="chapter:3/division:2/section:141/subsection:1",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Replay/base carry mathematical comparison symbols in the "
+                    "regulatory coefficient table. Oracle 120122011010 renders at "
+                    "least one of those symbols as '?'. This is a bounded RT "
+                    "symbol-display surface drift, not a missing amendment."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:3/division:2/section:184/subsection:2/item:5",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Source act 120122011001 rewrites § 184(2) item 5 with a "
+                    "semicolon-terminated list item. Replay applies the source "
+                    "payload. Oracle 120122011010 differs only in the item terminal "
+                    "punctuation."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:3/division:2/section:220/subsection:1/item:9",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Replay/base carry the Greek beta symbol in the formula item "
+                    "('β=1,4.'). Oracle 120122011010 renders the same symbol as "
+                    "'?'. This is a bounded RT symbol-display surface drift."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:3/division:2/section:231/subsection:4/item:1",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Replay/base carry the Greek alpha symbol in § 231(4) item 1. "
+                    "Oracle 120122011010 renders the symbol as '?'. This is a "
+                    "bounded RT symbol-display surface drift."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:3/division:3/section:254/subsection:1/item:2",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Replay/base carry the Greek sigma symbol in the veega-risk "
+                    "formula item. Oracle 120122011010 renders the symbol as '?'. "
+                    "This is a bounded RT symbol-display surface drift."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:3/division:6/section:284/subsection:3/item:1",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Source act 120122011001, § 1 item 39, replaces only § 284(3) "
+                    "item 1. Replay matches that source-backed item-1 payload. "
+                    "Oracle 120122011010 retains older item-1 wording while folding "
+                    "the replacement material into the following item."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:3/division:6/section:284/subsection:3/item:2",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Source act 120122011001, § 1 item 39, targets § 284(3) item 1 "
+                    "only. Replay preserves item 2 as the next live item. Oracle "
+                    "120122011010 carries the source-backed item-1 replacement under "
+                    "item 2, creating an item-alignment drift."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:3/division:6/section:288/subsection:2",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Replay/base carry comparison symbols in the § 288(2) table. "
+                    "Oracle 120122011010 renders at least one table comparison "
+                    "symbol as '?'. This is a bounded RT symbol-display surface "
+                    "drift."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:3/division:6/section:289/subsection:4",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Replay/base carry comparison symbols in the § 289(4) table. "
+                    "Oracle 120122011010 renders at least one table comparison "
+                    "symbol as '?'. This is a bounded RT symbol-display surface "
+                    "drift."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:3/division:6/section:310/subsection:6",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Source act 120122011001, § 1 item 56, replaces full § 310. "
+                    "Replay applies the source-backed new § 310(6). Oracle "
+                    "120122011010 keeps the pre-amendment § 310(6) wording."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:3/division:6/section:310_5/subsection:1/item:3",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Source act 120122011001, § 1 item 57, inserts §§ 310^1-310^8. "
+                    "The source has § 310^5(1) items 1-3 followed by a separate "
+                    "subsection (2). Replay preserves that structure. Oracle "
+                    "120122011010 drops source item 3 and also duplicates the "
+                    "subsection (2) text into item 3."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:3/division:6/section:311/subsection:3",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Replay preserves the source/base terminal period in § 311(3). "
+                    "Oracle 120122011010 differs only by omitting that terminal "
+                    "period; no source amendment in this pair changes the sentence "
+                    "body."
+                ),
+            ),
+        )),
+    ),
     ("112032019073", "115072023052"): EEPairResidualInventory(
         base_id="112032019073",
         oracle_id="115072023052",

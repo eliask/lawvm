@@ -871,6 +871,19 @@ def _heading_mention_precedes_child_target(text: str) -> bool:
 # Verb / action extraction
 # ---------------------------------------------------------------------------
 
+_EE_TEXTUAL_INVALIDATION_RULE = "ee_textual_invalidation_as_text_delete"
+
+
+def _is_textual_invalidation(text: str) -> bool:
+    """Return true for clauses invalidating quoted words, not legal units."""
+    preamble = _instruction_preamble(text).lower()
+    return (
+        "tunnistatakse kehtetuks" in preamble
+        and re.search(r'\b(?:sõna[a-z]*|sõnad|tekstiosa[a-z]*|lauseosa[a-z]*)\b', preamble)
+        is not None
+    )
+
+
 def _classify_verb(text: str) -> str:
     """Return a LegalOperation action from the amendment verb in text.
 
@@ -900,6 +913,12 @@ def _classify_verb(text: str) -> str:
         t,
         re.DOTALL,
     ):
+        return "text_replace"
+
+    # Text-level invalidation: "lõikes 3 tunnistatakse kehtetuks tekstiosa
+    # „...”;". The legal unit remains active; only the quoted surface is
+    # deleted. This must be classified before structural repeal.
+    if _is_textual_invalidation(text):
         return "text_replace"
 
     # Repeal: explicit kehtetuks / kehtivus termination phrases
@@ -1240,6 +1259,20 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
     )
     if nested_delete is not None:
         return nested_delete.group(1).strip(), ""
+    textual_invalidation = re.search(
+        r"\btunnistatakse\s+kehtetuks\s+(?:sõn(?:a|ad)|tekstiosa|lauseosa)\s+[„\"“](.+?)[”“\"]\s*[.;]?\s*$",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if textual_invalidation is not None:
+        return textual_invalidation.group(1).strip(), ""
+    trailing_textual_invalidation = re.search(
+        r"\b(?:sõn(?:a|ad)|tekstiosa|lauseosa)\s+[„\"“](.+?)[”“\"]\s+tunnistatakse\s+kehtetuks\s*[.;]?\s*$",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if trailing_textual_invalidation is not None:
+        return trailing_textual_invalidation.group(1).strip(), ""
     missing_new_close = re.search(
         r"\basendatakse\b.+?[„\"“](?P<old>[^„”“\"]+)[”“\"]\s+"
         r"(?:sõn(?:a|ad|adega|aga)|tekstiosa(?:ga)?|arvu|lauseosa(?:ga)?|viite(?:ga|le|ks)?)\s+"
@@ -4549,7 +4582,14 @@ def extract_ee_ops(
         )
         if new_text is not None or old_text is not None:
             payload = IRNode(kind=IRNodeKind.CONTENT, text=new_text or "")
-            payload, _rewrite_witness = _set_text_replace_payload_attrs(payload, clean, old_text, new_text)
+            source_family = _EE_TEXTUAL_INVALIDATION_RULE if _is_textual_invalidation(clean) else ""
+            payload, _rewrite_witness = _set_text_replace_payload_attrs(
+                payload,
+                clean,
+                old_text,
+                new_text,
+                source_family=source_family,
+            )
             payload = _attach_subsection_text_scope_meta(payload, clean, target)
 
             explicit_targets = _extract_multiple_explicit_targets(_clean_preamble)
