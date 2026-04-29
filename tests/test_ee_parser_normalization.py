@@ -5444,6 +5444,25 @@ def test_extract_ee_ops_binds_many_old_single_new_terms_to_local_targets() -> No
     assert all(op.witness_rule_id == "ee_target_scoped_many_old_single_new_text_replace" for op in ops)
 
 
+def test_extract_ee_ops_keeps_section_elative_symbol_scope_for_text_delete() -> None:
+    text = (
+        "Rahandusministri 21. veebruari 2011. a määruse nr 10 "
+        "„Finantsinspektsiooni veebilehel andmete avalikustamise ulatus ja kord” "
+        "§-st 91 jäetakse läbivalt välja sõna „Eestis”."
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "91"),)
+    assert ops[0].payload is not None
+    assert ops[0].payload.attrs["old_text"] == "Eestis"
+    assert ops[0].payload.text == ""
+    assert ops[0].payload.attrs["rewrite_mode"] == "delete"
+    assert ops[0].payload.attrs["all_occurrences"] is True
+
+
 def test_parse_ee_amendment_ops_keeps_superscript_jagu_insert_as_division_target() -> None:
     xml = """
     <oigusakt xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
