@@ -318,6 +318,38 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         )),
     ),
+    ("103052013007", "130042015007"): EEPairResidualInventory(
+        base_id="103052013007",
+        oracle_id="130042015007",
+        statute_title=(
+            "Keskkonnasõbraliku majandamise toetuse saamise nõuded, toetuse "
+            "taotlemise ja taotluse menetlemise täpsem kord"
+        ),
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "chapter:2",
+                    "chapter:2/section:5",
+                    "chapter:2/section:5/subsection:1",
+                    "chapter:2/section:5/subsection:1/item:5",
+                    "chapter:2/section:5/subsection:1/item:8",
+                ),
+                bucket="source_oracle_drift",
+                evidence=(
+                    "After filtering omnibus source act 129032014003 to the "
+                    "matching § 1 target only, the remaining § 5(1) residuals "
+                    "are source/oracle drift. Source act 129032014003 § 1 item "
+                    "3 repeals § 5(1) item 5, and source act 130042015004 § 1 "
+                    "does not reinsert or rewrite that item. Source act "
+                    "130042015004 § 1 item 8 rewrites § 5(1) item 8 with only "
+                    "the first manure/nitrogen sentence, while oracle "
+                    "130042015007 keeps the repealed training item and retains "
+                    "additional old nitraaditundlik-area sentences under item 8."
+                ),
+            ),
+        ),
+    ),
     ("106012015009", "113092017002"): EEPairResidualInventory(
         base_id="106012015009",
         oracle_id="113092017002",

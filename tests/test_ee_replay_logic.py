@@ -3071,3 +3071,35 @@ def test_replay_ee_to_pit_handles_statute_and_annex_institution_rename_in_veesoi
     assert result.oracle_id == "117122025007"
     assert result.n_ops == 4
     assert result.divergences == []
+
+
+def test_replay_ee_to_pit_filters_untitled_omnibus_regulation_sections_by_intro_title() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.residual_reporting import build_ee_residual_summary
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "103052013007",
+        "2015-05-03",
+        archive=archive,
+        oracle_id="130042015007",
+    )
+
+    assert result.error is None
+    assert result.oracle_id == "130042015007"
+    assert result.n_ops < 40
+    assert len(result.divergences) == 5
+
+    residual_summary = build_ee_residual_summary(
+        base_id="103052013007",
+        oracle_id="130042015007",
+        divergence_addresses=(
+            "/".join(f"{kind}:{label}" for kind, label in divergence.address.path)
+            for divergence in result.divergences
+        ),
+    )
+
+    assert residual_summary is not None
+    assert residual_summary.unknown_current_divergence_count == 0
+    assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": 5}

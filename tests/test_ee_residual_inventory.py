@@ -1921,6 +1921,7 @@ def test_list_known_ee_residual_inventories_contains_active_non_zero_pairs() -> 
         for inventory in list_known_ee_residual_inventories()
     }
 
+    assert ("103052013007", "130042015007") in pairs
     assert ("127122013026", "129102014007") in pairs
     assert ("108072011074", "127062017011") in pairs
     assert ("128122018041", "104122019022") in pairs
