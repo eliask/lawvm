@@ -250,6 +250,42 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
+    ("115122011012", "128032013018"): EEPairResidualInventory(
+        base_id="115122011012",
+        oracle_id="128032013018",
+        statute_title="Õiguspoliitika osakonna põhimäärus",
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "section:2",
+                    "section:2/subsection:1",
+                    "section:2/subsection:1/item:1",
+                    "section:8",
+                    "section:8/subsection:1",
+                    "section:8/subsection:1/item:7_1",
+                    "section:8/subsection:1/item:7_2",
+                    "section:8/subsection:1/item:7_3",
+                    "section:11",
+                    "section:11/subsection:1",
+                    "section:11/subsection:1/item:8",
+                ),
+                evidence=(
+                    "Source act 128032013013 § 3 targets the Õiguspoliitika "
+                    "osakonna põhimäärus with a global 'amet' -> 'ametikoht' "
+                    "case-inflected replacement, three targeted 'teenistuja' "
+                    "replacement groups, and repeal of § 6. It does not target "
+                    "§ 2 item 1 terminal punctuation, the pre-existing malformed "
+                    "§ 8 item 7^1/7^2/7^3 run, or § 11 item 8 terminal "
+                    "punctuation. Replay therefore preserves the base/source "
+                    "structure and punctuation, while oracle 128032013018 presents "
+                    "a cleaned consolidated surface. This is source/oracle surface "
+                    "drift, not replay-core mutation debt."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("123112010049", "122072011005"): EEPairResidualInventory(
         base_id="123112010049",
         oracle_id="122072011005",

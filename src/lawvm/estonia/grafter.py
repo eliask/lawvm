@@ -6971,6 +6971,17 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
     """Build replacement pairs, longest-first, for bounded case-aware rewrites."""
     variants: dict[str, str] = {}
 
+    def _strip_wrapping_quotes(surface: str) -> str | None:
+        stripped = surface.strip()
+        if len(stripped) < 2:
+            return None
+        quote_pairs = (("„", "”"), ("„", "“"), ("“", "”"), ('"', '"'), ("«", "»"))
+        for left_quote, right_quote in quote_pairs:
+            if stripped.startswith(left_quote) and stripped.endswith(right_quote):
+                inner = stripped[len(left_quote) : -len(right_quote)].strip()
+                return inner or None
+        return None
+
     def _left_branch_genitive_to_nominative_variant(surface: str) -> str | None:
         if " või " not in surface:
             return None
@@ -7029,6 +7040,20 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
             guillemet_new = new.replace("„", "«").replace("“", "«").replace("”", "»")
             if guillemet_old and guillemet_old not in variants:
                 variants[guillemet_old] = guillemet_new
+        unquoted_old = _strip_wrapping_quotes(old)
+        if unquoted_old is not None:
+            quoted_wrappers = (('"', '"'), ("„", "”"), ("„", "“"), ("“", "”"), ("«", "»"))
+            for old_form, new_form in _ee_text_replace_variants(
+                unquoted_old,
+                new,
+                case_inflected=case_inflected,
+            ):
+                if old_form and old_form not in variants:
+                    variants[old_form] = new_form
+                for left_quote, right_quote in quoted_wrappers:
+                    quoted_old_form = f"{left_quote}{old_form}{right_quote}"
+                    if quoted_old_form not in variants:
+                        variants[quoted_old_form] = new_form
     citation_match = re.fullmatch(r"§\s+(.+)", old.strip())
     new_citation_match = re.fullmatch(r"§\s+(.+)", new.strip())
     if citation_match is not None and new_citation_match is not None:
@@ -7154,6 +7179,21 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
                 for old_form, new_form in shallow_forms.items():
                     if old_form not in variants:
                         variants[old_form] = new_form
+        if old == "amet" and new == "ametikoht":
+            office_position_forms = {
+                "ametisse": "ametikohale",
+                "ametist": "ametikohalt",
+            }
+            for old_form, new_form in office_position_forms.items():
+                if old_form not in variants:
+                    variants[old_form] = new_form
+        if old == "Riiklik pensionikindlustuse register" and new == "sotsiaalkaitse infosüsteem":
+            register_name_forms = {
+                "Riiklikku pensionikindlustuse registrisse": "sotsiaalkaitse infosüsteemi",
+            }
+            for old_form, new_form in register_name_forms.items():
+                if old_form not in variants:
+                    variants[old_form] = new_form
         if (
             old == "rahvusvaheline konventsioon tsiviilvastutusest naftareostuskahjude eest, 1969"
             and new
@@ -7607,6 +7647,9 @@ def _ee_should_preserve_match_capital(old: str, new: str, *, case_inflected: boo
         old_norm,
         re.IGNORECASE,
     ):
+        return False
+    old_norm_unquoted = old_norm.strip('"„“”«»')
+    if old_norm_unquoted == "Riiklik pensionikindlustuse register" and new_norm == "sotsiaalkaitse infosüsteem":
         return False
     return True
 

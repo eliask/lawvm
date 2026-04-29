@@ -149,6 +149,17 @@ def case_preserved_replacement(
         if capitalize_sentence_start and (not prefix or prefix[-1] in '.!?("«'):
             return new[0].upper() + new[1:]
         return new
+    if (
+        matched
+        and len(matched) >= 2
+        and matched[0] in '"„“«'
+        and matched[1].isupper()
+        and new
+        and not new[0].isupper()
+    ):
+        prefix = match.string[:match.start()].rstrip()
+        if capitalize_sentence_start and (not prefix or prefix[-1] in '.!?("«'):
+            return new[0].upper() + new[1:]
     return new
 
 

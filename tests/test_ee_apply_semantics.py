@@ -4869,6 +4869,45 @@ def test_case_inflected_text_replace_handles_amet_illative_form() -> None:
     assert replaced == "Transpordiametisse hoiule jäetud dokumendid edastatakse Transpordiametile."
 
 
+def test_case_inflected_text_replace_handles_amet_to_ametikoht_phrase_forms() -> None:
+    text = "Osakonna juhataja nimetab ametisse ja vabastab ametist ametniku."
+
+    replaced = _ee_apply_text_replace_value(text, "amet", "ametikoht", case_inflected=True)
+
+    assert replaced == "Osakonna juhataja nimetab ametikohale ja vabastab ametikohalt ametniku."
+
+
+def test_case_inflected_text_replace_handles_riiklik_register_illative_phrase() -> None:
+    text = (
+        '"Riikliku pensionikindlustuse registri" andmed on aluseks. '
+        'Andmed kantakse "Riiklikku pensionikindlustuse registrisse". '
+        "Kanne kantakse Riiklikku pensionikindlustuse registrisse. "
+        "Riiklikule pensionikindlustuse registrile esitatakse teade."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "„Riiklik pensionikindlustuse register”",
+        "sotsiaalkaitse infosüsteem",
+        case_inflected=True,
+    )
+
+    assert replaced == (
+        "Sotsiaalkaitse infosüsteemi andmed on aluseks. "
+        "Andmed kantakse sotsiaalkaitse infosüsteemi. "
+        "Kanne kantakse sotsiaalkaitse infosüsteemi. "
+        "Sotsiaalkaitse infosüsteemile esitatakse teade."
+    )
+
+
+def test_exact_text_replace_does_not_apply_case_inflected_special_forms() -> None:
+    text = "Osakonna juhataja nimetab ametisse ja vabastab ametist ametniku."
+
+    replaced = _ee_apply_text_replace_value(text, "amet", "ametikoht", case_inflected=False)
+
+    assert replaced == text
+
+
 def test_case_inflected_text_replace_handles_riigi_eesvool_compound_forms() -> None:
     text = (
         "riigi eesvoolude tööde mahud; riigi eesvooludel drenaažisuudmete tööde mahud; "

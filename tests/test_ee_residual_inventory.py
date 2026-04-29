@@ -115,6 +115,31 @@ def test_get_ee_residual_inventory_uldosakond_untouched_item_punctuation_drift()
     assert all("does not target item 16" in record.evidence for record in inventory.residuals)
 
 
+def test_get_ee_residual_inventory_oiguspoliitika_surface_drift() -> None:
+    inventory = get_ee_residual_inventory("115122011012", "128032013018")
+
+    assert inventory is not None
+    assert inventory.statute_title == "Õiguspoliitika osakonna põhimäärus"
+    assert inventory.comparison_class == "commensurable_delta"
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert {
+        record.address for record in inventory.residuals
+    } == {
+        "section:2",
+        "section:2/subsection:1",
+        "section:2/subsection:1/item:1",
+        "section:8",
+        "section:8/subsection:1",
+        "section:8/subsection:1/item:7_1",
+        "section:8/subsection:1/item:7_2",
+        "section:8/subsection:1/item:7_3",
+        "section:11",
+        "section:11/subsection:1",
+        "section:11/subsection:1/item:8",
+    }
+    assert all("does not target" in record.evidence for record in inventory.residuals)
+
+
 def test_get_ee_residual_inventory_majutuse_appendix_projection_repeal() -> None:
     inventory = get_ee_residual_inventory("130042020010", "109032023008")
 
