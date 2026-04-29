@@ -47,6 +47,7 @@ _EE_TEXTIST_VAELJA_JAETUD_RE = re.compile(
     r"^\[\s*Käesolevast\s+tekstist\s+välja\s+jäetud\.?\s*\]$",
     re.IGNORECASE,
 )
+_EE_KEHTETU_MARKER_RE = re.compile(r"\s*\[\s*kehtetu-[^\]]+\]", re.IGNORECASE)
 _EE_KUNI_DASH_RE = re.compile(r"(?<=[A-Za-zÕÄÖÜõäöüŠŽšž])-(?=kuni\b)")
 _EE_ASCII_THIRD_RE = re.compile(r"(?<=\d)\s+1/3(?=-list\b)")
 _EE_COMMITTEE_DASH_RE = re.compile(
@@ -418,6 +419,14 @@ _EE_NORMALIZATION_RULES = (
         kind="placeholder",
         description="Map the longer removed-text placeholder to empty text.",
         pattern=_EE_TEXTIST_VAELJA_JAETUD_RE,
+        replacement="",
+    ),
+    EENormalizationRule(
+        name="kehtetu_marker",
+        rule_class=EENormalizationRuleClass.placeholder_equivalence,
+        kind="regex",
+        description="Remove RT repealed-unit display markers from comparison text.",
+        pattern=_EE_KEHTETU_MARKER_RE,
         replacement="",
     ),
     EENormalizationRule(
