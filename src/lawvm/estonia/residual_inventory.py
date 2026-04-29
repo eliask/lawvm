@@ -102,6 +102,29 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
+    ("115112016003", "114052020002"): EEPairResidualInventory(
+        base_id="115112016003",
+        oracle_id="114052020002",
+        statute_title="Algatusrühma koostöötegevused",
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "section:8",
+                    "section:8/subsection:2",
+                    "section:8/subsection:2/item:3",
+                ),
+                evidence=(
+                    "Source act 106092019001 inserts § 8(2) item 4 and changes "
+                    "'kuluefektiivsus' wording in item 3, but does not explicitly "
+                    "replace item 3's terminal period with a semicolon. Replay "
+                    "therefore preserves the source/base terminal punctuation while "
+                    "oracle 114052020002 renders item 3 as a non-final list item."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("105072012011", "126032014005"): EEPairResidualInventory(
         base_id="105072012011",
         oracle_id="126032014005",
