@@ -934,6 +934,7 @@ _EE_SECTION_SEQUENCE_RENUMBER_RULE = "ee_section_sequence_renumber_before_insert
 _EE_SUBSECTION_SEQUENCE_RENUMBER_RULE = "ee_subsection_sequence_renumber_before_insert"
 _EE_FLAT_SECTIONLESS_SINGLETON_ITEM_INSERT_RULE = "ee_flat_sectionless_singleton_item_insert"
 _EE_FLAT_SECTIONLESS_SINGLETON_ITEM_REPEAL_RULE = "ee_flat_sectionless_singleton_item_repeal"
+_EE_FLAT_SECTIONLESS_SINGLETON_SUBSECTION_SCOPE_RULE = "ee_flat_sectionless_singleton_subsection_scope"
 _EE_PAYLOAD_AFTER_TITLE_QUOTE_RULE = "ee_payload_after_marker_ignores_premarker_title_quote"
 
 
@@ -1434,6 +1435,38 @@ def _extract_flat_sectionless_singleton_item_repeals(
         ))
         seq += 1
     return ops
+
+
+def _extract_flat_sectionless_singleton_subsection_ops(
+    clean: str,
+    source: OperationSource,
+    seq: int,
+) -> list[LegalOperation]:
+    """Recover clauses that name a subsection/item but omit the singleton section."""
+    preamble = _instruction_preamble(clean)
+    if not re.search(r"^\s*l[oõ]ike(?:t|s|st|ga|le|)\s+\d", preamble, re.IGNORECASE):
+        return []
+    if not re.search(r"\bpunkt(?:i|ist|id|ides|idega|iga|)\b", preamble, re.IGNORECASE):
+        return []
+    scoped_clean = f"paragrahvi 1 {clean}"
+    scoped_ops = extract_ee_ops(scoped_clean, source, seq_start=seq)
+    if not scoped_ops:
+        return []
+    recovered: list[LegalOperation] = []
+    for op in scoped_ops:
+        if not op.target.path or op.target.path[0] != ("section", "1"):
+            return []
+        recovered.append(replace(
+            op,
+            provenance_tags=(
+                clean[:200],
+                *op.provenance_tags,
+                _EE_FLAT_SECTIONLESS_SINGLETON_SUBSECTION_SCOPE_RULE,
+                "scope_confidence:inferred_from_live_unique",
+            ),
+            witness_rule_id=op.witness_rule_id or _EE_FLAT_SECTIONLESS_SINGLETON_SUBSECTION_SCOPE_RULE,
+        ))
+    return recovered
 
 
 def _marker_payload_starts_with_right_quote(text: str) -> bool:
@@ -4957,6 +4990,9 @@ def extract_ee_ops(
     # Try to parse the provision target
     target = parse_target(clean)
     if target is None:
+        flat_subsection_ops = _extract_flat_sectionless_singleton_subsection_ops(clean, source, seq)
+        if flat_subsection_ops:
+            return flat_subsection_ops
         flat_item_repeals = _extract_flat_sectionless_singleton_item_repeals(clean, source, seq)
         if flat_item_repeals:
             return flat_item_repeals
