@@ -1979,12 +1979,25 @@ def test_get_ee_residual_inventory_korteriomandi_ja_korteriuhistuseadus() -> Non
     assert inventory is None
 
 
+def test_get_ee_residual_inventory_oil_seed_chapter_tail_address_projection() -> None:
+    inventory = get_ee_residual_inventory("117052024008", "104042025010")
+
+    assert inventory is not None
+    assert inventory.comparison_class == "commensurable_delta"
+    assert len(inventory.residuals) == 28
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert inventory.residuals[0].address == "chapter:5_1"
+    assert "104042025006" in inventory.residuals[0].evidence
+    assert "no instruction to renumber or move chapters" in inventory.residuals[0].evidence
+
+
 def test_list_known_ee_residual_inventories_contains_active_non_zero_pairs() -> None:
     pairs = {
         (inventory.base_id, inventory.oracle_id)
         for inventory in list_known_ee_residual_inventories()
     }
 
+    assert ("117052024008", "104042025010") in pairs
     assert ("103052013007", "130042015007") in pairs
     assert ("127122013026", "129102014007") in pairs
     assert ("108072011074", "127062017011") in pairs
