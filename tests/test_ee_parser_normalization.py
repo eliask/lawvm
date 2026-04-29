@@ -1994,6 +1994,35 @@ def test_parse_ee_amendment_ops_carries_wrapper_section_to_numbered_subsection_i
     assert all(str(op.target).startswith("section:45") for op in ops)
 
 
+def test_parse_ee_amendment_ops_strips_direct_target_title_before_chapter_repeals() -> None:
+    archive = open_rt_archive(readonly=True)
+    target_title = (
+        "Üldise õigusnõustamise sihtgrupp ja õigusvaldkonnad ning selle "
+        "nõustamise kättesaadavuse parandamiseks antava toetuse jagamise "
+        "tingimused ja kord"
+    )
+    xml = fetch_rt_xml("117022021004", archive)
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/117022021004",
+        target_title=target_title,
+        ref_effective="2021-02-20",
+    )
+
+    assert [(op.action, op.target.path) for op in ops[:3]] == [
+        (StructuralAction.REPEAL, (("chapter", "1"),)),
+        (StructuralAction.REPEAL, (("chapter", "3"),)),
+        (StructuralAction.REPEAL, (("chapter", "5"),)),
+    ]
+    assert [op.witness_rule_id for op in ops[:3]] == [
+        "ee_direct_target_title_prefix_stripped_for_structural_repeal",
+        "ee_direct_target_title_prefix_stripped_for_structural_repeal",
+        "ee_direct_target_title_prefix_stripped_for_structural_repeal",
+    ]
+    assert all("old_format_amendment_section:38" in op.provenance_tags for op in ops[:3])
+
+
 def test_extract_ee_ops_keeps_trailing_same_section_subsection_repeal_after_item_repeal() -> None:
     ops = extract_ee_ops(
         "paragrahvi 14 lõike 1 punkt 7 ja lõige 2 tunnistatakse kehtetuks;",

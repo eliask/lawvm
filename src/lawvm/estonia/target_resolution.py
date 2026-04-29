@@ -21,6 +21,8 @@ from lawvm.estonia.act_identity_registry import (
 )
 from lawvm.estonia.peg import _extract_quoted_content, _normalize_num, extract_ee_ops, parse_html_op_items
 
+_EE_DIRECT_TARGET_PREFIX_STRIP_RULE = "ee_direct_target_title_prefix_stripped_for_structural_repeal"
+
 
 @dataclass(frozen=True)
 class NewFormatGateFlags:
@@ -636,6 +638,12 @@ def new_format_lower_op_texts(
                     continue
 
         effective = re.sub(r'^\(?\d[\d\s_]*\)\s*', '', op_text).strip()
+        direct_prefix_stripped = False
+        effective, direct_prefix_stripped = strip_direct_target_title_prefix(
+            effective,
+            target_title,
+            title_matcher=title_matcher,
+        )
         if last_section and not has_section_ref(op_text):
             last_sect_raw = last_section.replace("_", " ")
             effective = f"paragrahvi {last_sect_raw} {op_text}"
@@ -652,7 +660,18 @@ def new_format_lower_op_texts(
                 tags.append(f"old_format_amendment_item:{amendment_item_label}")
             if base_act_name:
                 tags.append(f"base_act: {base_act_name}")
-            tagged_ops.append(replace(op, provenance_tags=tuple(tags)))
+            witness_rule_id = op.witness_rule_id
+            if direct_prefix_stripped:
+                tags.append(_EE_DIRECT_TARGET_PREFIX_STRIP_RULE)
+                if op.action is not StructuralAction.META:
+                    witness_rule_id = _EE_DIRECT_TARGET_PREFIX_STRIP_RULE
+            tagged_ops.append(
+                replace(
+                    op,
+                    provenance_tags=tuple(tags),
+                    witness_rule_id=witness_rule_id,
+                )
+            )
         ops = tagged_ops
         lowered.extend(ops)
         global_seq += len(ops)
@@ -1275,6 +1294,41 @@ def old_format_has_section_ref(text: str) -> bool:
             re.IGNORECASE,
         )
     )
+
+
+def strip_direct_target_title_prefix(
+    text: str,
+    target_title: str,
+    *,
+    title_matcher: Callable[[str, str], bool] = title_matches_para,
+) -> tuple[str, bool]:
+    """Strip an explicit target-act lead-in before a structural target."""
+    if not text or not target_title:
+        return text, False
+    match = re.match(
+        r"^[A-ZÜÕÖÄ].{0,360}?\b"
+        r"(?:seaduse|seadustiku|koodeksi|määruse)\b"
+        r"(?:\s+nr\.?\s*[\w./-]+)?\s+[„\"“](?P<title>[^„”“\"]+)[”“\"]\s+"
+        r"(?P<tail>.+)$",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if match is None:
+        return text, False
+    quoted_title = re.sub(r"\s+", " ", match.group("title")).strip()
+    tail = re.sub(r"\s+", " ", match.group("tail")).strip()
+    if not tail or not title_matcher(target_title, quoted_title):
+        return text, False
+    if not re.match(
+        r"(?:\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\.\s*,?\s*)?"
+        r"(?:\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*(?:\.\s*,?\s*(?:ja\s+)?)?|"
+        r"§|paragrahv|paragrahvi|peatükk|peatüki|osa|jagu|jaotis|"
+        r"tunnistatakse|muudetakse|asendatakse|täiendatakse|jäetakse|lisatakse)",
+        tail,
+        flags=re.IGNORECASE,
+    ):
+        return text, False
+    return tail, True
 
 
 def old_format_section_from_ops(ops: list[LegalOperation]) -> str | None:
@@ -2123,8 +2177,11 @@ def looks_like_self_referential_amendment_act_para(
     first_norm = re.sub(r"\s+", " ", first_tava.strip().lower())
     derived_target = paragrahv_to_act_id(para_title)
     registry_record = lookup_act_identity(title=para_title, alias=target_title)
+    quoted_target = _extract_quoted_content(para_title)
 
     if para_norm == target_norm or (derived_target and derived_target == target_norm):
+        return False
+    if quoted_target and title_matches_para(target_title, quoted_target):
         return False
     if registry_record is not None and getattr(registry_record, "source_family", "") == "self_referential_amendment_act":
         return True
