@@ -2615,7 +2615,7 @@ def _set_text_replace_payload_attrs(
         and re.search(r"\bpärast\s+sõnu\b", clean, re.IGNORECASE)
     ):
         attrs["all_occurrences"] = True
-        attrs["source_family"] = "ee_plural_subsection_insert_after_each_surface"
+        source_family = "ee_plural_subsection_insert_after_each_surface"
     if case_inflected:
         attrs["case_inflected"] = True
     if scope_chapters:
@@ -2949,6 +2949,40 @@ def extract_ee_ops(
         clean,
         re.IGNORECASE,
     )
+    title_delete_global = re.search(
+        rf'\b{statute_ref}\s+pealkirjast\s+j[äa]etakse\s+välja\s+'
+        r'(?:sõna|sõnad|tekstiosa)\s+[„"“](?P<old>[^”"]+)[”"]',
+        clean,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if title_delete_global is not None:
+        rule_id = "ee_statute_title_text_delete"
+        old_t = re.sub(r"\s+", " ", title_delete_global.group("old")).strip()
+        payload = IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="",
+            attrs={"rewrite_scope_surface": "title"},
+        )
+        payload, _rewrite_witness = _set_text_replace_payload_attrs(
+            payload,
+            clean,
+            old_t,
+            "",
+            source_family=rule_id,
+        )
+        return [
+            LegalOperation(
+                op_id=f"ee-title-text-delete-{seq}-{source.statute_id}",
+                sequence=seq,
+                action=_to_structural_action("text_replace"),
+                target=LegalAddress(path=()),
+                payload=payload,
+                text_patch=_typed_text_replace_patch(old_t, ""),
+                source=source,
+                provenance_tags=(clean[:200], rule_id),
+                witness_rule_id=rule_id,
+            )
+        ]
     if re.search(
         rf'\b{statute_ref}\s+kogu\s+teksti[s]?\s+asendatakse'
         rf'|\b{statute_ref}\s+asendatakse\s+läbivalt'

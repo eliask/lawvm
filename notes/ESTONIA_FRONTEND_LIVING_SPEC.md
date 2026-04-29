@@ -1075,3 +1075,62 @@ quoted `tekstiosaga`, the inserted text may itself contain a quoted title:
 
 The marker-aware insert-after parse owns this shape. Generic ordered quote
 pairing must not truncate the payload at the nested title's closing quote.
+
+## 57. Registry title aliases must match both surfaces
+
+The act-identity registry is evidence that two title surfaces name one act. It
+is not permission to admit every omnibus section once the target title has a
+registry record.
+
+Registry-backed target routing must require both the requested target title and
+the candidate wrapper/header/fragment to match the same record. This prevents
+flat omnibus acts from applying unrelated sections to the target statute.
+
+Corpus witness:
+
+- `128122024013` contains 31 flat old-format wrapper sections.
+- For base `106102022005`, only wrapper `§ 26` targets the same act through the
+  old `Maaeluministeeriumi...` title, intermediate
+  `Regionaal- ja Põllumajandusministeeriumi...` title, and final shorter title.
+- Wrapper `§ 25` is a similarly named 2015 act using `ja hoiu`; it is not the
+  same record as the 2018 `ning hoiu` act.
+
+The named target-routing repair is not a replay shortcut. It is exact registry
+admission plus quoted-title extraction from wrapper headers.
+
+## 58. Old-format wrapper sections can imply whole-regulation scope
+
+Inside an admitted old-format wrapper section, an item can say only:
+
+`asendatakse tekstiosa „OLD” tekstiosaga „NEW” vastavas käändes`
+
+The wrapper header has already named the target regulation, so this is a
+whole-regulation text replacement, not an unknown operation and not a target for
+the amendment act's own section number.
+
+The rule is:
+
+- `ee_old_format_wrapper_scope_inherited`
+
+It emits a statute-wide text replacement and keeps the wrapper section as
+`old_format_amendment_section:*` provenance only.
+
+Related title-only delete clauses such as `määruse pealkirjast jäetakse välja`
+compile under:
+
+- `ee_statute_title_text_delete`
+
+That rule records title-surface scope in the text rewrite witness; it does not
+invent a provision address.
+
+## 59. Compact coordinated agency spacing is a replay morphology variant
+
+Riigi Teataja source/oracle surfaces sometimes collapse coordinated agency names
+without both expected spaces:
+
+- source quote: `Põllumajandus- ja Toiduamet`
+- live text: `Põllumajandus-jaToiduameti`
+- oracle after replacement: `Maa-ja Ruumiameti`
+
+Case-inflected text replacement may match the compact `-ja` form for the same
+declined agency phrase. This belongs to text morphology, not target resolution.
