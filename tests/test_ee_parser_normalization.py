@@ -8680,6 +8680,33 @@ def test_parse_ee_statute_materializes_numbered_html_table_rows_as_items() -> No
     )
 
 
+def test_parse_ee_statute_html_table_rows_do_not_split_citation_parentheses_as_items() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    statute = parse_ee_statute(fetch_rt_xml("129102022018", archive), "ee/129102022018")
+    section = next(node for node in statute.body.children if node.kind == IRNodeKind.SECTION and node.label == "5")
+    subsection = next(node for node in section.children if node.kind == IRNodeKind.SUBSECTION and node.label == "2")
+
+    assert subsection.attrs["source_cleanup_rules"] == ("ee_html_table_numbered_items_materialized",)
+    assert [item.label for item in subsection.children] == [str(label) for label in range(1, 14)]
+    assert subsection.children[0].text == (
+        "originaalveterinaarravimi taotlus (Euroopa Parlamendi ja nõukogu määruse (EL) 2019/6 "
+        "(edaspidi määrus (EL) 2019/6) art 5 lg 1) 6000 eurot"
+    )
+    assert subsection.children[5].text == (
+        "homöopaatilise veterinaarravimi registreerimise taotlus (määruse (EL) 2019/6 art 86) "
+        "4500 eurot"
+    )
+    assert subsection.children[12].text == (
+        "sama taotleja sama toimeainet sisaldava ravimi iga järgneva ravimvormi ja tugevusega "
+        "ravimi müügiloa taotlus 3000 eurot"
+    )
+    assert all(
+        item.attrs["source_cleanup_rule"] == "ee_html_table_numbered_items_materialized"
+        for item in subsection.children
+    )
+
+
 def test_parse_ee_amendment_ops_uses_direct_old_format_header_target_section() -> None:
     archive = open_rt_archive(readonly=True)
 
