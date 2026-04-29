@@ -315,6 +315,36 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
+    ("115092020007", "130092020007"): EEPairResidualInventory(
+        base_id="115092020007",
+        oracle_id="130092020007",
+        statute_title=(
+            "2020. aastal toetatavate „Euroopa Merendus- ja Kalandusfondi "
+            "rakenduskava 2014–2020” meetmete ja tegevuste liigid"
+        ),
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "section:1",
+                    "section:1/subsection:1",
+                    "section:1/subsection:1/item:21",
+                ),
+                evidence=(
+                    "Source act 130092020005 repeals § 1(1) items 2, 4, 15, "
+                    "and 16 and inserts item 22. Replay applies those source-owned "
+                    "mutations and preserves the surviving item 21 terminal period; "
+                    "existing Estonia apply tests require that append-only item "
+                    "insertion does not silently rewrite the previous sibling's "
+                    "terminal punctuation. Oracle 130092020007 changes item 21 to "
+                    "a semicolon to display the extended list. This is bounded "
+                    "source/oracle list-punctuation drift, not a missing replay "
+                    "operation."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("123112010049", "122072011005"): EEPairResidualInventory(
         base_id="123112010049",
         oracle_id="122072011005",
