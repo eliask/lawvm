@@ -3637,13 +3637,13 @@ def extract_ee_ops(
 
     # Plural section repeal/text-replace: "paragrahvid N, M ja K tunnistatakse kehtetuks"
     # and "§-d N–M ning K tunnistatakse kehtetuks"
-    # Also handles "paragrahvides N ja M asendatakse" and en-dash ranges "paragrahvid N–M".
-    # paragrahvid (nominative), paragrahvide (genitive), paragrahvides (inessive)
+    # Also handles "paragrahvides/paragrahvidest N ja M asendatakse" and ranges "paragrahvid N-M".
+    # paragrahvid (nominative), paragrahvide (genitive), paragrahvides/paragrahvidest (local cases)
     _NUM_PAT_PS = r'\d+(?:\s+\d+)?'
     _RANGE_OR_NUM = _NUM_PAT_PS + r'(?:\s*[–‒\-]\s*' + _NUM_PAT_PS + r')?'
     section_clean = _strip_leading_clause_wrapper(clean)
     m_multi_sect = re.search(
-        r'(?:\bparagrahvid(?:e[s]?)?\b|§-d)\s+('
+        r'(?:\bparagrahvid(?:e(?:s|st)?|es|est)?\b|§-d)\s+('
         + _RANGE_OR_NUM
         + r'(?:\s*,\s*'
         + _RANGE_OR_NUM

@@ -26,6 +26,7 @@ _EE_DIRECT_TARGET_PREFIX_STRIP_RULE = "ee_direct_target_title_prefix_stripped_fo
 _EE_OLD_FORMAT_WRAPPER_SCOPE_INHERITED_RULE = "ee_old_format_wrapper_scope_inherited"
 _EE_OLD_FORMAT_DIRECT_HEADER_TARGET_SECTION_RULE = "ee_old_format_direct_header_target_section"
 _EE_OLD_FORMAT_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_old_format_preamble_clause_non_body"
+_EE_OLD_FORMAT_OUT_OF_BODY_APPENDIX_CLAUSE_RULE = "ee_old_format_out_of_body_appendix_clause_not_section_scoped"
 _EE_NEW_FORMAT_TARGET_ACT_HEADER_NOT_WRAPPER_RULE = "ee_new_format_target_act_header_not_wrapper_instruction"
 _OP_TEXT_RULE_PREFIX = "\x1eLAWVM_RULE:"
 _OP_TEXT_RULE_SUFFIX = "\x1f"
@@ -36,6 +37,36 @@ def _registry_record_matches_all(record: object, *surfaces: str) -> bool:
     narrowed_record = cast(EEActIdentityRecord, record)
     checked = [surface for surface in surfaces if surface]
     return bool(checked) and all(act_identity_matches_title(narrowed_record, surface) for surface in checked)
+
+
+def _strip_old_format_item_prefix(text: str) -> str:
+    return re.sub(r"^\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s*", "", text).strip()
+
+
+def _is_out_of_body_appendix_or_note_clause(text: str) -> bool:
+    stripped = _strip_old_format_item_prefix(text).lower()
+    return bool(
+        re.match(r"^(?:määruse|seaduse)\s+(?:senise\s+)?lisa(?:s|d|ga)?\b", stripped)
+        or re.match(r"^lisa(?:s|d|ga)?\b", stripped)
+        or re.match(r"^(?:määruse|seaduse)\s+(?:kolmas\s+)?normitehnili\w*\s+märkus", stripped)
+    )
+
+
+def _mark_old_format_out_of_body_clause(op: LegalOperation, source_text: str) -> LegalOperation:
+    if op.action is StructuralAction.META or op.target.path:
+        return op
+    tags = tuple((*op.provenance_tags, _EE_OLD_FORMAT_OUT_OF_BODY_APPENDIX_CLAUSE_RULE))
+    return replace(
+        op,
+        action=StructuralAction.META,
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text=source_text,
+            attrs={"source_family": _EE_OLD_FORMAT_OUT_OF_BODY_APPENDIX_CLAUSE_RULE},
+        ),
+        provenance_tags=tags,
+        witness_rule_id=_EE_OLD_FORMAT_OUT_OF_BODY_APPENDIX_CLAUSE_RULE,
+    )
 
 
 @dataclass(frozen=True)
@@ -608,14 +639,6 @@ def new_format_lower_op_texts(
     global_seq = seq_start
     last_section: str | None = None
 
-    def _is_act_level_non_body_clause(text: str) -> bool:
-        stripped = re.sub(r"^\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s*", "", text).strip().lower()
-        return bool(
-            re.match(r"^määruse\s+lisa(?:s|d|ga)?\b", stripped)
-            or re.match(r"^lisa(?:s|d|ga)?\b", stripped)
-            or re.match(r"^määruse\s+(?:kolmas\s+)?normitehnili\w*\s+märkus", stripped)
-        )
-
     for op_text in op_texts:
         rule_tags: list[str] = []
         while op_text.startswith(_OP_TEXT_RULE_PREFIX):
@@ -659,7 +682,7 @@ def new_format_lower_op_texts(
             target_title,
             title_matcher=title_matcher,
         )
-        if last_section and not has_section_ref(original_op_text) and not _is_act_level_non_body_clause(original_op_text):
+        if last_section and not has_section_ref(original_op_text) and not _is_out_of_body_appendix_or_note_clause(original_op_text):
             last_sect_raw = last_section.replace("_", " ")
             carried_text = re.sub(r"^\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s*", "", original_op_text)
             effective = f"paragrahvi {last_sect_raw} {carried_text}"
@@ -1334,7 +1357,7 @@ def old_format_has_section_ref(text: str) -> bool:
     preamble = text[:preamble_end]
     return bool(
         re.search(
-            r"\bparagrahvid(?:e[s]?)?\s+\d|\bparagrahvi(?:s|st)?\s+\d|\bparagrahv\s+\d|"
+            r"\bparagrahvid(?:e(?:s|st)?|es|est)?\s+\d|\bparagrahvi(?:s|st)?\s+\d|\bparagrahv\s+\d|"
             r"§(?:-d|-s|-ga|-iga|-des|-dega)?\s*\d|"
             r"\blisa(?:d|de|sid|ga)?\s+\d|"
             r"\bpeatüki\s+\d|\bjao\s+\d|\bjaotis(?:e|es|t)?\s+\d|"
@@ -1922,6 +1945,7 @@ def old_format_lower_op_texts(
         normalization_rule_id: str | None = None
         strip_outer_payload_quote = False
         inherited_wrapper_scope = False
+        out_of_body_appendix_or_note_clause = _is_out_of_body_appendix_or_note_clause(op_text)
         if re.match(
             r"^(?:\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s+)?määruse\s+preambul\s+sõnastatakse\b",
             op_text,
@@ -1948,7 +1972,12 @@ def old_format_lower_op_texts(
             re.search(r"\btekstiosa[a-z]*\s+[„\"“][^”\"]*?\bpeatükk\b", op_text, re.IGNORECASE)
             and re.search(r"\basendatakse\s+tekstiosaga\b", op_text, re.IGNORECASE)
         )
-        if last_section and not old_format_has_section_ref(op_text) and not is_container_heading_relabel:
+        if (
+            last_section
+            and not old_format_has_section_ref(op_text)
+            and not is_container_heading_relabel
+            and not out_of_body_appendix_or_note_clause
+        ):
             last_sect_raw = last_section.replace("_", " ")
             item_body = old_format_strip_item_label(op_text)
             effective = f"paragrahvi {last_sect_raw} {item_body}"
@@ -1976,6 +2005,8 @@ def old_format_lower_op_texts(
                 and op.op_id.startswith("ee-unknown-")
             )
         ]
+        if out_of_body_appendix_or_note_clause:
+            ops = [_mark_old_format_out_of_body_clause(op, op_text) for op in ops]
         sect = old_format_section_from_ops(ops)
         if sect:
             last_section = sect

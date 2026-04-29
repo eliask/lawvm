@@ -8201,6 +8201,21 @@ def test_extract_ee_ops_recovers_flat_sectionless_singleton_subsection_item_scop
     assert prefixed_ops[0].witness_rule_id == "ee_flat_sectionless_singleton_subsection_scope"
 
 
+def test_extract_ee_ops_handles_plural_elative_section_text_replace() -> None:
+    text = 'paragrahvidest 9 ja 12 jäetakse läbivalt välja tekstiosa „, elektrišokirelva”;'
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.TEXT_REPLACE, (("section", "9"),)),
+        (StructuralAction.TEXT_REPLACE, (("section", "12"),)),
+    ]
+    assert [op.payload.text for op in ops if op.payload is not None] == [
+        ", elektrišokirelva",
+        ", elektrišokirelva",
+    ]
+
+
 def test_parse_ee_amendment_ops_does_not_carry_section_into_appendix_clauses() -> None:
     archive = open_rt_archive(readonly=True)
 
@@ -8229,3 +8244,36 @@ def test_parse_ee_amendment_ops_does_not_carry_section_into_appendix_clauses() -
         and any("lisas esitatud Koidula" in tag for tag in op.provenance_tags)
         for op in bare_appendix_ops
     )
+
+    old_format_appendix_ops = parse_ee_amendment_ops(
+        fetch_rt_xml("106072023001", archive),
+        "ee/106072023001",
+        target_title="Testide andmekogu asutamine ja põhimäärus",
+    )
+    assert not any(
+        op.target.path == (("section", "16"),)
+        and op.target.special is FacetKind.HEADING
+        and any("määruse senise lisa" in tag for tag in op.provenance_tags)
+        for op in old_format_appendix_ops
+    )
+
+
+def test_parse_ee_amendment_ops_does_not_carry_old_format_section_into_appendix_repeal() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("129062024002", archive),
+        "ee/129062024002",
+        target_title="Liikluskindlustuse seadus",
+    )
+
+    appendix_ops = [
+        op
+        for op in ops
+        if any("seaduse lisa tunnistatakse kehtetuks" in tag for tag in op.provenance_tags)
+    ]
+
+    assert appendix_ops
+    assert appendix_ops[0].action is StructuralAction.META
+    assert appendix_ops[0].witness_rule_id == "ee_out_of_body_appendix_or_note_clause"
+    assert not any(op.target.path == (("section", "85_2"),) and op.action is StructuralAction.REPEAL for op in appendix_ops)
