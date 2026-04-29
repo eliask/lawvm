@@ -5848,6 +5848,11 @@ def parse_html_op_items(html_cdata: str, *, allow_plain_paragraph_items: bool = 
         text = _html_block_to_item_text(block)
         if text and re.match(r"\d+\)", text):
             fallback_result.append(text)
+    if result and fallback_result and len(fallback_result) == len(result):
+        return [
+            rich if len(rich) >= len(fallback) else fallback
+            for rich, fallback in zip(result, fallback_result)
+        ]
     if len(fallback_result) > 1 or not result:
         return fallback_result
     return result
