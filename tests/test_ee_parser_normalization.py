@@ -161,6 +161,25 @@ def test_extract_ee_ops_expands_multi_target_sentence_part_insert() -> None:
         assert op.witness_rule_id == "ee_insert_multi_explicit_targets"
 
 
+def test_extract_ee_ops_filters_host_subsection_from_inserted_label_target() -> None:
+    text = (
+        "paragrahvi 9 lõiget 1 täiendatakse lõikega 1 1 järgmises sõnastuses: "
+        "„(1 1) Projekti partner peab vastama taotleja kohta sätestatud nõuetele.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path, _payload(op).text) for op in ops] == [
+        (
+            StructuralAction.INSERT,
+            (("section", "9"), ("subsection", "1_1")),
+            "(1 1) Projekti partner peab vastama taotleja kohta sätestatud nõuetele.",
+        )
+    ]
+    assert "ee_insert_multi_explicit_targets_payload_label_filter" in ops[0].provenance_tags
+    assert ops[0].witness_rule_id == "ee_insert_multi_explicit_targets_payload_label_filter"
+
+
 def test_extract_ee_ops_splits_bare_later_section_in_coordinated_text_replace_targets() -> None:
     text = (
         "paragrahvi 13 lõikes 6, § 15 lõike 1 punktides 5 ja 6 ning "
@@ -1282,6 +1301,61 @@ def test_replay_ee_to_pit_preserves_heading_for_short_section_text_replacement()
     assert [(child.label, child.text) for child in section.children] == [
         ("1", "Hoiukavad koostab Põllumajandusamet.")
     ]
+
+
+def test_apply_ee_ops_does_not_split_item_payload_at_parenthetical_number() -> None:
+    from lawvm.estonia.grafter import apply_ee_ops
+
+    base = IRStatute(
+        statute_id="ee/test",
+        title="Test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="3",
+                    text="Toetatavad tegevused",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            text="Ehitatavale hoonele esitatavad nõuded:",
+                            children=(
+                                IRNode(kind=IRNodeKind.ITEM, label="1", text="vana esimene;"),
+                                IRNode(kind=IRNodeKind.ITEM, label="2", text="vana teine;"),
+                                IRNode(kind=IRNodeKind.ITEM, label="3", text="vana kolmas."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    payload_text = (
+        "2) ehitatava hoone energiatõhususarv peab vastama määruses nr 63 "
+        "„Hoone energiatõhususe miinimumnõuded“ (edaspidi määrus nr 63) "
+        "sätestatud nõuetele;"
+    )
+    op = LegalOperation(
+        op_id="ee/test/op",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "3"), ("subsection", "3"), ("item", "2"))),
+        payload=IRNode(kind=IRNodeKind.CONTENT, text=payload_text),
+        source=OperationSource(statute_id="ee/test", raw_text=payload_text),
+    )
+
+    adjudications = []
+    updated = apply_ee_ops(base, [op], adjudications_out=adjudications)
+    item_2 = updated.body.children[0].children[0].children[1]
+
+    assert item_2.text == (
+        "ehitatava hoone energiatõhususarv peab vastama määruses nr 63 "
+        "„Hoone energiatõhususe miinimumnõuded“ (edaspidi määrus nr 63) "
+        "sätestatud nõuetele;"
+    )
+    assert any(adj.kind == "ee_inline_item_parentheses_marker_guard" for adj in adjudications)
 
 
 def test_parse_ee_amendment_ops_uses_direct_html_intro_for_single_target_regulation() -> None:
@@ -9725,6 +9799,37 @@ def test_parse_ee_amendment_ops_strips_old_format_direct_target_prefix_before_ca
     ]
     assert "ee_old_format_direct_target_title_prefix_stripped_before_carry" in ops[0].provenance_tags
     assert "ee_old_format_carried_section_scope" not in ops[0].provenance_tags
+
+
+def test_parse_ee_amendment_ops_does_not_carry_section_scope_into_chapter_heading() -> None:
+    xml = """
+    <oigusakt xmlns="muutmismaarus_1_10.02.2010">
+      <aktinimi>
+        <nimi>
+          <pealkiri>Vabariigi Valitsuse 1. jaanuari 2020. a määruse nr 1 „Sihtmäärus” muutmine</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <sisuTekst>
+          <HTMLKonteiner><![CDATA[
+            <p>Vabariigi Valitsuse 1. jaanuari 2020. a määruses nr 1 „Sihtmäärus” tehakse järgmised muudatused:</p>
+            <p><b>1)</b> paragrahvi 7 täiendatakse lõikega 2 järgmises sõnastuses:</p>
+            <p>„(2) Esimene muudatus.”;</p>
+            <p><b>2)</b> kolmanda peatüki pealkirja täiendatakse pärast sõna „taotlejale” tekstiosaga „, projekti partnerile”;</p>
+          ]]></HTMLKonteiner>
+        </sisuTekst>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Sihtmäärus")
+
+    assert [(op.action, op.target.path, op.target.special) for op in ops] == [
+        (StructuralAction.INSERT, (("section", "7"), ("subsection", "2")), None),
+        (StructuralAction.TEXT_REPLACE, (("chapter", "3"),), FacetKind.HEADING),
+    ]
+    assert "ee_old_format_container_heading_target_blocks_section_carry" in ops[1].provenance_tags
+    assert "ee_old_format_carried_section_scope" not in ops[1].provenance_tags
 
 
 def test_parse_ee_amendment_ops_recovers_real_105072023001_direct_target_item() -> None:

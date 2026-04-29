@@ -143,6 +143,25 @@ def _normalize_num(raw: str) -> str:
     return re.sub(r'(\d)\s+(\d)', r'\1_\2', normalized)
 
 
+_EE_ORDINAL_WORD_NUMS = {
+    "esimese": "1",
+    "teise": "2",
+    "kolmanda": "3",
+    "neljanda": "4",
+    "viienda": "5",
+    "kuuenda": "6",
+    "seitsmenda": "7",
+    "kaheksanda": "8",
+    "üheksanda": "9",
+    "kümnenda": "10",
+}
+_EE_ORDINAL_WORD_PAT = "|".join(re.escape(word) for word in _EE_ORDINAL_WORD_NUMS)
+
+
+def _ee_ordinal_word_num(raw: str) -> str | None:
+    return _EE_ORDINAL_WORD_NUMS.get(raw.casefold())
+
+
 def _instruction_preamble(text: str) -> str:
     """Return the instruction part before quoted replacement payload begins."""
     text = _normalize_ee_parse_text(text)
@@ -260,6 +279,16 @@ def parse_target(text: str) -> Optional[LegalAddress]:
 
     # Chapter title: "N¹. peatüki pealkiri" or "peatüki N pealkiri"
     # Pattern: the chapter number appears before "peatüki" or as "N . peatüki"
+    m_ch_word = re.search(
+        rf'\b({_EE_ORDINAL_WORD_PAT})\s+peatük[k]?i\s+pealkir(?:i|ja(?:s|st)?)',
+        text,
+        re.IGNORECASE,
+    )
+    if m_ch_word:
+        ch_num = _ee_ordinal_word_num(m_ch_word.group(1))
+        if ch_num is not None:
+            return LegalAddress(path=(("chapter", ch_num),), special=FacetKind.HEADING)
+
     m_ch = re.search(
         r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s*[.]\s*peatük[k]?i\s+pealkir(?:i|ja(?:s|st)?)'
         r'|peatük[k]?i\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s*pealkir(?:i|ja(?:s|st)?)',
@@ -916,6 +945,20 @@ def _extract_explicit_heading_targets(text: str) -> List[LegalAddress]:
         seen.add(path)
         targets.append(LegalAddress(path=path, special=FacetKind.HEADING))
 
+    for match in re.finditer(
+        rf'\b({_EE_ORDINAL_WORD_PAT})\s+peatük[k]?i',
+        heading_scope,
+        re.IGNORECASE,
+    ):
+        ch_num = _ee_ordinal_word_num(match.group(1))
+        if ch_num is None:
+            continue
+        path = (("chapter", ch_num),)
+        if path in seen:
+            continue
+        seen.add(path)
+        targets.append(LegalAddress(path=path, special=FacetKind.HEADING))
+
     return sorted(targets, key=lambda target: (len(target.path), target.path))
 
 
@@ -955,6 +998,9 @@ _EE_EXPLICIT_MIXED_STRUCTURAL_REPEAL_LIST_RULE = "ee_explicit_mixed_structural_r
 _EE_SUBSECTION_TABLE_ONLY_REPLACE_RULE = "ee_subsection_table_only_replace_preserve_intro"
 _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE = "ee_senine_text_subsection_renumber_before_insert"
 _EE_FRAKTSIONEERITUD_TYPO_DELETE_RULE = "ee_fraktsioneeritud_source_typo_delete_variant"
+_EE_INSERT_MULTI_EXPLICIT_TARGETS_PAYLOAD_LABEL_FILTER_RULE = (
+    "ee_insert_multi_explicit_targets_payload_label_filter"
+)
 
 
 def _is_textual_invalidation(text: str) -> bool:
@@ -977,6 +1023,40 @@ def _split_section_renumber_labels(surface: str) -> tuple[str, ...]:
         if re.fullmatch(r"\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*", raw):
             labels.append(_normalize_num(raw))
     return tuple(labels)
+
+
+def _filter_insert_targets_by_payload_label(
+    targets: list[LegalAddress],
+    payload_text: str,
+) -> tuple[list[LegalAddress], str | None]:
+    """Keep the inserted unit when the clause also names its host as context."""
+    subsection_match = re.match(r"^\s*\(\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s*\)", payload_text)
+    if subsection_match is not None:
+        label = _normalize_num(subsection_match.group(1))
+        matching = [
+            target
+            for target in targets
+            if target.path
+            and target.path[-1][0] == "subsection"
+            and target.path[-1][1] == label
+        ]
+        if len(matching) == 1:
+            return matching, _EE_INSERT_MULTI_EXPLICIT_TARGETS_PAYLOAD_LABEL_FILTER_RULE
+
+    item_match = re.match(r"^\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s*\)", payload_text)
+    if item_match is not None:
+        label = _normalize_num(item_match.group(1))
+        matching = [
+            target
+            for target in targets
+            if target.path
+            and target.path[-1][0] == "item"
+            and target.path[-1][1] == label
+        ]
+        if len(matching) == 1:
+            return matching, _EE_INSERT_MULTI_EXPLICIT_TARGETS_PAYLOAD_LABEL_FILTER_RULE
+
+    return targets, None
 
 
 def _extract_section_renumber_pairs(text: str) -> tuple[tuple[str, str], ...]:
@@ -6257,6 +6337,10 @@ def extract_ee_ops(
             if action == "insert":
                 explicit_targets = _extract_multiple_explicit_targets(_clean_preamble)
                 if len(explicit_targets) > 1:
+                    explicit_targets, target_filter_rule = _filter_insert_targets_by_payload_label(
+                        explicit_targets,
+                        payload.text,
+                    )
                     for explicit_target in explicit_targets:
                         ops.append(LegalOperation(
                             op_id=f"ee-insert-multi-target-{str(explicit_target)}-{seq}-{source.statute_id}",
@@ -6270,8 +6354,12 @@ def extract_ee_ops(
                                 children=tuple(payload.children),
                             ),
                             source=source,
-                            provenance_tags=(clean[:200], "ee_insert_multi_explicit_targets"),
-                            witness_rule_id="ee_insert_multi_explicit_targets",
+                            provenance_tags=(
+                                clean[:200],
+                                "ee_insert_multi_explicit_targets",
+                                *((target_filter_rule,) if target_filter_rule is not None else ()),
+                            ),
+                            witness_rule_id=target_filter_rule or "ee_insert_multi_explicit_targets",
                         ))
                         seq += 1
                     return ops
