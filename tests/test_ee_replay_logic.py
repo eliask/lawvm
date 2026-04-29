@@ -3225,6 +3225,24 @@ def test_replay_ee_to_pit_handles_old_format_direct_header_target_section() -> N
     assert result.divergences == []
 
 
+def test_replay_ee_to_pit_handles_plaintext_preamble_and_repeal_range() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "128112014016",
+        "2017-01-31",
+        archive=archive,
+        oracle_id="128012017003",
+    )
+
+    assert result.error is None
+    assert result.oracle_id == "128012017003"
+    assert result.n_ops == 6
+    assert result.divergences == []
+
+
 def test_replay_ee_to_pit_filters_untitled_omnibus_regulation_sections_by_intro_title() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
