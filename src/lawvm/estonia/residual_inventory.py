@@ -224,6 +224,36 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
+    ("129052013034", "106052015012"): EEPairResidualInventory(
+        base_id="129052013034",
+        oracle_id="106052015012",
+        statute_title=(
+            "Fluoritud kasvuhoonegaase ja osoonikihti kahandavaid aineid "
+            "sisaldavate toodete, seadmete, süsteemide ja mahutite ning "
+            "käitlemistoimingute registri põhimäärus ja selle pidamise kord "
+            "ning andmete esitamise kord ja vormid"
+        ),
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "chapter:3/section:10",
+                    "chapter:3/section:10/subsection:1",
+                    "chapter:3/section:10/subsection:1/item:8",
+                ),
+                evidence=(
+                    "Source act 106052015005 § 1 item 11 inserts § 10(1) item 9 "
+                    "with source-owned terminal punctuation. Replay applies that "
+                    "insert and normalizes the previous live item terminal to a "
+                    "semicolon under the named item-list terminal normalization "
+                    "rule. Oracle 106052015012 presents the previous item with a "
+                    "period, leaving only bounded source/oracle list-punctuation "
+                    "drift in § 10."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("130032012017", "119062013014"): EEPairResidualInventory(
         base_id="130032012017",
         oracle_id="119062013014",
