@@ -933,6 +933,7 @@ _EE_TEXTUAL_INVALIDATION_RULE = "ee_textual_invalidation_as_text_delete"
 _EE_SECTION_SEQUENCE_RENUMBER_RULE = "ee_section_sequence_renumber_before_insert"
 _EE_SUBSECTION_SEQUENCE_RENUMBER_RULE = "ee_subsection_sequence_renumber_before_insert"
 _EE_FLAT_SECTIONLESS_SINGLETON_ITEM_INSERT_RULE = "ee_flat_sectionless_singleton_item_insert"
+_EE_FLAT_SECTIONLESS_SINGLETON_ITEM_REPEAL_RULE = "ee_flat_sectionless_singleton_item_repeal"
 _EE_PAYLOAD_AFTER_TITLE_QUOTE_RULE = "ee_payload_after_marker_ignores_premarker_title_quote"
 
 
@@ -1377,6 +1378,62 @@ def _extract_flat_sectionless_singleton_item_insert(
         ),
         witness_rule_id=_EE_FLAT_SECTIONLESS_SINGLETON_ITEM_INSERT_RULE,
     )
+
+
+def _extract_flat_sectionless_singleton_item_repeals(
+    clean: str,
+    source: OperationSource,
+    seq: int,
+) -> list[LegalOperation]:
+    """Recover top-level ``määruse punktid`` repeals in singleton list regulations."""
+    item_list_pat = (
+        _EE_NUM_ATOM
+        + r'(?:\s*[–‒\-]\s*'
+        + _EE_NUM_ATOM
+        + r')?(?:\s*,\s*'
+        + _EE_NUM_ATOM
+        + r'(?:\s*[–‒\-]\s*'
+        + _EE_NUM_ATOM
+        + r')?)*(?:\s+ja\s+'
+        + _EE_NUM_ATOM
+        + r'(?:\s*[–‒\-]\s*'
+        + _EE_NUM_ATOM
+        + r')?)*'
+    )
+    match = re.search(
+        r"\b(?:määruse|seaduse)\s+punkt(?:id|e)\s+(" + item_list_pat + r")\s+tunnistatakse\s+kehtetuks\b",
+        clean,
+        re.IGNORECASE,
+    )
+    if match is None:
+        return []
+    ops: list[LegalOperation] = []
+    for label in _expand_ee_numeric_list(match.group(1).strip()):
+        ops.append(LegalOperation(
+            op_id=f"ee-flat-sectionless-item-repeal-{label}-{seq}-{source.statute_id}",
+            sequence=seq,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "1"), ("subsection", "1"), ("item", label))),
+            payload=IRNode(
+                kind=IRNodeKind.CONTENT,
+                text="",
+                attrs={
+                    "source_family": _EE_FLAT_SECTIONLESS_SINGLETON_ITEM_REPEAL_RULE,
+                    "scope_confidence": "inferred_from_live_unique",
+                    "source_item_label": label,
+                    "inferred_singleton_path": "section:1/subsection:1",
+                },
+            ),
+            source=source,
+            provenance_tags=(
+                clean[:200],
+                _EE_FLAT_SECTIONLESS_SINGLETON_ITEM_REPEAL_RULE,
+                "scope_confidence:inferred_from_live_unique",
+            ),
+            witness_rule_id=_EE_FLAT_SECTIONLESS_SINGLETON_ITEM_REPEAL_RULE,
+        ))
+        seq += 1
+    return ops
 
 
 def _marker_payload_starts_with_right_quote(text: str) -> bool:
@@ -4900,6 +4957,9 @@ def extract_ee_ops(
     # Try to parse the provision target
     target = parse_target(clean)
     if target is None:
+        flat_item_repeals = _extract_flat_sectionless_singleton_item_repeals(clean, source, seq)
+        if flat_item_repeals:
+            return flat_item_repeals
         flat_item_insert = _extract_flat_sectionless_singleton_item_insert(clean, source, seq)
         if flat_item_insert is not None:
             return [flat_item_insert]
