@@ -4051,6 +4051,32 @@ def test_extract_ee_ops_splits_plural_item_insert_payloads_by_label() -> None:
     assert ops[1].payload.text == "7 10) piirata kelle tahes õigust kaubatuletisinstrumentidesse investeerida;"
 
 
+def test_extract_ee_ops_strips_plural_item_wrapper_quote_after_terminal_punctuation() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 19 täiendatakse punktidega 13 1 ja 13 2 järgmises sõnastuses: "
+            "„13 1) juhul kui toetuse saaja ei ole hankija „Riigihangete seaduse” mõistes, "
+            "järgib „Riigihangete seaduse” §-s 3 sätestatud põhimõtteid; "
+            "13 2) juhul kui toetuse saaja ei ole hankija „Riigihangete seaduse“ mõistes, "
+            "küsib vähemalt kolm võrreldavat hinnapakkumist;“"
+        ),
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.INSERT, (("section", "19"), ("item", "13_1"))),
+        (StructuralAction.INSERT, (("section", "19"), ("item", "13_2"))),
+    ]
+    assert _payload(ops[1]).text == (
+        "13 2) juhul kui toetuse saaja ei ole hankija „Riigihangete seaduse“ mõistes, "
+        "küsib vähemalt kolm võrreldavat hinnapakkumist;"
+    )
+    assert (
+        _payload(ops[1]).attrs["payload_normalization_rule"]
+        == "ee_plural_item_payload_outer_quote_tail_stripped"
+    )
+
+
 def test_extract_ee_ops_keeps_leading_item_repeal_in_compound_plural_subsection_clause() -> None:
     ops = extract_ee_ops(
         ("paragrahvi 47 lõike 1 1 punkt 3, § 85 7 ning § 87 3 lõiked 11 ja 12 tunnistatakse kehtetuks;"),

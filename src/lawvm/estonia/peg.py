@@ -943,6 +943,7 @@ _EE_FLAT_SECTIONLESS_SINGLETON_ITEM_REPEAL_RULE = "ee_flat_sectionless_singleton
 _EE_FLAT_SECTIONLESS_SINGLETON_SUBSECTION_SCOPE_RULE = "ee_flat_sectionless_singleton_subsection_scope"
 _EE_PAYLOAD_AFTER_TITLE_QUOTE_RULE = "ee_payload_after_marker_ignores_premarker_title_quote"
 _EE_ASCII_QUOTED_MARKER_PAYLOAD_RULE = "ee_ascii_quoted_marker_payload"
+_EE_PLURAL_ITEM_PAYLOAD_OUTER_QUOTE_TAIL_RULE = "ee_plural_item_payload_outer_quote_tail_stripped"
 _EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE = "ee_plural_subsection_insert_payload_split"
 _EE_MULTI_TARGET_TEXT_DELETE_SPLIT_RULE = "ee_multi_target_text_delete_split"
 _EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE = "ee_mixed_delete_and_replace_same_target"
@@ -1751,7 +1752,19 @@ def _split_plural_section_replace_payload(content: str) -> Optional[dict[str, st
     return chunks or None
 
 
-def _split_plural_item_payload(content: str) -> Optional[dict[str, str]]:
+def _strip_plural_item_payload_outer_quote_tail(piece: str) -> tuple[str, bool]:
+    """Strip a leaked wrapper quote after the terminal punctuation of the final item."""
+    stripped = piece.rstrip()
+    if (
+        len(stripped) >= 2
+        and stripped[-1] in {"“", "”", '"', "ˮ"}
+        and stripped[-2] in {".", ";", ":"}
+    ):
+        return stripped[:-1].rstrip(), True
+    return piece, False
+
+
+def _split_plural_item_payload(content: str) -> Optional[dict[str, tuple[str, bool]]]:
     """Split a shared payload into item-specific payloads by item label."""
     stripped = content.strip()
     if not stripped:
@@ -1771,7 +1784,12 @@ def _split_plural_item_payload(content: str) -> Optional[dict[str, str]]:
         piece = f"{raw_label}) {body}".strip()
         if idx == 0 and prefix:
             piece = f"{prefix} {piece}".strip()
-        chunks[norm_label] = piece
+        stripped_piece, wrapper_tail_stripped = (
+            _strip_plural_item_payload_outer_quote_tail(piece)
+            if idx == len(matches) - 1
+            else (piece, False)
+        )
+        chunks[norm_label] = (stripped_piece, wrapper_tail_stripped)
 
     return chunks or None
 
@@ -4984,7 +5002,11 @@ def extract_ee_ops(
                 )
             elif action in ("replace", "insert") and content:
                 item_label = addr.path[-1][1] if addr.path else ""
-                payload_text = split_content[item_label] if split_content is not None else content
+                wrapper_tail_stripped = False
+                if split_content is not None:
+                    payload_text, wrapper_tail_stripped = split_content[item_label]
+                else:
+                    payload_text = content
                 payload_attrs = (
                     {"source_family": "ee_explicit_item_replacement_terminal_preserved"}
                     if addr.path
@@ -4992,6 +5014,8 @@ def extract_ee_ops(
                     and payload_text.rstrip().endswith((".", ";"))
                     else {}
                 )
+                if wrapper_tail_stripped:
+                    payload_attrs["payload_normalization_rule"] = _EE_PLURAL_ITEM_PAYLOAD_OUTER_QUOTE_TAIL_RULE
                 payload = IRNode(kind=IRNodeKind.CONTENT, text=payload_text, attrs=payload_attrs)
                 if action == "replace":
                     payload = _set_sentence_replace_payload_attrs(payload, clean)
