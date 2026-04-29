@@ -9781,7 +9781,7 @@ def _ee_apply_op(
                             for idx in sorted(sentence_indexes, reverse=True):
                                 updated_text = _replace_sentence(updated_text, "", idx)
                             raw_text = updated_text
-                        elif sentence_index is not None and target_node.kind == IRNodeKind.SUBSECTION:
+                        elif sentence_index is not None and target_node.kind in (IRNodeKind.SUBSECTION, IRNodeKind.ITEM):
                             raw_text = _replace_sentence(target_node.text, raw_text, sentence_index)
                     elif target_node.kind == IRNodeKind.SECTION and sentence_indexes and not raw_text:
                         subsection_one = next(
