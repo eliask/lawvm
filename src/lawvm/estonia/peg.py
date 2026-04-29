@@ -1005,6 +1005,7 @@ _EE_MIXED_TEXT_REPLACE_SENTENCE_REPLACE_SAME_TARGET_RULE = (
 _EE_MIXED_SENTENCE_REPLACE_INSERT_SAME_TARGET_RULE = (
     "ee_mixed_sentence_replace_and_insert_same_target"
 )
+_EE_PLURAL_SECTION_INSERT_PAYLOAD_SPLIT_RULE = "ee_plural_section_insert_payload_split"
 _EE_EXPLICIT_MIXED_STRUCTURAL_REPEAL_LIST_RULE = "ee_explicit_mixed_structural_repeal_list"
 _EE_SUBSECTION_TABLE_ONLY_REPLACE_RULE = "ee_subsection_table_only_replace_preserve_intro"
 _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE = "ee_senine_text_subsection_renumber_before_insert"
@@ -4762,12 +4763,22 @@ def extract_ee_ops(
                 )
         # Try §-ga / §-dega form first (also handles ranges), then paragrahviga form
         m_secs = re.search(
-            r'§[‑–‒-](?:de)?ga\s+(' + _NUM_PAT + r'(?:\s*[–‒\-]\s*' + _NUM_PAT + r'|(?:\s+ja\s+' + _NUM_PAT + r'))*)',
+            r'§[‑–‒-](?:de)?ga\s+('
+            + _NUM_PAT
+            + r'(?:\s*[–‒\-]\s*'
+            + _NUM_PAT
+            + r'|(?:\s*,\s*|\s+(?:ja|ning)\s+)'
+            + _NUM_PAT
+            + r')*)',
             clean, re.IGNORECASE
         )
         if not m_secs:
             m_secs = re.search(
-                r'paragrahviga\s+(' + _NUM_PAT + r'(?:\s+ja\s+' + _NUM_PAT + r')*)',
+                r'paragrahviga\s+('
+                + _NUM_PAT
+                + r'(?:(?:\s*,\s*|\s+(?:ja|ning)\s+)'
+                + _NUM_PAT
+                + r')*)',
                 clean, re.IGNORECASE
             )
         content = _extract_quoted_content(clean)
@@ -4998,30 +5009,8 @@ def extract_ee_ops(
                 return ops
 
         if m_secs:
-            # Expand any en-dash ranges and collect all section labels
             raw_group = m_secs.group(1).strip()
-            raw_parts = re.split(r'\s+ja\s+', raw_group)
-            expanded: list[str] = []
-            for raw_part in raw_parts:
-                raw_part = raw_part.strip()
-                m_endash = re.match(r'^(\d+(?:\s+\d+)?)\s*[–‒\-]\s*(\d+(?:\s+\d+)?)$', raw_part)
-                if m_endash:
-                    s_norm = _normalize_num(m_endash.group(1).strip())
-                    e_norm = _normalize_num(m_endash.group(2).strip())
-                    if '_' in s_norm and '_' in e_norm:
-                        s_base, s_suf = s_norm.rsplit('_', 1)
-                        e_base, e_suf = e_norm.rsplit('_', 1)
-                        if s_base == e_base and s_suf.isdigit() and e_suf.isdigit():
-                            for suf in range(int(s_suf), int(e_suf) + 1):
-                                expanded.append(f"{s_base}_{suf}")
-                            continue
-                    if s_norm.isdigit() and e_norm.isdigit():
-                        for n in range(int(s_norm), int(e_norm) + 1):
-                            expanded.append(str(n))
-                        continue
-                    expanded.extend([s_norm, e_norm])
-                else:
-                    expanded.append(_normalize_num(raw_part))
+            expanded = _expand_ee_numeric_list(raw_group)
             section_payloads = (
                 _split_plural_section_replace_payload(content or "")
                 if content and len(expanded) > 1
@@ -5032,7 +5021,16 @@ def extract_ee_ops(
                 addr = LegalAddress(path=container_prefix + (("section", num),))
                 op_payload = payload
                 if section_payloads is not None and num in section_payloads:
-                    op_payload = IRNode(kind=IRNodeKind.CONTENT, text=section_payloads[num])
+                    op_payload = IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text=section_payloads[num],
+                        attrs={"source_family": _EE_PLURAL_SECTION_INSERT_PAYLOAD_SPLIT_RULE},
+                    )
+                rule_tags = (
+                    (_EE_PLURAL_SECTION_INSERT_PAYLOAD_SPLIT_RULE,)
+                    if len(expanded) > 1
+                    else ()
+                )
                 ops.append(LegalOperation(
                     op_id=f"ee-insert-sect-{num}-{source.statute_id}",
                     sequence=seq,
@@ -5040,7 +5038,8 @@ def extract_ee_ops(
                     target=addr,
                     payload=op_payload,
                     source=source,
-                    provenance_tags=(clean[:200],),
+                    provenance_tags=(clean[:200], *rule_tags),
+                    witness_rule_id=_EE_PLURAL_SECTION_INSERT_PAYLOAD_SPLIT_RULE if rule_tags else None,
                 ))
                 seq += 1
         return ops
