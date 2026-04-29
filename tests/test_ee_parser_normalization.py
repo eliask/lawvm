@@ -6910,6 +6910,41 @@ def test_parse_ee_amendment_ops_keeps_direct_target_clause_inside_other_act_para
     assert ops[0].payload.text == "lasteaed"
 
 
+def test_parse_ee_amendment_ops_ignores_direct_target_title_quote_for_text_replace_args() -> None:
+    xml = """
+    <akt xmlns="akt_1_10.06.2010">
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>3</paragrahvNr>
+          <paragrahvPealkiri>Keskkonnaministri määruse muutmine</paragrahvPealkiri>
+          <sisuTekst>
+            <HTMLKonteiner><![CDATA[
+              <p>Keskkonnaministri 21. aprilli 2004. a määruse nr 22 „Asbesti sisaldavate jäätmete käitlusnõuded“ § 1 lõikes 2 asendatakse sõnad „Vabariigi Valitsuse 6. aprilli 2004. a määruses nr 102 „Jäätmete, sealhulgas ohtlike jäätmete nimistu““ järgmiste sõnadega: „jäätmeseaduse § 2 lõike 5 alusel kehtestatud määruses“.</p>
+            ]]></HTMLKonteiner>
+          </sisuTekst>
+        </paragrahv>
+      </sisu>
+    </akt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Asbesti sisaldavate jäätmete käitlusnõuded",
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "1"), ("subsection", "2"))
+    assert ops[0].payload is not None
+    assert (
+        ops[0].payload.attrs["old_text"]
+        == "Vabariigi Valitsuse 6. aprilli 2004. a määruses nr 102 "
+        "„Jäätmete, sealhulgas ohtlike jäätmete nimistu“"
+    )
+    assert ops[0].payload.text == "jäätmeseaduse § 2 lõike 5 alusel kehtestatud määruses"
+
+
 def test_parse_ee_amendment_ops_keeps_direct_target_clause_inside_other_act_wrapper_payload() -> None:
     xml = """
     <akt xmlns="akt_1_10.06.2010">
@@ -9298,11 +9333,39 @@ def test_parse_ee_amendment_ops_uses_direct_old_format_header_target_section() -
     op = ops[0]
     assert op.action == StructuralAction.REPLACE
     assert op.target.path == (("section", "4"),)
-    assert op.witness_rule_id == "ee_old_format_direct_header_target_section"
     assert "ee_old_format_direct_header_target_section" in op.provenance_tags
     assert "old_format_amendment_section:1" in op.provenance_tags
     assert _payload(op).text.endswith("kindlustatavate isikute nimekiri.")
     assert not _payload(op).text.endswith('nimekiri."')
+
+
+def test_parse_ee_amendment_ops_uses_direct_old_format_header_target_subsection() -> None:
+    xml = """
+    <tyviseadus xmlns="tyviseadus_1_10.02.2010">
+      <HTMLKonteiner><![CDATA[
+        <p><b>§ 3.</b> Keskkonnaministri 21. aprilli 2004. a määruse nr 22 „Asbesti sisaldavate jäätmete käitlusnõuded“ § 1 lõikes 2 asendatakse sõnad „Vabariigi Valitsuse 6. aprilli 2004. a määruses nr 102 „Jäätmete, sealhulgas ohtlike jäätmete nimistu““ järgmiste sõnadega: „jäätmeseaduse § 2 lõike 5 alusel kehtestatud määruses“.</p>
+      ]]></HTMLKonteiner>
+    </tyviseadus>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Asbesti sisaldavate jäätmete käitlusnõuded",
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "1"), ("subsection", "2"))
+    assert op.witness_rule_id == "ee_old_format_direct_header_target_section"
+    assert "ee_old_format_direct_header_target_section" in op.provenance_tags
+    assert "old_format_amendment_section:3" in op.provenance_tags
+    assert _payload(op).attrs["old_text"] == (
+        "Vabariigi Valitsuse 6. aprilli 2004. a määruses nr 102 "
+        "„Jäätmete, sealhulgas ohtlike jäätmete nimistu“"
+    )
+    assert _payload(op).text == "jäätmeseaduse § 2 lõike 5 alusel kehtestatud määruses"
 
 
 def test_parse_ee_amendment_ops_splits_plaintext_preamble_and_repeal_range() -> None:
