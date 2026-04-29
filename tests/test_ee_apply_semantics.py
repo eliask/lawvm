@@ -4445,6 +4445,26 @@ def test_case_inflected_text_replace_handles_taotlusvoor_coordination_forms() ->
     )
 
 
+def test_case_inflected_text_replace_handles_neto_omavahend_prefix_forms() -> None:
+    text = (
+        "Neto-omavahendite minimaalsuurus. "
+        "Fondivalitseja neto-omavahendid ja neto-omavahendite aruanne."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "neto-omavahend",
+        "omavahend",
+        case_inflected=True,
+        all_occurrences=True,
+    )
+
+    assert replaced == (
+        "Omavahendite minimaalsuurus. "
+        "Fondivalitseja omavahendid ja omavahendite aruanne."
+    )
+
+
 def test_delete_text_replace_handles_fraktsioneeritud_source_typo_variant() -> None:
     text = (
         "Pindamiseks kasutatakse fraktsioneeritud killustikke. "
@@ -8763,6 +8783,104 @@ def test_apply_ee_ops_retargets_section_item_text_replace_to_unique_descendant_o
     assert subsection_2.children[0].text == "vana rakendusasutuse korraldusel antud toiminguid."
     assert [adj.kind for adj in adjudications] == ["ee_text_replace_unique_descendant_item_by_old_text"]
     assert adjudications[0].detail["resolved_path"].endswith("section:23/subsection:2/item:6")
+
+
+def test_apply_ee_ops_retargets_section_item_text_replace_to_same_number_subsection_old_text() -> None:
+    statute = IRStatute(
+        statute_id="ee/test",
+        title="Test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="8",
+                            text="Väärtpaberite kohta kasutatud mõisted",
+                            children=(
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Väärtpaberina käsitatakse väärtpaberit."),
+                                IRNode(
+                                    kind=IRNodeKind.SUBSECTION,
+                                    label="2",
+                                    text="Võlainstrument on laenuvõtja võlakohustust tõendav väärtpaber.",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    source = OperationSource(statute_id="2015/1")
+    op = LegalOperation(
+        op_id="ee-replace-section-item-2-same-number-subsection",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "8"), ("item", "2"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="võlaväärtpaber",
+            attrs={"old_text": "võlainstrument", "new_text": "võlaväärtpaber"},
+        ),
+        source=source,
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    result = apply_ee_ops(statute, [op], adjudications_out=adjudications)
+    subsection = result.body.children[0].children[0].children[1]
+
+    assert subsection.text == "Võlaväärtpaber on laenuvõtja võlakohustust tõendav väärtpaber."
+    assert [adj.kind for adj in adjudications] == [
+        "ee_text_replace_numbered_subsection_for_item_target_by_old_text"
+    ]
+    assert adjudications[0].detail["resolved_path"].endswith("section:8/subsection:2")
+
+
+def test_section_item_text_replace_does_not_retarget_same_number_subsection_without_old_text() -> None:
+    statute = IRStatute(
+        statute_id="ee/test",
+        title="Test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="8",
+                            children=(
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="Muu väärtpaberimääratlus."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    source = OperationSource(statute_id="2015/1")
+    op = LegalOperation(
+        op_id="ee-replace-section-item-2-no-old-text",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "8"), ("item", "2"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="võlaväärtpaber",
+            attrs={"old_text": "võlainstrument", "new_text": "võlaväärtpaber"},
+        ),
+        source=source,
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    result = apply_ee_ops(statute, [op], adjudications_out=adjudications)
+
+    assert result.body.children[0].children[0].children[0].text == "Muu väärtpaberimääratlus."
+    assert [adj.kind for adj in adjudications] == ["ee_replay_target_not_found"]
 
 
 def test_structural_textosa_heading_relabel_resolves_duplicate_chapter_by_heading() -> None:

@@ -1015,6 +1015,7 @@ _EE_OLEMASOLEV_TAHKEL_KUTUSEL_PHRASE_FORMS_RULE = "ee_case_inflected_olemasolev_
 _EE_VOLITATUD_VASTUTAV_FORMS_RULE = "ee_case_inflected_volitatud_vastutav_forms"
 _EE_TAOTLUSVOOR_COORDINATION_FORMS_RULE = "ee_case_inflected_taotlusvoor_coordination_forms"
 _EE_MIXED_ACRONYM_SUFFIX_CASE_REWRITE_RULE = "ee_case_inflected_mixed_acronym_suffix_case"
+_EE_NETO_OMAVAHEND_PREFIX_FORMS_RULE = "ee_case_inflected_neto_omavahend_prefix_forms"
 _EE_INSERT_MULTI_EXPLICIT_TARGETS_PAYLOAD_LABEL_FILTER_RULE = (
     "ee_insert_multi_explicit_targets_payload_label_filter"
 )
@@ -1050,6 +1051,8 @@ def _case_inflected_phrase_source_family(old_text: str | None, new_text: str | N
         and new_text == "teine, viies ja järgnevad taotlusvoorud"
     ):
         return _EE_TAOTLUSVOOR_COORDINATION_FORMS_RULE
+    if old_text == "neto-omavahend" and new_text == "omavahend":
+        return _EE_NETO_OMAVAHEND_PREFIX_FORMS_RULE
     if new_text and re.fullmatch(r"[A-ZÕÄÖÜŠŽ]{2,}-[a-zäöõüšž]+", new_text.strip()):
         return _EE_MIXED_ACRONYM_SUFFIX_CASE_REWRITE_RULE
     return ""
@@ -4049,7 +4052,7 @@ def extract_ee_ops(
         r')'
     )
     title_and_text_global = re.search(
-        rf'\b{statute_ref}\s+pealkirjas\s+ja\s+teksti[s]?\s+asendatakse(?:\s+läbivalt)?',
+        rf'\b{statute_ref}\s+pealkirjas\s+ja\s+(?:{statute_ref}\s+)?teksti[s]?\s+asendatakse(?:\s+läbivalt)?',
         clean,
         re.IGNORECASE,
     )
@@ -4098,7 +4101,7 @@ def extract_ee_ops(
         rf'|\b{statute_ref}\s+asendatakse\s+läbivalt'
         rf'|\b{statute_ref}\s+teksti[s]?\s+asendatakse'
         rf'|\b{statute_ref}\s+teksti[s]?\s*,\s*välja\s+arvatud\s+[^.]+?\s+asendatakse'
-        rf'|\b{statute_ref}\s+pealkirjas\s+ja\s+teksti[s]?\s+asendatakse(?:\s+läbivalt)?'
+        rf'|\b{statute_ref}\s+pealkirjas\s+ja\s+(?:{statute_ref}\s+)?teksti[s]?\s+asendatakse(?:\s+läbivalt)?'
         rf'|\b{statute_ref}\s+ja\s+selle\s+lisades\s+asendatakse'
         rf'|\b{statute_ref}\s+(?:ning|ja)\s+selle\s+lis[a-z]*(?:\s+\d[\d\s_]*)?\s+pealkirjas\s+asendatakse(?:\s+läbivalt)?'
         rf'|\b{statute_ref}\s*,\s*välja\s+arvatud\s+[^.]+?\s+asendatakse\s+(?:sõna[a-z]*|sõnu|arv[a-z]*|aastaarv[a-z]*|tekstiosa[a-z]*|lauseosa[a-z]*|number[a-z]*)'
