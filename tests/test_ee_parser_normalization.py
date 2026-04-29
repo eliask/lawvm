@@ -2118,6 +2118,19 @@ def test_extract_ee_ops_treats_spaced_teksti_osa_as_text_replace() -> None:
     assert _payload(ops[0]).text == "25. novembrini"
 
 
+def test_extract_ee_ops_keeps_nested_quotes_in_direct_text_delete() -> None:
+    ops = extract_ee_ops(
+        "paragrahvi 2 lõikest 2 jäetakse välja lauseosa „, välja arvatud rea „MTA märge”,”;",
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("subsection", "2"))),
+    ]
+    assert _payload(ops[0]).attrs.get("old_text") == ", välja arvatud rea „MTA märge”,"
+    assert _payload(ops[0]).text == ""
+
+
 def test_extract_ee_ops_fans_out_item_and_subsection_text_replace_targets() -> None:
     ops = extract_ee_ops(
         (
