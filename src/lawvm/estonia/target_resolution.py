@@ -1275,7 +1275,7 @@ def old_format_has_section_ref(text: str) -> bool:
     return bool(
         re.search(
             r"\bparagrahvid(?:e[s]?)?\s+\d|\bparagrahvi(?:s|st)?\s+\d|\bparagrahv\s+\d|"
-            r"§(?:-d|-s|-ga|-des|-dega)?\s*\d|"
+            r"§(?:-d|-s|-ga|-iga|-des|-dega)?\s*\d|"
             r"\blisa(?:d|de|sid|ga)?\s+\d|"
             r"\bpeatüki\s+\d|\bjao\s+\d|\bjaotis(?:e|es|t)?\s+\d|"
             r"\bpeatükiga\s+\d|"
@@ -1419,10 +1419,22 @@ def split_plaintext_numbered_op_texts(text: str) -> list[str]:
     )[0].strip()
     start_pattern = re.compile(
         r"(?:^|\s)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\)\s+"
-        r"(?=(?:paragrahvi|paragrahv|määruse|seaduse|lisa|lisad|§)\b)",
+        r"(?=(?:paragrahvi|paragrahv|määruse|määrust|seaduse|seadust|lisa|lisad|§)\b)",
         re.IGNORECASE,
     )
-    starts = [match.start(1) for match in start_pattern.finditer(normalized)]
+
+    def _inside_open_quote(pos: int) -> bool:
+        open_quote = False
+        for char in normalized[:pos]:
+            if char in {"„", "“", "”"}:
+                open_quote = not open_quote
+        return open_quote
+
+    starts = [
+        match.start(1)
+        for match in start_pattern.finditer(normalized)
+        if not _inside_open_quote(match.start(1))
+    ]
     if not starts:
         return []
     clauses: list[str] = []
@@ -2443,7 +2455,12 @@ def parse_preambul_single_target_ops(
     first_t = ET.SubElement(first_st, _ns(ns_str, "tavatekst"))
     first_t.text = intro_tava
     for child in direct_sisu_blocks:
-        synthetic_para.append(ET.fromstring(ET.tostring(child, encoding="utf-8")))
+        cloned_child = ET.fromstring(ET.tostring(child, encoding="utf-8"))
+        for text_el in cloned_child.iter(_ns(ns_str, "tavatekst")):
+            extracted_text = tavatekst_text(text_el, ns_str)
+            text_el.clear()
+            text_el.text = extracted_text
+        synthetic_para.append(cloned_child)
     return parse_muutmisseadus_ops(synthetic_root, source_id, ns_str, target_title)
 
 

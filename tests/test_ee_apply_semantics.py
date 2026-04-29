@@ -309,6 +309,21 @@ def test_insert_after_text_replace_rewrites_only_first_match() -> None:
     )
 
 
+def test_insert_after_text_replace_preserves_comma_list_separator() -> None:
+    replaced = _ee_apply_text_replace_value(
+        "harrastuskalapüügil on lubatud kasutada liivi, kuuritsat, harpuunpüssi ja harpuuni",
+        "kuuritsat",
+        "kuuritsat vähinatta, vähimõrda",
+        mode="insert_after",
+        case_inflected=False,
+    )
+
+    assert replaced == (
+        "harrastuskalapüügil on lubatud kasutada liivi, kuuritsat, "
+        "vähinatta, vähimõrda, harpuunpüssi ja harpuuni"
+    )
+
+
 def test_insert_after_text_replace_preserves_acronym_prefix_suffix_case() -> None:
     replaced = _ee_apply_text_replace_value(
         "võrreldud LOADMAN-tüüpi seadmega",
@@ -6784,12 +6799,10 @@ def test_replace_division_replaces_title_and_section_children() -> None:
     assert [(child.kind, child.label, child.text) for child in division.children] == [
         (IRNodeKind.SECTION, "3", "Taim, taimne saadus ja muu objekt"),
         (IRNodeKind.SECTION, "3_1", "Kaubasaadetis, turustamine ja lõppkasutaja"),
-        (
-            IRNodeKind.SECTION,
-            "4",
-            "Ohtlik taimekahjustaja Ohtlik taimekahjustaja käesoleva seaduse tähenduses on taimekahjustaja.",
-        ),
+        (IRNodeKind.SECTION, "4", "Ohtlik taimekahjustaja"),
     ]
+    section_4 = division.children[2]
+    assert section_4.children[0].text == "Ohtlik taimekahjustaja käesoleva seaduse tähenduses on taimekahjustaja."
 
 
 def test_replace_section_sentence_like_payload_materializes_inline_items_under_subsection_one() -> None:

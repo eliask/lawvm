@@ -17,6 +17,7 @@ _EE_QMARK_HYPHEN_RE = re.compile(
     r"(?<=[A-Za-z0-9ÕÄÖÜõäöüŠŽšž])\?(?=[A-Za-z0-9ÕÄÖÜõäöüŠŽšž])"
 )
 _EE_SECTION_SIGN_DASH_RE = re.compile(r"§[‑‒–](?=[A-Za-zÕÄÖÜõäöüŠŽšž])")
+_EE_SECTION_SIGN_DIGIT_SPACE_RE = re.compile(r"§\s+(?=\d)")
 _EE_HYPHEN_SPACING_RE = re.compile(
     r"(?<=[A-Za-z0-9ÕÄÖÜõäöüŠŽšž])\s*-\s*(?=[A-Za-z0-9ÕÄÖÜõäöüŠŽšž])"
 )
@@ -107,6 +108,14 @@ _EE_NORMALIZATION_RULES = (
         description="Normalize the dash immediately after a section sign.",
         pattern=_EE_SECTION_SIGN_DASH_RE,
         replacement="§-",
+    ),
+    EENormalizationRule(
+        name="section_sign_digit_spacing",
+        rule_class=EENormalizationRuleClass.punctuation,
+        kind="regex",
+        description="Normalize editorial spacing between a section sign and numeric section label.",
+        pattern=_EE_SECTION_SIGN_DIGIT_SPACE_RE,
+        replacement="§",
     ),
     EENormalizationRule(
         name="hyphen_spacing",

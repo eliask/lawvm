@@ -853,6 +853,70 @@ def test_parse_ee_statute_attaches_section_level_intro_to_structured_item_list()
     assert "ee_section_level_intro_attached_to_first_subsection" in subsection.attrs["source_cleanup_rules"]
 
 
+def test_parse_ee_chapter_payload_splits_repeated_heading_body_section() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("128062017067", archive),
+        "ee/128062017067",
+        target_title=(
+            "Ajutised püügikitsendused, harrastuspüügiõiguse tasu ja "
+            "püügivahendite piirarv harrastuskalapüügil 2017. aastal"
+        ),
+    )
+    chapter_insert = next(op for op in ops if op.action is StructuralAction.INSERT and op.target.path == (("chapter", "7_1"),))
+    assert chapter_insert.payload is not None
+
+    from lawvm.estonia.grafter import _parse_chapter_payload
+
+    chapter = _parse_chapter_payload(chapter_insert.payload.text, "7_1")
+    section = next(child for child in chapter.children if child.kind is IRNodeKind.SECTION and child.label == "15_2")
+
+    assert section.text == "Ühe vähipüügivahendiga harrastuspüügiõiguse tasu"
+    assert section.children[0].text.startswith("Ühe vähipüügivahendiga harrastuspüügiõiguse tasu üheks ööpäevaks")
+
+
+def test_parse_ee_section_blocks_marks_repeated_heading_body_recovery() -> None:
+    sections = _parse_section_blocks(
+        (
+            "§ 15 2 . Ühe vähipüügivahendiga harrastuspüügiõiguse tasu "
+            "Ühe vähipüügivahendiga harrastuspüügiõiguse tasu üheks ööpäevaks on 3 eurot."
+        )
+    )
+    section = sections[0]
+
+    assert section.text == "Ühe vähipüügivahendiga harrastuspüügiõiguse tasu"
+    assert "ee_repeated_section_heading_body_split" in section.children[0].attrs["source_cleanup_rules"]
+
+
+def test_parse_ee_amendment_ops_splits_plaintext_maarust_item_after_text_replace() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("128062017067", archive),
+        "ee/128062017067",
+        target_title=(
+            "Ajutised püügikitsendused, harrastuspüügiõiguse tasu ja "
+            "püügivahendite piirarv harrastuskalapüügil 2017. aastal"
+        ),
+    )
+
+    assert len(ops) == 6
+    assert any(
+        op.action is StructuralAction.TEXT_REPLACE
+        and op.target.path == (("section", "15"), ("subsection", "4"), ("item", "11"))
+        and op.payload is not None
+        and op.payload.text == "Kirikumäe"
+        for op in ops
+    )
+    assert not any(op.target.path == (("section", "15_5"),) for op in ops)
+    section_insert = next(op for op in ops if op.action is StructuralAction.INSERT and op.target.path == (("section", "16_1"),))
+    assert section_insert.payload is not None
+    parsed_section = _parse_section_payload(section_insert.payload.text, kind=IRNodeKind.SECTION)
+    assert parsed_section.text == "Rakendussäte"
+    assert parsed_section.children[0].text.startswith("Enne 1. juulit 2017")
+    chapter_insert = next(op for op in ops if op.action is StructuralAction.INSERT and op.target.path == (("chapter", "7_1"),))
+    assert "Kirikumõisa" not in chapter_insert.provenance_tags[0]
+
+
 def test_parse_section_payload_accepts_subsection_marker_without_space() -> None:
     parsed = _parse_section_payload(
         (

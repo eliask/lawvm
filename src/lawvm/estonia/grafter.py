@@ -106,6 +106,8 @@ from lawvm.estonia.text_morphology import (
     wrap_word_boundaries as _tm_wrap_word_boundaries,
 )
 
+_EE_REPEATED_SECTION_HEADING_BODY_RULE = "ee_repeated_section_heading_body_split"
+
 
 # ---------------------------------------------------------------------------
 # Context-inheritance helpers for amendment item loops
@@ -478,6 +480,33 @@ def _normalize_ee_statute_surface_text(text: str) -> str:
     text = re.sub(r"\s+", " ", text).strip()
     text = re.sub(r" +([.,;:!?)])", r"\1", text)
     return text
+
+
+def _element_text_with_bold_section_boundaries(el: ET.Element) -> str:
+    """Extract element text while preserving bold whole-section title boundaries."""
+    parts: list[str] = []
+
+    def _walk(node: ET.Element) -> None:
+        tag = node.tag.split("}")[-1] if "}" in node.tag else node.tag
+        if tag in {"b", "strong"}:
+            inner = " ".join(str(text) for text in node.itertext())
+            inner = re.sub(r"\s+", " ", inner.replace("\xa0", " ")).strip()
+            if inner:
+                parts.append(f"{inner}\x01" if "§" in inner else inner)
+            if node.tail:
+                parts.append(node.tail)
+            return
+        if node.text:
+            parts.append(node.text)
+        for child in node:
+            _walk(child)
+        if node.tail:
+            parts.append(node.tail)
+
+    _walk(el)
+    text = " ".join(part for part in parts if part)
+    text = text.replace("\xa0", " ")
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _tavatekst_text(t: ET.Element, ns_str: str) -> str:
@@ -1922,7 +1951,7 @@ def _parse_preambul_single_target_ops(
         target_title,
         lookup_act_identity=lookup_ee_act_identity,
         title_matcher=_title_matches_para,
-        tavatekst_text=_tavatekst_text,
+        tavatekst_text=lambda element, _ns_str: _element_text_with_bold_section_boundaries(element),
         parse_muutmisseadus_ops=_parse_synthetic_preambul_target,
     )
 
@@ -2453,9 +2482,7 @@ def _parse_old_format_amendment_ops(
         for el in root.iter():
             tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
             if tag == "preambul":
-                plain = " ".join(part for part in el.itertext())
-                plain = plain.replace("\xa0", " ")
-                plain = re.sub(r"\s+", " ", plain).strip()
+                plain = _element_text_with_bold_section_boundaries(el)
                 if plain:
                     plain_blocks.append(plain)
         raw_sections: list[str] = []
@@ -2485,9 +2512,7 @@ def _parse_old_format_amendment_ops(
                 tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
                 if tag != "tavatekst":
                     continue
-                plain = " ".join(part for part in el.itertext())
-                plain = plain.replace("\xa0", " ")
-                plain = re.sub(r"\s+", " ", plain).strip()
+                plain = _element_text_with_bold_section_boundaries(el)
                 if "§ 1." in plain and "muutmine" in plain.lower():
                     plain_blocks.append(plain)
         if not plain_blocks and not raw_sections and target_title:
@@ -2513,9 +2538,7 @@ def _parse_old_format_amendment_ops(
                         text_tag = text_el.tag.split("}")[-1] if "}" in text_el.tag else text_el.tag
                         if text_tag != "tavatekst":
                             continue
-                        plain = " ".join(part for part in text_el.itertext())
-                        plain = plain.replace("\xa0", " ")
-                        plain = re.sub(r"\s+", " ", plain).strip()
+                        plain = _element_text_with_bold_section_boundaries(text_el)
                         if plain:
                             direct_texts.append(plain)
                 direct_text = " ".join(direct_texts).strip()
@@ -2614,9 +2637,7 @@ def _parse_old_format_amendment_ops(
                         text_tag = text_el.tag.split("}")[-1] if "}" in text_el.tag else text_el.tag
                         if text_tag != "tavatekst":
                             continue
-                        plain = " ".join(part for part in text_el.itertext())
-                        plain = plain.replace("\xa0", " ")
-                        plain = re.sub(r"\s+", " ", plain).strip()
+                        plain = _element_text_with_bold_section_boundaries(text_el)
                         if plain:
                             direct_texts.append(plain)
                 direct_text = " ".join(direct_texts).strip()
@@ -3416,15 +3437,57 @@ def _parse_section_blocks(content: str) -> List[IRNode]:
             continue
         sec_label = _normalize_num(m_num.group(1).strip())
         parsed_sec = _parse_section_payload(block, kind=IRNodeKind.SECTION)
+        text = parsed_sec.text
+        children = parsed_sec.children
+        if not children:
+            split_title, split_body = _section_payload_title_body_parts(block)
+            if split_title and split_body:
+                text = split_title
+                children = (
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="1",
+                        text=_strip_rt_editorial_parentheticals(split_body),
+                        attrs={
+                            "source_cleanup_rules": (_EE_REPEATED_SECTION_HEADING_BODY_RULE,),
+                            "section_level_heading_text": split_title,
+                        },
+                    ),
+                )
         section_nodes.append(
             IRNode(
                 kind=IRNodeKind.SECTION,
                 label=sec_label,
-                text=parsed_sec.text,
-                children=parsed_sec.children,
+                text=text,
+                children=children,
             )
         )
     return section_nodes
+
+
+def _section_payload_title_body_parts(block: str) -> tuple[str, str]:
+    """Split a section payload with no subsection markers into title/body parts."""
+    stripped = block.strip().replace("\x01", " ")
+    match = re.match(
+        r"^§\s*\d[\d\s_]*[.]\s*(?P<rest>.+)$",
+        stripped,
+        re.DOTALL,
+    )
+    if match is None:
+        return "", stripped
+    rest = re.sub(r"\s+", " ", match.group("rest")).strip()
+    if not rest:
+        return "", ""
+    words = rest.split()
+    if len(words) < 4:
+        return "", rest
+    max_title_words = min(8, len(words) // 2)
+    for count in range(1, max_title_words + 1):
+        title = " ".join(words[:count])
+        body_prefix = " ".join(words[count: count + count])
+        if body_prefix == title:
+            return title, " ".join(words[count:])
+    return "", rest
 
 
 def _parse_chapter_payload(content: str, chapter_label: str) -> IRNode:
@@ -6827,6 +6890,25 @@ def _ee_trim_overlapping_replacement_tail(
     return replacement
 
 
+def _ee_insert_after_comma_list_replacement(
+    match: re.Match[str],
+    replacement: str,
+    following_text: str,
+) -> str:
+    """Keep comma-list punctuation when inserting a new item after a matched word."""
+    if not following_text.startswith(","):
+        return replacement
+    matched = match.group(0)
+    if not matched or not replacement.startswith(matched):
+        return replacement
+    tail = replacement[len(matched):]
+    if not tail.startswith(" ") or tail.startswith(" ,"):
+        return replacement
+    if tail.lstrip().startswith((",", ";", "ja ", "ning ", "või ")):
+        return replacement
+    return f"{matched},{tail}"
+
+
 def _ee_apply_text_replace_value(
     text: str | None,
     old: str,
@@ -6938,6 +7020,11 @@ def _ee_apply_text_replace_value(
                         replacement,
                         match.string[match.end():],
                     )
+                    replacement = _ee_insert_after_comma_list_replacement(
+                        match,
+                        replacement,
+                        match.string[match.end():],
+                    )
                     placeholders[token] = replacement if replacement else match.group(0)
                     return token
 
@@ -6960,6 +7047,11 @@ def _ee_apply_text_replace_value(
                 )
             )
             replacement = _ee_trim_overlapping_replacement_tail(
+                replacement,
+                working[match.end():],
+            )
+            replacement = _ee_insert_after_comma_list_replacement(
+                match,
                 replacement,
                 working[match.end():],
             )

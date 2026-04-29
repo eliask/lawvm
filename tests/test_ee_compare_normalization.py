@@ -39,7 +39,7 @@ def test_normalize_ee_comparison_text_closes_en_dash_digit_spacing_gap() -> None
 def test_normalize_ee_comparison_text_restores_space_after_period_before_ja() -> None:
     text = "käesoleva seaduse § 57 9 4.ja 5. lõiget"
 
-    assert normalize_ee_comparison_text(text) == "käesoleva seaduse § 57 9 4. ja 5. lõiget"
+    assert normalize_ee_comparison_text(text) == "käesoleva seaduse §57 9 4. ja 5. lõiget"
 
 
 def test_normalize_ee_comparison_text_normalizes_section_sign_structural_dash() -> None:
@@ -48,8 +48,14 @@ def test_normalize_ee_comparison_text_normalizes_section_sign_structural_dash() 
     )
 
 
+def test_normalize_ee_comparison_text_normalizes_section_sign_digit_spacing() -> None:
+    assert normalize_ee_comparison_text("ühes § 15 1 lõikes 4 nimetatud juhul") == (
+        "ühes §15 1 lõikes 4 nimetatud juhul"
+    )
+
+
 def test_normalize_ee_comparison_text_unifies_figure_dash_with_en_dash() -> None:
-    assert normalize_ee_comparison_text("§ 36 lõigetes 2‒4") == "§ 36 lõigetes 2–4"
+    assert normalize_ee_comparison_text("§ 36 lõigetes 2‒4") == "§36 lõigetes 2–4"
 
 
 def test_normalize_ee_comparison_text_normalizes_numeric_range_hyphen() -> None:
