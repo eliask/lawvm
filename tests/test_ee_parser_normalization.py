@@ -68,6 +68,44 @@ def test_extract_old_format_commencement_effects_handles_retroactive_application
     assert section_effects["7"] == "2016-01-01"
 
 
+def test_parse_ee_statute_attaches_unlabeled_loige_between_numbered_subsections() -> None:
+    statute = parse_ee_statute(
+        """
+        <akt xmlns="tyviseadus_1_10.02.2010">
+          <aktinimi><nimi><pealkiri>Test</pealkiri></nimi></aktinimi>
+          <sisu>
+            <paragrahv>
+              <paragrahvNr>9</paragrahvNr>
+              <paragrahvPealkiri>Muldkeha ehitamine</paragrahvPealkiri>
+              <loige>
+                <loigeNr>8</loigeNr>
+                <sisuTekst><tavatekst>Valem: H=(a+b)/2.</tavatekst></sisuTekst>
+              </loige>
+              <loige>
+                <sisuTekst><tavatekst>kus H on mõõtetulemus.</tavatekst></sisuTekst>
+              </loige>
+              <loige>
+                <loigeNr>9</loigeNr>
+                <sisuTekst><tavatekst>Järgmine päris lõige.</tavatekst></sisuTekst>
+              </loige>
+            </paragrahv>
+          </sisu>
+        </akt>
+        """.encode(),
+        "ee/test",
+    )
+
+    section = statute.body.children[0]
+
+    assert [(child.label, child.text) for child in section.children] == [
+        ("8", "Valem: H=(a+b)/2. kus H on mõõtetulemus."),
+        ("9", "Järgmine päris lõige."),
+    ]
+    assert "ee_unlabeled_loige_continuation_attached_to_previous_subsection" in section.children[0].attrs[
+        "source_cleanup_rules"
+    ]
+
+
 def test_extract_ee_ops_keeps_rewrite_witness_on_payload_sidecar_only() -> None:
     ops = extract_ee_ops(
         (
@@ -326,6 +364,31 @@ def test_extract_ee_ops_emits_statute_and_annex_global_text_replace_pairs() -> N
     assert all(
         _payload(op).attrs["source_family"] == "ee_global_text_replace_statute_and_annex_scope"
         for op in ops
+    )
+
+
+def test_extract_ee_ops_emits_statute_and_annex_heading_global_text_replace() -> None:
+    text = (
+        "määruses ning selle lisa 14 pealkirjas asendatakse läbivalt sõna "
+        "„asfaltbetoonsegu” sõnaga „asfaltsegu” vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path, op.witness_rule_id) for op in ops] == [
+        (
+            StructuralAction.TEXT_REPLACE,
+            (),
+            "ee_global_text_replace_statute_and_annex_heading_scope",
+        )
+    ]
+    assert _payload(ops[0]).attrs["old_text"] == "asfaltbetoonsegu"
+    assert _payload(ops[0]).text == "asfaltsegu"
+    assert _payload(ops[0]).attrs["case_inflected"] is True
+    assert _payload(ops[0]).attrs["all_occurrences"] is True
+    assert (
+        _payload(ops[0]).attrs["source_family"]
+        == "ee_global_text_replace_statute_and_annex_heading_scope"
     )
 
 
@@ -9059,6 +9122,60 @@ def test_extract_ee_ops_splits_multi_target_text_delete_groups() -> None:
         ((("section", "14"), ("subsection", "8")), "eeltaotlus või", ""),
     ]
     assert all(op.witness_rule_id == "ee_multi_target_text_delete_split" for op in ops)
+
+
+def test_extract_ee_ops_marks_fraktsioneeritud_source_typo_delete_variant() -> None:
+    text = 'paragrahvi 14 lõikest 2 jäetakse läbivalt välja sõna „fraktsioneeritud”;'
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "14"), ("subsection", "2"))
+    assert _payload(ops[0]).attrs["old_text"] == "fraktsioneeritud"
+    assert _payload(ops[0]).attrs["all_occurrences"] is True
+    assert (
+        _payload(ops[0]).attrs["source_family"]
+        == "ee_fraktsioneeritud_source_typo_delete_variant"
+    )
+    assert ops[0].witness_rule_id == "ee_fraktsioneeritud_source_typo_delete_variant"
+
+
+def test_extract_ee_ops_fans_out_shared_labelled_replace_payload_targets() -> None:
+    text = (
+        "paragrahvi 6 lõike 1 punkt 3 ja § 20 lõike 1 punkt 3 "
+        "sõnastatakse järgmiselt: „3) katte serva kaugus tee teljest võib "
+        "erineda –5/+15 cm, kusjuures katte kogulaius ei tohi olla "
+        "projekteeritust kitsam ja kahe järjestikuse mõõtmise vahe ühtlase "
+        "laiusega sirgetel lõikudel ei või olla üle 5 cm.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path, _payload(op).text) for op in ops] == [
+        (
+            StructuralAction.REPLACE,
+            (("section", "6"), ("subsection", "1"), ("item", "3")),
+            (
+                "3) katte serva kaugus tee teljest võib erineda –5/+15 cm, "
+                "kusjuures katte kogulaius ei tohi olla projekteeritust kitsam "
+                "ja kahe järjestikuse mõõtmise vahe ühtlase laiusega sirgetel "
+                "lõikudel ei või olla üle 5 cm."
+            ),
+        ),
+        (
+            StructuralAction.REPLACE,
+            (("section", "20"), ("subsection", "1"), ("item", "3")),
+            (
+                "3) katte serva kaugus tee teljest võib erineda –5/+15 cm, "
+                "kusjuures katte kogulaius ei tohi olla projekteeritust kitsam "
+                "ja kahe järjestikuse mõõtmise vahe ühtlase laiusega sirgetel "
+                "lõikudel ei või olla üle 5 cm."
+            ),
+        ),
+    ]
+    assert all(_payload(op).attrs["source_family"] == "ee_multi_target_replace_shared_payload" for op in ops)
+    assert all(op.witness_rule_id == "ee_multi_target_replace_shared_payload" for op in ops)
 
 
 def test_extract_ee_ops_splits_mixed_replace_and_delete_same_target() -> None:
