@@ -125,6 +125,29 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
+    ("125012012005", "123092022012"): EEPairResidualInventory(
+        base_id="125012012005",
+        oracle_id="123092022012",
+        statute_title="Alla 24-meetrise pikkusega laeva minimaalse vabaparda määramise nõuded",
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "section:6",
+                    "section:6/subsection:9",
+                ),
+                evidence=(
+                    "Source act 129122015004 § 1 item 5 explicitly targets § 6(5) "
+                    "and replaces 'peab' with 'peavad'. Replay applies that source "
+                    "target. Oracle 123092022012 leaves § 6(5) singular and instead "
+                    "renders § 6(9) as 'Kolmnurkade alumised tipud peavad...'. This "
+                    "is classified as source/oracle drift; replay must not retarget "
+                    "the operation from subsection 5 to subsection 9 by grammatical fit."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("105072012011", "126032014005"): EEPairResidualInventory(
         base_id="105072012011",
         oracle_id="126032014005",

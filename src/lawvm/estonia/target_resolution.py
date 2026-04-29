@@ -1366,7 +1366,16 @@ def split_old_format_wrapper_blocks(section_html: str) -> list[str]:
     wrapper_pat = re.compile(r"^§\s*\d+\.", re.IGNORECASE)
 
     def _current_has_unclosed_payload_quote() -> bool:
-        text = "\n".join(current)
+        text = "\n".join(strip_old_format_html_text(para) for para in current)
+        marker_matches = list(re.finditer(
+            r"(?:järgmises\s+sõnastuses|järgmiselt)\s*:\s*",
+            text,
+            re.IGNORECASE | re.DOTALL,
+        ))
+        if marker_matches:
+            tail = text[marker_matches[-1].end():].lstrip()
+            if tail.startswith(("„", '"', "“", "«", "ˮ")):
+                return not bool(re.search(r'[“”"»ˮ]\s*[.;:]?\s*$', tail))
         return text.count("„") > text.count("“")
 
     blocks: list[str] = []

@@ -8265,6 +8265,33 @@ def test_old_format_wrapper_split_keeps_quoted_embedded_section_payload_together
     ) in targets
 
 
+def test_parse_ee_amendment_ops_keeps_old_format_multi_section_payload_wrapped() -> None:
+    archive = open_rt_archive(readonly=True)
+    xml = fetch_rt_xml("129122015004", archive=archive)
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/129122015004",
+        target_title="Alla 24-meetrise pikkusega laeva minimaalse vabaparda määramise nõuded",
+    )
+
+    section_payloads = {
+        op.target.path[0][1]: op.payload.text
+        for op in ops
+        if op.action is StructuralAction.REPLACE
+        and op.target.path in {
+            (("section", "4"),),
+            (("section", "5"),),
+        }
+        and op.payload is not None
+    }
+    assert set(section_payloads) == {"4", "5"}
+    assert section_payloads["4"].startswith("§ 4. Minimaalse vabaparda määramine tekklaevadel")
+    assert "F ¼L = 35 L, mm." in section_payloads["4"]
+    assert section_payloads["5"].startswith("§ 5. Minimaalse vabaparda määramine tekita laevadel")
+    assert "F ¼L = 1,2 F 0 , mm." in section_payloads["5"]
+
+
 def test_old_format_commencement_scan_ignores_plain_joustumisest_body_text() -> None:
     archive = open_rt_archive(readonly=True)
     xml = fetch_rt_xml("13310847", archive=archive)
