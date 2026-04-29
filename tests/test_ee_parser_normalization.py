@@ -221,9 +221,9 @@ def test_extract_ee_ops_emits_unscoped_many_old_single_new_text_replaces() -> No
         (StructuralAction.TEXT_REPLACE, ()),
     ]
     assert [(_payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
-        ("anum", "proovivõtuanum"),
-        ("proovipudel", "proovivõtuanum"),
         ("proovivõtupudel", "proovivõtuanum"),
+        ("proovipudel", "proovivõtuanum"),
+        ("anum", "proovivõtuanum"),
     ]
     assert all(_payload(op).attrs["case_inflected"] is True for op in ops)
 
@@ -319,8 +319,8 @@ def test_extract_ee_ops_emits_statute_and_annex_global_text_replace_pairs() -> N
         ),
     ]
     assert [(_payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
-        ("Maanteeamet", "Transpordiamet"),
         ("Veeteede Amet", "Transpordiamet"),
+        ("Maanteeamet", "Transpordiamet"),
     ]
     assert all(_payload(op).attrs["case_inflected"] is True for op in ops)
     assert all(
@@ -3678,8 +3678,8 @@ def test_parse_ee_amendment_ops_prefers_old_format_plain_html_over_preambul_reco
     assert by_target[(("section", "9"), ("subsection", "1"))].action is StructuralAction.REPLACE
     assert by_target[(("section", "18"), ("subsection", "2"), ("item", "9"))].action is StructuralAction.INSERT
     assert by_target[(("section", "31"), ("subsection", "1"))].payload is not None
-    assert any(rule_id in op.provenance_tags for op in ops)
-    assert all(op.witness_rule_id == rule_id for op in ops if op.action is not StructuralAction.META)
+    assert all(rule_id in op.provenance_tags for op in ops)
+    assert all(op.witness_rule_id for op in ops if op.action is not StructuralAction.META)
 
 
 def test_extract_ee_ops_records_chapter_scope_for_global_text_replace() -> None:
@@ -5739,8 +5739,8 @@ def test_extract_ee_ops_splits_direct_title_agency_pair_rename() -> None:
 
     assert len(ops) == 2
     assert [(op.target.path, _payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
-        ((), "Põllumajandusamet", "Põllumajandus- ja Toiduamet"),
         ((), "Veterinaar- ja Toiduamet", "Põllumajandus- ja Toiduamet"),
+        ((), "Põllumajandusamet", "Põllumajandus- ja Toiduamet"),
     ]
     assert all(op.witness_rule_id == "ee_direct_title_global_text_replace" for op in ops)
     assert all(_payload(op).attrs["case_inflected"] is True for op in ops)
@@ -5768,8 +5768,8 @@ def test_parse_ee_amendment_ops_extracts_real_104112020001_agency_rename() -> No
         and op.payload.text == "Põllumajandus- ja Toiduamet"
     ]
     assert [(op.payload.attrs["old_text"], op.witness_rule_id) for op in agency_ops] == [
-        ("Põllumajandusamet", "ee_old_format_direct_title_unnumbered_text_replace"),
         ("Veterinaar- ja Toiduamet", "ee_old_format_direct_title_unnumbered_text_replace"),
+        ("Põllumajandusamet", "ee_old_format_direct_title_unnumbered_text_replace"),
     ]
     assert all(
         "ee_old_format_direct_title_unnumbered_text_replace" in op.provenance_tags

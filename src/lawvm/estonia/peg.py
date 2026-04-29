@@ -2186,8 +2186,9 @@ def _extract_mixed_delete_replace_segments(text: str) -> List[tuple[str, str, st
     normalized = html.unescape(text)
     quote = r'[„"“”«\u02ee]'
     quoted = rf'{quote}(?P<value>[^„”“"«»\u02ee]+){quote}'
+    sentence_scope_prefix = r'(?:\b[A-Za-zÕÄÖÜŠŽõäöüšž]+(?:st|s)\s+lause(?:st|s)\s+)?'
     replacement_segment = (
-        rf'(?P<segment>(?:\basendatakse\b\s+)?'
+        rf'(?P<segment>{sentence_scope_prefix}(?:\basendatakse\b\s+)?'
         rf'(?:sõn(?:a|ad)|tekstiosa|lauseosa|arv(?:u)?)\s+'
         rf'{quote}(?P<old>[^„”“"«»\u02ee]+){quote}\s+'
         rf'(?:sõn(?:a|aga|adega)|tekstiosaga|lauseosaga|arvuga)\s+'
@@ -2202,12 +2203,13 @@ def _extract_mixed_delete_replace_segments(text: str) -> List[tuple[str, str, st
             ordered.append((match.start(), (segment, old_text, new_text)))
 
     delete_segment = (
-        r'\bj[aä]etakse\s+v[aä]lja\s+'
+        rf'(?P<segment>{sentence_scope_prefix}\bj[aä]etakse\s+v[aä]lja\s+'
         r'(?:sõn(?:a|ad)|tekstiosa|lauseosa)\s+'
-        r'(?P<body>.*?)(?=(?:\s*,?\s+(?:ning|ja)\s+\basendatakse\b)|[.;]|$)'
+        r'(?P<body>.*?))(?=(?:\s*,?\s+(?:ning|ja)\s+(?![„"“”«\u02ee])[^.;]{0,120}\basendatakse\b)|[.;]|$)'
     )
     for match in re.finditer(delete_segment, normalized, re.IGNORECASE | re.DOTALL):
         body = match.group("body")
+        delete_source_segment = match.group("segment").strip(" ,;")
         terms = [term.group("value").strip() for term in re.finditer(quoted, body) if term.group("value").strip()]
         if not terms:
             continue
@@ -2216,11 +2218,9 @@ def _extract_mixed_delete_replace_segments(text: str) -> List[tuple[str, str, st
             and re.search(rf'{quote}[^„”“"«»\u02ee]+{quote}\s+ja\s+{quote}', body, re.IGNORECASE)
         ):
             combined = " ja ".join(terms)
-            segment = f"jäetakse välja sõnad „{combined}”"
-            ordered.append((match.start(), (segment, combined, "")))
+            ordered.append((match.start(), (delete_source_segment, combined, "")))
         for term in terms:
-            segment = f"jäetakse välja sõna „{term}”"
-            ordered.append((match.start(), (segment, term, "")))
+            ordered.append((match.start(), (delete_source_segment, term, "")))
 
     if not ordered:
         return []
