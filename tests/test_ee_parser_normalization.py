@@ -5835,6 +5835,31 @@ def test_extract_ee_ops_splits_two_insert_afters_and_after_anchor_delete() -> No
     assert sentence_meta.sentence_indexes == (1,)
 
 
+def test_extract_ee_ops_splits_repeated_insert_after_same_target_with_elided_verb() -> None:
+    text = (
+        "paragrahvi 36 lõiget 1 1 täiendatakse pärast sõna „võrra” "
+        "tekstiosaga „ilma täiendava vahearuande esitamise kohustuseta” "
+        "ning pärast sõna „riigieelarvelise” sõnadega „eraldise kasutamise”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.target.path, _payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        (
+            (("section", "36"), ("subsection", "1_1")),
+            "võrra",
+            "võrra ilma täiendava vahearuande esitamise kohustuseta",
+        ),
+        (
+            (("section", "36"), ("subsection", "1_1")),
+            "riigieelarvelise",
+            "riigieelarvelise eraldise kasutamise",
+        ),
+    ]
+    assert [_payload(op).attrs["rewrite_mode"] for op in ops] == ["insert_after", "insert_after"]
+    assert all(op.witness_rule_id == "ee_repeated_insert_after_same_target" for op in ops)
+
+
 def test_extract_ee_ops_treats_insert_after_arvu_as_text_replace_without_spacing_gap() -> None:
     ops = extract_ee_ops(
         'paragrahvi 16 lõiget 2 täiendatakse pärast arvu "15²" tekstiosaga "–15⁵".',
@@ -9458,6 +9483,41 @@ def test_extract_ee_ops_splits_same_target_text_replace_and_sentence_replace_cla
     assert sentence_meta.sentence_indexes == (1,)
     assert all(
         op.witness_rule_id == "ee_mixed_text_replace_and_sentence_replace_same_target"
+        for op in ops
+    )
+
+
+def test_extract_ee_ops_splits_sentence_replace_and_sentence_insert_clause() -> None:
+    text = (
+        "paragrahvi 30 lõike 5 esimene lause sõnastatakse järgmiselt: "
+        "„Mikrofinantseeringu saaja esitab kuluaruande eesti või inglise keeles "
+        "asjakohases riigis asuvale Eesti välisesindusele või esinduse puudumisel "
+        "riiki akrediteeritud diplomaatilisele esindajale, kes annab kuluaruandele "
+        "ja kuludokumentidele oma hinnangu”, ning lõiget täiendatakse pärast "
+        "esimest lauset lausega „Kui mikrofinantseeringu saaja on Eesti Vabariigis "
+        "registreeritud ning püsivalt tegutsev juriidiline isik, esitab ta "
+        "eestikeelse kuluaruande ministeeriumile.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [op.action.value for op in ops] == ["replace", "insert"]
+    assert [op.target.path for op in ops] == [
+        (("section", "30"), ("subsection", "5")),
+        (("section", "30"), ("subsection", "5")),
+    ]
+    assert _payload(ops[0]).text.endswith("oma hinnangu")
+    assert not _payload(ops[0]).text.endswith(".")
+    assert _payload(ops[1]).text.startswith("Kui mikrofinantseeringu saaja")
+    replace_meta = read_sentence_target_meta(_payload(ops[0]))
+    insert_meta = read_sentence_target_meta(_payload(ops[1]))
+    assert replace_meta is not None
+    assert replace_meta.sentence_indexes == (0,)
+    assert insert_meta is not None
+    assert insert_meta.sentence_indexes == (0,)
+    assert insert_meta.mode == "insert_after"
+    assert all(
+        op.witness_rule_id == "ee_mixed_sentence_replace_and_insert_same_target"
         for op in ops
     )
 
