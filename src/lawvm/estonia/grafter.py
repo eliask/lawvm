@@ -1682,6 +1682,24 @@ def parse_ee_amendment_ops(
         )
 
     def _augment_global_text_replace_exclusions(ops: List[LegalOperation]) -> None:
+        def _normalize_paths(raw_paths: object) -> tuple[tuple[tuple[str, str], ...], ...]:
+            if not isinstance(raw_paths, (list, tuple)):
+                return ()
+            normalized: list[tuple[tuple[str, str], ...]] = []
+            for raw_path in raw_paths:
+                if not isinstance(raw_path, (list, tuple)):
+                    continue
+                path_parts: list[tuple[str, str]] = []
+                for part in raw_path:
+                    if not isinstance(part, (list, tuple)) or len(part) != 2:
+                        continue
+                    kind, label = part
+                    path_parts.append((str(kind), str(label)))
+                path = tuple(path_parts)
+                if path:
+                    normalized.append(path)
+            return tuple(normalized)
+
         def _action_name(op: LegalOperation) -> str:
             return op.action.value if hasattr(op.action, "value") else str(op.action)
 
@@ -1709,12 +1727,10 @@ def parse_ee_amendment_ops(
             if not old_text:
                 continue
             old_text_norm = old_text.casefold()
-            excluded_paths = [
-                tuple((str(kind), str(label)) for kind, label in raw_path)
-                for raw_path in rewrite.exclude_paths
-                if isinstance(raw_path, (list, tuple))
-            ]
-            seen_paths = set(excluded_paths)
+            selector_excluded_paths = list(
+                _normalize_paths(payload.attrs.get("selector_composition_exclude_paths"))
+            )
+            seen_paths = set(rewrite.exclude_paths) | set(selector_excluded_paths)
             for op in ops:
                 if op is global_op or _action_name(op) != "text_replace" or not op.target.path or op.payload is None:
                     continue
@@ -1727,16 +1743,16 @@ def parse_ee_amendment_ops(
                     continue
                 path = tuple((str(kind), str(label)) for kind, label in op.target.path)
                 if path and path not in seen_paths:
-                    excluded_paths.append(path)
+                    selector_excluded_paths.append(path)
                     seen_paths.add(path)
-            if excluded_paths:
+            if selector_excluded_paths:
                 updated_op = replace(
                     global_op,
                     payload=replace(
                         payload,
                         attrs={
                             **payload.attrs,
-                            "exclude_paths": excluded_paths,
+                            "selector_composition_exclude_paths": tuple(selector_excluded_paths),
                         },
                     ),
                 )
@@ -1981,7 +1997,10 @@ def parse_ee_amendment_ops(
                     rewrite.case_inflected,
                     tuple(
                         tuple((str(kind), str(label)) for kind, label in raw_path)
-                        for raw_path in rewrite.exclude_paths
+                        for raw_path in (
+                            *rewrite.exclude_paths,
+                            *payload.attrs.get("selector_composition_exclude_paths", ()),
+                        )
                         if isinstance(raw_path, (list, tuple))
                     ),
                 )
@@ -7509,6 +7528,33 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         for old_form, new_form in form_pairs.items():
             variants.setdefault(old_form, new_form)
 
+    def _add_reagent_reaktiiv_forms() -> None:
+        """Own reagent -> reaktiiv forms for RT's 2023 lab terminology rewrite."""
+        if not case_inflected or old != "reagent" or new != "reaktiiv":
+            return
+        form_pairs = {
+            "reagent": "reaktiiv",
+            "reagendi": "reaktiivi",
+            "reagenti": "reaktiivi",
+            "reagendisse": "reaktiivi",
+            "reagendis": "reaktiivis",
+            "reagendist": "reaktiivist",
+            "reagendile": "reaktiivile",
+            "reagendil": "reaktiivil",
+            "reagendilt": "reaktiivilt",
+            "reagendiks": "reaktiiviks",
+            "reagendina": "reaktiivina",
+            "reagendiga": "reaktiiviga",
+            "reagendid": "reaktiivid",
+            "reagentide": "reaktiivide",
+            "reagente": "reaktiive",
+            "reagentidele": "reaktiividele",
+            "reagentidega": "reaktiividega",
+            "anti-D reagenti": "anti-D reaktiivi",
+        }
+        for old_form, new_form in form_pairs.items():
+            variants.setdefault(old_form, new_form)
+
     def _strip_wrapping_quotes(surface: str) -> str | None:
         stripped = surface.strip()
         if len(stripped) < 2:
@@ -7569,6 +7615,7 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         _add_ametikoht_teenistuskoht_forms()
         _add_olemasolev_tahkel_kutusel_forms()
         _add_volitatud_vastutav_forms()
+        _add_reagent_reaktiiv_forms()
         old_norm = _ee_normalize_text_replace_surface(old)
         new_norm = _ee_normalize_text_replace_surface(new)
         if old_norm and old_norm not in variants:

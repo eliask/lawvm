@@ -4108,6 +4108,32 @@ def test_case_inflected_text_replace_contracts_tuletorjesusteem_kustuti_phrase()
     )
 
 
+def test_case_inflected_text_replace_handles_reagent_reaktiiv_forms() -> None:
+    text = (
+        "Nõuded kasutatavatele reagentidele. "
+        "Kasutatavad reagendid peavad vastama nõuetele. "
+        "Kasutatakse monoklonaalset anti-A reagenti. "
+        "D kuuluvus määratakse anti-D reagenti kasutades. "
+        "Reagentide ja meetodite kombinatsioon on valideeritud."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "reagent",
+        "reaktiiv",
+        case_inflected=True,
+        all_occurrences=True,
+    )
+
+    assert replaced == (
+        "Nõuded kasutatavatele reaktiividele. "
+        "Kasutatavad reaktiivid peavad vastama nõuetele. "
+        "Kasutatakse monoklonaalset anti-A reaktiivi. "
+        "D kuuluvus määratakse anti-D reaktiivi kasutades. "
+        "Reaktiivide ja meetodite kombinatsioon on valideeritud."
+    )
+
+
 def test_delete_text_replace_handles_fraktsioneeritud_source_typo_variant() -> None:
     text = (
         "Pindamiseks kasutatakse fraktsioneeritud killustikke. "

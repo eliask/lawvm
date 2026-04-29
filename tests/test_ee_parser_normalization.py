@@ -9946,6 +9946,44 @@ def test_parse_ee_amendment_ops_keeps_excluded_global_rewrite_selectors_source_l
     )
 
 
+def test_parse_ee_amendment_ops_keeps_selector_exclusion_out_of_global_replay_scope() -> None:
+    archive = open_rt_archive(readonly=True)
+    base = parse_ee_statute(fetch_rt_xml("110082017006", archive), "ee/110082017006")
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("122112023003", archive),
+        "ee/122112023003",
+        target_title=base.title,
+    )
+
+    global_op = next(
+        op
+        for op in ops
+        if op.target.path == ()
+        and op.action is StructuralAction.TEXT_REPLACE
+        and op.payload is not None
+        and op.payload.attrs.get("old_text") == "reagent"
+    )
+    local_op = next(
+        op
+        for op in ops
+        if op.target.path == (("section", "3"), ("subsection", "3"))
+        and op.action is StructuralAction.TEXT_REPLACE
+    )
+
+    assert global_op.payload is not None
+    assert global_op.payload.attrs.get("exclude_paths") in (None, ())
+    assert global_op.payload.attrs["selector_composition_exclude_paths"] == (
+        (("section", "3"), ("subsection", "3")),
+    )
+    assert local_op.payload is not None
+    assert local_op.payload.attrs["old_text"] == "kontrollreagenti"
+    assert (
+        "ee_source_local_global_text_replace_selector_composition_skipped_for_excluded_target"
+        in local_op.provenance_tags
+    )
+
+
 def test_extract_ee_ops_preserves_explicit_plural_item_insert_terminals() -> None:
     text = (
         "paragrahvi 4 täiendatakse punktidega 6 ja 7 järgmises sõnastuses: "
