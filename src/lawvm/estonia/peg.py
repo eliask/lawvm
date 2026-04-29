@@ -1906,6 +1906,19 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
     )
     if trailing_textual_invalidation is not None:
         return trailing_textual_invalidation.group(1).strip(), ""
+    post_replace_match = re.search(r"\basendatakse\b(?P<post>.+)", text, re.IGNORECASE | re.DOTALL)
+    if post_replace_match is not None:
+        post_replace = post_replace_match.group("post")
+        if re.search(
+            r"\b(?:sõn(?:a|ad|u)|tekstiosa|lauseosa|arv)\b"
+            r"[^.;]{0,180}"
+            r"\b(?:sõn(?:aga|adega)|tekstiosaga|lauseosaga|arvuga)\b",
+            post_replace,
+            re.IGNORECASE | re.DOTALL,
+        ):
+            post_quotes = [part.strip() for part in _extract_quoted_contents(post_replace) if part.strip()]
+            if len(post_quotes) >= 2:
+                return post_quotes[0], post_quotes[1]
     missing_new_close = re.search(
         r"\basendatakse\b.+?[„\"“](?P<old>[^„”“\"]+)[”“\"]\s+"
         r"(?:sõn(?:a|ad|adega|aga)|tekstiosa(?:ga)?|arvu|lauseosa(?:ga)?|viite(?:ga|le|ks)?)\s+"

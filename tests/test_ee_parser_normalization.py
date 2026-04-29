@@ -245,6 +245,24 @@ def test_extract_ee_ops_accepts_left_right_curly_quote_text_replace() -> None:
     assert _payload(ops[0]).text == "põllu- ja metsamajandusliku"
 
 
+def test_extract_ee_ops_ignores_omnibus_target_title_quote_before_replace_verb() -> None:
+    text = (
+        "Vabariigi Valitsuse 19. detsembri 2000. a määruse nr 447 "
+        "„Eesti Haigekassa nõukogu liikmete tasustamise kord” pealkirjas, "
+        "preambulis ning §-des 1 ja 3 asendatakse läbivalt sõnad "
+        "„Eesti Haigekassa” sõnaga „Tervisekassa”."
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+    body_ops = [op for op in ops if op.target.path in {(("section", "1"),), (("section", "3"),)}]
+
+    assert len(body_ops) == 2
+    for op in body_ops:
+        assert op.payload is not None
+        assert op.payload.attrs["old_text"] == "Eesti Haigekassa"
+        assert op.payload.text == "Tervisekassa"
+
+
 def test_extract_ee_ops_emits_unscoped_many_old_single_new_text_replaces() -> None:
     text = (
         "sõnad „anum”, „proovipudel” ja „proovivõtupudel” "
