@@ -2837,6 +2837,27 @@ def test_parse_html_op_items_splits_plain_paragraph_item_markers() -> None:
     ]
 
 
+def test_parse_html_op_items_splits_plain_partitive_act_item_markers() -> None:
+    items = parse_html_op_items(
+        (
+            "<p>10) paragrahv 16 sõnastatakse järgmiselt:</p>"
+            "<p>„§ 16. Nõuded toetuse saajale</p>"
+            "<p>(1) Uus § 16 tekst.”;</p>"
+            "<p>11) määrust täiendatakse §-ga 16<sup>1</sup> järgmises sõnastuses:</p>"
+            "<p>„§ 16<sup>1</sup>. Tegevustega seotud muudatused</p>"
+            "<p>(1) Uus § 16<sup>1</sup> tekst.”;</p>"
+        ),
+        allow_plain_paragraph_items=True,
+    )
+
+    assert items == [
+        "10) paragrahv 16 sõnastatakse järgmiselt: „§ 16. Nõuded toetuse saajale "
+        "(1) Uus § 16 tekst.”;",
+        "11) määrust täiendatakse §-ga 16 1 järgmises sõnastuses: "
+        "„§ 16 1 . Tegevustega seotud muudatused (1) Uus § 16 1 tekst.”;",
+    ]
+
+
 def test_parse_html_op_items_does_not_split_plain_quoted_payload_items() -> None:
     items = parse_html_op_items(
         (
@@ -2867,6 +2888,30 @@ def test_parse_ee_amendment_ops_splits_plain_paragraph_items_for_2022_001() -> N
     assert (("section", "3"), ("subsection", "2")) in targets
     assert (("section", "10"), ("subsection", "2"), ("item", "1")) in targets
     assert (("section", "27"), ("item", "4")) in targets
+
+
+def test_parse_ee_amendment_ops_splits_partitive_plain_act_item_for_2012_001() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("120072012001", archive),
+        "ee/120072012001",
+        target_title=(
+            "Mikropõllumajandusettevõtte arendamise investeeringutoetuse saamise "
+            "nõuded, toetuse taotlemise ja taotluse menetlemise täpsem kord"
+        ),
+    )
+
+    by_target = {op.target.path: op for op in ops}
+    section_16 = by_target[(("section", "16"),)]
+    section_16_1 = by_target[(("section", "16_1"),)]
+
+    assert section_16.action == StructuralAction.REPLACE
+    assert section_16.payload is not None
+    assert "Nõuded toetuse saajale" in section_16.payload.text
+    assert "Tegevustega seotud muudatused" not in section_16.payload.text
+    assert section_16_1.action == StructuralAction.INSERT
+    assert section_16_1.payload is not None
+    assert "Tegevustega seotud muudatused" in section_16_1.payload.text
 
 
 def test_parse_ee_amendment_ops_splits_flat_plain_paragraph_items_for_2013_011() -> None:
