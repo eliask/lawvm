@@ -371,7 +371,13 @@ def test_ee_publication_db_builds_sqlite_from_replayable_corpus(tmp_path, monkey
         workers=1,
     )
 
-    assert stats == {"pairs": 1, "errors": 0, "divergences": 1, "open_divergences": 1}
+    assert stats == {
+        "pairs": 1,
+        "errors": 0,
+        "divergences": 1,
+        "open_divergences": 1,
+        "meaningful_candidates": 1,
+    }
     import sqlite3
 
     con = sqlite3.connect(output)
@@ -386,7 +392,8 @@ def test_ee_publication_db_builds_sqlite_from_replayable_corpus(tmp_path, monkey
         ).fetchone()
         divergence = con.execute(
             """
-            SELECT d.address, rt.text, ot.text
+            SELECT d.address, rt.text, ot.text, d.outreach_bucket,
+                   d.meaningful_candidate, d.outreach_evidence
             FROM divergences d
             LEFT JOIN text_blobs rt ON rt.text_hash = d.replay_text_hash
             LEFT JOIN text_blobs ot ON ot.text_hash = d.oracle_text_hash
@@ -395,7 +402,8 @@ def test_ee_publication_db_builds_sqlite_from_replayable_corpus(tmp_path, monkey
     finally:
         con.close()
     assert pair == ("b1", "o1", 1, 2, 1, 1, 10, 4)
-    assert divergence == ("section:1", "", "oracle")
+    assert divergence[:5] == ("section:1", "", "oracle", "publication_candidate", 1)
+    assert "candidate for human review" in divergence[5]
 
 
 def test_ee_publication_db_classifies_exact_cross_address_text_shadows() -> None:
@@ -743,6 +751,45 @@ def test_ee_publication_db_classifies_noncommensurable_pair_surface() -> None:
     assert divergences[0]["residual_bucket"] == "pair_surface_classification"
     assert divergences[0]["open_current"] == 0
     assert "forward_looking_oracle" in divergences[0]["residual_evidence"]
+
+
+def test_ee_publication_db_assigns_publication_outreach_triage() -> None:
+    divergences = [
+        {
+            "residual_bucket": None,
+            "open_current": 1,
+        },
+        {
+            "residual_bucket": "presentation_punctuation_whitespace",
+            "open_current": 0,
+        },
+        {
+            "residual_bucket": "replay_coverage_gap",
+            "open_current": 0,
+        },
+        {
+            "residual_bucket": "source_oracle_drift",
+            "open_current": 0,
+        },
+        {
+            "residual_bucket": "pair_surface_classification",
+            "open_current": 0,
+        },
+    ]
+
+    ee_publication_db._assign_publication_outreach_triage(divergences)
+
+    assert [
+        divergence["outreach_bucket"] for divergence in divergences
+    ] == [
+        "publication_candidate",
+        "excluded_presentation",
+        "excluded_replay_coverage",
+        "excluded_source_surface",
+        "excluded_pair_surface",
+    ]
+    assert [divergence["meaningful_candidate"] for divergence in divergences] == [1, 0, 0, 0, 0]
+    assert "punctuation_whitespace" in divergences[1]["outreach_evidence"]
 
 
 def test_bench_regression_guard_run_guard_pass_and_fail(tmp_path, monkeypatch, capsys) -> None:
