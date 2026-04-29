@@ -4397,6 +4397,33 @@ def test_extract_ee_ops_fans_out_targeted_word_replace_after_explicit_target_lis
     assert all(op.text_patch.replacement == "Rahandusministeerium" for op in ops if op.text_patch)
 
 
+def test_extract_ee_ops_strips_nested_quoted_title_before_targeted_word_replace() -> None:
+    ops = extract_ee_ops(
+        (
+            "Regionaalministri 15. mai 2008. a määruse nr 3 „Meetme "
+            "„Linnaliste piirkondade arendamine” tingimused ja investeeringute "
+            "kava koostamise kord” § 3 lõikes 1, § 9 lõikes 6, § 10 lõigetes "
+            "1 ja 2, § 11 lõigetes 1–6, § 12 lõigetes 1, 2 1 , 3 1 , 4 ja 6, "
+            "§ 13 lõigetes 1, 4, 4 1 ja 6, § 13 1 lõigetes 1, 1 2 , 2 ja 4, "
+            "§ 13 2 lõigetes 1, 3, 6, 8, 9 ja 11, § 15 lõike 1 punktis 1, "
+            "§ 16 lõike 5 punktis 4, § 17 lõikes 3, § 17 1 lõike 1 1 punktis 1 "
+            "ning § 23 punktis 2 asendatakse sõna „Siseministeerium” sõnaga "
+            "„Rahandusministeerium” vastavas käändes."
+        ),
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    paths = [op.target.path for op in ops]
+
+    assert len(ops) == 34
+    assert all(op.action is StructuralAction.TEXT_REPLACE for op in ops)
+    assert (("section", "3"), ("subsection", "1")) in paths
+    assert (("section", "17_1"), ("subsection", "1_1"), ("item", "1")) in paths
+    assert (("section", "23"), ("item", "2")) in paths
+    assert (("section", "12"), ("subsection", "9")) not in paths
+    assert all(op.payload is not None and op.payload.attrs.get("case_inflected") is True for op in ops)
+
+
 def test_parse_ee_amendment_ops_does_not_leak_kohtute_into_kohtutaituri_target() -> None:
     xml = """
     <oigusakt xmlns="akt_1_10.06.2010">

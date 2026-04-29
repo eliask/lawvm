@@ -6153,6 +6153,8 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
             return False
         if next_word in {"kohustatud", "nimetatakse", "päeva", "tööpäeva"}:
             return False
+        if next_word == "kava":
+            return False
         if re.match(
             r"\s*käesoleva\s+(?:seaduse|paragrahvi)\s+(?:§|l[oõ]i[kg])",
             suffix_text,
