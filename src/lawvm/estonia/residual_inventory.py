@@ -60,6 +60,29 @@ def _lower_generated_residual_records(
 
 
 _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
+    ("118092025007", "106122024009"): EEPairResidualInventory(
+        base_id="118092025007",
+        oracle_id="106122024009",
+        statute_title="Kinnistusraamatu andmetöötluskeskus",
+        comparison_class="commensurable_delta",
+        residuals=(
+            EEResidualRecord(
+                address="section:5",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "The only in-range amendment, source act 106122024003, "
+                    "targets § 6^1(4) and replaces the first-sentence text "
+                    "'1 euro' with 'kaks eurot'. No applied source operation "
+                    "targets § 5. The remaining divergence is confined to the "
+                    "§ 5 heading: oracle 106122024009 displays the mixed-case "
+                    "surface 'Justiits-ja DIgiministeeriumile', while replay "
+                    "preserves the source/base heading surface outside the "
+                    "amendment target. This is bounded source/oracle heading "
+                    "case drift, not replay authority to mutate § 5."
+                ),
+            ),
+        ),
+    ),
     ("103082018007", "126022019011"): EEPairResidualInventory(
         base_id="103082018007",
         oracle_id="126022019011",

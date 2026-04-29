@@ -51,6 +51,21 @@ def test_get_ee_residual_inventory_numbri_broneerimise_source_typo_correction() 
     assert all("126022019001 § 10" in record.evidence for record in inventory.residuals)
 
 
+def test_get_ee_residual_inventory_kinnistusraamatu_heading_case_drift() -> None:
+    inventory = get_ee_residual_inventory("118092025007", "106122024009")
+
+    assert inventory is not None
+    assert inventory.statute_title == "Kinnistusraamatu andmetöötluskeskus"
+    assert inventory.comparison_class == "commensurable_delta"
+    assert len(inventory.residuals) == 1
+    residual = inventory.residuals[0]
+    assert residual.address == "section:5"
+    assert residual.bucket == "source_oracle_drift"
+    assert "106122024003" in residual.evidence
+    assert "§ 6^1(4)" in residual.evidence
+    assert "DIgiministeeriumile" in residual.evidence
+
+
 def test_get_ee_residual_inventory_technical_assistance_transitional_redaction() -> None:
     inventory = get_ee_residual_inventory("124112010005", "109062011002")
 
