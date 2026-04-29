@@ -356,6 +356,64 @@ def test_insert_sentence_part_appends_before_terminal_punctuation() -> None:
     )
 
 
+def test_insert_sentence_part_strips_item_period_before_structural_semicolon() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="8",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="1",
+                                children=(
+                                    IRNode(
+                                        kind=IRNodeKind.ITEM,
+                                        label="7",
+                                        text=(
+                                            "kulud investeeringutele, mille osakaal ületab 80 protsenti "
+                                            "projekti abikõlblike kulude eelarvest.;"
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_append_item_sentence_part",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "8"), ("subsection", "1"), ("item", "7"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text=", välja arvatud juhul, kui toetuse summat suurendatakse §10 lõike 3 kohaselt.",
+            attrs={
+                "sentence_target_meta": make_sentence_target_meta(
+                    sentence_indexes=(),
+                    mode="append_sentence_part",
+                ),
+            },
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    item = result.children[0].children[0].children[0].children[0]
+
+    assert item.text == (
+        "kulud investeeringutele, mille osakaal ületab 80 protsenti projekti abikõlblike kulude eelarvest, "
+        "välja arvatud juhul, kui toetuse summat suurendatakse §10 lõike 3 kohaselt;"
+    )
+
+
 def test_insert_after_text_replace_preserves_acronym_prefix_suffix_case() -> None:
     replaced = _ee_apply_text_replace_value(
         "võrreldud LOADMAN-tüüpi seadmega",
@@ -3351,6 +3409,15 @@ def test_case_inflected_text_replace_keeps_subject_before_participial_object() -
         "linna- või vallavalitsus",
         case_inflected=True,
     ) == "Plaanile kannab linna- või vallavalitsus väljaselgitatud maatükkide piirid."
+
+
+def test_case_inflected_text_replace_handles_participial_phrase_head_genitive() -> None:
+    assert _ee_apply_text_replace_value(
+        "partneri ja kasu saava organisatsiooni kinnitus",
+        "kasu saav",
+        "muu kasu saav",
+        case_inflected=True,
+    ) == "partneri ja muu kasu saava organisatsiooni kinnitus"
 
 
 def test_case_inflected_text_replace_handles_shared_prefix_pere_forms() -> None:

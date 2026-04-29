@@ -426,13 +426,19 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
     preamble = re.sub(r'\s+', ' ', preamble).strip()
     chunks = re.split(
         r'(?:,\s*|\s+(?:ning|ja)\s+)'
-        r'(?=(?:§(?:-s)?\s*\d|\bparagrahvi(?:s|st)?\s+\d))',
+        r'(?=(?:§(?:-s)?\s*\d|\bparagrahvi(?:s|st)?\s+\d|\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s+lõike))',
         preamble,
         flags=re.IGNORECASE,
     )
     targets: List[LegalAddress] = []
     seen: set[tuple[tuple[str, str], ...]] = set()
     for chunk in chunks:
+        if re.match(
+            r'^\s*\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s+lõike(?:te|tes|st|s|t|ga)?\b',
+            chunk,
+            re.IGNORECASE,
+        ):
+            chunk = f"paragrahvi {chunk.strip()}"
         m_plural_sections = re.search(
             r'^(?:\bparagrahve\s+|§-d?\s*)'
             r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*(?:\s*(?:,|ja|–|‒|-)\s*\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)+)',
@@ -823,6 +829,25 @@ def _attach_subsection_text_scope_meta(
     attrs = dict(payload.attrs)
     attrs["subsection_text_scope_meta"] = make_subsection_text_scope_meta(intro_only=True)
     return replace(payload, attrs=attrs)
+
+
+def _is_mixed_subsection_and_item_replace_scope(clean: str, target: LegalAddress) -> bool:
+    """Return True for clauses that explicitly replace a subsection and one of its items."""
+    if len(target.path) < 3:
+        return False
+    if target.path[0][0] != "section" or target.path[1][0] != "subsection" or target.path[2][0] != "item":
+        return False
+    section_label = re.escape(target.path[0][1]).replace("_", r"\s*")
+    subsection_label = re.escape(target.path[1][1]).replace("_", r"\s*")
+    item_label = re.escape(target.path[2][1]).replace("_", r"\s*")
+    preamble = _instruction_preamble(clean)
+    return re.search(
+        rf'(?:\bparagrahvi(?:s|st)?\s+|§\s*){section_label}\s+'
+        rf'lõige\s+{subsection_label}\s+ja\s+'
+        rf'lõike\s+{subsection_label}\s+punkt(?:i|is|ist)?\s+{item_label}\b',
+        preamble,
+        re.IGNORECASE,
+    ) is not None
 
 
 def _extract_explicit_heading_targets(text: str) -> List[LegalAddress]:
@@ -4809,7 +4834,10 @@ def extract_ee_ops(
         and target.path
         and len(target.path) >= 3
         and target.path[-1][0] == "item"
-        and re.search(r"\bsissejuhatav(?:at)?\s+lauseosa\b", _instruction_preamble(clean), re.IGNORECASE)
+        and (
+            re.search(r"\bsissejuhatav(?:at)?\s+lauseosa\b", _instruction_preamble(clean), re.IGNORECASE)
+            or _is_mixed_subsection_and_item_replace_scope(clean, target)
+        )
     ):
         content = _extract_quoted_content(clean)
         if content:
