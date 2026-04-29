@@ -79,6 +79,27 @@ def test_get_ee_residual_inventory_international_events_surface_drift() -> None:
     assert all("sihtasutus" in record.evidence for record in inventory.residuals)
 
 
+def test_get_ee_residual_inventory_small_science_infra_source_typo() -> None:
+    inventory = get_ee_residual_inventory("130032012017", "119062013014")
+
+    assert inventory is not None
+    assert inventory.statute_title.startswith("Alameetme")
+    assert inventory.comparison_class == "commensurable_delta"
+    assert len(inventory.residuals) == 7
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert any(
+        record.address == "chapter:4/section:20/subsection:1/item:13_1"
+        and "119062013001 § 18 item 3" in record.evidence
+        and "ilma käibemaksuta" in record.evidence
+        for record in inventory.residuals
+    )
+    assert any(
+        record.address == "chapter:3/section:13/subsection:4"
+        and "terminal semicolon" in record.evidence
+        for record in inventory.residuals
+    )
+
+
 def test_get_ee_residual_inventory_leader_punctuation_drift() -> None:
     inventory = get_ee_residual_inventory("123112010049", "122072011005")
 

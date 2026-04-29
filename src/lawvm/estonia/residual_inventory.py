@@ -59,6 +59,49 @@ def _lower_generated_residual_records(
 
 
 _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
+    ("130032012017", "119062013014"): EEPairResidualInventory(
+        base_id="130032012017",
+        oracle_id="119062013014",
+        statute_title=(
+            "Alameetme «Väikesemahulise teaduse infrastruktuuri kaasajastamine Eesti "
+            "teadus- ja arendusasutuste teadusteemade sihtfinantseerimise raames» tingimused"
+        ),
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "chapter:3",
+                    "chapter:3/section:13",
+                    "chapter:3/section:13/subsection:4",
+                ),
+                evidence=(
+                    "Replay preserves the source/base terminal semicolon in § 13(4). "
+                    "Oracle 119062013014 renders the same subsection with a terminal "
+                    "period, without a source operation in the pair window that owns "
+                    "that punctuation change."
+                ),
+                bucket="source_oracle_drift",
+            ),
+            build_address_list_family(
+                addresses=(
+                    "chapter:4",
+                    "chapter:4/section:20",
+                    "chapter:4/section:20/subsection:1",
+                    "chapter:4/section:20/subsection:1/item:13_1",
+                ),
+                evidence=(
+                    "Source act 119062013001 § 18 item 3 inserts § 20 item 13^1 with "
+                    "the literal phrase '10 000 eurot (ilma käibemaksuta. ... "
+                    "https://riigihanked.riik.ee ;'. Replay preserves that source "
+                    "surface. Oracle 119062013014 instead has the closed parenthesis "
+                    "'(ilma käibemaksuta).' and no space before the terminal semicolon. "
+                    "This is classified as source/oracle drift pending authority review, "
+                    "not as replay-core license to correct amendment text."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("105072012011", "126032014005"): EEPairResidualInventory(
         base_id="105072012011",
         oracle_id="126032014005",
