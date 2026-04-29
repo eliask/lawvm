@@ -825,6 +825,81 @@ def test_mixed_replace_insert_after_keeps_insert_before_live_clause_comma() -> N
     )
 
 
+def test_repeated_insert_after_keeps_insert_before_live_clause_comma() -> None:
+    replaced = _ee_apply_text_replace_spec(
+        "Toetuse saajal on õigus pikendada perioodi kuni kahe kuu võrra, "
+        "kooskõlastades muudatused ministeeriumiga.",
+        EETextRewriteSpec(
+            old_text="võrra",
+            new_text="võrra ilma täiendava vahearuande esitamise kohustuseta",
+            mode="insert_after",
+            source_family="ee_repeated_insert_after_same_target",
+        ),
+    )
+
+    assert replaced == (
+        "Toetuse saajal on õigus pikendada perioodi kuni kahe kuu võrra "
+        "ilma täiendava vahearuande esitamise kohustuseta, "
+        "kooskõlastades muudatused ministeeriumiga."
+    )
+
+
+def test_mixed_sentence_replace_insert_adds_source_comma_sentence_terminal() -> None:
+    body = _body_with_section_and_subsection(
+        "30",
+        "5",
+        (
+            "Vana esimene lause. Kui mikrofinantseeringu saaja on käesoleva määruse "
+            "§11 lõike 3 punktides 1 ja 2 nimetatud isik, ei kohaldata nõuet. "
+            "Sellisel juhul lisab toetuse saaja tõlke."
+        ),
+    )
+    replace_op = LegalOperation(
+        op_id="ee_test_sentence_replace_source_comma_terminal",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "30"), ("subsection", "5"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text=(
+                "Mikrofinantseeringu saaja esitab kuluaruande eesti või inglise keeles "
+                "asjakohases riigis asuvale Eesti välisesindusele"
+            ),
+            attrs={
+                "sentence_target_meta": make_sentence_target_meta(sentence_indexes=(0,)),
+                "source_family": "ee_mixed_sentence_replace_and_insert_same_target",
+            },
+        ),
+        source=OperationSource(statute_id="ee/test", raw_text=""),
+    )
+    insert_op = LegalOperation(
+        op_id="ee_test_sentence_insert_after_replaced_terminal",
+        sequence=2,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "30"), ("subsection", "5"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text=(
+                "Kui mikrofinantseeringu saaja on Eesti Vabariigis registreeritud, "
+                "esitab ta kuluaruande ministeeriumile."
+            ),
+            attrs={"sentence_target_meta": make_sentence_target_meta(sentence_indexes=(0,), mode="insert_after")},
+        ),
+        source=OperationSource(statute_id="ee/test", raw_text=""),
+    )
+
+    after_replace = _ee_apply_op(body, replace_op)
+    after_insert = _ee_apply_op(after_replace, insert_op)
+    section = after_insert.children[0].children[0]
+    subsection = _child_subsection(section, "5")
+
+    assert subsection.text.startswith(
+        "Mikrofinantseeringu saaja esitab kuluaruande eesti või inglise keeles "
+        "asjakohases riigis asuvale Eesti välisesindusele. "
+        "Kui mikrofinantseeringu saaja on Eesti Vabariigis registreeritud"
+    )
+
+
 def test_subsection_table_only_replace_preserves_existing_intro() -> None:
     body = _body_with_section_and_subsection(
         "13",

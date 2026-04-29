@@ -4512,6 +4512,8 @@ _EE_SOURCE_CASE_ONLY_TEXT_REPLACE_RULE = "ee_source_case_only_text_replace"
 _EE_SOURCE_CASE_SUFFIX_TEXT_REPLACE_RULE = "ee_source_case_suffix_text_replace"
 _EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE = "ee_mixed_delete_and_replace_same_target"
 _EE_MIXED_REPLACE_INSERT_AFTER_SAME_TARGET_RULE = "ee_mixed_replace_and_insert_after_same_target"
+_EE_MIXED_SENTENCE_REPLACE_INSERT_SAME_TARGET_RULE = "ee_mixed_sentence_replace_and_insert_same_target"
+_EE_REPEATED_INSERT_AFTER_SAME_TARGET_RULE = "ee_repeated_insert_after_same_target"
 _EE_SUBSECTION_TABLE_ONLY_REPLACE_RULE = "ee_subsection_table_only_replace_preserve_intro"
 _EE_AMETIKOHT_TEENISTUSKOHT_FORMS_RULE = "ee_case_inflected_ametikoht_teenistuskoht_forms"
 _EE_AMBIGUOUS_SINGLE_OCCURRENCE_TEXT_REPLACE_RULE = "ee_ambiguous_single_occurrence_text_replace"
@@ -5084,7 +5086,11 @@ def _ee_apply_text_replace_spec(
         all_occurrences=spec.all_occurrences,
         capitalize_sentence_start=capitalize_sentence_start,
         single_occurrence=single_occurrence,
-        preserve_following_comma_list=spec.source_family != _EE_MIXED_REPLACE_INSERT_AFTER_SAME_TARGET_RULE,
+        preserve_following_comma_list=spec.source_family
+        not in {
+            _EE_MIXED_REPLACE_INSERT_AFTER_SAME_TARGET_RULE,
+            _EE_REPEATED_INSERT_AFTER_SAME_TARGET_RULE,
+        },
     )
     if (
         replaced is not None
@@ -10246,6 +10252,13 @@ def _ee_apply_op(
                                 updated_text = _replace_sentence(updated_text, "", idx)
                             raw_text = updated_text
                         elif sentence_index is not None and target_node.kind in (IRNodeKind.SUBSECTION, IRNodeKind.ITEM):
+                            if (
+                                payload.attrs.get("source_family")
+                                == _EE_MIXED_SENTENCE_REPLACE_INSERT_SAME_TARGET_RULE
+                                and raw_text
+                                and not raw_text.rstrip().endswith((".", ";", ":", "!", "?"))
+                            ):
+                                raw_text = f"{raw_text.rstrip()}."
                             raw_text = _replace_sentence(target_node.text, raw_text, sentence_index)
                         elif (
                             target_node.kind == IRNodeKind.SUBSECTION

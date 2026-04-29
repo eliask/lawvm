@@ -997,6 +997,9 @@ _EE_MIXED_REPLACE_INSERT_AFTER_SAME_TARGET_RULE = "ee_mixed_replace_and_insert_a
 _EE_MIXED_TEXT_REPLACE_SENTENCE_REPLACE_SAME_TARGET_RULE = (
     "ee_mixed_text_replace_and_sentence_replace_same_target"
 )
+_EE_MIXED_SENTENCE_REPLACE_INSERT_SAME_TARGET_RULE = (
+    "ee_mixed_sentence_replace_and_insert_same_target"
+)
 _EE_EXPLICIT_MIXED_STRUCTURAL_REPEAL_LIST_RULE = "ee_explicit_mixed_structural_repeal_list"
 _EE_SUBSECTION_TABLE_ONLY_REPLACE_RULE = "ee_subsection_table_only_replace_preserve_intro"
 _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE = "ee_senine_text_subsection_renumber_before_insert"
@@ -2294,6 +2297,32 @@ def _extract_mixed_text_replace_sentence_replace(text: str) -> tuple[list[tuple[
     return text_pairs, sentence_payload, sentence_replace_segment
 
 
+def _extract_mixed_sentence_replace_insert(text: str) -> tuple[str, str, str] | None:
+    """Extract same-target sentence replacement plus sentence insertion."""
+    if not (
+        re.search(r'\blause\s+s[oõ]nastatakse\s+j[aä]rgmiselt\b', text, re.IGNORECASE)
+        and re.search(r'\bt[aä]iendatakse\b', text, re.IGNORECASE)
+        and re.search(r'\bp[aä]rast\b[^.;]{0,80}\blause(?:t)?\s+lausega\b', text, re.IGNORECASE)
+    ):
+        return None
+
+    normalized = html.unescape(text)
+    parts = re.split(
+        r',\s+(?:ning|ja)\s+(?=[^.;]{0,160}\bt[aä]iendatakse\b)',
+        normalized,
+        maxsplit=1,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if len(parts) != 2:
+        return None
+    replace_segment, insert_segment = (part.strip() for part in parts)
+    replacement_payload = _extract_quoted_content(replace_segment)
+    inserted_payload = _extract_quoted_content(insert_segment)
+    if not replacement_payload or not inserted_payload:
+        return None
+    return replacement_payload, inserted_payload, insert_segment
+
+
 def _extract_mixed_insert_after_and_replace_pairs(text: str) -> list[tuple[str, str]]:
     """Extract paired text rewrites from clauses that mix insertion and replacement."""
     if not (
@@ -2324,6 +2353,43 @@ def _extract_mixed_insert_after_and_replace_pairs(text: str) -> list[tuple[str, 
     replace_pairs = _extract_text_replace_pairs(replace_segment)
     pairs = [(insert_quotes[0], insert_quotes[1]), *replace_pairs]
     return [(old, new) for old, new in pairs if old and new]
+
+
+def _extract_repeated_insert_after_segments_same_target(text: str) -> list[tuple[str, str, str]]:
+    """Extract repeated same-target insert-after clauses with an elided second verb."""
+    if not (
+        re.search(r'\bt[aä]iendatakse\b', text, re.IGNORECASE)
+        and re.search(r'\bp[aä]rast\s+(?:sõn[au]|tekstiosa|lauseosa|arvu)\b', text, re.IGNORECASE)
+    ):
+        return []
+
+    normalized = html.unescape(text)
+    parts = re.split(
+        r'\s+(?:ning|ja)\s+'
+        r'(?=(?:\bt[aä]iendatakse\b\s+)?p[aä]rast\s+(?:sõn[au]|tekstiosa|lauseosa|arvu)\b)',
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if len(parts) < 2:
+        return []
+
+    segments: list[tuple[str, str, str]] = []
+    for part in (raw_part.strip() for raw_part in parts):
+        segment = part
+        if not segment:
+            continue
+        if not re.search(r'\bt[aä]iendatakse\b', segment, re.IGNORECASE):
+            segment = f"täiendatakse {segment}"
+        old_text, new_text = _normalize_text_replace_args(
+            segment,
+            *_extract_text_replace_args(segment),
+        )
+        if old_text and new_text:
+            segments.append((segment, old_text, new_text))
+
+    if len(segments) < 2:
+        return []
+    return segments
 
 
 def _extract_mixed_insert_after_and_delete_segments(text: str) -> list[tuple[str, str, str]]:
@@ -5939,6 +6005,47 @@ def extract_ee_ops(
                 ))
                 return ops
 
+    if action == "replace":
+        mixed_sentence_replace_insert = _extract_mixed_sentence_replace_insert(clean)
+        if mixed_sentence_replace_insert is not None:
+            rule_id = _EE_MIXED_SENTENCE_REPLACE_INSERT_SAME_TARGET_RULE
+            replacement_text, inserted_text, insert_segment = mixed_sentence_replace_insert
+            replace_payload = IRNode(
+                kind=IRNodeKind.CONTENT,
+                text=replacement_text,
+                attrs={"source_family": rule_id},
+            )
+            replace_payload = _set_sentence_replace_payload_attrs(replace_payload, clean)
+            ops.append(LegalOperation(
+                op_id=f"ee-sentence-replace-before-insert-{str(target)}-{seq}-{source.statute_id}",
+                sequence=seq,
+                action=_to_structural_action("replace"),
+                target=target,
+                payload=replace_payload,
+                source=source,
+                provenance_tags=(rule_id, clean[:200]),
+                witness_rule_id=rule_id,
+            ))
+            seq += 1
+
+            insert_payload = IRNode(
+                kind=IRNodeKind.CONTENT,
+                text=inserted_text,
+                attrs={"source_family": rule_id},
+            )
+            insert_payload = _set_sentence_insert_payload_attrs(insert_payload, insert_segment)
+            ops.append(LegalOperation(
+                op_id=f"ee-sentence-insert-after-replace-{str(target)}-{seq}-{source.statute_id}",
+                sequence=seq,
+                action=_to_structural_action("insert"),
+                target=target,
+                payload=insert_payload,
+                source=source,
+                provenance_tags=(rule_id, insert_segment[:200]),
+                witness_rule_id=rule_id,
+            ))
+            return ops
+
     mixed_insert_replace_pairs = _extract_mixed_insert_after_and_replace_pairs(clean)
     if mixed_insert_replace_pairs:
         explicit_targets = _extract_multiple_explicit_targets(_clean_preamble)
@@ -6071,6 +6178,33 @@ def extract_ee_ops(
                 )
                 ops.append(LegalOperation(
                     op_id=f"ee-text_replace-mixed-insert-delete-{str(target)}-{seq}-{source.statute_id}",
+                    sequence=seq,
+                    action=_to_structural_action("text_replace"),
+                    target=target,
+                    payload=segment_payload,
+                    text_patch=_typed_text_replace_patch(segment_old, segment_new),
+                    source=source,
+                    provenance_tags=(rule_id, segment_text[:200]),
+                    witness_rule_id=rule_id,
+                ))
+                seq += 1
+            return ops
+
+    if action == "text_replace":
+        repeated_insert_after_segments = _extract_repeated_insert_after_segments_same_target(clean)
+        if repeated_insert_after_segments:
+            rule_id = "ee_repeated_insert_after_same_target"
+            for segment_text, segment_old, segment_new in repeated_insert_after_segments:
+                segment_payload = IRNode(kind=IRNodeKind.CONTENT, text=segment_new)
+                segment_payload, _segment_witness = _set_text_replace_payload_attrs(
+                    segment_payload,
+                    segment_text,
+                    segment_old,
+                    segment_new,
+                    source_family=rule_id,
+                )
+                ops.append(LegalOperation(
+                    op_id=f"ee-text_replace-repeated-insert-after-{str(target)}-{seq}-{source.statute_id}",
                     sequence=seq,
                     action=_to_structural_action("text_replace"),
                     target=target,
