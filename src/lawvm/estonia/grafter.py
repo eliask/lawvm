@@ -7077,6 +7077,13 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         for old_form, new_form in special_pairs.items():
             if old_form not in variants:
                 variants[old_form] = new_form
+    if old == "pedagoogidele" and new == "teistele õppe- ja kasvatusalal töötavatele isikutele":
+        special_pairs = {
+            "teistele pedagoogidele": "teistele õppe- ja kasvatusalal töötavatele isikutele",
+        }
+        for old_form, new_form in special_pairs.items():
+            if old_form not in variants:
+                variants[old_form] = new_form
     if case_inflected:
         old_l6ige_forms = _ee_law_reference_l6ige_forms(old)
         new_l6ige_forms = _ee_law_reference_l6ige_forms(new)

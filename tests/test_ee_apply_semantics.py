@@ -4908,6 +4908,25 @@ def test_exact_text_replace_does_not_apply_case_inflected_special_forms() -> Non
     assert replaced == text
 
 
+def test_text_replace_consumes_duplicate_left_context_for_pedagogue_recipient() -> None:
+    text = (
+        "teha kooli direktorile ja teistele pedagoogidele ettepanekuid "
+        "õppe- ja kasvatustegevuse kohta;"
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "pedagoogidele",
+        "teistele õppe- ja kasvatusalal töötavatele isikutele",
+        case_inflected=False,
+    )
+
+    assert replaced == (
+        "teha kooli direktorile ja teistele õppe- ja kasvatusalal töötavatele "
+        "isikutele ettepanekuid õppe- ja kasvatustegevuse kohta;"
+    )
+
+
 def test_case_inflected_text_replace_handles_riigi_eesvool_compound_forms() -> None:
     text = (
         "riigi eesvoolude tööde mahud; riigi eesvooludel drenaažisuudmete tööde mahud; "
