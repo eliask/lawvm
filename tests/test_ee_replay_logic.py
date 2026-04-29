@@ -1434,6 +1434,24 @@ def test_replay_ee_to_pit_adjudicates_jahitunnistus_label_offset_surface_drift()
     assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": len(divergence_addresses)}
 
 
+def test_replay_ee_to_pit_carries_wrapper_section_to_geological_survey_items() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "127062022032",
+        "2025-01-01",
+        archive=archive,
+        oracle_id="129122024056",
+    )
+
+    assert result.error is None
+    assert result.n_ops == 5
+    assert result.divergences == []
+
+
 def test_replay_ee_to_pit_handles_finite_verb_taotlusel_genitive_in_riigisaladus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary

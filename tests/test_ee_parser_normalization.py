@@ -1968,6 +1968,32 @@ def test_extract_ee_ops_does_not_invent_section_renumber_for_appendix_replacemen
     assert ops[0].payload is None
 
 
+def test_parse_ee_amendment_ops_carries_wrapper_section_to_numbered_subsection_items() -> None:
+    archive = open_rt_archive(readonly=True)
+    target_title = (
+        "Üldgeoloogilise uurimistöö ning maavara geoloogilise uuringu kord ja "
+        "nõuded ning nõuded fosforiidi, metallitoorme, põlevkivi, aluskorra "
+        "ehituskivi, järvelubja, järvemuda, meremuda, kruusa, liiva, lubjakivi, "
+        "dolokivi, savi ja turba omaduste kohta maavarana arvelevõtmiseks"
+    )
+    xml = fetch_rt_xml("129122024006", archive)
+
+    ops = parse_ee_amendment_ops(xml, "ee/129122024006", target_title=target_title)
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPEAL, (("section", "45"), ("subsection", "1"))),
+        (StructuralAction.REPLACE, (("section", "45"), ("subsection", "2"))),
+        (StructuralAction.REPEAL, (("section", "45"), ("subsection", "4"))),
+        (StructuralAction.REPLACE, (("section", "45"), ("subsection", "5"))),
+        (StructuralAction.REPLACE, (("section", "45"), ("subsection", "6"))),
+    ]
+    assert all(
+        "old_format_amendment_section:6" in op.provenance_tags
+        for op in ops
+    )
+    assert all(str(op.target).startswith("section:45") for op in ops)
+
+
 def test_extract_ee_ops_keeps_trailing_same_section_subsection_repeal_after_item_repeal() -> None:
     ops = extract_ee_ops(
         "paragrahvi 14 lõike 1 punkt 7 ja lõige 2 tunnistatakse kehtetuks;",

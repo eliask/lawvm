@@ -1325,6 +1325,40 @@ def old_format_item_label(op_text: str) -> str | None:
     return _normalize_num(match.group(1))
 
 
+def old_format_strip_item_label(op_text: str) -> str:
+    """Remove only the leading old-format amendment item label from an item body."""
+    return re.sub(
+        r"^\(?\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s*",
+        "",
+        op_text.strip(),
+        count=1,
+    )
+
+
+def old_format_section_from_intro_context(content_block: str) -> str | None:
+    """Extract a carried target section from intro prose before numbered items."""
+    paras = re.findall(r"<p\b[^>]*>.*?</p>", content_block, flags=re.DOTALL | re.IGNORECASE)
+    if not paras:
+        return None
+    item_start = re.compile(
+        r"^\s*\(?\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s+",
+        re.IGNORECASE,
+    )
+    labels: list[str] = []
+    for para in paras:
+        plain = strip_old_format_html_text(para)
+        if item_start.match(plain):
+            break
+        for match in re.finditer(
+            r"(?:§(?:-s|-st|-le|-ga|-des|-dega)?|paragrahvi(?:s|st)?|paragrahv)\s*"
+            r"(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)",
+            plain,
+            re.IGNORECASE,
+        ):
+            labels.append(_normalize_num(match.group(1)))
+    return labels[-1] if labels else None
+
+
 def split_plaintext_numbered_op_texts(text: str) -> list[str]:
     """Split a flat plaintext amendment body into top-level numbered clauses."""
     if not text:
@@ -1706,7 +1740,8 @@ def old_format_lower_op_texts(
         )
         if last_section and not old_format_has_section_ref(op_text) and not is_container_heading_relabel:
             last_sect_raw = last_section.replace("_", " ")
-            effective = f"paragrahvi {last_sect_raw}, {op_text}"
+            item_body = old_format_strip_item_label(op_text)
+            effective = f"paragrahvi {last_sect_raw} {item_body}"
         ops = extract_ee_ops(effective, source, seq_start=global_seq)
         ops = [
             op
@@ -1785,12 +1820,16 @@ def old_format_collect_section_ops(
                 use_block_header=use_block_header,
             )
             op_texts = old_format_extract_op_texts(content_block, block_header_text)
+            initial_section = (
+                old_format_section_from_header_text(block_header_text)
+                or old_format_section_from_intro_context(content_block)
+            )
             ops, global_seq, _ = old_format_lower_op_texts(
                 op_texts,
                 source,
                 seq_start=global_seq,
                 base_act_name=base_act_name,
-                initial_last_section=old_format_section_from_header_text(block_header_text),
+                initial_last_section=initial_section,
                 amendment_section_label=amendment_section_label,
             )
             all_ops.extend(ops)
