@@ -54,6 +54,22 @@ def test_get_ee_residual_inventory_leader_punctuation_drift() -> None:
     )
 
 
+def test_get_ee_residual_inventory_uldosakond_untouched_item_punctuation_drift() -> None:
+    inventory = get_ee_residual_inventory("129052012009", "128032013017")
+
+    assert inventory is not None
+    assert inventory.statute_title == "Üldosakonna põhimäärus"
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert {
+        record.address for record in inventory.residuals
+    } == {
+        "section:16",
+        "section:16/subsection:1",
+        "section:16/subsection:1/item:16",
+    }
+    assert all("does not target item 16" in record.evidence for record in inventory.residuals)
+
+
 def test_get_ee_residual_inventory_majutuse_appendix_projection_repeal() -> None:
     inventory = get_ee_residual_inventory("130042020010", "109032023008")
 
