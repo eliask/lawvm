@@ -6113,6 +6113,35 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_nom": stem + "d",
             "pl_gen": stem + "te",
         }
+    if lower.endswith("liige"):
+        prefix = word[: -len("liige")]
+        stem = prefix + "liikme"
+        plural_stem = prefix + "liikme"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": word + "t",
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_ill": stem + "sse",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": prefix + "liikmed",
+            "pl_gen": plural_stem + "te",
+            "pl_part": plural_stem + "id",
+            "pl_ine": plural_stem + "tes",
+            "pl_ela": plural_stem + "test",
+            "pl_all": plural_stem + "tele",
+            "pl_ade": plural_stem + "tel",
+            "pl_abl": plural_stem + "telt",
+            "pl_trn": plural_stem + "teks",
+        }
     if lower.endswith("nikud"):
         singular_forms = _ee_declension_forms(word[:-2])
         if singular_forms is not None:
@@ -6438,6 +6467,22 @@ def _ee_phrase_forms(text: str) -> dict[str, str] | None:
             for key, value in tail_forms.items()
         }
 
+    def _elliptic_genitive_coordination_forms(segments: list[str], separator: str) -> dict[str, str] | None:
+        """Handle shared-head coordination such as ``sihtasutuse või juhatuse liige``."""
+        if len(segments) < 2 or not all(" " not in segment for segment in segments[:-1]):
+            return None
+        last_parts = segments[-1].split()
+        if len(last_parts) < 2:
+            return None
+        head_forms = _ee_phrase_forms(last_parts[-1])
+        if head_forms is None:
+            return None
+        prefix = separator.join([*segments[:-1], " ".join(last_parts[:-1])])
+        return {
+            key: f"{prefix} {value}"
+            for key, value in head_forms.items()
+        }
+
     leading_prefix_match = re.match(r"^((?:või|ja|ning|koos)\s+)(.+)$", stripped, re.IGNORECASE)
     if leading_prefix_match is not None:
         prefix = leading_prefix_match.group(1)
@@ -6489,6 +6534,9 @@ def _ee_phrase_forms(text: str) -> dict[str, str] | None:
             static_prefix_forms = _shared_prefix_coordination_forms(segments, " või ")
             if static_prefix_forms is not None:
                 return static_prefix_forms
+            elliptic_forms = _elliptic_genitive_coordination_forms(segments, " või ")
+            if elliptic_forms is not None:
+                return elliptic_forms
     if " ning " in text:
         segments = [segment.strip() for segment in re.split(r"\s+ning\s+", text) if segment.strip()]
         if len(segments) >= 2:
@@ -6503,6 +6551,9 @@ def _ee_phrase_forms(text: str) -> dict[str, str] | None:
             static_prefix_forms = _shared_prefix_coordination_forms(segments, " ning ")
             if static_prefix_forms is not None:
                 return static_prefix_forms
+            elliptic_forms = _elliptic_genitive_coordination_forms(segments, " ning ")
+            if elliptic_forms is not None:
+                return elliptic_forms
     if " ja " in text:
         segments = [segment.strip() for segment in re.split(r"\s+ja\s+", text) if segment.strip()]
         if len(segments) >= 2:
@@ -6517,6 +6568,9 @@ def _ee_phrase_forms(text: str) -> dict[str, str] | None:
             static_prefix_forms = _shared_prefix_coordination_forms(segments, " ja ")
             if static_prefix_forms is not None:
                 return static_prefix_forms
+            elliptic_forms = _elliptic_genitive_coordination_forms(segments, " ja ")
+            if elliptic_forms is not None:
+                return elliptic_forms
     if " " not in text:
         return _ee_declension_forms(text)
 
@@ -6719,6 +6773,50 @@ def _ee_normalize_text_replace_surface(text: str) -> str:
 def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> list[tuple[str, str]]:
     """Build replacement pairs, longest-first, for bounded case-aware rewrites."""
     variants: dict[str, str] = {}
+
+    def _left_branch_genitive_to_nominative_variant(surface: str) -> str | None:
+        if " või " not in surface:
+            return None
+        left, right = surface.split(" või ", 1)
+        left_parts = left.split()
+        if not left_parts:
+            return None
+        head = left_parts[-1]
+        if not head.endswith("use"):
+            return None
+        nominative = f"{head[:-3]}us"
+        if _ee_declension_forms(nominative) is None:
+            return None
+        return " ".join([*left_parts[:-1], nominative, "või", right])
+
+    def _left_branch_shared_genitive_elided_variant(surface: str) -> str | None:
+        if " või " not in surface:
+            return None
+        left, right = surface.split(" või ", 1)
+        left_parts = left.split()
+        right_parts = right.split()
+        if len(left_parts) < 2 or not right_parts or left_parts[-1].casefold() != right_parts[0].casefold():
+            return None
+        return " ".join([*left_parts[:-1], "või", right])
+
+    def _authorized_member_three_branch_variant(surface: str) -> str | None:
+        match = re.fullmatch(
+            r"(?P<prefix>.+?)\s+(?P<organ>[A-Za-zÄÖÕÜäöõüŠŽšž-]+use)\s+või\s+"
+            r"(?P=organ)\s+liikme\s+poolt\s+volitatud\s+isik",
+            surface,
+            flags=re.IGNORECASE,
+        )
+        if match is None:
+            return None
+        organ = match.group("organ")
+        organ_nom = f"{organ[:-3]}us"
+        if _ee_declension_forms(organ_nom) is None:
+            return None
+        return (
+            f"{match.group('prefix')} {organ_nom} või {organ} liige või "
+            f"{organ} liikme poolt volitatud isik"
+        )
+
     if old:
         variants[old] = new
         old_norm = _ee_normalize_text_replace_surface(old)
@@ -6807,6 +6905,15 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
                         if candidate and candidate not in variants:
                             variants[candidate] = ""
         elif old_forms is not None and new_forms is not None:
+            nominative_left_branch = _left_branch_genitive_to_nominative_variant(old)
+            if nominative_left_branch and new_forms.get("sg_nom") and nominative_left_branch not in variants:
+                variants[nominative_left_branch] = new_forms["sg_nom"]
+            elided_left_branch = _left_branch_shared_genitive_elided_variant(old)
+            if elided_left_branch and new_forms.get("sg_nom") and elided_left_branch not in variants:
+                variants[elided_left_branch] = new_forms["sg_nom"]
+            authorized_member_variant = _authorized_member_three_branch_variant(old)
+            if authorized_member_variant and new_forms.get("sg_nom") and authorized_member_variant not in variants:
+                variants[authorized_member_variant] = new_forms["sg_nom"]
             preferred_keys = (
                 "sg_nom",
                 "sg_gen",

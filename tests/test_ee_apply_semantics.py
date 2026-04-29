@@ -4315,6 +4315,57 @@ def test_case_inflected_text_replace_keeps_nominative_in_comma_coordination_list
     )
 
 
+def test_case_inflected_text_replace_handles_elliptic_liige_coordination() -> None:
+    assert (
+        _ee_apply_text_replace_value(
+            "Sihtasutuse või juhatuse liikmel on õigus otsustada.",
+            "sihtasutuse või juhatuse liige",
+            "sihtasutus",
+            case_inflected=True,
+        )
+        == "Sihtasutusel on õigus otsustada."
+    )
+    assert (
+        _ee_apply_text_replace_value(
+            "Taotlus esitatakse sihtasutuse või juhatuse liikmele.",
+            "sihtasutuse või juhatuse liige",
+            "sihtasutus",
+            case_inflected=True,
+        )
+        == "Taotlus esitatakse sihtasutusele."
+    )
+
+
+def test_case_inflected_text_replace_handles_genitive_source_left_branch_coordination() -> None:
+    assert (
+        _ee_apply_text_replace_value(
+            "Sihtasutuse juhatus või juhatuse liikme poolt volitatud isik teeb otsuse.",
+            "sihtasutuse juhatuse või juhatuse liikme poolt volitatud isik",
+            "sihtasutus",
+            case_inflected=True,
+        )
+        == "Sihtasutus teeb otsuse."
+    )
+    assert (
+        _ee_apply_text_replace_value(
+            "Sihtasutuse või juhatuse liikme poolt volitatud isik teeb otsuse.",
+            "sihtasutuse juhatuse või juhatuse liikme poolt volitatud isik",
+            "sihtasutus",
+            case_inflected=True,
+        )
+        == "Sihtasutus teeb otsuse."
+    )
+    assert (
+        _ee_apply_text_replace_value(
+            "Sihtasutuse juhatus või juhatuse liige või juhatuse liikme poolt volitatud isik teeb otsuse.",
+            "sihtasutuse juhatuse või juhatuse liikme poolt volitatud isik",
+            "sihtasutus",
+            case_inflected=True,
+        )
+        == "Sihtasutus teeb otsuse."
+    )
+
+
 def test_global_case_inflected_text_replace_handles_coordinated_or_phrase_cases() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,
