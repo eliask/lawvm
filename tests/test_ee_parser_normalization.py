@@ -1908,6 +1908,49 @@ def test_extract_ee_ops_emits_section_renumber_before_insert_for_loetakse_paragr
     assert ops[1].payload.text.startswith("§ 27 1. Abivajavast lapsest teatamata jätmine")
 
 
+def test_extract_ee_ops_emits_plural_section_renumbers_before_new_occupied_section_insert() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvid 1 ja 1 1 loetakse §-deks 1 1 ja 1 2 ning määrust "
+            "täiendatakse §-ga 1 järgmises sõnastuses: "
+            "„§ 1. Määruse reguleerimisala Määrusega kehtestatakse: 1) loetelu.”"
+        ),
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert [
+        (op.action, op.target.path, op.destination.path if op.destination is not None else None)
+        for op in ops[:2]
+    ] == [
+        (StructuralAction.RENUMBER, (("section", "1_1"),), (("section", "1_2"),)),
+        (StructuralAction.RENUMBER, (("section", "1"),), (("section", "1_1"),)),
+    ]
+    assert [op.witness_rule_id for op in ops[:2]] == [
+        "ee_section_sequence_renumber_before_insert",
+        "ee_section_sequence_renumber_before_insert",
+    ]
+    assert ops[2].action is StructuralAction.INSERT
+    assert ops[2].target.path == (("section", "1"),)
+    assert ops[2].payload is not None
+    assert ops[2].payload.text.startswith("§ 1. Määruse reguleerimisala")
+
+
+def test_extract_ee_ops_does_not_emit_unpaired_plural_section_renumber() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvid 1 ja 1 1 loetakse §-deks 1 2 ning määrust "
+            "täiendatakse §-ga 1 järgmises sõnastuses: "
+            "„§ 1. Määruse reguleerimisala Määrusega kehtestatakse: 1) loetelu.”"
+        ),
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert all(op.action is not StructuralAction.RENUMBER for op in ops)
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "1"),)
+
+
 def test_extract_ee_ops_keeps_trailing_same_section_subsection_repeal_after_item_repeal() -> None:
     ops = extract_ee_ops(
         "paragrahvi 14 lõike 1 punkt 7 ja lõige 2 tunnistatakse kehtetuks;",

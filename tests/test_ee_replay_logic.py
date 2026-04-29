@@ -327,6 +327,21 @@ def test_replay_ee_to_pit_closes_spordiseadus_insert_after_duplication_family() 
     assert result.divergences == []
 
 
+def test_replay_ee_to_pit_renumbers_old_sections_before_inserting_new_section_one() -> None:
+    result = replay_ee_to_pit(
+        "126112020002",
+        as_of="2023-07-03",
+        oracle_id="129062023002",
+    )
+
+    assert result.error is None
+    assert result.n_ops == 10
+    assert result.n_mismatch == 0
+    assert result.n_ops_missing == 0
+    assert result.n_con_missing == 0
+    assert result.divergences == []
+
+
 def test_replay_ee_to_pit_respects_old_format_commencement_range_after_item_gap() -> None:
     result = replay_ee_to_pit(
         "119032013007",

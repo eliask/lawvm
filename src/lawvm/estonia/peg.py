@@ -872,6 +872,7 @@ def _heading_mention_precedes_child_target(text: str) -> bool:
 # ---------------------------------------------------------------------------
 
 _EE_TEXTUAL_INVALIDATION_RULE = "ee_textual_invalidation_as_text_delete"
+_EE_SECTION_SEQUENCE_RENUMBER_RULE = "ee_section_sequence_renumber_before_insert"
 
 
 def _is_textual_invalidation(text: str) -> bool:
@@ -882,6 +883,77 @@ def _is_textual_invalidation(text: str) -> bool:
         and re.search(r'\b(?:sõna[a-z]*|sõnad|tekstiosa[a-z]*|lauseosa[a-z]*)\b', preamble)
         is not None
     )
+
+
+def _split_section_renumber_labels(surface: str) -> tuple[str, ...]:
+    """Split an Estonian section-label list and normalize superscript labels."""
+    labels: list[str] = []
+    for part in re.split(r"\s*(?:,|\bja\b)\s*", surface):
+        raw = part.strip()
+        if not raw:
+            continue
+        if re.fullmatch(r"\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*", raw):
+            labels.append(_normalize_num(raw))
+    return tuple(labels)
+
+
+def _extract_section_renumber_pairs(text: str) -> tuple[tuple[str, str], ...]:
+    """Extract source-backed section relabel pairs from ``loetakse`` clauses."""
+    plural = re.search(
+        r"\bparagrahvid\s+(?P<old>.+?)\s+loetakse\s+"
+        r"(?:§-deks|paragrahvideks)\s+(?P<new>.+?)"
+        r"(?=\s+(?:ning|ja)\s+(?:määr|sead|koodeks)|[.;:])",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if plural is not None:
+        old_labels = _split_section_renumber_labels(plural.group("old"))
+        new_labels = _split_section_renumber_labels(plural.group("new"))
+        if len(old_labels) == len(new_labels) and old_labels:
+            return tuple(zip(old_labels, new_labels))
+
+    singular = re.search(
+        r'\bparagrahv\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+loetakse\s+'
+        r'(?:§-ks|paragrahviks)\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)',
+        text,
+        re.IGNORECASE,
+    )
+    if singular is None:
+        return ()
+    return ((_normalize_num(singular.group(1)), _normalize_num(singular.group(2))),)
+
+
+def _section_renumber_ops(
+    clean: str,
+    source: OperationSource,
+    *,
+    seq_start: int,
+) -> tuple[LegalOperation, ...]:
+    """Build renumber ops, moving occupied higher destinations first."""
+    pairs = _extract_section_renumber_pairs(clean)
+    ops: list[LegalOperation] = []
+    for offset, (old_label, new_label) in enumerate(reversed(pairs)):
+        payload = IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="",
+            attrs={
+                "rule_id": _EE_SECTION_SEQUENCE_RENUMBER_RULE,
+                "source_old_label": old_label,
+                "source_new_label": new_label,
+            },
+        )
+        ops.append(LegalOperation(
+            op_id=f"ee-renumber-section-{old_label}-{new_label}-{source.statute_id}",
+            sequence=seq_start + offset,
+            action=_to_structural_action("renumber"),
+            target=LegalAddress(path=(("section", old_label),)),
+            destination=LegalAddress(path=(("section", new_label),)),
+            payload=payload,
+            source=source,
+            provenance_tags=(clean[:200], _EE_SECTION_SEQUENCE_RENUMBER_RULE),
+            witness_rule_id=_EE_SECTION_SEQUENCE_RENUMBER_RULE,
+        ))
+    return tuple(ops)
 
 
 def _classify_verb(text: str) -> str:
@@ -3190,25 +3262,9 @@ def extract_ee_ops(
         or re.search(r'\b(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)\s+täiendatakse\s+[IVXLCDM]+[\d\s]*[.]\s*osaga', clean, re.IGNORECASE)
     )
     if statute_level_insert:
-        m_section_renumber = re.search(
-            r'\bparagrahv\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+loetakse\s+'
-            r'(?:§-ks|paragrahviks)\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)',
-            clean,
-            re.IGNORECASE,
-        )
-        if m_section_renumber:
-            old_label = _normalize_num(m_section_renumber.group(1))
-            new_label = _normalize_num(m_section_renumber.group(2))
-            ops.append(LegalOperation(
-                op_id=f"ee-renumber-section-{old_label}-{new_label}-{source.statute_id}",
-                sequence=seq,
-                action=_to_structural_action("renumber"),
-                target=LegalAddress(path=(("section", old_label),)),
-                destination=LegalAddress(path=(("section", new_label),)),
-                source=source,
-                provenance_tags=(clean[:200],),
-            ))
-            seq += 1
+        renumber_ops = _section_renumber_ops(clean, source, seq_start=seq)
+        ops.extend(renumber_ops)
+        seq += len(renumber_ops)
 
         # Section numbers: "71 1" (superscript as separate digit) or just "71"
         # Also handles en-dash ranges: "§-dega 89 28 ‒89 31" → 89_28..89_31
@@ -4263,25 +4319,9 @@ def extract_ee_ops(
     #   "Paragrahv 27 1 loetakse §-ks 27 2 ja seadust täiendatakse §-ga 27 1 ..."
     # Emit the renumber first, but do not return: the later insert/replace path
     # still needs to compile from the same instruction.
-    m_section_renumber = re.search(
-        r'\bparagrahv\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+loetakse\s+'
-        r'(?:§-ks|paragrahviks)\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)',
-        clean,
-        re.IGNORECASE,
-    )
-    if m_section_renumber:
-        old_label = _normalize_num(m_section_renumber.group(1))
-        new_label = _normalize_num(m_section_renumber.group(2))
-        ops.append(LegalOperation(
-            op_id=f"ee-renumber-section-{old_label}-{new_label}-{source.statute_id}",
-            sequence=seq,
-            action=_to_structural_action("renumber"),
-            target=LegalAddress(path=(("section", old_label),)),
-            destination=LegalAddress(path=(("section", new_label),)),
-            source=source,
-            provenance_tags=(clean[:200],),
-        ))
-        seq += 1
+    renumber_ops = _section_renumber_ops(clean, source, seq_start=seq)
+    ops.extend(renumber_ops)
+    seq += len(renumber_ops)
 
     # Direct chapter-qualified division insert: "seaduse N. peatükki täiendatakse M. jaoga ..."
     # Keep this before generic parse_target(), otherwise the first quoted § inside
