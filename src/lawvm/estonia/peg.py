@@ -5553,6 +5553,27 @@ def extract_ee_ops(
         provenance_tags=(clean[:200],),
     ))
     seq += 1
+    if (
+        action == "text_replace"
+        and payload is not None
+        and payload.attrs.get("old_text")
+        and target.special == FacetKind.HEADING
+        and target.path
+        and re.search(r"\bpealkirjas\s+(?:ning|ja)\s+tekstis\b", clean, re.IGNORECASE)
+    ):
+        rule_id = "ee_section_heading_and_text_replace_split"
+        ops.append(LegalOperation(
+            op_id=f"ee-text_replace-heading-and-text-{str(target.path[0][1])}-{source.statute_id}",
+            sequence=seq,
+            action=_to_structural_action("text_replace"),
+            target=LegalAddress(path=target.path),
+            payload=payload,
+            text_patch=standard_text_patch,
+            source=source,
+            provenance_tags=(clean[:200], rule_id),
+            witness_rule_id=rule_id,
+        ))
+        seq += 1
 
     # "paragrahvi N pealkirjast/pealkirjas ... lõikest/lõike M ..." —
     # the replacement must also apply to the section title.

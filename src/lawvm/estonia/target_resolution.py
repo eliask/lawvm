@@ -26,6 +26,9 @@ _EE_DIRECT_TARGET_PREFIX_STRIP_RULE = "ee_direct_target_title_prefix_stripped_fo
 _EE_OLD_FORMAT_WRAPPER_SCOPE_INHERITED_RULE = "ee_old_format_wrapper_scope_inherited"
 _EE_OLD_FORMAT_DIRECT_HEADER_TARGET_SECTION_RULE = "ee_old_format_direct_header_target_section"
 _EE_OLD_FORMAT_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_old_format_preamble_clause_non_body"
+_EE_NEW_FORMAT_TARGET_ACT_HEADER_NOT_WRAPPER_RULE = "ee_new_format_target_act_header_not_wrapper_instruction"
+_OP_TEXT_RULE_PREFIX = "\x1eLAWVM_RULE:"
+_OP_TEXT_RULE_SUFFIX = "\x1f"
 
 
 def _registry_record_matches_all(record: object, *surfaces: str) -> bool:
@@ -606,6 +609,16 @@ def new_format_lower_op_texts(
     last_section: str | None = None
 
     for op_text in op_texts:
+        rule_tags: list[str] = []
+        while op_text.startswith(_OP_TEXT_RULE_PREFIX):
+            end = op_text.find(_OP_TEXT_RULE_SUFFIX)
+            if end < 0:
+                break
+            rule_id = op_text[len(_OP_TEXT_RULE_PREFIX):end]
+            if rule_id:
+                rule_tags.append(rule_id)
+            op_text = op_text[end + len(_OP_TEXT_RULE_SUFFIX):]
+        original_op_text = op_text
         amendment_item_label = old_format_item_label(op_text)
         if target_title:
             m_stat_ref = re.match(
@@ -638,9 +651,9 @@ def new_format_lower_op_texts(
             target_title,
             title_matcher=title_matcher,
         )
-        if last_section and not has_section_ref(op_text):
+        if last_section and not has_section_ref(original_op_text):
             last_sect_raw = last_section.replace("_", " ")
-            effective = f"paragrahvi {last_sect_raw} {op_text}"
+            effective = f"paragrahvi {last_sect_raw} {original_op_text}"
         ops = extract_ops(effective, source, global_seq)
         sect = section_from_ops(ops)
         if sect:
@@ -654,11 +667,14 @@ def new_format_lower_op_texts(
                 tags.append(f"old_format_amendment_item:{amendment_item_label}")
             if base_act_name:
                 tags.append(f"base_act: {base_act_name}")
+            tags.extend(rule_tags)
             witness_rule_id = op.witness_rule_id
             if direct_prefix_stripped:
                 tags.append(_EE_DIRECT_TARGET_PREFIX_STRIP_RULE)
                 if op.action is not StructuralAction.META:
                     witness_rule_id = _EE_DIRECT_TARGET_PREFIX_STRIP_RULE
+            if rule_tags and op.action is not StructuralAction.META and witness_rule_id is None:
+                witness_rule_id = rule_tags[0]
             tagged_ops.append(
                 replace(
                     op,
@@ -893,6 +909,30 @@ def new_format_collect_op_texts(
         "§-ga", "§-dega",
     )
 
+    def _with_op_text_rule(text: str, rule_id: str) -> str:
+        return f"{_OP_TEXT_RULE_PREFIX}{rule_id}{_OP_TEXT_RULE_SUFFIX}{text}"
+
+    def _is_target_act_routing_intro(intro: str) -> bool:
+        """True for an act-level amendment header, not an executable wrapper."""
+        if not intro:
+            return False
+        plain = re.sub(r"\s+", " ", intro).strip()
+        if not re.search(r"[„\"“][^„”“\"]+[”“\"]", plain):
+            return False
+        if not re.search(
+            r"\b(?:seadus|seaduse|seaduses|seadust|määrus|määruse|määruses|määrust)\b",
+            plain,
+            re.IGNORECASE,
+        ):
+            return False
+        return bool(
+            re.search(
+                r"\b(?:muudetakse|tehakse)\s+(?:järgmiselt|järgmised\s+muudatused)\s*:?\s*$",
+                plain,
+                re.IGNORECASE,
+            )
+        )
+
     def _html_wrapper_instruction(html_block: str) -> str:
         m = re.split(
             r"(?=<[pb][^>]*>\s*<(?:b|strong)>\(?\d+\)\s*[^<]*</(?:b|strong)>|<(?:b|strong)>\(?\d+\)\s*[^<]*</(?:b|strong)>)",
@@ -934,7 +974,15 @@ def new_format_collect_op_texts(
                 wrapper_instruction = _html_wrapper_instruction(html)
                 if item_texts and wrapper_instruction:
                     for item_text in item_texts:
-                        combined = f"{wrapper_instruction} {item_text}".strip()
+                        if _is_target_act_routing_intro(wrapper_instruction) and old_format_has_section_ref(
+                            item_text,
+                        ):
+                            combined = _with_op_text_rule(
+                                item_text,
+                                _EE_NEW_FORMAT_TARGET_ACT_HEADER_NOT_WRAPPER_RULE,
+                            )
+                        else:
+                            combined = f"{wrapper_instruction} {item_text}".strip()
                         if combined not in op_texts:
                             op_texts.append(combined)
                 else:
