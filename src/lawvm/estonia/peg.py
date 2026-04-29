@@ -1809,6 +1809,13 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
         quoted = _extract_quoted_contents(text)
         if len(quoted) >= 2:
             return quoted[0].strip(), quoted[1].strip()
+    direct_delete_quotes = _extract_quoted_contents(text) if re.search(
+        r"\bj[aä]etakse\s+v[aä]lja\s*(?:sõn(?:a|ad)|tekstiosa|lauseosa)",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    ) else []
+    if direct_delete_quotes:
+        return direct_delete_quotes[0].strip(), ""
     nested_delete = re.search(
         r"\bj[aä]etakse\s+v[aä]lja\s*(?:sõn(?:a|ad)|tekstiosa)\s+[„\"“](.+?)[”“\"]\s*[.;]?\s*$",
         text,
