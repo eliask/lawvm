@@ -5415,6 +5415,35 @@ def test_extract_ee_ops_emits_multiple_targeted_text_replace_pairs() -> None:
     assert ops[0].payload is not None
 
 
+def test_extract_ee_ops_binds_many_old_single_new_terms_to_local_targets() -> None:
+    text = (
+        "paragrahvi 7 lõikes 6 asendatakse sõnad „käitlemistoimingu teostaja” "
+        "ning § 8 lõigetes 6 ja 7 sõnad „käitlemistoimingute teostaja” "
+        "sõnadega „käitlemistoimingu tegija”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.target.path, op.payload.attrs["old_text"], op.payload.text) for op in ops if op.payload] == [
+        (
+            (("section", "7"), ("subsection", "6")),
+            "käitlemistoimingu teostaja",
+            "käitlemistoimingu tegija",
+        ),
+        (
+            (("section", "8"), ("subsection", "6")),
+            "käitlemistoimingute teostaja",
+            "käitlemistoimingu tegija",
+        ),
+        (
+            (("section", "8"), ("subsection", "7")),
+            "käitlemistoimingute teostaja",
+            "käitlemistoimingu tegija",
+        ),
+    ]
+    assert all(op.witness_rule_id == "ee_target_scoped_many_old_single_new_text_replace" for op in ops)
+
+
 def test_parse_ee_amendment_ops_keeps_superscript_jagu_insert_as_division_target() -> None:
     xml = """
     <oigusakt xmlns="http://www.riigiteataja.ee/ns/akt/1.0">

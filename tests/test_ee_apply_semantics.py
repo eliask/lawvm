@@ -4050,6 +4050,35 @@ def test_case_inflected_text_replace_handles_segu_compound_forms() -> None:
     )
 
 
+def test_case_inflected_text_replace_contracts_tuletorjesusteem_kustuti_phrase() -> None:
+    body = _body_with_section_and_subsection(
+        "6",
+        "1",
+        (
+            "Andmed esitatakse tuletõrjesüsteemide, -kustutite kohta. "
+            "Lisas 6 nimetatakse tuletõrjesüsteemid ja-kustutid. "
+            "Mahuti asub paikses tuletõrjesüsteemis."
+        ),
+    )
+    source = (
+        "määruse tekstis asendatakse läbivalt sõnad "
+        "„tuletõrjesüsteem, -kustuti”, „tuletõrjesüsteem ja -kustuti”, "
+        "„tuletõrjesüsteem või -kustuti” ja „tuletõrjesüsteem” "
+        "sõnaga „tuletõrjeseade” vastavas käändes;"
+    )
+
+    result = body
+    for op in extract_ee_ops(source, OperationSource(statute_id="ee/test", raw_text=source)):
+        result = _ee_apply_op(result, op)
+    subsection = result.children[0].children[0].children[0]
+
+    assert subsection.text == (
+        "Andmed esitatakse tuletõrjeseadmete kohta. "
+        "Lisas 6 nimetatakse tuletõrjeseadmed. "
+        "Mahuti asub paikses tuletõrjeseadmes."
+    )
+
+
 def test_delete_text_replace_handles_fraktsioneeritud_source_typo_variant() -> None:
     text = (
         "Pindamiseks kasutatakse fraktsioneeritud killustikke. "
