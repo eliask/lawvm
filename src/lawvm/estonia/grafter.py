@@ -7201,6 +7201,13 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
             for old_form, new_form in register_name_forms.items():
                 if old_form not in variants:
                     variants[old_form] = new_form
+        if old == "õppekogunemine" and new == "reservteenistus":
+            reserve_service_forms = {
+                "õppekogunemise": "reservteenistuse",
+                "õppekogunemisel": "reservteenistuses",
+            }
+            for old_form, new_form in reserve_service_forms.items():
+                variants[old_form] = new_form
         if (
             old == "rahvusvaheline konventsioon tsiviilvastutusest naftareostuskahjude eest, 1969"
             and new

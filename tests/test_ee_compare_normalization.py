@@ -163,6 +163,16 @@ def test_normalize_ee_comparison_text_removes_rt_change_note_markers() -> None:
     ) == "liigitus on järgmine järgmine lause"
 
 
+def test_normalize_ee_comparison_text_removes_retroactive_rt_change_note_markers() -> None:
+    assert normalize_ee_comparison_text(
+        (
+            "seersant, maat 305 – [RT I, 26.02.2026, 3-jõust. 01.03.2026, "
+            "rakendatakse tagasiulatuvalt 4. veebruarist 2026. a.] "
+            "Suurendatud toetust makstakse"
+        )
+    ) == "seersant, maat 305 – Suurendatud toetust makstakse"
+
+
 def test_normalize_ee_comparison_text_empties_bare_dash_placeholder() -> None:
     assert normalize_ee_comparison_text("–") == ""
 

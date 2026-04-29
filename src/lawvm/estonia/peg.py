@@ -425,11 +425,12 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
     preamble = _strip_embedded_reference_wrapper(preamble)
     preamble = re.sub(r"§\s*[–‒‑-]\s*s\b", "§-s", preamble, flags=re.IGNORECASE)
     preamble = re.sub(r"§\s*[–‒‑-]\s*d\b", "§-d", preamble, flags=re.IGNORECASE)
+    preamble = re.sub(r"§\s*[–‒‑-]\s*des\b", "§-des", preamble, flags=re.IGNORECASE)
     preamble = re.sub(r"\bl[oõ]igetest\b", "lõigetes", preamble, flags=re.IGNORECASE)
     preamble = re.sub(r'\s+', ' ', preamble).strip()
     chunks = re.split(
         r'(?:,\s*|\s+(?:ning|ja)\s+)'
-        r'(?=(?:§(?:-s)?\s*\d|\bparagrahvi(?:s|st)?\s+\d|\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s+lõike))',
+        r'(?=(?:§(?:-s|-des)?\s*\d|\bparagrahvi(?:s|st)?\s+\d|\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s+lõike))',
         preamble,
         flags=re.IGNORECASE,
     )
@@ -443,7 +444,7 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
         ):
             chunk = f"paragrahvi {chunk.strip()}"
         m_plural_sections = re.search(
-            r'^(?:\bparagrahve\s+|§-d?\s*)'
+            r'^(?:\bparagrahve\s+|§-(?:d|des)\s*)'
             r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*(?:\s*(?:,|ja|–|‒|-)\s*\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)+)',
             chunk,
             re.IGNORECASE,
@@ -3358,6 +3359,42 @@ def extract_ee_ops(
 
     action = _classify_verb(clean)
 
+    def _lower_explicit_target_text_replace_ops(
+        explicit_targets: list[LegalAddress],
+        *,
+        rule_id: str,
+    ) -> list[LegalOperation]:
+        lowered: list[LegalOperation] = []
+        local_seq = seq
+        old_t, new_t = _normalize_text_replace_args(
+            clean,
+            *_extract_text_replace_args(clean),
+        )
+        if old_t is None and new_t is None:
+            return []
+        for explicit_target in explicit_targets:
+            payload = IRNode(kind=IRNodeKind.CONTENT, text=new_t or "")
+            payload, _rewrite_witness = _set_text_replace_payload_attrs(
+                payload,
+                clean,
+                old_t,
+                new_t,
+                source_family=rule_id,
+            )
+            lowered.append(LegalOperation(
+                op_id=f"ee-text_replace-explicit-scope-{str(explicit_target)}-{local_seq}-{source.statute_id}",
+                sequence=local_seq,
+                action=_to_structural_action("text_replace"),
+                target=explicit_target,
+                payload=payload,
+                text_patch=_typed_text_replace_patch(old_t, new_t),
+                source=source,
+                provenance_tags=(clean[:200], rule_id),
+                witness_rule_id=rule_id,
+            ))
+            local_seq += 1
+        return lowered
+
     def _chapter_heading_parts(raw: str) -> tuple[str, str] | None:
         match = re.match(
             r"\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s*[.]\s*peatükk\s+(.+?)\s*$",
@@ -5255,6 +5292,15 @@ def extract_ee_ops(
         flat_item_insert = _extract_flat_sectionless_singleton_item_insert(clean, source, seq)
         if flat_item_insert is not None:
             return [flat_item_insert]
+        if action == "text_replace":
+            explicit_targets = _extract_multiple_explicit_targets(instruction_scope)
+            if explicit_targets:
+                explicit_ops = _lower_explicit_target_text_replace_ops(
+                    explicit_targets,
+                    rule_id="ee_plural_section_scope_text_replace",
+                )
+                if explicit_ops:
+                    return explicit_ops
         if (
             action == "insert"
             and re.search(r"\b(?:seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)\s+täiendatakse\s+lisa(?:ga)?\s+\d", clean, re.IGNORECASE)
@@ -5360,6 +5406,15 @@ def extract_ee_ops(
             provenance_tags=(f"no_target: {clean[:200]}",),
         ))
         return ops
+    if action == "text_replace" and not target.path:
+        explicit_targets = _extract_multiple_explicit_targets(instruction_scope)
+        if explicit_targets:
+            explicit_ops = _lower_explicit_target_text_replace_ops(
+                explicit_targets,
+                rule_id="ee_plural_section_scope_text_replace",
+            )
+            if explicit_ops:
+                return explicit_ops
 
     # Build payload
     payload: Optional[IRNode] = None

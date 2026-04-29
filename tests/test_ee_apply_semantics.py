@@ -4927,6 +4927,25 @@ def test_text_replace_consumes_duplicate_left_context_for_pedagogue_recipient() 
     )
 
 
+def test_case_inflected_text_replace_handles_oppekogunemine_reservteenistus_forms() -> None:
+    text = (
+        "Reservväelane osaleb õppekogunemisel. "
+        "Toetus makstakse pärast õppekogunemise lõppemist."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "õppekogunemine",
+        "reservteenistus",
+        case_inflected=True,
+    )
+
+    assert replaced == (
+        "Reservväelane osaleb reservteenistuses. "
+        "Toetus makstakse pärast reservteenistuse lõppemist."
+    )
+
+
 def test_case_inflected_text_replace_handles_riigi_eesvool_compound_forms() -> None:
     text = (
         "riigi eesvoolude tööde mahud; riigi eesvooludel drenaažisuudmete tööde mahud; "
