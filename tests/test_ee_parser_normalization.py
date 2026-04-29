@@ -8200,6 +8200,61 @@ def test_plaintext_old_format_omnibus_routes_only_matching_target_section() -> N
     assert "ee_plaintext_old_format_target_section_filter" in ops[0].provenance_tags
 
 
+def test_plaintext_old_format_target_section_splits_numbered_clauses_before_lowering() -> None:
+    xml = """
+    <oigusakt xmlns="muutmismaarus_1_10.02.2010">
+      <sisu>
+        <sisuTekst>
+          <tavatekst>
+            § 1. Kaitseministri määruse nr 1 „Muu määrus“ muutmine
+            Kaitseministri määruses nr 1 „Muu määrus“ tehakse muudatus.
+            § 2. Kaitseministri määruse nr 23
+            „Kaitseministeeriumi arstliku vaidekomisjoni töökord“ muutmine
+            Kaitseministri määruses nr 23
+            „Kaitseministeeriumi arstliku vaidekomisjoni töökord“
+            tehakse järgmised muudatused:
+            1) paragrahvi 1 lõiget 1 täiendatakse punktiga 11 järgmises sõnastuses:
+            „11) Kaitseministeeriumi valitsemisala arstlike komisjonide tervise infosüsteemi päringutega seoses esitatud kaebuste lahendamine.“;
+            2) paragrahvi 4 täiendatakse punktiga 11 järgmises sõnastuses:
+            „11) saada vaide esitaja nõusolekul tervise infosüsteemist teavet vaidekomisjoni ülesannete täitmiseks;“;
+            3) paragrahvi 5 täiendatakse lõikega 5 järgmises sõnastuses:
+            „(5) Vaidekomisjonil on õigus saada tervise infosüsteemi volitatud töötlejalt andmeid.“.
+          </tavatekst>
+        </sisuTekst>
+      </sisu>
+    </oigusakt>
+    """.encode()
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Kaitseministeeriumi arstliku vaidekomisjoni töökord",
+    )
+
+    assert [(op.action, op.target.path, _payload(op).text) for op in ops] == [
+        (
+            StructuralAction.INSERT,
+            (("section", "1"), ("subsection", "1"), ("item", "11")),
+            (
+                "11) Kaitseministeeriumi valitsemisala arstlike komisjonide tervise "
+                "infosüsteemi päringutega seoses esitatud kaebuste lahendamine."
+            ),
+        ),
+        (
+            StructuralAction.INSERT,
+            (("section", "4"), ("item", "11")),
+            "11) saada vaide esitaja nõusolekul tervise infosüsteemist teavet vaidekomisjoni ülesannete täitmiseks;",
+        ),
+        (
+            StructuralAction.INSERT,
+            (("section", "5"), ("subsection", "5")),
+            "(5) Vaidekomisjonil on õigus saada tervise infosüsteemi volitatud töötlejalt andmeid.",
+        ),
+    ]
+    assert all("ee_plaintext_old_format_target_section_filter" in op.provenance_tags for op in ops)
+    assert all("ee_plaintext_numbered_clause_split" in op.provenance_tags for op in ops)
+
+
 def test_old_format_html_commencement_assigns_embedded_section_item_dates() -> None:
     xml = """
     <oigusakt xmlns="muutmismaarus_1_10.02.2010">
