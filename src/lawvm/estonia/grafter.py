@@ -3416,12 +3416,23 @@ def _parse_old_format_amendment_ops(
             if not content_text:
                 continue
             source = OperationSource(statute_id=source_id, title=target_title or "")
-            section_ops = extract_ee_ops(content_text, source, seq_start=seq)
+            clause_texts = _tr_split_plaintext_numbered_op_texts(content_text)
+            if clause_texts:
+                section_ops, _next_seq, _last_section = _tr_old_format_lower_op_texts(
+                    clause_texts,
+                    source,
+                    seq_start=seq,
+                    base_act_name=_tr_paragrahv_to_act_id(header_text),
+                    initial_last_section=_old_format_plain_intro_target_section(content_text),
+                )
+            else:
+                section_ops = extract_ee_ops(content_text, source, seq_start=seq)
             all_ops.extend(
                 replace(
                     op,
                     provenance_tags=(
                         *op.provenance_tags,
+                        *((_EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE,) if clause_texts else ()),
                         "ee_plaintext_old_format_target_section_filter",
                     ),
                     witness_rule_id=op.witness_rule_id or "ee_plaintext_old_format_target_section_filter",
