@@ -944,6 +944,7 @@ _EE_PAYLOAD_AFTER_TITLE_QUOTE_RULE = "ee_payload_after_marker_ignores_premarker_
 _EE_ASCII_QUOTED_MARKER_PAYLOAD_RULE = "ee_ascii_quoted_marker_payload"
 _EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE = "ee_plural_subsection_insert_payload_split"
 _EE_MULTI_TARGET_TEXT_DELETE_SPLIT_RULE = "ee_multi_target_text_delete_split"
+_EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE = "ee_mixed_delete_and_replace_same_target"
 _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE = "ee_senine_text_subsection_renumber_before_insert"
 
 
@@ -1245,6 +1246,8 @@ def _classify_verb(text: str) -> str:
     # Structural replace. _instruction_preamble() strips "järgmiselt:" before
     # payload parsing, so bare "sõnastatakse" in the preamble is the operative
     # replacement verb.
+    if 'kehtestatakse' in t and 'uues sõnastuses' in t:
+        return "replace"
     if 'sõnastatakse' in t:
         return "replace"
 
@@ -2110,31 +2113,53 @@ def _extract_mixed_delete_replace_segments(text: str) -> List[tuple[str, str, st
     ):
         return []
 
-    segments: List[tuple[str, str, str]] = []
-    parts = re.split(
-        r'\s+ja\s+(?=[^.;]*\b(?:asendatakse|j[aä]etakse\s+v[aä]lja)\b)',
-        text,
-        flags=re.IGNORECASE,
+    normalized = html.unescape(text)
+    quote = r'[„"“”«\u02ee]'
+    quoted = rf'{quote}(?P<value>[^„”“"«»\u02ee]+){quote}'
+    replacement_segment = (
+        rf'(?P<segment>(?:\basendatakse\b\s+)?'
+        rf'(?:sõn(?:a|ad)|tekstiosa|lauseosa|arv(?:u)?)\s+'
+        rf'{quote}(?P<old>[^„”“"«»\u02ee]+){quote}\s+'
+        rf'(?:sõn(?:a|aga|adega)|tekstiosaga|lauseosaga|arvuga)\s+'
+        rf'{quote}(?P<new>[^„”“"«»\u02ee]+){quote})'
     )
-    for part in parts:
-        segment = part.strip()
-        if not segment:
-            continue
-        if not (
-            re.search(r'\basendatakse\b', segment, re.IGNORECASE)
-            or re.search(r'\bj[aä]etakse\s+v[aä]lja\b', segment, re.IGNORECASE)
-        ):
-            continue
-        old_text, new_text = _extract_text_replace_args(segment)
-        old_text, new_text = _normalize_text_replace_args(
-            segment,
-            old_text,
-            new_text,
-        )
-        if old_text is None and new_text is None:
-            continue
-        segments.append((segment, old_text or "", new_text or ""))
+    ordered: list[tuple[int, tuple[str, str, str]]] = []
+    for match in re.finditer(replacement_segment, normalized, re.IGNORECASE | re.DOTALL):
+        segment = match.group("segment").strip(" ,;")
+        old_text = match.group("old").strip()
+        new_text = match.group("new").strip()
+        if old_text and new_text:
+            ordered.append((match.start(), (segment, old_text, new_text)))
 
+    delete_segment = (
+        r'\bj[aä]etakse\s+v[aä]lja\s+'
+        r'(?:sõn(?:a|ad)|tekstiosa|lauseosa)\s+'
+        r'(?P<body>.*?)(?=(?:\s*,?\s+(?:ning|ja)\s+\basendatakse\b)|[.;]|$)'
+    )
+    for match in re.finditer(delete_segment, normalized, re.IGNORECASE | re.DOTALL):
+        body = match.group("body")
+        terms = [term.group("value").strip() for term in re.finditer(quoted, body) if term.group("value").strip()]
+        if not terms:
+            continue
+        if (
+            len(terms) >= 2
+            and re.search(rf'{quote}[^„”“"«»\u02ee]+{quote}\s+ja\s+{quote}', body, re.IGNORECASE)
+        ):
+            combined = " ja ".join(terms)
+            segment = f"jäetakse välja sõnad „{combined}”"
+            ordered.append((match.start(), (segment, combined, "")))
+        for term in terms:
+            segment = f"jäetakse välja sõna „{term}”"
+            ordered.append((match.start(), (segment, term, "")))
+
+    if not ordered:
+        return []
+    ordered.sort(key=lambda item: item[0])
+    segments = [segment for _pos, segment in ordered]
+    has_delete = any(old and not new for _segment, old, new in segments)
+    has_replace = any(old and new for _segment, old, new in segments)
+    if not (has_delete and has_replace):
+        return []
     return segments
 
 
@@ -5451,12 +5476,10 @@ def extract_ee_ops(
                     seq += 1
             return ops
 
-    if (
-        action == "text_replace"
-        and re.search(r'\bj[aä]etakse\s+v[aä]lja\s+tekstiosa\b', clean, re.IGNORECASE)
-    ):
+    if action == "text_replace":
         mixed_segments = _extract_mixed_delete_replace_segments(clean)
         if mixed_segments:
+            rule_id = _EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE
             for segment_text, segment_old, segment_new in mixed_segments:
                 segment_payload = IRNode(kind=IRNodeKind.CONTENT, text=segment_new)
                 segment_payload, _segment_witness = _set_text_replace_payload_attrs(
@@ -5464,6 +5487,7 @@ def extract_ee_ops(
                     segment_text,
                     segment_old,
                     segment_new,
+                    source_family=rule_id,
                 )
                 ops.append(LegalOperation(
                     op_id=f"ee-text_replace-combined-{str(target)}-{seq}-{source.statute_id}",
@@ -5473,7 +5497,8 @@ def extract_ee_ops(
                     payload=segment_payload,
                     text_patch=_typed_text_replace_patch(segment_old, segment_new),
                     source=source,
-                    provenance_tags=(segment_text[:200],),
+                    provenance_tags=(rule_id, segment_text[:200]),
+                    witness_rule_id=rule_id,
                 ))
                 seq += 1
             return ops

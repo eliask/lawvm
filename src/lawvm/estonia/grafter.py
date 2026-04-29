@@ -4295,6 +4295,8 @@ def _ee_repeated_single_occurrence_rewrite_match_count(node: IRNode, spec: EETex
 
 
 _EE_SOURCE_TYPO_TEXT_REPLACE_RULE = "ee_source_typo_text_replace_near_match"
+_EE_SOURCE_CASE_SUFFIX_TEXT_REPLACE_RULE = "ee_source_case_suffix_text_replace"
+_EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE = "ee_mixed_delete_and_replace_same_target"
 _EE_AMBIGUOUS_SINGLE_OCCURRENCE_TEXT_REPLACE_RULE = "ee_ambiguous_single_occurrence_text_replace"
 _EE_OVERBROAD_CONTAINER_REPLACE_BLOCKED_RULE = "ee_overbroad_container_replace_blocked"
 _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE = "ee_explicit_item_replacement_terminal_preserved"
@@ -4334,12 +4336,12 @@ def _ee_levenshtein_distance_at_most_one(left: str, right: str) -> bool:
 def _ee_typo_tolerant_text_replace(
     node: IRNode,
     spec: EETextRewriteSpec,
-) -> tuple[IRNode, bool, str]:
+) -> tuple[IRNode, bool, str, str]:
     """Recover a one-character typo in source old-text only under the exact target."""
     old = _ee_normalize_text_replace_surface(spec.old_text)
     new = _ee_normalize_text_replace_surface(spec.new_text)
     if len(old) < 8 or not new:
-        return node, False, ""
+        return node, False, "", ""
     matches: list[tuple[tuple[int, ...], str]] = []
 
     def _collect_phrase_candidates(current: IRNode, path: tuple[int, ...]) -> None:
@@ -4383,8 +4385,22 @@ def _ee_typo_tolerant_text_replace(
     _collect(node)
     unique_candidates = {candidate for _, candidate in matches}
     if len(matches) != 1 or len(unique_candidates) != 1:
-        return node, False, ""
+        return node, False, "", ""
     target_path, actual_old = matches[0]
+    replacement_text = new
+    rule_id = _EE_SOURCE_TYPO_TEXT_REPLACE_RULE
+    old_norm = _ee_normalize_text_replace_surface(old)
+    actual_norm = _ee_normalize_text_replace_surface(actual_old)
+    new_norm = _ee_normalize_text_replace_surface(new)
+    if (
+        old_norm.endswith("us")
+        and new_norm.endswith("us")
+        and actual_norm.casefold() == f"{old_norm}e".casefold()
+    ):
+        replacement_text = f"{new}e"
+        if actual_old[:1].isupper() and replacement_text[:1].islower():
+            replacement_text = replacement_text[:1].upper() + replacement_text[1:]
+        rule_id = _EE_SOURCE_CASE_SUFFIX_TEXT_REPLACE_RULE
 
     def _replace(current: IRNode, path: tuple[int, ...] = ()) -> IRNode:
         if path == target_path:
@@ -4392,7 +4408,7 @@ def _ee_typo_tolerant_text_replace(
                 _ee_wrap_word_boundaries(_ee_surface_pattern(actual_old), actual_old),
                 re.IGNORECASE,
             )
-            replaced_text = pattern.sub(new, current.text or "", count=1)
+            replaced_text = pattern.sub(replacement_text, current.text or "", count=1)
             return IRNode(
                 kind=current.kind,
                 label=current.label,
@@ -4411,7 +4427,7 @@ def _ee_typo_tolerant_text_replace(
             children=children,
         )
 
-    return _replace(node), True, actual_old
+    return _replace(node), True, actual_old, rule_id
 
 
 def _ee_payload_is_narrower_than_container_replace(target_kind: IRNodeKind, payload_text: str) -> bool:
@@ -4764,11 +4780,26 @@ def _ee_apply_text_replace_spec(
     )
     if (
         replaced is not None
+        and mode == "delete"
+        and spec.source_family == _EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE
+    ):
+        replaced = _ee_cleanup_orphan_delete_conjunction(replaced)
+    if (
+        replaced is not None
         and spec.source_family == _EE_INSERT_AFTER_TERMINAL_PUNCTUATION_RULE
         and mode == "insert_after"
     ):
         replaced = re.sub(r";\.(?=\s|$)", ";", replaced)
     return replaced
+
+
+def _ee_cleanup_orphan_delete_conjunction(text: str) -> str:
+    """Clean punctuation left by a source-owned deletion from a coordinated list."""
+    cleaned = re.sub(r"\s+(?:ja|ning)\s*([,;:])", r"\1", text)
+    cleaned = re.sub(r",\s*,", ",", cleaned)
+    cleaned = re.sub(r"\s+([,;:])", r"\1", cleaned)
+    cleaned = re.sub(r"([,;:])(?=\S)", r"\1 ", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()
 
 
 def _ee_path_is_excluded(
@@ -10415,17 +10446,17 @@ def _ee_apply_op(
                     )
                     if changed:
                         return tree_ops.replace_at(body, full_path, replaced_node)
-                    typo_node, typo_changed, actual_old = _ee_typo_tolerant_text_replace(
+                    typo_node, typo_changed, actual_old, recovery_rule_id = _ee_typo_tolerant_text_replace(
                         node,
                         rewrite_spec,
                     )
                     if typo_changed:
                         _append_ee_replay_adjudication(
                             adjudications_out,
-                            kind=_EE_SOURCE_TYPO_TEXT_REPLACE_RULE,
+                            kind=recovery_rule_id,
                             message=(
-                                "EE replay applied an exact-target one-character source typo "
-                                "recovery for a text replacement."
+                                "EE replay applied an exact-target source-surface recovery "
+                                "for a text replacement."
                             ),
                             op=op,
                             detail={
