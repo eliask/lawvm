@@ -81,6 +81,44 @@ def test_plan_ee_oracle_pair_selects_only_effective_new_amendments(monkeypatch) 
     assert planned.plan.source_adjudication.oracle_suspect == "forward_looking_oracle"
 
 
+def test_plan_ee_oracle_pair_repairs_impossible_muutmismarge_publication_year(monkeypatch) -> None:
+    base_xml = b"<base/>"
+    oracle_xml = b"<oracle/>"
+    bad_ref = AmendmentRef(
+        aktViide="103122012009",
+        passed="2013-11-29",
+        joustumine="2013-12-06",
+    )
+
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-2")
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
+        lambda grupi_id, as_of, archive: "oracle",
+    )
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", lambda akt_viide, archive: oracle_xml)
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.extract_amendment_refs",
+        lambda xml: [] if xml == base_xml else [bad_ref],
+    )
+
+    planned = plan_ee_oracle_pair(
+        base_id="base",
+        as_of="2013-12-06",
+        base_xml=base_xml,
+        archive=None,
+    )
+
+    assert [ref.aktViide for ref in planned.plan.amendments_to_apply] == ["103122013009"]
+    assert planned.plan.effective_new_amendments == ("103122013009",)
+    assert any(
+        item.get("rule") == "ee_muutmismarge_aktviide_publication_year_repair"
+        and item.get("original_aktViide") == "103122012009"
+        and item.get("repaired_aktViide") == "103122013009"
+        for item in planned.plan.source_adjudication.lineage
+    )
+
+
 def test_plan_ee_oracle_pair_blocks_cross_statute_oracle_group(monkeypatch) -> None:
     base_xml = b"<base/>"
     oracle_xml = b"<oracle/>"

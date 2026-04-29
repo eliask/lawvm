@@ -1,7 +1,7 @@
 """Typed EE base/oracle pair planning for PIT replay."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Optional
 
 from lawvm.estonia.fetch import (
@@ -19,6 +19,10 @@ from lawvm.estonia.source_adjudication import (
     build_ee_source_adjudication,
     classify_ee_oracle_pair,
     classify_ee_source_basis,
+)
+
+_EE_MUUTMISMARGE_AKTVIIDE_PUBLICATION_YEAR_REPAIR_RULE = (
+    "ee_muutmismarge_aktviide_publication_year_repair"
 )
 
 
@@ -84,6 +88,47 @@ def _effective_pending_base_refs(
     )
 
 
+def _repair_muutmismarge_publication_year_refs(
+    refs: tuple[AmendmentRef, ...],
+    *,
+    archive: Any = None,
+) -> tuple[tuple[AmendmentRef, ...], tuple[dict[str, str], ...]]:
+    """Repair impossible RT muutmismarge act-id years using the passed-date witness."""
+    repaired_refs: list[AmendmentRef] = []
+    findings: list[dict[str, str]] = []
+    for ref in refs:
+        aid = ref.aktViide
+        passed_year = ref.passed[:4] if ref.passed else ""
+        if (
+            len(aid) == 12
+            and aid.isdigit()
+            and aid.startswith("1")
+            and passed_year.isdigit()
+            and aid[5:9].isdigit()
+            and aid[5:9] < passed_year
+        ):
+            candidate = f"{aid[:5]}{passed_year}{aid[9:]}"
+            try:
+                fetch_rt_xml(candidate, archive)
+            except Exception:
+                repaired_refs.append(ref)
+                continue
+            repaired_refs.append(replace(ref, aktViide=candidate))
+            findings.append(
+                {
+                    "kind": "source_pathology",
+                    "rule": _EE_MUUTMISMARGE_AKTVIIDE_PUBLICATION_YEAR_REPAIR_RULE,
+                    "original_aktViide": aid,
+                    "repaired_aktViide": candidate,
+                    "passed": ref.passed,
+                    "joustumine": ref.joustumine,
+                }
+            )
+            continue
+        repaired_refs.append(ref)
+    return tuple(repaired_refs), tuple(findings)
+
+
 @dataclass(frozen=True)
 class EEOraclePairPlan:
     """Typed pair-selection/adjudication product for one EE PIT replay."""
@@ -147,9 +192,13 @@ def plan_ee_oracle_pair(
     )
     base_is_consolidated = extract_tekstiliik(base_xml) == "terviktekst"
     base_effective = extract_effective_date(base_xml) if base_is_consolidated else ""
-    base_refs = _dedupe_refs_by_slice(tuple(extract_amendment_refs(base_xml)))
+    base_refs, base_ref_repair_findings = _repair_muutmismarge_publication_year_refs(
+        _dedupe_refs_by_slice(tuple(extract_amendment_refs(base_xml))),
+        archive=archive,
+    )
     base_slice_keys = {_ref_slice_key(ref) for ref in base_refs}
     oracle_refs: tuple[AmendmentRef, ...] = ()
+    oracle_ref_repair_findings: tuple[dict[str, str], ...] = ()
 
     if (
         base_is_consolidated
@@ -158,7 +207,10 @@ def plan_ee_oracle_pair(
         and not group_mismatch
     ):
         try:
-            oracle_refs = _dedupe_refs_by_slice(tuple(extract_amendment_refs(oracle_xml)))
+            oracle_refs, oracle_ref_repair_findings = _repair_muutmismarge_publication_year_refs(
+                _dedupe_refs_by_slice(tuple(extract_amendment_refs(oracle_xml))),
+                archive=archive,
+            )
         except Exception:
             oracle_refs = ()
 
@@ -226,6 +278,8 @@ def plan_ee_oracle_pair(
         )
 
     lineage = [
+        *base_ref_repair_findings,
+        *oracle_ref_repair_findings,
         {
             "kind": "ee_pair_classification",
             "source_basis": source_basis.value,
