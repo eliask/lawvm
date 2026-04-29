@@ -7578,6 +7578,34 @@ def test_extract_ee_ops_recovers_flat_sectionless_singleton_item_insert() -> Non
     assert op.payload.attrs["scope_confidence"] == "inferred_from_live_unique"
 
 
+def test_extract_ee_ops_keeps_nested_quote_tail_in_insert_after_textosa() -> None:
+    text = (
+        "paragrahvi 1 täiendatakse pärast sõnu “tunnistamise kord” tekstiosaga "
+        "“ning enne töö, teenuse või vara soetamise eest tasumist toetatava tegevuse "
+        "elluviimise riigieelarvelistest vahenditest rahastamise taotlemise ja taotluse "
+        "menetlemise kord ning taotluse vorm kooskõlas nõukogu määruse (EÜ) nr 1698/2005 "
+        "Maaelu Arengu Euroopa Põllumajandusfondist (EAFRD) antavate maaelu arengu toetuste "
+        "kohta (ELT L 277, 21.10.2005, lk 1–40) artikli 18 lõike 4 alusel heaks kiidetud "
+        "“Eesti maaelu arengukavaga 2007–2013” (edaspidi arengukava)”;"
+    )
+
+    ops = extract_ee_ops(
+        text,
+        OperationSource(statute_id="ee/104092012001", raw_text=text, effective="2012-09-07"),
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "1"),)
+    assert op.payload is not None
+    assert op.payload.attrs["old_text"] == "tunnistamise kord"
+    assert op.payload.text.endswith("“Eesti maaelu arengukavaga 2007–2013” (edaspidi arengukava)")
+    assert op.text_patch is not None
+    assert op.text_patch.replacement is not None
+    assert op.text_patch.replacement.endswith("“Eesti maaelu arengukavaga 2007–2013” (edaspidi arengukava)")
+
+
 def test_parse_ee_statute_canonicalizes_singleton_empty_section_label_for_2011_010() -> None:
     archive = open_rt_archive(readonly=True)
     xml = fetch_rt_xml("115032011010", archive=archive)
