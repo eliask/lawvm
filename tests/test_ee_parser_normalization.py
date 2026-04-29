@@ -9124,6 +9124,72 @@ def test_extract_ee_ops_splits_multi_target_text_delete_groups() -> None:
     assert all(op.witness_rule_id == "ee_multi_target_text_delete_split" for op in ops)
 
 
+def test_extract_ee_ops_splits_same_target_replace_then_insert_after_clause() -> None:
+    text = (
+        "paragrahvi 9 lõikes 4 asendatakse arv „15” arvuga „20” "
+        "ja lõiget 4 täiendatakse pärast sõna „kohta” tekstiosaga "
+        "„koos lõikes 3 nimetatud dokumentidega”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.target.path, _payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        ((("section", "9"), ("subsection", "4")), "15", "20"),
+        (
+            (("section", "9"), ("subsection", "4")),
+            "kohta",
+            "kohta koos lõikes 3 nimetatud dokumentidega",
+        ),
+    ]
+    assert [_payload(op).attrs["rewrite_mode"] for op in ops] == ["replace", "insert_after"]
+    assert all(op.witness_rule_id == "ee_mixed_replace_and_insert_after_same_target" for op in ops)
+
+
+def test_extract_ee_ops_splits_same_target_insert_after_then_replace_clause() -> None:
+    text = (
+        "paragrahvi 32 lõiget 3 täiendatakse pärast sõna „põhjendatud” "
+        "sõnadega „taotluses sisalduvate mitteabikõlblike kulude tõttu” "
+        "ja lõikes 3 asendatakse tekstiosa „lõike 5 alusel” tekstiosaga "
+        "„lõikes 5 sätestatud tingimustel”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.target.path, _payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        (
+            (("section", "32"), ("subsection", "3")),
+            "põhjendatud",
+            "põhjendatud taotluses sisalduvate mitteabikõlblike kulude tõttu",
+        ),
+        (
+            (("section", "32"), ("subsection", "3")),
+            "lõike 5 alusel",
+            "lõikes 5 sätestatud tingimustel",
+        ),
+    ]
+    assert [_payload(op).attrs["rewrite_mode"] for op in ops] == ["insert_after", "replace"]
+    assert all(op.witness_rule_id == "ee_mixed_replace_and_insert_after_same_target" for op in ops)
+
+
+def test_extract_ee_ops_preserves_explicit_mixed_structural_repeal_target_list() -> None:
+    text = (
+        "paragrahvi 25 lõike 2 punkt 13, § 26 lõige 6, § 27 lõike 1 punkt 6, "
+        "§ 29 lõike 1 punkt 2 ja § 34 lõige 3 tunnistatakse kehtetuks;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [op.target.path for op in ops] == [
+        (("section", "25"), ("subsection", "2"), ("item", "13")),
+        (("section", "26"), ("subsection", "6")),
+        (("section", "27"), ("subsection", "1"), ("item", "6")),
+        (("section", "29"), ("subsection", "1"), ("item", "2")),
+        (("section", "34"), ("subsection", "3")),
+    ]
+    assert all(op.action == StructuralAction.REPEAL for op in ops)
+    assert all(op.witness_rule_id == "ee_explicit_mixed_structural_repeal_list" for op in ops)
+
+
 def test_extract_ee_ops_marks_fraktsioneeritud_source_typo_delete_variant() -> None:
     text = 'paragrahvi 14 lõikest 2 jäetakse läbivalt välja sõna „fraktsioneeritud”;'
 

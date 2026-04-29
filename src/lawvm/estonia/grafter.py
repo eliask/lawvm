@@ -4476,6 +4476,7 @@ def _ee_repeated_single_occurrence_rewrite_match_count(node: IRNode, spec: EETex
 _EE_SOURCE_TYPO_TEXT_REPLACE_RULE = "ee_source_typo_text_replace_near_match"
 _EE_SOURCE_CASE_SUFFIX_TEXT_REPLACE_RULE = "ee_source_case_suffix_text_replace"
 _EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE = "ee_mixed_delete_and_replace_same_target"
+_EE_MIXED_REPLACE_INSERT_AFTER_SAME_TARGET_RULE = "ee_mixed_replace_and_insert_after_same_target"
 _EE_AMBIGUOUS_SINGLE_OCCURRENCE_TEXT_REPLACE_RULE = "ee_ambiguous_single_occurrence_text_replace"
 _EE_OVERBROAD_CONTAINER_REPLACE_BLOCKED_RULE = "ee_overbroad_container_replace_blocked"
 _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE = "ee_explicit_item_replacement_terminal_preserved"
@@ -4958,6 +4959,7 @@ def _ee_apply_text_replace_spec(
         all_occurrences=spec.all_occurrences,
         capitalize_sentence_start=capitalize_sentence_start,
         single_occurrence=single_occurrence,
+        preserve_following_comma_list=spec.source_family != _EE_MIXED_REPLACE_INSERT_AFTER_SAME_TARGET_RULE,
     )
     if (
         replaced is not None
@@ -7960,6 +7962,7 @@ def _ee_apply_text_replace_value(
     all_occurrences: bool = False,
     capitalize_sentence_start: bool = True,
     single_occurrence: bool = False,
+    preserve_following_comma_list: bool = True,
 ) -> str | None:
     """Apply one EE text replacement to a string value."""
     if text is None or not old:
@@ -8061,11 +8064,12 @@ def _ee_apply_text_replace_value(
                         replacement,
                         match.string[match.end():],
                     )
-                    replacement = _ee_insert_after_comma_list_replacement(
-                        match,
-                        replacement,
-                        match.string[match.end():],
-                    )
+                    if preserve_following_comma_list:
+                        replacement = _ee_insert_after_comma_list_replacement(
+                            match,
+                            replacement,
+                            match.string[match.end():],
+                        )
                     placeholders[token] = replacement if replacement else match.group(0)
                     return token
 
@@ -8091,11 +8095,12 @@ def _ee_apply_text_replace_value(
                 replacement,
                 working[match.end():],
             )
-            replacement = _ee_insert_after_comma_list_replacement(
-                match,
-                replacement,
-                working[match.end():],
-            )
+            if preserve_following_comma_list:
+                replacement = _ee_insert_after_comma_list_replacement(
+                    match,
+                    replacement,
+                    working[match.end():],
+                )
             if not replacement:
                 replacement = match.group(0)
             working = working[:match.start()] + replacement + working[match.end():]
