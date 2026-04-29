@@ -10209,6 +10209,16 @@ def test_text_morphology_sentence_indexes_from_notes_supports_notes() -> None:
     assert replace_case_preserving("Amet on siin.", "amet", "asutus") == "Asutus on siin."
 
 
+def test_case_preserved_replacement_keeps_mixed_acronym_suffix_case() -> None:
+    from lawvm.estonia.text_morphology import case_preserved_replacement
+    import re
+
+    match = re.compile(r"EMTAK 2008,").search("EMTAK 2008, jagu C")
+    assert match is not None
+
+    assert case_preserved_replacement(match, "EMTAK-i") == "EMTAK-i"
+
+
 def test_case_inflected_rewrite_preserves_nominative_in_kohustatud_subject_context() -> None:
     old = "Veterinaar- ja Toiduameti kohalik asutus"
     new = "Veterinaar- ja Toiduamet"

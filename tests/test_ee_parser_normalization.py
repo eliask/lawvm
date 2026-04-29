@@ -219,6 +219,20 @@ def test_extract_ee_ops_preserves_later_explicit_targets_after_plural_section_te
     assert all(op.payload is not None and op.payload.attrs["case_inflected"] is True for op in ops)
 
 
+def test_extract_ee_ops_marks_mixed_acronym_suffix_case_family() -> None:
+    text = (
+        "paragrahvi 5 lõike 2 punktis 1 asendatakse tekstiosa "
+        "„EMTAK 2008,” tekstiosaga „EMTAK-i” vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].payload is not None
+    assert ops[0].payload.attrs["case_inflected"] is True
+    assert ops[0].payload.attrs["source_family"] == "ee_case_inflected_mixed_acronym_suffix_case"
+
+
 def test_extract_ee_ops_splits_mixed_subsection_and_item_replace_payload() -> None:
     text = (
         "paragrahvi 26 lõige 2 ja lõike 2 punkt 1 sõnastatakse järgmiselt: "
