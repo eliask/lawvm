@@ -9260,15 +9260,51 @@ def _ee_apply_op(
                 # structured title + subsections to match oracle format.
                 if target_node.kind == IRNodeKind.SECTION:
                     note_text = _op_instruction_note_text(op)
-                    from lawvm.estonia.ee_instruction_waist import read_sentence_target_meta
+                    from lawvm.estonia.ee_instruction_waist import (
+                        read_sentence_target_meta,
+                        read_subsection_text_scope_meta,
+                    )
 
                     sentence_meta = read_sentence_target_meta(payload)
+                    subsection_text_scope_meta = read_subsection_text_scope_meta(payload)
                     sentence_indexes = (
                         list(sentence_meta.sentence_indexes)
                         if sentence_meta is not None and sentence_meta.sentence_indexes
                         else _sentence_indexes_from_notes(note_text)
                     )
                     sentence_index = sentence_indexes[0] if sentence_indexes else None
+                    if subsection_text_scope_meta is not None and subsection_text_scope_meta.intro_only:
+                        replacement_text = _strip_rt_editorial_parentheticals(payload.text.replace("\x01", ""))
+                        replacement_text = re.sub(r"^\(\d[\d\s_]*\)\s*", "", replacement_text).strip()
+                        first_subsection = next(
+                            (
+                                child
+                                for child in target_node.children
+                                if child.kind == IRNodeKind.SUBSECTION and child.text
+                            ),
+                            None,
+                        )
+                        if first_subsection is not None:
+                            new_children = [
+                                IRNode(
+                                    kind=child.kind,
+                                    label=child.label,
+                                    text=replacement_text,
+                                    attrs=dict(child.attrs),
+                                    children=tuple(child.children),
+                                )
+                                if child is first_subsection
+                                else child
+                                for child in target_node.children
+                            ]
+                            new_section = IRNode(
+                                kind=target_node.kind,
+                                label=target_node.label,
+                                text=target_node.text,
+                                attrs=dict(target_node.attrs),
+                                children=tuple(new_children),
+                            )
+                            return tree_ops.replace_at(body, full_path, new_section)
                     if sentence_index is not None:
                         target_subsection = next(
                             (

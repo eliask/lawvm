@@ -8764,3 +8764,21 @@ def test_parse_ee_amendment_ops_recovers_2022_2028_transitional_section_repeals(
         (("section", "6"),),
         (("section", "7"),),
     ]
+
+
+def test_extract_ee_ops_marks_section_intro_replace_without_widening_to_whole_section() -> None:
+    text = (
+        "paragrahvi 2 sissejuhatav lauseosa muudetakse ja sõnastatakse järgmiselt: "
+        "„Meetme eesmärgiks on VKEde konkurentsivõime suurendamine, mille tulemusena:”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "2"),)
+    assert ops[0].payload is not None
+    scope_meta = read_subsection_text_scope_meta(ops[0].payload)
+    assert scope_meta is not None
+    assert scope_meta.intro_only is True
+    assert ops[0].witness_rule_id == "ee_section_intro_replace_to_first_subsection"
