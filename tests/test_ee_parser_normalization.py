@@ -6726,6 +6726,19 @@ def test_extract_intro_statute_fragment_handles_quoted_regulation_title_intro() 
     )
 
 
+def test_extract_intro_statute_fragment_handles_quoted_regulation_title_accusative_intro() -> None:
+    text = (
+        "Põllumajandusministri 21. aprilli 2010. a määrust nr 46 "
+        "„Keskkonnasõbraliku majandamise toetuse saamise nõuded, toetuse "
+        "taotlemise ja taotluse menetlemise täpsem kord” muudetakse järgmiselt:"
+    )
+
+    assert _extract_intro_statute_fragment(text) == (
+        "Keskkonnasõbraliku majandamise toetuse saamise nõuded, toetuse "
+        "taotlemise ja taotluse menetlemise täpsem kord"
+    )
+
+
 def test_extract_intro_statute_fragment_handles_left_double_quote_as_closer() -> None:
     text = (
         "Rahandusministri 20. septembri 2005. a määruses nr 64 "
