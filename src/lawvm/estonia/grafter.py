@@ -4226,6 +4226,7 @@ _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE = "ee_plaintext_numbered_clause_split"
 _EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
 _EE_PARENTHESIZED_TARGET_HTML_BLOCK_RULE = "ee_parenthesized_target_html_block_sliced"
 _EE_OUT_OF_BODY_APPENDIX_OR_NOTE_RULE = "ee_out_of_body_appendix_or_note_clause"
+_EE_INSERT_AFTER_TERMINAL_PUNCTUATION_RULE = "ee_insert_after_terminal_punctuation_boundary"
 
 
 def _ee_levenshtein_distance_at_most_one(left: str, right: str) -> bool:
@@ -4611,6 +4612,7 @@ class EETextRewriteSpec:
     mode: EETextReplaceMode = "replace"
     case_inflected: bool = False
     all_occurrences: bool = False
+    source_family: str = ""
 
 
 def _ee_text_replace_mode(value: object) -> EETextReplaceMode:
@@ -4632,6 +4634,7 @@ def _ee_read_text_replace_spec(payload: IRNode | None) -> EETextRewriteSpec | No
         mode=_ee_text_replace_mode(rewrite.mode.value),
         case_inflected=rewrite.case_inflected,
         all_occurrences=bool(payload.attrs.get("all_occurrences")),
+        source_family=str(payload.attrs.get("source_family") or ""),
     )
 
 
@@ -4671,7 +4674,7 @@ def _ee_apply_text_replace_spec(
                 after_sep = ""
             new_text = f"{old_text}{after_sep}{new_text}"
 
-    return _ee_apply_text_replace_value(
+    replaced = _ee_apply_text_replace_value(
         text,
         old_text,
         new_text,
@@ -4681,6 +4684,13 @@ def _ee_apply_text_replace_spec(
         capitalize_sentence_start=capitalize_sentence_start,
         single_occurrence=single_occurrence,
     )
+    if (
+        replaced is not None
+        and spec.source_family == _EE_INSERT_AFTER_TERMINAL_PUNCTUATION_RULE
+        and mode == "insert_after"
+    ):
+        replaced = re.sub(r";\.(?=\s|$)", ";", replaced)
+    return replaced
 
 
 def _ee_path_is_excluded(

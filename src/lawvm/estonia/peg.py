@@ -1699,6 +1699,7 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
 
 
 _EE_AFTER_ANCHOR_TEXT_REPLACE_RULE = "ee_text_replace_after_anchor_clause"
+_EE_INSERT_AFTER_TERMINAL_PUNCTUATION_RULE = "ee_insert_after_terminal_punctuation_boundary"
 
 
 def _extract_after_anchor_text_delete_pair(text: str) -> tuple[str, str] | None:
@@ -1743,6 +1744,27 @@ def _extract_after_anchor_text_replace_pair(text: str) -> tuple[str, str] | None
     if len(quoted) < 3:
         return None
     return quoted[1], quoted[2]
+
+
+def _has_insert_after_terminal_punctuation_boundary(
+    text: str,
+    old_text: str | None,
+    new_text: str | None,
+) -> bool:
+    """The inserted payload replaces the live sentence terminator with semicolon syntax."""
+    if not old_text or not new_text:
+        return False
+    if old_text.rstrip().endswith((".", ";", ":", ",")):
+        return False
+    if not new_text.rstrip().endswith(";"):
+        return False
+    return bool(
+        re.search(
+            r"\btäiendatakse\b[^.;]{0,180}\bpärast\s+(?:sõn[au]|tekstiosa|lauseosa)\b",
+            text,
+            re.IGNORECASE | re.DOTALL,
+        )
+    )
 
 
 def _extract_text_replace_pairs(text: str) -> List[Tuple[str, str]]:
@@ -2826,6 +2848,12 @@ def _set_text_replace_payload_attrs(
     attrs["rewrite_mode"] = rewrite_mode
     if not source_family and _extract_after_anchor_text_replace_pair(clean) is not None:
         source_family = _EE_AFTER_ANCHOR_TEXT_REPLACE_RULE
+    if (
+        not source_family
+        and rewrite_mode == "insert_after"
+        and _has_insert_after_terminal_punctuation_boundary(clean, old_text, new_text)
+    ):
+        source_family = _EE_INSERT_AFTER_TERMINAL_PUNCTUATION_RULE
     if (
         not source_family
         and rewrite_mode == "insert_after"

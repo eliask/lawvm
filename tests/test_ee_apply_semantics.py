@@ -24,7 +24,13 @@ from lawvm.estonia.ee_instruction_waist import (
     make_subsection_text_scope_meta,
 )
 from lawvm.estonia.peg import extract_ee_ops
-from lawvm.estonia.grafter import _ee_apply_op, _ee_apply_text_replace_value, apply_ee_ops
+from lawvm.estonia.grafter import (
+    EETextRewriteSpec,
+    _ee_apply_op,
+    _ee_apply_text_replace_spec,
+    _ee_apply_text_replace_value,
+    apply_ee_ops,
+)
 from lawvm.replay_adjudication import CompileAdjudication
 
 
@@ -332,6 +338,28 @@ def test_insert_after_text_replace_preserves_comma_list_separator() -> None:
     assert replaced == (
         "harrastuskalapüügil on lubatud kasutada liivi, kuuritsat, "
         "vähinatta, vähimõrda, harpuunpüssi ja harpuuni"
+    )
+
+
+def test_insert_after_terminal_semicolon_replaces_live_period_when_marked() -> None:
+    replaced = _ee_apply_text_replace_spec(
+        "isik on töötanud üle kolme kuu.",
+        EETextRewriteSpec(
+            old_text="kolme kuu",
+            new_text=(
+                "kolme kuu, välja arvatud juhul, kui seda on tehtud "
+                "Sektoritevahelise mobiilsuse toetusmeetmest ja järgmine "
+                "projekt on eelneva tegevuse edasiarendus;"
+            ),
+            mode="insert_after",
+            source_family="ee_insert_after_terminal_punctuation_boundary",
+        ),
+    )
+
+    assert replaced == (
+        "isik on töötanud üle kolme kuu, välja arvatud juhul, kui seda on "
+        "tehtud Sektoritevahelise mobiilsuse toetusmeetmest ja järgmine "
+        "projekt on eelneva tegevuse edasiarendus;"
     )
 
 
