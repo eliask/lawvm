@@ -1012,6 +1012,7 @@ _EE_FRAKTSIONEERITUD_TYPO_DELETE_RULE = "ee_fraktsioneeritud_source_typo_delete_
 _EE_LOCAL_KOHTKUTE_SOURCE_SURFACE_DELETE_RULE = "ee_lokaal_kohtkute_source_surface_delete_variant"
 _EE_OLEMASOLEV_TAHKEL_KUTUSEL_PHRASE_FORMS_RULE = "ee_case_inflected_olemasolev_tahkel_kutusel_phrase_forms"
 _EE_VOLITATUD_VASTUTAV_FORMS_RULE = "ee_case_inflected_volitatud_vastutav_forms"
+_EE_TAOTLUSVOOR_COORDINATION_FORMS_RULE = "ee_case_inflected_taotlusvoor_coordination_forms"
 _EE_INSERT_MULTI_EXPLICIT_TARGETS_PAYLOAD_LABEL_FILTER_RULE = (
     "ee_insert_multi_explicit_targets_payload_label_filter"
 )
@@ -1042,6 +1043,11 @@ def _case_inflected_phrase_source_family(old_text: str | None, new_text: str | N
         return _EE_OLEMASOLEV_TAHKEL_KUTUSEL_PHRASE_FORMS_RULE
     if old_text == "volitatud" and new_text == "vastutav":
         return _EE_VOLITATUD_VASTUTAV_FORMS_RULE
+    if (
+        old_text == "teine ja viies taotlusvoor"
+        and new_text == "teine, viies ja järgnevad taotlusvoorud"
+    ):
+        return _EE_TAOTLUSVOOR_COORDINATION_FORMS_RULE
     return ""
 
 
@@ -2790,7 +2796,7 @@ def _extract_sd_section_nums(clean: str) -> List[str]:
 
 
 def _expand_ee_numeric_list(raw_group: str) -> List[str]:
-    """Expand a bounded numeric list with commas, `ja`, and en-dash ranges."""
+    """Expand a bounded numeric list with commas, `ja`, en-dash, and `kuni` ranges."""
     raw_group = _normalize_ee_parse_text(raw_group)
     _NUM_PAT = _EE_NUM_ATOM
     expanded: List[str] = []
@@ -2841,8 +2847,15 @@ def _expand_ee_numeric_list(raw_group: str) -> List[str]:
         if not raw_part:
             continue
         m_range = re.match(
-            r'^(' + _NUM_PAT + r')\s*[.]?\s*[' + _EE_DASH_CLASS + r']\s*(' + _NUM_PAT + r')\s*[.]?$',
+            r'^('
+            + _NUM_PAT
+            + r')\s*[.]?\s*(?:['
+            + _EE_DASH_CLASS
+            + r']|\bkuni\b)\s*('
+            + _NUM_PAT
+            + r')\s*[.]?$',
             raw_part,
+            re.IGNORECASE,
         )
         if m_range:
             start = _normalize_num(m_range.group(1).strip())
@@ -2863,8 +2876,15 @@ def _plain_numeric_ranges(raw_group: str) -> tuple[tuple[str, str], ...]:
         if not raw_part:
             continue
         m_range = re.match(
-            r'^(' + _NUM_PAT + r')\s*[' + _EE_DASH_CLASS + r']\s*(' + _NUM_PAT + r')$',
+            r'^('
+            + _NUM_PAT
+            + r')\s*(?:['
+            + _EE_DASH_CLASS
+            + r']|\bkuni\b)\s*('
+            + _NUM_PAT
+            + r')$',
             raw_part,
+            re.IGNORECASE,
         )
         if not m_range:
             continue
@@ -2884,8 +2904,15 @@ def _ee_label_ranges(raw_group: str) -> tuple[tuple[str, str], ...]:
         if not raw_part:
             continue
         m_range = re.match(
-            r'^(' + _EE_NUM_ATOM + r')\s*[.]?\s*[' + _EE_DASH_CLASS + r']\s*(' + _EE_NUM_ATOM + r')\s*[.]?$',
+            r'^('
+            + _EE_NUM_ATOM
+            + r')\s*[.]?\s*(?:['
+            + _EE_DASH_CLASS
+            + r']|\bkuni\b)\s*('
+            + _EE_NUM_ATOM
+            + r')\s*[.]?$',
             raw_part,
+            re.IGNORECASE,
         )
         if not m_range:
             continue
@@ -5556,15 +5583,15 @@ def extract_ee_ops(
     _NUM_PAT_IT = _EE_NUM_ATOM
     _ITEM_LIST_PAT = (
         _NUM_PAT_IT
-        + r'(?:\s*[–‒\-]\s*'
+        + r'(?:\s*(?:[–‒\-]|\bkuni\b)\s*'
         + _NUM_PAT_IT
         + r')?(?:\s*,\s*'
         + _NUM_PAT_IT
-        + r'(?:\s*[–‒\-]\s*'
+        + r'(?:\s*(?:[–‒\-]|\bkuni\b)\s*'
         + _NUM_PAT_IT
         + r')?)*(?:\s+ja\s+'
         + _NUM_PAT_IT
-        + r'(?:\s*[–‒\-]\s*'
+        + r'(?:\s*(?:[–‒\-]|\bkuni\b)\s*'
         + _NUM_PAT_IT
         + r')?)*'
     )
