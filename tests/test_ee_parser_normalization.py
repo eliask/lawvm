@@ -8064,3 +8064,27 @@ def test_parse_ee_amendment_ops_uses_direct_old_format_header_target_section() -
     assert "old_format_amendment_section:1" in op.provenance_tags
     assert _payload(op).text.endswith("kindlustatavate isikute nimekiri.")
     assert not _payload(op).text.endswith('nimekiri."')
+
+
+def test_parse_ee_amendment_ops_splits_plaintext_preamble_and_repeal_range() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("128012017002", archive),
+        "ee/128012017002",
+        target_title=(
+            "Elamisloa ja elamisõiguse menetluses ning isikut tõendava "
+            "dokumendi väljaandmise menetluses sõrmejälgede võtmise kord"
+        ),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.META, ()),
+        (StructuralAction.REPEAL, (("section", "1"),)),
+        (StructuralAction.REPEAL, (("section", "2"),)),
+        (StructuralAction.REPEAL, (("section", "3"),)),
+        (StructuralAction.REPEAL, (("section", "4"),)),
+        (StructuralAction.REPEAL, (("section", "6"),)),
+    ]
+    assert ops[0].witness_rule_id == "ee_preamble_clause_non_body"
+    assert _payload(ops[0]).attrs["source_family"] == "ee_preamble_clause_non_body"

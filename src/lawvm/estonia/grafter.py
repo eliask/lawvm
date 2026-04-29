@@ -88,6 +88,7 @@ from lawvm.estonia.target_resolution import (
     parse_preambul_single_target_ops as _tr_parse_preambul_single_target_ops,
     para_contains_direct_target_clause as _tr_para_contains_direct_target_clause,
     should_admit_new_format_paragraph as _tr_should_admit_new_format_paragraph,
+    split_plaintext_numbered_op_texts as _tr_split_plaintext_numbered_op_texts,
     split_old_format_wrapper_blocks as _tr_split_old_format_wrapper_blocks,
     strict_title_match_para as _tr_strict_title_match_para,
     title_matches_para as _tr_title_matches_para,
@@ -2035,7 +2036,7 @@ def _parse_preambul_single_target_ops(
             return plain_item_ops
         return default_ops
 
-    return _tr_parse_preambul_single_target_ops(
+    ops = _tr_parse_preambul_single_target_ops(
         root,
         source_id,
         ns_str,
@@ -2045,6 +2046,32 @@ def _parse_preambul_single_target_ops(
         tavatekst_text=lambda element, _ns_str: _element_text_with_bold_section_boundaries(element),
         parse_muutmisseadus_ops=_parse_synthetic_preambul_target,
     )
+    normalized_ops: list[LegalOperation] = []
+    for op in ops:
+        source_text = op.provenance_tags[0] if op.provenance_tags else ""
+        if re.match(r"^määruse\s+preambul\s+sõnastatakse\b", source_text, re.IGNORECASE):
+            normalized_ops.append(
+                LegalOperation(
+                    op_id=f"ee-preamble-clause-non-body-{op.sequence}-{source_id}",
+                    sequence=op.sequence,
+                    action=StructuralAction.META,
+                    target=LegalAddress(path=()),
+                    payload=IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text=source_text,
+                        attrs={"source_family": _EE_PREAMBLE_CLAUSE_NON_BODY_RULE},
+                    ),
+                    source=op.source,
+                    provenance_tags=(
+                        *op.provenance_tags,
+                        _EE_PREAMBLE_CLAUSE_NON_BODY_RULE,
+                    ),
+                    witness_rule_id=_EE_PREAMBLE_CLAUSE_NON_BODY_RULE,
+                )
+            )
+            continue
+        normalized_ops.append(op)
+    return normalized_ops
 
 
 _GENERIC_MINISTER_TITLES: tuple[str, ...] = (
@@ -2657,6 +2684,50 @@ def _parse_old_format_amendment_ops(
                         title=target_title,
                         raw_text=direct_text[:200],
                     )
+                    clause_texts = _tr_split_plaintext_numbered_op_texts(direct_text)
+                    if clause_texts:
+                        clause_ops: list[LegalOperation] = []
+                        seq = 1
+                        for clause_text in clause_texts:
+                            clause_source = replace(source, raw_text=clause_text[:200])
+                            if re.match(
+                                r"^\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s+määruse\s+preambul\s+sõnastatakse\b",
+                                clause_text,
+                                re.IGNORECASE,
+                            ):
+                                clause_ops.append(
+                                    LegalOperation(
+                                        op_id=f"ee-preamble-clause-non-body-{seq}-{source_id}",
+                                        sequence=seq,
+                                        action=StructuralAction.META,
+                                        target=LegalAddress(path=()),
+                                        payload=IRNode(
+                                            kind=IRNodeKind.CONTENT,
+                                            text=clause_text,
+                                            attrs={"source_family": _EE_PREAMBLE_CLAUSE_NON_BODY_RULE},
+                                        ),
+                                        source=clause_source,
+                                        provenance_tags=(clause_text[:200], _EE_PREAMBLE_CLAUSE_NON_BODY_RULE),
+                                        witness_rule_id=_EE_PREAMBLE_CLAUSE_NON_BODY_RULE,
+                                    )
+                                )
+                                seq += 1
+                                continue
+                            parsed_clause_ops = extract_ee_ops(clause_text, clause_source, seq_start=seq)
+                            clause_ops.extend(parsed_clause_ops)
+                            seq += len(parsed_clause_ops)
+                        return [
+                            replace(
+                                op,
+                                provenance_tags=(
+                                    *op.provenance_tags,
+                                    _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE,
+                                    f"base_act: {_tr_paragrahv_to_act_id(act_title)}",
+                                ),
+                                witness_rule_id=op.witness_rule_id or _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE,
+                            )
+                            for op in clause_ops
+                        ]
                     direct_instruction = direct_text
                     if target_title.lower() in direct_text.lower():
                         first_structural_target = re.search(r"§\s*\d", direct_text)
@@ -3915,6 +3986,8 @@ _EE_AMBIGUOUS_SINGLE_OCCURRENCE_TEXT_REPLACE_RULE = "ee_ambiguous_single_occurre
 _EE_OVERBROAD_CONTAINER_REPLACE_BLOCKED_RULE = "ee_overbroad_container_replace_blocked"
 _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE = "ee_explicit_item_replacement_terminal_preserved"
 _EE_INLINE_ITEM_REPLACE_SINGLETON_SUBSECTION_RULE = "ee_inline_item_replace_singleton_subsection"
+_EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE = "ee_plaintext_numbered_clause_split"
+_EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
 
 
 def _ee_levenshtein_distance_at_most_one(left: str, right: str) -> bool:

@@ -12,18 +12,20 @@ from typing import Callable, Iterable, Sequence, cast
 import xml.etree.ElementTree as ET
 import html as html_lib
 
-from lawvm.core.ir import LegalOperation, OperationSource, StructuralAction
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource, StructuralAction
 
 from lawvm.estonia.act_identity_registry import (
     EEActIdentityRecord,
     act_identity_matches_title,
     lookup_ee_act_identity,
 )
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.estonia.peg import _extract_quoted_content, _normalize_num, extract_ee_ops, parse_html_op_items
 
 _EE_DIRECT_TARGET_PREFIX_STRIP_RULE = "ee_direct_target_title_prefix_stripped_for_structural_repeal"
 _EE_OLD_FORMAT_WRAPPER_SCOPE_INHERITED_RULE = "ee_old_format_wrapper_scope_inherited"
 _EE_OLD_FORMAT_DIRECT_HEADER_TARGET_SECTION_RULE = "ee_old_format_direct_header_target_section"
+_EE_OLD_FORMAT_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_old_format_preamble_clause_non_body"
 
 
 def _registry_record_matches_all(record: object, *surfaces: str) -> bool:
@@ -1473,7 +1475,7 @@ def split_plaintext_numbered_op_texts(text: str) -> list[str]:
     )[0].strip()
     start_pattern = re.compile(
         r"(?:^|\s)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\)\s+"
-        r"(?=(?:paragrahvi|paragrahv|määruse|määrust|seaduse|seadust|lisa|lisad|§)\b)",
+        r"(?=(?:paragrahvi|paragrahvid|paragrahv|määruse|määrust|seaduse|seadust|lisa|lisad|§)\b)",
         re.IGNORECASE,
     )
 
@@ -1863,6 +1865,28 @@ def old_format_lower_op_texts(
         normalization_rule_id: str | None = None
         strip_outer_payload_quote = False
         inherited_wrapper_scope = False
+        if re.match(
+            r"^(?:\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s+)?määruse\s+preambul\s+sõnastatakse\b",
+            op_text,
+            re.IGNORECASE,
+        ):
+            meta_op = LegalOperation(
+                op_id=f"ee-old-format-preamble-clause-{global_seq}-{source.statute_id}",
+                sequence=global_seq,
+                action=StructuralAction.META,
+                target=LegalAddress(path=()),
+                payload=IRNode(
+                    kind=IRNodeKind.CONTENT,
+                    text=op_text,
+                    attrs={"source_family": _EE_OLD_FORMAT_PREAMBLE_CLAUSE_NON_BODY_RULE},
+                ),
+                source=replace(source, raw_text=op_text[:200]),
+                provenance_tags=(op_text[:200], _EE_OLD_FORMAT_PREAMBLE_CLAUSE_NON_BODY_RULE),
+                witness_rule_id=_EE_OLD_FORMAT_PREAMBLE_CLAUSE_NON_BODY_RULE,
+            )
+            lowered.append(meta_op)
+            global_seq += 1
+            continue
         is_container_heading_relabel = bool(
             re.search(r"\btekstiosa[a-z]*\s+[„\"“][^”\"]*?\bpeatükk\b", op_text, re.IGNORECASE)
             and re.search(r"\basendatakse\s+tekstiosaga\b", op_text, re.IGNORECASE)
