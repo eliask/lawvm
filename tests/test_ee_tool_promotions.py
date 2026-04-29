@@ -730,6 +730,63 @@ def test_ee_publication_db_classifies_omitted_text_placeholder_display_rows() ->
     assert divergences[2]["open_current"] == 1
 
 
+def test_ee_publication_db_classifies_descendant_projection_residuals() -> None:
+    divergences = [
+        {
+            "address": "section:1",
+            "divergence_type": "MISMATCH",
+            "replay_text": "Heading Child table text",
+            "oracle_text": "Heading",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+        {
+            "address": "section:2",
+            "divergence_type": "MISMATCH",
+            "replay_text": "Heading Different body",
+            "oracle_text": "Heading",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+    ]
+    raw_divergences = [
+        {
+            "address": "section:1",
+            "divergence_type": "MISMATCH",
+            "replay_text": "Heading Child table text",
+            "oracle_text": "Heading",
+        },
+        {
+            "address": "section:1/subsection:1",
+            "divergence_type": "CONSOLIDATED_MISSING",
+            "replay_text": "Child table text",
+            "oracle_text": None,
+        },
+        {
+            "address": "section:2/subsection:1",
+            "divergence_type": "CONSOLIDATED_MISSING",
+            "replay_text": "Child table text",
+            "oracle_text": None,
+        },
+    ]
+
+    ee_publication_db._classify_descendant_projection_residuals(
+        divergences,
+        raw_divergences=raw_divergences,
+    )
+
+    assert divergences[0]["residual_bucket"] == "comparison_descendant_projection"
+    assert divergences[0]["open_current"] == 0
+    assert divergences[0]["alignment_peer_addresses"] == "section:1/subsection:1"
+    assert "descendant missing-row" in divergences[0]["residual_evidence"]
+    assert divergences[1]["residual_bucket"] is None
+    assert divergences[1]["open_current"] == 1
+
+
 def test_ee_publication_db_classifies_noncommensurable_pair_surface() -> None:
     divergences = [
         {
@@ -775,6 +832,10 @@ def test_ee_publication_db_assigns_publication_outreach_triage() -> None:
             "residual_bucket": "pair_surface_classification",
             "open_current": 0,
         },
+        {
+            "residual_bucket": "comparison_descendant_projection",
+            "open_current": 0,
+        },
     ]
 
     ee_publication_db._assign_publication_outreach_triage(divergences)
@@ -787,8 +848,9 @@ def test_ee_publication_db_assigns_publication_outreach_triage() -> None:
         "excluded_replay_coverage",
         "excluded_source_surface",
         "excluded_pair_surface",
+        "excluded_comparison_projection",
     ]
-    assert [divergence["meaningful_candidate"] for divergence in divergences] == [1, 0, 0, 0, 0]
+    assert [divergence["meaningful_candidate"] for divergence in divergences] == [1, 0, 0, 0, 0, 0]
     assert "punctuation_whitespace" in divergences[1]["outreach_evidence"]
 
 

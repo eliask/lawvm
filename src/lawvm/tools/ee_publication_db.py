@@ -605,6 +605,65 @@ def _classify_omitted_text_placeholder_display(divergences: list[dict[str, Any]]
             divergence["open_current"] = 0
 
 
+def _classify_descendant_projection_residuals(
+    divergences: list[dict[str, Any]],
+    *,
+    raw_divergences: list[dict[str, Any]],
+) -> None:
+    """Close section rows that are exactly explained by a child missing-row.
+
+    The publication DB stores section-level browser rows, while raw consistency
+    can also report child rows. If a parent mismatch is just
+    ``heading + child_text`` on one side and ``heading`` on the other, the
+    section row is not an independent RT outreach candidate. This classifier is
+    deliberately equality-based and does not mutate replay or oracle text.
+    """
+    raw_by_section = {}
+    for raw in raw_divergences:
+        raw_address = str(raw.get("address") or "")
+        section_address = _section_address(raw_address)
+        if section_address is None or raw_address == section_address:
+            continue
+        raw_by_section.setdefault(section_address, []).append(raw)
+
+    for divergence in divergences:
+        if divergence.get("residual_bucket"):
+            continue
+        if divergence.get("divergence_type") != "MISMATCH":
+            continue
+        address = str(divergence.get("address") or "")
+        section_children = raw_by_section.get(address, [])
+        if not section_children:
+            continue
+        replay_text = normalize_ee_comparison_text(str(divergence.get("replay_text") or ""))
+        oracle_text = normalize_ee_comparison_text(str(divergence.get("oracle_text") or ""))
+        explaining_children: list[str] = []
+        for child in section_children:
+            child_type = str(child.get("divergence_type") or "")
+            child_replay = normalize_ee_comparison_text(str(child.get("replay_text") or ""))
+            child_oracle = normalize_ee_comparison_text(str(child.get("oracle_text") or ""))
+            if child_type == "CONSOLIDATED_MISSING":
+                projected = normalize_ee_comparison_text(f"{oracle_text} {child_replay}")
+                if child_replay and projected == replay_text:
+                    explaining_children.append(str(child.get("address") or ""))
+            elif child_type == "OPS_MISSING":
+                projected = normalize_ee_comparison_text(f"{replay_text} {child_oracle}")
+                if child_oracle and projected == oracle_text:
+                    explaining_children.append(str(child.get("address") or ""))
+        if not explaining_children:
+            continue
+        divergence["residual_bucket"] = "comparison_descendant_projection"
+        divergence["residual_evidence"] = (
+            "The section-level mismatch is exactly explained by descendant "
+            f"missing-row text at {', '.join(explaining_children)}. This is a "
+            "publication comparison projection residual, not an independent "
+            "Riigi Teataja outreach candidate; replay and oracle text are not "
+            "mutated."
+        )
+        divergence["alignment_peer_addresses"] = ",".join(explaining_children)
+        divergence["open_current"] = 0
+
+
 def _assign_publication_outreach_triage(divergences: list[dict[str, Any]]) -> None:
     """Project residual classifications into outreach-safe publication buckets.
 
@@ -647,6 +706,15 @@ def _assign_publication_outreach_triage(divergences: list[dict[str, Any]]) -> No
             divergence["outreach_evidence"] = (
                 "Excluded from outreach candidate set because the pair is not a "
                 "core commensurable replay/oracle comparison surface."
+            )
+            continue
+        if residual_bucket == "comparison_descendant_projection":
+            divergence["outreach_bucket"] = "excluded_comparison_projection"
+            divergence["meaningful_candidate"] = 0
+            divergence["outreach_evidence"] = (
+                "Excluded from outreach candidate set because the section-level "
+                "row is exactly explained by a raw descendant missing-row in "
+                "the comparison output."
             )
             continue
         if residual_bucket in _OUTREACH_SOURCE_SURFACE_BUCKETS:
@@ -747,7 +815,16 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
         **_section_agreement_metrics(result.replayed, result.oracle),
     }
     divergences: list[dict[str, Any]] = []
+    raw_divergences: list[dict[str, Any]] = []
     for divergence, address in zip(result.divergences, raw_divergence_addresses):
+        raw_divergences.append(
+            {
+                "address": address,
+                "divergence_type": divergence.divergence_type,
+                "replay_text": divergence.ops_text,
+                "oracle_text": divergence.consolidated_text,
+            }
+        )
         if not _is_browser_detail_address(address):
             continue
         replay_text = divergence.ops_text
@@ -799,6 +876,10 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
     _classify_punctuation_whitespace_only(divergences)
     _classify_omitted_text_placeholder_display(divergences)
     _classify_address_alignment_shadows(divergences)
+    _classify_descendant_projection_residuals(
+        divergences,
+        raw_divergences=raw_divergences,
+    )
     _assign_publication_outreach_triage(divergences)
     pair["browser_divergence_count"] = len(divergences)
     pair["browser_open_current_divergence_count"] = sum(1 for divergence in divergences if divergence["open_current"])
