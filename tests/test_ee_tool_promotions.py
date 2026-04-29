@@ -587,6 +587,37 @@ def test_ee_publication_db_classifies_exact_institutional_name_projection() -> N
     assert divergences[1]["open_current"] == 1
 
 
+def test_ee_publication_db_classifies_exact_source_typo_projection() -> None:
+    divergences = [
+        {
+            "address": "section:2",
+            "replay_text": "Andmekogu haldab Tarbijakatise ja Tehnilise Järelevalve Amet.",
+            "oracle_text": "Andmekogu haldab Tarbijakaitse ja Tehnilise Järelevalve Amet.",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+        {
+            "address": "section:3",
+            "replay_text": "Andmekogu haldab Tarbijakatise ja Tehnilise Järelevalve Amet ja muu tekst.",
+            "oracle_text": "Andmekogu haldab Tarbijakaitse ja Tehnilise Järelevalve Amet ja teine tekst.",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+    ]
+
+    ee_publication_db._classify_source_typo_projection(divergences)
+
+    assert divergences[0]["residual_bucket"] == "source_oracle_drift"
+    assert divergences[0]["open_current"] == 0
+    assert "ee_source_typo_126022019001_tarbijakaitse" in divergences[0]["residual_evidence"]
+    assert divergences[1]["residual_bucket"] is None
+    assert divergences[1]["open_current"] == 1
+
+
 def test_ee_publication_db_classifies_exact_symbol_placeholder_projection() -> None:
     divergences = [
         {

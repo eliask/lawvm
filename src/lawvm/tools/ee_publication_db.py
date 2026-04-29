@@ -48,6 +48,18 @@ _INSTITUTIONAL_NAME_PROJECTIONS: tuple[tuple[str, str], ...] = (
     ("Veeteede Amet", "Transpordiamet"),
     ("Veeteede Ameti", "Transpordiameti"),
 )
+_SOURCE_TYPO_PROJECTIONS: tuple[tuple[str, str, str], ...] = (
+    (
+        "Tarbijakatise ja Tehnilise Järelevalve Amet",
+        "Tarbijakaitse ja Tehnilise Järelevalve Amet",
+        "ee_source_typo_126022019001_tarbijakaitse",
+    ),
+    (
+        "Tarbijakatise ja Tehnilise Järelevalve Ametile",
+        "Tarbijakaitse ja Tehnilise Järelevalve Ametile",
+        "ee_source_typo_126022019001_tarbijakaitse",
+    ),
+)
 _SYMBOL_PLACEHOLDER_TRANSLATION = str.maketrans(
     {
         "≤": "?",
@@ -410,6 +422,45 @@ def _classify_institutional_name_projection(divergences: list[dict[str, Any]]) -
         divergence["open_current"] = 0
 
 
+def _source_typo_projection(text: str) -> tuple[str, tuple[str, ...]]:
+    projected = text
+    fired: list[str] = []
+    for old, new, rule_id in _SOURCE_TYPO_PROJECTIONS:
+        if old not in projected:
+            continue
+        projected = projected.replace(old, new)
+        fired.append(f"{rule_id}: {old} -> {new}")
+    return projected, tuple(fired)
+
+
+def _classify_source_typo_projection(divergences: list[dict[str, Any]]) -> None:
+    """Close exact rows where replay preserves a known source typo.
+
+    This is publication/adjudication metadata only. Replay remains faithful to
+    the source amendment text; the row is hidden from the default RT-candidate
+    queue only when a bounded source-typo projection makes the full section
+    texts equal.
+    """
+    for divergence in divergences:
+        if divergence.get("residual_bucket"):
+            continue
+        replay_text = divergence.get("replay_text")
+        oracle_text = divergence.get("oracle_text")
+        if replay_text is None or oracle_text is None:
+            continue
+        projected, fired = _source_typo_projection(str(replay_text))
+        if not fired or projected != str(oracle_text):
+            continue
+        divergence["residual_bucket"] = "source_oracle_drift"
+        divergence["residual_evidence"] = (
+            "Exact bounded source-typo projection makes replay and Riigi Teataja "
+            f"text equal for this section. Projection(s): {'; '.join(fired)}. "
+            "This is classified as source/oracle surface drift for publication "
+            "triage; replay output is not mutated."
+        )
+        divergence["open_current"] = 0
+
+
 def _symbol_placeholder_projection(text: str) -> str:
     projected = text.translate(_SYMBOL_PLACEHOLDER_TRANSLATION)
     projected = " ".join(projected.split())
@@ -657,6 +708,7 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
         comparison_class=result.comparison_class,
     )
     _classify_institutional_name_projection(divergences)
+    _classify_source_typo_projection(divergences)
     _classify_symbol_placeholder_projection(divergences)
     _classify_punctuation_whitespace_only(divergences)
     _classify_omitted_text_placeholder_display(divergences)
