@@ -1175,6 +1175,9 @@ def _extract_quoted_contents(text: str) -> List[str]:
     balanced_estonian = _extract_balanced_quoted_contents(text, '\u201e', '\u201d')
     if balanced_estonian:
         return balanced_estonian
+    balanced_estonian_ascii = _extract_balanced_quoted_contents(text, '\u201e', '"')
+    if balanced_estonian_ascii:
+        return balanced_estonian_ascii
     balanced_estonian_prime = _extract_balanced_quoted_contents(text, '\u201e', '\u02ee')
     if balanced_estonian_prime:
         return balanced_estonian_prime
@@ -1185,6 +1188,7 @@ def _extract_quoted_contents(text: str) -> List[str]:
         r'\u201c(.*?)\u201d',
         r'\u201e(.*?)\u201c',
         r'\u201e(.*?)\u201d',
+        r'\u201e(.*?)"',
         r'\u201e(.*?)\u02ee',
         r'\u201d(.*?)\u201d',
         r'\u201c(.*?)\u201c',
@@ -1363,6 +1367,9 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
     # RT HTML (CDATA) sometimes uses " (U+201D) for BOTH opening and closing
     # (non-standard pairing), so we also try " " (U+201D...U+201D).
     text = html.unescape(text)
+    after_anchor_pair = _extract_after_anchor_text_replace_pair(text)
+    if after_anchor_pair is not None:
+        return after_anchor_pair
     if re.search(
         r'\bt[aä]iendatakse\b[^.;]{0,180}\b(?:p[aä]rast|enne)\s+'
         r'(?:sõn[au]|tekstiosa|lauseosa|arvu)\b[^.;]{0,180}'
@@ -1420,9 +1427,39 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
     return None, None
 
 
+_EE_AFTER_ANCHOR_TEXT_REPLACE_RULE = "ee_text_replace_after_anchor_clause"
+
+
+def _extract_after_anchor_text_replace_pair(text: str) -> tuple[str, str] | None:
+    """Extract OLD->NEW when ``pärast sõna X`` is a replacement anchor, not payload."""
+    normalized = html.unescape(text)
+    if not re.search(
+        r'\basendatakse\b[^.;]{0,180}\bp[aä]rast\s+'
+        r'(?:sõn[au]|tekstiosa|lauseosa|arvu)\b',
+        normalized,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        return None
+    post = re.split(r'\basendatakse\b', normalized, maxsplit=1, flags=re.IGNORECASE)[-1]
+    if not re.search(
+        r'\b(?:sõn(?:a|ad|u)|tekstiosa|lauseosa|arv[a-z]*)\b[^.;]{0,160}'
+        r'\b(?:sõn(?:a|aga|adega)|tekstiosaga|lauseosaga|arvuga)\b',
+        post,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        return None
+    quoted = [part.strip() for part in _extract_quoted_contents(post) if part.strip()]
+    if len(quoted) < 3:
+        return None
+    return quoted[1], quoted[2]
+
+
 def _extract_text_replace_pairs(text: str) -> List[Tuple[str, str]]:
     """Extract all quoted OLD→NEW pairs from a text_replace clause."""
     text = html.unescape(text)
+    after_anchor_pair = _extract_after_anchor_text_replace_pair(text)
+    if after_anchor_pair is not None:
+        return [after_anchor_pair]
     for pat in (
         r'\u201e(.*?)(?:\u201c|\u201d|")',
         r'\u201c(.*?)\u201d',
@@ -1457,6 +1494,8 @@ def _extract_text_replace_pairs(text: str) -> List[Tuple[str, str]]:
 def _extract_many_old_single_new_text_replace_pairs(text: str) -> List[Tuple[str, str]]:
     """Extract ``sõnad A, B ja C asendatakse sõnaga D`` as A→D, B→D, C→D."""
     normalized = html.unescape(text)
+    if _extract_after_anchor_text_replace_pair(normalized) is not None:
+        return []
     if not re.search(
         r'\bsõn(?:ad|u)\b[^.;]{0,240}\basendatakse\b[^.;]{0,120}\b'
         r'(?:sõn(?:a|aga|adega)|tekstiosaga|lauseosaga)\b',
@@ -2384,6 +2423,8 @@ def _normalize_text_replace_args(
     new_text: str | None,
 ) -> tuple[str | None, str | None]:
     """Normalize EE text_replace args for delete and insert-after-word clauses."""
+    if _extract_after_anchor_text_replace_pair(text) is not None:
+        return old_text, new_text
     if (old_text is None and new_text
             and re.search(r'\bjäetakse\b.*\bvälja\b', text, re.IGNORECASE)):
         return new_text, ""
@@ -2423,6 +2464,8 @@ def _infer_text_replace_mode(
     if old_text and not new_text:
         return "delete"
     if old_text and new_text:
+        if _extract_after_anchor_text_replace_pair(text) is not None:
+            return "replace"
         if re.search(r'\benne\s+(?:sõn[au][a-z]*|tekstiosa|lauseosa|arvu)\b', text, re.IGNORECASE):
             return "insert_before"
         if (
@@ -2459,6 +2502,8 @@ def _set_text_replace_payload_attrs(
         attrs["old_text"] = old_text
     rewrite_mode = _infer_text_replace_mode(clean, old_text, new_text)
     attrs["rewrite_mode"] = rewrite_mode
+    if not source_family and _extract_after_anchor_text_replace_pair(clean) is not None:
+        source_family = _EE_AFTER_ANCHOR_TEXT_REPLACE_RULE
     case_inflected = _should_case_inflect_text_replace(clean, old_text, new_text)
     if "läbivalt" in _instruction_preamble(clean).lower() or (
         rewrite_mode == "insert_after" and case_inflected
@@ -4941,8 +4986,8 @@ def extract_ee_ops(
                         text_patch=_typed_text_replace_patch(old_text, new_text),
                         source=source,
                         provenance_tags=(clean[:200],),
-                ))
-                seq += 1
+                    ))
+                    seq += 1
                 if re.search(r'\bpealkirja(?:s|st)\b', clean, re.IGNORECASE):
                     seen_heading_sections: set[str] = {
                         explicit_target.path[0][1]
