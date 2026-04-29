@@ -7760,8 +7760,8 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
             if genitive_plural_old and genitive_plural_old not in variants:
                 variants[genitive_plural_old] = f"{genitive_plural_old}{new_norm[len(old_norm):]}"
         if any(char in old for char in "„“”"):
-            guillemet_old = old.replace("„", "«").replace("“", "«").replace("”", "»")
-            guillemet_new = new.replace("„", "«").replace("“", "«").replace("”", "»")
+            guillemet_old = old.replace("„", "«").replace("“", "»").replace("”", "»")
+            guillemet_new = new.replace("„", "«").replace("“", "»").replace("”", "»")
             if guillemet_old and guillemet_old not in variants:
                 variants[guillemet_old] = guillemet_new
         unquoted_old = _strip_wrapping_quotes(old)

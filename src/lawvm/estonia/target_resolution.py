@@ -1775,8 +1775,11 @@ def old_format_direct_header_target_section_instruction(
         return None
     header = op_text[: marker_match.start()]
     target_match = re.search(
-        r"§\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)"
-        r"\s*(?:tekst|lõige|lõikes|lõike|punkt|punkti|pealkiri)?\s*$",
+        r"§\s*(?P<section>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)"
+        r"(?P<tail>\s+(?:tekst|pealkiri)"
+        r"|\s+l[oõ]i(?:ge|kes|ke)\s+\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*"
+        r"(?:\s+punkt(?:i|is)?\s+\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)?"
+        r"|\s+punkt(?:i|is)?\s+\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)?\s*$",
         header,
         re.IGNORECASE,
     )
@@ -1785,9 +1788,25 @@ def old_format_direct_header_target_section_instruction(
     wrapper_match = re.match(r"^\s*§\s*\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\.", op_text)
     if wrapper_match is None:
         return None
-    target_label = _normalize_num(target_match.group(1))
+    target_label = _normalize_num(target_match.group("section"))
     if not target_label:
         return None
+    target_tail = re.sub(r"\s+", " ", target_match.group("tail") or "").strip()
+    target_surface = f"paragrahvi {target_label}"
+    if target_tail:
+        target_surface = f"{target_surface} {target_tail}"
+
+    def _strip_duplicate_direct_header_tail(tail: str) -> str:
+        duplicate_header_match = re.search(
+            r"[”“\"»]\.\s+(?=[A-ZÜÕÖÄ].{0,360}?\b(?:seaduse|seadustiku|koodeksi|määruse)\b"
+            r".{0,260}?\s§\s*\d)",
+            tail,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if duplicate_header_match is None:
+            return tail
+        return tail[: duplicate_header_match.start() + 2].strip()
+
     payload_markers = list(re.finditer(
         r"(?:järgmises\s+sõnastuses|järgmiselt)\s*:\s*",
         op_text,
@@ -1795,12 +1814,17 @@ def old_format_direct_header_target_section_instruction(
     ))
     if payload_markers:
         verb_phrase = op_text[marker_match.start() : payload_markers[0].end()].strip()
-        payload_tail = op_text[payload_markers[-1].end():].lstrip()
-        normalized = f"paragrahvi {target_label} {verb_phrase} {payload_tail}".strip()
+        payload_tail = op_text[payload_markers[0].end():].lstrip()
+        if re.search(r"\basendatakse\b", verb_phrase, re.IGNORECASE):
+            payload_tail = _strip_duplicate_direct_header_tail(payload_tail)
+        normalized = f"{target_surface} {verb_phrase} {payload_tail}".strip()
     else:
         payload_tail = ""
-        normalized = f"paragrahvi {target_label} {op_text[marker_match.start():].strip()}"
-    strip_outer_payload_quote = len(payload_tail) >= 2 and payload_tail[0] == "„" and payload_tail[1] == "„"
+        instruction_tail = op_text[marker_match.start():].strip()
+        if re.search(r"\basendatakse\b", instruction_tail, re.IGNORECASE):
+            instruction_tail = _strip_duplicate_direct_header_tail(instruction_tail)
+        normalized = f"{target_surface} {instruction_tail}"
+    strip_outer_payload_quote = payload_tail.startswith(("„", '"', "“", "ˮ"))
     return normalized, _EE_OLD_FORMAT_DIRECT_HEADER_TARGET_SECTION_RULE, strip_outer_payload_quote
 
 

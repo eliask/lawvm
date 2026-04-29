@@ -10284,6 +10284,28 @@ def test_nested_quote_delete_matches_guillemet_source_text() -> None:
     )
 
 
+def test_nested_estonian_quote_replace_matches_guillemet_source_text() -> None:
+    assert (
+        _ee_apply_text_replace_value(
+            (
+                "Asbestijäätmetena käsitatakse Vabariigi Valitsuse 6. aprilli 2004. a "
+                "määruses nr 102 «Jäätmete, sealhulgas ohtlike jäätmete nimistu» "
+                "koodinumbritega tähistatud jäätmeid."
+            ),
+            (
+                "Vabariigi Valitsuse 6. aprilli 2004. a määruses nr 102 "
+                "„Jäätmete, sealhulgas ohtlike jäätmete nimistu“"
+            ),
+            "jäätmeseaduse § 2 lõike 5 alusel kehtestatud määruses",
+            case_inflected=False,
+        )
+        == (
+            "Asbestijäätmetena käsitatakse jäätmeseaduse § 2 lõike 5 alusel "
+            "kehtestatud määruses koodinumbritega tähistatud jäätmeid."
+        )
+    )
+
+
 def test_replace_sentence_note_preserves_other_sentences_for_sixth_sentence() -> None:
     body = _body_with_section_and_subsection(
         "21",

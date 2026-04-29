@@ -1575,7 +1575,7 @@ def _extract_payload_after_marker(text: str) -> Optional[str]:
     payload = re.sub(r'\s*[.;]\s*$', '', payload)
     if starts_ascii_quote:
         payload = re.sub(r'\s*"\s*$', '', payload)
-    if not re.search(r'[\u201e\u00ab"]', payload):
+    if not re.search(r'[\u201e\u00ab"]', payload) or payload.startswith("\u201e"):
         payload = re.sub(r'\s*[\u201c\u201d\u00bb"\u02ee]\s*$', '', payload)
     return payload.strip() or None
 
@@ -2051,6 +2051,18 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
         if re.search(
             r"\b(?:sõn(?:a|ad|u)|tekstiosa|lauseosa|arv)\b"
             r"[^.;]{0,180}"
+            r"\b(?:sõn(?:aga|adega)|tekstiosaga|lauseosaga|arvuga)\b",
+            post_replace,
+            re.IGNORECASE | re.DOTALL,
+        ):
+            post_quotes = [part.strip() for part in _extract_quoted_contents(post_replace) if part.strip()]
+            if len(post_quotes) >= 2:
+                return post_quotes[0], post_quotes[1]
+        if re.search(
+            r"\b(?:sõn(?:a|ad|u)|tekstiosa|lauseosa|arv)\b",
+            post_replace,
+            re.IGNORECASE | re.DOTALL,
+        ) and re.search(
             r"\b(?:sõn(?:aga|adega)|tekstiosaga|lauseosaga|arvuga)\b",
             post_replace,
             re.IGNORECASE | re.DOTALL,
