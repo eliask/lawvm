@@ -3053,3 +3053,21 @@ def test_derive_ee_temporal_expiry_events_from_kehtib_kuni_clause() -> None:
     )
     assert event.source is not None
     assert event.source.expires == "2029-04-01"
+
+
+def test_replay_ee_to_pit_handles_statute_and_annex_institution_rename_in_veesoidukid() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "112022019010",
+        "2025-12-20",
+        archive=archive,
+        oracle_id="117122025007",
+    )
+
+    assert result.error is None
+    assert result.oracle_id == "117122025007"
+    assert result.n_ops == 4
+    assert result.divergences == []
