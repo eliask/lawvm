@@ -1445,7 +1445,7 @@ def _extract_flat_sectionless_singleton_subsection_ops(
     """Recover clauses that name a subsection/item but omit the singleton section."""
     preamble = _instruction_preamble(clean)
     if not re.search(
-        r"^\s*(?:(?:määruse|seaduse)\s+)?l[oõ]i(?:ke|ge)(?:t|s|st|ga|le|)\s+\d",
+        r"^\s*(?:määruse|seaduse)\s+l[oõ]i(?:ke|ge)(?:t|s|st|ga|le|)\s+\d",
         preamble,
         re.IGNORECASE,
     ):
