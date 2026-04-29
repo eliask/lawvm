@@ -54,6 +54,7 @@ from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core import tree_ops
 from lawvm.estonia.act_identity_registry import lookup_ee_act_identity
 from lawvm.estonia.peg import (
+    _EE_DASH_CLASS,
     _expand_ee_numeric_list,
     _instruction_preamble,
     _normalize_num,
@@ -110,6 +111,7 @@ from lawvm.estonia.text_morphology import (
 )
 
 _EE_REPEATED_SECTION_HEADING_BODY_RULE = "ee_repeated_section_heading_body_split"
+_EE_CROSS_ACT_TRANSITIONAL_SECTION_REPEAL_RULE = "ee_cross_act_transitional_section_repeal"
 
 
 # ---------------------------------------------------------------------------
@@ -1519,6 +1521,11 @@ def parse_ee_amendment_ops(
         source_id=source_id,
         target_title=target_title,
     )
+    cross_act_transitional_ops = _parse_cross_act_transitional_section_repeals(
+        root,
+        source_id=source_id,
+        target_title=target_title,
+    )
 
     def _op_merge_key(op: LegalOperation) -> tuple[object, ...]:
         payload_text = op.payload.text if op.payload is not None else None
@@ -2038,10 +2045,77 @@ def parse_ee_amendment_ops(
     parsed_ops = _mark_no_target_out_of_body_ops(parsed_ops)
     _augment_global_text_replace_exclusions(parsed_ops)
     parsed_ops = _compose_global_text_replaces_into_later_payloads(parsed_ops)
+    if cross_act_transitional_ops:
+        parsed_ops = _merge_frontloaded_ops(parsed_ops, cross_act_transitional_ops)
     leading_ops = [*generic_minister_ops, *generic_ministry_ops]
     if leading_ops:
         return _merge_frontloaded_ops(leading_ops, parsed_ops)
     return parsed_ops
+
+
+def _space_flexible_literal(text: str) -> str:
+    return r"\s+".join(re.escape(part) for part in re.split(r"\s+", text.strip()) if part)
+
+
+def _parse_cross_act_transitional_section_repeals(
+    root: ET.Element,
+    *,
+    source_id: str,
+    target_title: str,
+) -> List[LegalOperation]:
+    """Extract explicit transitional clauses repealing sections of the target act.
+
+    Example source shape:
+    ``[target act title]” §-d 2-4, 6 ja 7 tunnistatakse kehtetuks``.
+    This is not target guessing: the source sentence names the target act title
+    and the exact section list.
+    """
+    if not target_title:
+        return []
+    text = " ".join(raw.strip() for raw in root.itertext() if raw and raw.strip())
+    text = re.sub(r"\s+", " ", text.replace("\xa0", " ")).strip()
+    if not text:
+        return []
+    title_pattern = _space_flexible_literal(target_title)
+    if not title_pattern:
+        return []
+    pattern = re.compile(
+        title_pattern
+        + r"[”\"']?\s+§\s*[" + _EE_DASH_CLASS + r"]d\s+"
+        + r"(?P<labels>.+?)\s+tunnistatakse\s+kehtetuks\b",
+        re.IGNORECASE,
+    )
+    ops: List[LegalOperation] = []
+    for match in pattern.finditer(text):
+        labels = _expand_ee_numeric_list(match.group("labels").strip(" .;"))
+        if not labels:
+            continue
+        witness = match.group(0).strip()
+        for label in labels:
+            normalized = _normalize_num(label)
+            if not normalized:
+                continue
+            seq = len(ops) + 1
+            ops.append(
+                LegalOperation(
+                    op_id=f"ee-cross-act-transitional-section-repeal-{seq}-{source_id}",
+                    sequence=seq,
+                    action=StructuralAction.REPEAL,
+                    target=LegalAddress(path=(("section", normalized),)),
+                    source=OperationSource(
+                        statute_id=source_id,
+                        title=target_title,
+                        raw_text=witness[:500],
+                    ),
+                    provenance_tags=(
+                        _EE_CROSS_ACT_TRANSITIONAL_SECTION_REPEAL_RULE,
+                        f"target_title: {target_title}",
+                        witness[:500],
+                    ),
+                    witness_rule_id=_EE_CROSS_ACT_TRANSITIONAL_SECTION_REPEAL_RULE,
+                )
+            )
+    return ops
 
 
 def _parse_constitutional_review_ops(
