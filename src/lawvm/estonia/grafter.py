@@ -2036,6 +2036,13 @@ def parse_ee_amendment_ops(
         rule_id = "ee_old_format_html_section_preferred_over_preambul_plain_body"
         numbered_item_rule_id = "ee_old_format_numbered_items_preferred_over_preambul_recovery"
         rich_payload_rule_id = "ee_old_format_html_section_richer_payload_preferred"
+        target_filtered_plaintext_rule_id = "ee_plaintext_old_format_target_section_filter"
+        if any(
+            target_filtered_plaintext_rule_id in op.provenance_tags
+            for op in old_format_ops
+            if op.action is not StructuralAction.META
+        ):
+            return old_format_ops
         if _substantive_op_count(old_format_ops) < _substantive_op_count(preambul_ops):
             return preambul_ops
         if _substantive_op_count(old_format_ops) == _substantive_op_count(preambul_ops):
@@ -3074,6 +3081,8 @@ def _parse_old_format_amendment_ops(
                 plain = _element_text_with_bold_section_boundaries(el)
                 if plain:
                     plain_blocks.append(plain)
+        if plain_blocks and not any("§ 1." in plain and "muutmine" in plain.lower() for plain in plain_blocks):
+            plain_blocks = []
         raw_sections: list[str] = []
         if not plain_blocks:
             for para in root.iter():
@@ -3104,6 +3113,29 @@ def _parse_old_format_amendment_ops(
                 plain = _element_text_with_bold_section_boundaries(el)
                 if "§ 1." in plain and "muutmine" in plain.lower():
                     plain_blocks.append(plain)
+        if plain_blocks and not raw_sections:
+            full_plain = "\n".join(plain_blocks)
+            raw_sections = [
+                section.strip()
+                for section in re.split(r"(?=§\s*\d+\.\s+)", full_plain)
+                if section.strip()
+            ]
+            if target_title:
+                matching_sections: list[str] = []
+                for section in raw_sections:
+                    header_match = re.match(
+                        r"^(§\s*\d+\.\s*[^§]+?(?:muutmine|täiendamine|kehtetuks tunnistamine))(?:\s|\x01)+",
+                        section,
+                        re.IGNORECASE | re.DOTALL,
+                    )
+                    if header_match is None:
+                        continue
+                    header_text = re.sub(r"\s+", " ", header_match.group(1).replace("\x01", " ")).strip()
+                    if _tr_old_format_section_matches_target(target_title, header_text):
+                        matching_sections.append(section)
+                if matching_sections:
+                    raw_sections = matching_sections
+                    plain_blocks = []
         has_direct_html_container = any(
             (el.tag.split("}")[-1] if "}" in el.tag else el.tag) == "HTMLKonteiner"
             for el in root.iter()
@@ -3204,7 +3236,7 @@ def _parse_old_format_amendment_ops(
         if not plain_blocks and not raw_sections:
             return []
 
-        if not raw_sections:
+        if plain_blocks and not raw_sections:
             full_plain = "\n".join(plain_blocks)
             raw_sections = [
                 section.strip()
@@ -3230,7 +3262,17 @@ def _parse_old_format_amendment_ops(
                 continue
             source = OperationSource(statute_id=source_id, title=target_title or "")
             section_ops = extract_ee_ops(content_text, source, seq_start=seq)
-            all_ops.extend(section_ops)
+            all_ops.extend(
+                replace(
+                    op,
+                    provenance_tags=(
+                        *op.provenance_tags,
+                        "ee_plaintext_old_format_target_section_filter",
+                    ),
+                    witness_rule_id=op.witness_rule_id or "ee_plaintext_old_format_target_section_filter",
+                )
+                for op in section_ops
+            )
             seq += len(section_ops)
         if not all_ops and target_title:
             act_title = ""

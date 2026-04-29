@@ -7876,6 +7876,49 @@ def test_old_format_embedded_specific_regulation_header_routes_target_section() 
     assert "old_format_amendment_item:1" in ops[0].provenance_tags
 
 
+def test_plaintext_old_format_omnibus_routes_only_matching_target_section() -> None:
+    xml = """
+    <oigusakt xmlns="muutmismaarus_1_10.02.2010">
+      <sisu>
+        <preambul>
+          <tavatekst>Määrus kehtestatakse rahvastikuregistri seaduse § 50 lõike 6 alusel.</tavatekst>
+        </preambul>
+        <sisuTekst>
+          <tavatekst>
+            § 1. Regionaalministri 7. jaanuari 2005. aasta määruse nr 4
+            „Isikukoodide moodustamise, väljajagamise ja andmise kord“ muutmine
+            Regionaalministri 7. jaanuari 2005. aasta määruse nr 4
+            „Isikukoodide moodustamise, väljajagamise ja andmise kord“
+            § 91 täiendatakse lõikega 4 järgmises sõnastuses:
+            „(4) Diplomaatilise isikutunnistuse taotlus loetakse esitatuks.“.
+            § 2. Regionaalministri 3. mai 2010. aasta määruse nr 8
+            „Perekonnaseisuasutusele esitatavate avalduste vormid“ muutmine
+            Regionaalministri 3. mai 2010. aasta määruses nr 8 tehakse
+            järgmised muudatused:
+            1) paragrahvi 2 täiendatakse punktiga 11 järgmises sõnastuses:
+            „11) sünnikanne, kui vanemad on samast soost (lisa 25);“;
+          </tavatekst>
+        </sisuTekst>
+      </sisu>
+    </oigusakt>
+    """.encode()
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Isikukoodide moodustamise, väljajagamise ja andmise kord",
+    )
+
+    assert [(op.action, op.target.path, _payload(op).text) for op in ops] == [
+        (
+            StructuralAction.INSERT,
+            (("section", "91"), ("subsection", "4")),
+            "(4) Diplomaatilise isikutunnistuse taotlus loetakse esitatuks.",
+        )
+    ]
+    assert "ee_plaintext_old_format_target_section_filter" in ops[0].provenance_tags
+
+
 def test_old_format_html_commencement_assigns_embedded_section_item_dates() -> None:
     xml = """
     <oigusakt xmlns="muutmismaarus_1_10.02.2010">
