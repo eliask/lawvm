@@ -55,6 +55,27 @@ def test_get_ee_residual_inventory_jahitunnistus_label_offset_surface_drift() ->
     )
 
 
+def test_get_ee_residual_inventory_linnalised_piirkonnad_targeted_ministry_tail() -> None:
+    inventory = get_ee_residual_inventory("104082015013", "119082015009")
+
+    assert inventory is not None
+    assert inventory.statute_title.startswith("Meetme")
+    assert inventory.comparison_class == "commensurable_delta"
+    assert len(inventory.residuals) == 5
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert any(
+        record.address == "chapter:3/section:12/subsection:9"
+        and "§ 12 lõigetes 1, 2^1, 3^1, 4 ja 6" in record.evidence
+        and "unlisted § 12(9)" in record.evidence
+        for record in inventory.residuals
+    )
+    assert any(
+        record.address == "chapter:3/section:13_2/subsection:1"
+        and "'Siseministeeriumi algatada'" in record.evidence
+        for record in inventory.residuals
+    )
+
+
 def test_get_ee_residual_inventory_vabariigi_presidendi_tookorra_seadus() -> None:
     inventory = get_ee_residual_inventory("108072011074", "127062017011")
 

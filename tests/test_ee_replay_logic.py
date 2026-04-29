@@ -547,6 +547,17 @@ def test_case_inflected_replace_keeps_us_parenthetical_nom_and_illative() -> Non
     )
 
 
+def test_case_inflected_replace_keeps_nominative_before_kava_noun() -> None:
+    updated = _ee_apply_text_replace_value(
+        "uuendab Siseministeerium kava täiendamise menetluse.",
+        "Siseministeerium",
+        "Rahandusministeerium",
+        case_inflected=True,
+    )
+
+    assert updated == "uuendab Rahandusministeerium kava täiendamise menetluse."
+
+
 def test_apply_ee_ops_expands_plain_section_repeal_ranges_over_live_superscript_sections() -> None:
     base = IRStatute(
         statute_id="ee/test",
@@ -1486,6 +1497,36 @@ def test_replay_ee_to_pit_places_postposed_chapter_insert_in_metsanduse_oppekava
     assert result.error is None
     assert result.n_ops == 4
     assert result.divergences == []
+
+
+def test_replay_ee_to_pit_adjudicates_linnalised_piirkonnad_ministry_tail() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.residual_reporting import build_ee_residual_summary
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "104082015013",
+        "2015-09-01",
+        archive=archive,
+        oracle_id="119082015009",
+    )
+
+    assert result.error is None
+    assert result.n_ops == 34
+    divergence_addresses = tuple(str(div.address) for div in result.divergences)
+    assert "chapter:3/section:12/subsection:9" in divergence_addresses
+    assert "chapter:3/section:13_2/subsection:1" in divergence_addresses
+    residual_summary = build_ee_residual_summary(
+        base_id="104082015013",
+        oracle_id="119082015009",
+        divergence_addresses=divergence_addresses,
+    )
+    assert residual_summary is not None
+    assert residual_summary.unknown_current_divergence_count == 0
+    assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
+    assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": len(divergence_addresses)}
 
 
 def test_replay_ee_to_pit_handles_finite_verb_taotlusel_genitive_in_riigisaladus() -> None:

@@ -247,6 +247,37 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
+    ("104082015013", "119082015009"): EEPairResidualInventory(
+        base_id="104082015013",
+        oracle_id="119082015009",
+        statute_title=(
+            "Meetme „Linnaliste piirkondade arendamine“ tingimused ja "
+            "investeeringute kava koostamise kord"
+        ),
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "chapter:3",
+                    "chapter:3/section:12",
+                    "chapter:3/section:12/subsection:9",
+                    "chapter:3/section:13_2",
+                    "chapter:3/section:13_2/subsection:1",
+                ),
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Source act 119082015001 § 8 lists exact replacement targets: "
+                    "§ 12 lõigetes 1, 2^1, 3^1, 4 ja 6 and § 13^2 lõigetes "
+                    "1, 3, 6, 8, 9 ja 11. LawVM applies that explicit target "
+                    "list. Oracle 119082015009 also changes unlisted § 12(9) "
+                    "and normalizes the pre-existing § 13^2(1) source wording "
+                    "'Siseministeeriumi algatada' to nominative "
+                    "'Rahandusministeerium algatada'. Those residual edits are "
+                    "not source-backed by the exact § 8 target list."
+                ),
+            ),
+        ),
+    ),
     ("124112016002", "127092023006"): EEPairResidualInventory(
         base_id="124112016002",
         oracle_id="127092023006",
