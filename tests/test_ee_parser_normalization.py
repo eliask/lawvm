@@ -5042,6 +5042,57 @@ def test_extract_ee_ops_emits_global_text_replace_with_exclusions() -> None:
     assert ops[0].payload.attrs["rewrite_witness"].rewrite.case_inflected is True
 
 
+def test_extract_ee_ops_splits_direct_title_agency_pair_rename() -> None:
+    text = (
+        "Põllumajandusministri 20. veebruari 2009. a määruses nr 25 "
+        "„Mahepõllumajandusliku tootmise nõuded” asendatakse sõna "
+        "„Põllumajandusamet” ning sõnad „Veterinaar- ja Toiduamet” sõnadega "
+        "„Põllumajandus- ja Toiduamet” vastavas käändes."
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 2
+    assert [(op.target.path, _payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        ((), "Põllumajandusamet", "Põllumajandus- ja Toiduamet"),
+        ((), "Veterinaar- ja Toiduamet", "Põllumajandus- ja Toiduamet"),
+    ]
+    assert all(op.witness_rule_id == "ee_direct_title_global_text_replace" for op in ops)
+    assert all(_payload(op).attrs["case_inflected"] is True for op in ops)
+    assert all(_payload(op).attrs["source_family"] == "ee_direct_title_global_text_replace" for op in ops)
+
+
+def test_parse_ee_amendment_ops_extracts_real_104112020001_agency_rename() -> None:
+    try:
+        archive = open_rt_archive(readonly=True)
+        xml = fetch_rt_xml("104112020001", archive)
+    except (OSError, RuntimeError) as exc:
+        pytest.skip(f"EE archive unavailable in this environment: {exc}")
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/104112020001",
+        target_title="Mahepõllumajandusliku tootmise nõuded",
+    )
+
+    agency_ops = [
+        op
+        for op in ops
+        if op.action is StructuralAction.TEXT_REPLACE
+        and op.payload is not None
+        and op.payload.text == "Põllumajandus- ja Toiduamet"
+    ]
+    assert [(op.payload.attrs["old_text"], op.witness_rule_id) for op in agency_ops] == [
+        ("Põllumajandusamet", "ee_old_format_direct_title_unnumbered_text_replace"),
+        ("Veterinaar- ja Toiduamet", "ee_old_format_direct_title_unnumbered_text_replace"),
+    ]
+    assert all(
+        "ee_old_format_direct_title_unnumbered_text_replace" in op.provenance_tags
+        for op in agency_ops
+    )
+    assert all(op.payload.attrs["case_inflected"] is True for op in agency_ops)
+
+
 def test_extract_ee_ops_emits_global_text_replace_with_plural_subsection_exclusions() -> None:
     source = OperationSource(statute_id="ee/test", raw_text="test")
     ops = extract_ee_ops(
