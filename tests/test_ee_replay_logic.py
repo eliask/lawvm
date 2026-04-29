@@ -1600,6 +1600,24 @@ def test_replay_ee_to_pit_closes_new_format_xml_alampunkt_omnibus_items() -> Non
     assert result.divergences == []
 
 
+def test_replay_ee_to_pit_applies_case_only_source_text_recovery_for_2025_109122025001() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "128012025005",
+        "2026-01-01",
+        archive=archive,
+        oracle_id="109122025004",
+    )
+
+    assert result.error is None
+    assert result.divergences == []
+    assert any(adj.kind == "ee_source_case_only_text_replace" for adj in result.adjudications)
+
+
 def test_replay_ee_to_pit_adjudicates_jahitunnistus_label_offset_surface_drift() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary

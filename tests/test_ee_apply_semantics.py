@@ -109,6 +109,74 @@ def test_apply_ee_ops_replaces_statute_title_facet_without_touching_body() -> No
     assert statute.title == "Old title"
 
 
+def test_apply_ee_ops_records_case_only_source_text_recovery() -> None:
+    body = _body_with_section_and_subsection(
+        "8",
+        "2",
+        (
+            'Käesoleva määruse §2 lõike 2 punktides 1 ja 11 nimetatud isik teatab '
+            'sotsiaalmaksu maksjale 10 päeva jooksul kirjalikult oma abielu lahutamisest '
+            'ning "Sotsiaalmaksuseaduse" §6 lõike 1 punktis 8 nimetatud isik teatab '
+            'sellest Sotsiaalkindlustusametile.'
+        ),
+    )
+    statute = IRStatute(statute_id="ee/case", title="Case", body=body)
+    op = LegalOperation(
+        op_id="ee_case_delete",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "8"), ("subsection", "2"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="",
+            attrs={
+                "old_text": (
+                    'ning "Sotsiaalmaksuseaduse" §6 lõike 1 punktis 8 nimetatud isik '
+                    "teatab sellest sotsiaalkindlustusametile"
+                )
+            },
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    updated = apply_ee_ops(statute, [op], adjudications_out=adjudications)
+    subsection = updated.body.children[0].children[0].children[0]
+
+    assert subsection.text.endswith("kirjalikult oma abielu lahutamisest.")
+    assert "Sotsiaalkindlustusametile" not in subsection.text
+    assert any(adj.kind == "ee_source_case_only_text_replace" for adj in adjudications)
+
+
+def test_apply_ee_ops_blocks_ambiguous_case_only_source_text_recovery() -> None:
+    body = _body_with_section_and_subsection(
+        "8",
+        "2",
+        (
+            "Foo Sotsiaalkindlustusametile teatati. "
+            "Foo Sotsiaalkindlustusametile teatati uuesti."
+        ),
+    )
+    statute = IRStatute(statute_id="ee/case-ambiguous", title="Case", body=body)
+    op = LegalOperation(
+        op_id="ee_case_ambiguous_delete",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "8"), ("subsection", "2"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="",
+            attrs={"old_text": "Foo sotsiaalkindlustusametile"},
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    updated = apply_ee_ops(statute, [op], adjudications_out=adjudications)
+    subsection = updated.body.children[0].children[0].children[0]
+
+    assert subsection.text == body.children[0].children[0].children[0].text
+    assert not any(adj.kind == "ee_source_case_only_text_replace" for adj in adjudications)
+
+
 def test_case_inflected_text_replace_handles_ettevote_forms() -> None:
     replaced = _ee_apply_text_replace_value(
         "Ettevõttes on ettevõtte territoorium.",

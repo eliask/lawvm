@@ -4475,6 +4475,7 @@ def _ee_repeated_single_occurrence_rewrite_match_count(node: IRNode, spec: EETex
 
 
 _EE_SOURCE_TYPO_TEXT_REPLACE_RULE = "ee_source_typo_text_replace_near_match"
+_EE_SOURCE_CASE_ONLY_TEXT_REPLACE_RULE = "ee_source_case_only_text_replace"
 _EE_SOURCE_CASE_SUFFIX_TEXT_REPLACE_RULE = "ee_source_case_suffix_text_replace"
 _EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE = "ee_mixed_delete_and_replace_same_target"
 _EE_MIXED_REPLACE_INSERT_AFTER_SAME_TARGET_RULE = "ee_mixed_replace_and_insert_after_same_target"
@@ -4613,6 +4614,90 @@ def _ee_typo_tolerant_text_replace(
         )
 
     return _replace(node), True, actual_old, rule_id
+
+
+def _ee_case_only_tolerant_text_replace(
+    node: IRNode,
+    spec: EETextRewriteSpec,
+) -> tuple[IRNode, bool, str]:
+    """Recover a unique exact-target old-text match that differs only by case."""
+    if not spec.old_text or len(spec.old_text) < 8:
+        return node, False, ""
+    if _ee_text_replace_match_spans(node.text, spec):
+        return node, False, ""
+
+    variants = _ee_text_replace_variants(
+        spec.old_text,
+        spec.new_text,
+        case_inflected=spec.case_inflected,
+    )
+    matches: list[tuple[tuple[int, ...], str, str]] = []
+
+    def _collect(current: IRNode, path: tuple[int, ...] = ()) -> None:
+        text = current.text or ""
+        for old_variant, new_variant in variants:
+            pattern = re.compile(
+                _ee_wrap_word_boundaries(_ee_surface_pattern(old_variant), old_variant),
+                re.IGNORECASE,
+            )
+            for match in pattern.finditer(text):
+                actual_old = match.group(0)
+                if actual_old == old_variant:
+                    continue
+                if actual_old.casefold() == old_variant.casefold():
+                    matches.append((path, actual_old, new_variant))
+        for idx, child in enumerate(current.children):
+            _collect(child, (*path, idx))
+
+    _collect(node)
+    if len(matches) != 1:
+        return node, False, ""
+    target_path, actual_old, new_variant = matches[0]
+
+    def _replace(current: IRNode, path: tuple[int, ...] = ()) -> IRNode:
+        if path == target_path:
+            pattern = re.compile(
+                _ee_wrap_word_boundaries(_ee_surface_pattern(actual_old), actual_old),
+                re.IGNORECASE,
+            )
+
+            def _repl(match: re.Match[str]) -> str:
+                return _ee_case_preserved_replacement(
+                    match,
+                    new_variant,
+                    capitalize_sentence_start=current.kind != IRNodeKind.ITEM,
+                    preserve_match_capital=_ee_should_preserve_match_capital(
+                        actual_old,
+                        new_variant,
+                        case_inflected=spec.case_inflected,
+                    ),
+                )
+
+            replaced_text, count = pattern.subn(_repl, current.text or "", count=1)
+            if count != 1:
+                return current
+            replaced_text = re.sub(r"  +", " ", replaced_text)
+            replaced_text = re.sub(r" +([.,;:!?)])", r"\1", replaced_text)
+            replaced_text = re.sub(r",\s*,", ",", replaced_text)
+            return IRNode(
+                kind=current.kind,
+                label=current.label,
+                text=replaced_text.strip(),
+                attrs=dict(current.attrs),
+                children=tuple(current.children),
+            )
+        children = tuple(_replace(child, (*path, idx)) for idx, child in enumerate(current.children))
+        if children == current.children:
+            return current
+        return IRNode(
+            kind=current.kind,
+            label=current.label,
+            text=current.text,
+            attrs=dict(current.attrs),
+            children=children,
+        )
+
+    return _replace(node), True, actual_old
 
 
 def _ee_payload_is_narrower_than_container_replace(target_kind: IRNodeKind, payload_text: str) -> bool:
@@ -10941,6 +11026,27 @@ def _ee_apply_op(
                     )
                     if changed:
                         return tree_ops.replace_at(body, full_path, replaced_node)
+                    case_node, case_changed, case_actual_old = _ee_case_only_tolerant_text_replace(
+                        node,
+                        rewrite_spec,
+                    )
+                    if case_changed:
+                        _append_ee_replay_adjudication(
+                            adjudications_out,
+                            kind=_EE_SOURCE_CASE_ONLY_TEXT_REPLACE_RULE,
+                            message=(
+                                "EE replay applied an exact-target case-only source-surface "
+                                "recovery for a text replacement."
+                            ),
+                            op=op,
+                            detail={
+                                "target": str(op.target),
+                                "source_old_text": rewrite_spec.old_text,
+                                "matched_live_text": case_actual_old,
+                                "replacement": rewrite_spec.new_text,
+                            },
+                        )
+                        return tree_ops.replace_at(body, full_path, case_node)
                     typo_node, typo_changed, actual_old, recovery_rule_id = _ee_typo_tolerant_text_replace(
                         node,
                         rewrite_spec,
