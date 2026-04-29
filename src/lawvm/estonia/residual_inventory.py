@@ -59,6 +59,34 @@ def _lower_generated_residual_records(
 
 
 _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
+    ("129122011237", "129032013014"): EEPairResidualInventory(
+        base_id="129122011237",
+        oracle_id="129032013014",
+        statute_title=(
+            "Päästeteenistujate ning Sisekaitseakadeemia Päästekolledži "
+            "täiskoormusega õppe üliõpilaste ja õpilaste vormiriietuse kirjeldus"
+        ),
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "chapter:5/section:33",
+                    "chapter:5/section:33/subsection:1",
+                ),
+                evidence=(
+                    "Source act 129032013009 replaces selected ametikoht "
+                    "terminology and replaces § 35 text. It does not repeal "
+                    "§ 33, whose original text only declares an earlier 2000 "
+                    "regulation repealed. Replay preserves that source-owned "
+                    "spent implementation provision; oracle 129032013014 omits "
+                    "it from the consolidated comparison surface. This is "
+                    "bounded source/oracle presentation drift, not a replay "
+                    "targeting or deletion authority."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("123012024006", "118092025010"): EEPairResidualInventory(
         base_id="123012024006",
         oracle_id="118092025010",

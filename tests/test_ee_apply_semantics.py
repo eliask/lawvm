@@ -634,6 +634,29 @@ def test_insert_after_text_replace_preserves_comma_list_separator() -> None:
     )
 
 
+def test_case_inflected_ametikoht_rewrite_covers_rescue_service_plural_forms() -> None:
+    spec = EETextRewriteSpec(
+        old_text="ametikoht",
+        new_text="teenistuskoht",
+        mode="replace",
+        case_inflected=True,
+        all_occurrences=True,
+        source_family="ee_case_inflected_ametikoht_teenistuskoht_forms",
+    )
+
+    assert _ee_apply_text_replace_spec(
+        "päästeteenistujate ametikohtade eraldusmärgid;",
+        spec,
+    ) == "päästeteenistujate teenistuskohtade eraldusmärgid;"
+    assert _ee_apply_text_replace_spec("Ametikohtade eraldusmärgid", spec) == (
+        "Teenistuskohtade eraldusmärgid"
+    )
+    assert _ee_apply_text_replace_spec(
+        "vastavalt ametikohtadele vormiriietuse õlakutel",
+        spec,
+    ) == "vastavalt teenistuskohtadele vormiriietuse õlakutel"
+
+
 def test_mixed_replace_insert_after_keeps_insert_before_live_clause_comma() -> None:
     replaced = _ee_apply_text_replace_spec(
         (
