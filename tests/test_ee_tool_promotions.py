@@ -618,6 +618,37 @@ def test_ee_publication_db_classifies_exact_symbol_placeholder_projection() -> N
     assert divergences[1]["open_current"] == 1
 
 
+def test_ee_publication_db_classifies_punctuation_whitespace_only_rows() -> None:
+    divergences = [
+        {
+            "address": "chapter:1/section:1",
+            "replay_text": "EVS-EN 16798–1 nõuded; pindala 100 m2.",
+            "oracle_text": "EVS EN 16798 1 nõuded pindala 100 m2",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+        {
+            "address": "chapter:1/section:2",
+            "replay_text": "Sisuline tekst 100 m2.",
+            "oracle_text": "Sisuline tekst 101 m2.",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+    ]
+
+    ee_publication_db._classify_punctuation_whitespace_only(divergences)
+
+    assert divergences[0]["residual_bucket"] == "presentation_punctuation_whitespace"
+    assert divergences[0]["open_current"] == 0
+    assert "punctuation and whitespace" in divergences[0]["residual_evidence"]
+    assert divergences[1]["residual_bucket"] is None
+    assert divergences[1]["open_current"] == 1
+
+
 def test_ee_publication_db_classifies_noncommensurable_pair_surface() -> None:
     divergences = [
         {
