@@ -4633,6 +4633,7 @@ _EE_TEXT_REPLACE_UNIQUE_DESCENDANT_ITEM_RULE = "ee_text_replace_unique_descendan
 _EE_OLEMASOLEV_TAHKEL_KUTUSEL_PHRASE_FORMS_RULE = "ee_case_inflected_olemasolev_tahkel_kutusel_phrase_forms"
 _EE_LOCAL_KOHTKUTE_SOURCE_SURFACE_DELETE_RULE = "ee_lokaal_kohtkute_source_surface_delete_variant"
 _EE_VOLITATUD_VASTUTAV_FORMS_RULE = "ee_case_inflected_volitatud_vastutav_forms"
+_EE_TAOTLUSVOOR_COORDINATION_FORMS_RULE = "ee_case_inflected_taotlusvoor_coordination_forms"
 _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE = "ee_plaintext_numbered_clause_split"
 _EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
 _EE_PARENTHESIZED_TARGET_HTML_BLOCK_RULE = "ee_parenthesized_target_html_block_sliced"
@@ -7673,6 +7674,21 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         for old_form, new_form in form_pairs.items():
             variants.setdefault(old_form, new_form)
 
+    def _add_taotlusvoor_coordination_forms() -> None:
+        """Own RT's coordinated taotlusvoor phrase agreement in a 2015 global rewrite."""
+        if (
+            not case_inflected
+            or old != "teine ja viies taotlusvoor"
+            or new != "teine, viies ja järgnevad taotlusvoorud"
+        ):
+            return
+        form_pairs = {
+            "teine ja viies taotlusvoor": "teine, viies ja järgnev taotlusvoor",
+            "teise ja viienda taotlusvooru": "teise, viienda ja järgneva taotlusvooru",
+        }
+        for old_form, new_form in form_pairs.items():
+            variants[old_form] = new_form
+
     def _strip_wrapping_quotes(surface: str) -> str | None:
         stripped = surface.strip()
         if len(stripped) < 2:
@@ -7734,6 +7750,7 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         _add_olemasolev_tahkel_kutusel_forms()
         _add_volitatud_vastutav_forms()
         _add_reagent_reaktiiv_forms()
+        _add_taotlusvoor_coordination_forms()
         old_norm = _ee_normalize_text_replace_surface(old)
         new_norm = _ee_normalize_text_replace_surface(new)
         if old_norm and old_norm not in variants:

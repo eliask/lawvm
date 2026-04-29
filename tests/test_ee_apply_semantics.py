@@ -4360,6 +4360,25 @@ def test_case_inflected_text_replace_handles_reagent_reaktiiv_forms() -> None:
     )
 
 
+def test_case_inflected_text_replace_handles_taotlusvoor_coordination_forms() -> None:
+    text = (
+        "Teine ja viies taotlusvoor lõpeb. "
+        "Teise ja viienda taotlusvooru rahalise mahu kinnitab rakendusasutus."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "teine ja viies taotlusvoor",
+        "teine, viies ja järgnevad taotlusvoorud",
+        case_inflected=True,
+    )
+
+    assert replaced == (
+        "Teine, viies ja järgnev taotlusvoor lõpeb. "
+        "Teise, viienda ja järgneva taotlusvooru rahalise mahu kinnitab rakendusasutus."
+    )
+
+
 def test_delete_text_replace_handles_fraktsioneeritud_source_typo_variant() -> None:
     text = (
         "Pindamiseks kasutatakse fraktsioneeritud killustikke. "

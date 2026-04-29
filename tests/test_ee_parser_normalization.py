@@ -813,6 +813,20 @@ def test_extract_ee_ops_marks_case_inflected_replace_as_all_occurrences() -> Non
     assert ops[0].payload.attrs["all_occurrences"] is True
 
 
+def test_extract_ee_ops_marks_taotlusvoor_coordination_case_family() -> None:
+    text = (
+        "määruse tekstis asendatakse läbivalt sõnad „teine ja viies taotlusvoor“ "
+        "sõnadega „teine, viies ja järgnevad taotlusvoorud“ vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].payload is not None
+    assert ops[0].payload.attrs["case_inflected"] is True
+    assert ops[0].payload.attrs["source_family"] == "ee_case_inflected_taotlusvoor_coordination_forms"
+
+
 def test_new_format_omnibus_does_not_route_payload_cross_reference_to_target() -> None:
     xml = """
     <oigusakt xmlns="muutmismaarus_1_10.02.2010">
@@ -4425,6 +4439,25 @@ def test_extract_ee_ops_marks_plural_item_replace_range_selection_meta() -> None
         _payload(ops[0]).attrs["item_selection_rule"]
         == "ee_plural_item_replace_range_omits_inserted_labels"
     )
+
+
+def test_extract_ee_ops_expands_plural_item_kuni_insert_range() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 7 lõiget 1 täiendatakse punktidega 10 kuni 13 järgmises sõnastuses: "
+            "„10) kümme; 11) üksteist; 12) kaksteist; 13) kolmteist.“"
+        ),
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.INSERT, (("section", "7"), ("subsection", "1"), ("item", "10"))),
+        (StructuralAction.INSERT, (("section", "7"), ("subsection", "1"), ("item", "11"))),
+        (StructuralAction.INSERT, (("section", "7"), ("subsection", "1"), ("item", "12"))),
+        (StructuralAction.INSERT, (("section", "7"), ("subsection", "1"), ("item", "13"))),
+    ]
+    assert _payload(ops[0]).text == "10) kümme;"
+    assert _payload(ops[3]).text == "13) kolmteist."
 
 
 def test_extract_ee_ops_strips_plural_item_wrapper_quote_after_terminal_punctuation() -> None:
