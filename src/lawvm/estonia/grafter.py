@@ -4522,6 +4522,8 @@ _EE_INLINE_ITEM_PARENTHESES_MARKER_GUARD_RULE = "ee_inline_item_parentheses_mark
 _EE_PLURAL_ITEM_REPLACE_MISSING_LABEL_REPEAL_RULE = "ee_plural_item_replace_missing_label_repeal"
 _EE_INLINE_ITEM_REPLACE_SINGLETON_SUBSECTION_RULE = "ee_inline_item_replace_singleton_subsection"
 _EE_TEXT_REPLACE_UNIQUE_DESCENDANT_ITEM_RULE = "ee_text_replace_unique_descendant_item_by_old_text"
+_EE_OLEMASOLEV_TAHKEL_KUTUSEL_PHRASE_FORMS_RULE = "ee_case_inflected_olemasolev_tahkel_kutusel_phrase_forms"
+_EE_LOCAL_KOHTKUTE_SOURCE_SURFACE_DELETE_RULE = "ee_lokaal_kohtkute_source_surface_delete_variant"
 _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE = "ee_plaintext_numbered_clause_split"
 _EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
 _EE_PARENTHESIZED_TARGET_HTML_BLOCK_RULE = "ee_parenthesized_target_html_block_sliced"
@@ -5105,6 +5107,21 @@ def _ee_apply_text_replace_spec(
             lambda match: f"{match.group(1)}Killustik",
             replaced,
         )
+    if (
+        replaced is not None
+        and mode == "delete"
+        and spec.source_family == _EE_LOCAL_KOHTKUTE_SOURCE_SURFACE_DELETE_RULE
+    ):
+        old_variant = (
+            "enne 2010. aasta 1. jaanuari. Elamu või selle osa soojusvarustuse liigina "
+            "peab ehitisregistrisse olema märgitud lokaal-või kohtküte ja energiaallikaliigina tahkekütus"
+        )
+        pattern = re.compile(
+            _ee_wrap_word_boundaries(_ee_surface_pattern(old_variant), old_variant),
+            re.IGNORECASE,
+        )
+        replaced = pattern.sub("", replaced, count=0 if spec.all_occurrences else 1)
+        replaced = re.sub(r"\s+([.,;:])", r"\1", replaced)
     if (
         replaced is not None
         and spec.source_family == _EE_INSERT_AFTER_TERMINAL_PUNCTUATION_RULE
@@ -7335,6 +7352,30 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         for old_form, new_form in form_pairs.items():
             variants.setdefault(old_form, new_form)
 
+    def _add_olemasolev_tahkel_kutusel_forms() -> None:
+        """Own RT's 2025 kütteseade phrase contraction with explicit forms."""
+        if (
+            not case_inflected
+            or old != "olemasolev tahkel kütusel põhinev kütteseade"
+            or new != "olemasolev kütteseade"
+        ):
+            return
+        form_pairs = {
+            "olemasolev tahkel kütusel põhinev kütteseade": "olemasolev kütteseade",
+            "olemasoleva tahkel kütusel põhineva kütteseadme": "olemasoleva kütteseadme",
+            "olemasolevat tahkel kütusel põhinevat kütteseadet": "olemasolevat kütteseadet",
+            "olemasolevas tahkel kütusel põhinevas kütteseadmes": "olemasolevas kütteseadmes",
+            "olemasolevast tahkel kütusel põhinevast kütteseadmest": "olemasolevast kütteseadmest",
+            "olemasolevale tahkel kütusel põhinevale kütteseadmele": "olemasolevale kütteseadmele",
+            "olemasoleval tahkel kütusel põhineval kütteseadmel": "olemasoleval kütteseadmel",
+            "olemasolevalt tahkel kütusel põhinevalt kütteseadmelt": "olemasolevalt kütteseadmelt",
+            "olemasolevaks tahkel kütusel põhinevaks kütteseadmeks": "olemasolevaks kütteseadmeks",
+            "olemasoleva tahkel kütusel põhineva kütteseadmena": "olemasoleva kütteseadmena",
+            "olemasoleva tahkel kütusel põhineva kütteseadmega": "olemasoleva kütteseadmega",
+        }
+        for old_form, new_form in form_pairs.items():
+            variants.setdefault(old_form, new_form)
+
     def _strip_wrapping_quotes(surface: str) -> str | None:
         stripped = surface.strip()
         if len(stripped) < 2:
@@ -7393,6 +7434,7 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         variants[old] = new
         _add_vts_operator_forms()
         _add_ametikoht_teenistuskoht_forms()
+        _add_olemasolev_tahkel_kutusel_forms()
         old_norm = _ee_normalize_text_replace_surface(old)
         new_norm = _ee_normalize_text_replace_surface(new)
         if old_norm and old_norm not in variants:

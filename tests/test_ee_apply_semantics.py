@@ -29,6 +29,7 @@ from lawvm.estonia.grafter import (
     _ee_apply_op,
     _ee_apply_text_replace_spec,
     _ee_apply_text_replace_value,
+    _ee_read_text_replace_spec,
     apply_ee_ops,
 )
 from lawvm.replay_adjudication import CompileAdjudication
@@ -311,6 +312,32 @@ def test_text_replace_exact_target_preserves_us_genitive_suffix_recovery() -> No
     assert result_item.text == "teenistuja kuu töötasu arvestuse kohta tööjõukulude arvestusleht"
     assert [finding.kind for finding in adjudications] == ["ee_source_case_suffix_text_replace"]
     assert adjudications[0].detail["matched_live_text"] == "palgaarvestuse"
+
+
+def test_case_inflected_text_replace_contracts_olemasolev_tahkel_kutusel_phrase() -> None:
+    body = _body_with_section_and_subsection(
+        "3",
+        "1",
+        (
+            "Toetuse eesmärk on uuendada olemasolevat tahkel kütusel põhinevat "
+            "kütteseadet. Kütteseadme uuendamine hõlmab olemasoleva tahkel "
+            "kütusel põhineva kütteseadme eemaldamist."
+        ),
+    )
+    text = (
+        "määruse tekstis asendatakse läbivalt tekstiosa "
+        "„olemasolev tahkel kütusel põhinev kütteseade” tekstiosaga "
+        "„olemasolev kütteseade” vastavas käändes;"
+    )
+    op = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))[0]
+
+    result = _ee_apply_op(body, op)
+    subsection = result.children[0].children[0].children[0]
+
+    assert subsection.text == (
+        "Toetuse eesmärk on uuendada olemasolevat kütteseadet. "
+        "Kütteseadme uuendamine hõlmab olemasoleva kütteseadme eemaldamist."
+    )
 
 
 def test_mixed_replace_delete_same_target_cleans_deleted_list_conjunction() -> None:
@@ -3938,6 +3965,34 @@ def test_delete_text_replace_handles_fraktsioneeritud_source_typo_variant() -> N
     assert replaced == (
         "Pindamiseks kasutatakse killustikke. "
         "Killustike omadused on kirjeldatud standardis EVS-EN 13043."
+    )
+
+
+def test_delete_text_replace_handles_lokaal_kohtkute_source_surface_variant() -> None:
+    text = (
+        "Toetuse saamiseks peab taotleja elamu olema ehitatud õiguslikul alusel ning "
+        "kasutusele võetud enne 2010. aasta 1. jaanuari. Elamu või selle osa "
+        "soojusvarustuse liigina peab ehitisregistrisse olema märgitud lokaal-või "
+        "kohtküte ja energiaallikaliigina tahkekütus. Ehitisregistrisse peab olema "
+        "märgitud ehitise esmase kasutuselevõtmise aasta."
+    )
+    source = (
+        "paragrahvi 6 lõikest 8 jäetakse välja tekstiosa „enne 2010. aasta "
+        "1. jaanuari. Elamu või selle osa soojusvarustuse liigina peab "
+        "ehitisregistrisse olema märgitud lokaal- või kohtküte ja energiaallika "
+        "liigina tahkekütus“;"
+    )
+    op = extract_ee_ops(source, OperationSource(statute_id="ee/test", raw_text=source))[0]
+
+    _payload = op.payload
+    assert _payload is not None
+    assert _payload.attrs["source_family"] == "ee_lokaal_kohtkute_source_surface_delete_variant"
+    replaced = _ee_apply_text_replace_spec(text, _ee_read_text_replace_spec(_payload))
+
+    assert replaced == (
+        "Toetuse saamiseks peab taotleja elamu olema ehitatud õiguslikul alusel ning "
+        "kasutusele võetud. Ehitisregistrisse peab olema märgitud ehitise esmase "
+        "kasutuselevõtmise aasta."
     )
 
 
