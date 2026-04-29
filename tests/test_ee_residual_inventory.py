@@ -68,6 +68,20 @@ def test_get_ee_residual_inventory_majutuse_appendix_projection_repeal() -> None
     )
 
 
+def test_get_ee_residual_inventory_nakkushaigused_appendix_projection_gap() -> None:
+    inventory = get_ee_residual_inventory("115052020021", "128082021009")
+
+    assert inventory is not None
+    assert inventory.statute_title == "Nakkushaiguste tõrje nõuded"
+    assert len(inventory.residuals) == 31
+    assert {record.bucket for record in inventory.residuals} == {"appendix_display_pathology"}
+    assert any(
+        record.address == "section:2/subsection:1/item:9"
+        and "määruse lisa punkti 3^1" in record.evidence
+        for record in inventory.residuals
+    )
+
+
 def test_get_ee_residual_inventory_jahitunnistus_label_offset_surface_drift() -> None:
     inventory = get_ee_residual_inventory("106012015009", "113092017002")
 
