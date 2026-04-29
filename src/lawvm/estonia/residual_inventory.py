@@ -154,6 +154,59 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
+    ("115052020021", "128082021009"): EEPairResidualInventory(
+        base_id="115052020021",
+        oracle_id="128082021009",
+        statute_title="Nakkushaiguste tõrje nõuded",
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "section:2",
+                    "section:2/subsection:1",
+                    "section:2/subsection:1/item:1",
+                    "section:2/subsection:1/item:10",
+                    "section:2/subsection:1/item:11",
+                    "section:2/subsection:1/item:12",
+                    "section:2/subsection:1/item:13",
+                    "section:2/subsection:1/item:14",
+                    "section:2/subsection:1/item:15",
+                    "section:2/subsection:1/item:16",
+                    "section:2/subsection:1/item:17",
+                    "section:2/subsection:1/item:18",
+                    "section:2/subsection:1/item:19",
+                    "section:2/subsection:1/item:2",
+                    "section:2/subsection:1/item:20",
+                    "section:2/subsection:1/item:21",
+                    "section:2/subsection:1/item:22",
+                    "section:2/subsection:1/item:23",
+                    "section:2/subsection:1/item:24",
+                    "section:2/subsection:1/item:25",
+                    "section:2/subsection:1/item:26",
+                    "section:2/subsection:1/item:27",
+                    "section:2/subsection:1/item:28",
+                    "section:2/subsection:1/item:29",
+                    "section:2/subsection:1/item:3",
+                    "section:2/subsection:1/item:4",
+                    "section:2/subsection:1/item:5",
+                    "section:2/subsection:1/item:6",
+                    "section:2/subsection:1/item:7",
+                    "section:2/subsection:1/item:8",
+                    "section:2/subsection:1/item:9",
+                ),
+                evidence=(
+                    "Source act 128082021006 amends the appendix, specifically "
+                    "'määruse lisa punkti 3^1 alapunkt 3^1.2' and '3^1.3'. "
+                    "The current EE frontend does not yet model appendix numbered "
+                    "disease-control subpoints as independently addressable legal "
+                    "state, so replay leaves the previous appendix text while "
+                    "oracle 128082021009 reflects the appendix updates. This is an "
+                    "appendix projection gap, not an RT candidate divergence."
+                ),
+                bucket="appendix_display_pathology",
+            ),
+        ),
+    ),
     ("104072013022", "104072013023"): EEPairResidualInventory(
         base_id="104072013022",
         oracle_id="104072013023",
