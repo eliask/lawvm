@@ -933,6 +933,7 @@ _EE_TEXTUAL_INVALIDATION_RULE = "ee_textual_invalidation_as_text_delete"
 _EE_SECTION_SEQUENCE_RENUMBER_RULE = "ee_section_sequence_renumber_before_insert"
 _EE_SUBSECTION_SEQUENCE_RENUMBER_RULE = "ee_subsection_sequence_renumber_before_insert"
 _EE_FLAT_SECTIONLESS_SINGLETON_ITEM_INSERT_RULE = "ee_flat_sectionless_singleton_item_insert"
+_EE_PAYLOAD_AFTER_TITLE_QUOTE_RULE = "ee_payload_after_marker_ignores_premarker_title_quote"
 
 
 def _is_textual_invalidation(text: str) -> bool:
@@ -1303,14 +1304,15 @@ def _extract_quoted_contents(text: str) -> List[str]:
 
 def _extract_payload_after_marker(text: str) -> Optional[str]:
     """Fallback payload extraction when RT nesting leaves an unbalanced open quote."""
-    m = re.search(
-        r'(?:järgmises\s+sõnastuses|järgmiselt)\s*:\s*(.+)$',
+    matches = list(re.finditer(
+        r'(?:järgmises\s+sõnastuses|järgmiselt)\s*:\s*',
         text,
         re.IGNORECASE | re.DOTALL,
-    )
-    if not m:
+    ))
+    if not matches:
         return None
-    payload = m.group(1).strip()
+    marker = matches[-1]
+    payload = text[marker.end():].strip()
     payload = re.sub(r'^[\u201c\u201e\u201d"\u00ab\u00bb\u02ee]\s*', '', payload)
     payload = re.sub(r'\s*[.;]\s*$', '', payload)
     if not re.search(r'[\u201e\u00ab"]', payload):
@@ -1389,12 +1391,27 @@ def _marker_payload_starts_with_right_quote(text: str) -> bool:
     return text[marker.end():].lstrip().startswith("\u201d")
 
 
+def _payload_marker_has_preceding_quoted_title(text: str) -> bool:
+    """Return true when a target-act title quote appears before the payload marker."""
+    markers = list(re.finditer(
+        r'(?:järgmises\s+sõnastuses|järgmiselt)\s*:\s*',
+        text,
+        re.IGNORECASE | re.DOTALL,
+    ))
+    if not markers:
+        return False
+    marker = markers[-1]
+    return bool(_extract_quoted_contents(text[: marker.start()]))
+
+
 def _extract_quoted_content(text: str) -> Optional[str]:
     """Extract quoted payload text, joining multiple payload blocks when present."""
     matches = _extract_quoted_contents(text)
     if not matches:
         return _extract_payload_after_marker(text)
     marker_payload = _extract_payload_after_marker(text)
+    if marker_payload and _payload_marker_has_preceding_quoted_title(text):
+        return marker_payload
     if marker_payload and len(matches) > 1 and _marker_payload_starts_with_right_quote(text):
         return marker_payload
     if marker_payload and len(matches) == 1 and matches[0] != marker_payload:
@@ -5431,7 +5448,12 @@ def extract_ee_ops(
                         seq += 1
                     if ops:
                         return ops
-            payload = IRNode(kind=IRNodeKind.CONTENT, text=content)
+            payload_attrs = (
+                {"source_family": _EE_PAYLOAD_AFTER_TITLE_QUOTE_RULE}
+                if _payload_marker_has_preceding_quoted_title(clean)
+                else {}
+            )
+            payload = IRNode(kind=IRNodeKind.CONTENT, text=content, attrs=payload_attrs)
             if action == "replace":
                 payload = _set_sentence_replace_payload_attrs(payload, clean)
             elif action == "insert":
