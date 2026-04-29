@@ -592,6 +592,27 @@ def test_insert_after_accepts_genitive_plural_modifier_surface_variant() -> None
     assert updated == "koostab hindamistulemuste alusel projektitaotluste paremusjärjestuse ettepaneku."
 
 
+def test_case_inflected_numeric_suffix_rewrite_matches_suffix_forms() -> None:
+    assert (
+        _ee_apply_text_replace_value(
+            "vastavalt määruse lisale.",
+            "lisa",
+            "lisa 1",
+            case_inflected=True,
+        )
+        == "vastavalt määruse lisale 1."
+    )
+    assert (
+        _ee_apply_text_replace_value(
+            "Määruse lisas toodud tabel.",
+            "lisa",
+            "lisa 1",
+            case_inflected=True,
+        )
+        == "Määruse lisas 1 toodud tabel."
+    )
+
+
 def test_apply_ee_ops_preserves_explicit_item_replacement_terminal() -> None:
     base = IRStatute(
         statute_id="ee/test",

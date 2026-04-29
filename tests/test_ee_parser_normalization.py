@@ -933,6 +933,32 @@ def test_extract_ee_ops_treats_after_word_as_text_replace_anchor() -> None:
     )
 
 
+def test_extract_ee_ops_keeps_quoted_target_title_before_text_replace_verb() -> None:
+    text = (
+        "paragrahvis 1, § 3 lõikes 2, § 12 lõikes 1, § 15 lõikes 2, "
+        "§ 16 lõikes 1, § 17 lõikes 1, § 18 lõikes 1, §-s 19 ja määruse "
+        "lisas „Tasandus- ja toetusfondi jaotus” asendatakse sõna „lisa” "
+        "tekstiosaga „lisa 1” vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [op.target.path for op in ops] == [
+        (("section", "1"),),
+        (("section", "3"), ("subsection", "2")),
+        (("section", "12"), ("subsection", "1")),
+        (("section", "15"), ("subsection", "2")),
+        (("section", "16"), ("subsection", "1")),
+        (("section", "17"), ("subsection", "1")),
+        (("section", "18"), ("subsection", "1")),
+        (("section", "19"),),
+    ]
+    assert all(op.payload is not None for op in ops)
+    assert all(_payload(op).attrs["old_text"] == "lisa" for op in ops)
+    assert all(_payload(op).text == "lisa 1" for op in ops)
+    assert all(_payload(op).attrs["case_inflected"] is True for op in ops)
+
+
 def test_extract_ee_ops_recovers_missing_closing_quote_in_replacement_payload() -> None:
     text = (
         "paragrahvi 9 lõikes 2 asendatakse tekstiosa „§ 18 punktis 1“ "

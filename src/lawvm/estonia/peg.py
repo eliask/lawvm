@@ -144,6 +144,13 @@ def _normalize_num(raw: str) -> str:
 def _instruction_preamble(text: str) -> str:
     """Return the instruction part before quoted replacement payload begins."""
     text = _normalize_ee_parse_text(text)
+    verb_match = re.search(
+        r'\b(?:asendatakse|täiendatakse|tunnistatakse|sõnastatakse|muudetakse|'
+        r'jäetakse|lisatakse|kehtestatakse|loetakse)\b',
+        text,
+        re.IGNORECASE,
+    )
+    operative_start = verb_match.start() if verb_match is not None else 0
     preamble_end = len(text)
     for marker in (
         '\u201e',
@@ -154,7 +161,7 @@ def _instruction_preamble(text: str) -> str:
         'järgmises sõnastuses:',
         'järgmiselt:',
     ):
-        idx = text.find(marker)
+        idx = text.find(marker, operative_start)
         if 0 <= idx < preamble_end:
             preamble_end = idx
     return text[:preamble_end]
@@ -1460,6 +1467,11 @@ def _extract_text_replace_pairs(text: str) -> List[Tuple[str, str]]:
     after_anchor_pair = _extract_after_anchor_text_replace_pair(text)
     if after_anchor_pair is not None:
         return [after_anchor_pair]
+    if re.search(r"\basendatakse\b", text, re.IGNORECASE):
+        post = re.split(r"\basendatakse\b", text, maxsplit=1, flags=re.IGNORECASE)[-1]
+        post_quotes = [q.strip() for q in _extract_quoted_contents(post) if q.strip()]
+        if len(post_quotes) >= 2:
+            return _pair_ordered_text_replace_quotes(post_quotes, text)
     for pat in (
         r'\u201e(.*?)(?:\u201c|\u201d|")',
         r'\u201c(.*?)\u201d',
@@ -1471,24 +1483,32 @@ def _extract_text_replace_pairs(text: str) -> List[Tuple[str, str]]:
     ):
         quotes = [q.strip() for q in re.findall(pat, text, re.DOTALL) if q.strip()]
         if len(quotes) >= 2:
-            if len(quotes) >= 4 and len(quotes) % 2 == 0 and re.search(r'\bvastavalt\b', text, re.IGNORECASE):
-                mid = len(quotes) // 2
-                return [
-                    (quotes[i], quotes[mid + i])
-                    for i in range(mid)
-                    if quotes[i] and quotes[mid + i]
-                ]
-            if len(quotes) == 3:
-                return [
-                    (quotes[0], quotes[2]),
-                    (quotes[1], quotes[2]),
-                ]
-            return [
-                (quotes[i], quotes[i + 1])
-                for i in range(0, len(quotes) - 1, 2)
-                if quotes[i] and quotes[i + 1]
-            ]
+            return _pair_ordered_text_replace_quotes(quotes, text)
     return []
+
+
+def _pair_ordered_text_replace_quotes(
+    quotes: list[str],
+    source_text: str,
+) -> list[tuple[str, str]]:
+    """Pair ordered OLD/NEW quote surfaces from one replacement clause."""
+    if len(quotes) >= 4 and len(quotes) % 2 == 0 and re.search(r'\bvastavalt\b', source_text, re.IGNORECASE):
+        mid = len(quotes) // 2
+        return [
+            (quotes[i], quotes[mid + i])
+            for i in range(mid)
+            if quotes[i] and quotes[mid + i]
+        ]
+    if len(quotes) == 3:
+        return [
+            (quotes[0], quotes[2]),
+            (quotes[1], quotes[2]),
+        ]
+    return [
+        (quotes[i], quotes[i + 1])
+        for i in range(0, len(quotes) - 1, 2)
+        if quotes[i] and quotes[i + 1]
+    ]
 
 
 def _extract_many_old_single_new_text_replace_pairs(text: str) -> List[Tuple[str, str]]:
@@ -4946,6 +4966,13 @@ def extract_ee_ops(
             clean,
             *_extract_text_replace_args(clean),
         )
+        single_target_pair = _extract_many_old_single_new_text_replace_pairs(clean) or _extract_text_replace_pairs(clean)
+        if len(single_target_pair) == 1:
+            old_text, new_text = _normalize_text_replace_args(
+                clean,
+                single_target_pair[0][0],
+                single_target_pair[0][1],
+            )
         if new_text is not None or old_text is not None:
             payload = IRNode(kind=IRNodeKind.CONTENT, text=new_text or "")
             source_family = _EE_TEXTUAL_INVALIDATION_RULE if _is_textual_invalidation(clean) else ""

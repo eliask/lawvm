@@ -1021,3 +1021,19 @@ in `.` into `;` only because later sibling items remain.
 The replay marker is:
 
 - `ee_explicit_item_replacement_terminal_preserved`
+
+## 53. Quoted target names before the operative verb are not replacement payload
+
+Old-format clauses can name a target appendix/title in quotes before the actual
+operative verb:
+
+`... määruse lisas „Tasandus- ja toetusfondi jaotus” asendatakse sõna „lisa”
+tekstiosaga „lisa 1” vastavas käändes`
+
+The quoted appendix title is target scope evidence. It is not the old text for
+the replacement. The parser must search for the first operative verb before
+splitting the instruction/payload surface.
+
+The resulting operation family is still ordinary targeted text replacement.
+When the replacement is `lisa -> lisa 1` with `vastavas käändes`, replay must
+also apply the numeric suffix to declined forms such as `lisas` and `lisale`.
