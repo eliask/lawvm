@@ -7940,3 +7940,42 @@ def test_extract_ee_ops_keeps_mixed_subsection_and_sentence_repeals_distinct() -
     sentence_meta = read_sentence_target_meta(_payload(ops[2]))
     assert sentence_meta is not None
     assert sentence_meta.sentence_indexes == (3,)
+
+
+def test_extract_ee_ops_ignores_premarker_title_quote_for_section_text_replace() -> None:
+    text = (
+        "§ 1 tekst sõnastatakse järgmiselt: "
+        "Vabariigi Valitsuse 20. jaanuari 2022. a määruse nr 10 "
+        "„Väikesaarte nimistu” § 1 tekst sõnastatakse järgmiselt: "
+        "„Väikesaarte nimistus on Abruka saar ja Vormsi saar.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "1"),)
+    assert _payload(ops[0]).text == "Väikesaarte nimistus on Abruka saar ja Vormsi saar."
+    assert (
+        _payload(ops[0]).attrs["source_family"]
+        == "ee_payload_after_marker_ignores_premarker_title_quote"
+    )
+
+
+def test_extract_ee_ops_ignores_premarker_title_quote_for_item_replace() -> None:
+    text = (
+        "§ 4 lõike 1 punkt 1 sõnastatakse järgmiselt: "
+        "Kultuuriministri 8. detsembri 2022. a määruse nr 20 "
+        "„Eesti sõltumatu erameedia toetamise tingimused ja kord” "
+        "§ 4 lõike 1 punkt 1 sõnastatakse järgmiselt: "
+        "„1) kes annab välja eesti- ja venekeelseid meediaväljaandeid.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "4"), ("subsection", "1"), ("item", "1"))
+    assert _payload(ops[0]).text == "1) kes annab välja eesti- ja venekeelseid meediaväljaandeid."
+    assert (
+        _payload(ops[0]).attrs["source_family"]
+        == "ee_payload_after_marker_ignores_premarker_title_quote"
+    )
