@@ -1399,6 +1399,12 @@ def _classify_verb(text: str) -> str:
             or 'enne tekstiosa' in t
             or 'enne lauseosa' in t
             or 'enne arvu' in t
+            or re.search(
+                r'\b(?:sõn[au]|tekstiosa|lauseosa|arvu)\s+[„"«”][^„”“"«»]{0,240}'
+                r'[”"»“]\s+j[aä]rel\b',
+                normalized_text,
+                re.IGNORECASE,
+            )
         ):
             return "text_replace"
         # täiendatakse lausega / lõigetega / §-dega → structural insert
@@ -3388,7 +3394,8 @@ def _normalize_text_replace_args(
         and (
             re.search(r'\bpärast\s+(?:sõn[au]|tekstiosa|lauseosa)\b', text, re.IGNORECASE)
             or re.search(
-                r'\b(?:sõn[au]|tekstiosa|lauseosa)\s+[„"«”][^.;]{0,120}[”"»“]\s+j[aä]rel\b',
+                r'\b(?:sõn[au]|tekstiosa|lauseosa)\s+[„"«”][^„”“"«»]{0,240}'
+                r'[”"»“]\s+j[aä]rel\b',
                 text,
                 re.IGNORECASE,
             )
@@ -3417,7 +3424,8 @@ def _infer_text_replace_mode(
         if (
             re.search(r'\bpärast\s+(?:sõn[au][a-z]*|tekstiosa|lauseosa|arvu)\b', text, re.IGNORECASE)
             or re.search(
-                r'\b(?:sõn[au][a-z]*|tekstiosa|lauseosa|arvu)\s+[„"«”][^.;]{0,120}[”"»“]\s+j[aä]rel\b',
+                r'\b(?:sõn[au][a-z]*|tekstiosa|lauseosa|arvu)\s+[„"«”][^„”“"«»]{0,240}'
+                r'[”"»“]\s+j[aä]rel\b',
                 text,
                 re.IGNORECASE,
             )
@@ -4504,6 +4512,9 @@ def extract_ee_ops(
         or re.search(r'\btäiendada\s+(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)\s+paragrahviga', clean, re.IGNORECASE)
         # Also: "seaduse N. peatükki täiendatakse §-dega M" (chapter-qualified section insert)
         or re.search(r'\b(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)[a-z\s\d.]*peatük[k]?[i]+\s+täiendatakse\s+§[‑–‒-](?:de)?ga', clean, re.IGNORECASE)
+        # Also when the target act wrapper already scopes the clause:
+        # "4. peatükki täiendatakse §-ga 24^1".
+        or re.search(r'\b\d[\d\s]*[.]\s*peatük[k]?[iü]\s+täiendatakse\s+§[‑–‒-](?:de)?ga', clean, re.IGNORECASE)
         # Also: "seaduse N. peatüki M. jagu täiendatakse §-ga K" (division-qualified section insert)
         or re.search(r'\bjag[u-z]*\s+täiendatakse\s+§[‑–‒-](?:de)?ga', clean, re.IGNORECASE)
         # Also: "alljaotist täiendatakse §-dega 34^1 ja 34^2"; the shared
@@ -4556,6 +4567,12 @@ def extract_ee_ops(
                 clean,
                 re.IGNORECASE,
             )
+            if not m_ch_qualified_insert:
+                m_ch_qualified_insert = re.search(
+                    r'\b(' + _NUM_PAT + r')\s*[.]\s*peatük[k]?[iü]\s+täiendatakse\s+§[‑–‒-](?:de)?ga',
+                    clean,
+                    re.IGNORECASE,
+                )
             if m_ch_qualified_insert:
                 container_prefix = (
                     ("chapter", _normalize_num(m_ch_qualified_insert.group(1).strip())),

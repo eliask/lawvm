@@ -178,6 +178,36 @@ def _title_numeric_measure_markers_compatible(target_title: str, candidate_title
     return not target_markers or not candidate_markers or bool(target_markers & candidate_markers)
 
 
+def _title_temporal_identity_surfaces(text: str) -> tuple[str, ...]:
+    quoted = [match.group(1) for match in re.finditer(r'[„"“]([^„”“"]{4,260})[”“"]', text or "")]
+    if quoted:
+        return tuple(quoted)
+    return (text,)
+
+
+def _title_temporal_identity_markers(text: str) -> frozenset[str]:
+    """Return title-owned year/range markers used to distinguish similar programme acts."""
+    markers: set[str] = set()
+    for surface in _title_temporal_identity_surfaces(text):
+        normalized = surface.lower().replace("\xa0", " ")
+        normalized = normalized.replace("−", "-").replace("–", "-").replace("—", "-")
+        for match in re.finditer(r"\b(?P<start>19\d{2}|20\d{2})\s*-\s*(?P<end>\d{2}|19\d{2}|20\d{2})\b", normalized):
+            start = match.group("start")
+            end = match.group("end")
+            if len(end) == 2:
+                end = start[:2] + end
+            markers.add(f"range:{start}-{end}")
+        for match in re.finditer(r"\b(?P<year>19\d{2}|20\d{2})\.\s*aasta\b", normalized):
+            markers.add(f"year:{match.group('year')}")
+    return frozenset(markers)
+
+
+def _title_temporal_identity_markers_compatible(target_title: str, candidate_title: str) -> bool:
+    target_markers = _title_temporal_identity_markers(target_title)
+    candidate_markers = _title_temporal_identity_markers(candidate_title)
+    return not target_markers or not candidate_markers or bool(target_markers & candidate_markers)
+
+
 def numeric_measure_markers_compatible(target_title: str, candidate_title: str) -> bool:
     """Public gate for avoiding cross-routing between numbered programme measures."""
     return _title_numeric_measure_markers_compatible(target_title, candidate_title)
@@ -210,6 +240,8 @@ def title_matches_para(target_title: str, para_title: str) -> bool:
     if not para_title:
         return False
     if not _title_numeric_measure_markers_compatible(target_title, para_title):
+        return False
+    if not _title_temporal_identity_markers_compatible(target_title, para_title):
         return False
     registry_record = lookup_ee_act_identity(title=target_title, alias=para_title)
     if registry_record is not None and _registry_record_matches_all(registry_record, target_title, para_title):
@@ -256,6 +288,8 @@ def strict_title_match_para(target: str, para: str) -> bool:
     if not para or not target:
         return False
     if not _title_numeric_measure_markers_compatible(target, para):
+        return False
+    if not _title_temporal_identity_markers_compatible(target, para):
         return False
     registry_record = lookup_ee_act_identity(title=target, alias=para)
     if registry_record is not None and _registry_record_matches_all(registry_record, target, para):

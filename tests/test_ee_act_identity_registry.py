@@ -285,6 +285,31 @@ def test_title_match_does_not_cross_match_main_law_and_rakendamise_law() -> None
     ) is False
 
 
+def test_title_match_does_not_cross_match_different_programme_year_ranges() -> None:
+    target = "Tööhõiveprogramm 2016–2017"
+    matching_header = (
+        "Vabariigi Valitsuse 17. septembri 2015. a määruse nr 93 "
+        "„Tööhõiveprogramm 2016–2017” muutmine"
+    )
+    other_header = (
+        "Vabariigi Valitsuse 17. novembri 2016. a määruse nr 130 "
+        "„Tööhõiveprogramm 2017–2020” muutmine"
+    )
+
+    assert target_resolution.title_matches_para(target, matching_header) is True
+    assert target_resolution.strict_title_match_para(target, matching_header) is True
+    assert target_resolution.title_matches_para(target, other_header) is False
+    assert target_resolution.strict_title_match_para(target, other_header) is False
+
+
+def test_title_match_keeps_year_prefixed_budget_title_identity() -> None:
+    target = "2024. aasta riigieelarve seadus"
+    header = "2024. aasta riigieelarve seaduses tehakse järgmised muudatused:"
+
+    assert target_resolution.title_matches_para(target, header) is True
+    assert target_resolution.strict_title_match_para(target, header) is True
+
+
 def test_registry_evidence_wins_for_direct_target_clause_when_heuristics_fail(
     monkeypatch,
 ) -> None:
