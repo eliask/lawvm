@@ -8638,7 +8638,7 @@ def _ee_apply_op(
                     if target_node.kind == IRNodeKind.ITEM:
                         parent_path = full_path[:-1]
                         parent_node = tree_ops.resolve(body, parent_path) if parent_path else None
-                        if parent_node is not None and not explicit_item_terminal_from_payload:
+                        if parent_node is not None:
                             target_index = next(
                                 idx
                                 for idx, child in enumerate(parent_node.children)
