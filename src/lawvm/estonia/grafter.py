@@ -9424,6 +9424,20 @@ def _ee_apply_op(
                                             children=tuple(new_children),
                                         ),
                                     )
+                            if insert_idx is not None:
+                                terminal = _item_terminal_for_position(ordered, insert_idx)
+                                new_text = _rewrite_item_terminal(new_node.text, terminal)
+                                if new_text != new_node.text:
+                                    new_node = IRNode(
+                                        kind=new_node.kind,
+                                        label=new_node.label,
+                                        text=new_text,
+                                        attrs={
+                                            **dict(new_node.attrs),
+                                            "source_family": "ee_insert_item_terminal_normalized_by_position",
+                                        },
+                                        children=tuple(new_node.children),
+                                    )
                 return tree_ops.insert_sorted(body, parent_path, new_node, sort_key_fn=tree_ops._default_sort_key)
 
     elif action == "text_replace":
