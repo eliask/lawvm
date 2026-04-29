@@ -999,6 +999,8 @@ _EE_SUBSECTION_TABLE_ONLY_REPLACE_RULE = "ee_subsection_table_only_replace_prese
 _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE = "ee_senine_text_subsection_renumber_before_insert"
 _EE_FRAKTSIONEERITUD_TYPO_DELETE_RULE = "ee_fraktsioneeritud_source_typo_delete_variant"
 _EE_LOCAL_KOHTKUTE_SOURCE_SURFACE_DELETE_RULE = "ee_lokaal_kohtkute_source_surface_delete_variant"
+_EE_OLEMASOLEV_TAHKEL_KUTUSEL_PHRASE_FORMS_RULE = "ee_case_inflected_olemasolev_tahkel_kutusel_phrase_forms"
+_EE_VOLITATUD_VASTUTAV_FORMS_RULE = "ee_case_inflected_volitatud_vastutav_forms"
 _EE_INSERT_MULTI_EXPLICIT_TARGETS_PAYLOAD_LABEL_FILTER_RULE = (
     "ee_insert_multi_explicit_targets_payload_label_filter"
 )
@@ -1022,6 +1024,14 @@ def _is_lokaal_kohtkute_source_surface_delete_variant(old_text: str | None, new_
         "peab ehitisregistrisse olema märgitud lokaal- või kohtküte ja energiaallika "
         "liigina tahkekütus"
     )
+
+
+def _case_inflected_phrase_source_family(old_text: str | None, new_text: str | None) -> str:
+    if old_text == "olemasolev tahkel kütusel põhinev kütteseade" and new_text == "olemasolev kütteseade":
+        return _EE_OLEMASOLEV_TAHKEL_KUTUSEL_PHRASE_FORMS_RULE
+    if old_text == "volitatud" and new_text == "vastutav":
+        return _EE_VOLITATUD_VASTUTAV_FORMS_RULE
+    return ""
 
 
 def _split_section_renumber_labels(surface: str) -> tuple[str, ...]:
@@ -3338,6 +3348,8 @@ def _set_text_replace_payload_attrs(
     ):
         source_family = "ee_insert_after_source_phrase_surface_variants"
     case_inflected = _should_case_inflect_text_replace(clean, old_text, new_text)
+    if not source_family and case_inflected:
+        source_family = _case_inflected_phrase_source_family(old_text, new_text)
     if "läbivalt" in _instruction_preamble(clean).lower() or case_inflected:
         attrs["all_occurrences"] = True
     if (

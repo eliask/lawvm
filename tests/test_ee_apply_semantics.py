@@ -340,6 +340,36 @@ def test_case_inflected_text_replace_contracts_olemasolev_tahkel_kutusel_phrase(
     )
 
 
+def test_case_inflected_text_replace_handles_volitatud_vastutav_agreement() -> None:
+    body = _body_with_section_and_subsection(
+        "6",
+        "2",
+        (
+            "Isik peab esitama andmekogu volitatud töötlejale taotluse. "
+            "Leping sõlmitakse andmekogu volitatud töötleja vahelises korras. "
+            "Volitatud töötlejal on õigus nõuda lisateavet. "
+            "Volitatud töötleja peab arvestust."
+        ),
+    )
+    text = (
+        "paragrahvi 6 lõikes 2 asendatakse sõna „volitatud” sõnaga "
+        "„vastutav” vastavas käändes;"
+    )
+    op = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))[0]
+
+    assert op.payload is not None
+    assert op.payload.attrs["source_family"] == "ee_case_inflected_volitatud_vastutav_forms"
+    result = _ee_apply_op(body, op)
+    subsection = result.children[0].children[0].children[0]
+
+    assert subsection.text == (
+        "Isik peab esitama andmekogu vastutavale töötlejale taotluse. "
+        "Leping sõlmitakse andmekogu vastutava töötleja vahelises korras. "
+        "Vastutaval töötlejal on õigus nõuda lisateavet. "
+        "Vastutav töötleja peab arvestust."
+    )
+
+
 def test_mixed_replace_delete_same_target_cleans_deleted_list_conjunction() -> None:
     body = _body_with_section_and_subsection(
         "3",
