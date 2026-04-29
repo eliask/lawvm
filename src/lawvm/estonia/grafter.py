@@ -10050,7 +10050,12 @@ def _ee_apply_op(
                         # Strip item-label prefix "N) " or "N N ) " (superscript items)
                         raw_ins = re.sub(r"^\d[\d\s]*\)\s*", "", raw_ins)
                     raw_ins = _strip_rt_editorial_parentheticals(raw_ins)
-                    new_node = IRNode(kind=IRNodeKind.ITEM, label=label, text=raw_ins)
+                    new_node = IRNode(
+                        kind=IRNodeKind.ITEM,
+                        label=label,
+                        text=raw_ins,
+                        attrs=dict(payload.attrs),
+                    )
                 from lawvm.estonia.ee_instruction_waist import read_sentence_target_meta
 
                 leading_punct_sentence_meta = read_sentence_target_meta(payload)
@@ -10297,7 +10302,10 @@ def _ee_apply_op(
                                 ),
                                 None,
                             )
-                            if insert_idx is not None:
+                            if (
+                                insert_idx is not None
+                                and new_node.attrs.get("source_family") != _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE
+                            ):
                                 terminal = _item_terminal_for_position(ordered, insert_idx)
                                 new_text = _rewrite_item_terminal(new_node.text, terminal)
                                 if new_text != new_node.text:

@@ -51,6 +51,34 @@ def test_get_ee_residual_inventory_technical_assistance_transitional_redaction()
     assert all("editorial placeholder" in record.evidence for record in inventory.residuals)
 
 
+def test_get_ee_residual_inventory_international_events_surface_drift() -> None:
+    inventory = get_ee_residual_inventory("105072012011", "126032014005")
+
+    assert inventory is not None
+    assert inventory.statute_title == "Rahvusvaheliste ürituste ja konverentside toetamise tingimused ja kord"
+    assert inventory.comparison_class == "commensurable_delta"
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert {
+        record.address for record in inventory.residuals
+    } == {
+        "chapter:1",
+        "chapter:1/section:4",
+        "chapter:1/section:4/subsection:1",
+        "chapter:1/section:4/subsection:1/item:5",
+        "chapter:2",
+        "chapter:2/section:7",
+        "chapter:2/section:7/subsection:2",
+        "chapter:2/section:7/subsection:2/item:3",
+        "chapter:4",
+        "chapter:4/section:15",
+        "chapter:4/section:15/subsection:3",
+        "chapter:4/section:19",
+        "chapter:4/section:19/subsection:5",
+        "chapter:4/section:19/subsection:5/item:8",
+    }
+    assert all("sihtasutus" in record.evidence for record in inventory.residuals)
+
+
 def test_get_ee_residual_inventory_leader_punctuation_drift() -> None:
     inventory = get_ee_residual_inventory("123112010049", "122072011005")
 

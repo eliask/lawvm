@@ -4930,7 +4930,14 @@ def extract_ee_ops(
             elif action in ("replace", "insert") and content:
                 item_label = addr.path[-1][1] if addr.path else ""
                 payload_text = split_content[item_label] if split_content is not None else content
-                payload = IRNode(kind=IRNodeKind.CONTENT, text=payload_text)
+                payload_attrs = (
+                    {"source_family": "ee_explicit_item_replacement_terminal_preserved"}
+                    if addr.path
+                    and addr.path[-1][0] == "item"
+                    and payload_text.rstrip().endswith((".", ";"))
+                    else {}
+                )
+                payload = IRNode(kind=IRNodeKind.CONTENT, text=payload_text, attrs=payload_attrs)
                 if action == "replace":
                     payload = _set_sentence_replace_payload_attrs(payload, clean)
                 else:
