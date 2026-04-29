@@ -1707,6 +1707,37 @@ def old_format_has_section_ref(text: str) -> bool:
     )
 
 
+def _old_format_has_title_prefixed_section_ref(text: str) -> bool:
+    """Detect direct targets after a quoted target-act title.
+
+    Old-format clauses can start with a full act citation, including a quoted
+    target title, followed by the actual provision target: ``..." (RT ...) § 5``.
+    The generic detector stops at the first quote to avoid payload text, so this
+    narrow detector prevents carried section scope from overriding explicit
+    source scope in those title-prefixed clauses.
+    """
+    preamble_end = len(text)
+    for marker in ("järgmises sõnastuses:", "järgmiselt:"):
+        idx = text.find(marker)
+        if 0 <= idx < preamble_end:
+            preamble_end = idx
+    preamble = text[:preamble_end]
+    return bool(
+        re.search(
+            r"[”\"“»]\s*(?:\([^)]*\)\s*)?"
+            r"(?:§(?:-d|-s|-ga|-iga|-des|-dega)?\s*\d|"
+            r"\bparagrahvi(?:s|st)?\s+\d|\bparagrahv\s+\d)",
+            preamble,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _old_format_effective_has_section_ref(text: str) -> bool:
+    """Return whether old-format carry must respect an explicit target."""
+    return old_format_has_section_ref(text) or _old_format_has_title_prefixed_section_ref(text)
+
+
 def strip_direct_target_title_prefix(
     text: str,
     target_title: str,
@@ -2354,7 +2385,7 @@ def old_format_lower_op_texts(
         )
         if (
             last_section
-            and not old_format_has_section_ref(effective)
+            and not _old_format_effective_has_section_ref(effective)
             and not is_container_heading_relabel
             and not is_container_heading_target
             and not out_of_body_appendix_or_note_clause
@@ -2363,11 +2394,11 @@ def old_format_lower_op_texts(
             item_body = old_format_strip_item_label(effective)
             effective = f"paragrahvi {last_sect_raw} {item_body}"
             carried_section_scope = True
-        elif last_section and not old_format_has_section_ref(effective) and is_container_heading_target:
+        elif last_section and not _old_format_effective_has_section_ref(effective) and is_container_heading_target:
             container_heading_blocked_section_carry = True
         elif (
             not last_section
-            and not old_format_has_section_ref(effective)
+            and not _old_format_effective_has_section_ref(effective)
             and re.match(r"^\(?\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s*asendatakse\b|^asendatakse\b", op_text.strip(), re.IGNORECASE)
         ):
             item_body = old_format_strip_item_label(effective)

@@ -10542,6 +10542,23 @@ def test_parse_ee_amendment_ops_prefers_old_format_carried_section_over_live_uni
     )
 
 
+def test_parse_ee_amendment_ops_does_not_carry_over_title_prefixed_explicit_subsection() -> None:
+    archive = open_rt_archive(readonly=True)
+    target_title = "Koolieelse lasteasutuse nõustamise tingimused ja kord sisehindamise küsimustes"
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("113092012001", archive),
+        "ee/113092012001",
+        target_title=target_title,
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPEAL, (("section", "5"), ("subsection", "2"))),
+    ]
+    assert "ee_html_amendment_section_heading_wrapper_stripped" in ops[0].provenance_tags
+    assert "ee_old_format_carried_section_scope" not in ops[0].provenance_tags
+
+
 def test_parse_ee_amendment_ops_prefers_old_format_numbered_items_over_preambul_recovery() -> None:
     xml = """
     <oigusakt xmlns="muutmismaarus_1_10.02.2010">
