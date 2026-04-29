@@ -1444,9 +1444,7 @@ def _extract_flat_sectionless_singleton_subsection_ops(
 ) -> list[LegalOperation]:
     """Recover clauses that name a subsection/item but omit the singleton section."""
     preamble = _instruction_preamble(clean)
-    if not re.search(r"^\s*l[oõ]ike(?:t|s|st|ga|le|)\s+\d", preamble, re.IGNORECASE):
-        return []
-    if not re.search(r"\bpunkt(?:i|ist|id|ides|idega|iga|)\b", preamble, re.IGNORECASE):
+    if not re.search(r"^\s*l[oõ]i(?:ke|ge)(?:t|s|st|ga|le|)\s+\d", preamble, re.IGNORECASE):
         return []
     scoped_clean = f"paragrahvi 1 {clean}"
     scoped_ops = extract_ee_ops(scoped_clean, source, seq_start=seq)
