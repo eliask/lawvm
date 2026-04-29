@@ -1587,6 +1587,21 @@ def parse_ee_amendment_ops(
                 protected_quote or protected_child,
             )
 
+        def _rewrite_surface(
+            text: str,
+            *,
+            old: str,
+            new: str,
+            case_inflected: bool,
+        ) -> str:
+            updated = _ee_apply_text_replace_value(
+                text,
+                old,
+                new,
+                case_inflected=case_inflected,
+            )
+            return updated or ""
+
         active_rewrites: list[tuple[str, str, bool]] = []
         composed: list[LegalOperation] = []
         for op in ops:
@@ -1594,6 +1609,46 @@ def parse_ee_amendment_ops(
             payload = op.payload
             updated_op = op
             protected_quote = False
+            if payload is not None and action == "text_replace":
+                payload_meta = read_payload_rewrite_meta(payload)
+                rewrite = payload_meta.rewrite
+                if rewrite is not None:
+                    old_surface = rewrite.old_surface
+                    new_surface = rewrite.new_surface
+                    for old, new, case_inflected in active_rewrites:
+                        old_surface = _rewrite_surface(
+                            old_surface,
+                            old=old,
+                            new=new,
+                            case_inflected=case_inflected,
+                        )
+                        new_surface = _rewrite_surface(
+                            new_surface,
+                            old=old,
+                            new=new,
+                            case_inflected=case_inflected,
+                        )
+                    if old_surface != rewrite.old_surface or new_surface != rewrite.new_surface:
+                        updated_payload = replace(
+                            payload,
+                            text=new_surface,
+                            attrs={
+                                **payload.attrs,
+                                "old_text": old_surface,
+                                "source_old_text": payload.attrs.get("source_old_text") or rewrite.old_surface,
+                                "source_new_text": payload.attrs.get("source_new_text") or rewrite.new_surface,
+                            },
+                        )
+                        updated_op = replace(
+                            op,
+                            payload=updated_payload,
+                            text_patch=_typed_text_replace_patch(old_surface, new_surface),
+                            provenance_tags=(
+                                *op.provenance_tags,
+                                "ee_source_local_global_text_replace_selector_composition",
+                            ),
+                        )
+                        payload = updated_payload
             if payload is not None and action in {"replace", "insert"}:
                 updated_payload = payload
                 for old, new, case_inflected in active_rewrites:
@@ -4461,6 +4516,32 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_ade": stem + "tel",
             "pl_abl": stem + "telt",
             "pl_trn": stem + "teks",
+        }
+    if lower == "pere":
+        stem = word
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": stem + "t",
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": stem + "d",
+            "pl_gen": stem + "de",
+            "pl_part": stem + "sid",
+            "pl_ine": stem + "des",
+            "pl_ela": stem + "dest",
+            "pl_all": stem + "dele",
+            "pl_ade": stem + "del",
+            "pl_abl": stem + "delt",
+            "pl_trn": stem + "deks",
         }
     if lower == "ained":
         stem = word[:-1]

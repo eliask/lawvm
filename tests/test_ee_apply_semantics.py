@@ -3306,6 +3306,23 @@ def test_case_inflected_text_replace_keeps_subject_before_participial_object() -
     ) == "Plaanile kannab linna- või vallavalitsus väljaselgitatud maatükkide piirid."
 
 
+def test_case_inflected_text_replace_handles_shared_prefix_pere_forms() -> None:
+    assert _ee_apply_text_replace_value(
+        "Kui asenduskodu peres on rohkem kui viis last.",
+        "asenduskodu pere",
+        "pere- või asenduskodu pere",
+        case_inflected=True,
+        all_occurrences=True,
+    ) == "Kui pere- või asenduskodu peres on rohkem kui viis last."
+    assert _ee_apply_text_replace_value(
+        "Asenduskodu perel peab olema kaks tualettruumi.",
+        "asenduskodu pere",
+        "pere- või asenduskodu pere",
+        case_inflected=True,
+        all_occurrences=True,
+    ) == "Pere- või asenduskodu perel peab olema kaks tualettruumi."
+
+
 def test_global_case_inflected_text_replace_keeps_nominative_before_regular_noun_phrase() -> None:
     body = _body_with_section_and_subsection(
         "12",
