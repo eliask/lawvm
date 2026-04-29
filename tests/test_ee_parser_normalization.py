@@ -2867,6 +2867,45 @@ def test_extract_ee_ops_emits_global_text_replace_with_heading_exclusion() -> No
     assert op.payload.attrs["exclude_heading_paths"] == ((("section", "4"),),)
 
 
+def test_parse_ee_amendment_ops_does_not_promote_heading_exclusion_to_body_path_exclusions() -> None:
+    xml = """
+    <tyviseadus xmlns="tyviseadus_1_10.02.2010">
+      <sisu>
+        <sisuTekst><HTMLKonteiner><![CDATA[
+          <p><b>&sect; 1.</b> Testm&auml;&auml;rust muudetakse j&auml;rgmiselt:</p>
+          <p><b>1)</b> m&auml;&auml;ruse tekstis, v&auml;lja arvatud &sect; 4 pealkirjas, asendatakse l&auml;bivalt s&otilde;na &bdquo;karusloom&ldquo; s&otilde;naga &bdquo;t&scaron;int&scaron;ilja&ldquo; vastavas k&auml;&auml;ndes;</p>
+          <p><b>2)</b> paragrahvi 4 l&otilde;ikes 1 asendatakse tekstiosa &bdquo;karusloomi (edaspidi karusloomakasvandus)&ldquo; tekstiosaga &bdquo;t&scaron;int&scaron;iljasid (edaspidi t&scaron;int&scaron;iljakasvandus)&ldquo;.</p>
+        ]]></HTMLKonteiner></sisuTekst>
+      </sisu>
+    </tyviseadus>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Testmäärus")
+
+    global_op = next(op for op in ops if op.target.path == () and _payload(op).attrs.get("old_text") == "karusloom")
+    assert "exclude_paths" not in _payload(global_op).attrs
+    assert _payload(global_op).attrs["exclude_heading_paths"] == ((("section", "4"),),)
+
+
+def test_extract_ee_ops_recovers_mixed_repeal_singular_subsection_between_groups() -> None:
+    text = (
+        "paragrahvi 1 lõige 2, § 3 lõige 5, § 8 lõiked 6 ja 7 "
+        "ning §-d 9, 10 ja 12 tunnistatakse kehtetuks;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert {(op.action, op.target.path) for op in ops} == {
+        (StructuralAction.REPEAL, (("section", "1"), ("subsection", "2"))),
+        (StructuralAction.REPEAL, (("section", "8"), ("subsection", "6"))),
+        (StructuralAction.REPEAL, (("section", "8"), ("subsection", "7"))),
+        (StructuralAction.REPEAL, (("section", "3"), ("subsection", "5"))),
+        (StructuralAction.REPEAL, (("section", "9"),)),
+        (StructuralAction.REPEAL, (("section", "10"),)),
+        (StructuralAction.REPEAL, (("section", "12"),)),
+    }
+
+
 def test_extract_ee_ops_fans_out_mixed_repeal_item_targets() -> None:
     text = (
         "paragrahvi 3 punktid 7 ja 8, § 5 lõike 4 punkt 1, "

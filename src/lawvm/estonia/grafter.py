@@ -1407,6 +1407,8 @@ def parse_ee_amendment_ops(
             payload = global_op.payload
             if payload is None:
                 continue
+            if payload.attrs.get("exclude_heading_paths"):
+                continue
             payload_meta = read_payload_rewrite_meta(payload)
             rewrite = payload_meta.rewrite
             if rewrite is None:
@@ -4686,6 +4688,7 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "sg_part": word + "t",
             "sg_ine": stem + "s",
             "sg_ela": stem + "st",
+            "sg_ill": word + "se",
             "sg_all": stem + "le",
             "sg_ade": stem + "l",
             "sg_abl": stem + "lt",
@@ -5591,6 +5594,7 @@ def _ee_phrase_forms(text: str) -> dict[str, str] | None:
                     "sg_part",
                     "sg_ine",
                     "sg_ela",
+                    "sg_ill",
                     "sg_all",
                     "sg_ade",
                     "sg_abl",
@@ -6091,6 +6095,7 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
         "oli",
         "olnud",
         "on",
+        "otsustab",
         "saab",
         "soovib",
         "teeb",
@@ -6138,30 +6143,34 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
         joiner, next_word = _next_word_and_prefix(suffix_text)
         if next_word in {"poolt", "taotlusel"}:
             return True
-        if suffix_text.lstrip().startswith(","):
+        if suffix_text.lstrip().startswith((",", ")", ".", "!", "?", ";", ":")):
             return False
 
         preceding_word = _preceding_word(prefix_text)
         next_words = _next_words(suffix_text)
         semantic_next_words = next_words[1:] if joiner and next_words else next_words
-        if preceding_word == "on":
+        if not next_word:
             return False
-        if preceding_word == "arvates":
-            return False
-        if preceding_word.endswith(nonfinite_suffixes):
-            return False
-        if _looks_like_finite_verb(preceding_word):
+        if next_word in {"kohustatud", "nimetatakse", "päeva", "tööpäeva"}:
             return False
         if re.match(
-            r"\s*käesoleva\s+(?:seaduse|paragrahvi)\s+§",
+            r"\s*käesoleva\s+(?:seaduse|paragrahvi)\s+(?:§|l[oõ]i[kg])",
             suffix_text,
             re.IGNORECASE,
         ):
             return False
-
-        if not next_word:
+        if preceding_word == "on":
             return False
-        if next_word in {"kohustatud", "nimetatakse"}:
+        if preceding_word == "arvates":
+            return False
+        if (
+            not joiner
+            and re.match(r"[A-Za-zÄÖÕÜäöõüŠŽšž-]*(?:v|va|vas|vast|vate|vaks|vasse|tud|dud)$", next_word)
+        ):
+            return True
+        if preceding_word.endswith(nonfinite_suffixes):
+            return False
+        if _looks_like_finite_verb(preceding_word):
             return False
         if joiner and not (
             len(semantic_next_words) >= 2
@@ -6181,9 +6190,6 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
             and not _looks_like_finite_verb(semantic_next_words[1])
         ):
             return True
-        if re.match(r"[A-Za-zÄÖÕÜäöõüŠŽšž-]*(?:v|va|vas|vast|vate|vaks|vasse|tud|dud)$", next_word):
-            return True
-
         stripped_prefix = prefix_text.rstrip()
         if joiner == "ja" and stripped_prefix.endswith((",", ";", ":")):
             return False
@@ -6362,6 +6368,18 @@ def _ee_apply_text_replace_value(
             and new_forms["sg_gen"] != new_forms["sg_part"]
         ):
             if old == "karusloom" and new == "tšintšilja":
+                def _karusloom_water_access_repl(match: re.Match[str]) -> str:
+                    matched = match.group(0)
+                    return "Tšintšiljal" if matched and matched[0].isupper() else "tšintšiljal"
+
+                replaced = re.sub(
+                    r"(?<![A-Za-zÄÖÕÜäöõüŠŽšž-])karusloomale"
+                    r"(?=\s+peab\s+olema\s+tagatud\b)",
+                    _karusloom_water_access_repl,
+                    replaced,
+                    flags=re.IGNORECASE,
+                )
+
                 def _karusloom_partitive_repl(match: re.Match[str]) -> str:
                     matched = match.group(0)
                     return "Tšintšiljat" if matched and matched[0].isupper() else "tšintšiljat"

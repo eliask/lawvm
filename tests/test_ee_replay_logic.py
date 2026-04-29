@@ -490,7 +490,7 @@ def test_case_inflected_replace_matches_mang_and_korraldaja_forms() -> None:
 def test_case_inflected_replace_matches_loom_to_tsintsilja_forms() -> None:
     cases = {
         "Karuslooma pidamise ruum.": "Tšintšilja pidamise ruum.",
-        "Karusloomale peab olema tagatud vesi.": "Tšintšiljale peab olema tagatud vesi.",
+        "Karusloomale peab olema tagatud vesi.": "Tšintšiljal peab olema tagatud vesi.",
         "Karusloomaga kokkupuutuv vahend.": "Tšintšiljaga kokkupuutuv vahend.",
         "Karuslooma peab olema võimalik välja viia.": "Tšintšiljat peab olema võimalik välja viia.",
         "Karuslooma ei tohi pidada alaliselt pimedas.": "Tšintšiljat ei tohi pidada alaliselt pimedas.",
@@ -510,6 +510,26 @@ def test_case_inflected_replace_matches_loom_to_tsintsilja_forms() -> None:
             )
             == expected
         )
+
+
+def test_case_inflected_replace_keeps_us_parenthetical_nom_and_illative() -> None:
+    updated = _ee_apply_text_replace_value(
+        (
+            "kus peetakse tšintšiljasid (edaspidi tšintšiljakasvandus), "
+            "rajatakse karusloomakasvandusse."
+        ),
+        "karusloomakasvandus",
+        "tšintšiljakasvandus",
+        case_inflected=True,
+    )
+
+    assert (
+        updated
+        == (
+            "kus peetakse tšintšiljasid (edaspidi tšintšiljakasvandus), "
+            "rajatakse tšintšiljakasvandusse."
+        )
+    )
 
 
 def test_apply_ee_ops_expands_plain_section_repeal_ranges_over_live_superscript_sections() -> None:
