@@ -81,6 +81,44 @@ def test_plan_ee_oracle_pair_selects_only_effective_new_amendments(monkeypatch) 
     assert planned.plan.source_adjudication.oracle_suspect == "forward_looking_oracle"
 
 
+def test_plan_ee_oracle_pair_blocks_cross_statute_oracle_group(monkeypatch) -> None:
+    base_xml = b"<base/>"
+    oracle_xml = b"<oracle/>"
+    base_refs = [_ref("101", "2025-01-01")]
+    oracle_refs = [_ref("999", "2026-03-01")]
+
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.extract_grupi_id",
+        lambda xml: "gid-base" if xml == base_xml else "gid-oracle",
+    )
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
+        lambda grupi_id, as_of, archive: "oracle",
+    )
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", lambda akt_viide, archive: oracle_xml)
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.extract_amendment_refs",
+        lambda xml: base_refs if xml == base_xml else oracle_refs,
+    )
+
+    planned = plan_ee_oracle_pair(
+        base_id="base",
+        as_of="2026-03-24",
+        base_xml=base_xml,
+        archive=None,
+    )
+
+    assert planned.plan.source_basis.value == "noncommensurable"
+    assert planned.plan.comparison_class == "cross_statute_oracle_mismatch"
+    assert planned.plan.oracle_grupi_id == "gid-oracle"
+    assert planned.plan.oracle_refs == ()
+    assert planned.plan.amendments_to_apply == ()
+    assert planned.plan.effective_new_amendments == ()
+    assert planned.plan.source_adjudication.oracle_suspect == "cross_statute_oracle_mismatch"
+    assert planned.plan.source_adjudication.lineage[-1]["rule"] == "ee_oracle_group_mismatch"
+
+
 def test_plan_ee_oracle_pair_treats_later_slice_of_same_act_as_new_delta(monkeypatch) -> None:
     base_xml = b"<base/>"
     oracle_xml = b"<oracle/>"

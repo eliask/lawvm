@@ -284,6 +284,12 @@ def _score_one_pair(gid: str, base_id: str, oracle_id: str, title: str, archive:
             )
             unknown_current = residual_summary.unknown_current_divergence_count
 
+        core_benchmark = r.source_adjudication is not None and not r.source_adjudication.oracle_suspect
+        open_current = max(0, len(r.divergences) - matched_current)
+        if r.comparison_class == "cross_statute_oracle_mismatch":
+            unknown_current = 0
+            open_current = 0
+
         return _BenchResult(
             grupi_id=gid,
             base_id=base_id,
@@ -297,14 +303,14 @@ def _score_one_pair(gid: str, base_id: str, oracle_id: str, title: str, archive:
             status=status,
             source_basis=r.source_basis,
             comparison_class=r.comparison_class,
-            core_benchmark=(r.source_adjudication is not None and not r.source_adjudication.oracle_suspect),
+            core_benchmark=core_benchmark,
             benchmark_reporting_stratum=reporting_summary["benchmark_reporting_stratum"],
             benchmark_reporting_headline_eligible=reporting_summary["benchmark_reporting_headline_eligible"],
             adjudicated_residual_count=residual_count,
             matched_current_residual_count=matched_current,
             adjudicated_bucket_counts=bucket_counts,
             unknown_current_residual_count=unknown_current,
-            open_current_divergence_count=max(0, len(r.divergences) - matched_current),
+            open_current_divergence_count=open_current,
         )
     except Exception as e:
         return _BenchResult(
