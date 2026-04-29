@@ -174,6 +174,23 @@ def test_get_ee_residual_inventory_emkf_inserted_item_list_punctuation_drift() -
     assert all("item 22" in record.evidence for record in inventory.residuals)
 
 
+def test_get_ee_residual_inventory_maaelu_inserted_item_list_punctuation_drift() -> None:
+    inventory = get_ee_residual_inventory("113052023002", "109062023008")
+
+    assert inventory is not None
+    assert "Eesti maaelu arengukava" in inventory.statute_title
+    assert inventory.comparison_class == "commensurable_delta"
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert {
+        record.address for record in inventory.residuals
+    } == {
+        "section:2",
+        "section:2/subsection:3",
+        "section:2/subsection:3/item:2",
+    }
+    assert all("item 3" in record.evidence for record in inventory.residuals)
+
+
 def test_get_ee_residual_inventory_majutuse_appendix_projection_repeal() -> None:
     inventory = get_ee_residual_inventory("130042020010", "109032023008")
 
