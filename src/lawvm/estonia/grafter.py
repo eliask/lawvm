@@ -6043,6 +6043,16 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
                     variants[old_form] = new_form
         old_forms = _ee_phrase_forms(old)
         new_forms = _ee_phrase_forms(new)
+        numeric_suffix_match = re.fullmatch(
+            re.escape(old.strip()) + r"\s+(\d[\d\s_]*)",
+            new.strip(),
+            flags=re.IGNORECASE,
+        )
+        if numeric_suffix_match is not None and old_forms is not None:
+            suffix = numeric_suffix_match.group(1).strip()
+            for old_form in old_forms.values():
+                if old_form and old_form not in variants:
+                    variants[old_form] = f"{old_form} {suffix}"
         if new == "":
             stripped_old = old.strip()
             for conj in (" või", " ja"):
