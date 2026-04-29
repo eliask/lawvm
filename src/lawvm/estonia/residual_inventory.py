@@ -375,6 +375,34 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
+    ("125092019004", "122062021002"): EEPairResidualInventory(
+        base_id="125092019004",
+        oracle_id="122062021002",
+        statute_title="Advokaadi kinnitamistoimingud",
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "section:8",
+                    "section:8/subsection:4",
+                    "section:8/subsection:4/item:4",
+                    "section:8/subsection:4/item:5",
+                    "section:8/subsection:4/item:7",
+                    "section:8/subsection:4/item:8",
+                ),
+                evidence=(
+                    "Source act 125092019001 repeals § 8(5) but does not target "
+                    "§ 8(4) items 4, 5, 7, or 8; source act 122062021001 later "
+                    "repeals § 10 only. Replay therefore preserves the base/source "
+                    "terminal punctuation and capitalization in the untouched § 8(4) "
+                    "item list, while oracle 122062021002 presents a cleaned "
+                    "semicolon/lowercase list surface. This is bounded source/oracle "
+                    "list-punctuation drift, not replay mutation debt."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("123112010049", "122072011005"): EEPairResidualInventory(
         base_id="123112010049",
         oracle_id="122072011005",
