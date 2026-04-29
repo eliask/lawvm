@@ -664,6 +664,57 @@ def _classify_descendant_projection_residuals(
         divergence["open_current"] = 0
 
 
+def _classify_table_fragment_replay_gaps(
+    divergences: list[dict[str, Any]],
+    *,
+    raw_divergences: list[dict[str, Any]],
+) -> None:
+    """Close browser rows where replay exposed a table fragment as a section.
+
+    EE amendment prose can target ``paragrahvi N tabeliosa``. Until table-part
+    identity is modeled, those operations can replay a local table fragment as
+    if it were the entire section while the oracle still has the full section
+    body under a child row. This is replay coverage work, not RT outreach.
+    """
+    raw_by_section = {}
+    for raw in raw_divergences:
+        raw_address = str(raw.get("address") or "")
+        section_address = _section_address(raw_address)
+        if section_address is None or raw_address == section_address:
+            continue
+        raw_by_section.setdefault(section_address, []).append(raw)
+
+    for divergence in divergences:
+        if divergence.get("residual_bucket"):
+            continue
+        if divergence.get("divergence_type") != "MISMATCH":
+            continue
+        address = str(divergence.get("address") or "")
+        replay_text = normalize_ee_comparison_text(str(divergence.get("replay_text") or ""))
+        oracle_text = normalize_ee_comparison_text(str(divergence.get("oracle_text") or ""))
+        if len(replay_text) < 40 or len(oracle_text) <= len(replay_text):
+            continue
+        explaining_children: list[str] = []
+        for child in raw_by_section.get(address, []):
+            if str(child.get("divergence_type") or "") != "OPS_MISSING":
+                continue
+            child_oracle = normalize_ee_comparison_text(str(child.get("oracle_text") or ""))
+            if replay_text and replay_text in child_oracle:
+                explaining_children.append(str(child.get("address") or ""))
+        if not explaining_children:
+            continue
+        divergence["residual_bucket"] = "table_fragment_replay_gap"
+        divergence["residual_evidence"] = (
+            "The replay-side section text is a strict fragment of oracle "
+            f"descendant text at {', '.join(explaining_children)}. This matches "
+            "known EE table-part amendment coverage gaps where a targeted "
+            "tabeliosa operation is not yet modeled as table-part identity. "
+            "Replay and oracle text are not mutated."
+        )
+        divergence["alignment_peer_addresses"] = ",".join(explaining_children)
+        divergence["open_current"] = 0
+
+
 def _assign_publication_outreach_triage(divergences: list[dict[str, Any]]) -> None:
     """Project residual classifications into outreach-safe publication buckets.
 
@@ -698,6 +749,14 @@ def _assign_publication_outreach_triage(divergences: list[dict[str, Any]]) -> No
             divergence["outreach_evidence"] = (
                 "Excluded from outreach candidate set because LawVM does not yet "
                 "fully replay the relevant amendment chain."
+            )
+            continue
+        if residual_bucket == "table_fragment_replay_gap":
+            divergence["outreach_bucket"] = "excluded_replay_coverage"
+            divergence["meaningful_candidate"] = 0
+            divergence["outreach_evidence"] = (
+                "Excluded from outreach candidate set because LawVM does not yet "
+                "model the targeted EE table-part operation as table identity."
             )
             continue
         if residual_bucket == "pair_surface_classification":
@@ -877,6 +936,10 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
     _classify_omitted_text_placeholder_display(divergences)
     _classify_address_alignment_shadows(divergences)
     _classify_descendant_projection_residuals(
+        divergences,
+        raw_divergences=raw_divergences,
+    )
+    _classify_table_fragment_replay_gaps(
         divergences,
         raw_divergences=raw_divergences,
     )

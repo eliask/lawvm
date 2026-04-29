@@ -787,6 +787,65 @@ def test_ee_publication_db_classifies_descendant_projection_residuals() -> None:
     assert divergences[1]["open_current"] == 1
 
 
+def test_ee_publication_db_classifies_table_fragment_replay_gaps() -> None:
+    divergences = [
+        {
+            "address": "section:1",
+            "divergence_type": "MISMATCH",
+            "replay_text": "PEREMEDITSIINI OSAKOND Osakonnajuhataja 1 Analüütik 1 Peaspetsialist 3",
+            "oracle_text": (
+                "Terviseameti struktuuri ja koosseisu kinnitamine "
+                "Terviseameti struktuur ja teenistujate koosseis kinnitatakse "
+                "alljärgnevalt: Ametinimetus Koosseisuüksuste arv"
+            ),
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+        {
+            "address": "section:2",
+            "divergence_type": "MISMATCH",
+            "replay_text": "Short unrelated section fragment that should not classify",
+            "oracle_text": "Longer heading text for a different section",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+    ]
+    raw_divergences = [
+        {
+            "address": "section:1/subsection:1",
+            "divergence_type": "OPS_MISSING",
+            "replay_text": None,
+            "oracle_text": (
+                "Terviseameti struktuur ja teenistujate koosseis kinnitatakse "
+                "alljärgnevalt: PEREMEDITSIINI OSAKOND Osakonnajuhataja 1 "
+                "Analüütik 1 Peaspetsialist 3 Kõik kokku"
+            ),
+        },
+        {
+            "address": "section:2/subsection:1",
+            "divergence_type": "OPS_MISSING",
+            "replay_text": None,
+            "oracle_text": "A different child body that does not contain the replay fragment.",
+        },
+    ]
+
+    ee_publication_db._classify_table_fragment_replay_gaps(
+        divergences,
+        raw_divergences=raw_divergences,
+    )
+
+    assert divergences[0]["residual_bucket"] == "table_fragment_replay_gap"
+    assert divergences[0]["open_current"] == 0
+    assert divergences[0]["alignment_peer_addresses"] == "section:1/subsection:1"
+    assert "tabeliosa operation" in divergences[0]["residual_evidence"]
+    assert divergences[1]["residual_bucket"] is None
+    assert divergences[1]["open_current"] == 1
+
+
 def test_ee_publication_db_classifies_noncommensurable_pair_surface() -> None:
     divergences = [
         {
@@ -825,6 +884,10 @@ def test_ee_publication_db_assigns_publication_outreach_triage() -> None:
             "open_current": 0,
         },
         {
+            "residual_bucket": "table_fragment_replay_gap",
+            "open_current": 0,
+        },
+        {
             "residual_bucket": "source_oracle_drift",
             "open_current": 0,
         },
@@ -846,11 +909,12 @@ def test_ee_publication_db_assigns_publication_outreach_triage() -> None:
         "publication_candidate",
         "excluded_presentation",
         "excluded_replay_coverage",
+        "excluded_replay_coverage",
         "excluded_source_surface",
         "excluded_pair_surface",
         "excluded_comparison_projection",
     ]
-    assert [divergence["meaningful_candidate"] for divergence in divergences] == [1, 0, 0, 0, 0, 0]
+    assert [divergence["meaningful_candidate"] for divergence in divergences] == [1, 0, 0, 0, 0, 0, 0]
     assert "punctuation_whitespace" in divergences[1]["outreach_evidence"]
 
 
