@@ -3282,6 +3282,30 @@ def test_text_replace_skips_match_inside_existing_replacement_surface() -> None:
     )
 
 
+def test_case_inflected_text_replace_handles_shared_prefix_vallavolikogu_forms() -> None:
+    assert _ee_apply_text_replace_value(
+        "Vallavolikogul on õigus.",
+        "vallavolikogu",
+        "linna- või vallavolikogu",
+        case_inflected=True,
+    ) == "Linna- või vallavolikogul on õigus."
+    assert _ee_apply_text_replace_value(
+        "Kokkulepe esitatakse vallavolikogule.",
+        "vallavolikogu",
+        "linna- või vallavolikogu",
+        case_inflected=True,
+    ) == "Kokkulepe esitatakse linna- või vallavolikogule."
+
+
+def test_case_inflected_text_replace_keeps_subject_before_participial_object() -> None:
+    assert _ee_apply_text_replace_value(
+        "Plaanile kannab vallavalitsus väljaselgitatud maatükkide piirid.",
+        "vallavalitsus",
+        "linna- või vallavalitsus",
+        case_inflected=True,
+    ) == "Plaanile kannab linna- või vallavalitsus väljaselgitatud maatükkide piirid."
+
+
 def test_global_case_inflected_text_replace_keeps_nominative_before_regular_noun_phrase() -> None:
     body = _body_with_section_and_subsection(
         "12",
@@ -3924,6 +3948,19 @@ def test_case_inflected_text_replace_handles_compact_coordinated_agency_spacing(
     )
 
     assert updated == "Maa-ja Ruumiameti toetatavad tegevused."
+
+
+def test_case_inflected_text_replace_does_not_reapply_inside_hyphen_spaced_replacement() -> None:
+    text = "Katastripidaja teatab linna- või vallavalitsusele katastriüksuse üldpindala."
+
+    updated = _ee_apply_text_replace_value(
+        text,
+        "vallavalitsus",
+        "linna- või vallavalitsus",
+        case_inflected=True,
+    )
+
+    assert updated == text
 
 
 def test_case_inflected_text_replace_keeps_nominative_in_comma_coordination_list() -> None:
