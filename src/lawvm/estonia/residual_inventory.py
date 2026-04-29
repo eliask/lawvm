@@ -98,6 +98,62 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
+    ("130042020010", "109032023008"): EEPairResidualInventory(
+        base_id="130042020010",
+        oracle_id="109032023008",
+        statute_title="Majutuse ja toitlustuse erialade riiklik õppekava",
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "chapter:4_1",
+                    "chapter:4_1/section:15_1",
+                    "chapter:4_1/section:15_1/subsection:1",
+                    "chapter:4_1/section:15_1/subsection:2",
+                    "chapter:4_1/section:15_1/subsection:2/item:1",
+                    "chapter:4_1/section:15_1/subsection:2/item:10",
+                    "chapter:4_1/section:15_1/subsection:2/item:11",
+                    "chapter:4_1/section:15_1/subsection:2/item:2",
+                    "chapter:4_1/section:15_1/subsection:2/item:3",
+                    "chapter:4_1/section:15_1/subsection:2/item:4",
+                    "chapter:4_1/section:15_1/subsection:2/item:5",
+                    "chapter:4_1/section:15_1/subsection:2/item:6",
+                    "chapter:4_1/section:15_1/subsection:2/item:7",
+                    "chapter:4_1/section:15_1/subsection:2/item:8",
+                    "chapter:4_1/section:15_1/subsection:2/item:9",
+                    "chapter:4_1/section:15_2",
+                    "chapter:4_1/section:15_2/subsection:1",
+                    "chapter:4_1/section:15_2/subsection:2",
+                    "chapter:4_1/section:15_3",
+                    "chapter:4_1/section:15_3/subsection:1",
+                    "chapter:4_1/section:15_3/subsection:1/item:1",
+                    "chapter:4_1/section:15_3/subsection:1/item:2",
+                    "chapter:4_1/section:15_3/subsection:1/item:3",
+                    "chapter:4_1/section:15_3/subsection:2",
+                    "chapter:4_1/section:15_3/subsection:2/item:1",
+                    "chapter:4_1/section:15_3/subsection:2/item:2",
+                    "chapter:4_1/section:15_3/subsection:2/item:3",
+                    "chapter:4_1/section:15_3/subsection:2/item:4",
+                    "chapter:4_1/section:15_3/subsection:2/item:5",
+                    "chapter:4_1/section:15_3/subsection:2/item:6",
+                    "chapter:4_1/section:15_3/subsection:2/item:7",
+                    "chapter:4_1/section:15_3/subsection:2/item:8",
+                    "chapter:4_1/section:15_3/subsection:2/item:9",
+                    "chapter:4_1/section:15_4",
+                    "chapter:4_1/section:15_4/subsection:1",
+                ),
+                evidence=(
+                    "Source act 109032023004 says 'määruse lisa 5 tunnistatakse "
+                    "kehtetuks'. LawVM currently materializes the appendix body as "
+                    "chapter 4^1, while oracle 109032023008 keeps the chapter and "
+                    "section headings as repealed placeholders with descendants "
+                    "removed. This is a known appendix projection/repeal display "
+                    "pathology, not an RT candidate divergence."
+                ),
+                bucket="appendix_display_pathology",
+            ),
+        ),
+    ),
     ("104072013022", "104072013023"): EEPairResidualInventory(
         base_id="104072013022",
         oracle_id="104072013023",
