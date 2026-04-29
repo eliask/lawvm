@@ -117,6 +117,22 @@ def test_get_ee_residual_inventory_algatusruhma_list_continuation_punctuation() 
     assert all("106092019001" in record.evidence for record in inventory.residuals)
 
 
+def test_get_ee_residual_inventory_vabaparda_target_drift() -> None:
+    inventory = get_ee_residual_inventory("125012012005", "123092022012")
+
+    assert inventory is not None
+    assert inventory.statute_title.startswith("Alla 24-meetrise")
+    assert len(inventory.residuals) == 2
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert {
+        record.address for record in inventory.residuals
+    } == {
+        "section:6",
+        "section:6/subsection:9",
+    }
+    assert all("129122015004 § 1 item 5" in record.evidence for record in inventory.residuals)
+
+
 def test_get_ee_residual_inventory_leader_punctuation_drift() -> None:
     inventory = get_ee_residual_inventory("123112010049", "122072011005")
 
