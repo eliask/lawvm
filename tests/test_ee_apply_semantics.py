@@ -8792,6 +8792,56 @@ def test_insert_item_before_existing_later_item_gets_semicolon_terminal() -> Non
     assert inserted.attrs["source_family"] == "ee_insert_item_terminal_normalized_by_position"
 
 
+def test_insert_item_under_html_table_parent_preserves_table_cell_text() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="5",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label="2",
+                        attrs={"source_cleanup_rules": ("ee_html_table_numbered_items_materialized",)},
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.ITEM,
+                                label="13",
+                                text=(
+                                    "pakendi infolehele erandi tegemise taotlus "
+                                    "(määruse (EL) 2019/6 art 14 lg 4) 600 eurot"
+                                ),
+                                attrs={"source_cleanup_rule": "ee_html_table_numbered_items_materialized"},
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_insert_html_table_item",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "5"), ("subsection", "2"), ("item", "14"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="14) hilisema tunnustamise taotlus (määruse (EL) 2019/6 art 53) 3000 eurot",
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    subsection = result.children[0].children[0]
+    inserted = subsection.children[1]
+
+    assert subsection.children[0].text.endswith("600 eurot")
+    assert inserted.label == "14"
+    assert inserted.text == "hilisema tunnustamise taotlus (määruse (EL) 2019/6 art 53) 3000 eurot"
+    assert inserted.attrs["source_cleanup_rule"] == "ee_html_table_numbered_items_materialized"
+    assert "source_family" not in inserted.attrs
+
+
 def test_replace_last_item_finalizes_terminal_semicolon_to_period() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,

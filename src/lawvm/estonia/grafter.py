@@ -201,6 +201,18 @@ def _normalize_item_list_terminals(children: list[IRNode]) -> list[IRNode]:
     return normalized
 
 
+def _node_has_html_table_items(node: IRNode) -> bool:
+    """True when a node's item children originate from RT HTML table rows."""
+    cleanup_rules = node.attrs.get("source_cleanup_rules")
+    if isinstance(cleanup_rules, tuple) and _EE_HTML_TABLE_NUMBERED_ITEMS_RULE in cleanup_rules:
+        return True
+    return any(
+        child.kind == IRNodeKind.ITEM
+        and child.attrs.get("source_cleanup_rule") == _EE_HTML_TABLE_NUMBERED_ITEMS_RULE
+        for child in node.children
+    )
+
+
 def _is_inserted_numbered_label(label: str | None) -> bool:
     """Return whether an EE numeric label is an inserted/superscript label."""
     return bool(label and "_" in label)
@@ -737,6 +749,55 @@ def _strip_rt_inline_change_note(text: str) -> str:
     return re.sub(r"\s+", " ", _EE_RT_INLINE_CHANGE_NOTE_RE.sub("", text)).strip()
 
 
+def _html_fragment_plain_text(fragment: str) -> str:
+    """Return plain text from a small RT HTML fragment without structural splitting."""
+    import html as _html
+
+    text = re.sub(r"<(?:sup|sub)\b[^>]*>", " ", fragment, flags=re.IGNORECASE)
+    text = re.sub(r"</(?:sup|sub)>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = _html.unescape(text).replace("\xa0", " ")
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\(\s+", "(", text)
+    text = re.sub(r"\s+\)", ")", text)
+    return text
+
+
+def _extract_numbered_html_table_row_items(html_text: str) -> list[IRNode]:
+    """Materialize table rows whose first cell begins with an explicit item label.
+
+    Table cells frequently contain legal citations such as ``art 53)``. Those
+    parenthetical citation numbers are not item labels, so row extraction owns
+    the top-level label before falling back to generic inline item splitting.
+    """
+    items: list[IRNode] = []
+    rows = re.findall(r"<tr\b[^>]*>(.*?)</tr>", html_text, flags=re.IGNORECASE | re.DOTALL)
+    if not rows:
+        return []
+    for row in rows:
+        cells = re.findall(r"<td\b[^>]*>(.*?)</td>", row, flags=re.IGNORECASE | re.DOTALL)
+        if len(cells) < 2:
+            continue
+        cell_texts = [_html_fragment_plain_text(cell) for cell in cells]
+        first_cell = cell_texts[0]
+        match = re.match(r"^(?P<label>\d[\d\s_]*)\)\s*(?P<body>.+)$", first_cell)
+        if match is None:
+            continue
+        body_parts = [match.group("body").strip(), *[text for text in cell_texts[1:] if text]]
+        item_text = _strip_rt_inline_change_note(" ".join(part for part in body_parts if part).strip())
+        if not item_text:
+            continue
+        items.append(
+            IRNode(
+                kind=IRNodeKind.ITEM,
+                label=_normalize_num(match.group("label")),
+                text=item_text,
+                attrs={"source_cleanup_rule": _EE_HTML_TABLE_NUMBERED_ITEMS_RULE},
+            )
+        )
+    return items
+
+
 def _extract_html_table_item_children(el: ET.Element, ns_str: str) -> list[IRNode]:
     """Materialize numbered HTML table rows as item children when the labels are explicit."""
     children: list[IRNode] = []
@@ -748,6 +809,10 @@ def _extract_html_table_item_children(el: ET.Element, ns_str: str) -> list[IRNod
             if _extract_appendix_marker(child.text):
                 continue
             if not re.search(r"<table\b", child.text, re.IGNORECASE):
+                continue
+            row_items = _extract_numbered_html_table_row_items(child.text)
+            if row_items:
+                children.extend(row_items)
                 continue
             for item_text in parse_html_op_items(child.text):
                 intro_text, item_children = _parse_subsection_item_payload(item_text)
@@ -10409,7 +10474,8 @@ def _ee_apply_op(
                                     child.kind,
                                 )
                             )
-                            merged_children = _normalize_item_list_terminals(merged_children)
+                            if not _node_has_html_table_items(target_node):
+                                merged_children = _normalize_item_list_terminals(merged_children)
                             updated_text = target_node.text
                             if new_node.text:
                                 updated_text = (
@@ -10442,6 +10508,18 @@ def _ee_apply_op(
                 if kind == "item":
                     parent_node = tree_ops.resolve(body, parent_path)
                     if parent_node is not None:
+                        parent_uses_html_table_items = _node_has_html_table_items(parent_node)
+                        if parent_uses_html_table_items:
+                            new_node = IRNode(
+                                kind=new_node.kind,
+                                label=new_node.label,
+                                text=new_node.text,
+                                attrs={
+                                    **dict(new_node.attrs),
+                                    "source_cleanup_rule": _EE_HTML_TABLE_NUMBERED_ITEMS_RULE,
+                                },
+                                children=tuple(new_node.children),
+                            )
                         existing_items = [child for child in parent_node.children if child.kind == IRNodeKind.ITEM]
                         if existing_items:
                             ordered = sorted(
@@ -10460,6 +10538,7 @@ def _ee_apply_op(
                             )
                             if (
                                 insert_idx is not None
+                                and not parent_uses_html_table_items
                                 and new_node.attrs.get("source_family") != _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE
                             ):
                                 terminal = _item_terminal_for_position(ordered, insert_idx)
@@ -10483,7 +10562,7 @@ def _ee_apply_op(
                 )
                 if kind == "item":
                     updated_parent = tree_ops.resolve(updated_body, parent_path)
-                    if updated_parent is not None:
+                    if updated_parent is not None and not _node_has_html_table_items(updated_parent):
                         normalized_children = _normalize_item_list_terminals(list(updated_parent.children))
                         if tuple(normalized_children) != tuple(updated_parent.children):
                             updated_parent_node = IRNode(
