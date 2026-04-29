@@ -2801,6 +2801,7 @@ def extract_ee_ops(
         rf'|\b{statute_ref}\s+teksti[s]?\s+asendatakse'
         rf'|\b{statute_ref}\s+teksti[s]?\s*,\s*välja\s+arvatud\s+[^.]+?\s+asendatakse'
         rf'|\b{statute_ref}\s+pealkirjas\s+ja\s+teksti[s]?\s+asendatakse(?:\s+läbivalt)?'
+        rf'|\b{statute_ref}\s+ja\s+selle\s+lisades\s+asendatakse'
         rf'|\b{statute_ref}\s*,\s*välja\s+arvatud\s+[^.]+?\s+asendatakse\s+(?:sõna[a-z]*|sõnu|arv[a-z]*|aastaarv[a-z]*|tekstiosa[a-z]*|lauseosa[a-z]*|number[a-z]*)'
         rf'|\b{statute_ref}\s+\d+[^§]*peatüki[s]?\s+(?:pealkirjas\s+)?asendatakse'
         rf'|\b{statute_ref}\s+asendatakse\s+(?:sõna[a-z]*|arv[a-z]*|aastaarv[a-z]*|tekstiosa[a-z]*|lauseosa[a-z]*|number[a-z]*)',
@@ -2848,6 +2849,11 @@ def extract_ee_ops(
             scope_chapters = _extract_global_text_replace_chapter_scope(clean)
             exclusions = _extract_global_text_replace_exclusions(clean)
             heading_exclusions = _extract_global_text_replace_heading_exclusions(clean)
+            statute_and_annex_scope = re.search(
+                rf'\b{statute_ref}\s+ja\s+selle\s+lisades\s+asendatakse',
+                clean,
+                re.IGNORECASE,
+            ) is not None
             payload, _rewrite_witness = _set_text_replace_payload_attrs(
                 payload,
                 clean,
@@ -2855,6 +2861,11 @@ def extract_ee_ops(
                 new_t,
                 scope_chapters=tuple(scope_chapters),
                 exclude_paths=tuple(exclusions),
+                source_family=(
+                    "ee_global_text_replace_statute_and_annex_scope"
+                    if statute_and_annex_scope
+                    else ""
+                ),
             )
             if title_and_text_global is not None:
                 payload = replace(
@@ -2888,6 +2899,16 @@ def extract_ee_ops(
                         if title_and_text_global is not None
                         else ()
                     ),
+                    *(
+                        ("ee_global_text_replace_statute_and_annex_scope",)
+                        if statute_and_annex_scope
+                        else ()
+                    ),
+                ),
+                witness_rule_id=(
+                    "ee_global_text_replace_statute_and_annex_scope"
+                    if statute_and_annex_scope
+                    else None
                 ),
             ))
             seq += 1

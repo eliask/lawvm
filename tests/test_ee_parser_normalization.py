@@ -147,6 +147,37 @@ def test_extract_ee_ops_emits_unscoped_many_old_single_new_text_replaces() -> No
     assert all(_payload(op).attrs["case_inflected"] is True for op in ops)
 
 
+def test_extract_ee_ops_emits_statute_and_annex_global_text_replace_pairs() -> None:
+    text = (
+        "määruses ja selle lisades asendatakse sõna „Maanteeamet” ja "
+        "sõnad „Veeteede Amet” sõnaga „Transpordiamet” vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path, op.witness_rule_id) for op in ops] == [
+        (
+            StructuralAction.TEXT_REPLACE,
+            (),
+            "ee_global_text_replace_statute_and_annex_scope",
+        ),
+        (
+            StructuralAction.TEXT_REPLACE,
+            (),
+            "ee_global_text_replace_statute_and_annex_scope",
+        ),
+    ]
+    assert [(_payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        ("Maanteeamet", "Transpordiamet"),
+        ("Veeteede Amet", "Transpordiamet"),
+    ]
+    assert all(_payload(op).attrs["case_inflected"] is True for op in ops)
+    assert all(
+        _payload(op).attrs["source_family"] == "ee_global_text_replace_statute_and_annex_scope"
+        for op in ops
+    )
+
+
 def test_extract_ee_ops_targets_part_chapter_division_heading() -> None:
     text = (
         "seaduse 3. osa 6. peatüki 5. jao pealkiri muudetakse ja "
