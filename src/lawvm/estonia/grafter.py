@@ -7084,6 +7084,51 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
     """Build replacement pairs, longest-first, for bounded case-aware rewrites."""
     variants: dict[str, str] = {}
 
+    def _add_vts_operator_forms() -> None:
+        """Own RT's 2026 VTS terminology rewrite with explicit case forms."""
+        if not case_inflected:
+            return
+        form_sets = {
+            ("VTS operaator", "laevaliiklusjuht"): {
+                "VTS operaator": "laevaliiklusjuht",
+                "VTS operaatori": "laevaliiklusjuhi",
+                "VTS operaatorit": "laevaliiklusjuhti",
+                "VTS operaatorisse": "laevaliiklusjuhti",
+                "VTS operaatoris": "laevaliiklusjuhis",
+                "VTS operaatorist": "laevaliiklusjuhist",
+                "VTS operaatorile": "laevaliiklusjuhile",
+                "VTS operaatoril": "laevaliiklusjuhil",
+                "VTS operaatorilt": "laevaliiklusjuhilt",
+                "VTS operaatoriks": "laevaliiklusjuhiks",
+                "VTS operaatorini": "laevaliiklusjuhini",
+                "VTS operaatorina": "laevaliiklusjuhina",
+                "VTS operaatorita": "laevaliiklusjuhita",
+                "VTS operaatoriga": "laevaliiklusjuhiga",
+                "VTS operaatorid": "laevaliiklusjuhid",
+                "VTS operaatorite": "laevaliiklusjuhtide",
+            },
+            ("VTS vanemoperaator", "vanemlaevaliiklusjuht"): {
+                "VTS vanemoperaator": "vanemlaevaliiklusjuht",
+                "VTS vanemoperaatori": "vanemlaevaliiklusjuhi",
+                "VTS vanemoperaatorit": "vanemlaevaliiklusjuhti",
+                "VTS vanemoperaatorisse": "vanemlaevaliiklusjuhti",
+                "VTS vanemoperaatoris": "vanemlaevaliiklusjuhis",
+                "VTS vanemoperaatorist": "vanemlaevaliiklusjuhist",
+                "VTS vanemoperaatorile": "vanemlaevaliiklusjuhile",
+                "VTS vanemoperaatoril": "vanemlaevaliiklusjuhil",
+                "VTS vanemoperaatorilt": "vanemlaevaliiklusjuhilt",
+                "VTS vanemoperaatoriks": "vanemlaevaliiklusjuhiks",
+                "VTS vanemoperaatorini": "vanemlaevaliiklusjuhini",
+                "VTS vanemoperaatorina": "vanemlaevaliiklusjuhina",
+                "VTS vanemoperaatorita": "vanemlaevaliiklusjuhita",
+                "VTS vanemoperaatoriga": "vanemlaevaliiklusjuhiga",
+                "VTS vanemoperaatorid": "vanemlaevaliiklusjuhid",
+                "VTS vanemoperaatorite": "vanemlaevaliiklusjuhtide",
+            },
+        }
+        for old_form, new_form in form_sets.get((old, new), {}).items():
+            variants.setdefault(old_form, new_form)
+
     def _strip_wrapping_quotes(surface: str) -> str | None:
         stripped = surface.strip()
         if len(stripped) < 2:
@@ -7140,6 +7185,7 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
 
     if old:
         variants[old] = new
+        _add_vts_operator_forms()
         old_norm = _ee_normalize_text_replace_surface(old)
         new_norm = _ee_normalize_text_replace_surface(new)
         if old_norm and old_norm not in variants:
@@ -7767,9 +7813,11 @@ def _ee_should_preserve_match_capital(old: str, new: str, *, case_inflected: boo
     if not case_inflected:
         return False
     new_norm = _ee_normalize_text_replace_surface(new)
+    old_norm = _ee_normalize_text_replace_surface(old)
+    if old_norm in {"VTS operaator", "VTS vanemoperaator"}:
+        return False
     if new_norm[:1].isupper():
         return True
-    old_norm = _ee_normalize_text_replace_surface(old)
     if re.fullmatch(r"[A-ZÄÖÕÜŠŽ][A-Za-zÄÖÕÜäöõüŠŽšž-]+", old_norm) and re.search(
         r"(?:amet|inspektsioon|keskus|koda|komisjon|ministeerium|teenistus)$",
         old_norm,
@@ -8081,6 +8129,7 @@ def _ee_apply_text_replace_value(
             and new_forms.get("sg_nom")
             and new_forms.get("sg_gen")
             and new_forms["sg_nom"] != new_forms["sg_gen"]
+            and new_forms["sg_nom"] not in {"laevaliiklusjuht", "vanemlaevaliiklusjuht"}
         ):
             replaced = _ee_replace_ambiguous_genitive_phrase(
                 replaced,

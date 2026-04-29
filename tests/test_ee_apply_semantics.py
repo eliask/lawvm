@@ -108,6 +108,38 @@ def test_case_inflected_text_replace_handles_madalik_to_madal_forms() -> None:
     assert replaced == "Madalale sõitnud laev seisis madalal."
 
 
+def test_case_inflected_text_replace_handles_vts_operator_terminology_forms() -> None:
+    text = (
+        "VTS operaatori kutsetunnistuse saamiseks võib VTS operaatorina töötada. "
+        "Transpordiamet väljastab VTS operaatorile kutsetunnistuse. "
+        "Täienduskoolituse peab läbima iga VTS operaator iga 5 aasta järel. "
+        "VTS vanemoperaatori kvalifikatsiooni saamiseks hinnatakse VTS vanemoperaatori pädevust."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "VTS operaator",
+        "laevaliiklusjuht",
+        case_inflected=True,
+        all_occurrences=True,
+    )
+    replaced = _ee_apply_text_replace_value(
+        replaced,
+        "VTS vanemoperaator",
+        "vanemlaevaliiklusjuht",
+        case_inflected=True,
+        all_occurrences=True,
+    )
+
+    assert replaced == (
+        "Laevaliiklusjuhi kutsetunnistuse saamiseks võib laevaliiklusjuhina töötada. "
+        "Transpordiamet väljastab laevaliiklusjuhile kutsetunnistuse. "
+        "Täienduskoolituse peab läbima iga laevaliiklusjuht iga 5 aasta järel. "
+        "Vanemlaevaliiklusjuhi kvalifikatsiooni saamiseks hinnatakse "
+        "vanemlaevaliiklusjuhi pädevust."
+    )
+
+
 def test_text_replace_capitalized_source_surface_does_not_rewrite_lowercase_occurrence() -> None:
     body = _body_with_section_and_subsection(
         "42",
