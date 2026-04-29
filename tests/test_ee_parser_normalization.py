@@ -8174,3 +8174,17 @@ def test_extract_ee_ops_splits_section_heading_and_text_replace_scope() -> None:
         ((("section", "2"),), None),
     ]
     assert ops[1].witness_rule_id == "ee_section_heading_and_text_replace_split"
+
+
+def test_extract_ee_ops_recovers_flat_sectionless_singleton_item_repeals() -> None:
+    text = "määruse punktid 2, 4, 15 ja 16 tunnistatakse kehtetuks;"
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPEAL, (("section", "1"), ("subsection", "1"), ("item", "2"))),
+        (StructuralAction.REPEAL, (("section", "1"), ("subsection", "1"), ("item", "4"))),
+        (StructuralAction.REPEAL, (("section", "1"), ("subsection", "1"), ("item", "15"))),
+        (StructuralAction.REPEAL, (("section", "1"), ("subsection", "1"), ("item", "16"))),
+    ]
+    assert all(op.witness_rule_id == "ee_flat_sectionless_singleton_item_repeal" for op in ops)
