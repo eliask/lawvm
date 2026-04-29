@@ -1746,12 +1746,21 @@ def parse_ee_amendment_ops(
                     selector_excluded_paths.append(path)
                     seen_paths.add(path)
             if selector_excluded_paths:
+                canonical_excluded_paths = tuple(
+                    dict.fromkeys(
+                        (
+                            *rewrite.exclude_paths,
+                            *selector_excluded_paths,
+                        )
+                    )
+                )
                 updated_op = replace(
                     global_op,
                     payload=replace(
                         payload,
                         attrs={
                             **payload.attrs,
+                            "exclude_paths": canonical_excluded_paths,
                             "selector_composition_exclude_paths": tuple(selector_excluded_paths),
                         },
                     ),
@@ -2397,6 +2406,33 @@ def _parse_preambul_single_target_ops(
     normalized_ops: list[LegalOperation] = []
     for op in ops:
         source_text = op.provenance_tags[0] if op.provenance_tags else ""
+        if source_text and _tr_is_out_of_body_appendix_or_note_clause(source_text):
+            clause_text = re.split(
+                r"\s+§\s*\d[\d\s_]*\.(?:\s|\x01)+",
+                source_text,
+                maxsplit=1,
+                flags=re.IGNORECASE,
+            )[0].strip()
+            normalized_ops.append(
+                LegalOperation(
+                    op_id=f"ee-out-of-body-appendix-or-note-{op.sequence}-{source_id}",
+                    sequence=op.sequence,
+                    action=StructuralAction.META,
+                    target=LegalAddress(path=()),
+                    payload=IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text=clause_text,
+                        attrs={"source_family": _EE_OUT_OF_BODY_APPENDIX_OR_NOTE_RULE},
+                    ),
+                    source=op.source,
+                    provenance_tags=(
+                        *op.provenance_tags,
+                        _EE_OUT_OF_BODY_APPENDIX_OR_NOTE_RULE,
+                    ),
+                    witness_rule_id=_EE_OUT_OF_BODY_APPENDIX_OR_NOTE_RULE,
+                )
+            )
+            continue
         if re.match(r"^määruse\s+preambul\s+sõnastatakse\b", source_text, re.IGNORECASE):
             normalized_ops.append(
                 LegalOperation(

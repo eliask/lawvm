@@ -812,6 +812,45 @@ def test_extract_ee_ops_marks_case_inflected_replace_as_all_occurrences() -> Non
     assert ops[0].payload.attrs["all_occurrences"] is True
 
 
+def test_new_format_omnibus_does_not_route_payload_cross_reference_to_target() -> None:
+    xml = """
+    <oigusakt xmlns="muutmismaarus_1_10.02.2010">
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>1</paragrahvNr>
+          <paragrahvPealkiri>Vabariigi Valitsuse määruse nr 1 „Võõrmäärus” muutmine</paragrahvPealkiri>
+          <sisuTekst>
+            <HTMLKonteiner><![CDATA[
+              <p>Vabariigi Valitsuse määruses nr 1 „Võõrmäärus” tehakse järgmised muudatused:</p>
+              <p><b>1)</b> paragrahv 36 sõnastatakse järgmiselt:</p>
+              <p>„§ 36. Võõra määruse säte</p>
+              <p>Kohaldatakse Vabariigi Valitsuse määruse nr 2 „Sihtmäärus” § 21 lõiget 1.”;</p>
+              <p><b>2)</b> paragrahvi 11 täiendatakse lõikega 2 järgmises sõnastuses:</p>
+              <p>„(2) Võõr tekst.”;</p>
+            ]]></HTMLKonteiner>
+          </sisuTekst>
+        </paragrahv>
+        <paragrahv>
+          <paragrahvNr>2</paragrahvNr>
+          <paragrahvPealkiri>Vabariigi Valitsuse määruse nr 2 „Sihtmäärus” muutmine</paragrahvPealkiri>
+          <sisuTekst>
+            <HTMLKonteiner><![CDATA[
+              <p>Vabariigi Valitsuse määruses nr 2 „Sihtmäärus” tehakse järgmised muudatused:</p>
+              <p><b>1)</b> paragrahvi 5 lõige 1 tunnistatakse kehtetuks;</p>
+            ]]></HTMLKonteiner>
+          </sisuTekst>
+        </paragrahv>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Sihtmäärus")
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPEAL, (("section", "5"), ("subsection", "1"))),
+    ]
+
+
 def test_extract_ee_ops_marks_plural_subsection_insert_after_as_all_occurrences() -> None:
     ops = extract_ee_ops(
         (
@@ -9234,7 +9273,9 @@ def test_parse_ee_amendment_ops_slices_parenthesized_multi_regulation_block() ->
 
     targets = {(op.action, op.target.path) for op in ops}
     assert (StructuralAction.INSERT, (("section", "1"), ("subsection", "2"))) in targets
-    assert (StructuralAction.INSERT, (("section", "2"), ("subsection", "1"))) in targets
+    assert (StructuralAction.INSERT, (("section", "2"), ("subsection", "1"), ("item", "45"))) in targets
+    assert (StructuralAction.INSERT, (("section", "2"), ("subsection", "1"), ("item", "54"))) in targets
+    assert (StructuralAction.INSERT, (("section", "2"), ("subsection", "1"))) not in targets
     assert (StructuralAction.REPLACE, (("section", "2"), ("subsection", "2_2"), ("item", "1"))) in targets
     assert (StructuralAction.TEXT_REPLACE, (("section", "4"), ("subsection", "9"))) in targets
     assert (StructuralAction.INSERT, (("section", "5"),)) in targets
@@ -9407,7 +9448,7 @@ def test_parse_ee_amendment_ops_does_not_carry_old_format_section_into_appendix_
 
     assert appendix_ops
     assert appendix_ops[0].action is StructuralAction.META
-    assert appendix_ops[0].witness_rule_id == "ee_out_of_body_appendix_or_note_clause"
+    assert appendix_ops[0].witness_rule_id == "ee_out_of_body_appendix_clause_not_section_scoped"
     assert not any(op.target.path == (("section", "85_2"),) and op.action is StructuralAction.REPEAL for op in appendix_ops)
 
 
@@ -9972,7 +10013,9 @@ def test_parse_ee_amendment_ops_keeps_selector_exclusion_out_of_global_replay_sc
     )
 
     assert global_op.payload is not None
-    assert global_op.payload.attrs.get("exclude_paths") in (None, ())
+    assert global_op.payload.attrs["exclude_paths"] == (
+        (("section", "3"), ("subsection", "3")),
+    )
     assert global_op.payload.attrs["selector_composition_exclude_paths"] == (
         (("section", "3"), ("subsection", "3")),
     )

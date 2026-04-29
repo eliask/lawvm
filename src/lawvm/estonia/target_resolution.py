@@ -20,7 +20,13 @@ from lawvm.estonia.act_identity_registry import (
     lookup_ee_act_identity,
 )
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
-from lawvm.estonia.peg import _extract_quoted_content, _normalize_num, extract_ee_ops, parse_html_op_items
+from lawvm.estonia.peg import (
+    _extract_quoted_content,
+    _instruction_preamble,
+    _normalize_num,
+    extract_ee_ops,
+    parse_html_op_items,
+)
 
 _EE_DIRECT_TARGET_PREFIX_STRIP_RULE = "ee_direct_target_title_prefix_stripped_for_structural_repeal"
 _EE_OLD_FORMAT_DIRECT_TARGET_PREFIX_STRIP_BEFORE_CARRY_RULE = (
@@ -156,6 +162,16 @@ def _mark_old_format_out_of_body_clause(op: LegalOperation, source_text: str) ->
         provenance_tags=tags,
         witness_rule_id=_EE_OLD_FORMAT_OUT_OF_BODY_APPENDIX_CLAUSE_RULE,
     )
+
+
+def _strip_following_amendment_section_from_out_of_body_clause(text: str) -> str:
+    """Keep non-body appendix/note clauses from absorbing following § sections."""
+    return re.split(
+        r"\s+§\s*\d[\d\s_]*\.(?:\s|\x01)+",
+        text,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0].strip()
 
 
 def _title_numeric_measure_markers(text: str) -> frozenset[str]:
@@ -592,6 +608,63 @@ def plain_html_text(html_block: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _looks_like_embedded_act_section_intro(plain: str) -> bool:
+    """Return True for embedded act wrappers, not payload cross-references.
+
+    Some quoted replacement payloads cite another regulation by full title.
+    Those citations are legal text inside the payload; they must not reroute
+    the rest of the current paragraph into the cited regulation.
+    """
+    if not extract_intro_statute_fragment(plain.lstrip('„"« ')):
+        return False
+    lowered = plain.lower()
+    if re.search(
+        r"\btehakse\s+(?:järgmised\s+)?muudatused\b",
+        lowered,
+        re.IGNORECASE,
+    ):
+        return True
+    return bool(
+        re.search(
+            r"\b(?:§|paragrahv(?:i|is|ist)?)\s*\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*"
+            r"(?:(?![.;:]).){0,180}"
+            r"\b(?:sõnastatakse|muudetakse|täiendatakse|tunnistatakse|"
+            r"asendatakse|jäetakse\s+välja|lisatakse)\b",
+            lowered,
+            re.IGNORECASE | re.DOTALL,
+        )
+    )
+
+
+def _nested_payload_contains_direct_target_instruction(
+    *,
+    text: str,
+    target_title: str,
+    lookup_act_identity: Callable[..., object | None],
+    title_matcher: Callable[[str, str], bool],
+) -> bool:
+    nested = _extract_quoted_content(text)
+    if not nested:
+        return False
+    nested_preamble = _instruction_preamble(nested)
+    if not re.search(
+        r"\b(?:asendatakse|täiendatakse|tunnistatakse|sõnastatakse|"
+        r"muudetakse|jäetakse\s+välja|lisatakse)\b",
+        nested_preamble,
+        re.IGNORECASE,
+    ):
+        return False
+    nested_fragment = extract_intro_statute_fragment(nested_preamble)
+    if direct_target_clause_matches_registry(
+        fragment=nested_fragment,
+        target_title=target_title,
+        lookup_act_identity=lookup_act_identity,
+        title_matcher=title_matcher,
+    ):
+        return True
+    return bool(is_specific_direct_target_fragment(nested_fragment) and title_matcher(target_title, nested_fragment))
+
+
 def split_embedded_act_sections(html_block: str) -> list[str]:
     """Split hybrid new-format HTML blocks that embed internal §-act sections."""
     paras = re.findall(r"<p\b[^>]*>.*?</p>", html_block, flags=re.DOTALL | re.IGNORECASE)
@@ -610,13 +683,15 @@ def split_embedded_act_sections(html_block: str) -> list[str]:
         starts_from_paragraph_header = bool(
             re.match(r"^§\s*\d+\.\s+", plain)
             and any(kw in plain.lower() for kw in ("muutmine", "kehtetuks tunnistamine", "täiendamine"))
-        ) or bool(intro_fragment)
+        ) or bool(intro_fragment and _looks_like_embedded_act_section_intro(plain))
         if starts_from_paragraph_header:
             if current:
                 sections.append("\n".join(current))
             current = [para_html]
             saw_header = True
-            current_started_from_intro = bool(intro_fragment) and starts_with_quote
+            current_started_from_intro = (
+                bool(intro_fragment) and starts_with_quote
+            )
             quote_balance = (
                 plain.count("„") + plain.count("«") + plain.count('"')
                 - plain.count("”") - plain.count("»")
@@ -711,7 +786,11 @@ def collect_embedded_target_sections(
             is_paragraph_header = bool(re.match(r"^§\s*\d+\.\s+", header_plain))
             if (
                 (is_paragraph_header and strict_title_match_para(target_title, header_plain))
-                or (header_fragment and title_matches_para(target_title, header_fragment))
+                or (
+                    header_fragment
+                    and _looks_like_embedded_act_section_intro(header_plain)
+                    and title_matches_para(target_title, header_fragment)
+                )
             ):
                 embedded_target_sections.append(section_html)
     if embedded_target_sections and all(
@@ -756,16 +835,9 @@ def filter_direct_target_clause_op_texts(
     for op_text in op_texts:
         op_text_plain = re.sub(r"^\(?\d[\d\s_]*\)\s*", "", op_text).strip()
         plain_fragment = extract_intro_statute_fragment(op_text_plain)
-        nested = _extract_quoted_content(op_text_plain)
-        nested_fragment = extract_intro_statute_fragment(nested) if nested else ""
         if (
             title_matches_para(target_title, op_text_plain)
             or direct_target_clause_matches_registry(fragment=plain_fragment, target_title=target_title)
-            or (nested and title_matches_para(target_title, nested))
-            or (
-                nested
-                and direct_target_clause_matches_registry(fragment=nested_fragment, target_title=target_title)
-            )
         ):
             filtered_op_texts.append(op_text)
     return filtered_op_texts
@@ -782,7 +854,8 @@ def _strip_html_amendment_section_heading_wrapper(
         return op_text, False
     match = re.match(
         r"^§\s*\d[\d\s_]*\.\s+"
-        r"(?P<header>.{0,500}?\b(?:muutmine|täiendamine|kehtetuks\s+tunnistamine)\b)\s+"
+        r"(?P<header>.{0,500}?\b(?:muutmine|täiendamine|kehtetuks\s+tunnistamine)\b)"
+        r"(?:\s|\x01)+"
         r"(?P<body>.+)$",
         op_text,
         flags=re.IGNORECASE | re.DOTALL,
@@ -2210,6 +2283,8 @@ def old_format_lower_op_texts(
         carried_section_scope = False
         container_heading_blocked_section_carry = False
         out_of_body_appendix_or_note_clause = _is_out_of_body_appendix_or_note_clause(op_text)
+        if out_of_body_appendix_or_note_clause:
+            effective = _strip_following_amendment_section_from_out_of_body_clause(effective)
         if re.match(
             r"^(?:\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s+)?määruse\s+preambul\s+sõnastatakse\b",
             op_text,
@@ -2287,7 +2362,7 @@ def old_format_lower_op_texts(
             )
         ]
         if out_of_body_appendix_or_note_clause:
-            ops = [_mark_old_format_out_of_body_clause(op, op_text) for op in ops]
+            ops = [_mark_old_format_out_of_body_clause(op, effective) for op in ops]
         sect = old_format_section_from_ops(ops)
         if sect:
             last_section = sect
@@ -2721,7 +2796,7 @@ def para_contains_direct_target_clause(
         for hk in st.findall(_ns(ns_str, "HTMLKonteiner")):
             for item_text in parse_html_op_items(hk.text or ""):
                 item_plain = re.sub(r"^\(?\d[\d\s_]*\)\s*", "", item_text).strip()
-                stat_fragment = extract_intro_statute_fragment(item_plain)
+                stat_fragment = extract_intro_statute_fragment(_instruction_preamble(item_plain))
                 if direct_target_clause_matches_registry(
                     fragment=stat_fragment,
                     target_title=target_title,
@@ -2731,18 +2806,13 @@ def para_contains_direct_target_clause(
                     return True
                 if is_specific_direct_target_fragment(stat_fragment) and title_matcher(target_title, stat_fragment):
                     return True
-                nested = _extract_quoted_content(item_plain)
-                if nested:
-                    nested_fragment = extract_intro_statute_fragment(nested)
-                    if direct_target_clause_matches_registry(
-                        fragment=nested_fragment,
-                        target_title=target_title,
-                        lookup_act_identity=lookup_act_identity,
-                        title_matcher=title_matcher,
-                    ):
-                        return True
-                    if is_specific_direct_target_fragment(nested_fragment) and title_matcher(target_title, nested_fragment):
-                        return True
+                if _nested_payload_contains_direct_target_instruction(
+                    text=item_plain,
+                    target_title=target_title,
+                    lookup_act_identity=lookup_act_identity,
+                    title_matcher=title_matcher,
+                ):
+                    return True
         for t in st.findall(_ns(ns_str, "tavatekst")):
             txt = " ".join(str(_t) for _t in t.itertext()).replace("\xa0", " ")
             txt = re.sub(r"\s+", " ", txt).strip()
