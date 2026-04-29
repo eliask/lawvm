@@ -59,6 +59,32 @@ def _lower_generated_residual_records(
 
 
 _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
+    ("123012024006", "118092025010"): EEPairResidualInventory(
+        base_id="123012024006",
+        oracle_id="118092025010",
+        statute_title="Maksejõuetusavalduse esitamisel ja võlgade ümberkujundamise menetluses kasutatavate vormide kehtestamine",
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "section:1",
+                    "section:1/subsection:1",
+                ),
+                evidence=(
+                    "Source act 130122024001 contains a generic ministry rename: "
+                    "kehtivates ja tulevikus jõustuvates õigusaktides loetakse "
+                    "sõna 'Justiitsministeerium' asendatuks sõnadega "
+                    "'Justiits- ja Digiministeerium' vastavas käändes. Replay "
+                    "applies that source-owned textual rename. Oracle "
+                    "118092025010 also changes the website URL from www.just.ee "
+                    "to www.justdigi.ee in § 1, but that URL rewrite is not "
+                    "spelled out by the generic source clause. This is bounded "
+                    "source/oracle editorial drift, not a replay target failure."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("126052022004", "114102022002"): EEPairResidualInventory(
         base_id="126052022004",
         oracle_id="114102022002",
