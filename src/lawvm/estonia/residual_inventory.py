@@ -59,6 +59,34 @@ def _lower_generated_residual_records(
 
 
 _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
+    ("126052022004", "114102022002"): EEPairResidualInventory(
+        base_id="126052022004",
+        oracle_id="114102022002",
+        statute_title="Loetelu Eesti ametikohtadest, mille täitjaid loetakse riikliku taustaga isikuteks",
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "section:1",
+                    "section:1/subsection:1",
+                    "section:1/subsection:1/item:22",
+                ),
+                evidence=(
+                    "Source act 114102022001 replaces § 1(1) items 17 and 19, "
+                    "deletes a text part from item 20, inserts item 23, and changes "
+                    "selected 'või' surfaces to 'ja'. Replay applies those "
+                    "source-owned mutations and preserves the previous final item "
+                    "22 terminal period; existing Estonia apply tests require that "
+                    "append-only item insertion does not silently rewrite a previous "
+                    "sibling's terminal punctuation. Oracle 114102022002 changes "
+                    "item 22 to a semicolon to display the extended list. This is "
+                    "bounded source/oracle list-punctuation drift, not a missing "
+                    "replay operation."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("130032012017", "119062013014"): EEPairResidualInventory(
         base_id="130032012017",
         oracle_id="119062013014",

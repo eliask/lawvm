@@ -1057,11 +1057,15 @@ be generalized to multi-section documents.
 
 Old-format EE amendments can say a regulation is supplemented with `punktiga N`
 without naming a section, while the quoted payload starts with the same `N)`.
-For singleton regulations this compiles to:
+Some one-section regulations also state `lõike M punkt N sõnastatakse ...` after
+the surrounding amendment act has already named the regulation, without
+restating `§ 1`. For singleton regulations this compiles to:
 
 - `section:1/subsection:1/item:N`
 
-The rule is `ee_flat_sectionless_singleton_item_insert`. It carries
+The insert-specific rule is `ee_flat_sectionless_singleton_item_insert`; the
+subsection/item scope recovery rule is
+`ee_flat_sectionless_singleton_subsection_scope`. Both carry
 `scope_confidence=inferred_from_live_unique` because the source owns the item
 label but not the omitted singleton section/subsection path.
 
