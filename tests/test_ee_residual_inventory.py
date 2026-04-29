@@ -117,6 +117,25 @@ def test_get_ee_residual_inventory_algatusruhma_list_continuation_punctuation() 
     assert all("106092019001" in record.evidence for record in inventory.residuals)
 
 
+def test_get_ee_residual_inventory_riiklik_taust_punctuation_after_singleton_item_insert() -> None:
+    inventory = get_ee_residual_inventory("126052022004", "114102022002")
+
+    assert inventory is not None
+    assert inventory.statute_title.startswith("Loetelu Eesti ametikohtadest")
+    assert inventory.comparison_class == "commensurable_delta"
+    assert len(inventory.residuals) == 3
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert {
+        record.address for record in inventory.residuals
+    } == {
+        "section:1",
+        "section:1/subsection:1",
+        "section:1/subsection:1/item:22",
+    }
+    assert all("114102022001" in record.evidence for record in inventory.residuals)
+    assert any("append-only item insertion" in record.evidence for record in inventory.residuals)
+
+
 def test_get_ee_residual_inventory_vabaparda_target_drift() -> None:
     inventory = get_ee_residual_inventory("125012012005", "123092022012")
 

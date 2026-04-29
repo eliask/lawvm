@@ -8389,6 +8389,27 @@ def test_extract_ee_ops_recovers_flat_sectionless_singleton_item_insert() -> Non
     assert op.payload.attrs["scope_confidence"] == "inferred_from_live_unique"
 
 
+def test_extract_ee_ops_recovers_flat_sectionless_singleton_item_replace() -> None:
+    text = (
+        "lõike 1 punkt 17 sõnastatakse järgmiselt: "
+        "„17) Ettevõtluse ja Innovatsiooni Sihtasutuse nõukogu liige;”;"
+    )
+
+    ops = extract_ee_ops(
+        text,
+        OperationSource(statute_id="ee/114102022001", raw_text=text),
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.REPLACE
+    assert op.target.path == (("section", "1"), ("subsection", "1"), ("item", "17"))
+    assert op.payload is not None
+    assert op.payload.text == "17) Ettevõtluse ja Innovatsiooni Sihtasutuse nõukogu liige;"
+    assert op.witness_rule_id == "ee_flat_sectionless_singleton_subsection_scope"
+    assert "scope_confidence:inferred_from_live_unique" in op.provenance_tags
+
+
 def test_extract_ee_ops_keeps_nested_quote_tail_in_insert_after_textosa() -> None:
     text = (
         "paragrahvi 1 täiendatakse pärast sõnu “tunnistamise kord” tekstiosaga "
