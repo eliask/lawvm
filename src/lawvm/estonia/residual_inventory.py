@@ -87,6 +87,54 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
+    ("124112010012", "128042015015"): EEPairResidualInventory(
+        base_id="124112010012",
+        oracle_id="128042015015",
+        statute_title="Maaparandushoiukava sisu- ja vorminõuded ning kava koostamise kord",
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "chapter:2",
+                    "chapter:2/section:12",
+                    "chapter:2/section:12/subsection:1",
+                    "chapter:2/section:12/subsection:1/item:5",
+                ),
+                evidence=(
+                    "Source act 128042015004 § 1 item 13 replaces § 12(1) "
+                    "with a payload whose item 5 says 'maaparandussüsteemide "
+                    "eesvoolud, sealhulgas eraldi riigieesvoolud.' Replay "
+                    "preserves that source-literal plural form. Oracle "
+                    "128042015015 instead has 'maaparandussüsteemi eesvoolud'. "
+                    "This is a bounded source/oracle text-surface divergence, "
+                    "not a replay retargeting or morphology failure."
+                ),
+                bucket="source_oracle_drift",
+            ),
+            build_address_list_family(
+                addresses=(
+                    "chapter:2/section:3",
+                    "chapter:2/section:3/subsection:1",
+                    "chapter:2/section:3/subsection:1/item:6",
+                    "chapter:2/section:5_1",
+                    "chapter:2/section:5_1/subsection:1",
+                    "chapter:2/section:5_1/subsection:1/item:3",
+                ),
+                evidence=(
+                    "Source act 128042015004 repeals § 3 items 7 and 8 and "
+                    "inserts § 5^1 items 4 and 5. Replay applies those "
+                    "source-owned mutations while preserving the source/base "
+                    "terminal punctuation of the preceding live items; existing "
+                    "Estonia apply tests require that insertion/repeal does not "
+                    "silently rewrite a sibling's terminal punctuation. Oracle "
+                    "128042015015 normalizes those previous list terminals to "
+                    "semicolons to display continued lists. This is bounded "
+                    "source/oracle list-punctuation drift."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("130032012017", "119062013014"): EEPairResidualInventory(
         base_id="130032012017",
         oracle_id="119062013014",
