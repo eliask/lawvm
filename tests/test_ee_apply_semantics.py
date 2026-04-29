@@ -324,6 +324,38 @@ def test_insert_after_text_replace_preserves_comma_list_separator() -> None:
     )
 
 
+def test_insert_sentence_part_appends_before_terminal_punctuation() -> None:
+    body = _body_with_section_and_subsection(
+        "5",
+        "3",
+        "Investeeringu kulu võib moodustada kuni 80 protsenti projekti abikõlblikust eelarvest.",
+    )
+    op = LegalOperation(
+        op_id="ee_test_append_sentence_part",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "5"), ("subsection", "3"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text=", välja arvatud juhul, kui toetuse summat suurendatakse §10 lõike 3 kohaselt.",
+            attrs={
+                "sentence_target_meta": make_sentence_target_meta(
+                    sentence_indexes=(),
+                    mode="append_sentence_part",
+                ),
+            },
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    subsection = result.children[0].children[0].children[0]
+
+    assert subsection.text == (
+        "Investeeringu kulu võib moodustada kuni 80 protsenti projekti abikõlblikust eelarvest, "
+        "välja arvatud juhul, kui toetuse summat suurendatakse §10 lõike 3 kohaselt."
+    )
+
+
 def test_insert_after_text_replace_preserves_acronym_prefix_suffix_case() -> None:
     replaced = _ee_apply_text_replace_value(
         "võrreldud LOADMAN-tüüpi seadmega",

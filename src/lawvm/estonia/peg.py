@@ -1052,8 +1052,8 @@ def _classify_verb(text: str) -> str:
     # "jäetakse ... välja" — check whether it's word-level or structural
     # Word-level: "jäetakse pärast sõna X välja sõnad Y" → text_replace
     # Structural: "paragrahvi 12 lõige 3 jäetakse välja" → repeal
-    if re.search(r'\bjäetakse\b', t) and re.search(r'\bvälja\b', t):
-        if re.search(r'\bvälja\s+(?:sõna[a-z]*|lauseosa|tekstiosa|arv[a-z]*|number)', t):
+    if re.search(r'\bjäetakse\b', t) and re.search(r'\bvälja', t):
+        if re.search(r'\bvälja\s*(?:sõna[a-z]*|lauseosa|tekstiosa|arv[a-z]*|number)', t):
             return "text_replace"
         return "repeal"
 
@@ -1448,7 +1448,7 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
         if len(quoted) >= 2:
             return quoted[0].strip(), quoted[1].strip()
     nested_delete = re.search(
-        r"\bj[aä]etakse\s+v[aä]lja\s+(?:sõn(?:a|ad)|tekstiosa)\s+[„\"“](.+?)[”“\"]\s*[.;]?\s*$",
+        r"\bj[aä]etakse\s+v[aä]lja\s*(?:sõn(?:a|ad)|tekstiosa)\s+[„\"“](.+?)[”“\"]\s*[.;]?\s*$",
         text,
         re.IGNORECASE | re.DOTALL,
     )
@@ -2764,6 +2764,14 @@ def _set_sentence_insert_payload_attrs(payload: IRNode, clean: str) -> IRNode:
         attrs["sentence_target_meta"] = make_sentence_target_meta(
             sentence_indexes=(1,),
             mode="insert_before",
+        )
+        return replace(payload, attrs=attrs)
+
+    if re.search(r"\blause\s+teise\s+osaga\b", clean_lower):
+        attrs = dict(payload.attrs)
+        attrs["sentence_target_meta"] = make_sentence_target_meta(
+            sentence_indexes=(),
+            mode="append_sentence_part",
         )
         return replace(payload, attrs=attrs)
 
@@ -5232,6 +5240,27 @@ def extract_ee_ops(
                 payload = _set_sentence_replace_payload_attrs(payload, clean)
             elif action == "insert":
                 payload = _set_sentence_insert_payload_attrs(payload, clean)
+            if action == "insert":
+                explicit_targets = _extract_multiple_explicit_targets(_clean_preamble)
+                if len(explicit_targets) > 1:
+                    for explicit_target in explicit_targets:
+                        ops.append(LegalOperation(
+                            op_id=f"ee-insert-multi-target-{str(explicit_target)}-{seq}-{source.statute_id}",
+                            sequence=seq,
+                            action=_to_structural_action("insert"),
+                            target=explicit_target,
+                            payload=IRNode(
+                                kind=payload.kind,
+                                text=payload.text,
+                                attrs=dict(payload.attrs),
+                                children=tuple(payload.children),
+                            ),
+                            source=source,
+                            provenance_tags=(clean[:200], "ee_insert_multi_explicit_targets"),
+                            witness_rule_id="ee_insert_multi_explicit_targets",
+                        ))
+                        seq += 1
+                    return ops
 
     # Handle lõige-range insert: "täiendatakse lõigetega 4 ja 5 järgmises sõnastuses:"
     # Also handles dash ranges: "täiendatakse lõigetega 3–5" or
