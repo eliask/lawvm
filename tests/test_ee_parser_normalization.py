@@ -2496,6 +2496,49 @@ def test_extract_ee_ops_recovers_same_section_heading_and_plural_subsections() -
     )
 
 
+def test_extract_ee_ops_emits_extra_label_from_plural_subsection_replace_payload() -> None:
+    text = (
+        "paragrahvi 11 lõiked 4–7 sõnastatakse järgmiselt: "
+        "„(4) Neljas. (4 1) Neljas üks. (5) Viies. (6) Kuues. (7) Seitsmes.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPLACE, (("section", "11"), ("subsection", "4"))),
+        (StructuralAction.REPLACE, (("section", "11"), ("subsection", "4_1"))),
+        (StructuralAction.REPLACE, (("section", "11"), ("subsection", "5"))),
+        (StructuralAction.REPLACE, (("section", "11"), ("subsection", "6"))),
+        (StructuralAction.REPLACE, (("section", "11"), ("subsection", "7"))),
+    ]
+    extra = ops[1]
+    assert extra.payload is not None
+    assert extra.payload.text == "(4 1) Neljas üks."
+    assert extra.payload.attrs["source_family"] == "ee_plural_subsection_replace_extra_payload_label"
+    assert extra.witness_rule_id == "ee_plural_subsection_replace_extra_payload_label"
+
+
+def test_extract_ee_ops_emits_item_renumber_before_senine_item_replace() -> None:
+    text = (
+        "paragrahvi 13 lõike 1 punkt 11 loetakse punktiks 12 ja senine punkt 11 "
+        "sõnastatakse järgmiselt: „11) uus punkt;”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.RENUMBER, (("section", "13"), ("subsection", "1"), ("item", "11"))),
+        (StructuralAction.INSERT, (("section", "13"), ("subsection", "1"), ("item", "11"))),
+    ]
+    assert ops[0].destination is not None
+    assert ops[0].destination.path == (("section", "13"), ("subsection", "1"), ("item", "12"))
+    assert ops[0].witness_rule_id == "ee_item_renumber_before_replace"
+    assert ops[1].payload is not None
+    assert ops[1].payload.text == "11) uus punkt;"
+    assert ops[1].payload.attrs["source_family"] == "ee_item_renumber_before_replace"
+    assert ops[1].witness_rule_id == "ee_item_renumber_before_replace"
+
+
 def test_extract_ee_ops_recovers_mixed_heading_and_subsection_targets() -> None:
     ops = extract_ee_ops(
         (

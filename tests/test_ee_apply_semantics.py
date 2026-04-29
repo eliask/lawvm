@@ -632,6 +632,115 @@ def test_insert_item_normalizes_previous_terminal_in_sibling_list() -> None:
     ]
 
 
+def test_replace_extra_plural_subsection_payload_label_inserts_absent_subsection() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="11",
+                        children=(
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="4", text="old four"),
+                            IRNode(kind=IRNodeKind.SUBSECTION, label="5", text="old five"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_extra_plural_subsection_payload_label",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "11"), ("subsection", "4_1"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="(4 1) inserted extra label.",
+            attrs={"source_family": "ee_plural_subsection_replace_extra_payload_label"},
+        ),
+        source=OperationSource(statute_id="ee/source"),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    result = _ee_apply_op(body, op, adjudications_out=adjudications)
+    section = result.children[0].children[0]
+
+    assert [(child.label, child.text) for child in section.children] == [
+        ("4", "old four"),
+        ("4_1", "inserted extra label."),
+        ("5", "old five"),
+    ]
+    assert section.children[1].attrs["source_family"] == "ee_plural_subsection_replace_extra_payload_label"
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "ee_plural_subsection_replace_extra_payload_label"
+    ]
+
+
+def test_renumber_item_before_replace_preserves_carried_tail() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="13",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="1",
+                                children=(
+                                    IRNode(kind=IRNodeKind.ITEM, label="10", text="old ten;"),
+                                    IRNode(kind=IRNodeKind.ITEM, label="11", text="carried tail."),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    renumber = LegalOperation(
+        op_id="ee_test_item_renumber_before_replace",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("section", "13"), ("subsection", "1"), ("item", "11"))),
+        destination=LegalAddress(path=(("section", "13"), ("subsection", "1"), ("item", "12"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            attrs={"source_family": "ee_item_renumber_before_replace"},
+        ),
+        source=OperationSource(statute_id="ee/source"),
+    )
+    insert_op = LegalOperation(
+        op_id="ee_test_senine_item_replace_after_renumber",
+        sequence=2,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "13"), ("subsection", "1"), ("item", "11"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="11) replacement;",
+            attrs={"source_family": "ee_item_renumber_before_replace"},
+        ),
+        source=OperationSource(statute_id="ee/source"),
+    )
+
+    result = apply_ee_ops(IRStatute(statute_id="ee/test", title="Test", body=body), [renumber, insert_op])
+    subsection = result.body.children[0].children[0].children[0]
+
+    assert [(child.label, child.text) for child in subsection.children] == [
+        ("10", "old ten;"),
+        ("11", "replacement;"),
+        ("12", "carried tail."),
+    ]
+
+
 def test_replace_item_selects_matching_label_from_multi_item_payload() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,

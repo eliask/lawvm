@@ -2955,7 +2955,7 @@ def test_typo_tolerant_text_replace_refuses_multiple_near_matches() -> None:
         text="pensionamet ja pensionamet võivad tegutseda.",
     )
 
-    replaced, changed, actual_old = _ee_typo_tolerant_text_replace(
+    replaced, changed, actual_old, rule_id = _ee_typo_tolerant_text_replace(
         node,
         EETextRewriteSpec(
             old_text="pensioniamet",
@@ -2966,6 +2966,7 @@ def test_typo_tolerant_text_replace_refuses_multiple_near_matches() -> None:
     assert replaced is node
     assert changed is False
     assert actual_old == ""
+    assert rule_id == ""
 
 
 def test_precompose_pending_amendment_text_patch_requires_exact_old_format_item() -> None:
