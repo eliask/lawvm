@@ -8880,3 +8880,22 @@ def test_parse_ee_amendment_ops_keeps_excluded_global_rewrite_selectors_source_l
         "ee_source_local_global_text_replace_selector_composition_skipped_for_excluded_target"
         in op.provenance_tags
     )
+
+
+def test_extract_ee_ops_preserves_explicit_plural_item_insert_terminals() -> None:
+    text = (
+        "paragrahvi 4 täiendatakse punktidega 6 ja 7 järgmises sõnastuses: "
+        "„6) saatemeeskonnaks loetakse sihtturult saabuvad isikud; "
+        "7) sihtturg on taotluses määratletud välisriik.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.target.path, _payload(op).text) for op in ops] == [
+        ((("section", "4"), ("item", "6")), "6) saatemeeskonnaks loetakse sihtturult saabuvad isikud;"),
+        ((("section", "4"), ("item", "7")), "7) sihtturg on taotluses määratletud välisriik."),
+    ]
+    assert all(
+        _payload(op).attrs["source_family"] == "ee_explicit_item_replacement_terminal_preserved"
+        for op in ops
+    )

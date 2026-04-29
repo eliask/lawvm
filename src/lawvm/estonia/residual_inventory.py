@@ -59,6 +59,47 @@ def _lower_generated_residual_records(
 
 
 _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
+    ("105072012011", "126032014005"): EEPairResidualInventory(
+        base_id="105072012011",
+        oracle_id="126032014005",
+        statute_title="Rahvusvaheliste ürituste ja konverentside toetamise tingimused ja kord",
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "chapter:1",
+                    "chapter:1/section:4",
+                    "chapter:1/section:4/subsection:1",
+                    "chapter:1/section:4/subsection:1/item:5",
+                    "chapter:2",
+                    "chapter:2/section:7",
+                    "chapter:2/section:7/subsection:2",
+                    "chapter:2/section:7/subsection:2/item:3",
+                    "chapter:4",
+                    "chapter:4/section:15",
+                    "chapter:4/section:15/subsection:3",
+                    "chapter:4/section:19",
+                    "chapter:4/section:19/subsection:5",
+                    "chapter:4/section:19/subsection:5/item:8",
+                ),
+                evidence=(
+                    "Source act 126032014003 explicitly inserts § 4 items 6 and 7, "
+                    "§ 7(2) items 4-6, and § 19(5) item 9. Replay preserves the "
+                    "source-owned new-item terminal punctuation. The remaining item "
+                    "5, item 3, and item 8 rows are predecessor terminal punctuation "
+                    "differences only; mutating those siblings would require a separate "
+                    "owned list-continuation rule, not silent replay repair. The same "
+                    "source act also replaces the phrase 'sihtasutuse juhatus' with "
+                    "'sihtasutus' throughout the regulation in corresponding case; "
+                    "replay therefore produces 'teeb sihtasutus taotleja...', while "
+                    "oracle 126032014005 has 'teeb sihtasutuse taotleja...'. This is "
+                    "classified as a source/oracle text-surface disagreement pending "
+                    "external authority review."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("124112010005", "109062011002"): EEPairResidualInventory(
         base_id="124112010005",
         oracle_id="109062011002",
