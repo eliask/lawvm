@@ -66,6 +66,22 @@ def test_get_ee_residual_inventory_kinnistusraamatu_heading_case_drift() -> None
     assert "DIgiministeeriumile" in residual.evidence
 
 
+def test_get_ee_residual_inventory_koolikava_spent_repeal_projection() -> None:
+    inventory = get_ee_residual_inventory("125072024012", "102082025029")
+
+    assert inventory is not None
+    assert inventory.statute_title == "Koolikava toetus"
+    assert inventory.comparison_class == "commensurable_delta"
+    assert len(inventory.residuals) == 2
+    assert {record.address for record in inventory.residuals} == {
+        "section:14",
+        "section:14/subsection:1",
+    }
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert all("102082025003" in record.evidence for record in inventory.residuals)
+    assert all("§ 2(8^1)" in record.evidence for record in inventory.residuals)
+
+
 def test_get_ee_residual_inventory_technical_assistance_transitional_redaction() -> None:
     inventory = get_ee_residual_inventory("124112010005", "109062011002")
 

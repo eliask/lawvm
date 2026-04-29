@@ -83,6 +83,31 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
+    ("125072024012", "102082025029"): EEPairResidualInventory(
+        base_id="125072024012",
+        oracle_id="102082025029",
+        statute_title="Koolikava toetus",
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "section:14",
+                    "section:14/subsection:1",
+                ),
+                evidence=(
+                    "The only in-range amendment, source act 102082025003, "
+                    "inserts § 2(8^1). No applied source operation targets § 14. "
+                    "Base 125072024012 preserves § 14's spent repeal clause "
+                    "repealing the 2017 'Koolikava toetus' regulation, while "
+                    "oracle 102082025029 projects that clause as "
+                    "'[Käesolevast tekstist välja jäetud].' This is bounded "
+                    "source/oracle presentation drift for a spent implementation "
+                    "provision, not replay authority to rewrite § 14."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("103082018007", "126022019011"): EEPairResidualInventory(
         base_id="103082018007",
         oracle_id="126022019011",
