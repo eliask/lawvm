@@ -814,6 +814,30 @@ def test_parse_ee_amendment_ops_preserves_quoted_legal_title_during_source_local
     assert "ee_source_local_payload_composition_quoted_title_skipped" in subsection.provenance_tags
 
 
+def test_parse_ee_amendment_ops_composes_later_text_replace_selectors() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("131012018001", archive),
+        "ee/131012018001",
+        target_title="Tervisekaitsenõuded asenduskoduteenusele",
+    )
+
+    provider_rewrite = next(
+        op
+        for op in ops
+        if op.action is StructuralAction.TEXT_REPLACE
+        and op.payload is not None
+        and op.payload.text == "teenuseosutaja"
+    )
+
+    assert provider_rewrite.payload is not None
+    assert provider_rewrite.payload.attrs["old_text"] == "teenuse osutaja"
+    assert provider_rewrite.payload.attrs["source_old_text"] == "asenduskoduteenuse osutaja"
+    assert provider_rewrite.text_patch is not None
+    assert provider_rewrite.text_patch.selector.match_text == "teenuse osutaja"
+    assert "ee_source_local_global_text_replace_selector_composition" in provider_rewrite.provenance_tags
+
+
 def test_parse_section_payload_accepts_subsection_marker_without_space() -> None:
     parsed = _parse_section_payload(
         (

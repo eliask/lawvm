@@ -3055,6 +3055,13 @@ def extract_ee_ops(
                     else ""
                 ),
             )
+            payload = replace(
+                payload,
+                attrs={
+                    **payload.attrs,
+                    "all_occurrences": True,
+                },
+            )
             if title_and_text_global is not None:
                 payload = replace(
                     payload,
