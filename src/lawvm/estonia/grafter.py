@@ -682,6 +682,23 @@ def _appendix_html_payload_text(fragment: str) -> str:
     return plain
 
 
+def _section_html_table_text(st: ET.Element, ns_str: str) -> str:
+    """Return meaningful non-appendix table text from one section-level sisuTekst."""
+    parts: list[str] = []
+    for child in st:
+        local = child.tag.split("}")[1] if "}" in child.tag else child.tag
+        if local != "HTMLKonteiner" or not child.text:
+            continue
+        if _extract_appendix_marker(child.text):
+            continue
+        if not re.search(r"<table\b", child.text, re.IGNORECASE):
+            continue
+        plain = _html_to_plain_text(child.text)
+        if plain:
+            parts.append(plain)
+    return " ".join(parts).strip()
+
+
 def _extract_appendix_marker(fragment: str) -> str:
     """Extract a plain appendix marker like ``Lisa 1`` from HTMLKonteiner text."""
     plain = _html_to_plain_text(fragment)
@@ -725,6 +742,7 @@ _EE_DROP_ORPHAN_APPENDIX_MARKER_RULE = "ee_drop_orphan_appendix_marker_html"
 _EE_DROP_REPEALED_RANGE_RESIDUE_RULE = "ee_drop_repealed_range_residue"
 _EE_SINGLETON_EMPTY_SECTION_LABEL_RULE = "ee_singleton_empty_section_label_to_1"
 _EE_SECTION_LEVEL_INTRO_TO_FIRST_SUBSECTION_RULE = "ee_section_level_intro_attached_to_first_subsection"
+_EE_HTML_TABLE_TEXT_RULE = "ee_html_table_text_materialized"
 _EE_HTML_TABLE_NUMBERED_ITEMS_RULE = "ee_html_table_numbered_items_materialized"
 _EE_HTML_PARAGRAPH_NUMBERED_ITEMS_RULE = "ee_html_paragraph_numbered_items_materialized"
 _EE_UNLABELED_LOIGE_CONTINUATION_RULE = "ee_unlabeled_loige_continuation_attached_to_previous_subsection"
@@ -1431,10 +1449,15 @@ def _parse_section(el: ET.Element, ns_str: str) -> IRNode:
                 ns_str,
             )
             text_parts = []
+            used_html_table_text = False
             for st in el.findall(_ns(ns_str, "sisuTekst")):
                 txt = _sisuTekst_text(st, ns_str)
                 if txt:
                     text_parts.append(txt)
+                html_table_text = _section_html_table_text(st, ns_str)
+                if html_table_text:
+                    text_parts.append(html_table_text)
+                    used_html_table_text = True
             if html_intro_text:
                 text_parts.append(html_intro_text)
             if html_paragraph_item_children:
@@ -1448,7 +1471,12 @@ def _parse_section(el: ET.Element, ns_str: str) -> IRNode:
                     )
                 )
             elif text_parts:
-                children.append(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text=" ".join(text_parts)))
+                attrs = (
+                    {"source_cleanup_rules": (_EE_HTML_TABLE_TEXT_RULE,)}
+                    if used_html_table_text
+                    else {}
+                )
+                children.append(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text=" ".join(text_parts), attrs=attrs))
 
     # Detect already-repealed sections: muutmismarge says "Kehtetu" and there is
     # no body content.  RT tervikteksts preserve the original title of such sections
