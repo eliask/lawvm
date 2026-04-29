@@ -30,6 +30,28 @@ def _ref(akt_viide: str, passed: str, joustumine: str) -> AmendmentRef:
     return AmendmentRef(aktViide=akt_viide, passed=passed, joustumine=joustumine)
 
 
+def test_replay_ee_preambul_plain_paragraph_items_for_2012_001() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+    try:
+        result = replay_ee_to_pit(
+            base_id="118112011005",
+            as_of="2012-07-23",
+            archive=archive,
+            oracle_id="120072012004",
+            verbose=False,
+        )
+    finally:
+        close = getattr(archive, "close", None)
+        if callable(close):
+            close()
+
+    assert not result.error
+    assert result.n_ops >= 21
+    assert result.divergences == []
+
+
 def test_filter_cancelled_pending_refs_drops_future_effect_source_repealed_before_commencement(
     monkeypatch,
 ) -> None:
