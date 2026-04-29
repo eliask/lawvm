@@ -34,6 +34,26 @@ def test_get_ee_residual_inventory_liiklusseadus() -> None:
     )
 
 
+def test_get_ee_residual_inventory_leader_punctuation_drift() -> None:
+    inventory = get_ee_residual_inventory("123112010049", "122072011005")
+
+    assert inventory is not None
+    assert inventory.statute_title.startswith("Leader-meetme")
+    assert inventory.comparison_class == "commensurable_delta"
+    assert len(inventory.residuals) == 3
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert any(
+        record.address == "chapter:2/division:1/section:10/subsection:8"
+        and "source-literal period" in record.evidence
+        for record in inventory.residuals
+    )
+    assert any(
+        record.address == "chapter:2/division:2/section:12/subsection:1/item:2"
+        and "repealed-item display punctuation drift" in record.evidence
+        for record in inventory.residuals
+    )
+
+
 def test_get_ee_residual_inventory_jahitunnistus_label_offset_surface_drift() -> None:
     inventory = get_ee_residual_inventory("106012015009", "113092017002")
 
