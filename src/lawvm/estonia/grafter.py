@@ -3306,12 +3306,29 @@ def _parse_old_format_amendment_ops(
             fallback_effective=ref_effective,
         )
 
-    # Extract all CDATA / HTMLKonteiner blocks
+    # Extract all CDATA / HTMLKonteiner blocks. Some RT old-format sources put
+    # the target section wrapper in a preceding tavatekst sibling and the actual
+    # numbered amendment items in the following HTMLKonteiner.
     html_blocks: List[str] = []
+    pending_intro_html = ""
     for el in root.iter():
         tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+        if tag == "tavatekst":
+            intro_text = _element_text_with_bold_section_boundaries(el)
+            if (
+                target_title
+                and intro_text
+                and _title_matches_para(target_title, intro_text)
+                and re.search(r"(?:§(?:-s|-st)?|paragrahvi(?:s|st)?)\s*\d", intro_text)
+            ):
+                pending_intro_html = f"<p>{_html.escape(intro_text)}</p>"
+            continue
         if tag == "HTMLKonteiner" and el.text:
-            html_blocks.append(el.text)
+            html = el.text
+            if pending_intro_html:
+                html = f"{pending_intro_html}\n{html}"
+                pending_intro_html = ""
+            html_blocks.append(html)
 
     paragraph_scoped_ops = _parse_paragraph_scoped_old_format_html_sections()
     if paragraph_scoped_ops:
