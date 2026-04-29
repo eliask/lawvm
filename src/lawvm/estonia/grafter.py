@@ -68,6 +68,7 @@ from lawvm.estonia.target_resolution import (
     extract_intro_statute_fragment as _tr_extract_intro_statute_fragment,
     filter_direct_target_clause_op_texts as _tr_filter_direct_target_clause_op_texts,
     is_omnibus_amendment as _tr_is_omnibus_amendment,
+    _is_out_of_body_appendix_or_note_clause as _tr_is_out_of_body_appendix_or_note_clause,
     is_specific_direct_target_fragment as _tr_is_specific_direct_target_fragment,
     old_format_collect_all_ops as _tr_old_format_collect_all_ops,
     old_format_collect_nested_direct_target_ops as _tr_old_format_collect_nested_direct_target_ops,
@@ -1843,6 +1844,35 @@ def parse_ee_amendment_ops(
     def _substantive_op_count(ops: List[LegalOperation]) -> int:
         return sum(1 for op in ops if op.action is not StructuralAction.META)
 
+    def _mark_no_target_out_of_body_ops(ops: List[LegalOperation]) -> List[LegalOperation]:
+        updated: List[LegalOperation] = []
+        for op in ops:
+            if op.action is StructuralAction.META or op.target.path:
+                updated.append(op)
+                continue
+            no_target_text = ""
+            for tag in op.provenance_tags:
+                if tag.startswith("no_target: "):
+                    no_target_text = tag.removeprefix("no_target: ")
+                    break
+            if not no_target_text or not _tr_is_out_of_body_appendix_or_note_clause(no_target_text):
+                updated.append(op)
+                continue
+            updated.append(
+                replace(
+                    op,
+                    action=StructuralAction.META,
+                    payload=IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text=no_target_text,
+                        attrs={"source_family": _EE_OUT_OF_BODY_APPENDIX_OR_NOTE_RULE},
+                    ),
+                    provenance_tags=(*op.provenance_tags, _EE_OUT_OF_BODY_APPENDIX_OR_NOTE_RULE),
+                    witness_rule_id=_EE_OUT_OF_BODY_APPENDIX_OR_NOTE_RULE,
+                )
+            )
+        return updated
+
     def _prefer_old_format_html_parser(
         preambul_ops: List[LegalOperation],
         old_format_ops: List[LegalOperation],
@@ -2004,6 +2034,7 @@ def parse_ee_amendment_ops(
             parsed_ops,
             fallback_effective=ref_effective,
         )
+    parsed_ops = _mark_no_target_out_of_body_ops(parsed_ops)
     _augment_global_text_replace_exclusions(parsed_ops)
     parsed_ops = _compose_global_text_replaces_into_later_payloads(parsed_ops)
     leading_ops = [*generic_minister_ops, *generic_ministry_ops]
@@ -2153,7 +2184,9 @@ def _parse_parenthesized_target_html_block_ops(
         lower = stripped.lower()
         return bool(
             re.match(r"^määruse\s+(?:kolmas\s+)?normitehnili\w*\s+märkus", lower)
-            or re.match(r"^määruse\s+lisa(?:s|d|ga)?\b", lower)
+            or re.match(r"^seaduse\s+(?:kolmas\s+)?normitehnili\w*\s+märkus", lower)
+            or re.match(r"^(?:määruse|seaduse)\s+(?:senise\s+)?lisa(?:s|d|ga)?\b", lower)
+            or re.match(r"^lisa(?:s|d|ga)?\b", lower)
         )
 
     ops: list[LegalOperation] = []
