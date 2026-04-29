@@ -4316,6 +4316,16 @@ def extract_ee_ops(
         nested = _extract_quoted_content(clean)
         if nested:
             nested = nested.strip()
+        nested_preamble = _instruction_preamble(nested).strip() if nested else ""
+        nested_starts_with_direct_act_target = bool(
+            re.match(
+                r'^[\wÕÄÖÜŠŽõäöüšž\-– ]*'
+                r'(?:seaduse|seadustiku|koodeksi|määruse)\s+§',
+                nested_preamble,
+                re.IGNORECASE,
+            )
+        )
+        if nested and nested_starts_with_direct_act_target:
             nested_target = parse_target(nested)
             wrapper_target = parse_target(clean)
             nested_action = _classify_verb(nested)
@@ -4425,6 +4435,62 @@ def extract_ee_ops(
     payload: Optional[IRNode] = None
     old_text: Optional[str] = None
     _rewrite_witness: object | None = None
+
+    if (
+        action == "replace"
+        and target.path
+        and len(target.path) >= 3
+        and target.path[-1][0] == "item"
+        and re.search(r"\bsissejuhatav(?:at)?\s+lauseosa\b", _instruction_preamble(clean), re.IGNORECASE)
+    ):
+        content = _extract_quoted_content(clean)
+        if content:
+            sub_path = target.path[:-1]
+            item_label = target.path[-1][1]
+            raw_content = content.replace("\x01", "").strip()
+            raw_content = re.sub(r"^\(\d[\d\s_]*\)\s*", "", raw_content)
+            item_label_pattern = re.escape(item_label).replace("_", r"\s*")
+            item_match = re.search(
+                rf"\b{item_label_pattern}\s*\)\s*",
+                raw_content,
+            )
+            if item_match is not None:
+                rule_id = "ee_compound_subsection_intro_and_item_replace"
+                intro_text = raw_content[: item_match.start()].strip()
+                item_text = raw_content[item_match.start():].strip()
+                ops.append(LegalOperation(
+                    op_id=f"ee-subsection-intro-replace-{str(LegalAddress(path=sub_path))}-{seq}-{source.statute_id}",
+                    sequence=seq,
+                    action=_to_structural_action("replace"),
+                    target=LegalAddress(path=sub_path),
+                    payload=IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text=intro_text,
+                        attrs={
+                            "ee_replace_subsection_intro_only": True,
+                            "source_family": rule_id,
+                        },
+                    ),
+                    source=source,
+                    provenance_tags=(rule_id, clean[:200]),
+                    witness_rule_id=rule_id,
+                ))
+                seq += 1
+                ops.append(LegalOperation(
+                    op_id=f"ee-subsection-intro-item-replace-{str(target)}-{seq}-{source.statute_id}",
+                    sequence=seq,
+                    action=_to_structural_action("replace"),
+                    target=target,
+                    payload=IRNode(
+                        kind=IRNodeKind.CONTENT,
+                        text=item_text,
+                        attrs={"source_family": rule_id},
+                    ),
+                    source=source,
+                    provenance_tags=(rule_id, clean[:200]),
+                    witness_rule_id=rule_id,
+                ))
+                return ops
 
     mixed_insert_replace_pairs = _extract_mixed_insert_after_and_replace_pairs(clean)
     if mixed_insert_replace_pairs:

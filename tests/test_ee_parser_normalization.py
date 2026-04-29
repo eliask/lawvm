@@ -415,6 +415,35 @@ def test_extract_ee_ops_does_not_widen_subsection_intro_item_targets_to_section_
     ]
 
 
+def test_extract_ee_ops_splits_compound_subsection_intro_and_item_replace() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 6 lõike 3 sissejuhatav lauseosa ja punkt 1 "
+            "sõnastatakse järgmiselt: „(3) Kui taotlejal on õigus kasutada "
+            "põllumajandusmaad, esitab ta järgmised dokumendid: 1) taotluse lisa;”;"
+        ),
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert [(op.action, op.target.path, op.witness_rule_id) for op in ops] == [
+        (
+            StructuralAction.REPLACE,
+            (("section", "6"), ("subsection", "3")),
+            "ee_compound_subsection_intro_and_item_replace",
+        ),
+        (
+            StructuralAction.REPLACE,
+            (("section", "6"), ("subsection", "3"), ("item", "1")),
+            "ee_compound_subsection_intro_and_item_replace",
+        ),
+    ]
+    assert ops[0].payload is not None
+    assert ops[0].payload.attrs["ee_replace_subsection_intro_only"] is True
+    assert ops[0].payload.text.endswith("järgmised dokumendid:")
+    assert ops[1].payload is not None
+    assert ops[1].payload.text == "1) taotluse lisa;"
+
+
 def test_extract_ee_ops_keeps_sentence_scope_target_local_for_mixed_text_delete() -> None:
     text = (
         "paragrahvi 14 2 lõike 4 teisest lausest ja lõikest 5 jäetakse "
@@ -7040,6 +7069,27 @@ def test_extract_ee_ops_preserves_nested_closing_quote_in_unbalanced_payload() -
     assert ops[0].target.path == (("section", "95"),)
     assert ops[0].payload is not None
     assert ops[0].payload.text.endswith("„Estonia“")
+
+
+def test_extract_ee_ops_keeps_whole_section_body_references_out_of_wrapper_recursion() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 8 tekst sõnastatakse järgmiselt: "
+            "„(1) PRIA otsustab toetuse vähendamise komisjoni määruses, "
+            "millega täiendatakse Euroopa Parlamendi ja nõukogu määrust, "
+            "sätestatud alustel. (2) Kui on rikutud §-s 4 sätestatud nõuet, "
+            "vähendab PRIA toetust: 1) kuni 60%, kui rikkumine toimus enne tähtaega; "
+            "3) kuni 40%, kui rikkumine oli korduv.”;"
+        ),
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "8"),)
+    assert ops[0].payload is not None
+    assert "§-s 4 sätestatud nõuet" in ops[0].payload.text
+    assert "1) kuni 60%" in ops[0].payload.text
 
 
 def test_extract_ee_ops_splits_mixed_multi_section_replace_payload() -> None:

@@ -7900,6 +7900,20 @@ def _ee_apply_op(
                     raw_text = payload.text.replace("\x01", "")
                     sibling_subsection_nodes: list[IRNode] = []
                     inline_subsection_item_children: list[IRNode] = []
+                    if (
+                        target_node.kind == IRNodeKind.SUBSECTION
+                        and bool(payload.attrs.get("ee_replace_subsection_intro_only"))
+                    ):
+                        raw_text = re.sub(r"^\(\d[\d\s_]*\)\s*", "", raw_text)
+                        raw_text = _strip_rt_editorial_parentheticals(raw_text)
+                        new_node = IRNode(
+                            kind=target_node.kind,
+                            label=target_node.label,
+                            text=raw_text,
+                            attrs=dict(target_node.attrs),
+                            children=tuple(target_node.children),
+                        )
+                        return tree_ops.replace_at(body, full_path, new_node)
                     # Combined "pealkiri ja lõige N muudetakse" — payload starts
                     # with "§ N. NewTitle (N) Body".  The op targets a subsection
                     # but the payload also contains a new section heading.
