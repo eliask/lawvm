@@ -1415,8 +1415,22 @@ def _classify_verb(text: str) -> str:
     if re.search(r'\btäiendada\b', t):
         return "insert"
 
-    # "lisatakse" → insert
+    # "lisatakse pärast sõna X sõnad Y" mutates text inside an existing
+    # provision; it is not a structural insert of a duplicate child node.
     if 'lisatakse' in t:
+        if (
+            'pärast sõna' in t
+            or 'pärast sõnu' in t
+            or 'pärast tekstiosa' in t
+            or 'pärast lauseosa' in t
+            or 'pärast arvu' in t
+            or 'enne sõna' in t
+            or 'enne sõnu' in t
+            or 'enne tekstiosa' in t
+            or 'enne lauseosa' in t
+            or 'enne arvu' in t
+        ):
+            return "text_replace"
         return "insert"
 
     return "unknown"
@@ -5118,7 +5132,7 @@ def extract_ee_ops(
         r'(?:\bparagrahvi[s]?\s+|§\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
         r'(?:(?:pealkiri)\s+(?:ning|ja)\s+)?'
         r'(?:l[oõ]iked|l[oõ]igetes)\s+(' + _NUM_PAT_SUB + r'(?:\s*(?:,|[' + _EE_DASH_CLASS + r'])\s*' + _NUM_PAT_SUB +
-        r')*(?:\s+ja\s+' + _NUM_PAT_SUB + r')?)',
+        r')*(?:\s+ja\s+' + _NUM_PAT_SUB + r'(?:\s*[' + _EE_DASH_CLASS + r']\s*' + _NUM_PAT_SUB + r')?)?)',
         _clean_preamble, re.IGNORECASE
     )
     if m_plural_sub and action in ("repeal", "replace", "text_replace"):

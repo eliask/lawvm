@@ -5016,6 +5016,19 @@ def test_extract_ee_ops_tags_trailing_old_format_subsection_range_after_item_rep
         assert selection_meta.explicit_labels == ("2", "3", "4")
 
 
+def test_extract_ee_ops_expands_final_conjunct_subsection_range() -> None:
+    ops = extract_ee_ops(
+        "paragrahvi 30 lõiked 12, 13, 15, 16 ja 18–20 tunnistatakse kehtetuks;",
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert [op.target.path[-1][1] for op in ops] == ["12", "13", "15", "16", "18", "19", "20"]
+    selection_meta = read_subsection_selection_meta(_payload(ops[0]))
+    assert selection_meta is not None
+    assert selection_meta.explicit_labels == ("12", "13", "15", "16", "18", "19", "20")
+    assert selection_meta.plain_numeric_ranges == (("18", "20"),)
+
+
 def test_extract_ee_ops_keeps_singular_trailing_old_format_subsection_repeal_narrow() -> None:
     ops = extract_ee_ops(
         "paragrahvi 21 lõike 1 punktid 5, 6 1 ja lõige 1 1 tunnistatakse kehtetuks;",
@@ -5938,6 +5951,28 @@ def test_extract_ee_ops_treats_insert_after_sonu_as_insert_after_mode() -> None:
     assert ops[0].payload.attrs["old_text"] == "teenuse korralduse,"
     assert ops[0].payload.attrs.get("rewrite_mode") == "insert_after"
     assert ops[0].payload.text == "teenuse korralduse, terrorismiohvrile,"
+
+
+def test_extract_ee_ops_treats_lisatakse_after_sona_as_insert_after_mode() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 39 lõike 4 punkti 10 lisatakse pärast sõna "
+            "„säilitamisele” sõnad „või elanikkonnale nõuetekohase joogivee "
+            "ning reoveekäitluse tagamisele”."
+        ),
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "39"), ("subsection", "4"), ("item", "10"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.attrs["old_text"] == "säilitamisele"
+    assert ops[0].payload.attrs.get("rewrite_mode") == "insert_after"
+    assert ops[0].payload.text == (
+        "säilitamisele või elanikkonnale nõuetekohase joogivee ning "
+        "reoveekäitluse tagamisele"
+    )
 
 
 def test_extract_ee_ops_marks_insert_after_terminal_punctuation_boundary() -> None:
