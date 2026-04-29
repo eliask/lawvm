@@ -1630,6 +1630,26 @@ def parse_ee_amendment_ops(
             combined.append(op)
         return [replace(op, sequence=seq) for seq, op in enumerate(combined, start=1)]
 
+    def _substantive_op_count(ops: List[LegalOperation]) -> int:
+        return sum(1 for op in ops if op.action is not StructuralAction.META)
+
+    def _prefer_old_format_html_parser(
+        preambul_ops: List[LegalOperation],
+        old_format_ops: List[LegalOperation],
+    ) -> List[LegalOperation]:
+        """Prefer source-section old-format lowering over header-prefixed preambul recovery."""
+        rule_id = "ee_old_format_html_section_preferred_over_preambul_plain_body"
+        if _substantive_op_count(old_format_ops) <= _substantive_op_count(preambul_ops):
+            return preambul_ops
+        return [
+            replace(
+                op,
+                provenance_tags=(*op.provenance_tags, rule_id),
+                witness_rule_id=op.witness_rule_id or rule_id,
+            )
+            for op in old_format_ops
+        ]
+
     # Detect format by content: muutmisseadus uses paragrahv-per-target-act,
     # everything else (old tyviseadus, muutmismaarus, maarus) uses flat HTMLKonteiner
     # NOTE: deep search via .iter() — chapter-nested paragrahvs (sisu>peatykk>paragrahv)
@@ -1641,19 +1661,30 @@ def parse_ee_amendment_ops(
         for el in sisu.iter()
     )
 
-    parsed_ops = (
-        constitutional_review_ops or _parse_muutmisseadus_ops(root, source_id, root_ns, target_title=target_title)
-        if has_paragrahv
-        else constitutional_review_ops
-        or _parse_preambul_single_target_ops(root, source_id, root_ns, target_title)
-        or _parse_old_format_amendment_ops(
+    if has_paragrahv:
+        parsed_ops = constitutional_review_ops or _parse_muutmisseadus_ops(
+            root,
+            source_id,
+            root_ns,
+            target_title=target_title,
+        )
+    else:
+        old_format_ops = _parse_old_format_amendment_ops(
             root,
             source_id,
             target_title,
             ref_effective=ref_effective,
             has_earlier_same_act_slice=has_earlier_same_act_slice,
         )
-    )
+        if constitutional_review_ops:
+            parsed_ops = constitutional_review_ops
+        else:
+            preambul_ops = _parse_preambul_single_target_ops(root, source_id, root_ns, target_title)
+            parsed_ops = (
+                _prefer_old_format_html_parser(preambul_ops, old_format_ops)
+                if preambul_ops and old_format_ops
+                else preambul_ops or old_format_ops
+            )
     if has_paragrahv and target_title and (
         not parsed_ops or all(op.action is StructuralAction.META for op in parsed_ops)
     ):

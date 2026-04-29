@@ -967,3 +967,22 @@ Correct behavior:
 
 This preserves the legal uncertainty instead of resolving it by Python match
 order.
+
+## 50. Old-format flat HTML amendment sections beat preambul single-target recovery
+
+Some old `muutmismaarus` XML has no structural `paragrahv` nodes and stores a
+single target-act amendment section as flat `HTMLKonteiner` paragraphs:
+
+- a header paragraph naming the amended act
+- followed by plain numbered `<p>N) ...</p>` amendment items
+
+For this source shape, the old-format section parser owns lowering. Preambul
+single-target recovery must not prepend the act header to every item and then
+accept a META-heavy result merely because a few text replacements survived.
+
+The parser-selection witness rule is:
+
+- `ee_old_format_html_section_preferred_over_preambul_plain_body`
+
+It may fire only when the old-format section parser produces strictly more
+substantive non-META operations than the preambul recovery path.
