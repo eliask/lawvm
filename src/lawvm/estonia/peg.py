@@ -991,6 +991,7 @@ _EE_ASCII_QUOTED_MARKER_PAYLOAD_RULE = "ee_ascii_quoted_marker_payload"
 _EE_PLURAL_ITEM_PAYLOAD_OUTER_QUOTE_TAIL_RULE = "ee_plural_item_payload_outer_quote_tail_stripped"
 _EE_PLURAL_ITEM_MARKER_PAYLOAD_INNER_QUOTE_RULE = "ee_plural_item_marker_payload_recovers_inner_quote"
 _EE_PLURAL_ITEM_REPLACE_MISSING_LABEL_REPEAL_RULE = "ee_plural_item_replace_missing_label_repeal"
+_EE_PLURAL_ITEM_REPLACE_RANGE_OMITS_INSERTED_LABELS_RULE = "ee_plural_item_replace_range_omits_inserted_labels"
 _EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE = "ee_plural_subsection_insert_payload_split"
 _EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE = (
     "ee_plural_subsection_replace_extra_payload_label"
@@ -5579,6 +5580,17 @@ def extract_ee_ops(
         sub_label = _normalize_num(m_plural_item.group(2)) if m_plural_item.group(2) else None
         raw_items = m_plural_item.group(3).strip()
         expanded_items = _expand_ee_numeric_list(raw_items)
+        item_selection_meta = None
+        if action == "replace":
+            plain_item_ranges = _plain_numeric_ranges(raw_items)
+            if plain_item_ranges:
+                from lawvm.estonia.ee_instruction_waist import make_item_selection_meta
+
+                item_selection_meta = make_item_selection_meta(
+                    explicit_labels=tuple(expanded_items),
+                    plain_numeric_ranges=plain_item_ranges,
+                    label_ranges=_ee_label_ranges(raw_items),
+                )
         target_addrs = []
         for num in expanded_items:
             path_parts: list[tuple[str, str]] = [("section", sect_label)]
@@ -5677,6 +5689,11 @@ def extract_ee_ops(
                     payload_attrs["payload_normalization_rule"] = _EE_PLURAL_ITEM_PAYLOAD_OUTER_QUOTE_TAIL_RULE
                 if marker_payload_recovered:
                     payload_attrs["source_family"] = _EE_PLURAL_ITEM_MARKER_PAYLOAD_INNER_QUOTE_RULE
+                if item_selection_meta is not None:
+                    payload_attrs["item_selection_meta"] = item_selection_meta
+                    payload_attrs["item_selection_rule"] = (
+                        _EE_PLURAL_ITEM_REPLACE_RANGE_OMITS_INSERTED_LABELS_RULE
+                    )
                 payload = IRNode(kind=IRNodeKind.CONTENT, text=payload_text, attrs=payload_attrs)
                 if action == "replace":
                     payload = _set_sentence_replace_payload_attrs(payload, clean)

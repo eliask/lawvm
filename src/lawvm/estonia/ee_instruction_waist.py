@@ -74,6 +74,13 @@ class EESubsectionSelectionMeta:
 
 
 @dataclass(frozen=True)
+class EEItemSelectionMeta:
+    explicit_labels: tuple[str, ...] = ()
+    plain_numeric_ranges: tuple[tuple[str, str], ...] = ()
+    label_ranges: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
 class EESubsectionTextScopeMeta:
     intro_only: bool = False
 
@@ -340,6 +347,55 @@ def read_subsection_selection_meta(payload: IRNode | None) -> Optional[EESubsect
     return None
 
 
+def make_item_selection_meta(
+    *,
+    explicit_labels: Sequence[str],
+    plain_numeric_ranges: Sequence[Sequence[str]] = (),
+    label_ranges: Sequence[Sequence[str]] = (),
+) -> EEItemSelectionMeta:
+    normalized_ranges: list[tuple[str, str]] = []
+    for raw_range in plain_numeric_ranges:
+        if not isinstance(raw_range, (list, tuple)) or len(raw_range) != 2:
+            continue
+        start, end = str(raw_range[0]), str(raw_range[1])
+        if start and end:
+            normalized_ranges.append((start, end))
+    normalized_label_ranges: list[tuple[str, str]] = []
+    for raw_range in label_ranges:
+        if not isinstance(raw_range, (list, tuple)) or len(raw_range) != 2:
+            continue
+        start, end = str(raw_range[0]), str(raw_range[1])
+        if start and end:
+            normalized_label_ranges.append((start, end))
+    return EEItemSelectionMeta(
+        explicit_labels=tuple(str(label) for label in explicit_labels if str(label)),
+        plain_numeric_ranges=tuple(normalized_ranges),
+        label_ranges=tuple(normalized_label_ranges),
+    )
+
+
+def read_item_selection_meta(payload: IRNode | None) -> Optional[EEItemSelectionMeta]:
+    if payload is None:
+        return None
+    raw_meta = payload.attrs.get("item_selection_meta")
+    if isinstance(raw_meta, EEItemSelectionMeta):
+        return raw_meta
+    raw_labels = payload.attrs.get("item_explicit_labels")
+    raw_ranges = payload.attrs.get("item_plain_numeric_ranges")
+    raw_label_ranges = payload.attrs.get("item_label_ranges")
+    if (
+        isinstance(raw_labels, (list, tuple))
+        or isinstance(raw_ranges, (list, tuple))
+        or isinstance(raw_label_ranges, (list, tuple))
+    ):
+        return make_item_selection_meta(
+            explicit_labels=raw_labels if isinstance(raw_labels, (list, tuple)) else (),
+            plain_numeric_ranges=raw_ranges if isinstance(raw_ranges, (list, tuple)) else (),
+            label_ranges=raw_label_ranges if isinstance(raw_label_ranges, (list, tuple)) else (),
+        )
+    return None
+
+
 def make_subsection_text_scope_meta(*, intro_only: bool = False) -> EESubsectionTextScopeMeta:
     return EESubsectionTextScopeMeta(intro_only=bool(intro_only))
 
@@ -468,6 +524,7 @@ def parse_wrapper_quoted_clause(
 
 __all__ = [
     "EEInstructionFamily",
+    "EEItemSelectionMeta",
     "EEParsedInstruction",
     "EEPayloadRewriteMeta",
     "EESectionSelectionMeta",
@@ -476,11 +533,13 @@ __all__ = [
     "EETextRewrite",
     "EETextRewriteWitness",
     "EETextReplaceMode",
+    "make_item_selection_meta",
     "make_section_selection_meta",
     "make_subsection_selection_meta",
     "make_subsection_text_scope_meta",
     "make_sentence_target_meta",
     "make_text_rewrite_witness",
+    "read_item_selection_meta",
     "read_payload_rewrite_meta",
     "read_section_selection_meta",
     "read_subsection_selection_meta",
