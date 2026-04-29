@@ -331,7 +331,7 @@ def parse_target(text: str) -> Optional[LegalAddress]:
         # Also accept insert-form "§-ga N" so statute-level section inserts are
         # anchored from the instruction preamble rather than falling through to
         # the quoted payload and picking up cross-references from the body text.
-        m_sect = re.search(r'§(?:-s|-i|-ga)?\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)', preamble)
+        m_sect = re.search(r'§(?:-s|-st|-i|-ga)?\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)', preamble)
     if not m_sect:
         # Final fallback: search full text (covers cases where no preamble
         # marker is present and the clause has no quoted content at all)
@@ -352,7 +352,7 @@ def parse_target(text: str) -> Optional[LegalAddress]:
             re.IGNORECASE,
         )
     if not m_sect:
-        m_sect = re.search(r'§(?:-s|-i|-ga)?\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)', section_context)
+        m_sect = re.search(r'§(?:-s|-st|-i|-ga)?\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)', section_context)
     if not m_sect:
         return None
     path.append(("section", _normalize_num(m_sect.group(1))))
@@ -362,7 +362,7 @@ def parse_target(text: str) -> Optional[LegalAddress]:
     # must not leak the later subsection onto the leading plain section target.
     section_tail = section_context[m_sect.end():]
     next_section = re.search(
-        r'(?:\bparagrahvi(?:s|st)?\s+\d|\bparagrahv\s+\d|§(?:-s)?\s*\d)',
+        r'(?:\bparagrahvi(?:s|st)?\s+\d|\bparagrahv\s+\d|§(?:-s|-st)?\s*\d)',
         section_tail,
         re.IGNORECASE,
     )
