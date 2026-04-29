@@ -907,6 +907,32 @@ def test_parse_ee_amendment_ops_uses_direct_html_intro_for_single_target_regulat
     )
 
 
+def test_extract_ee_ops_treats_after_word_as_text_replace_anchor() -> None:
+    text = (
+        'paragrahvi 23 lõike 2 punktis 3, § 43 pealkirjas ja selle lõikes 2 '
+        'asendatakse pärast sõna "kutseõppeasutuse" tekstiosa '
+        '"päevases õppevormis või täiskoormusega" tekstiosaga '
+        '"statsionaarses õppevormis";'
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [op.target.path for op in ops] == [
+        (("section", "23"), ("subsection", "2"), ("item", "3")),
+        (("section", "43"), ("subsection", "2")),
+        (("section", "43"),),
+    ]
+    assert ops[2].target.special is FacetKind.HEADING
+    assert all(op.payload is not None for op in ops)
+    assert all(_payload(op).attrs["old_text"] == "päevases õppevormis või täiskoormusega" for op in ops)
+    assert all(_payload(op).text == "statsionaarses õppevormis" for op in ops)
+    assert all(_payload(op).attrs["rewrite_mode"] == "replace" for op in ops)
+    assert all(
+        _payload(op).attrs["source_family"] == "ee_text_replace_after_anchor_clause"
+        for op in ops
+    )
+
+
 def test_extract_ee_ops_recovers_missing_closing_quote_in_replacement_payload() -> None:
     text = (
         "paragrahvi 9 lõikes 2 asendatakse tekstiosa „§ 18 punktis 1“ "
@@ -919,6 +945,23 @@ def test_extract_ee_ops_recovers_missing_closing_quote_in_replacement_payload() 
     assert ops[0].target.path == (("section", "9"), ("subsection", "2"))
     assert _payload(ops[0]).attrs["old_text"] == "§ 18 punktis 1"
     assert _payload(ops[0]).text == "§ 18 lõike 1 punktis 1"
+
+
+def test_extract_ee_ops_accepts_estonian_open_ascii_close_structural_payload() -> None:
+    text = (
+        'määrust täiendatakse §-ga 62 4 järgmises sõnastuses: '
+        '„§ 62 4 . Kutseõppes täis- ja osakoormusega õppevormis õppimine '
+        'Enne 2013/14 õppeaastat kutseõppesse õppima asunud isikute suhtes '
+        'kohaldatakse täis- ja osakoormusega õppevormi ning õppekoormust."'
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "62_4"),)
+    assert ops[0].payload is not None
+    assert not ops[0].payload.text.endswith('"')
+    assert "õppekoormust." in ops[0].payload.text
 
 
 def test_extract_ee_ops_strips_direct_target_title_before_global_text_replace() -> None:
