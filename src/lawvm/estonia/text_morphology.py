@@ -170,7 +170,7 @@ def case_preserved_replacement(
 ) -> str:
     """Compute one case-preserved replacement string for a regex match."""
     matched = match.group(0)
-    if matched.isupper() and new:
+    if matched.isupper() and new and not _has_mixed_acronym_suffix_case(new):
         return new.upper()
     if matched and matched[0].isupper() and new:
         if preserve_match_capital:
@@ -193,6 +193,17 @@ def case_preserved_replacement(
         if capitalize_sentence_start and (not prefix or prefix[-1] in '.!?("«'):
             return new[0].upper() + new[1:]
     return new
+
+
+def _has_mixed_acronym_suffix_case(text: str) -> bool:
+    """Return true for source-authored acronym case suffixes such as ``EMTAK-i``.
+
+    Python ``str.isupper`` ignores digits and punctuation, so a match like
+    ``EMTAK 2008,`` looks all-uppercase. The replacement surface may still own
+    a lowercase Estonian suffix after a hyphen, and uppercasing it would mutate
+    the source payload.
+    """
+    return bool(re.search(r"\b[A-ZÕÄÖÜŠŽ]{2,}-[a-zäöõüšž]+\b", text))
 
 
 def replace_case_preserving(

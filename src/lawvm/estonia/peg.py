@@ -1013,6 +1013,7 @@ _EE_LOCAL_KOHTKUTE_SOURCE_SURFACE_DELETE_RULE = "ee_lokaal_kohtkute_source_surfa
 _EE_OLEMASOLEV_TAHKEL_KUTUSEL_PHRASE_FORMS_RULE = "ee_case_inflected_olemasolev_tahkel_kutusel_phrase_forms"
 _EE_VOLITATUD_VASTUTAV_FORMS_RULE = "ee_case_inflected_volitatud_vastutav_forms"
 _EE_TAOTLUSVOOR_COORDINATION_FORMS_RULE = "ee_case_inflected_taotlusvoor_coordination_forms"
+_EE_MIXED_ACRONYM_SUFFIX_CASE_REWRITE_RULE = "ee_case_inflected_mixed_acronym_suffix_case"
 _EE_INSERT_MULTI_EXPLICIT_TARGETS_PAYLOAD_LABEL_FILTER_RULE = (
     "ee_insert_multi_explicit_targets_payload_label_filter"
 )
@@ -1048,6 +1049,8 @@ def _case_inflected_phrase_source_family(old_text: str | None, new_text: str | N
         and new_text == "teine, viies ja järgnevad taotlusvoorud"
     ):
         return _EE_TAOTLUSVOOR_COORDINATION_FORMS_RULE
+    if new_text and re.fullmatch(r"[A-ZÕÄÖÜŠŽ]{2,}-[a-zäöõüšž]+", new_text.strip()):
+        return _EE_MIXED_ACRONYM_SUFFIX_CASE_REWRITE_RULE
     return ""
 
 
