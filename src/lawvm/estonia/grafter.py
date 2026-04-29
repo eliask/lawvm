@@ -104,6 +104,7 @@ from lawvm.estonia.text_morphology import (
     replace_first_sentence as _tm_replace_first_sentence,
     replace_case_preserving as _tm_replace_case_preserving,
     replace_sentence as _tm_replace_sentence,
+    replace_sentence_span as _tm_replace_sentence_span,
     sentence_index_from_notes as _tm_sentence_index_from_notes,
     sentence_indexes_from_notes as _tm_sentence_indexes_from_notes,
     surface_pattern as _tm_surface_pattern,
@@ -256,6 +257,11 @@ def _split_ee_sentences(text: str) -> list[str]:
 def _replace_sentence(text: str, replacement: str, sentence_index: int) -> str:
     """Compatibility wrapper; migrated to ``lawvm.estonia.text_morphology``."""
     return _tm_replace_sentence(text, replacement, sentence_index)
+
+
+def _replace_sentence_span(text: str, replacement: str, sentence_indexes: list[int]) -> str:
+    """Compatibility wrapper; migrated to ``lawvm.estonia.text_morphology``."""
+    return _tm_replace_sentence_span(text, replacement, sentence_indexes)
 
 
 def _sentence_indexes_from_notes(note_text: str) -> list[int]:
@@ -10355,7 +10361,10 @@ def _ee_apply_op(
                                 and not raw_text.rstrip().endswith((".", ";", ":", "!", "?"))
                             ):
                                 raw_text = f"{raw_text.rstrip()}."
-                            raw_text = _replace_sentence(target_node.text, raw_text, sentence_index)
+                            if len(sentence_indexes) > 1:
+                                raw_text = _replace_sentence_span(target_node.text, raw_text, sentence_indexes)
+                            else:
+                                raw_text = _replace_sentence(target_node.text, raw_text, sentence_index)
                         elif (
                             target_node.kind == IRNodeKind.SUBSECTION
                             and payload.attrs.get("source_family") == _EE_SUBSECTION_TABLE_ONLY_REPLACE_RULE
