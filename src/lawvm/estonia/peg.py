@@ -3258,6 +3258,8 @@ def extract_ee_ops(
         # Also: "seadust täiendatakse N 1. ja N 2. peatükiga ..." (multi-chapter insert)
         # Whole-chapter insert — handled specially below
         or re.search(r'\b(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)\s+täiendatakse\s+\d+[\d\s]*[.]\s*(?:ja\s+\d+[\d\s]*[.]\s*)*peatükiga', clean, re.IGNORECASE)
+        # Also: "määrust täiendatakse peatükiga N 1 järgmises sõnastuses".
+        or re.search(r'\b(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)\s+täiendatakse\s+peatükiga\s+\d+[\d\s]*', clean, re.IGNORECASE)
         # Also: "seadust täiendatakse III 1. osaga järgmises sõnastuses:" (part insert)
         or re.search(r'\b(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)\s+täiendatakse\s+[IVXLCDM]+[\d\s]*[.]\s*osaga', clean, re.IGNORECASE)
     )
@@ -3427,6 +3429,7 @@ def extract_ee_ops(
         _CH_SEQ = r'(?:' + _NUM_CH + r'\s*[.]\s*(?:ja\s+)?)+\s*'
         _is_peatukk_insert = bool(
             re.search(r'täiendatakse\s+' + _CH_SEQ + r'peatükiga', clean, re.IGNORECASE)
+            or re.search(r'täiendatakse\s+peatükiga\s+' + _NUM_CH, clean, re.IGNORECASE)
         )
         if not m_secs and content and _is_peatukk_insert:
             # Extract all chapter numbers: "täiendatakse 3 1 . ja 3 2 . peatükiga"
@@ -3444,6 +3447,14 @@ def extract_ee_ops(
                     raw_part = raw_part.strip().rstrip('.').strip()
                     if raw_part:
                         ch_labels.append(_normalize_num(raw_part))
+            if not ch_labels:
+                m_ch_postposed = re.search(
+                    r'täiendatakse\s+peatükiga\s+(' + _NUM_CH + r')',
+                    clean,
+                    re.IGNORECASE,
+                )
+                if m_ch_postposed:
+                    ch_labels.append(_normalize_num(m_ch_postposed.group(1).strip()))
             if not ch_labels:
                 # Fallback: find chapter numbers from the quoted content itself
                 ch_in_content = re.findall(
@@ -4350,6 +4361,21 @@ def extract_ee_ops(
     # Try to parse the provision target
     target = parse_target(clean)
     if target is None:
+        if (
+            action == "insert"
+            and re.search(r"\b(?:seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)\s+täiendatakse\s+lisa(?:ga)?\s+\d", clean, re.IGNORECASE)
+        ):
+            rule_id = "ee_appendix_addition_not_body_replay"
+            ops.append(LegalOperation(
+                op_id=f"ee-appendix-addition-meta-{seq}-{source.statute_id}",
+                sequence=seq,
+                action=StructuralAction.META,
+                target=LegalAddress(path=()),
+                source=source,
+                provenance_tags=(clean[:200], rule_id),
+                witness_rule_id=rule_id,
+            ))
+            return ops
         if action == "text_replace" and stripped_explicit_act_reference:
             old_t, new_t = _normalize_text_replace_args(
                 clean,

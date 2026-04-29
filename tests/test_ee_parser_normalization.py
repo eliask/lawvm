@@ -3169,6 +3169,39 @@ def test_extract_ee_ops_handles_french_quote_chapter_insert() -> None:
     assert ops[0].payload.text.startswith("4 1. peatükk JUHI TÖÖ- JA PUHKEAEG")
 
 
+def test_extract_ee_ops_handles_postposed_chapter_number_insert() -> None:
+    ops = extract_ee_ops(
+        (
+            "3) määrust täiendatakse peatükiga 4 1 järgmises sõnastuses: "
+            "„4 1 . peatükk Metsuri eriala õppekava üldosa § 15 1 . Metsuri eriala "
+            "kutsekeskharidusõppe eesmärk ja õpiväljundid\x01 (1) Õpetusega taotletakse.”;"
+        ),
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("chapter", "4_1"),)
+    assert ops[0].payload is not None
+    assert ops[0].payload.text.startswith("4 1 . peatükk Metsuri eriala õppekava üldosa")
+
+
+def test_extract_ee_ops_keeps_appendix_addition_out_of_body_replay() -> None:
+    ops = extract_ee_ops(
+        (
+            "4) määrust täiendatakse lisaga 5 "
+            "„Metsuri eriala põhiõpingute moodulite kirjeldused”."
+        ),
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.META
+    assert ops[0].target.path == ()
+    assert ops[0].payload is None
+    assert ops[0].witness_rule_id == "ee_appendix_addition_not_body_replay"
+
+
 def test_parse_section_payload_strips_bare_leading_section_number() -> None:
     node = _parse_section_payload(
         ("28 1 . Mootorsõidukijuhi ja juhtimisõiguse taotleja tervisekontroll (1) Esimene lõige.")

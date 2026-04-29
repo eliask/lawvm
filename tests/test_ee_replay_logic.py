@@ -1470,6 +1470,24 @@ def test_replay_ee_to_pit_applies_direct_target_chapter_repeals_in_oigusnoustami
     assert result.divergences == []
 
 
+def test_replay_ee_to_pit_places_postposed_chapter_insert_in_metsanduse_oppekava() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "130042020014",
+        "2021-06-07",
+        archive=archive,
+        oracle_id="104062021003",
+    )
+
+    assert result.error is None
+    assert result.n_ops == 4
+    assert result.divergences == []
+
+
 def test_replay_ee_to_pit_handles_finite_verb_taotlusel_genitive_in_riigisaladus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
