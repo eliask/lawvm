@@ -74,6 +74,22 @@ _EE_OMITTED_TEXT_PLACEHOLDER_RE = re.compile(
     r"\[?\s*Käesolevast\s+tekstist\s+välja\s+jäetud\.?\s*\]?",
     re.IGNORECASE,
 )
+_OUTREACH_PRESENTATION_BUCKETS = frozenset(
+    {
+        "address_alignment_shadow",
+        "appendix_display_pathology",
+        "presentation_omitted_text_placeholder",
+        "presentation_punctuation_whitespace",
+    }
+)
+_OUTREACH_SOURCE_SURFACE_BUCKETS = frozenset(
+    {
+        "descendant_residual_mix",
+        "oracle_correction_notice",
+        "source_ambiguity",
+        "source_oracle_drift",
+    }
+)
 
 
 def _address_to_string(address: Any) -> str:
@@ -142,6 +158,9 @@ def _create_schema(con: sqlite3.Connection) -> None:
             residual_evidence TEXT,
             alignment_peer_addresses TEXT,
             open_current INTEGER NOT NULL DEFAULT 1,
+            outreach_bucket TEXT NOT NULL DEFAULT '',
+            meaningful_candidate INTEGER NOT NULL DEFAULT 0,
+            outreach_evidence TEXT NOT NULL DEFAULT '',
             FOREIGN KEY(pair_key) REFERENCES pairs(pair_key)
         );
 
@@ -160,6 +179,8 @@ def _create_schema(con: sqlite3.Connection) -> None:
             ON divergences(pair_key, section_address);
         CREATE INDEX IF NOT EXISTS idx_ee_pub_divergences_bucket
             ON divergences(residual_bucket);
+        CREATE INDEX IF NOT EXISTS idx_ee_pub_divergences_outreach
+            ON divergences(meaningful_candidate, outreach_bucket);
         """
     )
 
@@ -584,6 +605,75 @@ def _classify_omitted_text_placeholder_display(divergences: list[dict[str, Any]]
             divergence["open_current"] = 0
 
 
+def _assign_publication_outreach_triage(divergences: list[dict[str, Any]]) -> None:
+    """Project residual classifications into outreach-safe publication buckets.
+
+    This is a reporting projection only. It does not change replay, oracle text,
+    residual classifications, or open-current counts. The separate
+    ``meaningful_candidate`` flag exists so publication/outreach queries can
+    omit punctuation/whitespace-only rows without reimplementing bucket logic.
+    """
+    for divergence in divergences:
+        residual_bucket = str(divergence.get("residual_bucket") or "")
+        open_current_raw = divergence.get("open_current")
+        open_current = open_current_raw is True or open_current_raw == 1 or open_current_raw == "1"
+        if open_current and not residual_bucket:
+            divergence["outreach_bucket"] = "publication_candidate"
+            divergence["meaningful_candidate"] = 1
+            divergence["outreach_evidence"] = (
+                "Open current divergence with no residual classifier. This row "
+                "is a candidate for human review before Riigi Teataja outreach."
+            )
+            continue
+        if residual_bucket in _OUTREACH_PRESENTATION_BUCKETS:
+            divergence["outreach_bucket"] = "excluded_presentation"
+            divergence["meaningful_candidate"] = 0
+            divergence["outreach_evidence"] = (
+                f"Excluded from outreach candidate set by residual bucket "
+                f"{residual_bucket}; this is presentation or alignment triage."
+            )
+            continue
+        if residual_bucket == "replay_coverage_gap":
+            divergence["outreach_bucket"] = "excluded_replay_coverage"
+            divergence["meaningful_candidate"] = 0
+            divergence["outreach_evidence"] = (
+                "Excluded from outreach candidate set because LawVM does not yet "
+                "fully replay the relevant amendment chain."
+            )
+            continue
+        if residual_bucket == "pair_surface_classification":
+            divergence["outreach_bucket"] = "excluded_pair_surface"
+            divergence["meaningful_candidate"] = 0
+            divergence["outreach_evidence"] = (
+                "Excluded from outreach candidate set because the pair is not a "
+                "core commensurable replay/oracle comparison surface."
+            )
+            continue
+        if residual_bucket in _OUTREACH_SOURCE_SURFACE_BUCKETS:
+            divergence["outreach_bucket"] = "excluded_source_surface"
+            divergence["meaningful_candidate"] = 0
+            divergence["outreach_evidence"] = (
+                f"Excluded from outreach candidate set by residual bucket "
+                f"{residual_bucket}; the row is already classified as a source, "
+                "oracle, or correction-surface issue."
+            )
+            continue
+        if residual_bucket:
+            divergence["outreach_bucket"] = "excluded_adjudicated_other"
+            divergence["meaningful_candidate"] = 0
+            divergence["outreach_evidence"] = (
+                f"Excluded from outreach candidate set by residual bucket "
+                f"{residual_bucket}."
+            )
+            continue
+        divergence["outreach_bucket"] = "excluded_closed_unclassified"
+        divergence["meaningful_candidate"] = 0
+        divergence["outreach_evidence"] = (
+            "Excluded from outreach candidate set because the row is not open "
+            "current, even though no residual bucket is present."
+        )
+
+
 def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     base_id = row["base_id"].strip()
     oracle_id = row["oracle_id"].strip()
@@ -616,6 +706,9 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
                 "ops_missing_count": 0,
                 "consolidated_missing_count": 0,
                 "open_current_divergence_count": 0,
+                "browser_divergence_count": 0,
+                "browser_open_current_divergence_count": 0,
+                "browser_meaningful_candidate_count": 0,
                 **_section_agreement_metrics(None, None),
             },
             [],
@@ -706,8 +799,12 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
     _classify_punctuation_whitespace_only(divergences)
     _classify_omitted_text_placeholder_display(divergences)
     _classify_address_alignment_shadows(divergences)
+    _assign_publication_outreach_triage(divergences)
     pair["browser_divergence_count"] = len(divergences)
     pair["browser_open_current_divergence_count"] = sum(1 for divergence in divergences if divergence["open_current"])
+    pair["browser_meaningful_candidate_count"] = sum(
+        1 for divergence in divergences if divergence["meaningful_candidate"]
+    )
     return pair, divergences
 
 
@@ -771,7 +868,13 @@ def build_ee_publication_db(
     con.execute("INSERT INTO meta(key, value) VALUES (?, ?)", ("corpus_path", str(corpus_path)))
     con.execute("INSERT INTO meta(key, value) VALUES (?, ?)", ("archive_path", str(archive_path)))
 
-    stats = {"pairs": 0, "errors": 0, "divergences": 0, "open_divergences": 0}
+    stats = {
+        "pairs": 0,
+        "errors": 0,
+        "divergences": 0,
+        "open_divergences": 0,
+        "meaningful_candidates": 0,
+    }
     try:
         for idx, (row, pair, divergences) in enumerate(
             _iter_scored_pairs(rows, archive_path=archive_path, workers=workers),
@@ -782,6 +885,7 @@ def build_ee_publication_db(
             stats["pairs"] += 1
             stats["divergences"] += pair["browser_divergence_count"]
             stats["open_divergences"] += pair["browser_open_current_divergence_count"]
+            stats["meaningful_candidates"] += pair["browser_meaningful_candidate_count"]
 
             con.execute(
                 """
@@ -857,6 +961,9 @@ def build_ee_publication_db(
                         divergence["residual_evidence"],
                         divergence["alignment_peer_addresses"],
                         divergence["open_current"],
+                        divergence["outreach_bucket"],
+                        divergence["meaningful_candidate"],
+                        divergence["outreach_evidence"],
                     )
                 )
             con.executemany(
@@ -869,8 +976,8 @@ def build_ee_publication_db(
                     pair_key, base_id, oracle_id, section_address, address, divergence_type,
                     replay_text_hash, oracle_text_hash, residual_bucket, residual_evidence,
                     alignment_peer_addresses,
-                    open_current
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    open_current, outreach_bucket, meaningful_candidate, outreach_evidence
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 divergence_rows,
             )
@@ -898,6 +1005,7 @@ def main(args: "argparse.Namespace") -> None:
     print(f"  errors          : {stats['errors']}")
     print(f"  divergences     : {stats['divergences']}")
     print(f"  open divergences: {stats['open_divergences']}")
+    print(f"  candidates      : {stats['meaningful_candidates']}")
 
 
 __all__ = ["build_ee_publication_db", "main"]

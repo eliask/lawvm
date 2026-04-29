@@ -1138,3 +1138,27 @@ without both expected spaces:
 
 Case-inflected text replacement may match the compact `-ja` form for the same
 declined agency phrase. This belongs to text morphology, not target resolution.
+
+## 60. Publication DB outreach triage is a projection, not adjudication
+
+The EE publication DB stores a separate outreach projection on each divergence:
+
+- `outreach_bucket`
+- `meaningful_candidate`
+- `outreach_evidence`
+
+This layer exists so outreach queries can omit punctuation/whitespace-only and
+other already-classified residual rows without reimplementing residual-bucket
+logic. It must not mutate replay text, oracle text, residual classifications, or
+open-current counts.
+
+The only automatic outreach candidate is an open current divergence with no
+residual bucket. Known residual families are explicit exclusions, for example:
+
+- `presentation_punctuation_whitespace` -> `excluded_presentation`
+- `replay_coverage_gap` -> `excluded_replay_coverage`
+- `source_oracle_drift` -> `excluded_source_surface`
+- `pair_surface_classification` -> `excluded_pair_surface`
+
+This is publication/reporting metadata only. A `meaningful_candidate=1` row
+still requires human review before Riigi Teataja outreach.
