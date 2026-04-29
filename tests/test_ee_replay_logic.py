@@ -1452,6 +1452,24 @@ def test_replay_ee_to_pit_carries_wrapper_section_to_geological_survey_items() -
     assert result.divergences == []
 
 
+def test_replay_ee_to_pit_applies_direct_target_chapter_repeals_in_oigusnoustamine() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "111062020002",
+        "2021-02-20",
+        archive=archive,
+        oracle_id="117022021005",
+    )
+
+    assert result.error is None
+    assert result.n_ops == 3
+    assert result.divergences == []
+
+
 def test_replay_ee_to_pit_handles_finite_verb_taotlusel_genitive_in_riigisaladus() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
