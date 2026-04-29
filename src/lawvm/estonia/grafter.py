@@ -4590,6 +4590,33 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_abl": stem + "telt",
             "pl_trn": stem + "teks",
         }
+    if lower.endswith("tõend"):
+        stem = word + "i"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": stem + "it",
+            "sg_ine": stem + "is",
+            "sg_ela": stem + "ist",
+            "sg_ill": stem + "isse",
+            "sg_all": stem + "ile",
+            "sg_ade": stem + "il",
+            "sg_abl": stem + "ilt",
+            "sg_trn": stem + "iks",
+            "sg_ter": stem + "ini",
+            "sg_ess": stem + "ina",
+            "sg_abe": stem + "ita",
+            "sg_com": stem + "iga",
+            "pl_nom": stem + "id",
+            "pl_gen": stem + "ite",
+            "pl_part": word + "eid",
+            "pl_ine": stem + "ites",
+            "pl_ela": stem + "itest",
+            "pl_all": stem + "itele",
+            "pl_ade": stem + "itel",
+            "pl_abl": stem + "itelt",
+            "pl_trn": stem + "iteks",
+        }
     if lower.endswith("geen"):
         stem = word + "i"
         return {
@@ -7174,6 +7201,27 @@ def _ee_resolve_full_path(body: IRNode, path: tree_ops.Path) -> Optional[tree_op
 
     if not path:
         return None
+
+    if len(path) > 1:
+        parent_full = _ee_resolve_full_path(body, path[:-1])
+        if parent_full is not None:
+            candidate = parent_full + (path[-1],)
+            if tree_ops.resolve(body, candidate) is not None:
+                return candidate
+            leaf_kind, _leaf_label = path[-1]
+            parent_node = tree_ops.resolve(body, parent_full)
+            if (
+                leaf_kind == "item"
+                and parent_node is not None
+                and parent_node.kind == IRNodeKind.SECTION
+                and len(parent_node.children) == 1
+                and parent_node.children[0].kind == IRNodeKind.SUBSECTION
+            ):
+                subsection = parent_node.children[0]
+                subsection_candidate = parent_full + (("subsection", subsection.label or ""), path[-1])
+                if tree_ops.resolve(body, subsection_candidate) is not None:
+                    return subsection_candidate
+            return None
 
     # Try to locate the first element via deep find, then resolve the rest
     # relative to that found node.

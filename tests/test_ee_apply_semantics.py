@@ -3333,6 +3333,74 @@ def test_scoped_text_replace_without_all_occurrences_rewrites_first_match_only()
     ) == "koostab ministeeriumi ametnike ja töötajate koolituskava, korraldab töötajate koolitust;"
 
 
+def test_case_inflected_text_replace_handles_toend_phrase_forms() -> None:
+    assert _ee_apply_text_replace_value(
+        "Meditsiinilise sünnitõendi andmete üleandmisel.",
+        "meditsiiniline sünnitõend",
+        "tervishoiuteenuse osutaja tõend",
+        case_inflected=True,
+    ) == "Tervishoiuteenuse osutaja tõendi andmete üleandmisel."
+
+
+def test_insert_item_does_not_hijack_same_label_under_different_section() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="1",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="1",
+                                children=(IRNode(kind=IRNodeKind.ITEM, label="3", text="existing elsewhere."),),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="4",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="50",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="1",
+                                children=(IRNode(kind=IRNodeKind.ITEM, label="2", text="local predecessor."),),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_insert_item_no_cross_section_hijack",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "50"), ("subsection", "1"), ("item", "3"))),
+        payload=IRNode(kind=IRNodeKind.CONTENT, text="3) inserted locally."),
+    )
+
+    result = _ee_apply_op(body, op)
+    foreign_item = result.children[0].children[0].children[0].children[0]
+    local_subsection = result.children[1].children[0].children[0]
+
+    assert foreign_item.text == "existing elsewhere."
+    assert [(item.label, item.text) for item in local_subsection.children] == [
+        ("2", "local predecessor;"),
+        ("3", "inserted locally."),
+    ]
+
+
 def test_global_case_inflected_text_replace_keeps_nominative_before_regular_noun_phrase() -> None:
     body = _body_with_section_and_subsection(
         "12",
