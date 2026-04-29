@@ -2337,6 +2337,25 @@ def test_extract_ee_ops_emits_section_renumber_before_insert_for_loetakse_paragr
     assert ops[1].payload.text.startswith("§ 27 1. Abivajavast lapsest teatamata jätmine")
 
 
+def test_extract_ee_ops_emits_subsection_renumber_before_insert_for_loetakse_loikeks_clause() -> None:
+    text = (
+        "paragrahvi 7 lõige 2 1 loetakse lõikeks 2 2 ning paragrahvi täiendatakse "
+        "lõikega 2 1 järgmises sõnastuses: „(2 1) Uus lõige.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.RENUMBER, (("section", "7"), ("subsection", "2_1"))),
+        (StructuralAction.INSERT, (("section", "7"), ("subsection", "2_1"))),
+    ]
+    assert ops[0].destination is not None
+    assert ops[0].destination.path == (("section", "7"), ("subsection", "2_2"))
+    assert ops[0].witness_rule_id == "ee_subsection_sequence_renumber_before_insert"
+    assert ops[1].witness_rule_id == "ee_subsection_sequence_renumber_before_insert"
+    assert _payload(ops[1]).text == "(2 1) Uus lõige."
+
+
 def test_extract_ee_ops_emits_plural_section_renumbers_before_new_occupied_section_insert() -> None:
     ops = extract_ee_ops(
         (
@@ -5187,6 +5206,56 @@ def test_extract_ee_ops_splits_mixed_insert_after_and_delete_same_target() -> No
     assert sentence_meta.sentence_indexes == (0,)
 
 
+def test_extract_ee_ops_splits_mixed_delete_and_insert_after_same_target() -> None:
+    text = (
+        "paragrahvi 6 lõikest 2 jäetakse välja sõnad „EUREKA koostöövõrgustiku” "
+        "ning täiendatakse pärast sõna „toetatakse” sõnadega „rakendusuuringu ja”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 2
+    assert [op.target.path for op in ops] == [
+        (("section", "6"), ("subsection", "2")),
+        (("section", "6"), ("subsection", "2")),
+    ]
+    assert [(_payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        ("EUREKA koostöövõrgustiku", ""),
+        ("toetatakse", "toetatakse rakendusuuringu ja"),
+    ]
+    assert [_payload(op).attrs["rewrite_mode"] for op in ops] == ["delete", "insert_after"]
+    assert all(
+        _payload(op).attrs["source_family"] == "ee_mixed_insert_after_and_delete_same_target"
+        for op in ops
+    )
+
+
+def test_extract_ee_ops_splits_two_insert_afters_and_after_anchor_delete() -> None:
+    text = (
+        "paragrahvi 12 lõike 2 esimest lauset täiendatakse pärast sõna "
+        "„taotlusvoorudest” tekstiosaga „, toetuse tingimustest” ja teist lauset "
+        "pärast sõna „taotlusvoorud” tekstiosaga „, nende tingimused” ning "
+        "jäetakse teisest lausest pärast sõna „ning” välja sõna „nende”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 3
+    assert [(_payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        ("taotlusvoorudest", "taotlusvoorudest, toetuse tingimustest"),
+        ("taotlusvoorud", "taotlusvoorud, nende tingimused"),
+        ("ning nende", "ning"),
+    ]
+    assert [_payload(op).attrs["rewrite_mode"] for op in ops] == [
+        "insert_after",
+        "insert_after",
+        "replace",
+    ]
+    sentence_meta = read_sentence_target_meta(_payload(ops[2]))
+    assert sentence_meta is not None
+    assert sentence_meta.sentence_indexes == (1,)
+
+
 def test_extract_ee_ops_treats_insert_after_arvu_as_text_replace_without_spacing_gap() -> None:
     ops = extract_ee_ops(
         'paragrahvi 16 lõiget 2 täiendatakse pärast arvu "15²" tekstiosaga "–15⁵".',
@@ -7850,3 +7919,24 @@ def test_extract_ee_ops_normalizes_unicode_superscript_section_targets() -> None
         "section:110_1",
     }
     assert all(_payload(op).attrs.get("case_inflected") is True for op in ops)
+
+
+def test_extract_ee_ops_keeps_mixed_subsection_and_sentence_repeals_distinct() -> None:
+    text = (
+        "paragrahvi 8 lõiked 3 ja 3 1 ning § 9 lõike 2 neljas lause "
+        "tunnistatakse kehtetuks;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, str(op.target)) for op in ops] == [
+        (StructuralAction.REPEAL, "section:8/subsection:3"),
+        (StructuralAction.REPEAL, "section:8/subsection:3_1"),
+        (StructuralAction.REPLACE, "section:9/subsection:2"),
+    ]
+    selection_meta = read_subsection_selection_meta(_payload(ops[0]))
+    assert selection_meta is not None
+    assert selection_meta.explicit_labels == ("3", "3_1")
+    sentence_meta = read_sentence_target_meta(_payload(ops[2]))
+    assert sentence_meta is not None
+    assert sentence_meta.sentence_indexes == (3,)

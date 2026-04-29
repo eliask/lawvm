@@ -931,6 +931,7 @@ def _heading_mention_precedes_child_target(text: str) -> bool:
 
 _EE_TEXTUAL_INVALIDATION_RULE = "ee_textual_invalidation_as_text_delete"
 _EE_SECTION_SEQUENCE_RENUMBER_RULE = "ee_section_sequence_renumber_before_insert"
+_EE_SUBSECTION_SEQUENCE_RENUMBER_RULE = "ee_subsection_sequence_renumber_before_insert"
 _EE_FLAT_SECTIONLESS_SINGLETON_ITEM_INSERT_RULE = "ee_flat_sectionless_singleton_item_insert"
 
 
@@ -1013,6 +1014,71 @@ def _section_renumber_ops(
             witness_rule_id=_EE_SECTION_SEQUENCE_RENUMBER_RULE,
         ))
     return tuple(ops)
+
+
+def _subsection_renumber_then_insert_ops(
+    clean: str,
+    source: OperationSource,
+    *,
+    seq_start: int,
+) -> tuple[LegalOperation, ...]:
+    """Build ops for ``lõige A loetakse lõikeks B`` plus a new subsection insert."""
+    match = re.search(
+        r'\bparagrahvi\s+(?P<section>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+        r'lõige\s+(?P<old>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+loetakse\s+'
+        r'lõikeks\s+(?P<new>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+        r'(?:ning|ja)\s+paragrahvi\s+t[aä]iendatakse\s+'
+        r'lõikega\s+(?P<insert>\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\b',
+        clean,
+        re.IGNORECASE,
+    )
+    content = _extract_quoted_content(clean)
+    if match is None or not content:
+        return ()
+    section_label = _normalize_num(match.group("section"))
+    old_label = _normalize_num(match.group("old"))
+    new_label = _normalize_num(match.group("new"))
+    insert_label = _normalize_num(match.group("insert"))
+    renumber_payload = IRNode(
+        kind=IRNodeKind.CONTENT,
+        text="",
+        attrs={
+            "rule_id": _EE_SUBSECTION_SEQUENCE_RENUMBER_RULE,
+            "source_old_label": old_label,
+            "source_new_label": new_label,
+        },
+    )
+    insert_payload = _set_sentence_insert_payload_attrs(
+        IRNode(
+            kind=IRNodeKind.CONTENT,
+            text=content,
+            attrs={"source_family": _EE_SUBSECTION_SEQUENCE_RENUMBER_RULE},
+        ),
+        clean,
+    )
+    return (
+        LegalOperation(
+            op_id=f"ee-renumber-subsection-{section_label}-{old_label}-{new_label}-{source.statute_id}",
+            sequence=seq_start,
+            action=_to_structural_action("renumber"),
+            target=LegalAddress(path=(("section", section_label), ("subsection", old_label))),
+            destination=LegalAddress(path=(("section", section_label), ("subsection", new_label))),
+            payload=renumber_payload,
+            source=source,
+            provenance_tags=(clean[:200], _EE_SUBSECTION_SEQUENCE_RENUMBER_RULE),
+            witness_rule_id=_EE_SUBSECTION_SEQUENCE_RENUMBER_RULE,
+        ),
+        LegalOperation(
+            op_id=f"ee-insert-renumbered-subsection-{section_label}-{insert_label}-{source.statute_id}",
+            sequence=seq_start + 1,
+            action=_to_structural_action("insert"),
+            target=LegalAddress(path=(("section", section_label), ("subsection", insert_label))),
+            payload=insert_payload,
+            source=source,
+            provenance_tags=(clean[:200], _EE_SUBSECTION_SEQUENCE_RENUMBER_RULE),
+            witness_rule_id=_EE_SUBSECTION_SEQUENCE_RENUMBER_RULE,
+        ),
+    )
 
 
 def _classify_verb(text: str) -> str:
@@ -1459,6 +1525,9 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
     # RT HTML (CDATA) sometimes uses " (U+201D) for BOTH opening and closing
     # (non-standard pairing), so we also try " " (U+201D...U+201D).
     text = html.unescape(text)
+    after_anchor_delete_pair = _extract_after_anchor_text_delete_pair(text)
+    if after_anchor_delete_pair is not None:
+        return after_anchor_delete_pair
     after_anchor_pair = _extract_after_anchor_text_replace_pair(text)
     if after_anchor_pair is not None:
         return after_anchor_pair
@@ -1520,6 +1589,26 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
 
 
 _EE_AFTER_ANCHOR_TEXT_REPLACE_RULE = "ee_text_replace_after_anchor_clause"
+
+
+def _extract_after_anchor_text_delete_pair(text: str) -> tuple[str, str] | None:
+    """Extract OLD->NEW for ``after word X delete word Y`` text deletions."""
+    normalized = html.unescape(text)
+    match = re.search(
+        r'\bj[aä]etakse\b[^.;]{0,120}\bp[aä]rast\s+'
+        r'(?:sõn[au]|tekstiosa|lauseosa|arvu)\s+[„"“](?P<anchor>[^„”“"]+)[”"“]\s+'
+        r'v[aä]lja\s+(?:sõn[au]|tekstiosa|lauseosa|arv)\s+[„"“](?P<deleted>[^„”“"]+)[”"“]',
+        normalized,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if match is None:
+        return None
+    anchor = match.group("anchor").strip()
+    deleted = match.group("deleted").strip()
+    if not anchor or not deleted:
+        return None
+    separator = "" if re.match(r"^[\s–‒\-.,;:)]", deleted) else " "
+    return f"{anchor}{separator}{deleted}", anchor
 
 
 def _extract_after_anchor_text_replace_pair(text: str) -> tuple[str, str] | None:
@@ -1676,10 +1765,21 @@ def _extract_mixed_insert_after_and_replace_pairs(text: str) -> list[tuple[str, 
     ):
         return []
 
-    pairs = _extract_text_replace_pairs(text)
-    if len(pairs) < 2:
+    mixed_parts = re.split(
+        r'\s+(?:ja|ning)\s+(?=asendatakse\b)',
+        html.unescape(text),
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )
+    if len(mixed_parts) != 2:
         return []
-    return pairs
+    insert_segment, replace_segment = mixed_parts
+    insert_quotes = [part.strip() for part in _extract_quoted_contents(insert_segment) if part.strip()]
+    if len(insert_quotes) < 2:
+        return []
+    replace_pairs = _extract_text_replace_pairs(replace_segment)
+    pairs = [(insert_quotes[0], insert_quotes[1]), *replace_pairs]
+    return [(old, new) for old, new in pairs if old and new]
 
 
 def _extract_mixed_insert_after_and_delete_segments(text: str) -> list[tuple[str, str, str]]:
@@ -1693,32 +1793,24 @@ def _extract_mixed_insert_after_and_delete_segments(text: str) -> list[tuple[str
 
     normalized = html.unescape(text)
     parts = re.split(
-        r'\s+(?:ning|ja)\s+(?=[^.;]{0,180}\bj[aä]etakse\b[^.;]{0,120}\bv[aä]lja\b)',
+        r'\s+(?:ning|ja)\s+'
+        r'(?=[^.;]{0,180}(?:\bj[aä]etakse\b[^.;]{0,120}\bv[aä]lja\b|\bt[aä]iendatakse\b))',
         normalized,
-        maxsplit=1,
         flags=re.IGNORECASE,
     )
-    if len(parts) != 2:
+    if len(parts) < 2:
         return []
 
     segments: list[tuple[str, str, str]] = []
-    insert_segment = parts[0].strip()
-    delete_segment = parts[1].strip()
-    insert_old, insert_new = _normalize_text_replace_args(
-        insert_segment,
-        *_extract_text_replace_args(insert_segment),
-    )
-    if insert_old and insert_new:
-        segments.append((insert_segment, insert_old, insert_new))
+    for segment in (part.strip() for part in parts):
+        old_text, new_text = _normalize_text_replace_args(
+            segment,
+            *_extract_text_replace_args(segment),
+        )
+        if old_text is not None and new_text is not None:
+            segments.append((segment, old_text, new_text))
 
-    delete_old, delete_new = _normalize_text_replace_args(
-        delete_segment,
-        *_extract_text_replace_args(delete_segment),
-    )
-    if delete_old is not None and delete_new is not None:
-        segments.append((delete_segment, delete_old, delete_new))
-
-    if len(segments) != 2:
+    if len(segments) < 2:
         return []
     return segments
 
@@ -2538,6 +2630,9 @@ def _normalize_text_replace_args(
     new_text: str | None,
 ) -> tuple[str | None, str | None]:
     """Normalize EE text_replace args for delete and insert-after-word clauses."""
+    after_anchor_delete_pair = _extract_after_anchor_text_delete_pair(text)
+    if after_anchor_delete_pair is not None:
+        return after_anchor_delete_pair
     if _extract_after_anchor_text_replace_pair(text) is not None:
         return old_text, new_text
     if (old_text is None and new_text
@@ -2579,6 +2674,8 @@ def _infer_text_replace_mode(
     if old_text and not new_text:
         return "delete"
     if old_text and new_text:
+        if _extract_after_anchor_text_delete_pair(text) is not None:
+            return "replace"
         if _extract_after_anchor_text_replace_pair(text) is not None:
             return "replace"
         if re.search(r'\benne\s+(?:sõn[au][a-z]*|tekstiosa|lauseosa|arvu)\b', text, re.IGNORECASE):
@@ -3949,11 +4046,78 @@ def extract_ee_ops(
             and target.path[0][0] == "section"
             and target.path[1][0] == "subsection"
         ]
-        if subsection_targets:
+        sentence_repeals, _subsection_repeals = _extract_secondary_sentence_and_subsection_repeals(clean)
+        sentence_target_paths = {
+            (("section", sect_label), ("subsection", sub_label))
+            for sect_label, sub_label, _sentence_word in sentence_repeals
+        }
+        if subsection_targets and sentence_target_paths:
+            from lawvm.estonia.ee_instruction_waist import (
+                make_sentence_target_meta,
+                make_subsection_selection_meta,
+            )
+            from lawvm.estonia.text_morphology import sentence_indexes_from_notes
+
+            labels_by_section: dict[str, list[str]] = {}
+            for target in subsection_targets:
+                if target.path in sentence_target_paths:
+                    continue
+                section_label = target.path[0][1]
+                labels_by_section.setdefault(section_label, []).append(target.path[1][1])
+            for target in subsection_targets:
+                section_label = target.path[0][1]
+                subsection_label = target.path[1][1]
+                if target.path in sentence_target_paths:
+                    matching_notes = [
+                        f"{sentence_word} lause tunnistatakse kehtetuks"
+                        for sect_label, sub_label, sentence_word in sentence_repeals
+                        if sect_label == section_label and sub_label == subsection_label
+                    ]
+                    local_sentence_note = matching_notes[0] if matching_notes else sentence_note
+                    ops.append(LegalOperation(
+                        op_id=(
+                            f"ee-replace-sub-sentence-{section_label}-{subsection_label}-"
+                            f"{source.statute_id}"
+                        ),
+                        sequence=seq,
+                        action=_to_structural_action("replace"),
+                        target=target,
+                        payload=IRNode(
+                            kind=IRNodeKind.CONTENT,
+                            text="",
+                            attrs={
+                                "sentence_target_meta": make_sentence_target_meta(
+                                    sentence_indexes=sentence_indexes_from_notes(local_sentence_note)
+                                )
+                            },
+                        ),
+                        source=source,
+                        provenance_tags=(clean[:200], local_sentence_note),
+                    ))
+                else:
+                    ops.append(LegalOperation(
+                        op_id=f"ee-repeal-sub-{section_label}-{subsection_label}-{source.statute_id}",
+                        sequence=seq,
+                        action=_to_structural_action("repeal"),
+                        target=target,
+                        payload=IRNode(
+                            kind=IRNodeKind.CONTENT,
+                            text="",
+                            attrs={
+                                "subsection_selection_meta": make_subsection_selection_meta(
+                                    explicit_labels=tuple(labels_by_section.get(section_label, ()))
+                                )
+                            },
+                        ),
+                        source=source,
+                        provenance_tags=(clean[:200],),
+                    ))
+                seq += 1
+            return ops
+        if subsection_targets and not sentence_target_paths:
             from lawvm.estonia.ee_instruction_waist import make_sentence_target_meta
             from lawvm.estonia.text_morphology import sentence_indexes_from_notes
 
-            sentence_indexes = sentence_indexes_from_notes(sentence_note)
             for target in subsection_targets:
                 ops.append(LegalOperation(
                     op_id=(
@@ -3968,7 +4132,7 @@ def extract_ee_ops(
                         text="",
                         attrs={
                             "sentence_target_meta": make_sentence_target_meta(
-                                sentence_indexes=sentence_indexes
+                                sentence_indexes=sentence_indexes_from_notes(sentence_note)
                             )
                         },
                     ),
@@ -4684,6 +4848,10 @@ def extract_ee_ops(
     #   "Paragrahv 27 1 loetakse §-ks 27 2 ja seadust täiendatakse §-ga 27 1 ..."
     # Emit the renumber first, but do not return: the later insert/replace path
     # still needs to compile from the same instruction.
+    subsection_renumber_ops = _subsection_renumber_then_insert_ops(clean, source, seq_start=seq)
+    if subsection_renumber_ops:
+        return list(subsection_renumber_ops)
+
     renumber_ops = _section_renumber_ops(clean, source, seq_start=seq)
     ops.extend(renumber_ops)
     seq += len(renumber_ops)

@@ -8007,6 +8007,49 @@ def test_insert_item_converts_previous_terminal_period_to_semicolon() -> None:
     assert subsection.children[3].text == "neljas."
 
 
+def test_insert_item_before_existing_later_item_gets_semicolon_terminal() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="3",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="1",
+                                text="Mõisted:",
+                                children=(
+                                    IRNode(kind=IRNodeKind.ITEM, label="4_3", text="eelmine;"),
+                                    IRNode(kind=IRNodeKind.ITEM, label="5", text="järgmine."),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_insert_item_middle_terminal",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "3"), ("subsection", "1"), ("item", "4_4"))),
+        payload=IRNode(kind=IRNodeKind.CONTENT, text="4 4) uus definitsioon"),
+    )
+
+    result = _ee_apply_op(body, op)
+    subsection = result.children[0].children[0].children[0]
+    inserted = next(child for child in subsection.children if child.label == "4_4")
+
+    assert inserted.text == "uus definitsioon;"
+    assert inserted.attrs["source_family"] == "ee_insert_item_terminal_normalized_by_position"
+
+
 def test_replace_last_item_finalizes_terminal_semicolon_to_period() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,
