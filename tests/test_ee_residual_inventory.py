@@ -34,6 +34,23 @@ def test_get_ee_residual_inventory_liiklusseadus() -> None:
     )
 
 
+def test_get_ee_residual_inventory_numbri_broneerimise_source_typo_correction() -> None:
+    inventory = get_ee_residual_inventory("103082018007", "126022019011")
+
+    assert inventory is not None
+    assert inventory.statute_title == "Numbri broneerimise tingimused"
+    assert inventory.comparison_class == "commensurable_delta"
+    assert len(inventory.residuals) == 11
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert {
+        "section:2/subsection:2",
+        "section:4/subsection:1/item:5",
+        "section:5/subsection:2",
+    }.issubset({record.address for record in inventory.residuals})
+    assert all("Tarbijakatise" in record.evidence for record in inventory.residuals)
+    assert all("126022019001 § 10" in record.evidence for record in inventory.residuals)
+
+
 def test_get_ee_residual_inventory_technical_assistance_transitional_redaction() -> None:
     inventory = get_ee_residual_inventory("124112010005", "109062011002")
 

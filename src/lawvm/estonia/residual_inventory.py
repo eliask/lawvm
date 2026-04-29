@@ -59,6 +59,41 @@ def _lower_generated_residual_records(
 
 
 _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
+    ("103082018007", "126022019011"): EEPairResidualInventory(
+        base_id="103082018007",
+        oracle_id="126022019011",
+        statute_title="Numbri broneerimise tingimused",
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "section:2",
+                    "section:2/subsection:2",
+                    "section:3",
+                    "section:3/subsection:5",
+                    "section:4",
+                    "section:4/subsection:1",
+                    "section:4/subsection:1/item:5",
+                    "section:4/subsection:3",
+                    "section:4/subsection:5_1",
+                    "section:5",
+                    "section:5/subsection:2",
+                ),
+                evidence=(
+                    "Source act 126022019001 § 10, targeting the 8 March 2005 "
+                    "regulation no. 29 'Numbri broneerimise tingimused', says "
+                    "to replace 'Tehnilise Järelevalve Amet' with "
+                    "'Tarbijakatise ja Tehnilise Järelevalve Amet' throughout "
+                    "the regulation. Replay preserves that source-owned typo. "
+                    "Oracle 126022019011 instead uses 'Tarbijakaitse ja Tehnilise "
+                    "Järelevalve Amet', matching the institution name and nearby "
+                    "same-source amendments. This is bounded source/oracle typo "
+                    "correction drift, not a replay target or morphology failure."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("129122011237", "129032013014"): EEPairResidualInventory(
         base_id="129122011237",
         oracle_id="129032013014",
