@@ -254,6 +254,46 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
+    ("119082014014", "118012019009"): EEPairResidualInventory(
+        base_id="119082014014",
+        oracle_id="118012019009",
+        statute_title="Põllumajandusameti põhimäärus",
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "chapter:1",
+                    "chapter:1/section:1",
+                    "chapter:1/section:1/subsection:1",
+                ),
+                evidence=(
+                    "Source act 127032015001 § 1 item 1 replaces § 1(1) with "
+                    "the source-literal phrase 'kes teostab riiklikku ja "
+                    "haldusjärelevalvet'. No later amendment in the pair window "
+                    "rewrites that verb to 'teeb'. Oracle 118012019009 presents "
+                    "'kes teeb riiklikku ja haldusjärelevalvet'. This is bounded "
+                    "source/oracle lexical drift, not a replay target failure."
+                ),
+                bucket="source_oracle_drift",
+            ),
+            build_address_list_family(
+                addresses=(
+                    "chapter:4",
+                    "chapter:4/section:26",
+                    "chapter:4/section:26/subsection:2",
+                    "chapter:4/section:26/subsection:2/item:3",
+                ),
+                evidence=(
+                    "Source act 118012019003 § 1 item 6 replaces § 26(2) item 3 "
+                    "with a payload ending in a semicolon. Replay preserves that "
+                    "source-owned terminal punctuation. Oracle 118012019009 "
+                    "renders the same item with a terminal period. This is "
+                    "bounded source/oracle list-punctuation drift."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("130032012017", "119062013014"): EEPairResidualInventory(
         base_id="130032012017",
         oracle_id="119062013014",

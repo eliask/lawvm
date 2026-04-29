@@ -211,6 +211,29 @@ def test_get_ee_residual_inventory_fgaas_register_item_terminal_punctuation() ->
     assert all("terminal punctuation" in record.evidence for record in inventory.residuals)
 
 
+def test_get_ee_residual_inventory_pollumajandusamet_source_oracle_drift() -> None:
+    inventory = get_ee_residual_inventory("119082014014", "118012019009")
+
+    assert inventory is not None
+    assert inventory.statute_title == "Põllumajandusameti põhimäärus"
+    assert inventory.comparison_class == "commensurable_delta"
+    assert len(inventory.residuals) == 7
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert {
+        record.address for record in inventory.residuals
+    } == {
+        "chapter:1",
+        "chapter:1/section:1",
+        "chapter:1/section:1/subsection:1",
+        "chapter:4",
+        "chapter:4/section:26",
+        "chapter:4/section:26/subsection:2",
+        "chapter:4/section:26/subsection:2/item:3",
+    }
+    assert any("127032015001 § 1 item 1" in record.evidence for record in inventory.residuals)
+    assert any("118012019003 § 1 item 6" in record.evidence for record in inventory.residuals)
+
+
 def test_get_ee_residual_inventory_vabaparda_target_drift() -> None:
     inventory = get_ee_residual_inventory("125012012005", "123092022012")
 
