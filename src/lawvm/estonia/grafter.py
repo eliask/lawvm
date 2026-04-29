@@ -1741,33 +1741,44 @@ def parse_ee_amendment_ops(
             )
             return updated or ""
 
-        active_rewrites: list[tuple[str, str, bool]] = []
+        active_rewrites: list[
+            tuple[str, str, bool, tuple[tuple[tuple[str, str], ...], ...]]
+        ] = []
         composed: list[LegalOperation] = []
         for op in ops:
             action = _action_name(op)
             payload = op.payload
             updated_op = op
             protected_quote = False
+            target_path = tuple((str(kind), str(label)) for kind, label in op.target.path)
+            selector_composition_skipped = False
             if payload is not None and action == "text_replace":
                 payload_meta = read_payload_rewrite_meta(payload)
                 rewrite = payload_meta.rewrite
                 if rewrite is not None:
                     old_surface = rewrite.old_surface
                     new_surface = rewrite.new_surface
-                    for old, new, case_inflected in active_rewrites:
-                        old_surface = _rewrite_surface(
-                            old_surface,
-                            old=old,
-                            new=new,
-                            case_inflected=case_inflected,
-                        )
+                    for old, new, case_inflected, exclude_paths in active_rewrites:
+                        if target_path and target_path in exclude_paths:
+                            selector_composition_skipped = True
+                        else:
+                            old_surface = _rewrite_surface(
+                                old_surface,
+                                old=old,
+                                new=new,
+                                case_inflected=case_inflected,
+                            )
                         new_surface = _rewrite_surface(
                             new_surface,
                             old=old,
                             new=new,
                             case_inflected=case_inflected,
                         )
-                    if old_surface != rewrite.old_surface or new_surface != rewrite.new_surface:
+                    if (
+                        old_surface != rewrite.old_surface
+                        or new_surface != rewrite.new_surface
+                        or selector_composition_skipped
+                    ):
                         updated_payload = replace(
                             payload,
                             text=new_surface,
@@ -1784,13 +1795,22 @@ def parse_ee_amendment_ops(
                             text_patch=_typed_text_replace_patch(old_surface, new_surface),
                             provenance_tags=(
                                 *op.provenance_tags,
-                                "ee_source_local_global_text_replace_selector_composition",
+                                *(
+                                    ("ee_source_local_global_text_replace_selector_composition",)
+                                    if old_surface != rewrite.old_surface or new_surface != rewrite.new_surface
+                                    else ()
+                                ),
+                                *(
+                                    ("ee_source_local_global_text_replace_selector_composition_skipped_for_excluded_target",)
+                                    if selector_composition_skipped
+                                    else ()
+                                ),
                             ),
                         )
                         payload = updated_payload
             if payload is not None and action in {"replace", "insert"}:
                 updated_payload = payload
-                for old, new, case_inflected in active_rewrites:
+                for old, new, case_inflected, _exclude_paths in active_rewrites:
                     updated_payload, rewrite_protected_quote = _rewrite_node(
                         updated_payload,
                         old=old,
@@ -1831,6 +1851,11 @@ def parse_ee_amendment_ops(
                     rewrite.old_surface,
                     rewrite.new_surface,
                     rewrite.case_inflected,
+                    tuple(
+                        tuple((str(kind), str(label)) for kind, label in raw_path)
+                        for raw_path in rewrite.exclude_paths
+                        if isinstance(raw_path, (list, tuple))
+                    ),
                 )
             )
         return composed

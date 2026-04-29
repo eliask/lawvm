@@ -8855,3 +8855,28 @@ def test_extract_ee_ops_treats_kehtestatakse_uues_sonastuses_as_replace() -> Non
     assert ops[0].target.path == (("section", "6"), ("subsection", "7"))
     assert ops[0].payload is not None
     assert ops[0].payload.text.startswith("(7) Uus lõike tekst")
+
+
+def test_parse_ee_amendment_ops_keeps_excluded_global_rewrite_selectors_source_literal() -> None:
+    archive = open_rt_archive(readonly=True)
+    base = parse_ee_statute(fetch_rt_xml("109072013006", archive), "ee/109072013006")
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("121042016001", archive),
+        "ee/121042016001",
+        target_title=base.title,
+    )
+
+    op = next(
+        op
+        for op in ops
+        if op.target.path == (("section", "2"), ("subsection", "1_1"))
+        and op.action is StructuralAction.TEXT_REPLACE
+    )
+
+    assert op.payload is not None
+    assert op.payload.attrs["old_text"] == "ühenduse tolliseadustiku artiklites 36a ja 182a"
+    assert (
+        "ee_source_local_global_text_replace_selector_composition_skipped_for_excluded_target"
+        in op.provenance_tags
+    )
