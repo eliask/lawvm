@@ -1527,6 +1527,16 @@ def _extract_text_replace_pairs(text: str) -> List[Tuple[str, str]]:
     after_anchor_pair = _extract_after_anchor_text_replace_pair(text)
     if after_anchor_pair is not None:
         return [after_anchor_pair]
+    if re.search(
+        r'\bt[aä]iendatakse\b[^.;]{0,180}\b(?:p[aä]rast|enne)\s+'
+        r'(?:sõn[au]|tekstiosa|lauseosa|arvu)\b[^.;]{0,180}'
+        r'\b(?:sõn(?:a|adega)|tekstiosaga|lauseosaga|arvuga)\b',
+        text,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        old_text, new_text = _extract_text_replace_args(text)
+        if old_text and new_text:
+            return [(old_text, new_text)]
     if re.search(r"\basendatakse\b", text, re.IGNORECASE):
         post = re.split(r"\basendatakse\b", text, maxsplit=1, flags=re.IGNORECASE)[-1]
         post_quotes = [q.strip() for q in _extract_quoted_contents(post) if q.strip()]

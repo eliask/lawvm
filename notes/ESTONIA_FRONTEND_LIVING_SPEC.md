@@ -1064,3 +1064,14 @@ For singleton regulations this compiles to:
 The rule is `ee_flat_sectionless_singleton_item_insert`. It carries
 `scope_confidence=inferred_from_live_unique` because the source owns the item
 label but not the omitted singleton section/subsection path.
+
+## 56. Insert-after `tekstiosaga` payloads may contain nested quoted titles
+
+When an EE clause says a provision is supplemented after quoted words with a
+quoted `tekstiosaga`, the inserted text may itself contain a quoted title:
+
+- old anchor: `tunnistamise kord`
+- inserted tail includes: `“Eesti maaelu arengukavaga 2007–2013”`
+
+The marker-aware insert-after parse owns this shape. Generic ordered quote
+pairing must not truncate the payload at the nested title's closing quote.
