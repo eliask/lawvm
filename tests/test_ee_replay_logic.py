@@ -1578,6 +1578,24 @@ def test_replay_ee_to_pit_adjudicates_spent_repeal_clause_presentation_drift() -
     assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": len(divergence_addresses)}
 
 
+def test_replay_ee_to_pit_closes_new_format_xml_alampunkt_omnibus_items() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "105012016010",
+        "2016-07-01",
+        archive=archive,
+        oracle_id="119052016017",
+    )
+
+    assert result.error is None
+    assert result.n_ops == 10
+    assert result.divergences == []
+
+
 def test_replay_ee_to_pit_adjudicates_jahitunnistus_label_offset_surface_drift() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
