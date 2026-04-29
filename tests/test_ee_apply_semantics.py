@@ -4900,6 +4900,14 @@ def test_case_inflected_text_replace_handles_riiklik_register_illative_phrase() 
     )
 
 
+def test_case_inflected_text_replace_handles_a_noun_illative_forms() -> None:
+    text = "Dokumentide haigekassasse laekumise päevaks loetakse esitamise päev."
+
+    replaced = _ee_apply_text_replace_value(text, "haigekassa", "Tervisekassa", case_inflected=True)
+
+    assert replaced == "Dokumentide Tervisekassasse laekumise päevaks loetakse esitamise päev."
+
+
 def test_exact_text_replace_does_not_apply_case_inflected_special_forms() -> None:
     text = "Osakonna juhataja nimetab ametisse ja vabastab ametist ametniku."
 
