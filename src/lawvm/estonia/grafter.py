@@ -260,6 +260,17 @@ def _insert_sentence_before(text: str, inserted: str, sentence_index: int) -> st
     return _tm_insert_sentence_before(text, inserted, sentence_index)
 
 
+def _append_sentence_part(text: str, inserted: str) -> str:
+    """Append a source-owned sentence part before terminal punctuation."""
+    base = text.strip()
+    tail = inserted.strip()
+    if not base or not tail:
+        return text
+    if base.endswith((".", ";")):
+        return f"{base[:-1]}{tail}"
+    return f"{base}{tail}"
+
+
 _EE_APPENDIX_TABLE_CATEGORY_ORDER = [
     "A",
     "B",
@@ -9101,7 +9112,17 @@ def _ee_apply_op(
                         raw_ins = re.sub(r"^\d[\d\s]*\)\s*", "", raw_ins)
                     raw_ins = _strip_rt_editorial_parentheticals(raw_ins)
                     new_node = IRNode(kind=IRNodeKind.ITEM, label=label, text=raw_ins)
-                if raw_ins and re.match(r"^[,;:.)]", raw_ins):
+                from lawvm.estonia.ee_instruction_waist import read_sentence_target_meta
+
+                leading_punct_sentence_meta = read_sentence_target_meta(payload)
+                if (
+                    raw_ins
+                    and re.match(r"^[,;:.)]", raw_ins)
+                    and not (
+                        leading_punct_sentence_meta is not None
+                        and leading_punct_sentence_meta.mode == "append_sentence_part"
+                    )
+                ):
                     full_path = _ee_resolve_full_path(body, path)
                     target_node = tree_ops.resolve(body, full_path) if full_path is not None else None
                     if full_path is not None and target_node is not None:
@@ -9127,8 +9148,6 @@ def _ee_apply_op(
                     if full_path is not None and target_node is not None and raw_ins:
                         if _ee_insert_matches_existing_node(target_node, new_node):
                             return body
-                        from lawvm.estonia.ee_instruction_waist import read_sentence_target_meta
-
                         sentence_meta = read_sentence_target_meta(payload)
                         base_text = (target_node.text or "").rstrip()
                         if base_text:
@@ -9170,8 +9189,6 @@ def _ee_apply_op(
                     if full_path is not None and target_node is not None and raw_ins:
                         if _ee_insert_matches_existing_node(target_node, new_node):
                             return body
-                        from lawvm.estonia.ee_instruction_waist import read_sentence_target_meta
-
                         note_text = _op_instruction_note_text(op)
                         sentence_meta = read_sentence_target_meta(payload)
                         sentence_index = (
@@ -9180,6 +9197,17 @@ def _ee_apply_op(
                             else _sentence_index_from_notes(note_text)
                         )
                         sentence_mode = sentence_meta.mode if sentence_meta is not None else ""
+                        if sentence_mode == "append_sentence_part" and target_node.text:
+                            inserted_text = _strip_rt_editorial_parentheticals(raw_ins)
+                            updated_text = _append_sentence_part(target_node.text, inserted_text)
+                            new_target = IRNode(
+                                kind=target_node.kind,
+                                label=target_node.label,
+                                text=updated_text,
+                                attrs=dict(target_node.attrs),
+                                children=tuple(target_node.children),
+                            )
+                            return tree_ops.replace_at(body, full_path, new_target)
                         if (
                             sentence_index is not None
                             and (

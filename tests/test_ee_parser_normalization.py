@@ -84,6 +84,44 @@ def test_extract_ee_ops_keeps_rewrite_witness_on_payload_sidecar_only() -> None:
     assert witness.rewrite.old_surface == "Veterinaar- ja Toiduamet"
 
 
+def test_extract_ee_ops_parses_fused_valja_tekstiosa_delete() -> None:
+    ops = extract_ee_ops(
+        'paragrahvi 5 lõike 2 punktist 5 jäetakse väljatekstiosa „hangete korraldamise,”;',
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "5"), ("subsection", "2"), ("item", "5"))
+    assert op.payload is not None
+    assert op.payload.text == ""
+    assert op.payload.attrs["old_text"] == "hangete korraldamise,"
+    assert op.payload.attrs["rewrite_mode"] == "delete"
+
+
+def test_extract_ee_ops_expands_multi_target_sentence_part_insert() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 5 lõiget 3 ja paragrahvi 8 lõike 1 punkti 7 täiendatakse "
+            "lause teise osaga „, välja arvatud juhul, kui toetuse summat suurendatakse "
+            "§ 10 lõike 3 kohaselt.”;"
+        ),
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert [op.target.path for op in ops] == [
+        (("section", "5"), ("subsection", "3")),
+        (("section", "8"), ("subsection", "1"), ("item", "7")),
+    ]
+    for op in ops:
+        assert op.action is StructuralAction.INSERT
+        assert op.payload is not None
+        assert op.payload.text.startswith(", välja arvatud juhul")
+        assert op.payload.attrs["sentence_target_meta"].mode == "append_sentence_part"
+        assert op.witness_rule_id == "ee_insert_multi_explicit_targets"
+
+
 def test_extract_ee_ops_accepts_estonian_left_quote_close_in_text_replace() -> None:
     ops = extract_ee_ops(
         'paragrahvi 2 1 lõikes 1 asendatakse sõna „kaheksa“ sõnaga „seitse“;',
