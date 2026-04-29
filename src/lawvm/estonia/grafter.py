@@ -4751,6 +4751,8 @@ _EE_NETO_OMAVAHEND_PREFIX_FORMS_RULE = "ee_case_inflected_neto_omavahend_prefix_
 _EE_KYSK_RTK_FORMS_RULE = "ee_case_inflected_kysk_riigi_tugiteenuste_keskus_forms"
 _EE_ARUANDED_ARUANNE_FORMS_RULE = "ee_case_inflected_aruanded_aruanne_forms"
 _EE_ARUANDED_HEADING_AGREEMENT_RULE = "ee_case_inflected_aruanded_heading_agreement"
+_EE_NORMITEHNILINE_MARKUS_INSERT_AFTER_RULE = "ee_normitehniline_markus_insert_after_anchor"
+_EE_NORMITEHNILINE_MARKUS_OPTIONAL_EU_MARKER_RULE = "ee_normitehniline_markus_optional_eu_marker_anchor"
 _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE = "ee_plaintext_numbered_clause_split"
 _EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
 _EE_PARENTHESIZED_TARGET_HTML_BLOCK_RULE = "ee_parenthesized_target_html_block_sliced"
@@ -5476,6 +5478,31 @@ def _ee_apply_heading_agreement_projection(text: str | None, spec: EETextRewrite
     )
 
 
+def _ee_apply_normitehniline_optional_eu_marker_anchor(
+    text: str | None,
+    *,
+    old_text: str,
+    new_text: str,
+    replace_kwargs: dict[str, object],
+) -> str | None:
+    """Apply normitehniline-note insertion when source adds an EU marker absent from base."""
+    if text is None or not old_text.startswith("(EL) ") or not new_text.startswith(old_text):
+        return text
+    alternate_old = old_text.removeprefix("(EL) ")
+    alternate_new = f"{alternate_old}{new_text[len(old_text):]}"
+    return _ee_apply_text_replace_value(
+        text,
+        alternate_old,
+        alternate_new,
+        mode=cast(str, replace_kwargs["mode"]),
+        case_inflected=cast(bool, replace_kwargs["case_inflected"]),
+        all_occurrences=cast(bool, replace_kwargs["all_occurrences"]),
+        capitalize_sentence_start=cast(bool, replace_kwargs["capitalize_sentence_start"]),
+        single_occurrence=cast(bool, replace_kwargs["single_occurrence"]),
+        preserve_following_comma_list=cast(bool, replace_kwargs["preserve_following_comma_list"]),
+    )
+
+
 def _ee_apply_text_replace_spec(
     text: str | None,
     spec: EETextRewriteSpec | None,
@@ -5537,6 +5564,16 @@ def _ee_apply_text_replace_spec(
             old_text,
             new_text,
             **replace_kwargs,
+        )
+    if (
+        replaced == text
+        and spec.source_family == _EE_NORMITEHNILINE_MARKUS_INSERT_AFTER_RULE
+    ):
+        replaced = _ee_apply_normitehniline_optional_eu_marker_anchor(
+            text,
+            old_text=old_text,
+            new_text=new_text,
+            replace_kwargs=replace_kwargs,
         )
     if (
         replaced is not None
@@ -9863,6 +9900,39 @@ def _ee_apply_op(
                         kind=node.kind,
                         label=node.label,
                         text=new_text or "",
+                        attrs=dict(node.attrs),
+                        children=tuple(new_children),
+                    )
+
+                return _walk(body)
+            if rewrite_spec.source_family == _EE_NORMITEHNILINE_MARKUS_INSERT_AFTER_RULE:
+
+                def _walk(
+                    node: IRNode,
+                    current_path: tuple[tuple[str, str], ...] = (),
+                ) -> IRNode:
+                    node_path = current_path
+                    if node.label is not None:
+                        node_path = current_path + ((str(node.kind), node.label),)
+                    if _ee_path_is_excluded(node_path, excluded_paths):
+                        return node
+                    if node.text:
+                        new_text = _ee_apply_text_replace_spec(
+                            node.text,
+                            rewrite_spec,
+                            capitalize_sentence_start=node.kind != IRNodeKind.ITEM,
+                        )
+                    else:
+                        new_text = node.text
+                    new_children = [_walk(c, node_path) for c in node.children]
+                    text_changed = new_text != node.text
+                    children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children))
+                    if not text_changed and not children_changed:
+                        return node
+                    return IRNode(
+                        kind=node.kind,
+                        label=node.label,
+                        text=new_text,
                         attrs=dict(node.attrs),
                         children=tuple(new_children),
                     )

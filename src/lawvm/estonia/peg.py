@@ -1020,6 +1020,8 @@ _EE_KYSK_RTK_FORMS_RULE = "ee_case_inflected_kysk_riigi_tugiteenuste_keskus_form
 _EE_ARUANDED_ARUANNE_FORMS_RULE = "ee_case_inflected_aruanded_aruanne_forms"
 _EE_ARUANDED_HEADING_AGREEMENT_RULE = "ee_case_inflected_aruanded_heading_agreement"
 _EE_QUOTED_LEGAL_TITLE_PROTECTION_RULE = "ee_text_replace_quoted_legal_title_protection"
+_EE_NORMITEHNILINE_MARKUS_INSERT_AFTER_RULE = "ee_normitehniline_markus_insert_after_anchor"
+_EE_NORMITEHNILINE_MARKUS_OPTIONAL_EU_MARKER_RULE = "ee_normitehniline_markus_optional_eu_marker_anchor"
 _EE_INSERT_MULTI_EXPLICIT_TARGETS_PAYLOAD_LABEL_FILTER_RULE = (
     "ee_insert_multi_explicit_targets_payload_label_filter"
 )
@@ -5975,14 +5977,63 @@ def extract_ee_ops(
     if re.search(r'\bnormitehnili\w*\s+märkus\w*\b', clean, re.IGNORECASE):
         content = _extract_quoted_content(clean)
         payload = IRNode(kind=IRNodeKind.CONTENT, text=content or "") if content else None
+        norm_note_segment = re.split(
+            r"\bnormitehnili\w*\s+märkus\w*\b",
+            clean,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[-1]
+        raw_old_text, raw_new_text = _extract_text_replace_args(norm_note_segment)
+        old_text, new_text = _normalize_text_replace_args(
+            norm_note_segment,
+            raw_old_text,
+            raw_new_text,
+        )
+        rewrite_witness = None
+        if action == "text_replace" and old_text and new_text:
+            executable_new_text = new_text
+            if re.search(r"\btäiendatakse\b", clean, re.IGNORECASE):
+                old_norm = _normalize_ee_parse_text(old_text)
+                new_norm = _normalize_ee_parse_text(new_text)
+                if old_norm and old_norm.casefold() not in new_norm.casefold():
+                    separator = "" if re.match(r"^[\s,.;:!?)\-–‒]", new_text) else " "
+                    executable_new_text = f"{old_text}{separator}{new_text}"
+            payload = IRNode(
+                kind=IRNodeKind.CONTENT,
+                text=executable_new_text,
+                attrs={"source_inserted_text": raw_new_text or new_text},
+            )
+            payload, rewrite_witness = _set_text_replace_payload_attrs(
+                payload,
+                clean,
+                old_text,
+                executable_new_text,
+                source_family=_EE_NORMITEHNILINE_MARKUS_INSERT_AFTER_RULE,
+            )
+            if old_text.startswith("(EL) "):
+                payload = replace(
+                    payload,
+                    attrs={
+                        **payload.attrs,
+                        "anchor_variant_rule": _EE_NORMITEHNILINE_MARKUS_OPTIONAL_EU_MARKER_RULE,
+                    },
+                )
         ops.append(LegalOperation(
             op_id=f"ee-normitehniline-markus-{seq}-{source.statute_id}",
             sequence=seq,
             action=_to_structural_action(action),
             target=LegalAddress(path=()),
             payload=payload,
+            text_patch=_typed_text_replace_patch(old_text, executable_new_text)
+            if action == "text_replace" and old_text and new_text
+            else None,
             source=source,
-            provenance_tags=(clean[:200], "normitehniline_markus"),
+            provenance_tags=(
+                clean[:200],
+                "normitehniline_markus",
+                *((_EE_NORMITEHNILINE_MARKUS_INSERT_AFTER_RULE,) if rewrite_witness is not None else ()),
+                *((_EE_NORMITEHNILINE_MARKUS_OPTIONAL_EU_MARKER_RULE,) if old_text and old_text.startswith("(EL) ") else ()),
+            ),
         ))
         return ops
 

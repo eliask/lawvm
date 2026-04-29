@@ -4597,6 +4597,70 @@ def test_aruanded_global_rewrite_projects_chapter_heading_agreement() -> None:
     assert chapter.children[0].text == "Aruanne"
 
 
+def test_normitehniline_markus_insert_after_tolerates_missing_eu_marker_on_anchor() -> None:
+    text = (
+        "2017/1920 (ELT, L 271, 20.10.2017, lk 34–37) ning määrustega "
+        "(EÜ) nr 806/2003."
+    )
+
+    replaced = _ee_apply_text_replace_spec(
+        text,
+        EETextRewriteSpec(
+            old_text="(EL) 2017/1920 (ELT, L 271, 20.10.2017, lk 34–37)",
+            new_text=(
+                "(EL) 2017/1920 (ELT, L 271, 20.10.2017, lk 34–37), "
+                "(EL) 2019/523 (ELT L 86, 28.03.2019, lk 41–65)"
+            ),
+            mode="insert_after",
+            source_family="ee_normitehniline_markus_insert_after_anchor",
+        ),
+    )
+
+    assert replaced == (
+        "2017/1920 (ELT, L 271, 20.10.2017, lk 34–37), "
+        "(EL) 2019/523 (ELT L 86, 28.03.2019, lk 41–65) ning määrustega "
+        "(EÜ) nr 806/2003."
+    )
+
+
+def test_global_normitehniline_markus_insert_after_uses_typed_rewrite_spec() -> None:
+    body = _body_with_section_and_subsection(
+        "10",
+        "2",
+        (
+            "2017/1920 (ELT, L 271, 20.10.2017, lk 34–37) ning määrustega "
+            "(EÜ) nr 806/2003."
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_normitehniline_global",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=()),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text=(
+                "(EL) 2017/1920 (ELT, L 271, 20.10.2017, lk 34–37), "
+                "(EL) 2019/523 (ELT L 86, 28.03.2019, lk 41–65)"
+            ),
+            attrs={
+                "old_text": "(EL) 2017/1920 (ELT, L 271, 20.10.2017, lk 34–37)",
+                "rewrite_mode": "insert_after",
+                "source_family": "ee_normitehniline_markus_insert_after_anchor",
+            },
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    subsection = result.children[0].children[0].children[0]
+
+    assert subsection.text == (
+        "2017/1920 (ELT, L 271, 20.10.2017, lk 34–37), "
+        "(EL) 2019/523 (ELT L 86, 28.03.2019, lk 41–65) ning määrustega "
+        "(EÜ) nr 806/2003."
+    )
+
+
 def test_delete_text_replace_handles_fraktsioneeritud_source_typo_variant() -> None:
     text = (
         "Pindamiseks kasutatakse fraktsioneeritud killustikke. "

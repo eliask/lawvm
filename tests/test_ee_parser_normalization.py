@@ -8726,6 +8726,52 @@ def test_extract_ee_ops_keeps_normitehniline_markus_visible_without_fabricating_
     assert "normitehniline_markus" in ops[0].provenance_tags
 
 
+def test_extract_ee_ops_lowers_normitehniline_markus_insert_after_anchor() -> None:
+    text = (
+        "määruse normitehnilist märkust täiendatakse pärast tekstiosa "
+        "„(EL) 2017/1920 (ELT, L 271, 20.10.2017, lk 34–37)” "
+        "tekstiosaga „, (EL) 2019/523 (ELT L 86, 28.03.2019, lk 41–65)”."
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].target.path == ()
+    assert ops[0].text_patch is not None
+    assert _payload(ops[0]).attrs["old_text"] == "(EL) 2017/1920 (ELT, L 271, 20.10.2017, lk 34–37)"
+    assert _payload(ops[0]).text == (
+        "(EL) 2017/1920 (ELT, L 271, 20.10.2017, lk 34–37), "
+        "(EL) 2019/523 (ELT L 86, 28.03.2019, lk 41–65)"
+    )
+    assert _payload(ops[0]).attrs["source_inserted_text"] == ", (EL) 2019/523 (ELT L 86, 28.03.2019, lk 41–65)"
+    assert _payload(ops[0]).attrs["source_family"] == "ee_normitehniline_markus_insert_after_anchor"
+    assert _payload(ops[0]).attrs["anchor_variant_rule"] == "ee_normitehniline_markus_optional_eu_marker_anchor"
+    assert "normitehniline_markus" in ops[0].provenance_tags
+    assert "ee_normitehniline_markus_insert_after_anchor" in ops[0].provenance_tags
+    assert "ee_normitehniline_markus_optional_eu_marker_anchor" in ops[0].provenance_tags
+
+
+def test_extract_ee_ops_ignores_direct_act_title_for_normitehniline_anchor() -> None:
+    text = (
+        "Põllumajandusministri 23. detsembri 2005. a määruse nr 132 "
+        "„Euroopa Liidu standardmääradele vastavad ühendusevälisest riigist Eestisse "
+        "toimetatava kaubasaadetise taimetervise järelevalve tasu määrad” "
+        "normitehnilist märkust täiendatakse pärast tekstiosa "
+        "„(EL) 2017/1920 (ELT, L 271, 20.10.2017, lk 34–37)” "
+        "tekstiosaga „, (EL) 2019/523 (ELT L 86, 28.03.2019, lk 41–65)”."
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert _payload(ops[0]).attrs["old_text"] == "(EL) 2017/1920 (ELT, L 271, 20.10.2017, lk 34–37)"
+    assert _payload(ops[0]).text == (
+        "(EL) 2017/1920 (ELT, L 271, 20.10.2017, lk 34–37), "
+        "(EL) 2019/523 (ELT L 86, 28.03.2019, lk 41–65)"
+    )
+    assert "Euroopa Liidu standardmääradele" not in _payload(ops[0]).attrs["old_text"]
+
+
 def test_parse_ee_amendment_ops_decodes_old_format_numeric_quote_entities_in_wrapperless_text_replace() -> None:
     xml = """
     <tyviseadus xmlns="tyviseadus_1_10.02.2010">
