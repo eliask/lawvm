@@ -1093,6 +1093,10 @@ def test_get_ee_residual_inventory_kohtutaituri_solved_pair_is_not_published() -
     assert get_ee_residual_inventory("109042021007", "114032025016") is None
 
 
+def test_get_ee_residual_inventory_mahepollumajandus_solved_pair_is_not_published() -> None:
+    assert get_ee_residual_inventory("124112016002", "127092023006") is None
+
+
 def test_generated_shortened_section_family_matches_loomatauditorje_divisions() -> None:
     generated = build_shortened_section_family(
         bucket="source_oracle_drift",
