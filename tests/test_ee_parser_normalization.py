@@ -8688,6 +8688,33 @@ def test_old_format_right_quote_payload_preserves_inner_right_quoted_titles() ->
     assert section_116_3.payload.text.count("Eesti maaelu arengukava 2014–2020") == 2
 
 
+def test_parse_ee_amendment_ops_does_not_route_different_programme_year_range_block() -> None:
+    archive = open_rt_archive(readonly=True)
+    xml = fetch_rt_xml("128022017004", archive=archive)
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/128022017004",
+        target_title="Tööhõiveprogramm 2016–2017",
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.TEXT_REPLACE, (("section", "3"),)),
+        (StructuralAction.TEXT_REPLACE, (("section", "15_1"), ("subsection", "2"))),
+        (StructuralAction.REPLACE, (("section", "15_1"), ("subsection", "9"))),
+        (StructuralAction.REPLACE, (("chapter", "4"),)),
+        (StructuralAction.INSERT, (("chapter", "4"), ("section", "24_1"))),
+    ]
+    section_3 = ops[0]
+    assert section_3.payload is not None
+    assert section_3.payload.attrs["old_text"] == "kuni 31. detsembrini 2017. a"
+    assert section_3.payload.attrs["rewrite_mode"] == "insert_after"
+    assert all(
+        "Tööhõiveprogramm 2017–2020" not in (op.source.raw_text if op.source else "")
+        for op in ops
+    )
+
+
 def test_quoted_regulation_title_direct_target_paragraph_repeals_mixed_section_groups() -> None:
     archive = open_rt_archive(readonly=True)
     xml = fetch_rt_xml("113102015002", archive=archive)
