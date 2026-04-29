@@ -1188,7 +1188,7 @@ def _classify_verb(text: str) -> str:
     # EU regulation titles (e.g. "millega tunnistatakse kehtetuks määrus (EÜ) nr 854/2004"),
     # which would trigger repeal if checked first.  "asendatakse sõnad" in the instruction
     # preamble unambiguously identifies a text-replace regardless of payload content.
-    # Covers: asendatakse sõna/sõnad/sõnu/arv/tekstiosa/lauseosa/number
+    # Covers: asendatakse sõna/sõnad/sõnu/arv/tekstiosa/lauseosa/number/lühend
     # Also: asendatakse läbivalt sõna (läbivalt = throughout, intervenes before noun)
     # and targeted forms where the provision list sits between the verb and the
     # replaced word, e.g. "seaduses asendatakse § 8 lõike 4 punktis 2 ja lõikes 5
@@ -1202,13 +1202,13 @@ def _classify_verb(text: str) -> str:
         return "text_replace"
     if re.search(
         r'asendatakse\b.{0,240}?\b(?:läbivalt\s+)?'
-        r'(?:sõna[a-z]*|arv[a-z]*|aastaarv[a-z]*|tekstiosa[a-z]*|lauseosa[a-z]*|number[a-z]*|viide[a-z]*)',
+        r'(?:sõna[a-z]*|arv[a-z]*|aastaarv[a-z]*|tekstiosa[a-z]*|lauseosa[a-z]*|number[a-z]*|viide[a-z]*|lühend[a-z]*)',
         t,
         re.DOTALL,
     ):
         return "text_replace"
     if re.search(
-        r'\b(?:sõna[a-z]*|sõnad|sõnu|arv[a-z]*|aastaarv[a-z]*|tekstiosa[a-z]*|lauseosa[a-z]*|number[a-z]*|viide[a-z]*)'
+        r'\b(?:sõna[a-z]*|sõnad|sõnu|arv[a-z]*|aastaarv[a-z]*|tekstiosa[a-z]*|lauseosa[a-z]*|number[a-z]*|viide[a-z]*|lühend[a-z]*)'
         r'\b.{0,240}\basendatakse\b',
         t,
         re.DOTALL,
