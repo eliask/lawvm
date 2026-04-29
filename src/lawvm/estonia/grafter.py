@@ -5135,6 +5135,32 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_nom": stem + "d",
             "pl_gen": stem + "de",
         }
+    if lower == "madal":
+        return {
+            "sg_nom": word,
+            "sg_gen": word + "a",
+            "sg_part": word + "at",
+            "sg_ine": word + "as",
+            "sg_ela": word + "ast",
+            "sg_ill": word + "asse",
+            "sg_all": word + "ale",
+            "sg_ade": word + "al",
+            "sg_abl": word + "alt",
+            "sg_trn": word + "aks",
+            "sg_ter": word + "ani",
+            "sg_ess": word + "ana",
+            "sg_abe": word + "ata",
+            "sg_com": word + "aga",
+            "pl_nom": word + "ad",
+            "pl_gen": word + "ate",
+            "pl_part": word + "aid",
+            "pl_ine": word + "ates",
+            "pl_ela": word + "atest",
+            "pl_all": word + "atele",
+            "pl_ade": word + "atel",
+            "pl_abl": word + "atelt",
+            "pl_trn": word + "ateks",
+        }
     if lower == "aine":
         stem = word
         return {
@@ -7120,6 +7146,14 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
                     new_form_norm = _ee_normalize_text_replace_surface(new_form)
                     if old_form_norm and old_form_norm not in variants:
                         variants[old_form_norm] = new_form_norm
+            if old == "madalik" and new == "madal":
+                shallow_forms = {
+                    "madalile": "madalale",
+                    "madalil": "madalal",
+                }
+                for old_form, new_form in shallow_forms.items():
+                    if old_form not in variants:
+                        variants[old_form] = new_form
         if (
             old == "rahvusvaheline konventsioon tsiviilvastutusest naftareostuskahjude eest, 1969"
             and new

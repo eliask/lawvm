@@ -97,6 +97,17 @@ def test_case_inflected_text_replace_handles_ettevote_forms() -> None:
     assert replaced == "Loomapidamisettevõttes on loomapidamisettevõtte territoorium."
 
 
+def test_case_inflected_text_replace_handles_madalik_to_madal_forms() -> None:
+    replaced = _ee_apply_text_replace_value(
+        "Madalile sõitnud laev seisis madalil.",
+        "madalik",
+        "madal",
+        case_inflected=True,
+    )
+
+    assert replaced == "Madalale sõitnud laev seisis madalal."
+
+
 def test_text_replace_capitalized_source_surface_does_not_rewrite_lowercase_occurrence() -> None:
     body = _body_with_section_and_subsection(
         "42",
