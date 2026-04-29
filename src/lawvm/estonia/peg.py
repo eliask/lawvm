@@ -2504,6 +2504,16 @@ def _set_text_replace_payload_attrs(
     attrs["rewrite_mode"] = rewrite_mode
     if not source_family and _extract_after_anchor_text_replace_pair(clean) is not None:
         source_family = _EE_AFTER_ANCHOR_TEXT_REPLACE_RULE
+    if (
+        not source_family
+        and rewrite_mode == "insert_after"
+        and old_text
+        and new_text
+        and _normalize_ee_parse_text(new_text).casefold().startswith(
+            _normalize_ee_parse_text(old_text).casefold()
+        )
+    ):
+        source_family = "ee_insert_after_source_phrase_surface_variants"
     case_inflected = _should_case_inflect_text_replace(clean, old_text, new_text)
     if "läbivalt" in _instruction_preamble(clean).lower() or (
         rewrite_mode == "insert_after" and case_inflected

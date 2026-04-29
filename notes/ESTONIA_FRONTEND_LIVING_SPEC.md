@@ -986,3 +986,38 @@ The parser-selection witness rule is:
 
 It may fire only when the old-format section parser produces strictly more
 substantive non-META operations than the preambul recovery path.
+
+## 51. Insert-after phrase anchors may need source-owned surface variants
+
+Some Estonian amendment clauses supplement text after a quoted phrase, while
+the live provision contains the same phrase with a narrow source/live surface
+variant. Example from `122072011003`:
+
+- source anchor: `projektitaotluse paremusjärjestuse`
+- live text: `projektitaotluste paremusjärjestuse`
+- inserted tail: `ettepaneku`
+
+This is not permission to search the whole statute or rewrite a different
+target. It is an exact-target text rewrite with a bounded morphology variant on
+the quoted source surface.
+
+The payload witness family is:
+
+- `ee_insert_after_source_phrase_surface_variants`
+
+Current allowed variant: first modifier ending in `-use` may match `-uste`
+inside the same quoted phrase when the replacement is an insert-after expansion
+whose new surface starts with the quoted old surface.
+
+## 52. Explicit item replacement punctuation beats list-terminal normalization
+
+When an amendment replaces an item with a quoted payload that already contains
+the item terminal punctuation, replay must preserve that source terminal.
+
+List-terminal normalization may still run for repeals, insertions, and payloads
+without explicit terminal evidence. It must not turn a quoted replacement ending
+in `.` into `;` only because later sibling items remain.
+
+The replay marker is:
+
+- `ee_explicit_item_replacement_terminal_preserved`

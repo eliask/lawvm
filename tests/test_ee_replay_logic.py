@@ -580,6 +580,63 @@ def test_case_inflected_replace_keeps_nominative_before_kava_noun() -> None:
     assert updated == "uuendab Rahandusministeerium kava täiendamise menetluse."
 
 
+def test_insert_after_accepts_genitive_plural_modifier_surface_variant() -> None:
+    updated = _ee_apply_text_replace_value(
+        "koostab hindamistulemuste alusel projektitaotluste paremusjärjestuse.",
+        "projektitaotluse paremusjärjestuse",
+        "projektitaotluse paremusjärjestuse ettepaneku",
+        mode="insert_after",
+        case_inflected=False,
+    )
+
+    assert updated == "koostab hindamistulemuste alusel projektitaotluste paremusjärjestuse ettepaneku."
+
+
+def test_apply_ee_ops_preserves_explicit_item_replacement_terminal() -> None:
+    base = IRStatute(
+        statute_id="ee/test",
+        title="Test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="31",
+                    text="Taotlus",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            text="Taotlusele lisatakse:",
+                            children=(
+                                IRNode(kind=IRNodeKind.ITEM, label="5", text="eelmine punkt;"),
+                                IRNode(kind=IRNodeKind.ITEM, label="6", text="vana punkt;"),
+                                IRNode(kind=IRNodeKind.ITEM, label="16", text="hilisem punkt."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee/test/item-terminal",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "31"), ("subsection", "3"), ("item", "6"))),
+        payload=IRNode(kind=IRNodeKind.CONTENT, text="6) uus punkt."),
+        source=OperationSource(statute_id="ee/test", raw_text="punkt 6 sõnastatakse järgmiselt"),
+    )
+
+    replayed = apply_ee_ops(base, [op])
+    section = replayed.body.children[0]
+    subsection = section.children[0]
+    item_6 = next(child for child in subsection.children if child.label == "6")
+
+    assert item_6.text == "uus punkt."
+    assert item_6.attrs["source_family"] == "ee_explicit_item_replacement_terminal_preserved"
+
+
 def test_apply_ee_ops_expands_plain_section_repeal_ranges_over_live_superscript_sections() -> None:
     base = IRStatute(
         statute_id="ee/test",
