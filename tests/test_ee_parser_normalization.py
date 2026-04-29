@@ -7554,6 +7554,44 @@ def test_quoted_regulation_title_direct_target_paragraph_repeals_mixed_section_g
     assert (StructuralAction.REPEAL, (("section", "18"),)) in targets
 
 
+def test_extract_ee_ops_recovers_flat_sectionless_singleton_item_insert() -> None:
+    text = (
+        "Põllumajandusministri 5. jaanuari 2011. a määrust nr 1 "
+        "“2011. aastal toetatavad “Euroopa Kalandusfondi 2007-2013 rakenduskava” "
+        "meetmed ja tegevuste liigid” (RT I, 15.03.2011, 10) täiendatakse "
+        "punktiga 12 järgmises sõnastuses: "
+        "“12) meede 3.1 “Ühistegevused” tegevus “Ühisinvesteeringud”.“"
+    )
+
+    ops = extract_ee_ops(
+        text,
+        OperationSource(statute_id="ee/101092011002", raw_text=text, effective="2011-09-04"),
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.INSERT
+    assert op.target.path == (("section", "1"), ("subsection", "1"), ("item", "12"))
+    assert op.payload is not None
+    assert op.payload.text == "meede 3.1 “Ühistegevused” tegevus “Ühisinvesteeringud”."
+    assert op.witness_rule_id == "ee_flat_sectionless_singleton_item_insert"
+    assert op.payload.attrs["scope_confidence"] == "inferred_from_live_unique"
+
+
+def test_parse_ee_statute_canonicalizes_singleton_empty_section_label_for_2011_010() -> None:
+    archive = open_rt_archive(readonly=True)
+    xml = fetch_rt_xml("115032011010", archive=archive)
+
+    statute = parse_ee_statute(xml, "ee/115032011010")
+
+    assert len(statute.body.children) == 1
+    section = statute.body.children[0]
+    assert section.kind == IRNodeKind.SECTION
+    assert section.label == "1"
+    assert section.attrs["source_cleanup_rules"] == ("ee_singleton_empty_section_label_to_1",)
+    assert section.attrs["source_empty_section_label"] == ""
+
+
 def test_quoted_ministerial_target_intro_admits_direct_html_items() -> None:
     archive = open_rt_archive(readonly=True)
     xml = fetch_rt_xml("121042016001", archive=archive)

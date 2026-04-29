@@ -641,6 +641,7 @@ def _subsection_uses_appendix_html(el: ET.Element, ns_str: str) -> bool:
 
 _EE_DROP_ORPHAN_APPENDIX_MARKER_RULE = "ee_drop_orphan_appendix_marker_html"
 _EE_DROP_REPEALED_RANGE_RESIDUE_RULE = "ee_drop_repealed_range_residue"
+_EE_SINGLETON_EMPTY_SECTION_LABEL_RULE = "ee_singleton_empty_section_label_to_1"
 
 
 def _element_has_kehtetu_marker(el: ET.Element, ns_str: str) -> bool:
@@ -1111,6 +1112,28 @@ def _parse_section(el: ET.Element, ns_str: str) -> IRNode:
     return IRNode(kind=IRNodeKind.SECTION, label=nr, text=title, attrs=attrs, children=tuple(children))
 
 
+def _canonicalize_singleton_empty_section_label(children: tuple[IRNode, ...]) -> tuple[IRNode, ...]:
+    """Map one unlabeled top-level section to section 1 with an explicit witness.
+
+    Some old RT regulation XML stores the only section as an empty
+    ``paragrahvNr`` while later consolidated surfaces expose the same unit as
+    ``§ 1``. This is safe only for a single top-level section that actually has
+    provision content; broader relabeling would be target hijacking.
+    """
+    if len(children) != 1:
+        return children
+    section = children[0]
+    if section.kind != IRNodeKind.SECTION or section.label not in (None, ""):
+        return children
+    if not section.children and not (section.text or "").strip():
+        return children
+    attrs = dict(section.attrs)
+    cleanup_rules = tuple(attrs.get("source_cleanup_rules", ()))
+    attrs["source_cleanup_rules"] = cleanup_rules + (_EE_SINGLETON_EMPTY_SECTION_LABEL_RULE,)
+    attrs["source_empty_section_label"] = section.label or ""
+    return (replace(section, label="1", attrs=attrs),)
+
+
 def _parse_division(el: ET.Element, ns_str: str, phantoms: AbstractSet = frozenset()) -> IRNode:
     """Parse a jagu (division) element → IRNode(kind=IRNodeKind.DIVISION)."""
     nr = _extract_superscript_label(el, ns_str) or _text(_find(el, ns_str, "jaguNr"))
@@ -1269,7 +1292,9 @@ def parse_ee_statute(xml_bytes: bytes, statute_id: str = "") -> IRStatute:
                 if child not in phantoms:
                     body_children.append(_parse_section(child, ns_str))
 
-    body = IRNode(kind=IRNodeKind.BODY, label=None, text="", children=tuple(_expand_range_sections(body_children)))
+    expanded_children = tuple(_expand_range_sections(body_children))
+    expanded_children = _canonicalize_singleton_empty_section_label(expanded_children)
+    body = IRNode(kind=IRNodeKind.BODY, label=None, text="", children=expanded_children)
 
     # Metadata
     meta_el = root.find(_ns(ns_str, "metaandmed"))

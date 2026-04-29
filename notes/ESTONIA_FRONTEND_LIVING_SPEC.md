@@ -1037,3 +1037,30 @@ splitting the instruction/payload surface.
 The resulting operation family is still ordinary targeted text replacement.
 When the replacement is `lisa -> lisa 1` with `vastavas käändes`, replay must
 also apply the numeric suffix to declined forms such as `lisas` and `lisale`.
+
+## 54. Singleton unlabeled regulation sections may be `§ 1`
+
+Some old Riigi Teataja regulation XML exposes the only top-level `paragrahv`
+with an empty `paragrahvNr`, while later consolidated surfaces expose the same
+unit as `§ 1`.
+
+The parser may relabel that section to `1` only when:
+
+- there is exactly one top-level section;
+- the section label is empty or absent;
+- the section has provision content.
+
+The source-cleanup rule is `ee_singleton_empty_section_label_to_1`. It must not
+be generalized to multi-section documents.
+
+## 55. Flat sectionless singleton item inserts are explicit fallback scope
+
+Old-format EE amendments can say a regulation is supplemented with `punktiga N`
+without naming a section, while the quoted payload starts with the same `N)`.
+For singleton regulations this compiles to:
+
+- `section:1/subsection:1/item:N`
+
+The rule is `ee_flat_sectionless_singleton_item_insert`. It carries
+`scope_confidence=inferred_from_live_unique` because the source owns the item
+label but not the omitted singleton section/subsection path.
