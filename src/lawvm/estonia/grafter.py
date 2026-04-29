@@ -2214,6 +2214,70 @@ def _parse_flat_html_plain_paragraph_item_ops(
     ]
 
 
+def _parse_old_format_direct_title_unnumbered_text_replace_ops(
+    root: ET.Element,
+    source_id: str,
+    target_title: str,
+) -> List[LegalOperation]:
+    """Extract one-paragraph old-format text rewrites under an exact target header."""
+    if not target_title:
+        return []
+    html_blocks: list[str] = []
+    for el in root.iter():
+        tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+        if tag == "HTMLKonteiner" and el.text:
+            html_blocks.append(el.text)
+    if not html_blocks:
+        return []
+
+    full_html = "\n".join(html_blocks)
+    paragraphs = re.findall(r"<p\b[^>]*>(.*?)</p>", full_html, flags=re.IGNORECASE | re.DOTALL)
+    rule_id = "ee_old_format_direct_title_unnumbered_text_replace"
+    for idx, paragraph_html in enumerate(paragraphs[:-1]):
+        header_text = _html.unescape(re.sub(r"<[^>]+>", " ", paragraph_html))
+        header_text = header_text.replace("\xa0", " ")
+        header_text = re.sub(r"\s+", " ", header_text).strip()
+        if not re.search(r"§\s*\d+", header_text):
+            continue
+        if not _tr_old_format_section_matches_target(target_title, header_text):
+            continue
+
+        body_html = paragraphs[idx + 1]
+        body_text = _html.unescape(re.sub(r"<[^>]+>", " ", body_html))
+        body_text = body_text.replace("\xa0", " ")
+        body_text = re.sub(r"\s+", " ", body_text).strip()
+        if not re.search(r"\basendatakse\b", body_text, re.IGNORECASE):
+            continue
+        if not (
+            target_title.lower() in body_text.lower()
+            or _title_matches_para(target_title, body_text)
+        ):
+            continue
+
+        source = OperationSource(
+            statute_id=source_id,
+            title=target_title,
+            raw_text=body_text[:200],
+        )
+        ops = extract_ee_ops(body_text, source, seq_start=1)
+        text_replace_ops = [op for op in ops if op.action is StructuralAction.TEXT_REPLACE]
+        if not text_replace_ops:
+            continue
+        return [
+            replace(
+                op,
+                provenance_tags=(
+                    *op.provenance_tags,
+                    rule_id,
+                    f"old_format_target_header:{header_text[:160]}",
+                ),
+                witness_rule_id=rule_id,
+            )
+            for op in text_replace_ops
+        ]
+    return []
+
+
 def _parse_old_format_amendment_ops(
     root: ET.Element,
     source_id: str,
@@ -2564,6 +2628,14 @@ def _parse_old_format_amendment_ops(
     paragraph_scoped_ops = _parse_paragraph_scoped_old_format_html_sections()
     if paragraph_scoped_ops:
         return paragraph_scoped_ops
+
+    direct_title_unnumbered_ops = _parse_old_format_direct_title_unnumbered_text_replace_ops(
+        root,
+        source_id,
+        target_title,
+    )
+    if direct_title_unnumbered_ops:
+        return direct_title_unnumbered_ops
 
     if not html_blocks:
         return _parse_plaintext_old_format_sections()

@@ -4508,6 +4508,34 @@ def extract_ee_ops(
             ))
             return ops
         if action == "text_replace" and stripped_explicit_act_reference:
+            direct_title_pairs = (
+                _extract_many_old_single_new_text_replace_pairs(clean)
+                or _extract_text_replace_pairs(clean)
+            )
+            if direct_title_pairs:
+                rule_id = "ee_direct_title_global_text_replace"
+                for old_t, new_t in direct_title_pairs:
+                    payload = IRNode(kind=IRNodeKind.CONTENT, text=new_t)
+                    payload, _rewrite_witness = _set_text_replace_payload_attrs(
+                        payload,
+                        clean,
+                        old_t,
+                        new_t,
+                        source_family=rule_id,
+                    )
+                    ops.append(LegalOperation(
+                        op_id=f"ee-global-text_replace-direct-title-{seq}-{source.statute_id}",
+                        sequence=seq,
+                        action=_to_structural_action("text_replace"),
+                        target=LegalAddress(path=()),
+                        payload=payload,
+                        text_patch=_typed_text_replace_patch(old_t, new_t),
+                        source=source,
+                        provenance_tags=(clean_before_act_ref_strip[:200], rule_id),
+                        witness_rule_id=rule_id,
+                    ))
+                    seq += 1
+                return ops
             old_t, new_t = _normalize_text_replace_args(
                 clean,
                 *_extract_text_replace_args(clean),

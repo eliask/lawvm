@@ -1333,6 +1333,40 @@ def test_replay_ee_to_pit_applies_old_format_typographic_quote_text_replace() ->
     assert result.divergences == []
 
 
+def test_replay_ee_to_pit_applies_104112020001_agency_rename_for_mahe_pair() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+    try:
+        result = replay_ee_to_pit(
+            "112102018008",
+            "2023-05-08",
+            archive=archive,
+            oracle_id="105052023004",
+        )
+    finally:
+        close = getattr(archive, "close", None)
+        if callable(close):
+            close()
+
+    assert result.error is None
+    assert "104112020001" in result.amendments_applied
+    replayed_texts: list[str] = []
+
+    def collect_text(node: IRNode) -> None:
+        if node.text:
+            replayed_texts.append(node.text)
+        for child in node.children:
+            collect_text(child)
+
+    assert result.replayed is not None
+    collect_text(result.replayed.body)
+    replayed_text = "\n".join(replayed_texts)
+    assert "Põllumajandusamet" not in replayed_text
+    assert "Veterinaar- ja Toiduamet" not in replayed_text
+    assert "Põllumajandus- ja Toiduamet" in replayed_text
+
+
 def test_replay_ee_to_pit_applies_title_and_text_rewrite_without_rewriting_later_payloads() -> None:
     from lawvm.estonia.fetch import open_rt_archive
 
