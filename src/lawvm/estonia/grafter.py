@@ -4370,6 +4370,8 @@ _EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE = "ee_mixed_delete_and_replace_same_ta
 _EE_AMBIGUOUS_SINGLE_OCCURRENCE_TEXT_REPLACE_RULE = "ee_ambiguous_single_occurrence_text_replace"
 _EE_OVERBROAD_CONTAINER_REPLACE_BLOCKED_RULE = "ee_overbroad_container_replace_blocked"
 _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE = "ee_explicit_item_replacement_terminal_preserved"
+_EE_LABELLED_ITEM_REPLACEMENT_PAYLOAD_SELECTION_RULE = "ee_labelled_item_replacement_payload_selection"
+_EE_PLURAL_ITEM_REPLACE_MISSING_LABEL_REPEAL_RULE = "ee_plural_item_replace_missing_label_repeal"
 _EE_INLINE_ITEM_REPLACE_SINGLETON_SUBSECTION_RULE = "ee_inline_item_replace_singleton_subsection"
 _EE_TEXT_REPLACE_UNIQUE_DESCENDANT_ITEM_RULE = "ee_text_replace_unique_descendant_item_by_old_text"
 _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE = "ee_plaintext_numbered_clause_split"
@@ -9301,6 +9303,9 @@ def _ee_apply_op(
                 parent_path = full_path[:-1]
                 parent_node = tree_ops.resolve(body, parent_path) if parent_path else None
                 if parent_node is not None:
+                    remove_item_entirely = (
+                        op.witness_rule_id == _EE_PLURAL_ITEM_REPLACE_MISSING_LABEL_REPEAL_RULE
+                    )
                     target_index = next(
                         (
                             idx
@@ -9325,6 +9330,8 @@ def _ee_apply_op(
                         new_children: list[IRNode] = []
                         for idx, child in enumerate(parent_node.children):
                             if idx == target_index:
+                                if remove_item_entirely:
+                                    continue
                                 new_children.append(
                                     IRNode(
                                         kind=IRNodeKind.ITEM,
@@ -9356,11 +9363,14 @@ def _ee_apply_op(
                             children=tuple(
                                 new_children
                                 if (
-                                    _is_inserted_numbered_label(target_node.label)
-                                    or (
-                                        had_trailing_empty_placeholders
-                                        and original_last_nonempty_index is not None
-                                        and target_index < original_last_nonempty_index
+                                    not remove_item_entirely
+                                    and (
+                                        _is_inserted_numbered_label(target_node.label)
+                                        or (
+                                            had_trailing_empty_placeholders
+                                            and original_last_nonempty_index is not None
+                                            and target_index < original_last_nonempty_index
+                                        )
                                     )
                                 )
                                 else _normalize_item_list_terminals(new_children)
@@ -9639,6 +9649,7 @@ def _ee_apply_op(
                     raw_text = payload.text.replace("\x01", "")
                     sibling_subsection_nodes: list[IRNode] = []
                     inline_subsection_item_children: list[IRNode] = []
+                    selected_item_payload_by_label = False
                     if (
                         target_node.kind == IRNodeKind.SUBSECTION
                         and bool(payload.attrs.get("ee_replace_subsection_intro_only"))
@@ -9653,6 +9664,39 @@ def _ee_apply_op(
                             children=tuple(target_node.children),
                         )
                         return tree_ops.replace_at(body, full_path, new_node)
+                    if target_node.kind == IRNodeKind.ITEM:
+                        _item_intro, item_payload_children = _parse_inline_item_children(
+                            raw_text,
+                            require_first_label_one=False,
+                        )
+                        matched_payload_item = next(
+                            (
+                                item_child
+                                for item_child in item_payload_children
+                                if item_child.kind == IRNodeKind.ITEM
+                                and item_child.label == target_node.label
+                            ),
+                            None,
+                        )
+                        if matched_payload_item is not None:
+                            raw_text = matched_payload_item.text or ""
+                            selected_item_payload_by_label = True
+                            _append_ee_replay_adjudication(
+                                adjudications_out,
+                                kind=_EE_LABELLED_ITEM_REPLACEMENT_PAYLOAD_SELECTION_RULE,
+                                message=(
+                                    "EE replay selected the matching labelled item from a "
+                                    "multi-item replacement payload."
+                                ),
+                                op=op,
+                                detail={
+                                    "source_target": str(op.target),
+                                    "selected_item_label": target_node.label or "",
+                                    "payload_item_labels": ",".join(
+                                        child.label or "" for child in item_payload_children
+                                    ),
+                                },
+                            )
                     # Combined "pealkiri ja lõige N muudetakse" — payload starts
                     # with "§ N. NewTitle (N) Body".  The op targets a subsection
                     # but the payload also contains a new section heading.
@@ -9824,9 +9868,13 @@ def _ee_apply_op(
                         attrs=(
                             {
                                 **dict(target_node.attrs),
-                                "source_family": _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE,
+                                "source_family": (
+                                    _EE_LABELLED_ITEM_REPLACEMENT_PAYLOAD_SELECTION_RULE
+                                    if selected_item_payload_by_label
+                                    else _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE
+                                ),
                             }
-                            if explicit_item_terminal_from_payload
+                            if explicit_item_terminal_from_payload or selected_item_payload_by_label
                             else dict(target_node.attrs)
                         ),
                         children=tuple(preserved_children),
@@ -9845,6 +9893,7 @@ def _ee_apply_op(
                                 kind=new_node.kind,
                                 label=new_node.label,
                                 text=_rewrite_item_terminal(new_node.text, terminal),
+                                attrs=dict(new_node.attrs),
                                 children=tuple(new_node.children),
                             )
                 updated_body = tree_ops.replace_at(body, full_path, new_node)
@@ -10360,6 +10409,7 @@ def _ee_apply_op(
                                     child.kind,
                                 )
                             )
+                            merged_children = _normalize_item_list_terminals(merged_children)
                             updated_text = target_node.text
                             if new_node.text:
                                 updated_text = (
@@ -10425,7 +10475,26 @@ def _ee_apply_op(
                                         },
                                         children=tuple(new_node.children),
                                     )
-                return tree_ops.insert_sorted(body, parent_path, new_node, sort_key_fn=tree_ops._default_sort_key)
+                updated_body = tree_ops.insert_sorted(
+                    body,
+                    parent_path,
+                    new_node,
+                    sort_key_fn=tree_ops._default_sort_key,
+                )
+                if kind == "item":
+                    updated_parent = tree_ops.resolve(updated_body, parent_path)
+                    if updated_parent is not None:
+                        normalized_children = _normalize_item_list_terminals(list(updated_parent.children))
+                        if tuple(normalized_children) != tuple(updated_parent.children):
+                            updated_parent_node = IRNode(
+                                kind=updated_parent.kind,
+                                label=updated_parent.label,
+                                text=updated_parent.text,
+                                attrs=dict(updated_parent.attrs),
+                                children=tuple(normalized_children),
+                            )
+                            updated_body = tree_ops.replace_at(updated_body, parent_path, updated_parent_node)
+                return updated_body
 
     elif action == "text_replace":
         full_path = _ee_resolve_full_path(body, path)

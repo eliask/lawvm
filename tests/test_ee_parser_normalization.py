@@ -4120,6 +4120,44 @@ def test_extract_ee_ops_strips_plural_item_wrapper_quote_after_terminal_punctuat
     )
 
 
+def test_extract_ee_ops_recovers_plural_item_payload_after_premature_wrapper_quote() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 11 lõike 4 punktid 5–15 sõnastatakse järgmiselt: "
+            "„5) jao K alajagu 62 – programmeerimine, konsultatsioonid jms tegevused; "
+            "6) jagu L – finants- ja kindlustustegevus; "
+            "7) jao N alajagu 69 – juriidilised toimingud ja arvepidamine; "
+            "8) jao N alajagu 70 – peakontorite tegevus ning juhtimisalane nõustamine; "
+            "9) jao N alajagu 73 – reklaamindus, turu-uuringud ja suhtekorraldus; "
+            "10) jao O alajagu 77 – rentimine ja kasutusrent; "
+            "11) jao O alajagu 782 – tööjõu rent ja muud tööjõuteenused“; "
+            "12) jao S alajagu 92 – hasartmängude ja kihlvedude korraldamine.“;"
+        ),
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPLACE, (("section", "11"), ("subsection", "4"), ("item", "5"))),
+        (StructuralAction.REPLACE, (("section", "11"), ("subsection", "4"), ("item", "6"))),
+        (StructuralAction.REPLACE, (("section", "11"), ("subsection", "4"), ("item", "7"))),
+        (StructuralAction.REPLACE, (("section", "11"), ("subsection", "4"), ("item", "8"))),
+        (StructuralAction.REPLACE, (("section", "11"), ("subsection", "4"), ("item", "9"))),
+        (StructuralAction.REPLACE, (("section", "11"), ("subsection", "4"), ("item", "10"))),
+        (StructuralAction.REPLACE, (("section", "11"), ("subsection", "4"), ("item", "11"))),
+        (StructuralAction.REPLACE, (("section", "11"), ("subsection", "4"), ("item", "12"))),
+        (StructuralAction.REPEAL, (("section", "11"), ("subsection", "4"), ("item", "13"))),
+        (StructuralAction.REPEAL, (("section", "11"), ("subsection", "4"), ("item", "14"))),
+        (StructuralAction.REPEAL, (("section", "11"), ("subsection", "4"), ("item", "15"))),
+    ]
+    assert _payload(ops[6]).text == "11) jao O alajagu 782 – tööjõu rent ja muud tööjõuteenused;"
+    assert (
+        _payload(ops[6]).attrs["payload_normalization_rule"]
+        == "ee_plural_item_payload_outer_quote_tail_stripped"
+    )
+    assert _payload(ops[7]).text == "12) jao S alajagu 92 – hasartmängude ja kihlvedude korraldamine."
+    assert ops[8].witness_rule_id == "ee_plural_item_replace_missing_label_repeal"
+
+
 def test_extract_ee_ops_keeps_leading_item_repeal_in_compound_plural_subsection_clause() -> None:
     ops = extract_ee_ops(
         ("paragrahvi 47 lõike 1 1 punkt 3, § 85 7 ning § 87 3 lõiked 11 ja 12 tunnistatakse kehtetuks;"),

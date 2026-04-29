@@ -945,6 +945,7 @@ _EE_FLAT_SECTIONLESS_SINGLETON_SUBSECTION_SCOPE_RULE = "ee_flat_sectionless_sing
 _EE_PAYLOAD_AFTER_TITLE_QUOTE_RULE = "ee_payload_after_marker_ignores_premarker_title_quote"
 _EE_ASCII_QUOTED_MARKER_PAYLOAD_RULE = "ee_ascii_quoted_marker_payload"
 _EE_PLURAL_ITEM_PAYLOAD_OUTER_QUOTE_TAIL_RULE = "ee_plural_item_payload_outer_quote_tail_stripped"
+_EE_PLURAL_ITEM_REPLACE_MISSING_LABEL_REPEAL_RULE = "ee_plural_item_replace_missing_label_repeal"
 _EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE = "ee_plural_subsection_insert_payload_split"
 _EE_MULTI_TARGET_TEXT_DELETE_SPLIT_RULE = "ee_multi_target_text_delete_split"
 _EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE = "ee_mixed_delete_and_replace_same_target"
@@ -1650,6 +1651,16 @@ def _extract_quoted_content(text: str) -> Optional[str]:
         return marker_payload
     if marker_payload and len(matches) > 1 and _marker_payload_starts_with_right_quote(text):
         return marker_payload
+    if marker_payload and len(matches) == 1 and marker_payload.startswith(matches[0]):
+        marker_items = _split_plural_item_payload(marker_payload)
+        matched_items = _split_plural_item_payload(matches[0])
+        if (
+            marker_items
+            and matched_items
+            and set(matched_items).issubset(set(marker_items))
+            and len(marker_items) > len(matched_items)
+        ):
+            return marker_payload
     if (
         marker_payload
         and matches
@@ -1762,6 +1773,16 @@ def _strip_plural_item_payload_outer_quote_tail(piece: str) -> tuple[str, bool]:
         and stripped[-2] in {".", ";", ":"}
     ):
         return stripped[:-1].rstrip(), True
+    if (
+        len(stripped) >= 2
+        and stripped[-1] in {".", ";", ":"}
+        and stripped[-2] in {"“", "”", '"', "ˮ"}
+        and (
+            stripped.count("“") + stripped.count("”") + stripped.count('"') + stripped.count("ˮ")
+            > stripped.count("„")
+        )
+    ):
+        return f"{stripped[:-2].rstrip()}{stripped[-1]}", True
     return piece, False
 
 
@@ -1785,11 +1806,7 @@ def _split_plural_item_payload(content: str) -> Optional[dict[str, tuple[str, bo
         piece = f"{raw_label}) {body}".strip()
         if idx == 0 and prefix:
             piece = f"{prefix} {piece}".strip()
-        stripped_piece, wrapper_tail_stripped = (
-            _strip_plural_item_payload_outer_quote_tail(piece)
-            if idx == len(matches) - 1
-            else (piece, False)
-        )
+        stripped_piece, wrapper_tail_stripped = _strip_plural_item_payload_outer_quote_tail(piece)
         chunks[norm_label] = (stripped_piece, wrapper_tail_stripped)
 
     return chunks or None
@@ -2044,6 +2061,8 @@ def _extract_many_old_single_new_text_replace_pairs(text: str) -> List[Tuple[str
         quotes = _extract_quoted_contents(normalized)
         if len(quotes) < 3:
             return []
+        if len(quotes) >= 4 and len(quotes) % 2 == 0 and re.search(r"\bvastavalt\b", normalized, re.IGNORECASE):
+            return _pair_ordered_text_replace_quotes(quotes, normalized)
         new_text = quotes[-1].strip()
         if not new_text:
             return []
@@ -4980,10 +4999,22 @@ def extract_ee_ops(
             target_addrs.append(LegalAddress(path=tuple(path_parts)))
         content = _extract_quoted_content(clean)
         split_content = None
+        missing_replace_item_labels: set[str] = set()
         if action in ("replace", "insert") and content:
             maybe_split = _split_plural_item_payload(content)
             if maybe_split and set(expanded_items).issubset(set(maybe_split)):
                 split_content = maybe_split
+            elif action == "replace" and maybe_split:
+                split_labels = set(maybe_split)
+                expanded_set = set(expanded_items)
+                if (
+                    split_labels
+                    and split_labels.issubset(expanded_set)
+                    and expanded_items
+                    and expanded_items[0] in split_labels
+                ):
+                    split_content = maybe_split
+                    missing_replace_item_labels = expanded_set - split_labels
         old_t, new_t = _extract_text_replace_args(clean) if action == "text_replace" else (None, None)
         if action == "text_replace":
             old_t, new_t = _normalize_text_replace_args(clean, old_t, new_t)
@@ -5000,7 +5031,19 @@ def extract_ee_ops(
                 target_addrs = explicit_targets
         for addr in target_addrs:
             payload = None
-            if action == "text_replace" and new_t:
+            item_label = addr.path[-1][1] if addr.path else ""
+            op_action = action
+            op_witness_rule_id: str | None = None
+            op_provenance_tags: tuple[str, ...] = (clean[:200],)
+            if action == "replace" and item_label in missing_replace_item_labels:
+                op_action = "repeal"
+                op_witness_rule_id = _EE_PLURAL_ITEM_REPLACE_MISSING_LABEL_REPEAL_RULE
+                op_provenance_tags = (
+                    clean[:200],
+                    _EE_PLURAL_ITEM_REPLACE_MISSING_LABEL_REPEAL_RULE,
+                    f"missing_replacement_item_label:{item_label}",
+                )
+            if op_action == "text_replace" and new_t:
                 payload = IRNode(kind=IRNodeKind.CONTENT, text=new_t)
                 payload, _ = _set_text_replace_payload_attrs(payload, clean, old_t, new_t)
                 payload = _sentence_scoped_text_replace_payload_for_target(
@@ -5009,8 +5052,7 @@ def extract_ee_ops(
                     addr,
                     target_count=len(target_addrs),
                 )
-            elif action in ("replace", "insert") and content:
-                item_label = addr.path[-1][1] if addr.path else ""
+            elif op_action in ("replace", "insert") and content:
                 wrapper_tail_stripped = False
                 if split_content is not None:
                     payload_text, wrapper_tail_stripped = split_content[item_label]
@@ -5031,14 +5073,15 @@ def extract_ee_ops(
                 else:
                     payload = _set_sentence_insert_payload_attrs(payload, clean)
             ops.append(LegalOperation(
-                op_id=f"ee-{action}-item-{sect_label}-{num}-{source.statute_id}",
+                op_id=f"ee-{op_action}-item-{sect_label}-{item_label}-{source.statute_id}",
                 sequence=seq,
-                action=_to_structural_action(action),
+                action=_to_structural_action(op_action),
                 target=addr,
                 payload=payload,
-                text_patch=_typed_text_replace_patch(old_t, new_t) if action == "text_replace" else None,
+                text_patch=_typed_text_replace_patch(old_t, new_t) if op_action == "text_replace" else None,
                 source=source,
-                provenance_tags=(clean[:200],),
+                provenance_tags=op_provenance_tags,
+                witness_rule_id=op_witness_rule_id,
             ))
             seq += 1
         if expanded_items:

@@ -407,6 +407,167 @@ def test_insert_item_noops_when_identical_item_already_exists() -> None:
     assert item == existing_item
 
 
+def test_insert_item_normalizes_previous_terminal_in_sibling_list() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="7",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="2",
+                                children=(
+                                    IRNode(kind=IRNodeKind.ITEM, label="1", text="first;"),
+                                    IRNode(kind=IRNodeKind.ITEM, label="2", text="second."),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_insert_item_terminal_list_normalization",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "7"), ("subsection", "2"), ("item", "3"))),
+        payload=IRNode(kind=IRNodeKind.CONTENT, text="3) third."),
+        source=OperationSource(statute_id="ee/source"),
+    )
+
+    result = _ee_apply_op(body, op)
+    items = result.children[0].children[0].children[0].children
+
+    assert [(item.label, item.text) for item in items] == [
+        ("1", "first;"),
+        ("2", "second;"),
+        ("3", "third."),
+    ]
+
+
+def test_replace_item_selects_matching_label_from_multi_item_payload() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="11",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="4",
+                                children=(
+                                    IRNode(kind=IRNodeKind.ITEM, label="5", text="old five;"),
+                                    IRNode(kind=IRNodeKind.ITEM, label="6", text="old six;"),
+                                    IRNode(kind=IRNodeKind.ITEM, label="7", text="old seven;"),
+                                    IRNode(kind=IRNodeKind.ITEM, label="8", text="old eight."),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_multi_item_payload_selection",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "11"), ("subsection", "4"), ("item", "7"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="5) new five; 6) new six; 7) new seven; 8) new eight.",
+        ),
+        source=OperationSource(statute_id="ee/source"),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    result = _ee_apply_op(body, op, adjudications_out=adjudications)
+    items = result.children[0].children[0].children[0].children
+
+    assert [item.text for item in items] == [
+        "old five;",
+        "old six;",
+        "new seven;",
+        "old eight.",
+    ]
+    assert items[2].attrs["source_family"] == "ee_labelled_item_replacement_payload_selection"
+    assert [item.kind for item in adjudications] == ["ee_labelled_item_replacement_payload_selection"]
+    assert adjudications[0].detail["selected_item_label"] == "7"
+
+
+def test_missing_labels_from_plural_item_replace_remove_tail_items() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="11",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="4",
+                                children=(
+                                    IRNode(kind=IRNodeKind.ITEM, label="11", text="old eleven;"),
+                                    IRNode(kind=IRNodeKind.ITEM, label="12", text="old twelve;"),
+                                    IRNode(kind=IRNodeKind.ITEM, label="13", text="old thirteen;"),
+                                    IRNode(kind=IRNodeKind.ITEM, label="14", text="old fourteen;"),
+                                    IRNode(kind=IRNodeKind.ITEM, label="15", text="old fifteen."),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    statute = IRStatute(statute_id="ee/test", title="Test", body=body)
+    ops = [
+        LegalOperation(
+            op_id="ee-test-replace-12",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "11"), ("subsection", "4"), ("item", "12"))),
+            payload=IRNode(kind=IRNodeKind.CONTENT, text="12) new twelve;"),
+            source=OperationSource(statute_id="ee/source"),
+        ),
+        *[
+            LegalOperation(
+                op_id=f"ee-test-repeal-{label}",
+                sequence=idx,
+                action=StructuralAction.REPEAL,
+                target=LegalAddress(path=(("section", "11"), ("subsection", "4"), ("item", label))),
+                source=OperationSource(statute_id="ee/source"),
+                witness_rule_id="ee_plural_item_replace_missing_label_repeal",
+            )
+            for idx, label in enumerate(("13", "14", "15"), start=2)
+        ],
+    ]
+
+    result = apply_ee_ops(statute, ops)
+    items = result.body.children[0].children[0].children[0].children
+
+    assert [(item.label, item.text) for item in items] == [
+        ("11", "old eleven;"),
+        ("12", "new twelve."),
+    ]
+
+
 def test_insert_after_text_replace_rewrites_only_first_match() -> None:
     replaced = _ee_apply_text_replace_value(
         (
@@ -2238,7 +2399,7 @@ def test_insert_item_without_explicit_subsection_uses_existing_subsection_item_p
     subsection = result.children[0].children[0].children[0]
 
     assert [child.label for child in subsection.children] == ["7_8", "7_9"]
-    assert subsection.children[0].text == "eelmine punkt."
+    assert subsection.children[0].text == "eelmine punkt;"
     assert subsection.children[1].text == "uus punkt."
 
 
@@ -8545,7 +8706,7 @@ def test_repeal_item_keeps_previous_semicolon_when_later_items_remain() -> None:
     assert subsection.children[2].text == "kohalikul teel – valla- või linnavalitsus."
 
 
-def test_insert_item_preserves_previous_terminal_period() -> None:
+def test_insert_item_normalizes_previous_terminal_semicolon() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,
         children=(
@@ -8584,7 +8745,7 @@ def test_insert_item_preserves_previous_terminal_period() -> None:
     result = _ee_apply_op(body, op)
     subsection = result.children[0].children[0].children[0]
 
-    assert subsection.children[2].text == "kolmas."
+    assert subsection.children[2].text == "kolmas;"
     assert subsection.children[3].text == "neljas."
 
 
