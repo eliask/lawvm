@@ -70,6 +70,12 @@ def test_normalize_ee_comparison_text_collapses_numeric_range_dash_spacing() -> 
     )
 
 
+def test_normalize_ee_comparison_text_normalizes_numeric_millimeter_hyphen() -> None:
+    assert normalize_ee_comparison_text("40-millimeetrise läbimõõduga rist") == (
+        "40 millimeetrise läbimõõduga rist"
+    )
+
+
 def test_normalize_ee_comparison_text_restores_euro_suffix_spacing() -> None:
     assert normalize_ee_comparison_text("25 337 991eurot") == "25 337 991 eurot"
 

@@ -25,6 +25,7 @@ _EE_EN_DASH_DIGIT_SPACE_RE = re.compile(r"(?<=\d)[–‒]\s+(?=\d)")
 _EE_FIGURE_DASH_RE = re.compile(r"‒")
 _EE_NUMERIC_RANGE_HYPHEN_RE = re.compile(r"(?<=\d)-(?=\d)")
 _EE_NUMERIC_RANGE_DASH_SPACING_RE = re.compile(r"(?<=\d)\s+[–‒-]\s*(?=\d)")
+_EE_NUMERIC_MILLIMETER_HYPHEN_RE = re.compile(r"(?<=\d)-(?=millimeetri(?:se|st|ne|t|ga|ni)?\b)")
 _EE_EURO_SUFFIX_SPACING_RE = re.compile(r"(?<=\d)(?=eurot\b)")
 _EE_HTML_SECTION_SIGN_ENTITY_RE = re.compile(r"&#167;")
 _EE_HTML_QUOTE_ENTITY_RE = re.compile(r"&#(?:171|187);")
@@ -148,6 +149,14 @@ _EE_NORMALIZATION_RULES = (
         description="Collapse editorial spaces around numeric range dashes.",
         pattern=_EE_NUMERIC_RANGE_DASH_SPACING_RE,
         replacement="–",
+    ),
+    EENormalizationRule(
+        name="numeric_millimeter_hyphen",
+        rule_class=EENormalizationRuleClass.punctuation,
+        kind="regex",
+        description="Normalize hyphen-vs-space surfaces in numeric millimeter adjectives.",
+        pattern=_EE_NUMERIC_MILLIMETER_HYPHEN_RE,
+        replacement=" ",
     ),
     EENormalizationRule(
         name="euro_suffix_spacing",
