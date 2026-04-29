@@ -4478,6 +4478,7 @@ _EE_SOURCE_CASE_SUFFIX_TEXT_REPLACE_RULE = "ee_source_case_suffix_text_replace"
 _EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE = "ee_mixed_delete_and_replace_same_target"
 _EE_MIXED_REPLACE_INSERT_AFTER_SAME_TARGET_RULE = "ee_mixed_replace_and_insert_after_same_target"
 _EE_SUBSECTION_TABLE_ONLY_REPLACE_RULE = "ee_subsection_table_only_replace_preserve_intro"
+_EE_AMETIKOHT_TEENISTUSKOHT_FORMS_RULE = "ee_case_inflected_ametikoht_teenistuskoht_forms"
 _EE_AMBIGUOUS_SINGLE_OCCURRENCE_TEXT_REPLACE_RULE = "ee_ambiguous_single_occurrence_text_replace"
 _EE_OVERBROAD_CONTAINER_REPLACE_BLOCKED_RULE = "ee_overbroad_container_replace_blocked"
 _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE = "ee_explicit_item_replacement_terminal_preserved"
@@ -7194,6 +7195,26 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         for old_form, new_form in form_sets.get((old, new), {}).items():
             variants.setdefault(old_form, new_form)
 
+    def _add_ametikoht_teenistuskoht_forms() -> None:
+        """Own ametikoht -> teenistuskoht forms for RT's 2013 rescue-service rewrite."""
+        if not case_inflected or (old, new) != ("ametikoht", "teenistuskoht"):
+            return
+        form_pairs = {
+            "ametikoht": "teenistuskoht",
+            "ametikoha": "teenistuskoha",
+            "ametikohta": "teenistuskohta",
+            "ametikohtade": "teenistuskohtade",
+            "ametikohti": "teenistuskohti",
+            "ametikohtades": "teenistuskohtades",
+            "ametikohtadest": "teenistuskohtadest",
+            "ametikohtadele": "teenistuskohtadele",
+            "ametikohtadel": "teenistuskohtadel",
+            "ametikohtadelt": "teenistuskohtadelt",
+            "ametikohtadeks": "teenistuskohtadeks",
+        }
+        for old_form, new_form in form_pairs.items():
+            variants.setdefault(old_form, new_form)
+
     def _strip_wrapping_quotes(surface: str) -> str | None:
         stripped = surface.strip()
         if len(stripped) < 2:
@@ -7251,6 +7272,7 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
     if old:
         variants[old] = new
         _add_vts_operator_forms()
+        _add_ametikoht_teenistuskoht_forms()
         old_norm = _ee_normalize_text_replace_surface(old)
         new_norm = _ee_normalize_text_replace_surface(new)
         if old_norm and old_norm not in variants:

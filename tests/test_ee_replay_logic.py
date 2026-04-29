@@ -1549,6 +1549,35 @@ def test_replay_ee_to_pit_classifies_vereulekanne_protocol_case_oracle_drift() -
     assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": len(divergence_addresses)}
 
 
+def test_replay_ee_to_pit_adjudicates_spent_repeal_clause_presentation_drift() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.residual_reporting import build_ee_residual_summary
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "129122011237",
+        "2013-04-01",
+        archive=archive,
+        oracle_id="129032013014",
+    )
+
+    assert result.error is None
+    divergence_addresses = tuple(str(div.address) for div in result.divergences)
+    assert "chapter:5/section:33" in divergence_addresses
+    assert "chapter:5/section:33/subsection:1" in divergence_addresses
+    residual_summary = build_ee_residual_summary(
+        base_id="129122011237",
+        oracle_id="129032013014",
+        divergence_addresses=divergence_addresses,
+    )
+    assert residual_summary is not None
+    assert residual_summary.unknown_current_divergence_count == 0
+    assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
+    assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": len(divergence_addresses)}
+
+
 def test_replay_ee_to_pit_adjudicates_jahitunnistus_label_offset_surface_drift() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
