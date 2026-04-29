@@ -5943,6 +5943,44 @@ def test_parse_ee_amendment_ops_recovers_direct_html_plural_subsection_insert() 
     assert ops[0].witness_rule_id == "ee_plural_subsection_insert_payload_split"
 
 
+def test_parse_ee_amendment_ops_carries_tavatekst_section_context_to_html_items() -> None:
+    target_title = (
+        "Ajutised püügikitsendused, harrastuspüügiõiguse tasu ja püügivahendite "
+        "piirarv harrastuskalapüügil 2013. aastal"
+    )
+    xml = f"""
+    <oigusakt xmlns="tyviseadus_1_10.02.2010">
+      <aktinimi>
+        <nimi>
+          <pealkiri>{target_title} muutmine</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <sisuTekst>
+          <tavatekst>Keskkonnaministri määruses „{target_title}” §-s 11 tehakse järgmised muudatused:</tavatekst>
+        </sisuTekst>
+        <sisuTekst>
+          <HTMLKonteiner><![CDATA[
+            <p><b>1)</b> lõige 1 muudetakse ja sõnastatakse järgmiselt:</p>
+            <p>„(1) Harrastuskalapüügiks Silma looduskaitsealal antakse kalastuskaarte:<br/>
+              1) Sutlepa merele – 2;<br/>
+              2) Saunja lahele – 2.”;</p>
+            <p><b>2)</b> paragrahvi täiendatakse lõikega 6 järgmises sõnastuses:</p>
+            <p>„(6) Harrastuskalapüügiõiguse tasu võetakse iga piirkonna eest eraldi.”.</p>
+          ]]></HTMLKonteiner>
+        </sisuTekst>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(xml, "ee/129072013004", target_title=target_title)
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPLACE, (("section", "11"), ("subsection", "1"))),
+        (StructuralAction.INSERT, (("section", "11"), ("subsection", "6"))),
+    ]
+
+
 def test_parse_ee_amendment_ops_strips_html_amendment_section_heading_before_direct_target() -> None:
     xml = """
     <oigusakt xmlns="muutmismaarus_1_10.02.2010">

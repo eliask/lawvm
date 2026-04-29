@@ -2190,10 +2190,12 @@ def old_format_collect_fallback_ops(
     """Lower the old-format single-act fallback path with carried section context."""
     source = OperationSource(statute_id=source_id, title=target_title or "")
     op_texts = _parse_html_op_items_with_plain_recovery(full_html)
+    initial_section = old_format_section_from_intro_context(full_html)
     ops, global_seq, _ = old_format_lower_op_texts(
         op_texts,
         source,
         seq_start=seq_start,
+        initial_last_section=initial_section,
     )
     return ops, global_seq
 
