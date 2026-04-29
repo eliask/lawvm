@@ -145,7 +145,15 @@ def _instruction_preamble(text: str) -> str:
     """Return the instruction part before quoted replacement payload begins."""
     text = _normalize_ee_parse_text(text)
     preamble_end = len(text)
-    for marker in ('\u201e', '\u02ee', '\u00ab', 'järgmises sõnastuses:', 'järgmiselt:'):
+    for marker in (
+        '\u201e',
+        '\u201c',
+        '\u201d',
+        '\u02ee',
+        '\u00ab',
+        'järgmises sõnastuses:',
+        'järgmiselt:',
+    ):
         idx = text.find(marker)
         if 0 <= idx < preamble_end:
             preamble_end = idx
@@ -5129,9 +5137,22 @@ def parse_html_op_items(html_cdata: str, *, allow_plain_paragraph_items: bool = 
     )
     grouped_blocks: list[str] = []
     current: list[str] = []
+
+    def _has_open_replacement_quote(text: str) -> bool:
+        # Plain paragraph splitting is only a fallback for old RT HTML. If an
+        # amendment item has opened a quoted replacement payload, numbered
+        # paragraphs inside that payload are legal-unit/list content, not new
+        # amendment item boundaries.
+        open_quote = False
+        for char in text:
+            if char in {"“", "„", "”"}:
+                open_quote = not open_quote
+        return open_quote
+
     for paragraph in paragraph_blocks:
         paragraph_text = _html_block_to_item_text(paragraph)
-        starts_item = bool(item_start.match(paragraph_text))
+        current_text = _html_block_to_item_text("".join(current)) if current else ""
+        starts_item = bool(item_start.match(paragraph_text)) and not _has_open_replacement_quote(current_text)
         if starts_item:
             if current:
                 grouped_blocks.append("".join(current))

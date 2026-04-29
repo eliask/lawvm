@@ -2858,6 +2858,29 @@ def test_parse_html_op_items_splits_plain_partitive_act_item_markers() -> None:
     ]
 
 
+def test_parse_html_op_items_keeps_numbered_payload_paragraphs_inside_open_quote() -> None:
+    items = parse_html_op_items(
+        (
+            "<p>11) määrust täiendatakse §-ga 16<sup>1</sup> järgmises sõnastuses:</p>"
+            "<p>“<b>§ 16<sup>1</sup>. Tegevustega seotud muudatused</b></p>"
+            "<p>(1) Esimene lõige.</p>"
+            "<p>(2) Lõikes 1 nimetatud juhul esitatakse:</p>"
+            "<p>1) esimene dokument;</p>"
+            "<p>2) paragrahvis 7 nimetatud hinnapakkumus;</p>"
+            "<p>(3) Kolmas lõige.”;</p>"
+            "<p>12) paragrahvi 18 täiendatakse lõikega 1<sup>1</sup>:</p>"
+            "<p>“(1<sup>1</sup>) Järgmine muudatus.”;</p>"
+        ),
+        allow_plain_paragraph_items=True,
+    )
+
+    assert len(items) == 2
+    assert items[0].startswith("11) määrust täiendatakse")
+    assert "2) paragrahvis 7 nimetatud hinnapakkumus" in items[0]
+    assert "(3) Kolmas lõige.”;" in items[0]
+    assert items[1].startswith("12) paragrahvi 18 täiendatakse")
+
+
 def test_parse_html_op_items_does_not_split_plain_quoted_payload_items() -> None:
     items = parse_html_op_items(
         (
@@ -4743,6 +4766,25 @@ def test_extract_ee_ops_treats_insert_after_sonu_as_insert_after_mode() -> None:
     assert ops[0].payload.attrs["old_text"] == "teenuse korralduse,"
     assert ops[0].payload.attrs.get("rewrite_mode") == "insert_after"
     assert ops[0].payload.text == "teenuse korralduse, terrorismiohvrile,"
+
+
+def test_extract_ee_ops_does_not_take_subsection_target_from_insert_after_payload() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 1 täiendatakse pärast sõnu “tunnistamise kord” "
+            "tekstiosaga “ning taotluse vorm kooskõlas nõukogu määruse "
+            "artikli 18 lõike 4 alusel heaks kiidetud kavaga.”;"
+        ),
+        OperationSource(statute_id="120072012001", raw_text="test"),
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "1"),)
+    assert ops[0].payload is not None
+    assert ops[0].payload.attrs["old_text"] == "tunnistamise kord"
+    assert ops[0].payload.attrs["rewrite_mode"] == "insert_after"
+    assert "lõike 4" in ops[0].payload.text
 
 
 def test_extract_ee_ops_preserves_nested_quote_in_insert_after_payload() -> None:
