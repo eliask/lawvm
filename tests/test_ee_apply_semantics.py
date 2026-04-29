@@ -3516,6 +3516,72 @@ def test_replace_section_strips_rt_editorial_parentheticals_from_payload_subsect
     ]
 
 
+def test_replace_section_materializes_spaced_superscript_subsection_marker() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="3",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="3",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.DIVISION,
+                                label="1",
+                                children=(
+                                    IRNode(
+                                        kind=IRNodeKind.SECTION,
+                                        label="126",
+                                        text="Kinnisomandist loobumine",
+                                        children=(
+                                            IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Vana esimene."),
+                                            IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="Vana teine."),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_replace_section_spaced_superscript_subsection",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "126"),)),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text=(
+                "(1) Kinnisasja omanik võib kinnisomandist loobuda. "
+                "(1 1 ) Isikul ei ole õigust kinnisomandist loobuda, kui: "
+                "1) kohustus on täitmata; 2) kinnisasi on koormatud hüpoteegiga. "
+                "(2) Tehing peab olema notariaalselt tõestatud."
+            ),
+        ),
+        provenance_tags=("Asjaõigusseaduse § 126 tekst muudetakse ja sõnastatakse järgmiselt",),
+    )
+
+    result = _ee_apply_op(body, op)
+    section = result.children[0].children[0].children[0].children[0]
+
+    assert section.text == "Kinnisomandist loobumine"
+    assert [(child.label, child.text) for child in section.children] == [
+        ("1", "Kinnisasja omanik võib kinnisomandist loobuda."),
+        ("1_1", "Isikul ei ole õigust kinnisomandist loobuda, kui:"),
+        ("2", "Tehing peab olema notariaalselt tõestatud."),
+    ]
+    assert section.children[1].attrs["source_cleanup_rule"] == "ee_spaced_superscript_subsection_marker"
+    assert [(item.label, item.text) for item in section.children[1].children] == [
+        ("1", "kohustus on täitmata;"),
+        ("2", "kinnisasi on koormatud hüpoteegiga."),
+    ]
+
+
 def test_replace_subsection_strips_rt_editorial_parenthetical_from_payload_text() -> None:
     body = _body_with_section_and_subsection(
         "63",

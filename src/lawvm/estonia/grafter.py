@@ -727,6 +727,7 @@ _EE_SINGLETON_EMPTY_SECTION_LABEL_RULE = "ee_singleton_empty_section_label_to_1"
 _EE_SECTION_LEVEL_INTRO_TO_FIRST_SUBSECTION_RULE = "ee_section_level_intro_attached_to_first_subsection"
 _EE_HTML_TABLE_NUMBERED_ITEMS_RULE = "ee_html_table_numbered_items_materialized"
 _EE_UNLABELED_LOIGE_CONTINUATION_RULE = "ee_unlabeled_loige_continuation_attached_to_previous_subsection"
+_EE_SPACED_SUPERSCRIPT_SUBSECTION_MARKER_RULE = "ee_spaced_superscript_subsection_marker"
 _EE_RT_INLINE_CHANGE_NOTE_RE = re.compile(
     r"\s*\[\s*RT\s+[IVX]+\s*,\s*\d{1,2}\.\d{1,2}\.\d{4}\s*,\s*\d+"
     r"(?:\s*-\s*jõust\.\s*\d{1,2}\.\d{1,2}\.\d{4})?\s*\]",
@@ -4396,7 +4397,7 @@ def _parse_section_payload(text: str, kind: IRNodeKind = IRNodeKind.SECTION) -> 
 
     # Split at subsection markers: (N) at start of subsection
     # Pattern: split on "(N)" where N is 1+ digits, possibly with superscript
-    subsection_marker = r"\(\d{1,3}(?:[\s_]\d{1,3})?\)\s*"
+    subsection_marker = r"\(\s*\d{1,3}(?:[\s_]\d{1,3})?\s*\)\s*"
     parts = re.split(rf"(?={subsection_marker})", stripped)
 
     title_part = parts[0].strip() if parts else stripped.strip()
@@ -4436,9 +4437,14 @@ def _parse_section_payload(text: str, kind: IRNodeKind = IRNodeKind.SECTION) -> 
     # Build children from subsection parts
     children: List[IRNode] = []
     for sp in subsection_parts:
-        m = re.match(r"\((\d{1,3}(?:[\s_]\d{1,3})?)\)\s*(.*)", sp, re.DOTALL)
+        m = re.match(r"\(\s*(\d{1,3}(?:[\s_]\d{1,3})?)\s*\)\s*(.*)", sp, re.DOTALL)
         if m:
             sub_label = re.sub(r"\s+", "_", m.group(1).strip())
+            attrs = (
+                {"source_cleanup_rule": _EE_SPACED_SUPERSCRIPT_SUBSECTION_MARKER_RULE}
+                if "_" in sub_label and re.match(r"\(\s*\d{1,3}[\s_]\d{1,3}\s+\)", sp.strip())
+                else {}
+            )
             sub_text = _strip_rt_editorial_parentheticals(m.group(2).strip())
             # Split item markers "1) ... 2) ... N) ..." into item children.
             # Estonian list items use pattern: "N) text" where N is an integer,
@@ -4450,11 +4456,12 @@ def _parse_section_payload(text: str, kind: IRNodeKind = IRNodeKind.SECTION) -> 
                         kind=IRNodeKind.SUBSECTION,
                         label=sub_label,
                         text=intro_text,
+                        attrs=attrs,
                         children=tuple(item_children),
                     )
                 )
             else:
-                children.append(IRNode(kind=IRNodeKind.SUBSECTION, label=sub_label, text=sub_text))
+                children.append(IRNode(kind=IRNodeKind.SUBSECTION, label=sub_label, text=sub_text, attrs=attrs))
 
     return IRNode(kind=kind, label="", text=title_part, children=tuple(children))
 
@@ -5010,11 +5017,11 @@ def _extract_subsection_text(payload_text: str, label: str) -> str:
     marker_num = label.replace("_", " ")
 
     # Split on all subsection markers
-    parts = re.split(r"(?=\(\d{1,3}(?:[\s_]\d{1,3})?\)\s)", payload_text.strip())
+    parts = re.split(r"(?=\(\s*\d{1,3}(?:[\s_]\d{1,3})?\s*\)\s)", payload_text.strip())
 
     # Find the part that starts with the marker matching our label
     for part in parts:
-        m = re.match(r"\((\d{1,3}(?:\s\d{1,3})?)\)\s*(.*)", part.strip(), re.DOTALL)
+        m = re.match(r"\(\s*(\d{1,3}(?:\s\d{1,3})?)\s*\)\s*(.*)", part.strip(), re.DOTALL)
         if m:
             # Normalize the captured number the same way _normalize_num does
             part_num = re.sub(r"\s+", " ", m.group(1).strip())
@@ -5096,13 +5103,18 @@ def _parse_inline_subsection_payload_nodes(raw_text: str) -> List[IRNode]:
     materialize those later blocks as real subsection nodes, so replay must do
     the same instead of discarding everything after the first label.
     """
-    parts = re.split(r"(?=\(\d{1,3}(?:[\s_]\d{1,3})?\)\s)", raw_text.strip())
+    parts = re.split(r"(?=\(\s*\d{1,3}(?:[\s_]\d{1,3})?\s*\)\s)", raw_text.strip())
     nodes: List[IRNode] = []
     for part in parts:
-        match = re.match(r"^\((\d{1,3}(?:\s\d{1,3})?)\)\s*(.*)$", part.strip(), re.DOTALL)
+        match = re.match(r"^\(\s*(\d{1,3}(?:\s\d{1,3})?)\s*\)\s*(.*)$", part.strip(), re.DOTALL)
         if match is None:
             continue
         label = _normalize_num(match.group(1))
+        attrs = (
+            {"source_cleanup_rule": _EE_SPACED_SUPERSCRIPT_SUBSECTION_MARKER_RULE}
+            if "_" in label and re.match(r"^\(\s*\d{1,3}\s\d{1,3}\s+\)", part.strip())
+            else {}
+        )
         body_text = _strip_rt_editorial_parentheticals(match.group(2).strip())
         intro_text, item_children = _parse_subsection_item_payload(
             body_text,
@@ -5113,6 +5125,7 @@ def _parse_inline_subsection_payload_nodes(raw_text: str) -> List[IRNode]:
                 kind=IRNodeKind.SUBSECTION,
                 label=label,
                 text=intro_text,
+                attrs=attrs,
                 children=tuple(item_children),
             )
         )
