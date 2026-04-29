@@ -945,6 +945,7 @@ _EE_FLAT_SECTIONLESS_SINGLETON_SUBSECTION_SCOPE_RULE = "ee_flat_sectionless_sing
 _EE_PAYLOAD_AFTER_TITLE_QUOTE_RULE = "ee_payload_after_marker_ignores_premarker_title_quote"
 _EE_ASCII_QUOTED_MARKER_PAYLOAD_RULE = "ee_ascii_quoted_marker_payload"
 _EE_PLURAL_ITEM_PAYLOAD_OUTER_QUOTE_TAIL_RULE = "ee_plural_item_payload_outer_quote_tail_stripped"
+_EE_PLURAL_ITEM_MARKER_PAYLOAD_INNER_QUOTE_RULE = "ee_plural_item_marker_payload_recovers_inner_quote"
 _EE_PLURAL_ITEM_REPLACE_MISSING_LABEL_REPEAL_RULE = "ee_plural_item_replace_missing_label_repeal"
 _EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE = "ee_plural_subsection_insert_payload_split"
 _EE_MULTI_TARGET_TEXT_DELETE_SPLIT_RULE = "ee_multi_target_text_delete_split"
@@ -5124,7 +5125,7 @@ def extract_ee_ops(
 
     # Plural item repeal/replace/insert: "paragrahvi N [lõike M] punktid K ja L ..."
     # Also: "paragrahvi N punktid K, L ja M tunnistatakse kehtetuks" (no subsection)
-    _NUM_PAT_IT = r'\d+(?:\s+\d+)?'
+    _NUM_PAT_IT = _EE_NUM_ATOM
     _ITEM_LIST_PAT = (
         _NUM_PAT_IT
         + r'(?:\s*[–‒\-]\s*'
@@ -5140,8 +5141,8 @@ def extract_ee_ops(
         + r')?)*'
     )
     m_plural_item = re.search(
-        r'(?:\bparagrahvi[s]?\s+|§\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)'
-        r'(?:\s+l[oõ]ike[s]?\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*))?'
+        r'(?:\bparagrahvi[s]?\s+|§\s*)(' + _EE_NUM_ATOM + r')'
+        r'(?:\s+l[oõ]i[kg]e(?:s|t)?\s+(' + _EE_NUM_ATOM + r'))?'
         r'(?:\s+täiendatakse)?'
         r'\s+punkt(?:id|e)(?:ega|es)?\s+(' + _ITEM_LIST_PAT + r')',
         _clean_preamble, re.IGNORECASE
@@ -5159,12 +5160,31 @@ def extract_ee_ops(
             path_parts.append(("item", num))
             target_addrs.append(LegalAddress(path=tuple(path_parts)))
         content = _extract_quoted_content(clean)
+        marker_payload_recovered = False
+        marker_payload = _extract_payload_after_marker(clean) if action in ("replace", "insert") else None
         split_content = None
         missing_replace_item_labels: set[str] = set()
         if action in ("replace", "insert") and content:
             maybe_split = _split_plural_item_payload(content)
-            if maybe_split and set(expanded_items).issubset(set(maybe_split)):
+            marker_split = _split_plural_item_payload(marker_payload or "")
+            if marker_split and set(expanded_items).issubset(set(marker_split)):
+                split_content = marker_split
+                marker_payload_recovered = maybe_split is None or not set(expanded_items).issubset(set(maybe_split))
+                content = marker_payload or content
+            elif maybe_split and set(expanded_items).issubset(set(maybe_split)):
                 split_content = maybe_split
+            elif action == "replace" and marker_split:
+                split_labels = set(marker_split)
+                expanded_set = set(expanded_items)
+                if (
+                    split_labels
+                    and split_labels.issubset(expanded_set)
+                    and expanded_items
+                    and expanded_items[0] in split_labels
+                ):
+                    split_content = marker_split
+                    marker_payload_recovered = maybe_split is None or maybe_split != marker_split
+                    missing_replace_item_labels = expanded_set - split_labels
             elif action == "replace" and maybe_split:
                 split_labels = set(maybe_split)
                 expanded_set = set(expanded_items)
@@ -5228,6 +5248,8 @@ def extract_ee_ops(
                 )
                 if wrapper_tail_stripped:
                     payload_attrs["payload_normalization_rule"] = _EE_PLURAL_ITEM_PAYLOAD_OUTER_QUOTE_TAIL_RULE
+                if marker_payload_recovered:
+                    payload_attrs["source_family"] = _EE_PLURAL_ITEM_MARKER_PAYLOAD_INNER_QUOTE_RULE
                 payload = IRNode(kind=IRNodeKind.CONTENT, text=payload_text, attrs=payload_attrs)
                 if action == "replace":
                     payload = _set_sentence_replace_payload_attrs(payload, clean)
@@ -5241,8 +5263,22 @@ def extract_ee_ops(
                 payload=payload,
                 text_patch=_typed_text_replace_patch(old_t, new_t) if op_action == "text_replace" else None,
                 source=source,
-                provenance_tags=op_provenance_tags,
-                witness_rule_id=op_witness_rule_id,
+                provenance_tags=(
+                    *op_provenance_tags,
+                    *(
+                        (_EE_PLURAL_ITEM_MARKER_PAYLOAD_INNER_QUOTE_RULE,)
+                        if marker_payload_recovered and op_action in ("replace", "insert")
+                        else ()
+                    ),
+                ),
+                witness_rule_id=(
+                    op_witness_rule_id
+                    or (
+                        _EE_PLURAL_ITEM_MARKER_PAYLOAD_INNER_QUOTE_RULE
+                        if marker_payload_recovered and op_action in ("replace", "insert")
+                        else None
+                    )
+                ),
             ))
             seq += 1
         if expanded_items:

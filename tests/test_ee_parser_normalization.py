@@ -4273,6 +4273,36 @@ def test_extract_ee_ops_strips_plural_item_wrapper_quote_after_terminal_punctuat
     )
 
 
+def test_extract_ee_ops_splits_plural_item_insert_with_partitive_subsection_and_inner_quote() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 18 lõiget 1 täiendatakse punktidega 3 ja 4 järgmises sõnastuses: "
+            "„3) taotlus saab hindamisel määruse lisas 2 kehtestatud hindamiskriteeriumi 4 "
+            "„Ruumimõju ümbritsevale keskkonnale ja asukoha juurdepääsetavus“ alusel "
+            "0 punkti ega ületa seetõttu hindamiskriteeriumides sätestatud miinimumlävendit“; "
+            "4) taotleja ei nõustu § 16 lõike 4 punkti 3 alusel pakutud tingimustega.“;"
+        ),
+        OperationSource(statute_id="ee/test", raw_text="test"),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.INSERT, (("section", "18"), ("subsection", "1"), ("item", "3"))),
+        (StructuralAction.INSERT, (("section", "18"), ("subsection", "1"), ("item", "4"))),
+    ]
+    assert _payload(ops[0]).text == (
+        "3) taotlus saab hindamisel määruse lisas 2 kehtestatud hindamiskriteeriumi 4 "
+        "„Ruumimõju ümbritsevale keskkonnale ja asukoha juurdepääsetavus“ alusel "
+        "0 punkti ega ületa seetõttu hindamiskriteeriumides sätestatud miinimumlävendit;"
+    )
+    assert _payload(ops[1]).text == (
+        "4) taotleja ei nõustu § 16 lõike 4 punkti 3 alusel pakutud tingimustega."
+    )
+    assert all(
+        "ee_plural_item_marker_payload_recovers_inner_quote" in op.provenance_tags
+        for op in ops
+    )
+
+
 def test_extract_ee_ops_recovers_plural_item_payload_after_premature_wrapper_quote() -> None:
     ops = extract_ee_ops(
         (
@@ -9717,3 +9747,41 @@ def test_parse_ee_amendment_ops_recovers_real_105072023001_direct_target_item() 
     assert "keskkonnaministri määruse" not in _payload(ops[0]).text
     assert "ee_old_format_direct_target_title_prefix_stripped_before_carry" in ops[0].provenance_tags
     assert "ee_old_format_carried_section_scope" not in ops[0].provenance_tags
+
+
+def test_parse_ee_amendment_ops_recovers_real_107032025001_section_18_item_4() -> None:
+    archive = open_rt_archive(readonly=True)
+    target_title = "Kohaliku omavalitsuse üksustele liginullenergiahoonete ehitamiseks antava toetuse kasutamise tingimused ja kord"
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("107032025001", archive),
+        "ee/107032025001",
+        target_title=target_title,
+    )
+
+    section_18_ops = [
+        op
+        for op in ops
+        if op.target.path
+        and op.target.path[:2] == (("section", "18"), ("subsection", "1"))
+        and op.action is StructuralAction.INSERT
+    ]
+    assert [(op.target.path, _payload(op).text) for op in section_18_ops] == [
+        (
+            (("section", "18"), ("subsection", "1"), ("item", "3")),
+            (
+                "3) taotlus saab hindamisel määruse lisas 2 kehtestatud "
+                "hindamiskriteeriumi 4 „Ruumimõju ümbritsevale keskkonnale "
+                "ja asukoha juurdepääsetavus“ alusel 0 punkti ega ületa "
+                "seetõttu hindamiskriteeriumides sätestatud miinimumlävendit;"
+            ),
+        ),
+        (
+            (("section", "18"), ("subsection", "1"), ("item", "4")),
+            "4) taotleja ei nõustu § 16 lõike 4 punkti 3 alusel pakutud tingimustega.",
+        ),
+    ]
+    assert all(
+        "ee_plural_item_marker_payload_recovers_inner_quote" in op.provenance_tags
+        for op in section_18_ops
+    )
