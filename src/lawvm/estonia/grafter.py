@@ -642,6 +642,7 @@ def _subsection_uses_appendix_html(el: ET.Element, ns_str: str) -> bool:
 _EE_DROP_ORPHAN_APPENDIX_MARKER_RULE = "ee_drop_orphan_appendix_marker_html"
 _EE_DROP_REPEALED_RANGE_RESIDUE_RULE = "ee_drop_repealed_range_residue"
 _EE_SINGLETON_EMPTY_SECTION_LABEL_RULE = "ee_singleton_empty_section_label_to_1"
+_EE_SECTION_LEVEL_INTRO_TO_FIRST_SUBSECTION_RULE = "ee_section_level_intro_attached_to_first_subsection"
 
 
 def _element_has_kehtetu_marker(el: ET.Element, ns_str: str) -> bool:
@@ -661,6 +662,16 @@ def _is_repealed_range_residue_text(text: str) -> bool:
         re.fullmatch(r"[–‒-]+\s*\(?\d+\)?", cleaned)
         or re.fullmatch(r"§-d\s+\d[\d_]*\s*[–‒-]\s*\d[\d_]*", cleaned)
     )
+
+
+def _section_level_sisutekst_text(el: ET.Element, ns_str: str) -> str:
+    """Return direct section-level text that precedes explicit subsections."""
+    parts: list[str] = []
+    for st in el.findall(_ns(ns_str, "sisuTekst")):
+        txt = _sisuTekst_text(st, ns_str)
+        if txt:
+            parts.append(txt)
+    return " ".join(parts).strip()
 
 
 def _sisuTekst_text_with_appendix_markers(
@@ -1071,6 +1082,24 @@ def _parse_section(el: ET.Element, ns_str: str) -> IRNode:
                 children.append(node)
             elif node.attrs.get("source_cleanup_rule") == _EE_DROP_REPEALED_RANGE_RESIDUE_RULE:
                 dropped_repealed_residues.append(str(node.attrs["dropped_repealed_residue"]))
+    if children:
+        section_intro = _section_level_sisutekst_text(el, ns_str)
+        if section_intro:
+            first = children[0]
+            first_rules = tuple(first.attrs.get("source_cleanup_rules", ()))
+            first_attrs = {
+                **first.attrs,
+                "source_cleanup_rules": (
+                    *first_rules,
+                    _EE_SECTION_LEVEL_INTRO_TO_FIRST_SUBSECTION_RULE,
+                ),
+                "section_level_intro_text": section_intro,
+            }
+            children[0] = replace(
+                first,
+                text=" ".join(part for part in (section_intro, first.text) if part).strip(),
+                attrs=first_attrs,
+            )
 
     # Section with no loige children — capture sisuTekst directly as single subsection.
     # _sisuTekst_text captures tavatekst + viide/kuvatavTekst in document order.
@@ -3631,6 +3660,7 @@ def _replace_text_in_subtree_with_spec(
     *,
     case_inflected: bool | None = None,
     capitalize_sentence_start: bool | None = None,
+    single_occurrence: bool = False,
 ) -> tuple[IRNode, bool]:
     """Replace text in a subtree using a typed rewrite spec."""
     actual_case_inflected = spec.case_inflected if case_inflected is None else case_inflected
@@ -3645,6 +3675,7 @@ def _replace_text_in_subtree_with_spec(
             spec,
             case_inflected=actual_case_inflected,
             capitalize_sentence_start=actual_capitalize_sentence_start,
+            single_occurrence=single_occurrence,
         )
         if replaced is None:
             replaced = node.text
@@ -3658,6 +3689,7 @@ def _replace_text_in_subtree_with_spec(
             spec,
             case_inflected=actual_case_inflected,
             capitalize_sentence_start=capitalize_sentence_start,
+            single_occurrence=single_occurrence,
         )
         new_children.append(new_child)
         changed = changed or child_changed
@@ -4143,6 +4175,7 @@ def _ee_apply_text_replace_spec(
     *,
     case_inflected: bool | None = None,
     capitalize_sentence_start: bool = True,
+    single_occurrence: bool = False,
 ) -> str | None:
     """Apply a typed rewrite spec to text using existing replacement engine."""
     if spec is None:
@@ -4180,6 +4213,7 @@ def _ee_apply_text_replace_spec(
         case_inflected=inflected,
         all_occurrences=spec.all_occurrences,
         capitalize_sentence_start=capitalize_sentence_start,
+        single_occurrence=single_occurrence,
     )
 
 
@@ -6775,6 +6809,7 @@ def _ee_apply_text_replace_value(
     case_inflected: bool,
     all_occurrences: bool = False,
     capitalize_sentence_start: bool = True,
+    single_occurrence: bool = False,
 ) -> str | None:
     """Apply one EE text replacement to a string value."""
     if text is None or not old:
@@ -6918,6 +6953,38 @@ def _ee_apply_text_replace_value(
                 _ee_wrap_word_boundaries(_ee_surface_pattern(old_variant), old_variant),
                 _ee_text_replace_regex_flags(old_variant, case_inflected=case_inflected),
             )
+
+            if single_occurrence:
+                selected_match: re.Match[str] | None = None
+                for match in pattern.finditer(working):
+                    if mode == "replace" and _ee_match_inside_existing_replacement(
+                        working,
+                        match_start=match.start(),
+                        match_end=match.end(),
+                        replacement=new_variant,
+                    ):
+                        continue
+                    selected_match = match
+                    break
+                if selected_match is None:
+                    continue
+                replacement = _ee_case_preserved_replacement(
+                    selected_match,
+                    new_variant,
+                    capitalize_sentence_start=capitalize_sentence_start,
+                    preserve_match_capital=preserve_match_capital,
+                )
+                if mode == "replace" and new_variant.lower().startswith(old_variant.lower()):
+                    replacement = _ee_trim_overlapping_replacement_tail(
+                        replacement,
+                        working[selected_match.end():],
+                    )
+                working = (
+                    working[:selected_match.start()]
+                    + replacement
+                    + working[selected_match.end():]
+                )
+                break
 
             def _repl(match: re.Match[str], *, idx: int = idx, new_variant: str = new_variant) -> str:
                 if mode == "replace" and _ee_match_inside_existing_replacement(
@@ -9331,6 +9398,11 @@ def _ee_apply_op(
                         rewrite_spec,
                         case_inflected=rewrite_spec.case_inflected,
                         capitalize_sentence_start=node.kind != IRNodeKind.ITEM,
+                        single_occurrence=(
+                            rewrite_spec.mode == "replace"
+                            and not rewrite_spec.all_occurrences
+                            and node.kind == IRNodeKind.ITEM
+                        ),
                     )
                     if changed:
                         return tree_ops.replace_at(body, full_path, replaced_node)

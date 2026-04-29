@@ -3323,6 +3323,16 @@ def test_case_inflected_text_replace_handles_shared_prefix_pere_forms() -> None:
     ) == "Pere- või asenduskodu perel peab olema kaks tualettruumi."
 
 
+def test_scoped_text_replace_without_all_occurrences_rewrites_first_match_only() -> None:
+    assert _ee_apply_text_replace_value(
+        "koostab ministeeriumi töötajate koolituskava, korraldab töötajate koolitust;",
+        "töötajate",
+        "ametnike ja töötajate",
+        case_inflected=False,
+        single_occurrence=True,
+    ) == "koostab ministeeriumi ametnike ja töötajate koolituskava, korraldab töötajate koolitust;"
+
+
 def test_global_case_inflected_text_replace_keeps_nominative_before_regular_noun_phrase() -> None:
     body = _body_with_section_and_subsection(
         "12",
