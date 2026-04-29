@@ -27,7 +27,10 @@ _EE_OLD_FORMAT_CARRIED_SECTION_SCOPE_RULE = "ee_old_format_carried_section_scope
 _EE_OLD_FORMAT_WRAPPER_SCOPE_INHERITED_RULE = "ee_old_format_wrapper_scope_inherited"
 _EE_OLD_FORMAT_DIRECT_HEADER_TARGET_SECTION_RULE = "ee_old_format_direct_header_target_section"
 _EE_OLD_FORMAT_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_old_format_preamble_clause_non_body"
+_EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
+_EE_TITLE_CLAUSE_NON_BODY_RULE = "ee_title_clause_non_body"
 _EE_OLD_FORMAT_OUT_OF_BODY_APPENDIX_CLAUSE_RULE = "ee_old_format_out_of_body_appendix_clause_not_section_scoped"
+_EE_OUT_OF_BODY_APPENDIX_CLAUSE_RULE = "ee_out_of_body_appendix_clause_not_section_scoped"
 _EE_NEW_FORMAT_TARGET_ACT_HEADER_NOT_WRAPPER_RULE = "ee_new_format_target_act_header_not_wrapper_instruction"
 _EE_HTML_AMENDMENT_SECTION_HEADING_WRAPPER_STRIPPED_RULE = "ee_html_amendment_section_heading_wrapper_stripped"
 _OP_TEXT_RULE_PREFIX = "\x1eLAWVM_RULE:"
@@ -51,6 +54,39 @@ def _is_out_of_body_appendix_or_note_clause(text: str) -> bool:
         re.match(r"^(?:määruse|seaduse)\s+(?:senise\s+)?lisa(?:s|d|ga)?\b", stripped)
         or re.match(r"^lisa(?:s|d|ga)?\b", stripped)
         or re.match(r"^(?:määruse|seaduse)\s+(?:kolmas\s+)?normitehnili\w*\s+märkus", stripped)
+    )
+
+
+def _is_preamble_clause_non_body(text: str) -> bool:
+    stripped = _strip_old_format_item_prefix(text).lower()
+    return bool(re.match(r"^(?:määruse|seaduse)\s+preambul(?:is|ist|it)?\b", stripped))
+
+
+def _is_title_clause_non_body(text: str) -> bool:
+    stripped = _strip_old_format_item_prefix(text).lower()
+    return bool(re.match(r"^(?:määruse|seaduse)\s+pealkir(?:i|jas|jast)\b", stripped))
+
+
+def _non_body_meta_op(
+    *,
+    source: OperationSource,
+    source_text: str,
+    sequence: int,
+    rule_id: str,
+) -> LegalOperation:
+    return LegalOperation(
+        op_id=f"ee-non-body-clause-{sequence}-{source.statute_id}",
+        sequence=sequence,
+        action=StructuralAction.META,
+        target=LegalAddress(path=()),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text=source_text,
+            attrs={"source_family": rule_id},
+        ),
+        source=replace(source, raw_text=source_text[:200]),
+        provenance_tags=(source_text[:200], rule_id),
+        witness_rule_id=rule_id,
     )
 
 
@@ -738,6 +774,39 @@ def new_format_lower_op_texts(
                     continue
 
         effective = re.sub(r'^\(?\d[\d\s_]*\)\s*', '', op_text).strip()
+        if _is_title_clause_non_body(original_op_text):
+            lowered.append(
+                _non_body_meta_op(
+                    source=source,
+                    source_text=original_op_text,
+                    sequence=global_seq,
+                    rule_id=_EE_TITLE_CLAUSE_NON_BODY_RULE,
+                )
+            )
+            global_seq += 1
+            continue
+        if _is_preamble_clause_non_body(original_op_text):
+            lowered.append(
+                _non_body_meta_op(
+                    source=source,
+                    source_text=original_op_text,
+                    sequence=global_seq,
+                    rule_id=_EE_PREAMBLE_CLAUSE_NON_BODY_RULE,
+                )
+            )
+            global_seq += 1
+            continue
+        if _is_out_of_body_appendix_or_note_clause(original_op_text):
+            lowered.append(
+                _non_body_meta_op(
+                    source=source,
+                    source_text=original_op_text,
+                    sequence=global_seq,
+                    rule_id=_EE_OUT_OF_BODY_APPENDIX_CLAUSE_RULE,
+                )
+            )
+            global_seq += 1
+            continue
         effective, section_heading_stripped = _strip_html_amendment_section_heading_wrapper(
             effective,
             target_title,
@@ -1011,6 +1080,21 @@ def new_format_collect_op_texts(
         "asendatakse", "jäetakse välja", "lisatakse",
         "§-ga", "§-dega",
     )
+
+    for item in para.iter(_ns(ns_str, "alampunkt")):
+        item_parts: list[str] = []
+        for st in item.findall(_ns(ns_str, "sisuTekst")):
+            for t in st.findall(_ns(ns_str, "tavatekst")):
+                txt = " ".join(str(_t) for _t in t.itertext()).replace("\xa0", " ")
+                txt = re.sub(r"\s+", " ", txt).strip()
+                if txt:
+                    item_parts.append(txt)
+        item_text = " ".join(item_parts).strip()
+        if item_text and (
+            any(kw in item_text.lower() for kw in op_kws)
+            or re.search(r"§\s*\d", item_text)
+        ):
+            op_texts.append(item_text)
 
     def _with_op_text_rule(text: str, rule_id: str) -> str:
         return f"{_OP_TEXT_RULE_PREFIX}{rule_id}{_OP_TEXT_RULE_SUFFIX}{text}"

@@ -8836,6 +8836,37 @@ def test_parse_ee_amendment_ops_splits_plaintext_preamble_and_repeal_range() -> 
     assert _payload(ops[0]).attrs["source_family"] == "ee_preamble_clause_non_body"
 
 
+def test_parse_ee_amendment_ops_collects_xml_alampunkt_items_for_new_format_omnibus() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("119052016002", archive),
+        "ee/119052016002",
+        target_title=(
+            "Püsiva töövõimetuse ekspertiisiks ning puude raskusastme ja "
+            "lisakulude tuvastamiseks vajalike dokumentide loetelu ja vormid"
+        ),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.META, ()),
+        (StructuralAction.META, ()),
+        (StructuralAction.REPLACE, (("section", "1"),)),
+        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("item", "2"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("item", "3"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("item", "4"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("item", "5"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("item", "6"))),
+        (StructuralAction.REPEAL, (("section", "3"),)),
+        (StructuralAction.META, ()),
+    ]
+    assert _payload(ops[0]).attrs["source_family"] == "ee_title_clause_non_body"
+    assert _payload(ops[1]).attrs["source_family"] == "ee_preamble_clause_non_body"
+    assert _payload(ops[9]).attrs["source_family"] == "ee_out_of_body_appendix_clause_not_section_scoped"
+    assert _payload(ops[3]).attrs["old_text"] == "kutsehaigestumise raport"
+    assert _payload(ops[3]).text == "kutsehaigestumise teatis"
+
+
 def test_parse_ee_amendment_ops_slices_parenthesized_multi_regulation_block() -> None:
     archive = open_rt_archive(readonly=True)
 
