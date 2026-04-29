@@ -1690,6 +1690,43 @@ def test_extract_ee_ops_classifies_bare_sonastatakse_as_replace() -> None:
     assert ops[0].payload is not None
 
 
+def test_extract_ee_ops_keeps_inner_jargmiselt_inside_section_payload() -> None:
+    text = (
+        "paragrahvi 1 tekst sõnastatakse järgmiselt: „(1) Taotlus esitatakse. "
+        "(2) Arve lisatakse. (3) Arve sisaldab järgmisi andmeid: 1) nimetus. "
+        "(4) Kogus märgitakse järgmiselt: 1) alkohol liitrites; "
+        "2) elektrienergia vastavalt ühikule.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "1"),)
+    assert ops[0].payload is not None
+    assert ops[0].payload.text.startswith("(1) Taotlus esitatakse.")
+    assert "(4) Kogus märgitakse järgmiselt:" in ops[0].payload.text
+    assert not ops[0].payload.text.startswith("1) alkohol liitrites")
+
+
+def test_extract_ee_ops_uses_later_marker_after_repeated_target_title() -> None:
+    text = (
+        "§ 3 täiendatakse punktiga 20 järgmises sõnastuses: "
+        "„20) matemaatika (kirjalik) – 7. juuni 2013.a.“. "
+        "Haridus- ja teadusministri määruse nr 20 „Riigieksamite ajad“ "
+        "§ 3 täiendatakse punktiga 20 järgmises sõnastuses: "
+        "„20) matemaatika (kirjalik) – 7. juuni 2013.a.“."
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "3"), ("item", "20"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.text == "20) matemaatika (kirjalik) – 7. juuni 2013.a."
+
+
 def test_extract_ee_ops_classifies_bare_sonastatakse_subsection_as_replace() -> None:
     ops = extract_ee_ops(
         'paragrahvi 13 2 lõige 5 sõnastatakse järgmiselt: „(5) Uus tekst.”',
@@ -2355,6 +2392,26 @@ def test_extract_ee_ops_emits_subsection_renumber_before_insert_for_loetakse_loi
     assert ops[0].witness_rule_id == "ee_subsection_sequence_renumber_before_insert"
     assert ops[1].witness_rule_id == "ee_subsection_sequence_renumber_before_insert"
     assert _payload(ops[1]).text == "(2 1) Uus lõige."
+
+
+def test_extract_ee_ops_emits_senine_text_subsection_renumber_before_insert() -> None:
+    text = (
+        "paragrahvi 23 senine tekst loetakse lõikeks 2 ja paragrahvi täiendatakse "
+        "lõikega 1 järgmises sõnastuses: „(1) Rakendusüksusel on õigus: "
+        "1) tutvuda dokumentidega; 2) küsida lisateavet.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.RENUMBER, (("section", "23"), ("subsection", "1"))),
+        (StructuralAction.INSERT, (("section", "23"), ("subsection", "1"))),
+    ]
+    assert ops[0].destination is not None
+    assert ops[0].destination.path == (("section", "23"), ("subsection", "2"))
+    assert ops[0].witness_rule_id == "ee_senine_text_subsection_renumber_before_insert"
+    assert ops[1].witness_rule_id == "ee_senine_text_subsection_renumber_before_insert"
+    assert _payload(ops[1]).text.startswith("(1) Rakendusüksusel on õigus:")
 
 
 def test_extract_ee_ops_emits_plural_section_renumbers_before_new_occupied_section_insert() -> None:
@@ -5597,6 +5654,88 @@ def test_parse_ee_amendment_ops_handles_preambul_single_target_insert() -> None:
     assert ops[0].target.path == (("section", "60_2"),)
 
 
+def test_parse_ee_amendment_ops_does_not_duplicate_direct_body_intro_payload() -> None:
+    xml = """
+    <oigusakt xmlns="muutmismaarus_1_10.02.2010">
+      <aktinimi>
+        <nimi>
+          <pealkiri>Sotsiaalministri määruse nr 70 „Meetme «Õendus- ja hooldusteenuste infrastruktuuri arendamine» toetuse andmise ja toetuse kasutamise seire tingimused ja kord” muutmine</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <preambul>
+          <tavatekst>Määrus kehtestatakse volitusnormi alusel.</tavatekst>
+        </preambul>
+        <sisuTekst>
+          <tavatekst>Sotsiaalministri määruse nr 70 „Meetme «Õendus- ja hooldusteenuste infrastruktuuri arendamine» toetuse andmise ja toetuse kasutamise seire tingimused ja kord” § 6 lõige 2 sõnastatakse järgmiselt:<reavahetus/>„(2) Projekti abikõlblikkuse perioodi alguskuupäev ei või olla hilisem kui 31. detsember 2015.”.</tavatekst>
+        </sisuTekst>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title=(
+            "Meetme «Õendus- ja hooldusteenuste infrastruktuuri arendamine» "
+            "toetuse andmise ja toetuse kasutamise seire tingimused ja kord"
+        ),
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "6"), ("subsection", "2"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.text == (
+        "(2) Projekti abikõlblikkuse perioodi alguskuupäev ei või olla hilisem "
+        "kui 31. detsember 2015."
+    )
+    assert ops[0].payload.text.count("Projekti abikõlblikkuse") == 1
+    assert "Õendus- ja hooldusteenuste" not in ops[0].payload.text
+
+
+def test_parse_ee_amendment_ops_keeps_html_direct_body_intro_as_payload_carrier() -> None:
+    xml = """
+    <oigusakt xmlns="muutmismaarus_1_10.02.2010">
+      <aktinimi>
+        <nimi>
+          <pealkiri>Vabariigi Valitsuse määruse nr 312 „Pirita jõeoru maastikukaitseala kaitse-eeskiri” muutmine</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <preambul>
+          <tavatekst>Määrus kehtestatakse volitusnormi alusel.</tavatekst>
+        </preambul>
+        <sisuTekst>
+          <HTMLKonteiner><![CDATA[
+            <p><b>§ 1. Määruse muutmine</b></p>
+            <p>Vabariigi Valitsuse määruse nr 312 „Pirita jõeoru maastikukaitseala kaitse-eeskiri” § 7 lõike 2 punkt 4 sõnastatakse järgmiselt:</p>
+            <p>„4) Botaanikaaia piiranguvööndis kaitseala valitseja nõusolekul ehitiste püstitamine;”.</p>
+            <p><b>§ 2. Muudatuse põhjendus</b></p>
+            <p>Seletuskirjas on esitatud põhjendus.</p>
+          ]]></HTMLKonteiner>
+        </sisuTekst>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Pirita jõeoru maastikukaitseala kaitse-eeskiri",
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "7"), ("subsection", "2"), ("item", "4"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.text == (
+        "4) Botaanikaaia piiranguvööndis kaitseala valitseja nõusolekul "
+        "ehitiste püstitamine;"
+    )
+    assert "Muudatuse põhjendus" not in ops[0].payload.text
+
+
 def test_parse_ee_amendment_ops_keeps_target_header_single_sentence_delete() -> None:
     xml = """
     <akt xmlns="akt_1_10.06.2010">
@@ -8391,3 +8530,27 @@ def test_parse_html_op_items_keeps_ascii_quoted_payload_items_together() -> None
     assert items[0].startswith("16)")
     assert items[1].startswith("17)")
     assert items[2].startswith("18)")
+
+
+def test_extract_ee_ops_splits_multi_target_text_delete_groups() -> None:
+    text = (
+        "paragrahvi 12 lõikest 3 ning § 14 lõigetest 4, 6 ja 7 jäetakse "
+        "välja sõnad „eeltaotluse ja”, ning § 14 lõigetest 5, 7 ja 8 "
+        "jäetakse välja sõnad „eeltaotlus” ja „eeltaotlus või” vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.target.path, _payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        ((("section", "12"), ("subsection", "3")), "eeltaotluse ja", ""),
+        ((("section", "14"), ("subsection", "4")), "eeltaotluse ja", ""),
+        ((("section", "14"), ("subsection", "6")), "eeltaotluse ja", ""),
+        ((("section", "14"), ("subsection", "7")), "eeltaotluse ja", ""),
+        ((("section", "14"), ("subsection", "5")), "eeltaotlus", ""),
+        ((("section", "14"), ("subsection", "5")), "eeltaotlus või", ""),
+        ((("section", "14"), ("subsection", "7")), "eeltaotlus", ""),
+        ((("section", "14"), ("subsection", "7")), "eeltaotlus või", ""),
+        ((("section", "14"), ("subsection", "8")), "eeltaotlus", ""),
+        ((("section", "14"), ("subsection", "8")), "eeltaotlus või", ""),
+    ]
+    assert all(op.witness_rule_id == "ee_multi_target_text_delete_split" for op in ops)

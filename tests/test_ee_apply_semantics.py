@@ -666,6 +666,89 @@ def test_text_replace_case_inflected_delete_supports_leading_voi_phrase() -> Non
     )
 
 
+def test_case_inflected_text_replace_keeps_nominative_before_passive_verb() -> None:
+    replaced = _ee_apply_text_replace_value(
+        "Eeltaotlus esitatakse rakendusüksusele.",
+        "eeltaotlus",
+        "taotlus",
+        case_inflected=True,
+    )
+
+    assert replaced == "Taotlus esitatakse rakendusüksusele."
+
+
+def test_case_inflected_text_delete_cleans_removed_coordinated_head_punctuation() -> None:
+    assert (
+        _ee_apply_text_replace_value(
+            "Eeltaotlus, taotlus või taotleja ei vasta nõuetele.",
+            "eeltaotlus",
+            "",
+            case_inflected=True,
+        )
+        == "Taotlus või taotleja ei vasta nõuetele."
+    )
+    assert (
+        _ee_apply_text_replace_value(
+            "Kui eeltaotluse, taotluse ja taotleja nõuetele vastavuse kontrollimisel avastatakse ebatäpsusi.",
+            "eeltaotlus",
+            "",
+            case_inflected=True,
+        )
+        == "Kui taotluse ja taotleja nõuetele vastavuse kontrollimisel avastatakse ebatäpsusi."
+    )
+    assert (
+        _ee_apply_text_replace_value(
+            "nõuded taotlejale, eeltaotlusele või taotlusele ei ole täidetud;",
+            "eeltaotlus",
+            "",
+            case_inflected=True,
+        )
+        == "nõuded taotlejale või taotlusele ei ole täidetud;"
+    )
+
+
+def test_case_inflected_or_phrase_delete_respects_comma_list_context() -> None:
+    comma_context = "nõuded taotlejale, eeltaotlusele või taotlusele ei ole täidetud;"
+    phrase_context = "eeltaotluses või taotluses on esitatud valesid andmeid;"
+
+    assert (
+        _ee_apply_text_replace_value(
+            comma_context,
+            "eeltaotlus või",
+            "",
+            case_inflected=True,
+        )
+        == comma_context
+    )
+    assert (
+        _ee_apply_text_replace_value(
+            phrase_context,
+            "eeltaotlus või",
+            "",
+            case_inflected=True,
+        )
+        == "taotluses on esitatud valesid andmeid;"
+    )
+
+
+def test_text_delete_preserves_non_eeltaotlus_comma_before_or() -> None:
+    assert (
+        _ee_apply_text_replace_value(
+            (
+                "Juhul kui andmetest ei saa mõistlikult tuletada vajalikke andmeid, "
+                "mis vastavad taksonoomiale, või kui majandusaasta ei ühti kalendriaastaga."
+            ),
+            "ebavajalik",
+            "",
+            case_inflected=True,
+        )
+        == (
+            "Juhul kui andmetest ei saa mõistlikult tuletada vajalikke andmeid, "
+            "mis vastavad taksonoomiale, või kui majandusaasta ei ühti kalendriaastaga."
+        )
+    )
+
+
 def test_item_text_replace_preserves_lowercase_sentence_start_from_source() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,
@@ -7261,6 +7344,92 @@ def test_apply_ee_ops_renumbers_existing_section_before_inserting_new_same_label
     assert chapter.children[1].children[0].text == "Vana tekst."
     assert chapter.children[1].children[1].text == "Veel vana teksti."
     assert chapter.children[1].children[1].children[0].label == "1"
+
+
+def test_apply_ee_ops_retargets_section_item_text_replace_to_unique_descendant_old_text() -> None:
+    statute = IRStatute(
+        statute_id="ee/test",
+        title="Test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="6",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="23",
+                            text="Rakendusüksuse õigused ja kohustused",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.SUBSECTION,
+                                    label="1",
+                                    text="Rakendusüksuse kohustused:",
+                                    children=(
+                                        IRNode(kind=IRNodeKind.ITEM, label="6", text="vana halduslepingus sätestatud toiminguid."),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    source = OperationSource(statute_id="2018/1")
+    ops = [
+        LegalOperation(
+            op_id="ee-renumber-senine-23",
+            sequence=1,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "23"), ("subsection", "1"))),
+            destination=LegalAddress(path=(("section", "23"), ("subsection", "2"))),
+            source=source,
+        ),
+        LegalOperation(
+            op_id="ee-insert-new-23-1",
+            sequence=2,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "23"), ("subsection", "1"))),
+            payload=IRNode(
+                kind=IRNodeKind.CONTENT,
+                text=(
+                    "(1) Rakendusüksusel on õigus: "
+                    "1) tutvuda dokumentidega; "
+                    "6) keelduda väljamaksmisest;"
+                ),
+            ),
+            source=source,
+        ),
+        LegalOperation(
+            op_id="ee-replace-old-item-6",
+            sequence=3,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "23"), ("item", "6"))),
+            payload=IRNode(
+                kind=IRNodeKind.CONTENT,
+                text="rakendusasutuse korraldusel antud",
+                attrs={
+                    "old_text": "halduslepingus sätestatud",
+                    "new_text": "rakendusasutuse korraldusel antud",
+                },
+            ),
+            source=source,
+        ),
+    ]
+    adjudications: list[CompileAdjudication] = []
+
+    result = apply_ee_ops(statute, ops, adjudications_out=adjudications)
+    section = result.body.children[0].children[0]
+    subsection_1 = _child_subsection(section, "1")
+    subsection_2 = _child_subsection(section, "2")
+
+    assert subsection_1.children[0].text == "tutvuda dokumentidega;"
+    assert subsection_1.children[1].text == "keelduda väljamaksmisest;"
+    assert subsection_2.children[0].text == "vana rakendusasutuse korraldusel antud toiminguid."
+    assert [adj.kind for adj in adjudications] == ["ee_text_replace_unique_descendant_item_by_old_text"]
+    assert adjudications[0].detail["resolved_path"].endswith("section:23/subsection:2/item:6")
 
 
 def test_structural_textosa_heading_relabel_resolves_duplicate_chapter_by_heading() -> None:
