@@ -69,6 +69,31 @@ def _mark_old_format_out_of_body_clause(op: LegalOperation, source_text: str) ->
     )
 
 
+def _title_numeric_measure_markers(text: str) -> frozenset[str]:
+    """Return source-identifying numeric programme/measure markers from an EE title."""
+    normalized = text.lower().replace("\xa0", " ")
+    markers = {
+        re.sub(r"\s+", " ", match.group(0)).strip()
+        for match in re.finditer(
+            r"\b(?:meetme|meede|tegevuse)\s+\d+(?:\.\d+)+\b",
+            normalized,
+            re.IGNORECASE,
+        )
+    }
+    return frozenset(markers)
+
+
+def _title_numeric_measure_markers_compatible(target_title: str, candidate_title: str) -> bool:
+    target_markers = _title_numeric_measure_markers(target_title)
+    candidate_markers = _title_numeric_measure_markers(candidate_title)
+    return not target_markers or not candidate_markers or bool(target_markers & candidate_markers)
+
+
+def numeric_measure_markers_compatible(target_title: str, candidate_title: str) -> bool:
+    """Public gate for avoiding cross-routing between numbered programme measures."""
+    return _title_numeric_measure_markers_compatible(target_title, candidate_title)
+
+
 @dataclass(frozen=True)
 class NewFormatGateFlags:
     """Root-level new-format amendment routing flags."""
@@ -94,6 +119,8 @@ class NewFormatParagraphContext:
 def title_matches_para(target_title: str, para_title: str) -> bool:
     """Return True if para_title refers to the same statute as target_title."""
     if not para_title:
+        return False
+    if not _title_numeric_measure_markers_compatible(target_title, para_title):
         return False
     registry_record = lookup_ee_act_identity(title=target_title, alias=para_title)
     if registry_record is not None and _registry_record_matches_all(registry_record, target_title, para_title):
@@ -138,6 +165,8 @@ def title_matches_para(target_title: str, para_title: str) -> bool:
 def strict_title_match_para(target: str, para: str) -> bool:
     """Strict title match for wrapper headers that must name the same statute."""
     if not para or not target:
+        return False
+    if not _title_numeric_measure_markers_compatible(target, para):
         return False
     registry_record = lookup_ee_act_identity(title=target, alias=para)
     if registry_record is not None and _registry_record_matches_all(registry_record, target, para):
@@ -833,6 +862,8 @@ def should_admit_new_format_paragraph(
     dedicated_kws = gate_flags.dedicated_kws
     if any(kw in para_title.lower() for kw in ("jõustumise", "jõustumine", "rakendussätted")):
         return False
+    if target_title and first_tava and not numeric_measure_markers_compatible(target_title, first_tava):
+        return False
 
     if has_dedicated:
         if looks_like_self_referential_amendment_act_para(
@@ -1154,6 +1185,8 @@ def old_format_section_matches_target(
 ) -> bool:
     """Return True when an old-format section header names the same statute."""
     if not target or not header:
+        return False
+    if not _title_numeric_measure_markers_compatible(target, header):
         return False
 
     registry_record = lookup_act_identity(title=target, alias=header)
@@ -2653,6 +2686,7 @@ __all__ = [
     "matches_target_statute_header",
     "new_format_collect_all_ops",
     "new_format_lower_op_texts",
+    "numeric_measure_markers_compatible",
     "old_format_section_matches_target",
     "parse_constitutional_review_ops",
     "parse_preambul_single_target_ops",
