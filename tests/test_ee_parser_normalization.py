@@ -8192,6 +8192,7 @@ def test_extract_ee_ops_recovers_flat_sectionless_singleton_item_repeals() -> No
 
 def test_extract_ee_ops_recovers_flat_sectionless_singleton_subsection_item_scope() -> None:
     subsection_text = "lõikes 1 asendatakse arv „46” arvuga „66”;"
+    prefixed_text = "määruse lõike 3 punktis 3 asendatakse sõna „vana” sõnaga „uus”;"
     replace_text = "lõike 1 punkt 17 sõnastatakse järgmiselt: „17) uus tekst;”;"
     delete_text = "lõike 1 punktist 20 jäetakse välja tekstiosa „, vana tekst”;"
 
@@ -8199,11 +8200,15 @@ def test_extract_ee_ops_recovers_flat_sectionless_singleton_subsection_item_scop
         subsection_text,
         OperationSource(statute_id="ee/test", raw_text=subsection_text),
     )
+    prefixed_ops = extract_ee_ops(prefixed_text, OperationSource(statute_id="ee/test", raw_text=prefixed_text))
     replace_ops = extract_ee_ops(replace_text, OperationSource(statute_id="ee/test", raw_text=replace_text))
     delete_ops = extract_ee_ops(delete_text, OperationSource(statute_id="ee/test", raw_text=delete_text))
 
     assert [(op.action, op.target.path) for op in subsection_ops] == [
         (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"))),
+    ]
+    assert [(op.action, op.target.path) for op in prefixed_ops] == [
+        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "3"), ("item", "3"))),
     ]
     assert [(op.action, op.target.path) for op in replace_ops] == [
         (StructuralAction.REPLACE, (("section", "1"), ("subsection", "1"), ("item", "17"))),
@@ -8212,6 +8217,7 @@ def test_extract_ee_ops_recovers_flat_sectionless_singleton_subsection_item_scop
         (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "20"))),
     ]
     assert subsection_ops[0].witness_rule_id == "ee_flat_sectionless_singleton_subsection_scope"
+    assert prefixed_ops[0].witness_rule_id == "ee_flat_sectionless_singleton_subsection_scope"
     assert replace_ops[0].witness_rule_id == "ee_flat_sectionless_singleton_subsection_scope"
     assert delete_ops[0].witness_rule_id == "ee_flat_sectionless_singleton_subsection_scope"
 
