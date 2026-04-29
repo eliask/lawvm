@@ -8014,3 +8014,29 @@ def test_parse_ee_amendment_ops_prefers_richer_old_format_table_payload_with_tar
     )
     assert "T1 I tasand T2 II tasand" in _payload(replace_op).text
     assert "ee_old_format_html_section_richer_payload_preferred" in replace_op.provenance_tags
+
+
+def test_parse_ee_statute_materializes_numbered_html_table_rows_as_items() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    statute = parse_ee_statute(fetch_rt_xml("120022014005", archive), "ee/120022014005")
+    section = next(node for node in statute.body.children if node.kind == IRNodeKind.SECTION and node.label == "1")
+    subsection = next(node for node in section.children if node.kind == IRNodeKind.SUBSECTION and node.label == "1")
+
+    assert subsection.text == (
+        "Universaalse postiteenuse makse määrad rahastamiskohustusega "
+        "postiteenuse osutajale kehtestatakse järgmiselt:"
+    )
+    assert subsection.attrs["source_cleanup_rules"] == ("ee_html_table_numbered_items_materialized",)
+    assert [(item.label, item.text) for item in subsection.children] == [
+        ("1", "lihtsaadetisena edastatav kirisaadetis 0,08 eurot;"),
+        ("2", "tähtsaadetisena edastatav kirisaadetis 0,40 eurot;"),
+        ("3", "väärtsaadetisena edastatav kirisaadetis 0,40 eurot;"),
+        ("4", "lihtsaadetisena edastatav postipakk 0 eurot;"),
+        ("5", "tähtsaadetisena edastatav postipakk 0 eurot;"),
+        ("6", "väärtsaadetisena edastatav postipakk 0 eurot."),
+    ]
+    assert all(
+        item.attrs["source_cleanup_rule"] == "ee_html_table_numbered_items_materialized"
+        for item in subsection.children
+    )

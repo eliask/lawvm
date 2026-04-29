@@ -690,6 +690,12 @@ _EE_DROP_ORPHAN_APPENDIX_MARKER_RULE = "ee_drop_orphan_appendix_marker_html"
 _EE_DROP_REPEALED_RANGE_RESIDUE_RULE = "ee_drop_repealed_range_residue"
 _EE_SINGLETON_EMPTY_SECTION_LABEL_RULE = "ee_singleton_empty_section_label_to_1"
 _EE_SECTION_LEVEL_INTRO_TO_FIRST_SUBSECTION_RULE = "ee_section_level_intro_attached_to_first_subsection"
+_EE_HTML_TABLE_NUMBERED_ITEMS_RULE = "ee_html_table_numbered_items_materialized"
+_EE_RT_INLINE_CHANGE_NOTE_RE = re.compile(
+    r"\s*\[\s*RT\s+[IVX]+\s*,\s*\d{1,2}\.\d{1,2}\.\d{4}\s*,\s*\d+"
+    r"(?:\s*-\s*jõust\.\s*\d{1,2}\.\d{1,2}\.\d{4})?\s*\]",
+    re.IGNORECASE,
+)
 
 
 def _element_has_kehtetu_marker(el: ET.Element, ns_str: str) -> bool:
@@ -719,6 +725,43 @@ def _section_level_sisutekst_text(el: ET.Element, ns_str: str) -> str:
         if txt:
             parts.append(txt)
     return " ".join(parts).strip()
+
+
+def _strip_rt_inline_change_note(text: str) -> str:
+    """Remove RT inline amendment notes from parsed structural item text."""
+    return re.sub(r"\s+", " ", _EE_RT_INLINE_CHANGE_NOTE_RE.sub("", text)).strip()
+
+
+def _extract_html_table_item_children(el: ET.Element, ns_str: str) -> list[IRNode]:
+    """Materialize numbered HTML table rows as item children when the labels are explicit."""
+    children: list[IRNode] = []
+    for st in el.findall(_ns(ns_str, "sisuTekst")):
+        for child in st:
+            local = child.tag.split("}")[1] if "}" in child.tag else child.tag
+            if local != "HTMLKonteiner" or not child.text:
+                continue
+            if _extract_appendix_marker(child.text):
+                continue
+            if not re.search(r"<table\b", child.text, re.IGNORECASE):
+                continue
+            for item_text in parse_html_op_items(child.text):
+                intro_text, item_children = _parse_subsection_item_payload(item_text)
+                if intro_text or not item_children:
+                    continue
+                for item in item_children:
+                    children.append(
+                        IRNode(
+                            kind=item.kind,
+                            label=item.label,
+                            text=_strip_rt_inline_change_note(item.text),
+                            attrs={
+                                **dict(item.attrs),
+                                "source_cleanup_rule": _EE_HTML_TABLE_NUMBERED_ITEMS_RULE,
+                            },
+                            children=tuple(item.children),
+                        )
+                    )
+    return children
 
 
 def _sisuTekst_text_with_appendix_markers(
@@ -916,7 +959,8 @@ def _parse_subsection(el: ET.Element, ns_str: str, default_nr: int = 1) -> IRNod
     # Direct intro text (sisuTekst at this level, not under alampunkt).
     # _sisuTekst_text captures tavatekst + viide/kuvatavTekst in document order.
     text_parts = []
-    use_appendix_html = _subsection_uses_appendix_html(el, ns_str)
+    html_table_item_children = _extract_html_table_item_children(el, ns_str)
+    use_appendix_html = _subsection_uses_appendix_html(el, ns_str) and not html_table_item_children
     for st in el.findall(_ns(ns_str, "sisuTekst")):
         txt = _sisuTekst_text_with_appendix_markers(st, ns_str) if use_appendix_html else _sisuTekst_text(st, ns_str)
         if txt:
@@ -952,11 +996,20 @@ def _parse_subsection(el: ET.Element, ns_str: str, default_nr: int = 1) -> IRNod
             intro_text = _extract_reavahetus_intro_text(el, ns_str)
             if intro_text:
                 sub_text = intro_text
+    used_html_table_item_children = False
+    if not children and html_table_item_children:
+        children = html_table_item_children
+        used_html_table_item_children = True
 
     attrs = {}
     if dropped_repealed_residues:
         attrs["source_cleanup_rules"] = (_EE_DROP_REPEALED_RANGE_RESIDUE_RULE,)
         attrs["dropped_repealed_residues"] = tuple(dropped_repealed_residues)
+    if used_html_table_item_children:
+        attrs["source_cleanup_rules"] = (
+            *tuple(attrs.get("source_cleanup_rules", ())),
+            _EE_HTML_TABLE_NUMBERED_ITEMS_RULE,
+        )
 
     return IRNode(kind=IRNodeKind.SUBSECTION, label=nr, text=sub_text, attrs=attrs, children=tuple(children))
 
