@@ -4729,10 +4729,14 @@ _EE_PLURAL_ITEM_REPLACE_RANGE_OMITS_INSERTED_LABELS_RULE = "ee_plural_item_repla
 _EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE = "ee_plural_subsection_replace_extra_payload_label"
 _EE_INLINE_ITEM_REPLACE_SINGLETON_SUBSECTION_RULE = "ee_inline_item_replace_singleton_subsection"
 _EE_TEXT_REPLACE_UNIQUE_DESCENDANT_ITEM_RULE = "ee_text_replace_unique_descendant_item_by_old_text"
+_EE_TEXT_REPLACE_NUMBERED_SUBSECTION_BY_OLD_TEXT_RULE = (
+    "ee_text_replace_numbered_subsection_for_item_target_by_old_text"
+)
 _EE_OLEMASOLEV_TAHKEL_KUTUSEL_PHRASE_FORMS_RULE = "ee_case_inflected_olemasolev_tahkel_kutusel_phrase_forms"
 _EE_LOCAL_KOHTKUTE_SOURCE_SURFACE_DELETE_RULE = "ee_lokaal_kohtkute_source_surface_delete_variant"
 _EE_VOLITATUD_VASTUTAV_FORMS_RULE = "ee_case_inflected_volitatud_vastutav_forms"
 _EE_TAOTLUSVOOR_COORDINATION_FORMS_RULE = "ee_case_inflected_taotlusvoor_coordination_forms"
+_EE_NETO_OMAVAHEND_PREFIX_FORMS_RULE = "ee_case_inflected_neto_omavahend_prefix_forms"
 _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE = "ee_plaintext_numbered_clause_split"
 _EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
 _EE_PARENTHESIZED_TARGET_HTML_BLOCK_RULE = "ee_parenthesized_target_html_block_sliced"
@@ -7794,6 +7798,36 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         for old_form, new_form in form_pairs.items():
             variants[old_form] = new_form
 
+    def _add_neto_omavahend_prefix_forms() -> None:
+        """Own neto-omavahend -> omavahend prefix removal with explicit forms."""
+        if not case_inflected or old != "neto-omavahend" or new != "omavahend":
+            return
+        form_pairs = {
+            "neto-omavahend": "omavahend",
+            "neto-omavahendi": "omavahendi",
+            "neto-omavahendit": "omavahendit",
+            "neto-omavahendisse": "omavahendisse",
+            "neto-omavahendis": "omavahendis",
+            "neto-omavahendist": "omavahendist",
+            "neto-omavahendile": "omavahendile",
+            "neto-omavahendil": "omavahendil",
+            "neto-omavahendilt": "omavahendilt",
+            "neto-omavahendiks": "omavahendiks",
+            "neto-omavahendina": "omavahendina",
+            "neto-omavahendiga": "omavahendiga",
+            "neto-omavahendid": "omavahendid",
+            "neto-omavahendite": "omavahendite",
+            "neto-omavahendeid": "omavahendeid",
+            "neto-omavahendites": "omavahendites",
+            "neto-omavahenditest": "omavahenditest",
+            "neto-omavahenditele": "omavahenditele",
+            "neto-omavahenditel": "omavahenditel",
+            "neto-omavahenditelt": "omavahenditelt",
+            "neto-omavahenditeks": "omavahenditeks",
+        }
+        for old_form, new_form in form_pairs.items():
+            variants.setdefault(old_form, new_form)
+
     def _strip_wrapping_quotes(surface: str) -> str | None:
         stripped = surface.strip()
         if len(stripped) < 2:
@@ -7856,6 +7890,7 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         _add_volitatud_vastutav_forms()
         _add_reagent_reaktiiv_forms()
         _add_taotlusvoor_coordination_forms()
+        _add_neto_omavahend_prefix_forms()
         old_norm = _ee_normalize_text_replace_surface(old)
         new_norm = _ee_normalize_text_replace_surface(new)
         if old_norm and old_norm not in variants:
@@ -9102,6 +9137,42 @@ def _ee_resolve_unique_descendant_item_by_old_text(
             _walk(child, node_path + ((str(child.kind), child.label),))
 
     _walk(section, section_path)
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
+def _ee_resolve_numbered_subsection_for_item_target_by_old_text(
+    body: IRNode,
+    path: tree_ops.Path,
+    rewrite_spec: EETextRewriteSpec,
+) -> Optional[tree_ops.Path]:
+    """Resolve ``section/item`` text rewrites to a same-number subsection witness."""
+    if (
+        len(path) != 2
+        or path[0][0] != "section"
+        or path[1][0] != "item"
+        or not rewrite_spec.old_text
+    ):
+        return None
+    section_path = _ee_resolve_full_path(body, (path[0],))
+    if section_path is None:
+        return None
+    section = tree_ops.resolve(body, section_path)
+    if section is None or section.kind != IRNodeKind.SECTION:
+        return None
+    target_label = path[1][1]
+    matches: list[tree_ops.Path] = []
+    for child in section.children:
+        if child.kind != IRNodeKind.SUBSECTION or child.label != target_label:
+            continue
+        replacement = _ee_apply_text_replace_spec(
+            child.text or "",
+            rewrite_spec,
+            case_inflected=rewrite_spec.case_inflected,
+        )
+        if replacement is not None and replacement != (child.text or ""):
+            matches.append(section_path + (("subsection", child.label),))
     if len(matches) != 1:
         return None
     return matches[0]
@@ -11442,6 +11513,27 @@ def _ee_apply_op(
                             "source_old_text": rewrite_spec.old_text,
                         },
                     )
+                if recovered_full_path is None:
+                    recovered_full_path = _ee_resolve_numbered_subsection_for_item_target_by_old_text(
+                        body,
+                        path,
+                        rewrite_spec,
+                    )
+                    if recovered_full_path is not None:
+                        _append_ee_replay_adjudication(
+                            adjudications_out,
+                            kind=_EE_TEXT_REPLACE_NUMBERED_SUBSECTION_BY_OLD_TEXT_RULE,
+                            message=(
+                                "EE replay resolved a section-level item text replacement "
+                                "to the same-number subsection containing the source text."
+                            ),
+                            op=op,
+                            detail={
+                                "target": str(op.target),
+                                "resolved_path": "/".join(f"{kind}:{label}" for kind, label in recovered_full_path),
+                                "source_old_text": rewrite_spec.old_text,
+                            },
+                        )
                 full_path = recovered_full_path
         if full_path is not None:
             node = tree_ops.resolve(body, full_path)
@@ -11961,6 +12053,15 @@ def apply_ee_ops(
                         and any(
                             adjudication.op_id == op.op_id
                             and adjudication.kind == _EE_TEXT_REPLACE_UNIQUE_DESCENDANT_ITEM_RULE
+                            for adjudication in adjudications_out
+                        )
+                    )
+                    or (
+                        action == "text_replace"
+                        and adjudications_out is not None
+                        and any(
+                            adjudication.op_id == op.op_id
+                            and adjudication.kind == _EE_TEXT_REPLACE_NUMBERED_SUBSECTION_BY_OLD_TEXT_RULE
                             for adjudication in adjudications_out
                         )
                     )

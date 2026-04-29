@@ -4115,6 +4115,37 @@ def test_parse_ee_amendment_ops_keeps_title_and_text_clause_as_global_text_repla
     assert _payload(ops[0]).attrs["rewrite_scope_surface"] == "title_and_text"
 
 
+def test_parse_ee_amendment_ops_keeps_repeated_statute_title_and_text_clause_global() -> None:
+    xml = """
+    <oigusakt xmlns="muutmisseadus_1_10.02.2010">
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>1</paragrahvNr>
+          <sisuTekst>
+            <HTMLKonteiner><![CDATA[
+              <p><b>1)</b> määruse pealkirjas ja määruse tekstis asendatakse läbivalt
+              sõna „neto-omavahend” sõnaga „omavahend” vastavas käändes;</p>
+            ]]></HTMLKonteiner>
+          </sisuTekst>
+        </paragrahv>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Testmäärus")
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == ()
+    assert ops[0].target.special is None
+    assert _payload(ops[0]).attrs["old_text"] == "neto-omavahend"
+    assert _payload(ops[0]).text == "omavahend"
+    assert _payload(ops[0]).attrs["case_inflected"] is True
+    assert _payload(ops[0]).attrs["source_family"] == "ee_case_inflected_neto_omavahend_prefix_forms"
+    assert _payload(ops[0]).attrs["rewrite_scope_surface"] == "title_and_text"
+    assert _payload(ops[0]).attrs["compose_future_payloads"] is False
+
+
 def test_parse_ee_amendment_ops_replays_108072015008_title_and_text_global_rewrites() -> None:
     archive = open_rt_archive(readonly=True)
 
