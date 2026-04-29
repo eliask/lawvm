@@ -178,6 +178,21 @@ def test_extract_ee_ops_emits_statute_and_annex_global_text_replace_pairs() -> N
     )
 
 
+def test_extract_ee_ops_handles_imperative_statute_section_insert() -> None:
+    text = (
+        "täiendada määrust paragrahviga 17 1 järgmises sõnastuses: "
+        "„§ 17 1 . Tervisenõuded V grupi päästeteenistujale "
+        "(1) V grupi päästeteenistujate terviseseisund peab võimaldama töötada.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.INSERT, (("section", "17_1"),)),
+    ]
+    assert _payload(ops[0]).text.startswith("§ 17 1 . Tervisenõuded V grupi")
+
+
 def test_extract_ee_ops_targets_part_chapter_division_heading() -> None:
     text = (
         "seaduse 3. osa 6. peatüki 5. jao pealkiri muudetakse ja "

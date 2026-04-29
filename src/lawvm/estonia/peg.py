@@ -1078,6 +1078,11 @@ def _classify_verb(text: str) -> str:
         # täiendatakse lausega / lõigetega / §-dega → structural insert
         return "insert"
 
+    # Imperative supplement form used in amendment points:
+    # "täiendada määrust paragrahviga 17 1 järgmises sõnastuses".
+    if re.search(r'\btäiendada\b', t):
+        return "insert"
+
     # "lisatakse" → insert
     if 'lisatakse' in t:
         return "insert"
@@ -3357,6 +3362,7 @@ def extract_ee_ops(
     statute_level_insert = bool(
         re.search(r'\b(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)\s+täiendatakse\s+§[‑–‒-](?:de)?ga', clean, re.IGNORECASE)
         or re.search(r'\b(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)\s+täiendatakse\s+paragrahviga', clean, re.IGNORECASE)
+        or re.search(r'\btäiendada\s+(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)\s+paragrahviga', clean, re.IGNORECASE)
         # Also: "seaduse N. peatükki täiendatakse §-dega M" (chapter-qualified section insert)
         or re.search(r'\b(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)[a-z\s\d.]*peatük[k]?[i]+\s+täiendatakse\s+§[‑–‒-](?:de)?ga', clean, re.IGNORECASE)
         # Also: "seaduse N. peatüki M. jagu täiendatakse §-ga K" (division-qualified section insert)

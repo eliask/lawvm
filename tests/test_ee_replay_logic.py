@@ -3103,3 +3103,20 @@ def test_replay_ee_to_pit_filters_untitled_omnibus_regulation_sections_by_intro_
     assert residual_summary is not None
     assert residual_summary.unknown_current_divergence_count == 0
     assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": 5}
+
+
+def test_replay_ee_to_pit_handles_imperative_section_insert_in_paasteteenistujad() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "122062024007",
+        "2025-04-13",
+        archive=archive,
+        oracle_id="110042025009",
+    )
+
+    assert result.error is None
+    assert result.oracle_id == "110042025009"
+    assert result.divergences == []
