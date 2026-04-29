@@ -1635,7 +1635,7 @@ def old_format_extract_op_texts(content_block: str, block_header_text: str) -> l
             )
             if not old_format_is_section_header_text(rest_first_plain):
                 item_source_block = rest
-    op_texts = parse_html_op_items(item_source_block)
+    op_texts = _parse_html_op_items_with_plain_recovery(item_source_block)
     if op_texts:
         return op_texts
 
@@ -2143,13 +2143,20 @@ def old_format_collect_fallback_ops(
 ) -> tuple[list[LegalOperation], int]:
     """Lower the old-format single-act fallback path with carried section context."""
     source = OperationSource(statute_id=source_id, title=target_title or "")
-    op_texts = parse_html_op_items(full_html)
+    op_texts = _parse_html_op_items_with_plain_recovery(full_html)
     ops, global_seq, _ = old_format_lower_op_texts(
         op_texts,
         source,
         seq_start=seq_start,
     )
     return ops, global_seq
+
+
+def _parse_html_op_items_with_plain_recovery(html: str) -> list[str]:
+    """Use plain paragraph item recovery only when it preserves extra items."""
+    default_items = parse_html_op_items(html)
+    plain_items = parse_html_op_items(html, allow_plain_paragraph_items=True)
+    return plain_items if len(plain_items) > len(default_items) else default_items
 
 
 def old_format_collect_nested_direct_target_ops(

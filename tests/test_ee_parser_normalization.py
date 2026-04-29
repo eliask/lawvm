@@ -8337,3 +8337,57 @@ def test_extract_ee_ops_recovers_subsection_target_without_space_after_loige() -
     assert ops[0].action is StructuralAction.REPLACE
     assert ops[0].target.path == (("section", "8"), ("subsection", "1"))
     assert ops[0].witness_rule_id == "ee_optional_target_label_space"
+
+
+def test_extract_ee_ops_splits_plural_subsection_insert_payload_by_label() -> None:
+    text = (
+        "paragrahvi 7 täiendatakse lõigetega 3 ja 4 järgmises sõnastuses: "
+        "„(3) Kolmanda lõike tekst: 1) esimene punkt; 2) teine punkt. "
+        "(4) Neljanda lõike tekst.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.INSERT, (("section", "7"), ("subsection", "3"))),
+        (StructuralAction.INSERT, (("section", "7"), ("subsection", "4"))),
+    ]
+    assert _payload(ops[0]).text == "(3) Kolmanda lõike tekst: 1) esimene punkt; 2) teine punkt."
+    assert _payload(ops[1]).text == "(4) Neljanda lõike tekst."
+    assert all(op.witness_rule_id == "ee_plural_subsection_insert_payload_split" for op in ops)
+
+
+def test_extract_ee_ops_uses_ascii_outer_payload_over_nested_title_quotes() -> None:
+    text = (
+        'paragrahvi 12 täiendatakse lõikega 6 1 järgnevas sõnastuses: '
+        '"(6 1) Taotlusvormile lisatakse Euroopa Komisjoni otsuse '
+        '„Euroopa Liidu toimimise lepingu artikli 106 lõike 2 kohaldamise kohta” '
+        'artikli 4 tähenduses dokument.";'
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "12"), ("subsection", "6_1"))
+    assert _payload(ops[0]).text.startswith("(6 1) Taotlusvormile lisatakse")
+    assert "artikli 4 tähenduses dokument" in _payload(ops[0]).text
+    assert _payload(ops[0]).attrs["source_family"] == "ee_ascii_quoted_marker_payload"
+
+
+def test_parse_html_op_items_keeps_ascii_quoted_payload_items_together() -> None:
+    html = (
+        "<p>16) paragrahvi 12 lõiget 5 täiendatakse punktiga 8 järgmises "
+        'sõnastuses: "8) esimene payload.";</p>'
+        "<p>17) paragrahvi 12 lõike 6 preambulile lisatakse pärast sõna "
+        "„Taotlusvormile“ sõnad „I-V taotlusvoorus“;</p>"
+        "<p>18) paragrahvi 12 täiendatakse lõikega 6 1 järgnevas "
+        'sõnastuses: "(6 1) esimene lause.”;</p>'
+    )
+
+    items = parse_html_op_items(html, allow_plain_paragraph_items=True)
+
+    assert len(items) == 3
+    assert items[0].startswith("16)")
+    assert items[1].startswith("17)")
+    assert items[2].startswith("18)")
