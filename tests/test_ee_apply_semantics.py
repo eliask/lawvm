@@ -4505,6 +4505,98 @@ def test_case_inflected_kysk_rewrite_keeps_subject_before_riigivastutuse_referen
     )
 
 
+def test_case_inflected_text_replace_handles_aruanded_to_aruanne_forms() -> None:
+    text = (
+        "Aruanded esitatakse. "
+        "Käesoleva määrusega kehtestatud aruandeid esitatakse. "
+        "Aruannetes määratakse valuutakood. "
+        "Aruannete esitamine."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "aruanded",
+        "aruanne",
+        case_inflected=True,
+        all_occurrences=True,
+    )
+
+    assert replaced == (
+        "Aruanne esitatakse. "
+        "Käesoleva määrusega kehtestatud aruannet esitatakse. "
+        "Aruandes määratakse valuutakood. "
+        "Aruande esitamine."
+    )
+
+
+def test_aruanded_global_rewrite_preserves_quoted_legal_title() -> None:
+    text = (
+        "Aruanne esitatakse Eesti Pangale Eesti Panga presidendi 29. mai 2018. "
+        "aasta määruse nr 4 \"Aruannete elektroonilise esitamise nõuded\" kohaselt. "
+        "Aruannete esitamine toimub tähtajaks."
+    )
+
+    replaced = _ee_apply_text_replace_spec(
+        text,
+        EETextRewriteSpec(
+            old_text="aruanded",
+            new_text="aruanne",
+            case_inflected=True,
+            all_occurrences=True,
+            source_family="ee_case_inflected_aruanded_aruanne_forms",
+        ),
+    )
+
+    assert replaced == (
+        "Aruanne esitatakse Eesti Pangale Eesti Panga presidendi 29. mai 2018. "
+        "aasta määruse nr 4 \"Aruannete elektroonilise esitamise nõuded\" kohaselt. "
+        "Aruande esitamine toimub tähtajaks."
+    )
+
+
+def test_aruanded_global_rewrite_projects_chapter_heading_agreement() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="2",
+                text="ARUANDED, NENDE KOOSTAMISE PÕHIMÕTTED JA ESITAMINE",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="3",
+                        text="Aruanded",
+                        children=(),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_aruanded_heading_agreement",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=()),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="aruanne",
+            attrs={
+                "old_text": "aruanded",
+                "case_inflected": True,
+                "all_occurrences": True,
+                "source_family": "ee_case_inflected_aruanded_aruanne_forms",
+            },
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    chapter = result.children[0]
+
+    assert chapter.text == "ARUANNE JA SELLE KOOSTAMISE PÕHIMÕTTED JA ESITAMINE"
+    assert chapter.children[0].text == "Aruanne"
+
+
 def test_delete_text_replace_handles_fraktsioneeritud_source_typo_variant() -> None:
     text = (
         "Pindamiseks kasutatakse fraktsioneeritud killustikke. "

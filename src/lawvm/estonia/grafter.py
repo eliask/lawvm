@@ -4749,6 +4749,8 @@ _EE_VOLITATUD_VASTUTAV_FORMS_RULE = "ee_case_inflected_volitatud_vastutav_forms"
 _EE_TAOTLUSVOOR_COORDINATION_FORMS_RULE = "ee_case_inflected_taotlusvoor_coordination_forms"
 _EE_NETO_OMAVAHEND_PREFIX_FORMS_RULE = "ee_case_inflected_neto_omavahend_prefix_forms"
 _EE_KYSK_RTK_FORMS_RULE = "ee_case_inflected_kysk_riigi_tugiteenuste_keskus_forms"
+_EE_ARUANDED_ARUANNE_FORMS_RULE = "ee_case_inflected_aruanded_aruanne_forms"
+_EE_ARUANDED_HEADING_AGREEMENT_RULE = "ee_case_inflected_aruanded_heading_agreement"
 _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE = "ee_plaintext_numbered_clause_split"
 _EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
 _EE_PARENTHESIZED_TARGET_HTML_BLOCK_RULE = "ee_parenthesized_target_html_block_sliced"
@@ -5348,6 +5350,132 @@ def _ee_read_text_replace_spec(payload: IRNode | None) -> EETextRewriteSpec | No
     )
 
 
+def _ee_quote_contains_rewrite_surface(text: str, *, old: str, new: str, case_inflected: bool) -> bool:
+    return any(
+        old_variant.casefold() in text.casefold()
+        for old_variant, _new_variant in _ee_text_replace_variants(
+            old,
+            new,
+            case_inflected=case_inflected,
+        )
+        if old_variant
+    )
+
+
+def _ee_looks_like_legal_title_quote(text: str, start: int, end: int, quoted: str) -> bool:
+    first_alpha = next((char for char in quoted.strip() if char.isalpha()), "")
+    if not first_alpha or first_alpha != first_alpha.upper():
+        return False
+    prefix = text[max(0, start - 140):start]
+    suffix = text[end:min(len(text), end + 60)]
+    return bool(
+        re.search(r"\b(?:seaduse|seadustiku|määruse|otsuse|direktiivi)\b", prefix, re.IGNORECASE)
+        and re.search(r"^\s*(?:§|RT\b|\(|,|\bkohaselt\b)", suffix, re.IGNORECASE)
+    )
+
+
+def _ee_apply_text_replace_value_preserving_quoted_legal_titles(
+    text: str | None,
+    old: str,
+    new: str,
+    *,
+    mode: str = "replace",
+    case_inflected: bool,
+    all_occurrences: bool = False,
+    capitalize_sentence_start: bool = True,
+    single_occurrence: bool = False,
+    preserve_following_comma_list: bool = True,
+) -> tuple[str | None, bool]:
+    """Apply a lexical rewrite while keeping quoted titles of other acts stable."""
+    if not text:
+        return text, False
+    pieces: list[str] = []
+    protected = False
+    cursor = 0
+    quote_pattern = re.compile(r'[„“"]([^„“”"]+)[“”"]')
+    for match in quote_pattern.finditer(text):
+        quoted = match.group(1)
+        quoted_end = match.end()
+        while quoted_end < len(text) and text[quoted_end].isspace():
+            quoted_end += 1
+        quote_is_protected = (
+            _ee_quote_contains_rewrite_surface(quoted, old=old, new=new, case_inflected=case_inflected)
+            and _ee_looks_like_legal_title_quote(text, match.start(), quoted_end, quoted)
+        )
+        if not quote_is_protected:
+            continue
+        before = text[cursor:match.start()]
+        pieces.append(
+            _ee_apply_text_replace_value(
+                before,
+                old,
+                new,
+                mode=mode,
+                case_inflected=case_inflected,
+                all_occurrences=all_occurrences,
+                capitalize_sentence_start=capitalize_sentence_start,
+                single_occurrence=single_occurrence,
+                preserve_following_comma_list=preserve_following_comma_list,
+            )
+            or ""
+        )
+        pieces.append(match.group(0))
+        pieces.append(text[match.end():quoted_end])
+        cursor = quoted_end
+        protected = True
+    if not protected:
+        return (
+            _ee_apply_text_replace_value(
+                text,
+                old,
+                new,
+                mode=mode,
+                case_inflected=case_inflected,
+                all_occurrences=all_occurrences,
+                capitalize_sentence_start=capitalize_sentence_start,
+                single_occurrence=single_occurrence,
+                preserve_following_comma_list=preserve_following_comma_list,
+            ),
+            False,
+        )
+    pieces.append(
+        _ee_apply_text_replace_value(
+            text[cursor:],
+            old,
+            new,
+            mode=mode,
+            case_inflected=case_inflected,
+            all_occurrences=all_occurrences,
+            capitalize_sentence_start=capitalize_sentence_start,
+            single_occurrence=single_occurrence,
+            preserve_following_comma_list=preserve_following_comma_list,
+        )
+        or ""
+    )
+    return "".join(pieces), True
+
+
+def _ee_apply_heading_agreement_projection(text: str | None, spec: EETextRewriteSpec) -> str | None:
+    """Apply source-family-owned heading grammar projections after lexical rewrite."""
+    if text is None or spec.source_family != _EE_ARUANDED_ARUANNE_FORMS_RULE:
+        return text
+
+    def _replace(match: re.Match[str]) -> str:
+        aruanne = match.group(1)
+        pronoun = match.group(2)
+        if aruanne.isupper() and pronoun.isupper():
+            return f"{aruanne} JA SELLE"
+        if aruanne[0].isupper():
+            return f"{aruanne} ja selle"
+        return f"{aruanne} ja selle"
+
+    return re.sub(
+        r"\b(ARUANNE|Aruanne|aruanne),\s+(NENDE|Nende|nende)\b",
+        _replace,
+        text,
+    )
+
+
 def _ee_apply_text_replace_spec(
     text: str | None,
     spec: EETextRewriteSpec | None,
@@ -5384,21 +5512,32 @@ def _ee_apply_text_replace_spec(
                 after_sep = ""
             new_text = f"{old_text}{after_sep}{new_text}"
 
-    replaced = _ee_apply_text_replace_value(
-        text,
-        old_text,
-        new_text,
-        mode=mode,
-        case_inflected=inflected,
-        all_occurrences=spec.all_occurrences,
-        capitalize_sentence_start=capitalize_sentence_start,
-        single_occurrence=single_occurrence,
-        preserve_following_comma_list=spec.source_family
+    replace_kwargs = {
+        "mode": mode,
+        "case_inflected": inflected,
+        "all_occurrences": spec.all_occurrences,
+        "capitalize_sentence_start": capitalize_sentence_start,
+        "single_occurrence": single_occurrence,
+        "preserve_following_comma_list": spec.source_family
         not in {
             _EE_MIXED_REPLACE_INSERT_AFTER_SAME_TARGET_RULE,
             _EE_REPEATED_INSERT_AFTER_SAME_TARGET_RULE,
         },
-    )
+    }
+    if spec.source_family == _EE_ARUANDED_ARUANNE_FORMS_RULE:
+        replaced, _protected_quote = _ee_apply_text_replace_value_preserving_quoted_legal_titles(
+            text,
+            old_text,
+            new_text,
+            **replace_kwargs,
+        )
+    else:
+        replaced = _ee_apply_text_replace_value(
+            text,
+            old_text,
+            new_text,
+            **replace_kwargs,
+        )
     if (
         replaced is not None
         and mode == "delete"
@@ -7861,6 +8000,27 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         for old_form, new_form in form_pairs.items():
             variants.setdefault(old_form, new_form)
 
+    def _add_aruanded_aruanne_forms() -> None:
+        """Own aruanded -> aruanne plural-to-singular report forms."""
+        if not case_inflected or old != "aruanded" or new != "aruanne":
+            return
+        form_pairs = {
+            "aruanded": "aruanne",
+            "aruannete": "aruande",
+            "aruandeid": "aruannet",
+            "aruannetes": "aruandes",
+            "aruannetesse": "aruandesse",
+            "aruannetest": "aruandest",
+            "aruannetele": "aruandele",
+            "aruannetel": "aruandel",
+            "aruannetelt": "aruandelt",
+            "aruanneteks": "aruandeks",
+            "aruannetena": "aruandena",
+            "aruannetega": "aruandega",
+        }
+        for old_form, new_form in form_pairs.items():
+            variants.setdefault(old_form, new_form)
+
     def _strip_wrapping_quotes(surface: str) -> str | None:
         stripped = surface.strip()
         if len(stripped) < 2:
@@ -7925,6 +8085,7 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         _add_taotlusvoor_coordination_forms()
         _add_neto_omavahend_prefix_forms()
         _add_kysk_riigi_tugiteenuste_keskus_forms()
+        _add_aruanded_aruanne_forms()
         old_norm = _ee_normalize_text_replace_surface(old)
         new_norm = _ee_normalize_text_replace_surface(new)
         if old_norm and old_norm not in variants:
@@ -9652,6 +9813,8 @@ def _ee_apply_op(
             new_text=parsed_rewrite.new_surface,
             mode=parsed_rewrite.mode.value,
             case_inflected=parsed_rewrite.case_inflected,
+            all_occurrences=bool(payload.attrs.get("all_occurrences")) if payload is not None else False,
+            source_family=str(payload.attrs.get("source_family") or "") if payload is not None else "",
         )
         old = rewrite_spec.old_text
         if old:
@@ -9687,6 +9850,8 @@ def _ee_apply_op(
                             rewrite_spec,
                             capitalize_sentence_start=node.kind != IRNodeKind.ITEM,
                         )
+                        if node.kind in {IRNodeKind.CHAPTER, IRNodeKind.DIVISION, IRNodeKind.SECTION}:
+                            new_text = _ee_apply_heading_agreement_projection(new_text, rewrite_spec)
                     else:
                         new_text = node.text
                     new_children = [_walk(c, chapter_label, node_path) for c in node.children]
