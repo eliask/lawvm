@@ -649,6 +649,48 @@ def test_ee_publication_db_classifies_punctuation_whitespace_only_rows() -> None
     assert divergences[1]["open_current"] == 1
 
 
+def test_ee_publication_db_classifies_omitted_text_placeholder_display_rows() -> None:
+    divergences = [
+        {
+            "address": "chapter:5/section:68",
+            "replay_text": "",
+            "oracle_text": "Määruse kehtetuks tunnistamine [Käesolevast tekstist välja jäetud].",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+        {
+            "address": "chapter:3/section:9",
+            "replay_text": "[Kehtetud]",
+            "oracle_text": "",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+        {
+            "address": "chapter:6/section:27",
+            "replay_text": "Määruse jõustumine [Käesolevast tekstist välja jäetud]",
+            "oracle_text": "Määruse jõustumine Määrus jõustub 1. mail 2003. a.",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+    ]
+
+    ee_publication_db._classify_omitted_text_placeholder_display(divergences)
+
+    assert divergences[0]["residual_bucket"] == "presentation_omitted_text_placeholder"
+    assert divergences[0]["open_current"] == 0
+    assert "omitted-text/repealed-section display" in divergences[0]["residual_evidence"]
+    assert divergences[1]["residual_bucket"] == "presentation_omitted_text_placeholder"
+    assert divergences[1]["open_current"] == 0
+    assert divergences[2]["residual_bucket"] is None
+    assert divergences[2]["open_current"] == 1
+
+
 def test_ee_publication_db_classifies_noncommensurable_pair_surface() -> None:
     divergences = [
         {

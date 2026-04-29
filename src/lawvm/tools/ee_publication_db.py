@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import re
 import sqlite3
 import time
 import unicodedata
@@ -54,6 +55,10 @@ _SYMBOL_PLACEHOLDER_TRANSLATION = str.maketrans(
         "α": "?",
         "σ": "?",
     }
+)
+_EE_OMITTED_TEXT_PLACEHOLDER_RE = re.compile(
+    r"\[?\s*Käesolevast\s+tekstist\s+välja\s+jäetud\.?\s*\]?",
+    re.IGNORECASE,
 )
 
 
@@ -479,6 +484,62 @@ def _classify_punctuation_whitespace_only(divergences: list[dict[str, Any]]) -> 
         divergence["open_current"] = 0
 
 
+def _without_omitted_text_placeholder(text: str) -> str:
+    stripped = _EE_OMITTED_TEXT_PLACEHOLDER_RE.sub("", text)
+    return " ".join(stripped.replace("[", " ").replace("]", " ").split()).strip(" .;:")
+
+
+def _is_omitted_display_heading(text: str) -> bool:
+    normalized = _without_omitted_text_placeholder(text)
+    if not normalized:
+        return True
+    lowered = normalized.casefold()
+    return normalized in {"Kehtetud"} or lowered in {
+        "määruse kehtetuks tunnistamine",
+        "seaduse kehtetuks tunnistamine",
+    }
+
+
+def _classify_omitted_text_placeholder_display(divergences: list[dict[str, Any]]) -> None:
+    """Close exact RT omitted-text display placeholder rows for publication triage.
+
+    Riigi Teataja sometimes projects non-current final/repeal provisions as a
+    heading plus ``[Käesolevast tekstist välja jäetud]`` while the opposite
+    surface has no active section row. This classifier is deliberately narrow:
+    it only closes placeholder/heading equivalences and does not hide rows where
+    one side has actual provision text such as a commencement sentence.
+    """
+    for divergence in divergences:
+        if divergence.get("residual_bucket"):
+            continue
+        replay_text = divergence.get("replay_text")
+        oracle_text = divergence.get("oracle_text")
+        if replay_text is None or oracle_text is None:
+            continue
+        replay_surface = str(replay_text)
+        oracle_surface = str(oracle_text)
+        replay_has_placeholder = bool(_EE_OMITTED_TEXT_PLACEHOLDER_RE.search(replay_surface))
+        oracle_has_placeholder = bool(_EE_OMITTED_TEXT_PLACEHOLDER_RE.search(oracle_surface))
+        replay_heading = _is_omitted_display_heading(replay_surface)
+        oracle_heading = _is_omitted_display_heading(oracle_surface)
+        if not (
+            replay_surface in {"", "[Kehtetud]", "Kehtetud"}
+            or oracle_surface in {"", "[Kehtetud]", "Kehtetud"}
+            or replay_has_placeholder
+            or oracle_has_placeholder
+        ):
+            continue
+        if replay_heading and oracle_heading:
+            divergence["residual_bucket"] = "presentation_omitted_text_placeholder"
+            divergence["residual_evidence"] = (
+                "The row differs only by Riigi Teataja omitted-text/repealed-section "
+                "display scaffolding such as '[Käesolevast tekstist välja jäetud]' "
+                "or '[Kehtetud]'. This is publication triage metadata only; replay "
+                "and oracle text are not mutated."
+            )
+            divergence["open_current"] = 0
+
+
 def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     base_id = row["base_id"].strip()
     oracle_id = row["oracle_id"].strip()
@@ -598,6 +659,7 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
     _classify_institutional_name_projection(divergences)
     _classify_symbol_placeholder_projection(divergences)
     _classify_punctuation_whitespace_only(divergences)
+    _classify_omitted_text_placeholder_display(divergences)
     _classify_address_alignment_shadows(divergences)
     pair["browser_divergence_count"] = len(divergences)
     pair["browser_open_current_divergence_count"] = sum(1 for divergence in divergences if divergence["open_current"])
