@@ -5551,6 +5551,17 @@ def test_global_case_inflected_text_replace_handles_ambiguous_ioon_object_after_
     assert subsection.text == "teavitab Keskkonnaametit keskkonda kahjustavast tegevusest."
 
 
+def test_case_inflected_text_replace_handles_ambiguous_amet_object_after_teavitada() -> None:
+    replaced = _ee_apply_text_replace_value(
+        "kohustus teavitada ministeeriumi: andmed.",
+        "ministeerium",
+        "Terviseamet",
+        case_inflected=True,
+    )
+
+    assert replaced == "kohustus teavitada Terviseametit: andmed."
+
+
 def test_global_case_inflected_text_replace_handles_mine_to_olu_phrase_family() -> None:
     body = _body_with_section_and_subsection(
         "80",

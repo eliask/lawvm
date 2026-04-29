@@ -2203,6 +2203,29 @@ def test_extract_ee_ops_handles_mixed_targets_with_section_inessive_shorthand() 
     assert all(op.text_patch.replacement == "liikluskindlustuse olemasolu" for op in ops if op.text_patch)
 
 
+def test_extract_ee_ops_handles_mixed_targets_with_section_genitive_shorthand() -> None:
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 1 lõike 2 punktis 5, §-i 2 lõigetes 1, 3–5 "
+            "ja § 3 lõikes 2 asendatakse sõna „ministeerium” sõnaga "
+            "„Terviseamet” vastavas käändes;"
+        ),
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "2"), ("item", "5"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("subsection", "1"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("subsection", "3"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("subsection", "4"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "2"), ("subsection", "5"))),
+        (StructuralAction.TEXT_REPLACE, (("section", "3"), ("subsection", "2"))),
+    ]
+    assert all(op.text_patch is not None for op in ops)
+    assert all(op.text_patch.selector.match_text == "ministeerium" for op in ops if op.text_patch)
+    assert all(op.text_patch.replacement == "Terviseamet" for op in ops if op.text_patch)
+
+
 def test_extract_ee_ops_recovers_later_same_section_target_after_quoted_pair() -> None:
     ops = extract_ee_ops(
         (
