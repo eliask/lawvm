@@ -5,6 +5,7 @@ import csv
 import hashlib
 import sqlite3
 import time
+import unicodedata
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -441,6 +442,43 @@ def _classify_symbol_placeholder_projection(divergences: list[dict[str, Any]]) -
         divergence["open_current"] = 0
 
 
+def _strip_punctuation_and_whitespace(text: str) -> str:
+    return "".join(
+        char
+        for char in text
+        if not char.isspace()
+        and not unicodedata.category(char).startswith(("P", "Z"))
+    )
+
+
+def _classify_punctuation_whitespace_only(divergences: list[dict[str, Any]]) -> None:
+    """Close rows whose remaining difference is only punctuation/whitespace.
+
+    This is publication triage only. It does not change replay/oracle text and
+    it deliberately does not normalize letters, digits, symbols, or words.
+    """
+    for divergence in divergences:
+        if divergence.get("residual_bucket"):
+            continue
+        replay_text = divergence.get("replay_text")
+        oracle_text = divergence.get("oracle_text")
+        if replay_text is None or oracle_text is None:
+            continue
+        replay_surface = str(replay_text)
+        oracle_surface = str(oracle_text)
+        if replay_surface == oracle_surface:
+            continue
+        if _strip_punctuation_and_whitespace(replay_surface) != _strip_punctuation_and_whitespace(oracle_surface):
+            continue
+        divergence["residual_bucket"] = "presentation_punctuation_whitespace"
+        divergence["residual_evidence"] = (
+            "Replay and Riigi Teataja text differ only by Unicode punctuation "
+            "and whitespace after a publication-only projection. The row is "
+            "kept for auditability but hidden from the default open candidate queue."
+        )
+        divergence["open_current"] = 0
+
+
 def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     base_id = row["base_id"].strip()
     oracle_id = row["oracle_id"].strip()
@@ -559,6 +597,7 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
     )
     _classify_institutional_name_projection(divergences)
     _classify_symbol_placeholder_projection(divergences)
+    _classify_punctuation_whitespace_only(divergences)
     _classify_address_alignment_shadows(divergences)
     pair["browser_divergence_count"] = len(divergences)
     pair["browser_open_current_divergence_count"] = sum(1 for divergence in divergences if divergence["open_current"])
