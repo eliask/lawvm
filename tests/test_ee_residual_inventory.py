@@ -140,6 +140,23 @@ def test_get_ee_residual_inventory_oiguspoliitika_surface_drift() -> None:
     assert all("does not target" in record.evidence for record in inventory.residuals)
 
 
+def test_get_ee_residual_inventory_ekf_inserted_item_list_punctuation_drift() -> None:
+    inventory = get_ee_residual_inventory("115032011010", "101092011004")
+
+    assert inventory is not None
+    assert "Euroopa Kalandusfondi" in inventory.statute_title
+    assert inventory.comparison_class == "commensurable_delta"
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert {
+        record.address for record in inventory.residuals
+    } == {
+        "section:1",
+        "section:1/subsection:1",
+        "section:1/subsection:1/item:11",
+    }
+    assert all("item 12" in record.evidence for record in inventory.residuals)
+
+
 def test_get_ee_residual_inventory_majutuse_appendix_projection_repeal() -> None:
     inventory = get_ee_residual_inventory("130042020010", "109032023008")
 
