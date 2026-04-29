@@ -7145,8 +7145,16 @@ def parse_html_op_items(html_cdata: str, *, allow_plain_paragraph_items: bool = 
     item_tag = r"(?:b|strong)"
     blocks = re.split(
         r"(?="
-        r"<[pb]\b[^>]*>\s*<" + item_tag + r"\b[^>]*>\s*\(?\d+\)\s*[^<]*</" + item_tag + r">"
-        r"|<" + item_tag + r"\b[^>]*>\s*\(?\d+\)\s*[^<]*</" + item_tag + r">"
+        r"<[pb]\b[^>]*>\s*<"
+        + item_tag
+        + r"\b[^>]*>\s*\(?\d+\s*\)?\s*[^<]*</"
+        + item_tag
+        + r">\s*\)?"
+        r"|<"
+        + item_tag
+        + r"\b[^>]*>\s*\(?\d+\s*\)?\s*[^<]*</"
+        + item_tag
+        + r">\s*\)?"
         r")",
         html_cdata,
         flags=re.IGNORECASE,

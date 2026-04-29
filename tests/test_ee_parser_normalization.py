@@ -9984,6 +9984,32 @@ def test_parse_ee_amendment_ops_keeps_selector_exclusion_out_of_global_replay_sc
     )
 
 
+def test_parse_html_op_items_splits_bold_number_with_trailing_paren_outside_tag() -> None:
+    html = (
+        "<p><b>11)</b> paragrahvid 16–18 tunnistatakse kehtetuks;</p>"
+        "<p><b>12</b>) paragrahv 19 sõnastatakse järgmiselt:</p>"
+        "<p>„<b>§ 19. Maaparanduse osakond</b></p>"
+        "<p>Maaparanduse osakonna põhiülesanne on:<br/>"
+        "1) teostada või korraldada riiklikku järelevalvet.”;</p>"
+    )
+
+    items = parse_html_op_items(html)
+
+    assert len(items) == 2
+    assert items[0] == "11) paragrahvid 16–18 tunnistatakse kehtetuks;"
+    assert items[1].startswith("12) paragrahv 19 sõnastatakse järgmiselt:")
+    repeal_ops = extract_ee_ops(items[0], OperationSource(statute_id="ee/test", raw_text=items[0]))
+    replace_ops = extract_ee_ops(items[1], OperationSource(statute_id="ee/test", raw_text=items[1]))
+    assert [(op.action, op.target.path) for op in repeal_ops] == [
+        (StructuralAction.REPEAL, (("section", "16"),)),
+        (StructuralAction.REPEAL, (("section", "17"),)),
+        (StructuralAction.REPEAL, (("section", "18"),)),
+    ]
+    assert [(op.action, op.target.path) for op in replace_ops] == [
+        (StructuralAction.REPLACE, (("section", "19"),)),
+    ]
+
+
 def test_extract_ee_ops_preserves_explicit_plural_item_insert_terminals() -> None:
     text = (
         "paragrahvi 4 täiendatakse punktidega 6 ja 7 järgmises sõnastuses: "
