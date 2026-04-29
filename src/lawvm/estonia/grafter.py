@@ -3647,6 +3647,7 @@ def _ee_repeated_single_occurrence_rewrite_match_count(node: IRNode, spec: EETex
 _EE_SOURCE_TYPO_TEXT_REPLACE_RULE = "ee_source_typo_text_replace_near_match"
 _EE_AMBIGUOUS_SINGLE_OCCURRENCE_TEXT_REPLACE_RULE = "ee_ambiguous_single_occurrence_text_replace"
 _EE_OVERBROAD_CONTAINER_REPLACE_BLOCKED_RULE = "ee_overbroad_container_replace_blocked"
+_EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE = "ee_explicit_item_replacement_terminal_preserved"
 
 
 def _ee_levenshtein_distance_at_most_one(left: str, right: str) -> bool:
@@ -5998,6 +5999,10 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         new_norm = _ee_normalize_text_replace_surface(new)
         if old_norm and old_norm not in variants:
             variants[old_norm] = new_norm
+        if old_norm and new_norm.lower().startswith(old_norm.lower()):
+            genitive_plural_old = _ee_genitive_singular_modifier_phrase_to_plural(old_norm)
+            if genitive_plural_old and genitive_plural_old not in variants:
+                variants[genitive_plural_old] = f"{genitive_plural_old}{new_norm[len(old_norm):]}"
         if any(char in old for char in "„“”"):
             guillemet_old = old.replace("„", "«").replace("“", "«").replace("”", "»")
             guillemet_new = new.replace("„", "«").replace("“", "«").replace("”", "»")
@@ -6256,6 +6261,17 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
                 if old_form not in variants:
                     variants[old_form] = new_form
     return sorted(variants.items(), key=lambda item: len(item[0]), reverse=True)
+
+
+def _ee_genitive_singular_modifier_phrase_to_plural(text: str) -> str:
+    """Return a narrow -us genitive modifier plural variant for source anchors."""
+    parts = text.split(" ", 1)
+    if len(parts) != 2:
+        return ""
+    first, rest = parts
+    if not first.endswith("use") or len(first) <= 4:
+        return ""
+    return f"{first[:-2]}ste {rest}"
 
 
 def _ee_insert_matches_existing_node(target_node: IRNode, new_node: IRNode) -> bool:
@@ -8208,6 +8224,10 @@ def _ee_apply_op(
                     # but the payload also contains a new section heading.
                     # Promote to a section-level replace: update the title
                     # and all subsections that appear in the payload.
+                    explicit_item_terminal_from_payload = (
+                        target_node.kind == IRNodeKind.ITEM
+                        and raw_text.rstrip().endswith((".", ";"))
+                    )
                     if raw_text.lstrip().startswith("§") and target_node.kind == IRNodeKind.SUBSECTION:
                         parsed_sec = _parse_section_payload(raw_text, kind=IRNodeKind.SECTION)
                         # Locate the parent section in the tree
@@ -8367,12 +8387,20 @@ def _ee_apply_op(
                         kind=target_node.kind,
                         label=target_node.label,
                         text=raw_text,
+                        attrs=(
+                            {
+                                **dict(target_node.attrs),
+                                "source_family": _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE,
+                            }
+                            if explicit_item_terminal_from_payload
+                            else dict(target_node.attrs)
+                        ),
                         children=tuple(preserved_children),
                     )
                     if target_node.kind == IRNodeKind.ITEM:
                         parent_path = full_path[:-1]
                         parent_node = tree_ops.resolve(body, parent_path) if parent_path else None
-                        if parent_node is not None:
+                        if parent_node is not None and not explicit_item_terminal_from_payload:
                             target_index = next(
                                 idx
                                 for idx, child in enumerate(parent_node.children)
