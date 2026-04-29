@@ -2449,6 +2449,54 @@ def test_replace_subsection_prefers_typed_sentence_target_meta_over_note_text() 
     assert subsection.text == "Uus esimene lause. Vana teine lause."
 
 
+def test_replace_item_prefers_typed_sentence_target_meta() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.CHAPTER,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SECTION,
+                        label="6",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBSECTION,
+                                label="1",
+                                children=(
+                                    IRNode(
+                                        kind=IRNodeKind.ITEM,
+                                        label="2",
+                                        text="Esimene lause jääb alles. Vana teine lause;",
+                                    ),
+                                    IRNode(kind=IRNodeKind.ITEM, label="3", text="Järgmine punkt."),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_replace_item_prefers_typed_second_sentence",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "6"), ("subsection", "1"), ("item", "2"))),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="Uus teine lause;",
+            attrs={"sentence_target_meta": make_sentence_target_meta(sentence_indexes=(1,))},
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    item = result.children[0].children[0].children[0].children[0]
+
+    assert item.text == "Esimene lause jääb alles. Uus teine lause;"
+
+
 def test_replace_section_prefers_typed_sentence_target_meta_over_note_text() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,
