@@ -151,6 +151,12 @@ def test_normalize_ee_comparison_text_empties_kaesolevast_tekstist_valja_jaetud_
     assert normalize_ee_comparison_text("[Käesolevast tekstist välja jäetud.]") == ""
 
 
+def test_normalize_ee_comparison_text_removes_kehtetu_markers() -> None:
+    assert normalize_ee_comparison_text(
+        "finants-ja varahaldustalitus [kehtetu-RTL 2007, 92, 1520-jõust. 17.12.2007] kantselei"
+    ) == "finants-ja varahaldustalitus kantselei"
+
+
 def test_normalize_ee_comparison_text_empties_bare_dash_placeholder() -> None:
     assert normalize_ee_comparison_text("–") == ""
 
