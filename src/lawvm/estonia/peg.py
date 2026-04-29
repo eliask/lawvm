@@ -982,6 +982,7 @@ def _heading_mention_precedes_child_target(text: str) -> bool:
 _EE_TEXTUAL_INVALIDATION_RULE = "ee_textual_invalidation_as_text_delete"
 _EE_SECTION_SEQUENCE_RENUMBER_RULE = "ee_section_sequence_renumber_before_insert"
 _EE_SUBSECTION_SEQUENCE_RENUMBER_RULE = "ee_subsection_sequence_renumber_before_insert"
+_EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE = "ee_item_renumber_before_replace"
 _EE_FLAT_SECTIONLESS_SINGLETON_ITEM_INSERT_RULE = "ee_flat_sectionless_singleton_item_insert"
 _EE_FLAT_SECTIONLESS_SINGLETON_ITEM_REPEAL_RULE = "ee_flat_sectionless_singleton_item_repeal"
 _EE_FLAT_SECTIONLESS_SINGLETON_SUBSECTION_SCOPE_RULE = "ee_flat_sectionless_singleton_subsection_scope"
@@ -991,6 +992,9 @@ _EE_PLURAL_ITEM_PAYLOAD_OUTER_QUOTE_TAIL_RULE = "ee_plural_item_payload_outer_qu
 _EE_PLURAL_ITEM_MARKER_PAYLOAD_INNER_QUOTE_RULE = "ee_plural_item_marker_payload_recovers_inner_quote"
 _EE_PLURAL_ITEM_REPLACE_MISSING_LABEL_REPEAL_RULE = "ee_plural_item_replace_missing_label_repeal"
 _EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE = "ee_plural_subsection_insert_payload_split"
+_EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE = (
+    "ee_plural_subsection_replace_extra_payload_label"
+)
 _EE_MULTI_TARGET_TEXT_DELETE_SPLIT_RULE = "ee_multi_target_text_delete_split"
 _EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE = "ee_mixed_delete_and_replace_same_target"
 _EE_MIXED_REPLACE_INSERT_AFTER_SAME_TARGET_RULE = "ee_mixed_replace_and_insert_after_same_target"
@@ -3843,6 +3847,63 @@ def extract_ee_ops(
 
     action = _classify_verb(clean)
 
+    m_item_renumber_before_replace = re.search(
+        r'(?:\bparagrahvi[s]?\s+|§\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+        r'l[oõ]ike\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+        r'punkt\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+loetakse\s+punktiks\s+'
+        r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+ja\s+senine\s+punkt\s+\3\s+s[oõ]nastatakse',
+        _instruction_preamble(clean),
+        re.IGNORECASE,
+    )
+    if action == "replace" and m_item_renumber_before_replace:
+        sect_label = _normalize_num(m_item_renumber_before_replace.group(1))
+        sub_label = _normalize_num(m_item_renumber_before_replace.group(2))
+        old_item = _normalize_num(m_item_renumber_before_replace.group(3))
+        new_item = _normalize_num(m_item_renumber_before_replace.group(4))
+        content = _extract_quoted_content(clean)
+        if content:
+            item_path = (("section", sect_label), ("subsection", sub_label), ("item", old_item))
+            renumber_op = LegalOperation(
+                op_id=(
+                    f"ee-renumber-item-before-replace-{sect_label}-{sub_label}-"
+                    f"{old_item}-{new_item}-{source.statute_id}"
+                ),
+                sequence=seq,
+                action=_to_structural_action("renumber"),
+                target=LegalAddress(path=item_path),
+                destination=LegalAddress(
+                    path=(("section", sect_label), ("subsection", sub_label), ("item", new_item))
+                ),
+                payload=IRNode(
+                    kind=IRNodeKind.CONTENT,
+                    text="",
+                    attrs={"source_family": _EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE},
+                ),
+                source=source,
+                provenance_tags=(clean[:200], _EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE),
+                witness_rule_id=_EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE,
+            )
+            replacement_payload = IRNode(
+                kind=IRNodeKind.CONTENT,
+                text=content,
+                attrs={"source_family": _EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE},
+            )
+            replacement_payload = _set_sentence_replace_payload_attrs(replacement_payload, clean)
+            insert_op = LegalOperation(
+                op_id=(
+                    f"ee-insert-senine-item-after-renumber-{sect_label}-{sub_label}-"
+                    f"{old_item}-{source.statute_id}"
+                ),
+                sequence=seq + 1,
+                action=_to_structural_action("insert"),
+                target=LegalAddress(path=item_path),
+                payload=replacement_payload,
+                source=source,
+                provenance_tags=(clean[:200], _EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE),
+                witness_rule_id=_EE_ITEM_RENUMBER_BEFORE_REPLACE_RULE,
+            )
+            return [renumber_op, insert_op]
+
     def _lower_explicit_target_text_replace_ops(
         explicit_targets: list[LegalAddress],
         *,
@@ -5139,9 +5200,10 @@ def extract_ee_ops(
         sect_label = _normalize_num(m_plural_sub.group(1))
         raw_subs = m_plural_sub.group(2).strip()
         expanded = _expand_ee_numeric_list(raw_subs)
+        target_labels = list(expanded)
         target_addrs = [
             LegalAddress(path=(("section", sect_label), ("subsection", num)))
-            for num in expanded
+            for num in target_labels
         ]
         if action == "text_replace":
             explicit_targets = _extract_multiple_explicit_targets(_clean_preamble)
@@ -5153,6 +5215,11 @@ def extract_ee_ops(
             maybe_split = _split_plural_subsection_replace_payload(content)
             if maybe_split and set(expanded).issubset(set(maybe_split)):
                 split_content = maybe_split
+                target_labels = list(maybe_split)
+                target_addrs = [
+                    LegalAddress(path=(("section", sect_label), ("subsection", num)))
+                    for num in target_labels
+                ]
         old_t, new_t = _extract_text_replace_args(clean) if action == "text_replace" else (None, None)
         if action == "text_replace":
             old_t, new_t = _normalize_text_replace_args(clean, old_t, new_t)
@@ -5180,8 +5247,25 @@ def extract_ee_ops(
             elif action == "replace" and content:
                 num = addr.path[-1][1]
                 payload_text = split_content[num] if split_content is not None else content
-                payload = IRNode(kind=IRNodeKind.CONTENT, text=payload_text)
+                is_extra_payload_label = split_content is not None and num not in expanded
+                payload_attrs = (
+                    {"source_family": _EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE}
+                    if is_extra_payload_label
+                    else {}
+                )
+                payload = IRNode(kind=IRNodeKind.CONTENT, text=payload_text, attrs=payload_attrs)
                 payload = _set_sentence_replace_payload_attrs(payload, clean)
+                if is_extra_payload_label:
+                    payload = IRNode(
+                        kind=payload.kind,
+                        label=payload.label,
+                        text=payload.text,
+                        attrs={
+                            **dict(payload.attrs),
+                            "source_family": _EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE,
+                        },
+                        children=tuple(payload.children),
+                    )
             elif action == "repeal" and subsection_selection_meta is not None:
                 payload = IRNode(
                     kind=IRNodeKind.CONTENT,
@@ -5196,7 +5280,20 @@ def extract_ee_ops(
                 payload=payload,
                 text_patch=_typed_text_replace_patch(old_t, new_t) if action == "text_replace" else None,
                 source=source,
-                provenance_tags=(clean[:200],),
+                provenance_tags=(
+                    (clean[:200], _EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE)
+                    if payload is not None
+                    and payload.attrs.get("source_family")
+                    == _EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE
+                    else (clean[:200],)
+                ),
+                witness_rule_id=(
+                    _EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE
+                    if payload is not None
+                    and payload.attrs.get("source_family")
+                    == _EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE
+                    else None
+                ),
             ))
             seq += 1
         if (

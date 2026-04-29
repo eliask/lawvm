@@ -4625,6 +4625,7 @@ _EE_EXPLICIT_ITEM_REPLACEMENT_TERMINAL_RULE = "ee_explicit_item_replacement_term
 _EE_LABELLED_ITEM_REPLACEMENT_PAYLOAD_SELECTION_RULE = "ee_labelled_item_replacement_payload_selection"
 _EE_INLINE_ITEM_PARENTHESES_MARKER_GUARD_RULE = "ee_inline_item_parentheses_marker_guard"
 _EE_PLURAL_ITEM_REPLACE_MISSING_LABEL_REPEAL_RULE = "ee_plural_item_replace_missing_label_repeal"
+_EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE = "ee_plural_subsection_replace_extra_payload_label"
 _EE_INLINE_ITEM_REPLACE_SINGLETON_SUBSECTION_RULE = "ee_inline_item_replace_singleton_subsection"
 _EE_TEXT_REPLACE_UNIQUE_DESCENDANT_ITEM_RULE = "ee_text_replace_unique_descendant_item_by_old_text"
 _EE_OLEMASOLEV_TAHKEL_KUTUSEL_PHRASE_FORMS_RULE = "ee_case_inflected_olemasolev_tahkel_kutusel_phrase_forms"
@@ -9980,6 +9981,45 @@ def _ee_apply_op(
     elif action == "replace":
         if payload is not None:
             full_path = _ee_resolve_full_path(body, path)
+            if (
+                full_path is None
+                and path
+                and path[-1][0] == "subsection"
+                and payload.attrs.get("source_family")
+                == _EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE
+            ):
+                parent_path = _ee_resolve_parent_path(body, path)
+                if parent_path is not None:
+                    raw_text = payload.text.replace("\x01", "")
+                    raw_text = re.sub(r"^\(\d[\d\s_]*\)\s*", "", raw_text)
+                    raw_text = _strip_rt_editorial_parentheticals(raw_text)
+                    raw_text, item_children = _parse_subsection_item_payload(raw_text)
+                    new_node = IRNode(
+                        kind=IRNodeKind.SUBSECTION,
+                        label=path[-1][1],
+                        text=raw_text,
+                        attrs=dict(payload.attrs),
+                        children=tuple(item_children),
+                    )
+                    _append_ee_replay_adjudication(
+                        adjudications_out,
+                        kind=_EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE,
+                        message=(
+                            "EE replay inserted an extra labelled subsection carried by "
+                            "a plural subsection replacement payload."
+                        ),
+                        op=op,
+                        detail={
+                            "target": str(op.target),
+                            "source_family": _EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE,
+                        },
+                    )
+                    return tree_ops.insert_sorted(
+                        body,
+                        parent_path,
+                        new_node,
+                        sort_key_fn=tree_ops._default_sort_key,
+                    )
             if full_path is None and path and path[-1][0] == "item":
                 recovered_body = _ee_replace_inline_item_in_singleton_subsection(
                     body,
@@ -10288,7 +10328,7 @@ def _ee_apply_op(
                             ),
                             None,
                         )
-                        if matched_payload_item is not None:
+                        if matched_payload_item is not None and len(item_payload_children) > 1:
                             raw_text = matched_payload_item.text or ""
                             selected_item_payload_by_label = True
                             _append_ee_replay_adjudication(
@@ -10315,6 +10355,10 @@ def _ee_apply_op(
                     explicit_item_terminal_from_payload = (
                         target_node.kind == IRNodeKind.ITEM
                         and raw_text.rstrip().endswith((".", ";"))
+                    )
+                    explicit_item_period_from_payload = (
+                        target_node.kind == IRNodeKind.ITEM
+                        and raw_text.rstrip().endswith(".")
                     )
                     if raw_text.lstrip().startswith("§") and target_node.kind == IRNodeKind.SUBSECTION:
                         parsed_sec = _parse_section_payload(raw_text, kind=IRNodeKind.SECTION)
@@ -10519,7 +10563,7 @@ def _ee_apply_op(
                         ),
                         children=tuple(preserved_children),
                     )
-                    if target_node.kind == IRNodeKind.ITEM:
+                    if target_node.kind == IRNodeKind.ITEM and not explicit_item_period_from_payload:
                         parent_path = full_path[:-1]
                         parent_node = tree_ops.resolve(body, parent_path) if parent_path else None
                         if parent_node is not None:
