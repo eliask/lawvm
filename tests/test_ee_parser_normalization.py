@@ -146,6 +146,21 @@ def test_extract_ee_ops_emits_unscoped_many_old_single_new_text_replaces() -> No
     assert all(_payload(op).attrs["case_inflected"] is True for op in ops)
 
 
+def test_extract_ee_ops_targets_part_chapter_division_heading() -> None:
+    text = (
+        "seaduse 3. osa 6. peatüki 5. jao pealkiri muudetakse ja "
+        "sõnastatakse järgmiselt: „5. jagu Keskkonnaagentuuri toimingud”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("part", "3"), ("chapter", "6"), ("division", "5"))
+    assert ops[0].target.special is FacetKind.HEADING
+    assert _payload(ops[0]).text == "5. jagu Keskkonnaagentuuri toimingud"
+
+
 def test_extract_ee_ops_accepts_left_right_curly_quote_heading_delete() -> None:
     text = 'Paragrahvi 18 pealkirjast jäetakse välja sõnad “ja projekteerimisnormid”;'
 

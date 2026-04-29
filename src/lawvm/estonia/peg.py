@@ -197,6 +197,24 @@ def parse_target(text: str) -> Optional[LegalAddress]:
     """
     path: list[tuple[str, str]] = []
 
+    # Part + chapter + division title:
+    # "N. osa M. peatüki K. jao pealkiri"
+    m_part_ch_div = re.search(
+        r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s*[.]\s*osa\s+'
+        r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s*[.]\s*peatük[k]?i\s+'
+        r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s*[.]\s*jao\s+pealkir(?:i|ja(?:s|st)?)',
+        text,
+        re.IGNORECASE,
+    )
+    if m_part_ch_div:
+        part_num = _normalize_num(m_part_ch_div.group(1))
+        ch_num = _normalize_num(m_part_ch_div.group(2))
+        div_num = _normalize_num(m_part_ch_div.group(3))
+        return LegalAddress(
+            path=(("part", part_num), ("chapter", ch_num), ("division", div_num)),
+            special=FacetKind.HEADING,
+        )
+
     # Part + chapter title: "N. osa M. peatüki pealkiri"
     m_part_ch = re.search(
         r'(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s*[.]\s*osa\s+'

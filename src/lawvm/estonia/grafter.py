@@ -3505,6 +3505,7 @@ def _ee_repeated_single_occurrence_rewrite_match_count(node: IRNode, spec: EETex
 
 _EE_SOURCE_TYPO_TEXT_REPLACE_RULE = "ee_source_typo_text_replace_near_match"
 _EE_AMBIGUOUS_SINGLE_OCCURRENCE_TEXT_REPLACE_RULE = "ee_ambiguous_single_occurrence_text_replace"
+_EE_OVERBROAD_CONTAINER_REPLACE_BLOCKED_RULE = "ee_overbroad_container_replace_blocked"
 
 
 def _ee_levenshtein_distance_at_most_one(left: str, right: str) -> bool:
@@ -3612,6 +3613,24 @@ def _ee_typo_tolerant_text_replace(
         )
 
     return _replace(node), True, actual_old
+
+
+def _ee_payload_is_narrower_than_container_replace(target_kind: IRNodeKind, payload_text: str) -> bool:
+    """Return true when a replace payload names a child container, not the target container."""
+    stripped = payload_text.replace("\x01", "").strip()
+    if not stripped:
+        return False
+    starts_chapter = re.match(r"^\d[\d\s_]*[.]\s*peatükk\b", stripped, re.IGNORECASE) is not None
+    starts_division = re.match(r"^\d[\d\s_]*[.]\s*jagu\b", stripped, re.IGNORECASE) is not None
+    starts_subdivision = re.match(r"^\d[\d\s_]*[.]\s*jaotis\b", stripped, re.IGNORECASE) is not None
+    starts_section = stripped.startswith("§")
+    if target_kind == IRNodeKind.PART:
+        return starts_chapter or starts_division or starts_subdivision or starts_section
+    if target_kind == IRNodeKind.CHAPTER:
+        return starts_division or starts_subdivision or starts_section
+    if target_kind == IRNodeKind.DIVISION:
+        return starts_subdivision or starts_section
+    return False
 
 
 def _extract_subsection_text(payload_text: str, label: str) -> str:
@@ -7765,6 +7784,22 @@ def _ee_apply_op(
                 if target_node is None:
                     # Duplicate container label (e.g. two 'division 6' blocks) causes
                     # resolve to fail even though find() returned a path.  Skip op.
+                    return body
+                if _ee_payload_is_narrower_than_container_replace(target_node.kind, payload.text):
+                    _append_ee_replay_adjudication(
+                        adjudications_out,
+                        kind=_EE_OVERBROAD_CONTAINER_REPLACE_BLOCKED_RULE,
+                        message=(
+                            "EE replay blocked over-broad container replacement "
+                            "whose payload names a narrower legal unit."
+                        ),
+                        op=op,
+                        detail={
+                            "target_kind": str(target_node.kind),
+                            "target": str(op.target),
+                            "payload_preview": payload.text.replace("\x01", "")[:160],
+                        },
+                    )
                     return body
                 if target_node.kind == IRNodeKind.SECTION:
                     payload_meta = read_payload_rewrite_meta(payload)
