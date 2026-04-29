@@ -998,6 +998,7 @@ _EE_EXPLICIT_MIXED_STRUCTURAL_REPEAL_LIST_RULE = "ee_explicit_mixed_structural_r
 _EE_SUBSECTION_TABLE_ONLY_REPLACE_RULE = "ee_subsection_table_only_replace_preserve_intro"
 _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE = "ee_senine_text_subsection_renumber_before_insert"
 _EE_FRAKTSIONEERITUD_TYPO_DELETE_RULE = "ee_fraktsioneeritud_source_typo_delete_variant"
+_EE_LOCAL_KOHTKUTE_SOURCE_SURFACE_DELETE_RULE = "ee_lokaal_kohtkute_source_surface_delete_variant"
 _EE_INSERT_MULTI_EXPLICIT_TARGETS_PAYLOAD_LABEL_FILTER_RULE = (
     "ee_insert_multi_explicit_targets_payload_label_filter"
 )
@@ -1010,6 +1011,16 @@ def _is_textual_invalidation(text: str) -> bool:
         "tunnistatakse kehtetuks" in preamble
         and re.search(r'\b(?:sõna[a-z]*|sõnad|tekstiosa[a-z]*|lauseosa[a-z]*)\b', preamble)
         is not None
+    )
+
+
+def _is_lokaal_kohtkute_source_surface_delete_variant(old_text: str | None, new_text: str | None) -> bool:
+    if new_text:
+        return False
+    return (old_text or "") == (
+        "enne 2010. aasta 1. jaanuari. Elamu või selle osa soojusvarustuse liigina "
+        "peab ehitisregistrisse olema märgitud lokaal- või kohtküte ja energiaallika "
+        "liigina tahkekütus"
     )
 
 
@@ -3310,6 +3321,12 @@ def _set_text_replace_payload_attrs(
         and _has_insert_after_terminal_punctuation_boundary(clean, old_text, new_text)
     ):
         source_family = _EE_INSERT_AFTER_TERMINAL_PUNCTUATION_RULE
+    if (
+        not source_family
+        and rewrite_mode == "delete"
+        and _is_lokaal_kohtkute_source_surface_delete_variant(old_text, new_text)
+    ):
+        source_family = _EE_LOCAL_KOHTKUTE_SOURCE_SURFACE_DELETE_RULE
     if (
         not source_family
         and rewrite_mode == "insert_after"
