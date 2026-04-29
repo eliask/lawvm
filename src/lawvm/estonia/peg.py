@@ -2239,6 +2239,71 @@ def _extract_many_old_single_new_text_replace_pairs(text: str) -> List[Tuple[str
     return _longest_old_first([(old_text.strip(), new_text) for old_text in pre_quotes if old_text.strip()])
 
 
+_EE_TARGET_SCOPED_MANY_OLD_SINGLE_NEW_TEXT_REPLACE_RULE = (
+    "ee_target_scoped_many_old_single_new_text_replace"
+)
+
+
+def _extract_quoted_content_spans(text: str) -> list[tuple[str, int, int]]:
+    """Return quoted payload surfaces with their source spans."""
+    for pat in (
+        r'\u201e(?P<body>.*?)(?:\u201c|\u201d|")',
+        r'\u201c(?P<body>.*?)\u201d',
+        r'\u201d(?P<body>.*?)\u201d',
+        r'\u201c(?P<body>.*?)\u201c',
+        r'\u02ee(?P<body>.*?)\u02ee',
+        r'\u00ab(?P<body>.*?)\u00bb',
+        r'"(?P<body>.*?)"',
+    ):
+        matches = [
+            (match.group("body").strip(), match.start(), match.end())
+            for match in re.finditer(pat, text, re.DOTALL)
+            if match.group("body").strip()
+        ]
+        if matches:
+            return matches
+    return []
+
+
+def _extract_target_scoped_many_old_single_new_text_replace_groups(
+    text: str,
+) -> list[tuple[list[LegalAddress], str, str]]:
+    """Bind each old term to the explicit target segment that introduces it.
+
+    Handles clauses like ``§ 7 lõikes 6 asendatakse sõnad A ning § 8 lõigetes
+    6 ja 7 sõnad B sõnadega C``.  The shared destination ``C`` is common, but
+    source scope is not: ``A`` belongs to § 7(6), while ``B`` belongs to
+    § 8(6) and § 8(7).  Broadcasting both old terms to all targets would be a
+    target-ownership violation.
+    """
+    normalized = html.unescape(text)
+    pairs = _extract_many_old_single_new_text_replace_pairs(normalized)
+    if len(pairs) < 2:
+        return []
+    quoted_spans = _extract_quoted_content_spans(normalized)
+    if len(quoted_spans) < 3:
+        return []
+    new_text = quoted_spans[-1][0]
+    if not new_text:
+        return []
+    old_spans = quoted_spans[:-1]
+    groups: list[tuple[list[LegalAddress], str, str]] = []
+    for index, (old_text, old_start, _old_end) in enumerate(old_spans):
+        segment_start = old_spans[index - 1][2] if index > 0 else 0
+        segment = normalized[segment_start:old_start]
+        targets = _extract_multiple_explicit_targets(segment)
+        if not targets:
+            continue
+        groups.append((targets, old_text, new_text))
+    if not groups:
+        return []
+    scoped_target_count = sum(len(targets) for targets, _old, _new in groups)
+    explicit_target_count = len(_extract_multiple_explicit_targets(normalized))
+    if scoped_target_count != explicit_target_count:
+        return []
+    return groups
+
+
 def _extract_mixed_text_replace_sentence_insert(text: str) -> tuple[str, str, str] | None:
     """Extract OLD→NEW plus same-target sentence insertion from one clause."""
     if not (
@@ -6352,6 +6417,40 @@ def extract_ee_ops(
     if action == "text_replace":
         target_pairs = _extract_many_old_single_new_text_replace_pairs(clean) or _extract_text_replace_pairs(clean)
         if len(target_pairs) > 1:
+            target_scoped_groups = _extract_target_scoped_many_old_single_new_text_replace_groups(clean)
+            if target_scoped_groups:
+                rule_id = _EE_TARGET_SCOPED_MANY_OLD_SINGLE_NEW_TEXT_REPLACE_RULE
+                for scoped_targets, old_t, new_t in target_scoped_groups:
+                    old_t, new_t = _normalize_text_replace_args(clean, old_t, new_t)
+                    for scoped_target in scoped_targets:
+                        scoped_payload = IRNode(kind=IRNodeKind.CONTENT, text=new_t or "")
+                        scoped_payload, _rewrite_witness = _set_text_replace_payload_attrs(
+                            scoped_payload,
+                            clean,
+                            old_t,
+                            new_t,
+                            source_family=rule_id,
+                        )
+                        scoped_payload = _sentence_scoped_text_replace_payload_for_target(
+                            scoped_payload,
+                            clean,
+                            scoped_target,
+                            target_count=sum(len(targets) for targets, _old, _new in target_scoped_groups),
+                        )
+                        scoped_payload = _attach_subsection_text_scope_meta(scoped_payload, clean, scoped_target)
+                        ops.append(LegalOperation(
+                            op_id=f"ee-text_replace-scoped-many-old-{str(scoped_target)}-{seq}-{source.statute_id}",
+                            sequence=seq,
+                            action=_to_structural_action("text_replace"),
+                            target=scoped_target,
+                            payload=scoped_payload,
+                            text_patch=_typed_text_replace_patch(old_t, new_t),
+                            source=source,
+                            provenance_tags=(rule_id, clean[:200]),
+                            witness_rule_id=rule_id,
+                        ))
+                        seq += 1
+                return ops
             explicit_targets = _extract_multiple_explicit_targets(clean)
             heading_targets = _extract_explicit_heading_targets(clean)
             missing_heading_targets = [

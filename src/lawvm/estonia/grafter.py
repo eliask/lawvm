@@ -5509,6 +5509,34 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_abl": stem + "telt",
             "pl_trn": stem + "teks",
         }
+    if lower.endswith("seade"):
+        prefix = word[: -len("seade")]
+        stem = prefix + "seadme"
+        plural_stem = prefix + "seadmete"
+        return {
+            "sg_nom": word,
+            "sg_gen": stem,
+            "sg_part": prefix + "seadet",
+            "sg_ine": stem + "s",
+            "sg_ela": stem + "st",
+            "sg_all": stem + "le",
+            "sg_ade": stem + "l",
+            "sg_abl": stem + "lt",
+            "sg_trn": stem + "ks",
+            "sg_ter": stem + "ni",
+            "sg_ess": stem + "na",
+            "sg_abe": stem + "ta",
+            "sg_com": stem + "ga",
+            "pl_nom": prefix + "seadmed",
+            "pl_gen": plural_stem,
+            "pl_part": prefix + "seadmeid",
+            "pl_ine": plural_stem + "s",
+            "pl_ela": plural_stem + "st",
+            "pl_all": plural_stem + "le",
+            "pl_ade": plural_stem + "l",
+            "pl_abl": plural_stem + "lt",
+            "pl_trn": plural_stem + "ks",
+        }
     if lower.endswith("ettevõte"):
         stem = word[:-1] + "te"
         return {
@@ -6848,6 +6876,32 @@ def _ee_declension_forms(word: str) -> dict[str, str] | None:
             "pl_trn": word + "iteks",
         }
     if lower.endswith("i"):
+        if lower.endswith("kustuti"):
+            plural_stem = word + "te"
+            return {
+                "sg_nom": word,
+                "sg_gen": word,
+                "sg_part": word,
+                "sg_ine": word + "s",
+                "sg_ela": word + "st",
+                "sg_all": word + "le",
+                "sg_ade": word + "l",
+                "sg_abl": word + "lt",
+                "sg_trn": word + "ks",
+                "sg_ter": word + "ni",
+                "sg_ess": word + "na",
+                "sg_abe": word + "ta",
+                "sg_com": word + "ga",
+                "pl_nom": word + "d",
+                "pl_gen": plural_stem,
+                "pl_part": word[:-1] + "eid",
+                "pl_ine": plural_stem + "s",
+                "pl_ela": plural_stem + "st",
+                "pl_all": plural_stem + "le",
+                "pl_ade": plural_stem + "l",
+                "pl_abl": plural_stem + "lt",
+                "pl_trn": plural_stem + "ks",
+            }
         stem = word
         return {
             "sg_nom": word,
