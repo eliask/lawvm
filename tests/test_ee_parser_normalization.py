@@ -657,6 +657,21 @@ def test_extract_ee_ops_marks_case_inflected_insert_after_as_all_occurrences() -
     assert ops[0].payload.attrs["all_occurrences"] is True
 
 
+def test_extract_ee_ops_marks_case_inflected_replace_as_all_occurrences() -> None:
+    text = (
+        "paragrahvi 4 punktis 8 asendatakse sõna „teenuseosutaja” "
+        "tekstiosaga „IOT või AOT” vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].payload is not None
+    assert ops[0].payload.attrs["rewrite_mode"] == "replace"
+    assert ops[0].payload.attrs["case_inflected"] is True
+    assert ops[0].payload.attrs["all_occurrences"] is True
+
+
 def test_extract_ee_ops_marks_plural_subsection_insert_after_as_all_occurrences() -> None:
     ops = extract_ee_ops(
         (
@@ -8782,3 +8797,15 @@ def test_extract_ee_ops_marks_section_intro_replace_without_widening_to_whole_se
     assert scope_meta is not None
     assert scope_meta.intro_only is True
     assert ops[0].witness_rule_id == "ee_section_intro_replace_to_first_subsection"
+
+
+def test_parse_html_op_items_preserves_words_split_by_inline_style_tags() -> None:
+    html = (
+        "<p><b>5)</b> paragrahvi 4 punkt 3 muudetakse ja sõnastatakse järgmiselt:</p>"
+        "<p>„3) teadus- ja arendusasutus (edaspidi <i>TA&#160;asutu</i>s);”;</p>"
+    )
+
+    items = parse_html_op_items(html)
+
+    assert "TA asutus" in items[0]
+    assert "TA asutu s" not in items[0]

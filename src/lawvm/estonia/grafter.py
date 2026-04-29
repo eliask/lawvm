@@ -6528,6 +6528,47 @@ def _ee_phrase_forms(text: str) -> dict[str, str] | None:
     """Infer bounded case forms for a word or a phrase whose last token inflects."""
     stripped = text.strip()
 
+    def _acronym_coordination_forms(value: str) -> dict[str, str] | None:
+        match = re.fullmatch(
+            r"([A-ZÕÄÖÜŠŽ]{2,})(\s+(?:või|ja|ning)\s+)([A-ZÕÄÖÜŠŽ]{2,})",
+            value.strip(),
+        )
+        if match is None:
+            return None
+        left, joiner, right = match.groups()
+
+        def both(suffix: str) -> str:
+            return f"{left}{suffix}{joiner}{right}{suffix}"
+
+        return {
+            "sg_nom": value.strip(),
+            "sg_gen": value.strip(),
+            "sg_part": both("-d"),
+            "sg_ine": both("-s"),
+            "sg_ela": both("-st"),
+            "sg_all": both("-le"),
+            "sg_ade": both("-l"),
+            "sg_abl": both("-lt"),
+            "sg_trn": both("-ks"),
+            "sg_ter": both("-ni"),
+            "sg_ess": both("-na"),
+            "sg_abe": both("-ta"),
+            "sg_com": both("-ga"),
+            "pl_nom": both("-d"),
+            "pl_gen": both("-te"),
+            "pl_part": both("-sid"),
+            "pl_ine": both("-tes"),
+            "pl_ela": both("-test"),
+            "pl_all": both("-tele"),
+            "pl_ade": both("-tel"),
+            "pl_abl": both("-telt"),
+            "pl_trn": both("-teks"),
+        }
+
+    acronym_forms = _acronym_coordination_forms(stripped)
+    if acronym_forms is not None:
+        return acronym_forms
+
     def _shared_prefix_coordination_forms(segments: list[str], separator: str) -> dict[str, str] | None:
         """Handle shared-prefix coordination such as ``linna- või vallavolikogu``."""
         if len(segments) < 2 or not all(segment.endswith("-") for segment in segments[:-1]):
@@ -10118,27 +10159,6 @@ def _ee_apply_op(
                                     child.kind,
                                 )
                             )
-                            inserted_labels = {child.label for child in new_node.children if child.kind == IRNodeKind.ITEM}
-                            if inserted_labels:
-                                ordered_items = [child for child in merged_children if child.kind == IRNodeKind.ITEM]
-                                first_insert_idx = next(
-                                    (idx for idx, child in enumerate(ordered_items) if child.label in inserted_labels),
-                                    None,
-                                )
-                                if first_insert_idx is not None and first_insert_idx > 0:
-                                    prev_label = ordered_items[first_insert_idx - 1].label
-                                    merged_children = [
-                                        IRNode(
-                                            kind=child.kind,
-                                            label=child.label,
-                                            text=_rewrite_item_terminal(child.text, ";"),
-                                            attrs=dict(child.attrs),
-                                            children=tuple(child.children),
-                                        )
-                                        if child.kind == IRNodeKind.ITEM and child.label == prev_label
-                                        else child
-                                        for child in merged_children
-                                    ]
                             updated_text = target_node.text
                             if new_node.text:
                                 updated_text = (
@@ -10187,42 +10207,6 @@ def _ee_apply_op(
                                 ),
                                 None,
                             )
-                            if insert_idx is not None and insert_idx > 0:
-                                prev_item = ordered[insert_idx - 1]
-                                if (
-                                    prev_item.kind == IRNodeKind.ITEM
-                                    and prev_item.text
-                                    and prev_item.text.rstrip().endswith(".")
-                                ):
-                                    new_children: list[IRNode] = []
-                                    for child in parent_node.children:
-                                        if (
-                                            child.kind == IRNodeKind.ITEM
-                                            and child.label == prev_item.label
-                                            and child.text == prev_item.text
-                                        ):
-                                            new_children.append(
-                                                IRNode(
-                                                    kind=child.kind,
-                                                    label=child.label,
-                                                    text=_rewrite_item_terminal(child.text, ";"),
-                                                    attrs=dict(child.attrs),
-                                                    children=tuple(child.children),
-                                                )
-                                            )
-                                        else:
-                                            new_children.append(child)
-                                    body = tree_ops.replace_at(
-                                        body,
-                                        parent_path,
-                                        IRNode(
-                                            kind=parent_node.kind,
-                                            label=parent_node.label,
-                                            text=parent_node.text,
-                                            attrs=dict(parent_node.attrs),
-                                            children=tuple(new_children),
-                                        ),
-                                    )
                             if insert_idx is not None:
                                 terminal = _item_terminal_for_position(ordered, insert_idx)
                                 new_text = _rewrite_item_terminal(new_node.text, terminal)

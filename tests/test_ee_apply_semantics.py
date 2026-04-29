@@ -650,6 +650,27 @@ def test_replace_with_section_intro_scope_updates_first_subsection_and_preserves
     ]
 
 
+def test_case_inflected_text_replace_handles_acronym_coordination_forms() -> None:
+    text = (
+        "Meetme raames toetatakse teenuseosutajate pakutavaid teenuseid. "
+        "Teenuseosutaja poolt valmib lahendus. "
+        "Oskusteave jääb teenuseosutajale ja isik ei tööta teenuseosutajas."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "teenuseosutaja",
+        "IOT või AOT",
+        case_inflected=True,
+    )
+
+    assert replaced == (
+        "Meetme raames toetatakse IOT-te või AOT-te pakutavaid teenuseid. "
+        "IOT või AOT poolt valmib lahendus. "
+        "Oskusteave jääb IOT-le või AOT-le ja isik ei tööta IOT-s või AOT-s."
+    )
+
+
 def test_insert_after_text_replace_can_rewrite_all_matches_when_marked_labivalt() -> None:
     replaced = _ee_apply_text_replace_value(
         "abikaasade ühine avaldus ja abikaasade suhtes tehtud otsustus",
@@ -2117,7 +2138,7 @@ def test_insert_item_without_explicit_subsection_uses_existing_subsection_item_p
     subsection = result.children[0].children[0].children[0]
 
     assert [child.label for child in subsection.children] == ["7_8", "7_9"]
-    assert subsection.children[0].text == "eelmine punkt;"
+    assert subsection.children[0].text == "eelmine punkt."
     assert subsection.children[1].text == "uus punkt."
 
 
@@ -8272,7 +8293,7 @@ def test_repeal_item_keeps_previous_semicolon_when_later_items_remain() -> None:
     assert subsection.children[2].text == "kohalikul teel – valla- või linnavalitsus."
 
 
-def test_insert_item_converts_previous_terminal_period_to_semicolon() -> None:
+def test_insert_item_preserves_previous_terminal_period() -> None:
     body = IRNode(
         kind=IRNodeKind.BODY,
         children=(
@@ -8311,7 +8332,7 @@ def test_insert_item_converts_previous_terminal_period_to_semicolon() -> None:
     result = _ee_apply_op(body, op)
     subsection = result.children[0].children[0].children[0]
 
-    assert subsection.children[2].text == "kolmas;"
+    assert subsection.children[2].text == "kolmas."
     assert subsection.children[3].text == "neljas."
 
 
