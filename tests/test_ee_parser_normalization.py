@@ -838,6 +838,21 @@ def test_parse_ee_amendment_ops_composes_later_text_replace_selectors() -> None:
     assert "ee_source_local_global_text_replace_selector_composition" in provider_rewrite.provenance_tags
 
 
+def test_parse_ee_statute_attaches_section_level_intro_to_structured_item_list() -> None:
+    archive = open_rt_archive(readonly=True)
+    statute = parse_ee_statute(fetch_rt_xml("129052012009", archive), "ee/129052012009")
+    section_5 = next(
+        node
+        for node in statute.body.children
+        if node.kind is IRNodeKind.SECTION and node.label == "5"
+    )
+    subsection = section_5.children[0]
+
+    assert subsection.text == "Üldosakonna struktuuriüksused on:"
+    assert subsection.attrs["section_level_intro_text"] == "Üldosakonna struktuuriüksused on:"
+    assert "ee_section_level_intro_attached_to_first_subsection" in subsection.attrs["source_cleanup_rules"]
+
+
 def test_parse_section_payload_accepts_subsection_marker_without_space() -> None:
     parsed = _parse_section_payload(
         (
