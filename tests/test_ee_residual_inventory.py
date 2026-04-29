@@ -1287,6 +1287,39 @@ def test_get_ee_residual_inventory_vaartpaberituru() -> None:
     assert inventory is None
 
 
+def test_get_ee_residual_inventory_investeerimisuhingu_normatiivid_2011() -> None:
+    inventory = get_ee_residual_inventory("117032011030", "120122011010")
+
+    assert inventory is not None
+    assert inventory.statute_title.startswith("Investeerimisühingu ja investeerimisühingu")
+    assert inventory.comparison_class == "commensurable_delta"
+    assert len(inventory.residuals) == 12
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert any(
+        record.address == "chapter:3/division:6/section:284/subsection:3/item:1"
+        and "§ 1 item 39" in record.evidence
+        and "item-1 payload" in record.evidence
+        for record in inventory.residuals
+    )
+    assert any(
+        record.address == "chapter:3/division:6/section:310/subsection:6"
+        and "§ 1 item 56" in record.evidence
+        and "pre-amendment" in record.evidence
+        for record in inventory.residuals
+    )
+    assert any(
+        record.address == "chapter:3/division:6/section:310_5/subsection:1/item:3"
+        and "§ 1 item 57" in record.evidence
+        and "duplicates the subsection (2) text" in record.evidence
+        for record in inventory.residuals
+    )
+    assert any(
+        record.address == "chapter:3/division:2/section:220/subsection:1/item:9"
+        and "Greek beta symbol" in record.evidence
+        for record in inventory.residuals
+    )
+
+
 def test_get_ee_residual_inventory_kaibemaksuseadus() -> None:
     inventory = get_ee_residual_inventory("130122025021", "130122025022")
 

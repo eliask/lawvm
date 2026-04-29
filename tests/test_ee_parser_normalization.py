@@ -251,6 +251,19 @@ def test_extract_ee_ops_recovers_nested_quote_tekstiosa_delete() -> None:
     assert _payload(ops[0]).text == ""
 
 
+def test_extract_ee_ops_treats_tekstiosa_invalidation_as_text_delete() -> None:
+    text = 'paragrahvi 9 lõikes 3 tunnistatakse kehtetuks tekstiosa „ning ülekande-”;'
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(path=(("section", "9"), ("subsection", "3")))
+    assert _payload(ops[0]).text == ""
+    assert _payload(ops[0]).attrs["old_text"] == "ning ülekande-"
+    assert _payload(ops[0]).attrs["rewrite_mode"] == "delete"
+    assert _payload(ops[0]).attrs["source_family"] == "ee_textual_invalidation_as_text_delete"
+
+
 def test_extract_ee_ops_recovers_compound_item_and_subsection_repeal() -> None:
     text = "§ 4 lõike 3 punkt 7 ja § 4 1 lõige 8 tunnistatakse kehtetuks."
     ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
