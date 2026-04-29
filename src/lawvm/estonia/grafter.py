@@ -7673,6 +7673,7 @@ def _ee_replace_ambiguous_partitive_object(text: str, genitive: str, partitive: 
         clause_prefix = re.split(r"[.!?;:]", prefix_text)[-1]
         if not (
             re.search(r"\bteavitab\s*$", clause_prefix, re.IGNORECASE)
+            or re.search(r"\bteavitada\s*$", clause_prefix, re.IGNORECASE)
             or re.search(r"\bhoiule\b", clause_prefix, re.IGNORECASE)
         ):
             return match.group(0)

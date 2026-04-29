@@ -302,7 +302,7 @@ def parse_target(text: str) -> Optional[LegalAddress]:
         # Also accept insert-form "§-ga N" so statute-level section inserts are
         # anchored from the instruction preamble rather than falling through to
         # the quoted payload and picking up cross-references from the body text.
-        m_sect = re.search(r'§(?:-s|-ga)?\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)', preamble)
+        m_sect = re.search(r'§(?:-s|-i|-ga)?\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)', preamble)
     if not m_sect:
         # Final fallback: search full text (covers cases where no preamble
         # marker is present and the clause has no quoted content at all)
@@ -323,7 +323,7 @@ def parse_target(text: str) -> Optional[LegalAddress]:
             re.IGNORECASE,
         )
     if not m_sect:
-        m_sect = re.search(r'§(?:-s|-ga)?\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)', section_context)
+        m_sect = re.search(r'§(?:-s|-i|-ga)?\s*(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)', section_context)
     if not m_sect:
         return None
     path.append(("section", _normalize_num(m_sect.group(1))))
@@ -424,13 +424,14 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
         preamble = re.sub(pat, ' ', preamble, flags=re.DOTALL)
     preamble = _strip_embedded_reference_wrapper(preamble)
     preamble = re.sub(r"§\s*[–‒‑-]\s*s\b", "§-s", preamble, flags=re.IGNORECASE)
+    preamble = re.sub(r"§\s*[–‒‑-]\s*i\b", "§-i", preamble, flags=re.IGNORECASE)
     preamble = re.sub(r"§\s*[–‒‑-]\s*d\b", "§-d", preamble, flags=re.IGNORECASE)
     preamble = re.sub(r"§\s*[–‒‑-]\s*des\b", "§-des", preamble, flags=re.IGNORECASE)
     preamble = re.sub(r"\bl[oõ]igetest\b", "lõigetes", preamble, flags=re.IGNORECASE)
     preamble = re.sub(r'\s+', ' ', preamble).strip()
     chunks = re.split(
         r'(?:,\s*|\s+(?:ning|ja)\s+)'
-        r'(?=(?:§(?:-s|-des)?\s*\d|\bparagrahvi(?:s|st)?\s+\d|\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s+lõike))',
+        r'(?=(?:§(?:-s|-i|-des)?\s*\d|\bparagrahvi(?:s|st)?\s+\d|\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s+lõike))',
         preamble,
         flags=re.IGNORECASE,
     )
@@ -459,7 +460,7 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
             continue
 
         m_same_section_mixed = re.search(
-            r'(?:\bparagrahvi(?:s|st)?\s+|§\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+',
+            r'(?:\bparagrahvi(?:s|st)?\s+|§(?:-i)?\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+',
             chunk,
             re.IGNORECASE,
         )
@@ -661,7 +662,7 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
                 continue
 
         m_plural_sub = re.search(
-            r'(?:\bparagrahvi(?:s|st)?\s+|§\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+            r'(?:\bparagrahvi(?:s|st)?\s+|§(?:-i)?\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
             r'(?:l[oõ]iked|l[oõ]igetes)\s+'
             r'(\d+(?:\s+\d+)?(?:[,–\-]\s*\d+(?:\s+\d+)?)*(?:\s+ja\s+\d+(?:\s+\d+)?)*)',
             chunk,
@@ -693,7 +694,7 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
     # section label. Recover all subsection targets under that same section.
     section_refs = list(
         re.finditer(
-            r'(?:\bparagrahvi(?:s|st)?\s+|§\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)',
+            r'(?:\bparagrahvi(?:s|st)?\s+|§(?:-i)?\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)',
             preamble,
             re.IGNORECASE,
         )
