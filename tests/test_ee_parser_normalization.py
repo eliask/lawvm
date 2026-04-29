@@ -3796,6 +3796,40 @@ def test_parse_ee_statute_preserves_table_html_in_existing_appendix_subsection()
     ]
 
 
+def test_parse_ee_statute_preserves_section_level_html_table_text() -> None:
+    xml = """
+    <tyviseadus xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
+      <aktinimi>
+        <nimi>
+          <pealkiri>Testmäärus</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>1</paragrahvNr>
+          <paragrahvPealkiri>Teenistujate koosseis</paragrahvPealkiri>
+          <sisuTekst>
+            <HTMLKonteiner><![CDATA[
+              <table class="data">
+                <tr><td><p><b>Struktuuriüksus</b></p></td><td><p><b>Teenistuskoht</b></p></td></tr>
+                <tr><td><p>Juhtkond</p></td><td><p>Direktor</p></td></tr>
+              </table>
+            ]]></HTMLKonteiner>
+          </sisuTekst>
+        </paragrahv>
+      </sisu>
+    </tyviseadus>
+    """.encode("utf-8")
+
+    statute = parse_ee_statute(xml, "ee/test")
+    section = statute.body.children[0]
+
+    assert [(child.label, child.text) for child in section.children] == [
+        ("1", "Struktuuriüksus Teenistuskoht Juhtkond Direktor"),
+    ]
+    assert section.children[0].attrs["source_cleanup_rules"] == ("ee_html_table_text_materialized",)
+
+
 def test_parse_ee_statute_keeps_chapter_title_with_inline_bold_and_reavahetus() -> None:
     xml = """
     <tyviseadus xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
