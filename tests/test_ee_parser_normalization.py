@@ -9667,3 +9667,53 @@ def test_parse_ee_amendment_ops_recovers_real_127032024007_numbered_item_targets
         "ee_old_format_numbered_items_preferred_over_preambul_recovery" in op.provenance_tags
         for op in ops
     )
+
+
+def test_parse_ee_amendment_ops_strips_old_format_direct_target_prefix_before_carry() -> None:
+    xml = """
+    <oigusakt xmlns="tyviseadus_1_10.02.2010">
+      <sisu>
+        <sisuTekst>
+          <HTMLKonteiner><![CDATA[
+            <p><b>§ 177. Vabariigi Valitsuse 1. jaanuari 2020. a määruse nr 1 „Sihtmäärus” muutmine</b></p>
+            <p>Vabariigi Valitsuse 1. jaanuari 2020. a määruse nr 1 „Sihtmäärus” § 11 punkt 4 sõnastatakse järgmiselt:</p>
+            <p>„4) uus tekst seaduse § 6 lõike 1 punktis 7 nimetatud juhul;”.</p>
+          ]]></HTMLKonteiner>
+        </sisuTekst>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Sihtmäärus")
+
+    assert [(op.action, op.target.path, _payload(op).text) for op in ops] == [
+        (
+            StructuralAction.REPLACE,
+            (("section", "11"), ("item", "4")),
+            "4) uus tekst seaduse § 6 lõike 1 punktis 7 nimetatud juhul;",
+        ),
+    ]
+    assert "ee_old_format_direct_target_title_prefix_stripped_before_carry" in ops[0].provenance_tags
+    assert "ee_old_format_carried_section_scope" not in ops[0].provenance_tags
+
+
+def test_parse_ee_amendment_ops_recovers_real_105072023001_direct_target_item() -> None:
+    archive = open_rt_archive(readonly=True)
+    target_title = (
+        "Tegevusvaldkondade, mille korral tuleb anda keskkonnamõju hindamise "
+        "vajalikkuse eelhinnang, täpsustatud loetelu"
+    )
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("105072023001", archive),
+        "ee/105072023001",
+        target_title=target_title,
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPLACE, (("section", "11"), ("item", "4"))),
+    ]
+    assert "kehtestatud määruse lisades" in _payload(ops[0]).text
+    assert "keskkonnaministri määruse" not in _payload(ops[0]).text
+    assert "ee_old_format_direct_target_title_prefix_stripped_before_carry" in ops[0].provenance_tags
+    assert "ee_old_format_carried_section_scope" not in ops[0].provenance_tags

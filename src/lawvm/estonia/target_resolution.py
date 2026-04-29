@@ -23,6 +23,9 @@ from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.estonia.peg import _extract_quoted_content, _normalize_num, extract_ee_ops, parse_html_op_items
 
 _EE_DIRECT_TARGET_PREFIX_STRIP_RULE = "ee_direct_target_title_prefix_stripped_for_structural_repeal"
+_EE_OLD_FORMAT_DIRECT_TARGET_PREFIX_STRIP_BEFORE_CARRY_RULE = (
+    "ee_old_format_direct_target_title_prefix_stripped_before_carry"
+)
 _EE_OLD_FORMAT_CARRIED_SECTION_SCOPE_RULE = "ee_old_format_carried_section_scope"
 _EE_OLD_FORMAT_WRAPPER_SCOPE_INHERITED_RULE = "ee_old_format_wrapper_scope_inherited"
 _EE_OLD_FORMAT_DIRECT_HEADER_TARGET_SECTION_RULE = "ee_old_format_direct_header_target_section"
@@ -2132,6 +2135,7 @@ def old_format_lower_op_texts(
     *,
     seq_start: int,
     base_act_name: str = "",
+    target_title: str = "",
     initial_last_section: str | None = None,
     amendment_section_label: str | None = None,
 ) -> tuple[list[LegalOperation], int, str | None]:
@@ -2145,6 +2149,7 @@ def old_format_lower_op_texts(
         effective = op_text
         normalization_rule_id: str | None = None
         strip_outer_payload_quote = False
+        direct_prefix_stripped = False
         inherited_wrapper_scope = False
         carried_section_scope = False
         out_of_body_appendix_or_note_clause = _is_out_of_body_appendix_or_note_clause(op_text)
@@ -2176,11 +2181,16 @@ def old_format_lower_op_texts(
         )
         effective, section_heading_stripped = _strip_html_amendment_section_heading_wrapper(
             effective,
-            source.title,
+            target_title or source.title,
             title_matcher=title_matches_para,
         )
         if section_heading_stripped:
             normalization_rule_id = _EE_HTML_AMENDMENT_SECTION_HEADING_WRAPPER_STRIPPED_RULE
+        effective, direct_prefix_stripped = strip_direct_target_title_prefix(
+            effective,
+            target_title or source.title,
+            title_matcher=title_matches_para,
+        )
         if (
             last_section
             and not old_format_has_section_ref(effective)
@@ -2242,6 +2252,10 @@ def old_format_lower_op_texts(
                 tags.append(_EE_OLD_FORMAT_CARRIED_SECTION_SCOPE_RULE)
                 if op.action is not StructuralAction.META and witness_rule_id is None:
                     witness_rule_id = _EE_OLD_FORMAT_CARRIED_SECTION_SCOPE_RULE
+            if direct_prefix_stripped:
+                tags.append(_EE_OLD_FORMAT_DIRECT_TARGET_PREFIX_STRIP_BEFORE_CARRY_RULE)
+                if op.action is not StructuralAction.META and witness_rule_id is None:
+                    witness_rule_id = _EE_OLD_FORMAT_DIRECT_TARGET_PREFIX_STRIP_BEFORE_CARRY_RULE
             tagged_ops.append(replace(op, provenance_tags=tuple(tags), witness_rule_id=witness_rule_id))
         ops = tagged_ops
         lowered.extend(ops)
@@ -2307,6 +2321,7 @@ def old_format_collect_section_ops(
                 source,
                 seq_start=global_seq,
                 base_act_name=base_act_name,
+                target_title=target_title,
                 initial_last_section=initial_section,
                 amendment_section_label=amendment_section_label,
             )
@@ -2330,6 +2345,7 @@ def old_format_collect_fallback_ops(
         op_texts,
         source,
         seq_start=seq_start,
+        target_title=target_title,
         initial_last_section=initial_section,
     )
     return ops, global_seq
