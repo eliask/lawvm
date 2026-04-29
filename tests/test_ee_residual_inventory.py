@@ -76,6 +76,28 @@ def test_get_ee_residual_inventory_linnalised_piirkonnad_targeted_ministry_tail(
     )
 
 
+def test_get_ee_residual_inventory_poolloodusliku_koosluse_surface_tails() -> None:
+    inventory = get_ee_residual_inventory("129032014010", "130042015006")
+
+    assert inventory is not None
+    assert inventory.statute_title.startswith("Poolloodusliku koosluse")
+    assert inventory.comparison_class == "commensurable_delta"
+    assert len(inventory.residuals) == 7
+    assert {record.bucket for record in inventory.residuals} == {"source_oracle_drift"}
+    assert any(
+        record.address == "chapter:2/section:6/subsection:2/item:4"
+        and "repeals § 6(2) item 5" in record.evidence
+        and "full stop" in record.evidence
+        for record in inventory.residuals
+    )
+    assert any(
+        record.address == "chapter:7/section:17/subsection:9"
+        and "§ 14(2^1)" in record.evidence
+        and "'21'" in record.evidence
+        for record in inventory.residuals
+    )
+
+
 def test_get_ee_residual_inventory_vabariigi_presidendi_tookorra_seadus() -> None:
     inventory = get_ee_residual_inventory("108072011074", "127062017011")
 

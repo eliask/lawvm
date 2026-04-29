@@ -59,6 +59,87 @@ def _lower_generated_residual_records(
 
 
 _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
+    ("129032014010", "130042015006"): EEPairResidualInventory(
+        base_id="129032014010",
+        oracle_id="130042015006",
+        statute_title=(
+            "Poolloodusliku koosluse hooldamise toetuse saamise nõuded, toetuse "
+            "taotlemise ja taotluse menetlemise täpsem kord aastateks 2007–2013"
+        ),
+        comparison_class="commensurable_delta",
+        residuals=cast(tuple[EEResidualRecord, ...], (
+            EEResidualRecord(
+                address="chapter:2",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Parent echo of § 6(2) item 4 terminal punctuation. Source act "
+                    "130042015004 repeals § 6(2) item 5 and does not rewrite item 4; "
+                    "the remaining difference is the semicolon/full-stop surface "
+                    "before the repealed placeholder item."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:2/section:6",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Parent echo of § 6(2) item 4 terminal punctuation. Source act "
+                    "130042015004 repeals § 6(2) item 5 and does not rewrite item 4; "
+                    "the remaining difference is the semicolon/full-stop surface "
+                    "before the repealed placeholder item."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:2/section:6/subsection:2",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Parent echo of § 6(2) item 4 terminal punctuation. Source act "
+                    "130042015004 repeals § 6(2) item 5 and does not rewrite item 4; "
+                    "the remaining difference is the semicolon/full-stop surface "
+                    "before the repealed placeholder item."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:2/section:6/subsection:2/item:4",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Source act 130042015004 repeals § 6(2) item 5 and does not "
+                    "rewrite item 4. Replay and oracle differ only on whether item 4 "
+                    "keeps the semicolon before the repealed placeholder item or is "
+                    "finalized with a full stop."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:7",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Parent echo of § 17(9)'s display of the superscript subsection "
+                    "reference § 14(2^1). Source act 130042015004 carries the "
+                    "superscript form; replay comparison text renders it as '2 1', "
+                    "while oracle 130042015006 renders the same reference as '21'."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:7/section:17",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Parent echo of § 17(9)'s display of the superscript subsection "
+                    "reference § 14(2^1). Source act 130042015004 carries the "
+                    "superscript form; replay comparison text renders it as '2 1', "
+                    "while oracle 130042015006 renders the same reference as '21'."
+                ),
+            ),
+            EEResidualRecord(
+                address="chapter:7/section:17/subsection:9",
+                bucket="source_oracle_drift",
+                evidence=(
+                    "Source act 130042015004 inserts § 17(9) with a superscript "
+                    "reference to § 14(2^1). Replay comparison text renders that "
+                    "reference as '2 1', while oracle 130042015006 renders it as "
+                    "'21'. This is a bounded superscript display surface difference."
+                ),
+            ),
+        )),
+    ),
     ("106012015009", "113092017002"): EEPairResidualInventory(
         base_id="106012015009",
         oracle_id="113092017002",
