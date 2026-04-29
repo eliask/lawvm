@@ -54,6 +54,20 @@ def test_get_ee_residual_inventory_leader_punctuation_drift() -> None:
     )
 
 
+def test_get_ee_residual_inventory_majutuse_appendix_projection_repeal() -> None:
+    inventory = get_ee_residual_inventory("130042020010", "109032023008")
+
+    assert inventory is not None
+    assert inventory.statute_title == "Majutuse ja toitlustuse erialade riiklik õppekava"
+    assert len(inventory.residuals) == 35
+    assert {record.bucket for record in inventory.residuals} == {"appendix_display_pathology"}
+    assert any(
+        record.address == "chapter:4_1"
+        and "määruse lisa 5 tunnistatakse kehtetuks" in record.evidence
+        for record in inventory.residuals
+    )
+
+
 def test_get_ee_residual_inventory_jahitunnistus_label_offset_surface_drift() -> None:
     inventory = get_ee_residual_inventory("106012015009", "113092017002")
 
