@@ -1246,7 +1246,12 @@ def _classify_verb(text: str) -> str:
     # Structural replace. _instruction_preamble() strips "järgmiselt:" before
     # payload parsing, so bare "sõnastatakse" in the preamble is the operative
     # replacement verb.
-    if 'kehtestatakse' in t and 'uues sõnastuses' in t:
+    if (
+        'kehtestatakse' in t
+        and 'uues sõnastuses' in t
+        and re.search(r'\b(?:paragrahvi|§|lõige|lõikes|lõiget|punkt(?:i|is)?)\b', t)
+        and not re.search(r'\blisa(?:s|ga)?\b', t)
+    ):
         return "replace"
     if 'sõnastatakse' in t:
         return "replace"
