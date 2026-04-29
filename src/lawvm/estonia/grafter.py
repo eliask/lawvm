@@ -2024,10 +2024,33 @@ def parse_ee_amendment_ops(
     ) -> List[LegalOperation]:
         """Prefer source-section old-format lowering over header-prefixed preambul recovery."""
         rule_id = "ee_old_format_html_section_preferred_over_preambul_plain_body"
+        numbered_item_rule_id = "ee_old_format_numbered_items_preferred_over_preambul_recovery"
         rich_payload_rule_id = "ee_old_format_html_section_richer_payload_preferred"
         if _substantive_op_count(old_format_ops) < _substantive_op_count(preambul_ops):
             return preambul_ops
         if _substantive_op_count(old_format_ops) == _substantive_op_count(preambul_ops):
+            old_has_numbered_item_witness = any(
+                any(tag.startswith("old_format_amendment_item:") for tag in op.provenance_tags)
+                for op in old_format_ops
+                if op.action is not StructuralAction.META
+            )
+            preambul_uses_premarker_title_recovery = any(
+                "ee_payload_after_marker_ignores_premarker_title_quote" in op.provenance_tags
+                for op in preambul_ops
+                if op.action is not StructuralAction.META
+            )
+            if old_has_numbered_item_witness and preambul_uses_premarker_title_recovery:
+                old_shape = [(op.action, op.target.path) for op in old_format_ops]
+                preambul_shape = [(op.action, op.target.path) for op in preambul_ops]
+                if old_shape != preambul_shape:
+                    return [
+                        replace(
+                            op,
+                            provenance_tags=(*op.provenance_tags, numbered_item_rule_id),
+                            witness_rule_id=op.witness_rule_id or numbered_item_rule_id,
+                        )
+                        for op in old_format_ops
+                    ]
             old_has_carried_section_scope = any(
                 "ee_old_format_carried_section_scope" in op.provenance_tags
                 for op in old_format_ops
