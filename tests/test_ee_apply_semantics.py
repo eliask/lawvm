@@ -4528,6 +4528,46 @@ def test_case_inflected_text_replace_handles_sampling_container_terms() -> None:
     )
 
 
+def test_replace_blocks_child_payload_from_overwriting_part_container() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="3",
+                text="III osa",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="6",
+                        text="6. peatükk",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SECTION,
+                                label="242",
+                                text="Surviving section",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee_test_overbroad_part_replace",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("part", "3"),)),
+        payload=IRNode(kind=IRNodeKind.CONTENT, text="5. jagu Keskkonnaagentuuri toimingud"),
+    )
+    findings: list[CompileAdjudication] = []
+
+    result = _ee_apply_op(body, op, adjudications_out=findings)
+
+    assert result == body
+    assert any(finding.kind == "ee_overbroad_container_replace_blocked" for finding in findings)
+
+
 def test_ee_apply_text_replace_handles_ning_coordinated_phrase_inflection() -> None:
     text = "Andmed avalikustatakse Põllumajandusameti ning Veterinaar- ja Toiduameti veebilehel."
 
