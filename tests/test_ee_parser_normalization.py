@@ -8242,3 +8242,22 @@ def test_parse_ee_amendment_ops_does_not_fold_item_label_into_carried_section() 
         (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "20"))),
         (StructuralAction.TEXT_REPLACE, (("section", "1"), ("subsection", "1"), ("item", "21"))),
     ]
+
+
+def test_parse_ee_amendment_ops_does_not_carry_section_into_appendix_clauses() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("119032026009", archive),
+        "ee/119032026009",
+        target_title="Metsise püsielupaikade kaitse alla võtmine",
+    )
+
+    appendix_ops = [
+        op
+        for op in ops
+        if any("määruse lisa" in tag for tag in op.provenance_tags)
+    ]
+
+    assert appendix_ops
+    assert not any(op.target.path == (("section", "2"),) and op.action is not StructuralAction.META for op in appendix_ops)

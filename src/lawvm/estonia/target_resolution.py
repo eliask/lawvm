@@ -608,6 +608,13 @@ def new_format_lower_op_texts(
     global_seq = seq_start
     last_section: str | None = None
 
+    def _is_act_level_non_body_clause(text: str) -> bool:
+        stripped = re.sub(r"^\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s*", "", text).strip().lower()
+        return bool(
+            re.match(r"^määruse\s+lisa(?:s|d|ga)?\b", stripped)
+            or re.match(r"^määruse\s+(?:kolmas\s+)?normitehnili\w*\s+märkus", stripped)
+        )
+
     for op_text in op_texts:
         rule_tags: list[str] = []
         while op_text.startswith(_OP_TEXT_RULE_PREFIX):
@@ -651,7 +658,7 @@ def new_format_lower_op_texts(
             target_title,
             title_matcher=title_matcher,
         )
-        if last_section and not has_section_ref(original_op_text):
+        if last_section and not has_section_ref(original_op_text) and not _is_act_level_non_body_clause(original_op_text):
             last_sect_raw = last_section.replace("_", " ")
             carried_text = re.sub(r"^\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s*", "", original_op_text)
             effective = f"paragrahvi {last_sect_raw} {carried_text}"
