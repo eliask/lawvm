@@ -479,6 +479,33 @@ def test_extract_ee_ops_handles_imperative_statute_section_insert() -> None:
     assert _payload(ops[0]).text.startswith("§ 17 1 . Tervisenõuded V grupi")
 
 
+def test_extract_ee_ops_splits_comma_separated_plural_section_insert_payloads() -> None:
+    text = (
+        "määrust täiendatakse §-dega 17 1, 17 2 ja 17 3 järgmises sõnastuses: "
+        "„§ 17 1 . Esimene\x01 Esimese tekst. "
+        "§ 17 2 . Teine\x01 (1) Teise esimene lõige. "
+        "§ 17 3 . Kolmas\x01 (1) Kolmanda esimene lõige.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path, op.witness_rule_id) for op in ops] == [
+        (StructuralAction.INSERT, (("section", "17_1"),), "ee_plural_section_insert_payload_split"),
+        (StructuralAction.INSERT, (("section", "17_2"),), "ee_plural_section_insert_payload_split"),
+        (StructuralAction.INSERT, (("section", "17_3"),), "ee_plural_section_insert_payload_split"),
+    ]
+    assert [op.payload.text for op in ops if op.payload is not None] == [
+        "§ 17 1 . Esimene\x01 Esimese tekst.",
+        "§ 17 2 . Teine\x01 (1) Teise esimene lõige.",
+        "§ 17 3 . Kolmas\x01 (1) Kolmanda esimene lõige.",
+    ]
+    assert all(
+        op.payload is not None
+        and op.payload.attrs["source_family"] == "ee_plural_section_insert_payload_split"
+        for op in ops
+    )
+
+
 def test_extract_ee_ops_targets_part_chapter_division_heading() -> None:
     text = (
         "seaduse 3. osa 6. peatüki 5. jao pealkiri muudetakse ja "
