@@ -1286,8 +1286,9 @@ def old_format_has_section_ref(text: str) -> bool:
         re.search(
             r"\bparagrahvid(?:e[s]?)?\s+\d|\bparagrahvi(?:s|st)?\s+\d|\bparagrahv\s+\d|"
             r"§(?:-d|-s|-ga|-des|-dega)?\s*\d|"
-            r"\blisa(?:d|de|sid)?\s+\d|"
+            r"\blisa(?:d|de|sid|ga)?\s+\d|"
             r"\bpeatüki\s+\d|\bjao\s+\d|\bjaotis(?:e|es|t)?\s+\d|"
+            r"\bpeatükiga\s+\d|"
             r"\b\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s*[.]\s*peatük|\b\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s*[.]\s*jao|"
             r"\b\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s*[.]\s*jaotis",
             preamble,
