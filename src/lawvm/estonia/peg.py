@@ -1017,6 +1017,9 @@ _EE_TAOTLUSVOOR_COORDINATION_FORMS_RULE = "ee_case_inflected_taotlusvoor_coordin
 _EE_MIXED_ACRONYM_SUFFIX_CASE_REWRITE_RULE = "ee_case_inflected_mixed_acronym_suffix_case"
 _EE_NETO_OMAVAHEND_PREFIX_FORMS_RULE = "ee_case_inflected_neto_omavahend_prefix_forms"
 _EE_KYSK_RTK_FORMS_RULE = "ee_case_inflected_kysk_riigi_tugiteenuste_keskus_forms"
+_EE_ARUANDED_ARUANNE_FORMS_RULE = "ee_case_inflected_aruanded_aruanne_forms"
+_EE_ARUANDED_HEADING_AGREEMENT_RULE = "ee_case_inflected_aruanded_heading_agreement"
+_EE_QUOTED_LEGAL_TITLE_PROTECTION_RULE = "ee_text_replace_quoted_legal_title_protection"
 _EE_INSERT_MULTI_EXPLICIT_TARGETS_PAYLOAD_LABEL_FILTER_RULE = (
     "ee_insert_multi_explicit_targets_payload_label_filter"
 )
@@ -1056,6 +1059,8 @@ def _case_inflected_phrase_source_family(old_text: str | None, new_text: str | N
         return _EE_NETO_OMAVAHEND_PREFIX_FORMS_RULE
     if old_text == "KÜSK" and new_text == "Riigi Tugiteenuste Keskus":
         return _EE_KYSK_RTK_FORMS_RULE
+    if old_text == "aruanded" and new_text == "aruanne":
+        return _EE_ARUANDED_ARUANNE_FORMS_RULE
     if new_text and re.fullmatch(r"[A-ZÕÄÖÜŠŽ]{2,}-[a-zäöõüšž]+", new_text.strip()):
         return _EE_MIXED_ACRONYM_SUFFIX_CASE_REWRITE_RULE
     return ""
@@ -3637,6 +3642,9 @@ def _set_text_replace_payload_attrs(
         attrs["old_titles"] = list(old_titles)
     if source_family:
         attrs["source_family"] = source_family
+    if source_family == _EE_ARUANDED_ARUANNE_FORMS_RULE:
+        attrs["heading_agreement_rule"] = _EE_ARUANDED_HEADING_AGREEMENT_RULE
+        attrs["quoted_legal_title_protection_rule"] = _EE_QUOTED_LEGAL_TITLE_PROTECTION_RULE
     if not old_text and not new_text and not scope_chapters and not exclude_paths and not generic_minister_plural and not old_titles and not source_family and not case_inflected:
         return replace(payload, attrs=attrs), None
     witness = make_text_rewrite_witness(
@@ -4101,6 +4109,7 @@ def extract_ee_ops(
         ]
     if re.search(
         rf'\b{statute_ref}\s+kogu\s+teksti[s]?\s+asendatakse'
+        rf'|\b{statute_ref}\s+asendatakse\s+kogu\s+teksti\s+ulatuses'
         rf'|\b{statute_ref}\s+asendatakse\s+läbivalt'
         rf'|\b{statute_ref}\s+teksti[s]?\s+asendatakse'
         rf'|\b{statute_ref}\s+teksti[s]?\s*,\s*välja\s+arvatud\s+[^.]+?\s+asendatakse'

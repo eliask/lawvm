@@ -885,6 +885,25 @@ def test_extract_ee_ops_marks_kysk_abbreviation_case_family() -> None:
     )
 
 
+def test_extract_ee_ops_marks_aruanded_to_aruanne_case_family() -> None:
+    text = (
+        "määruses asendatakse kogu teksti ulatuses sõna „aruanded” "
+        "sõnaga „aruanne” vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].payload is not None
+    assert _payload(ops[0]).attrs["case_inflected"] is True
+    assert _payload(ops[0]).attrs["source_family"] == "ee_case_inflected_aruanded_aruanne_forms"
+    assert _payload(ops[0]).attrs["heading_agreement_rule"] == "ee_case_inflected_aruanded_heading_agreement"
+    assert (
+        _payload(ops[0]).attrs["quoted_legal_title_protection_rule"]
+        == "ee_text_replace_quoted_legal_title_protection"
+    )
+
+
 def test_new_format_omnibus_does_not_route_payload_cross_reference_to_target() -> None:
     xml = """
     <oigusakt xmlns="muutmismaarus_1_10.02.2010">
