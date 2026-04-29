@@ -4507,6 +4507,27 @@ def test_global_case_inflected_text_replace_handles_meri_irregular_forms() -> No
     assert "veekogu" not in subsection.text
 
 
+def test_case_inflected_text_replace_handles_sampling_container_terms() -> None:
+    assert (
+        _ee_apply_text_replace_value(
+            "proovipudeli valimine",
+            "proovipudel",
+            "proovivõtuanum",
+            case_inflected=True,
+        )
+        == "proovivõtuanuma valimine"
+    )
+    assert (
+        _ee_apply_text_replace_value(
+            "avatud anumat hoitakse anumas",
+            "anum",
+            "proovivõtuanum",
+            case_inflected=True,
+        )
+        == "avatud proovivõtuanumat hoitakse proovivõtuanumas"
+    )
+
+
 def test_ee_apply_text_replace_handles_ning_coordinated_phrase_inflection() -> None:
     text = "Andmed avalikustatakse Põllumajandusameti ning Veterinaar- ja Toiduameti veebilehel."
 

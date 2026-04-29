@@ -125,6 +125,27 @@ def test_extract_ee_ops_accepts_left_right_curly_quote_text_replace() -> None:
     assert _payload(ops[0]).text == "põllu- ja metsamajandusliku"
 
 
+def test_extract_ee_ops_emits_unscoped_many_old_single_new_text_replaces() -> None:
+    text = (
+        "sõnad „anum”, „proovipudel” ja „proovivõtupudel” "
+        "asendatakse sõnaga „proovivõtuanum” vastavas käändes;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.TEXT_REPLACE, ()),
+        (StructuralAction.TEXT_REPLACE, ()),
+        (StructuralAction.TEXT_REPLACE, ()),
+    ]
+    assert [(_payload(op).attrs["old_text"], _payload(op).text) for op in ops] == [
+        ("anum", "proovivõtuanum"),
+        ("proovipudel", "proovivõtuanum"),
+        ("proovivõtupudel", "proovivõtuanum"),
+    ]
+    assert all(_payload(op).attrs["case_inflected"] is True for op in ops)
+
+
 def test_extract_ee_ops_accepts_left_right_curly_quote_heading_delete() -> None:
     text = 'Paragrahvi 18 pealkirjast jäetakse välja sõnad “ja projekteerimisnormid”;'
 
