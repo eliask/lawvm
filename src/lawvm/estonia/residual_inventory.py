@@ -24,6 +24,7 @@ EEResidualBucket = Literal[
     "appendix_display_pathology",
     "oracle_correction_notice",
     "descendant_residual_mix",
+    "presentation_punctuation_whitespace",
 ]
 
 

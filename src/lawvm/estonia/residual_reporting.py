@@ -1,6 +1,7 @@
 """Helpers for surfacing adjudicated EE residual inventories in reports."""
 from __future__ import annotations
 
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass
 from typing import Iterable
@@ -9,6 +10,14 @@ from lawvm.estonia.residual_inventory import (
     EEPairResidualInventory,
     EEResidualRecord,
     get_ee_residual_inventory,
+)
+
+
+_PRESENTATION_PUNCTUATION_WHITESPACE_BUCKET = "presentation_punctuation_whitespace"
+_PRESENTATION_PUNCTUATION_WHITESPACE_EVIDENCE = (
+    "Replay and Riigi Teataja text differ only by Unicode punctuation "
+    "and whitespace after a publication-only projection. The row is "
+    "kept for auditability but hidden from the default open candidate queue."
 )
 
 
@@ -27,6 +36,44 @@ class EEResidualSummary:
     unknown_current_divergence_count: int
     unknown_current_divergence_addresses: tuple[str, ...]
     record_by_address: dict[str, EEResidualRecord]
+
+
+def strip_ee_punctuation_and_whitespace(text: str) -> str:
+    """Projection used only for EE residual triage, not replay comparison."""
+    return "".join(
+        char
+        for char in text
+        if not char.isspace()
+        and not unicodedata.category(char).startswith(("P", "Z"))
+    )
+
+
+def is_ee_punctuation_whitespace_only_difference(
+    replay_text: str | None,
+    oracle_text: str | None,
+) -> bool:
+    """Return true when EE surfaces differ only by punctuation/whitespace.
+
+    This is a reporting/publication classifier. It deliberately does not
+    normalize letters, digits, symbols, or words, and it never mutates replay.
+    """
+    if replay_text is None or oracle_text is None:
+        return False
+    if replay_text == oracle_text:
+        return False
+    return (
+        strip_ee_punctuation_and_whitespace(replay_text)
+        == strip_ee_punctuation_and_whitespace(oracle_text)
+    )
+
+
+def build_ee_punctuation_whitespace_record(address: str) -> EEResidualRecord:
+    """Build a typed presentation-only residual record for one EE address."""
+    return EEResidualRecord(
+        address=address,
+        bucket=_PRESENTATION_PUNCTUATION_WHITESPACE_BUCKET,
+        evidence=_PRESENTATION_PUNCTUATION_WHITESPACE_EVIDENCE,
+    )
 
 
 def _derive_ancestor_record(
@@ -124,5 +171,8 @@ def build_ee_residual_summary(
 
 __all__ = [
     "EEResidualSummary",
+    "build_ee_punctuation_whitespace_record",
     "build_ee_residual_summary",
+    "is_ee_punctuation_whitespace_only_difference",
+    "strip_ee_punctuation_and_whitespace",
 ]
