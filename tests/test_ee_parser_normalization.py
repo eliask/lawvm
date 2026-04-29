@@ -9606,3 +9606,64 @@ def test_parse_ee_amendment_ops_prefers_old_format_carried_section_over_live_uni
         "ee_flat_sectionless_singleton_subsection_scope" not in op.provenance_tags
         for op in ops
     )
+
+
+def test_parse_ee_amendment_ops_prefers_old_format_numbered_items_over_preambul_recovery() -> None:
+    xml = """
+    <oigusakt xmlns="muutmismaarus_1_10.02.2010">
+      <aktinimi>
+        <nimi>
+          <pealkiri>Vabariigi Valitsuse 1. jaanuari 2020. a määruse nr 1 „Sihtmäärus” täiendamine</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <preambul>
+          <tavatekst>Määrus kehtestatakse seaduse alusel.</tavatekst>
+        </preambul>
+        <sisuTekst>
+          <HTMLKonteiner><![CDATA[
+            <p>Vabariigi Valitsuse 1. jaanuari 2020. a määrust nr 1 „Sihtmäärus” täiendatakse järgmiselt:</p>
+            <p><b>1)</b> paragrahvi 10 täiendatakse punktiga 4 järgmises sõnastuses:</p>
+            <p>„4) esimene muudatus.”;</p>
+            <p><b>2)</b> paragrahvi 15 täiendatakse punktiga 12 järgmises sõnastuses:</p>
+            <p>„12) teine muudatus.”.</p>
+          ]]></HTMLKonteiner>
+        </sisuTekst>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Sihtmäärus")
+
+    assert [(op.action, op.target.path, _payload(op).text) for op in ops] == [
+        (StructuralAction.INSERT, (("section", "10"), ("item", "4")), "4) esimene muudatus."),
+        (StructuralAction.INSERT, (("section", "15"), ("item", "12")), "12) teine muudatus."),
+    ]
+    assert all(any(tag.startswith("old_format_amendment_item:") for tag in op.provenance_tags) for op in ops)
+    assert all(
+        "ee_old_format_numbered_items_preferred_over_preambul_recovery" in op.provenance_tags
+        for op in ops
+    )
+
+
+def test_parse_ee_amendment_ops_recovers_real_127032024007_numbered_item_targets() -> None:
+    archive = open_rt_archive(readonly=True)
+    target_title = (
+        "Tegevusvaldkondade, mille korral tuleb anda keskkonnamõju hindamise "
+        "vajalikkuse eelhinnang, täpsustatud loetelu"
+    )
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("127032024007", archive),
+        "ee/127032024007",
+        target_title=target_title,
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.INSERT, (("section", "10"), ("item", "4"))),
+        (StructuralAction.INSERT, (("section", "15"), ("item", "12"))),
+    ]
+    assert all(
+        "ee_old_format_numbered_items_preferred_over_preambul_recovery" in op.provenance_tags
+        for op in ops
+    )
