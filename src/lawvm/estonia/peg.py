@@ -994,6 +994,9 @@ _EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE = "ee_plural_subsection_insert_p
 _EE_MULTI_TARGET_TEXT_DELETE_SPLIT_RULE = "ee_multi_target_text_delete_split"
 _EE_MIXED_DELETE_REPLACE_SAME_TARGET_RULE = "ee_mixed_delete_and_replace_same_target"
 _EE_MIXED_REPLACE_INSERT_AFTER_SAME_TARGET_RULE = "ee_mixed_replace_and_insert_after_same_target"
+_EE_MIXED_TEXT_REPLACE_SENTENCE_REPLACE_SAME_TARGET_RULE = (
+    "ee_mixed_text_replace_and_sentence_replace_same_target"
+)
 _EE_EXPLICIT_MIXED_STRUCTURAL_REPEAL_LIST_RULE = "ee_explicit_mixed_structural_repeal_list"
 _EE_SUBSECTION_TABLE_ONLY_REPLACE_RULE = "ee_subsection_table_only_replace_preserve_intro"
 _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE = "ee_senine_text_subsection_renumber_before_insert"
@@ -2256,6 +2259,39 @@ def _extract_mixed_text_replace_sentence_insert(text: str) -> tuple[str, str, st
         if len(quotes) >= 3:
             return quotes[0], quotes[1], quotes[2]
     return None
+
+
+def _extract_mixed_text_replace_sentence_replace(text: str) -> tuple[list[tuple[str, str]], str, str] | None:
+    """Extract text OLD→NEW plus same-target sentence replacement from one clause."""
+    if not (
+        re.search(r'\basendatakse\b', text, re.IGNORECASE)
+        and re.search(r'\blause\s+asendatakse\s+lausega\b', text, re.IGNORECASE)
+    ):
+        return None
+
+    normalized = html.unescape(text)
+    sentence_replace_start = (
+        r'(?:esime(?:ne|se)|tei(?:ne|se)|kolma(?:s|nda)|nelja(?:s|nda)|'
+        r'vii(?:es|enda)|kuu(?:es|enda)|seitsme(?:s|nda)|kaheks(?:as|anda)|'
+        r'viima(?:ne|se)|\d+\.?)\s+lause\s+asendatakse\s+lausega\b'
+    )
+    parts = re.split(
+        rf'\s+(?:ning|ja)\s+(?=[^.;]{{0,160}}\b{sentence_replace_start})',
+        normalized,
+        maxsplit=1,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if len(parts) != 2:
+        return None
+    text_replace_segment, sentence_replace_segment = (part.strip() for part in parts)
+    text_pairs = _extract_many_old_single_new_text_replace_pairs(
+        text_replace_segment
+    ) or _extract_text_replace_pairs(text_replace_segment)
+    text_pairs = [(old, new) for old, new in text_pairs if old and new]
+    sentence_payload = _extract_quoted_content(sentence_replace_segment)
+    if not text_pairs or not sentence_payload:
+        return None
+    return text_pairs, sentence_payload, sentence_replace_segment
 
 
 def _extract_mixed_insert_after_and_replace_pairs(text: str) -> list[tuple[str, str]]:
@@ -6114,6 +6150,51 @@ def extract_ee_ops(
                 payload=insert_payload,
                 source=source,
                 provenance_tags=(clean[:200],),
+            ))
+            return ops
+
+    if action == "text_replace":
+        mixed_text_replace_sentence_replace = _extract_mixed_text_replace_sentence_replace(clean)
+        if mixed_text_replace_sentence_replace is not None:
+            rule_id = _EE_MIXED_TEXT_REPLACE_SENTENCE_REPLACE_SAME_TARGET_RULE
+            text_pairs, sentence_replacement, sentence_segment = mixed_text_replace_sentence_replace
+            for replacement_old, replacement_new in text_pairs:
+                replace_payload = IRNode(kind=IRNodeKind.CONTENT, text=replacement_new)
+                replace_payload, _replace_witness = _set_text_replace_payload_attrs(
+                    replace_payload,
+                    clean,
+                    replacement_old,
+                    replacement_new,
+                    source_family=rule_id,
+                )
+                ops.append(LegalOperation(
+                    op_id=f"ee-text-replace-before-sentence-replace-{str(target)}-{seq}-{source.statute_id}",
+                    sequence=seq,
+                    action=_to_structural_action("text_replace"),
+                    target=target,
+                    payload=replace_payload,
+                    text_patch=_typed_text_replace_patch(replacement_old, replacement_new),
+                    source=source,
+                    provenance_tags=(rule_id, clean[:200]),
+                    witness_rule_id=rule_id,
+                ))
+                seq += 1
+
+            sentence_payload = IRNode(
+                kind=IRNodeKind.CONTENT,
+                text=sentence_replacement,
+                attrs={"source_family": rule_id},
+            )
+            sentence_payload = _set_sentence_replace_payload_attrs(sentence_payload, sentence_segment)
+            ops.append(LegalOperation(
+                op_id=f"ee-sentence-replace-after-text-replace-{str(target)}-{seq}-{source.statute_id}",
+                sequence=seq,
+                action=_to_structural_action("replace"),
+                target=target,
+                payload=sentence_payload,
+                source=source,
+                provenance_tags=(rule_id, sentence_segment[:200]),
+                witness_rule_id=rule_id,
             ))
             return ops
 
