@@ -5829,6 +5829,50 @@ def test_parse_ee_amendment_ops_keeps_html_direct_body_intro_as_payload_carrier(
     assert "Muudatuse põhjendus" not in ops[0].payload.text
 
 
+def test_parse_ee_amendment_ops_accepts_bare_sonastatakse_html_instruction() -> None:
+    xml = """
+    <oigusakt xmlns="muutmismaarus_1_10.02.2010">
+      <aktinimi>
+        <nimi>
+          <pealkiri>Sotsiaalministri määruste muutmine</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>8</paragrahvNr>
+          <paragrahvPealkiri>Sotsiaalministri määruse nr 59 „Aine või toote ravimina määratlemise tingimused ja kord“ muutmine</paragrahvPealkiri>
+          <sisuTekst>
+            <HTMLKonteiner><![CDATA[
+              <p>Sotsiaalministri määruse nr 59 „Aine või toote ravimina määratlemise tingimused ja kord“ § 3 lõige 2 sõnastatakse järgmiselt:</p>
+              <p>„(2) Toode määratletakse ravimina järgmistel juhtudel:<br/>
+                1) tootega kaasneb informatsioon;<br/>
+                2) toodet kasutatakse diagnoosimiseks;<br/>
+                3) toode on ette nähtud loomade surmamiseks.“.</p>
+            ]]></HTMLKonteiner>
+          </sisuTekst>
+        </paragrahv>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Aine või toote ravimina määratlemise tingimused ja kord",
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPLACE
+    assert ops[0].target.path == (("section", "3"), ("subsection", "2"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.text == (
+        "(2) Toode määratletakse ravimina järgmistel juhtudel: "
+        "1) tootega kaasneb informatsioon; "
+        "2) toodet kasutatakse diagnoosimiseks; "
+        "3) toode on ette nähtud loomade surmamiseks."
+    )
+
+
 def test_parse_ee_amendment_ops_strips_html_amendment_section_heading_before_direct_target() -> None:
     xml = """
     <oigusakt xmlns="muutmismaarus_1_10.02.2010">

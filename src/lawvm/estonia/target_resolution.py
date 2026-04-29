@@ -1006,7 +1006,7 @@ def new_format_collect_op_texts(
 
     op_kws = (
         "paragrahvi", "paragrahvist", "lõiget", "lõikest", "lõikes",
-        "muudetakse", "täiendatakse", "tunnistatakse",
+        "muudetakse", "täiendatakse", "tunnistatakse", "sõnastatakse",
         "asendatakse", "jäetakse välja", "lisatakse",
         "§-ga", "§-dega",
     )
