@@ -1157,6 +1157,7 @@ residual bucket. Known residual families are explicit exclusions, for example:
 
 - `presentation_punctuation_whitespace` -> `excluded_presentation`
 - `replay_coverage_gap` -> `excluded_replay_coverage`
+- `table_fragment_replay_gap` -> `excluded_replay_coverage`
 - `comparison_descendant_projection` -> `excluded_comparison_projection`
 - `source_oracle_drift` -> `excluded_source_surface`
 - `pair_surface_classification` -> `excluded_pair_surface`
