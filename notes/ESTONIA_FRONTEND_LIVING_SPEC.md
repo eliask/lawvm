@@ -1379,3 +1379,17 @@ explicit target, equivalent to `pärast sõna`.
 The payload witness family is:
 
 - `ee_peale_sona_insert_after_synonym`
+
+## 71. Elative section targets can carry sentence-scope deletion
+
+Clauses such as `§-st 6 jäetakse välja teine lause` target a sentence inside a
+section, not the section as a whole. The elative `§-st` supplies the section
+target, while `teine lause` supplies sentence scope.
+
+This must lower to a sentence-scoped `REPLACE` with empty payload and
+`sentence_target_meta`, not a structural section repeal.
+
+Corpus witness:
+
+- `114082018004` changes `102112016003`; oracle `114082018005` keeps § 6 and
+  removes only its second sentence.

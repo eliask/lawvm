@@ -5319,6 +5319,20 @@ def test_extract_ee_ops_treats_section_sentence_repeal_as_replace() -> None:
     assert ops[0].provenance_tags[-1] == "esimene lause tunnistatakse kehtetuks"
 
 
+def test_extract_ee_ops_treats_elative_section_sentence_delete_as_replace() -> None:
+    text = "§-st 6 jäetakse välja teine lause."
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert [(op.action, op.target.path, _payload(op).text) for op in ops] == [
+        (StructuralAction.REPLACE, (("section", "6"),), ""),
+    ]
+    assert ops[0].provenance_tags[-1] == "teine lause jäetakse välja"
+    sentence_meta = read_sentence_target_meta(_payload(ops[0]))
+    assert sentence_meta is not None
+    assert sentence_meta.sentence_indexes == (1,)
+
+
 def test_extract_ee_ops_handles_aastaarv_text_replace_across_multiple_subsections() -> None:
     ops = extract_ee_ops(
         ("paragrahvi 9 2 lõigetes 1 1 ja 1 2 asendatakse aastaarv ”2019” aastaarvuga ”2024”."),
@@ -7199,6 +7213,24 @@ def test_parse_ee_amendment_ops_keeps_target_header_single_sentence_delete() -> 
     assert ops[0].target.path == (("section", "4"), ("subsection", "1"))
     assert ops[0].payload is not None
     assert ops[0].payload.text == ""
+
+
+def test_parse_ee_amendment_ops_keeps_archive_elative_section_sentence_delete() -> None:
+    archive = open_rt_archive(readonly=True)
+    base = parse_ee_statute(fetch_rt_xml("102112016003", archive), "ee/102112016003")
+    xml = fetch_rt_xml("114082018004", archive)
+
+    ops = parse_ee_amendment_ops(xml, "ee/114082018004", target_title=base.title)
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPLACE
+    assert op.target.path == (("section", "6"),)
+    assert op.payload is not None
+    assert op.payload.text == ""
+    sentence_meta = read_sentence_target_meta(op.payload)
+    assert sentence_meta is not None
+    assert sentence_meta.sentence_indexes == (1,)
 
 
 def test_parse_ee_amendment_ops_single_target_preambul_preserves_sections_5_to_10() -> None:

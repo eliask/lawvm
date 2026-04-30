@@ -4500,7 +4500,7 @@ def extract_ee_ops(
     if action == "repeal":
         sentence_note = _extract_sentence_repeal_note(clean)
         m_single_sect_sentence_repeal = re.search(
-            r'(?:\bparagrahvi[s]?\s+|§\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
+            r'(?:\bparagrahvi(?:s|st)?\s+|§(?:-st)?\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+'
             r'(?:(?:esime(?:ne|se)|tei(?:ne|se)|kolma(?:s|nda)|nelja(?:s|nda))\s+lause\s+'
             r'(?:tunnistatakse\s+kehtetuks|j[aä]etakse\s+v[aä]lja)'
             r'|(?:tunnistatakse\s+kehtetuks|j[aä]etakse\s+v[aä]lja)\s+'
