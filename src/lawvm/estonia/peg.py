@@ -2962,15 +2962,19 @@ def _strip_leading_quoted_act_reference(text: str) -> str:
     """Drop explicit act-title prefix before a structural target list."""
     if re.match(r"^\s*(?:§|paragrahvi?|lõike|punkti)\b", text, re.IGNORECASE):
         return text
-    return re.sub(
+    preamble = _instruction_preamble(text)
+    stripped_preamble = re.sub(
         r"^[A-ZÜÕÖÄ][^\n]{0,520}?\b(?:seaduse|seaduses|seadustiku|koodeksi|määruse|määruses)\b"
         r"(?:\s+nr\.?\s*[\w./-]+)?\s+[„\"“].+[”“\"]\s+"
         r"(?=(?:§|paragrahv|asendatakse|muudetakse|täiendatakse|tunnistatakse|jäetakse))",
         "",
-        text,
+        preamble,
         count=1,
         flags=re.IGNORECASE,
     ).strip()
+    if stripped_preamble == preamble.strip():
+        return text.strip()
+    return f"{stripped_preamble}{text[len(preamble):]}".strip()
 
 
 def _extract_secondary_subsection_repeals(clean: str) -> List[tuple[str, str]]:
