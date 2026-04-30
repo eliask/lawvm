@@ -2467,6 +2467,24 @@ def test_extract_ee_ops_keeps_cited_act_section_insert_out_of_payload_item_scope
     assert not _payload(ops[0]).text.endswith('elluviimisel."')
 
 
+def test_extract_ee_ops_keeps_bare_statute_section_insert_out_of_payload_act_title_scope() -> None:
+    text = (
+        "määrust täiendatakse §-ga 6 1 järgmises sõnastuses: "
+        "„§ 6 1 . Nõuetele vastavuse küsimustiku täitmine\x01 "
+        "Piimasektori eritoetuse taotleja esitab PRIA-le põllumajandusministri "
+        "20. märtsi 2010. a määruse nr 36 „Ühtse pindalatoetuse kord” "
+        "§ 5 lõikes 1 nimetatud tähtaja jooksul küsimustiku.”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "6_1"),)
+    assert "määruse nr 36" in _payload(ops[0]).text
+    assert "§ 5 lõikes 1" in _payload(ops[0]).text
+
+
 def test_parse_ee_amendment_ops_keeps_real_cited_act_section_insert_target() -> None:
     archive = open_rt_archive(readonly=True)
     ops = parse_ee_amendment_ops(
@@ -2480,6 +2498,29 @@ def test_parse_ee_amendment_ops_keeps_real_cited_act_section_insert_target() -> 
     assert ops[0].target.path == (("section", "9_1"),)
     assert ops[0].witness_rule_id == "ee_act_citation_section_insert_target"
     assert "paragrahvi 25 punkti 8" in _payload(ops[0]).text
+
+
+def test_parse_ee_amendment_ops_keeps_real_bare_statute_insert_target_before_payload_act_title() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("115022012003", archive),
+        "ee/115022012003",
+        target_title=(
+            "Loomakasvatuse täiendava otsetoetuse ja piimasektori eritoetuse "
+            "saamise täpsemad nõuded ning toetuse taotlemise ja taotluse "
+            "menetlemise täpsem kord ning täiendava otsetoetuse toetusõiguse "
+            "üleandmisest teavitamise kord ja põllumajandusloomade loomühikute "
+            "arvestuse alused"
+        ),
+    )
+    archive.close()
+
+    section_insert = next(op for op in ops if op.target.path == (("section", "6_1"),))
+
+    assert section_insert.action is StructuralAction.INSERT
+    assert section_insert.payload is not None
+    assert "määruse nr 36" in section_insert.payload.text
+    assert "§ 5 lõikes 1" in section_insert.payload.text
 
 
 def test_extract_ee_ops_fans_out_mixed_text_replace_targets() -> None:
