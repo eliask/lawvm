@@ -473,6 +473,36 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
+    ("104022011014", "115022012004"): EEPairResidualInventory(
+        base_id="104022011014",
+        oracle_id="115022012004",
+        statute_title=(
+            "Loomakasvatuse täiendava otsetoetuse ja piimasektori eritoetuse "
+            "saamise täpsemad nõuded ning toetuse taotlemise ja taotluse "
+            "menetlemise täpsem kord ning täiendava otsetoetuse toetusõiguse "
+            "üleandmisest teavitamise kord ja põllumajandusloomade loomühikute "
+            "arvestuse alused"
+        ),
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "section:12_1",
+                    "section:12_1/subsection:1",
+                ),
+                evidence=(
+                    "Source act 115022012003 inserts § 12^1 and explicitly says "
+                    "§ 12^1(1) ends with 'artikli 7 lõikes 2 sätestatu'. Replay "
+                    "preserves that source-owned payload. Oracle 115022012004 "
+                    "instead displays 'artikli 7 lõikes 2 sätestatut'. This is a "
+                    "bounded source/oracle inflection-surface disagreement in the "
+                    "inserted payload, not authority for replay to mutate the "
+                    "quoted source text."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("124112010005", "109062011002"): EEPairResidualInventory(
         base_id="124112010005",
         oracle_id="109062011002",
