@@ -1102,6 +1102,29 @@ Corpus witness:
 The named target-routing repair is not a replay shortcut. It is exact registry
 admission plus quoted-title extraction from wrapper headers.
 
+## 57.1. Registry aliases cover title relabels between base and later source acts
+
+Estonian amendment chains can rename a target act title before a later omnibus
+amendment targets that same act under the renamed title. Pairwise replay still
+parses each amendment against the original base title, so title routing cannot
+depend on already-mutated live state at parse time.
+
+This is not a live-unique fallback. It is registry-backed identity evidence:
+
+- the old base title surface must match the registry record;
+- the later wrapper/header quoted title surface must match the same record;
+- unrelated omnibus sections remain rejected.
+
+Corpus witness:
+
+- base `122042022003` exposes `... Justiitsministeeriumi ametniku ...`;
+- source `118072025001` wrapper § 7 targets the same regulation as
+  `... Justiits- ja Digiministeeriumi ametniku ...`;
+- oracle `118072025011` expects § 2 lõige 2 punktid 3 ja 4 from that wrapper.
+
+The registry entry is family-level `title_relabel_alias` evidence, not a statute
+ID special-case in replay.
+
 ## 58. Old-format wrapper sections can imply whole-regulation scope
 
 Inside an admitted old-format wrapper section, an item can say only:
