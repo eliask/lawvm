@@ -840,6 +840,8 @@ class EEPitResult:
     # Timelines (populated after timeline-primary flip)
     timelines: Optional[dict] = None
     temporal_events: tuple[TemporalEvent, ...] = ()
+    compiled_ops: tuple[LegalOperation, ...] = ()
+    applied_snapshot_ops: tuple[LegalOperation, ...] = ()
 
     # Consistency check
     divergences: list = field(default_factory=list)
@@ -1048,6 +1050,7 @@ def replay_ee_to_pit(
         _log(f"Pending amendment precompositions: {len(precomposition_adjudications)}")
 
     result.n_ops = len(all_ops)
+    result.compiled_ops = tuple(all_ops)
     _log(f"Total ops: {len(all_ops)}")
     temporal_source_ops: list[LegalOperation] = list(all_ops)
     if pair_plan.base_is_consolidated and not to_apply:
@@ -1119,6 +1122,7 @@ def replay_ee_to_pit(
         *precomposition_adjudications,
         *adjudications,
     ]
+    result.applied_snapshot_ops = tuple(lo_ops_out)
     _log(f"Timeline snapshots emitted: {len(lo_ops_out)}")
 
     # ── Step 5b: Timeline-primary — compile timelines + materialize PIT ────
