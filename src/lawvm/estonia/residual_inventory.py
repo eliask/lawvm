@@ -473,6 +473,34 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             ),
         ),
     ),
+    ("101042022020", "113072024004"): EEPairResidualInventory(
+        base_id="101042022020",
+        oracle_id="113072024004",
+        statute_title=(
+            "Riiklike maksude maksuhalduri poolt hallatavate nõuete ja "
+            "kohustuste arvestusse kandmise, tasumise ja tagastamise kord"
+        ),
+        comparison_class="commensurable_delta",
+        residuals=_lower_generated_residual_records(
+            build_address_list_family(
+                addresses=(
+                    "chapter:3",
+                    "chapter:3/section:6",
+                    "chapter:3/section:6/subsection:3",
+                ),
+                evidence=(
+                    "Source act 113072024003 replaces § 6(3) and explicitly "
+                    "quotes 'Maksukorralduse seaduse § 1 lõikes 6 nimetatud ...'. "
+                    "Replay preserves that source-owned payload. Oracle "
+                    "113072024004 instead displays '§ 1 lõike 6 nimetatud ...' "
+                    "at § 6(3). This is a bounded source/oracle case-form "
+                    "surface disagreement in quoted replacement text, not "
+                    "authority for replay to mutate the source payload."
+                ),
+                bucket="source_oracle_drift",
+            ),
+        ),
+    ),
     ("104022011014", "115022012004"): EEPairResidualInventory(
         base_id="104022011014",
         oracle_id="115022012004",
