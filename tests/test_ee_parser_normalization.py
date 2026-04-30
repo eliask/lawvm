@@ -10708,6 +10708,53 @@ def test_parse_ee_amendment_ops_recovers_2022_2028_transitional_section_repeals(
     ]
 
 
+def test_parse_ee_amendment_ops_cross_act_transitional_helper_skips_mixed_subsection_clause() -> None:
+    target_title = "Aadressiandmete süsteem"
+    xml = f"""
+    <akt>
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>22</paragrahvNr>
+          <paragrahvPealkiri>Määruse muutmine</paragrahvPealkiri>
+          <loige>
+            <tavatekst>
+              Vabariigi Valitsuse 20. detsembri 2007. a määruse nr 251
+              „{target_title}” §-d 1-5, § 6 lõiked 1-3 ning 6-10,
+              §-d 7-10, § 11 lõiked 3, 8-11 ja 13-14 ning §-d 12-18
+              tunnistatakse kehtetuks.
+            </tavatekst>
+          </loige>
+        </paragrahv>
+      </sisu>
+    </akt>
+    """.encode()
+
+    ops = parse_ee_amendment_ops(xml, "ee/test", target_title)
+
+    assert ops == []
+
+
+def test_parse_ee_amendment_ops_recovers_real_113102015002_without_malformed_cross_act_targets() -> None:
+    archive = open_rt_archive(readonly=True)
+    base = parse_ee_statute(fetch_rt_xml("126082015026", archive), "ee/126082015026")
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("113102015002", archive),
+        "ee/113102015002",
+        base.title,
+    )
+
+    assert all(op.witness_rule_id != "ee_cross_act_transitional_section_repeal" for op in ops)
+    assert all("§" not in dict(op.target.path).get("section", "") for op in ops)
+    assert len([op for op in ops if op.action is StructuralAction.REPEAL]) == 31
+    assert (StructuralAction.REPEAL, (("section", "6"), ("subsection", "10"))) in [
+        (op.action, op.target.path) for op in ops
+    ]
+    assert (StructuralAction.REPEAL, (("section", "11"), ("subsection", "14"))) in [
+        (op.action, op.target.path) for op in ops
+    ]
+
+
 def test_extract_ee_ops_marks_section_intro_replace_without_widening_to_whole_section() -> None:
     text = (
         "paragrahvi 2 sissejuhatav lauseosa muudetakse ja sõnastatakse järgmiselt: "
@@ -10940,6 +10987,65 @@ def test_parse_ee_amendment_ops_prefers_old_format_numbered_items_over_preambul_
         "ee_old_format_numbered_items_preferred_over_preambul_recovery" in op.provenance_tags
         for op in ops
     )
+
+
+def test_parse_ee_amendment_ops_keeps_out_of_body_appendix_clause_from_inherited_section_scope() -> None:
+    xml = """
+    <oigusakt xmlns="muutmisseadus_1_10.02.2010">
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>2</paragrahvNr>
+          <paragrahvPealkiri>Vabariigi Valitsuse 1. jaanuari 2020. a määruse nr 1 „Sihtmäärus” muutmine</paragrahvPealkiri>
+          <sisuTekst>
+            <HTMLKonteiner><![CDATA[
+              <p>Vabariigi Valitsuse 1. jaanuari 2020. a määrust nr 1 „Sihtmäärus” muudetakse järgmiselt:</p>
+              <p><b>1)</b> paragrahvi 3 tekst sõnastatakse järgmiselt:</p>
+              <p>„(1) Uus tekst.”;</p>
+              <p><b>2)</b> määrust täiendatakse lisaga „Lisa pealkiri” (lisatud);</p>
+              <p><b>3)</b> paragrahvi 7 täiendatakse lõikega 2 järgmises sõnastuses:</p>
+              <p>„(2) Hilisem tekst.”.</p>
+            ]]></HTMLKonteiner>
+          </sisuTekst>
+        </paragrahv>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(xml, "ee/test", target_title="Sihtmäärus")
+
+    assert [(op.action, op.target.path, _payload(op).text) for op in ops] == [
+        (StructuralAction.REPLACE, (("section", "3"),), "(1) Uus tekst."),
+        (StructuralAction.META, (), '2) määrust täiendatakse lisaga „Lisa pealkiri” (lisatud);'),
+        (StructuralAction.INSERT, (("section", "7"), ("subsection", "2")), "(2) Hilisem tekst."),
+    ]
+    assert "ee_out_of_body_appendix_clause_not_section_scoped" in ops[1].provenance_tags
+    assert "ee_new_format_target_act_header_not_wrapper_instruction" in ops[1].provenance_tags
+    assert "ee_old_format_carried_section_scope" not in ops[1].provenance_tags
+
+
+def test_parse_ee_amendment_ops_keeps_real_112092023001_appendix_clause_from_section_body() -> None:
+    archive = open_rt_archive(readonly=True)
+    target_title = (
+        "Veterinaarteenuse osutamise kohta arvestuse pidamise ning aruande ja "
+        "andmete esitamise täpsemad nõuded ja kord"
+    )
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("112092023001", archive),
+        "ee/112092023001",
+        target_title=target_title,
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPLACE, (("section", "2"), ("subsection", "1"), ("item", "10"))),
+        (StructuralAction.REPLACE, (("section", "3"),)),
+        (StructuralAction.META, ()),
+        (StructuralAction.INSERT, (("section", "7"), ("subsection", "1_1"))),
+    ]
+    assert "pakendikood" in _payload(ops[1]).text
+    assert "määrust täiendatakse lisaga" not in _payload(ops[1]).text
+    assert "määrust täiendatakse lisaga" in _payload(ops[2]).text
+    assert "ee_out_of_body_appendix_clause_not_section_scoped" in ops[2].provenance_tags
 
 
 def test_parse_ee_amendment_ops_recovers_real_127032024007_numbered_item_targets() -> None:
