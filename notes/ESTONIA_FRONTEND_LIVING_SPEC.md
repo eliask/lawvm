@@ -1433,6 +1433,23 @@ Corpus witness:
 - `129122020040` changes `108022017004`; oracle `129122020047` keeps § 12 and
   removes only its second sentence.
 
+## 71.1. Plain numbered clauses may target `paragrahvis`
+
+Flat `tavatekst` amendment bodies can contain multiple numbered clauses without
+HTML item markup. The clause boundary must recognize section target case forms,
+including inessive `paragrahvis`, so a later text-replacement clause is not
+smuggled into the previous section replacement payload.
+
+Corpus witness:
+
+- `117072015009` item 1 replaces § 10 of `109072014029`;
+- item 2 says `paragrahvis 11 asendatakse sõna „kaks“ sõnaga „kolm“`;
+- oracle `117072015011` expects § 11 to say `kolm aastat`.
+
+The owned split is source-local extraction. It preserves numbered-item
+provenance (`old_format_amendment_item:2`) and does not broaden target
+resolution.
+
 ## 72. Case-inflected agency renames preserve nominative before `ise`
 
 When a global `vastavas käändes` agency rename sees a nominative agency name

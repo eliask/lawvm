@@ -2055,7 +2055,7 @@ def split_plaintext_numbered_op_texts(text: str) -> list[str]:
     )[0].strip()
     start_pattern = re.compile(
         r"(?:^|\s)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\)\s+"
-        r"(?=(?:paragrahvi|paragrahvid|paragrahv|määruse|määrust|seaduse|seadust|lisa|lisad|§)\b)",
+        r"(?=(?:paragrahv(?:i|id|is|ist|ile)?|määruse|määrust|seaduse|seadust|lisa|lisad|§)\b)",
         re.IGNORECASE,
     )
 
