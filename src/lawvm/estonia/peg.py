@@ -993,6 +993,7 @@ _EE_PLURAL_ITEM_MARKER_PAYLOAD_INNER_QUOTE_RULE = "ee_plural_item_marker_payload
 _EE_PLURAL_ITEM_REPLACE_MISSING_LABEL_REPEAL_RULE = "ee_plural_item_replace_missing_label_repeal"
 _EE_PLURAL_ITEM_REPLACE_RANGE_OMITS_INSERTED_LABELS_RULE = "ee_plural_item_replace_range_omits_inserted_labels"
 _EE_PLURAL_SUBSECTION_INSERT_PAYLOAD_SPLIT_RULE = "ee_plural_subsection_insert_payload_split"
+_EE_ACT_CITATION_SECTION_INSERT_RULE = "ee_act_citation_section_insert_target"
 _EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE = (
     "ee_plural_subsection_replace_extra_payload_label"
 )
@@ -1587,11 +1588,11 @@ def _extract_payload_after_marker(text: str) -> Optional[str]:
         return None
     marker = matches[-1]
     payload = text[marker.end():].strip()
-    starts_ascii_quote = payload.startswith('"')
+    starts_wrapper_quote = bool(re.match(r'^[\u201c\u201e\u201d"\u00ab\u00bb\u02ee]', payload))
     payload = re.sub(r'^[\u201c\u201e\u201d"\u00ab\u00bb\u02ee]\s*', '', payload)
     payload = re.sub(r'\s*[.;]\s*$', '', payload)
-    if starts_ascii_quote:
-        payload = re.sub(r'\s*"\s*$', '', payload)
+    if starts_wrapper_quote:
+        payload = re.sub(r'\s*[\u201c\u201d\u00bb"\u02ee]\s*$', '', payload)
     if not re.search(r'[\u201e\u00ab"]', payload) or payload.startswith("\u201e"):
         payload = re.sub(r'\s*[\u201c\u201d\u00bb"\u02ee]\s*$', '', payload)
     return payload.strip() or None
@@ -4707,9 +4708,24 @@ def extract_ee_ops(
     # Statute-level insert: "seadustikku täiendatakse §-dega N ja M järgmises sõnastuses:"
     # Also: "seadust täiendatakse paragrahviga N järgmises sõnastuses:" (word form instead of §-ga)
     # The target is not a specific provision but the statute itself (inserted after existing §N)
+    act_ref = (
+        r'(?:seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)'
+        r'(?:\s+nr\s+\d[\d\s./-]*)?'
+        r'(?:\s+[\u201e"«][^\u201c\u201d"»\n]{1,240}[\u201c\u201d"»])?'
+    )
+    act_citation_section_insert = bool(
+        re.search(
+            r'\b(?:seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)'
+            r'(?:\s+nr\s+\d[\d\s./-]*)'
+            r'(?:\s+[\u201e"«][^\u201c\u201d"»\n]{1,240}[\u201c\u201d"»])?'
+            r'\s+täiendatakse\s+§[‑–‒-](?:de)?ga',
+            clean,
+            re.IGNORECASE,
+        )
+    )
     statute_level_insert = bool(
-        re.search(r'\b(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)\s+täiendatakse\s+§[‑–‒-](?:de)?ga', clean, re.IGNORECASE)
-        or re.search(r'\b(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)\s+täiendatakse\s+paragrahviga', clean, re.IGNORECASE)
+        re.search(r'\b' + act_ref + r'\s+täiendatakse\s+§[‑–‒-](?:de)?ga', clean, re.IGNORECASE)
+        or re.search(r'\b' + act_ref + r'\s+täiendatakse\s+paragrahviga', clean, re.IGNORECASE)
         or re.search(r'\btäiendada\s+(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)\s+paragrahviga', clean, re.IGNORECASE)
         # Also: "seaduse N. peatükki täiendatakse §-dega M" (chapter-qualified section insert)
         or re.search(r'\b(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)[a-z\s\d.]*peatük[k]?[i]+\s+täiendatakse\s+§[‑–‒-](?:de)?ga', clean, re.IGNORECASE)
@@ -5048,6 +5064,11 @@ def extract_ee_ops(
                     if len(expanded) > 1
                     else ()
                 )
+                citation_tags = (
+                    (_EE_ACT_CITATION_SECTION_INSERT_RULE,)
+                    if act_citation_section_insert
+                    else ()
+                )
                 ops.append(LegalOperation(
                     op_id=f"ee-insert-sect-{num}-{source.statute_id}",
                     sequence=seq,
@@ -5055,8 +5076,14 @@ def extract_ee_ops(
                     target=addr,
                     payload=op_payload,
                     source=source,
-                    provenance_tags=(clean[:200], *rule_tags),
-                    witness_rule_id=_EE_PLURAL_SECTION_INSERT_PAYLOAD_SPLIT_RULE if rule_tags else None,
+                    provenance_tags=(clean[:200], *rule_tags, *citation_tags),
+                    witness_rule_id=(
+                        _EE_PLURAL_SECTION_INSERT_PAYLOAD_SPLIT_RULE
+                        if rule_tags
+                        else _EE_ACT_CITATION_SECTION_INSERT_RULE
+                        if citation_tags
+                        else None
+                    ),
                 ))
                 seq += 1
         return ops

@@ -2374,6 +2374,43 @@ def test_extract_ee_ops_keeps_statute_level_section_insert_out_of_cross_referenc
     assert ops[0].target.path == (("section", "165_1"),)
 
 
+def test_extract_ee_ops_keeps_cited_act_section_insert_out_of_payload_item_scope() -> None:
+    text = (
+        "Haridus- ja teadusministri 29. oktoobri 2014. a määrust nr 22 "
+        "„Gümnaasiumivõrgu korrastamine perioodil 2014-2020” täiendatakse "
+        "§-ga 9 1 järgmises sõnastuses: "
+        "„§ 9 1 . Mittetoimiv projekt\x01 "
+        "(1) Mittetoimiv projekt on määruse alusel rahastatud ja alustatud projekt. "
+        "(7) Käesoleva määruse paragrahvi 25 punkti 8 kohaldatakse "
+        "mittetoimiva projekti elluviimisel.”."
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "9_1"),)
+    assert ops[0].witness_rule_id == "ee_act_citation_section_insert_target"
+    assert "paragrahvi 25 punkti 8" in _payload(ops[0]).text
+    assert _payload(ops[0]).text.endswith("mittetoimiva projekti elluviimisel.")
+    assert not _payload(ops[0]).text.endswith('elluviimisel."')
+
+
+def test_parse_ee_amendment_ops_keeps_real_cited_act_section_insert_target() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("125082023001", archive),
+        "ee/125082023001",
+        target_title="Gümnaasiumivõrgu korrastamine perioodil 2014-2020",
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "9_1"),)
+    assert ops[0].witness_rule_id == "ee_act_citation_section_insert_target"
+    assert "paragrahvi 25 punkti 8" in _payload(ops[0]).text
+
+
 def test_extract_ee_ops_fans_out_mixed_text_replace_targets() -> None:
     ops = extract_ee_ops(
         (

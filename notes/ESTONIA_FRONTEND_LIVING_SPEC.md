@@ -1164,3 +1164,24 @@ residual bucket. Known residual families are explicit exclusions, for example:
 
 This is publication/reporting metadata only. A `meaningful_candidate=1` row
 still requires human review before Riigi Teataja outreach.
+
+## 61. Cited-act section inserts keep the explicit `§-ga` target
+
+Old-format wrapper clauses can cite a regulation number and title before the
+operative verb:
+
+`... määrust nr 22 „Title” täiendatakse §-ga 9^1 järgmises sõnastuses: ...`
+
+The cited title is source scope, not inserted payload. The explicit `§-ga`
+target must therefore preempt internal references that appear later inside the
+inserted provision body. Otherwise references such as `paragrahvi 25 punkti 8`
+inside the new section body hijack the operation target.
+
+The parser rule is:
+
+- `ee_act_citation_section_insert_target`
+
+Corpus witnesses:
+
+- `125082023001` inserts `§ 9^1` into `Gümnaasiumivõrgu korrastamine perioodil 2014-2020`; the inserted body later references `§ 25 punkt 8`.
+- `113122023001` inserts `§ 9^1` into `Kaugküttesüsteemide investeeringute toetamise tingimused`; the inserted body later references `§ 27 lõike 2 punkt 8`.
