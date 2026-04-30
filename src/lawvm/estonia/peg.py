@@ -1021,6 +1021,9 @@ _EE_NETO_OMAVAHEND_PREFIX_FORMS_RULE = "ee_case_inflected_neto_omavahend_prefix_
 _EE_KYSK_RTK_FORMS_RULE = "ee_case_inflected_kysk_riigi_tugiteenuste_keskus_forms"
 _EE_ARUANDED_ARUANNE_FORMS_RULE = "ee_case_inflected_aruanded_aruanne_forms"
 _EE_ARUANDED_HEADING_AGREEMENT_RULE = "ee_case_inflected_aruanded_heading_agreement"
+_EE_RIIKLIK_REGISTER_INFOSUSTEEM_FORMS_RULE = (
+    "ee_case_inflected_riiklik_register_infosusteem_forms"
+)
 _EE_QUOTED_LEGAL_TITLE_PROTECTION_RULE = "ee_text_replace_quoted_legal_title_protection"
 _EE_NORMITEHNILINE_MARKUS_INSERT_AFTER_RULE = "ee_normitehniline_markus_insert_after_anchor"
 _EE_NORMITEHNILINE_MARKUS_OPTIONAL_EU_MARKER_RULE = "ee_normitehniline_markus_optional_eu_marker_anchor"
@@ -1065,6 +1068,12 @@ def _case_inflected_phrase_source_family(old_text: str | None, new_text: str | N
         return _EE_KYSK_RTK_FORMS_RULE
     if old_text == "aruanded" and new_text == "aruanne":
         return _EE_ARUANDED_ARUANNE_FORMS_RULE
+    if (
+        old_text
+        and old_text.casefold() == "riiklik pensionikindlustuse register"
+        and new_text == "sotsiaalkaitse infosüsteem"
+    ):
+        return _EE_RIIKLIK_REGISTER_INFOSUSTEEM_FORMS_RULE
     if new_text and re.fullmatch(r"[A-ZÕÄÖÜŠŽ]{2,}-[a-zäöõüšž]+", new_text.strip()):
         return _EE_MIXED_ACRONYM_SUFFIX_CASE_REWRITE_RULE
     return ""
