@@ -2249,14 +2249,28 @@ def parse_ee_amendment_ops(
             if op.action is not StructuralAction.META
         ):
             return old_format_ops
+        old_has_numbered_item_witness = any(
+            any(tag.startswith("old_format_amendment_item:") for tag in op.provenance_tags)
+            for op in old_format_ops
+            if op.action is not StructuralAction.META
+        )
+        preambul_targets_more_duplicate_body_slots = len({
+            (op.action, op.target.path)
+            for op in preambul_ops
+            if op.action is not StructuralAction.META and op.target.path
+        }) < sum(1 for op in preambul_ops if op.action is not StructuralAction.META and op.target.path)
+        if old_has_numbered_item_witness and preambul_targets_more_duplicate_body_slots:
+            return [
+                replace(
+                    op,
+                    provenance_tags=(*op.provenance_tags, numbered_item_rule_id),
+                    witness_rule_id=op.witness_rule_id or numbered_item_rule_id,
+                )
+                for op in old_format_ops
+            ]
         if _substantive_op_count(old_format_ops) < _substantive_op_count(preambul_ops):
             return preambul_ops
         if _substantive_op_count(old_format_ops) == _substantive_op_count(preambul_ops):
-            old_has_numbered_item_witness = any(
-                any(tag.startswith("old_format_amendment_item:") for tag in op.provenance_tags)
-                for op in old_format_ops
-                if op.action is not StructuralAction.META
-            )
             preambul_uses_premarker_title_recovery = any(
                 "ee_payload_after_marker_ignores_premarker_title_quote" in op.provenance_tags
                 for op in preambul_ops
