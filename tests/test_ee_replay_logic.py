@@ -524,6 +524,28 @@ def test_case_inflected_replace_matches_mang_and_korraldaja_forms() -> None:
     )
 
 
+def test_case_inflected_noop_does_not_mutate_replacement_like_prefix() -> None:
+    text = "teavitama Veterinaar- ja Toiduameti kohalikku asutust."
+
+    skipped = _ee_apply_text_replace_value(
+        text,
+        "Veterinaar- ja Toiduameti kohaliku asutuse juht",
+        "Veterinaar- ja Toiduamet",
+        case_inflected=True,
+        all_occurrences=True,
+    )
+    updated = _ee_apply_text_replace_value(
+        skipped or "",
+        "Veterinaar- ja Toiduameti kohalik asutus",
+        "Veterinaar- ja Toiduamet",
+        case_inflected=True,
+        all_occurrences=True,
+    )
+
+    assert skipped == text
+    assert updated == "teavitama Veterinaar- ja Toiduametit."
+
+
 def test_case_inflected_replace_matches_loom_to_tsintsilja_forms() -> None:
     cases = {
         "Karuslooma pidamise ruum.": "Tšintšilja pidamise ruum.",
@@ -611,6 +633,60 @@ def test_case_inflected_numeric_suffix_rewrite_matches_suffix_forms() -> None:
         )
         == "Määruse lisas 1 toodud tabel."
     )
+
+
+def test_apply_ee_ops_resolves_section_item_replace_to_unique_descendant_item() -> None:
+    statute = IRStatute(
+        statute_id="ee/test",
+        title="Test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2",
+                    text="Chapter",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="7",
+                            text="Section",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.SUBSECTION,
+                                    label="1",
+                                    text="Intro",
+                                    children=(
+                                        IRNode(kind=IRNodeKind.ITEM, label="7_1", text="old item;"),
+                                    ),
+                                ),
+                                IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="Other subsection."),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="ee-test-op",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "7"), ("item", "7_1"))),
+        payload=IRNode(kind=IRNodeKind.CONTENT, text="7 1) new item;"),
+    )
+    adjudications = []
+    snapshots = []
+
+    replayed = apply_ee_ops(statute, [op], lo_ops_out=snapshots, adjudications_out=adjudications)
+
+    section = replayed.body.children[0].children[0]
+    item = section.children[0].children[0]
+    assert item.text == "new item."
+    assert any(adj.kind == "ee_section_item_replace_unique_descendant_item" for adj in adjudications)
+    assert [(snap.action, snap.target.path) for snap in snapshots] == [
+        (StructuralAction.REPLACE, (("chapter", "2"), ("section", "7"))),
+    ]
 
 
 def test_apply_ee_ops_preserves_explicit_item_replacement_terminal() -> None:
@@ -1213,6 +1289,7 @@ def test_replay_ee_to_pit_applies_nik_plural_case_inflection() -> None:
     )
 
     assert result.error is None
+    assert result.replayed is not None
     section_16_item_2 = find_item(result.replayed.body, "16", "2")
     section_18_item_19 = find_item(result.replayed.body, "18", "19")
     assert section_16_item_2 is not None
@@ -2262,9 +2339,6 @@ def test_replay_ee_to_pit_adjudicates_sotsiaalhoolekande_forward_looking_oracle(
         "chapter:3_1/section:21_3/subsection:2",
         "chapter:3_1/section:21_3/subsection:2/item:7",
         "chapter:4",
-        "chapter:4/section:22_1",
-        "chapter:4/section:22_1/subsection:3",
-        "chapter:4/section:22_1/subsection:3/item:2",
         "chapter:4/section:23_1",
         "chapter:4/section:23_1/subsection:5",
         "chapter:4/section:23_1/subsection:5/item:1",
@@ -2343,7 +2417,12 @@ def test_replay_ee_to_pit_adjudicates_riigiloivuseadus_forward_looking_oracle() 
     )
     assert residual_summary is not None
     assert residual_summary.matched_current_divergence_count > 0
-    assert residual_summary.unknown_current_divergence_count > 0
+    assert residual_summary.unknown_current_divergence_count == 0
+    assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
+    assert residual_summary.matched_current_bucket_counts == {
+        "appendix_display_pathology": 5,
+        "source_oracle_drift": 34,
+    }
     assert "part:2/chapter:3/section:22/subsection:1/item:2" not in (
         residual_summary.unknown_current_divergence_addresses
     )
@@ -3392,7 +3471,7 @@ def test_replay_ee_to_pit_filters_untitled_omnibus_regulation_sections_by_intro_
     assert result.error is None
     assert result.oracle_id == "130042015007"
     assert result.n_ops < 40
-    assert len(result.divergences) == 5
+    assert len(result.divergences) == 4
 
     residual_summary = build_ee_residual_summary(
         base_id="103052013007",
@@ -3405,7 +3484,7 @@ def test_replay_ee_to_pit_filters_untitled_omnibus_regulation_sections_by_intro_
 
     assert residual_summary is not None
     assert residual_summary.unknown_current_divergence_count == 0
-    assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": 5}
+    assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": 4}
 
 
 def test_replay_ee_to_pit_handles_imperative_section_insert_in_paasteteenistujad() -> None:

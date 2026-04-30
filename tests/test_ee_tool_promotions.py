@@ -1007,7 +1007,7 @@ def test_ee_publication_db_assigns_publication_outreach_triage() -> None:
         "excluded_comparison_projection",
     ]
     assert [divergence["meaningful_candidate"] for divergence in divergences] == [1, 0, 0, 0, 0, 0, 0]
-    assert "punctuation_whitespace" in divergences[1]["outreach_evidence"]
+    assert "punctuation_whitespace" in str(divergences[1]["outreach_evidence"])
 
 
 def test_bench_regression_guard_run_guard_pass_and_fail(tmp_path, monkeypatch, capsys) -> None:

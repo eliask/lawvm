@@ -86,6 +86,25 @@ class TestLegalOpToClauseNode:
         assert node.text_patch.selector.match_text == "justiitsminister"
         assert node.text_patch.replacement == "õigusminister"
 
+    def test_global_text_replace_op(self):
+        op = LegalOperation(
+            op_id="ee-4-global",
+            sequence=4,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=()),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="justiitsminister"),
+                replacement="õigusminister",
+            ),
+        )
+        node = legal_op_to_clause_node(op)
+        assert isinstance(node, TextAmend)
+        assert node.target.path == ()
+        rt = clause_node_to_legal_operation(node, sequence=op.sequence)
+        assert rt is not None
+        assert rt.target.path == ()
+
     def test_text_repeal_op(self):
         op = LegalOperation(
             op_id="ee-7",

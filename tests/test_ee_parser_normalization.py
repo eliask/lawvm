@@ -3051,7 +3051,9 @@ def test_extract_ee_ops_recovers_section_intro_and_item_targets() -> None:
         (StructuralAction.TEXT_REPLACE, (("section", "7"),)),
         (StructuralAction.TEXT_REPLACE, (("section", "7"), ("item", "1"))),
     ]
-    assert read_subsection_text_scope_meta(_payload(ops[0])).intro_only is True
+    scope_meta = read_subsection_text_scope_meta(_payload(ops[0]))
+    assert scope_meta is not None
+    assert scope_meta.intro_only is True
     assert read_subsection_text_scope_meta(_payload(ops[1])) is None
 
 
@@ -3387,6 +3389,26 @@ def test_extract_ee_ops_does_not_invent_section_renumber_for_appendix_replacemen
     assert ops[0].action is StructuralAction.META
     assert ops[0].target.path == ()
     assert ops[0].payload is None
+
+
+def test_parse_ee_amendment_ops_preserves_real_appendix_only_clause_as_meta() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("113092017001", archive),
+        "ee/113092017001",
+        target_title=(
+            "Jahitunnistuse vorm, jahiteooriaeksami ja laskekatse sooritamise "
+            "ning jahitunnistuse taotlemise ja andmise kord, jahindusalasele "
+            "koolitusele ja koolitajale esitatavad nõuded ning koolitamise kord"
+        ),
+        ref_effective="2017-09-16",
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [(StructuralAction.META, ())]
+    assert ops[0].payload is not None
+    assert ops[0].payload.attrs["source_family"] == "ee_out_of_body_appendix_or_note_clause"
+    assert "lisa 5 kehtestatakse uues sõnastuses" in ops[0].payload.text
 
 
 def test_parse_ee_amendment_ops_carries_wrapper_section_to_numbered_subsection_items() -> None:
@@ -6945,7 +6967,7 @@ def test_parse_ee_amendment_ops_extracts_real_104112020001_agency_rename() -> No
         and op.payload is not None
         and op.payload.text == "Põllumajandus- ja Toiduamet"
     ]
-    assert [(op.payload.attrs["old_text"], op.witness_rule_id) for op in agency_ops] == [
+    assert [(_payload(op).attrs["old_text"], op.witness_rule_id) for op in agency_ops] == [
         ("Veterinaar- ja Toiduamet", "ee_old_format_direct_title_unnumbered_text_replace"),
         ("Põllumajandusamet", "ee_old_format_direct_title_unnumbered_text_replace"),
     ]
@@ -6953,7 +6975,7 @@ def test_parse_ee_amendment_ops_extracts_real_104112020001_agency_rename() -> No
         "ee_old_format_direct_title_unnumbered_text_replace" in op.provenance_tags
         for op in agency_ops
     )
-    assert all(op.payload.attrs["case_inflected"] is True for op in agency_ops)
+    assert all(_payload(op).attrs["case_inflected"] is True for op in agency_ops)
 
 
 def test_parse_ee_amendment_ops_slices_old_format_preambul_html_sections_for_2021_012() -> None:
@@ -8236,6 +8258,63 @@ def test_parse_ee_amendment_ops_stamps_old_format_whole_act_default_with_same_se
     assert effective_by_item["1"] == "2021-02-01"
     assert effective_by_item["2"] == "2021-02-01"
     assert effective_by_item["5"] == "2021-02-01"
+    provenance_by_item = {
+        next(
+            tag.split(":", 1)[1]
+            for tag in op.provenance_tags
+            if tag.startswith("old_format_amendment_item:")
+        ): op.provenance_tags
+        for op in ops
+    }
+    assert "ee_old_format_commencement_whole_act_default" in provenance_by_item["1"]
+    assert "ee_old_format_commencement_whole_act_default" in provenance_by_item["2"]
+    assert "ee_old_format_commencement_item_effective" in provenance_by_item["5"]
+
+
+def test_parse_ee_amendment_ops_stamps_old_format_whole_act_default_with_unrelated_section_exceptions() -> None:
+    archive = open_rt_archive(readonly=True)
+    try:
+        base_title = parse_ee_statute(
+            fetch_rt_xml("104012021044", archive),
+            "ee/104012021044",
+        ).title
+        ops = parse_ee_amendment_ops(
+            fetch_rt_xml("104012021004", archive),
+            "ee/104012021004",
+            target_title=base_title,
+            ref_effective="2021-02-01",
+            has_earlier_same_act_slice=True,
+        )
+    finally:
+        archive.close()
+
+    effective_by_item = {
+        next(
+            tag.split(":", 1)[1]
+            for tag in op.provenance_tags
+            if tag.startswith("old_format_amendment_item:")
+        ): (op.source.effective if op.source is not None else "")
+        for op in ops
+    }
+
+    assert effective_by_item == {
+        "1": "2021-02-01",
+        "2": "2021-02-01",
+        "3": "2021-02-01",
+        "4": "2021-02-01",
+        "5": "2021-02-01",
+    }
+    provenance_by_item = {
+        next(
+            tag.split(":", 1)[1]
+            for tag in op.provenance_tags
+            if tag.startswith("old_format_amendment_item:")
+        ): op.provenance_tags
+        for op in ops
+    }
+    for item_label in ("1", "2", "3", "4"):
+        assert "ee_old_format_commencement_whole_act_default" in provenance_by_item[item_label]
+    assert "ee_old_format_commencement_item_effective" in provenance_by_item["5"]
 
 
 def test_parse_ee_amendment_ops_ignores_quoted_old_format_commencement_payloads() -> None:
@@ -10750,6 +10829,7 @@ def test_extract_ee_ops_splits_same_target_text_replace_and_sentence_replace_cla
     assert _payload(ops[0]).attrs["old_text"] == "6400 eurot"
     assert _payload(ops[0]).attrs["rewrite_mode"] == "replace"
     sentence_meta = read_sentence_target_meta(_payload(ops[1]))
+    assert sentence_meta is not None
     assert sentence_meta.sentence_indexes == (1,)
     assert all(
         op.witness_rule_id == "ee_mixed_text_replace_and_sentence_replace_same_target"

@@ -48,6 +48,8 @@ _EE_NEW_FORMAT_TARGET_ACT_HEADER_NOT_WRAPPER_RULE = "ee_new_format_target_act_he
 _EE_HTML_AMENDMENT_SECTION_HEADING_WRAPPER_STRIPPED_RULE = "ee_html_amendment_section_heading_wrapper_stripped"
 _EE_EMBEDDED_OPEN_QUOTE_SECTION_HEADER_RULE = "ee_embedded_open_quote_payload_section_header"
 _EE_OLD_FORMAT_OPEN_QUOTE_SECTION_HEADER_RULE = "ee_old_format_open_quote_payload_section_header"
+_EE_NESTED_DIRECT_TARGET_LAW_CLAUSE_RULE = "ee_nested_direct_target_law_clause"
+_EE_NESTED_DIRECT_TARGET_HEADER_CARRY_RULE = "ee_nested_direct_target_law_clause_header_carry"
 _OP_TEXT_RULE_PREFIX = "\x1eLAWVM_RULE:"
 _OP_TEXT_RULE_SUFFIX = "\x1f"
 
@@ -68,11 +70,16 @@ def _strip_old_format_item_prefix(text: str) -> str:
 
 
 def _is_out_of_body_appendix_or_note_clause(text: str) -> bool:
-    stripped = _strip_old_format_item_prefix(text).lower()
+    stripped = _strip_old_format_item_prefix(text).replace("\xa0", " ").lower()
     return bool(
         re.match(r"^(?:määruse|seaduse)\s+(?:senise\s+)?lisa(?:s|d|ga)?\b", stripped)
         or re.match(r"^(?:määrust|seadust)\s+täiendatakse\s+(?:senise\s+)?lisa(?:ga|dega)?\b", stripped)
         or re.match(r"^lisa(?:s|d|ga)?\b", stripped)
+        or re.search(
+            r"[„\"“][^”\"]+[”\"]\s+lisa(?:s|d|ga)?\s*\d*"
+            r"\s+(?:kehtestatakse|sõnastatakse|tunnistatakse)\b",
+            stripped,
+        )
         or re.match(r"^(?:määruse|seaduse)\s+(?:kolmas\s+)?normitehnili\w*\s+märkus", stripped)
     )
 
@@ -141,7 +148,7 @@ def _statute_title_replace_op(
     source_text: str,
     sequence: int,
 ) -> LegalOperation:
-    title = _extract_quoted_content(source_text).strip()
+    title = (_extract_quoted_content(source_text) or "").strip()
     return LegalOperation(
         op_id=f"ee-statute-title-replace-{sequence}-{source.statute_id}",
         sequence=sequence,
@@ -159,7 +166,7 @@ def _statute_title_replace_op(
 
 
 def _mark_old_format_out_of_body_clause(op: LegalOperation, source_text: str) -> LegalOperation:
-    if op.action is StructuralAction.META or op.target.path:
+    if op.target.path:
         return op
     tags = tuple((*op.provenance_tags, _EE_OLD_FORMAT_OUT_OF_BODY_APPENDIX_CLAUSE_RULE))
     return replace(
@@ -1027,7 +1034,7 @@ def new_format_lower_op_texts(
 
         effective = re.sub(r'^\(?\d[\d\s_]*\)\s*', '', op_text).strip()
         if _is_title_clause_non_body(original_op_text):
-            if _extract_quoted_content(original_op_text).strip():
+            if (_extract_quoted_content(original_op_text) or "").strip():
                 lowered.append(
                     _statute_title_replace_op(
                         source=source,
@@ -1414,6 +1421,14 @@ def new_format_collect_op_texts(
                 st_html.append(html)
                 html_blocks.append(html)
                 html_has_open_quote_section_header = _has_embedded_open_quote_payload_section_header(html)
+                html_has_embedded_target_header = bool(
+                    embedded_target_sections
+                    and re.search(
+                        r"\btehakse\s+(?:järgmised\s+)?muudatused\b",
+                        plain_html_text(html),
+                        re.IGNORECASE,
+                    )
+                )
                 item_texts = parse_html_op_items(
                     html,
                     allow_plain_paragraph_items=allow_plain_paragraph_items,
@@ -1440,6 +1455,14 @@ def new_format_collect_op_texts(
                             op_texts.append(combined)
                 else:
                     for item_text in item_texts:
+                        if html_has_embedded_target_header:
+                            item_text = _with_op_text_rule(
+                                _with_op_text_rule(
+                                    item_text,
+                                    _EE_NESTED_DIRECT_TARGET_LAW_CLAUSE_RULE,
+                                ),
+                                _EE_NESTED_DIRECT_TARGET_HEADER_CARRY_RULE,
+                            )
                         if (
                             html_has_open_quote_section_header
                             and _item_has_embedded_open_quote_payload_section_header(item_text)
@@ -2713,20 +2736,48 @@ def old_format_collect_nested_direct_target_ops(
     source = OperationSource(statute_id=source_id, title=target_title)
     lowered: list[LegalOperation] = []
     global_seq = seq_start
+    active_outer_label: int | None = None
 
-    for op_text in parse_html_op_items(full_html):
-        nested = _extract_quoted_content(op_text)
-        if not nested or "\x01" not in nested:
-            continue
-        nested_instruction = nested.split("\x01", 1)[1].strip()
-        if not nested_instruction or not title_matches_para(target_title, nested_instruction):
-            continue
-        ops = extract_ee_ops(
-            nested_instruction,
-            replace(source, raw_text=nested_instruction[:200]),
-            seq_start=global_seq,
+    def _numeric_item_label(op_text: str) -> int | None:
+        label = old_format_item_label(op_text)
+        if not label:
+            return None
+        digits = label.replace("_", "")
+        return int(digits) if digits.isdigit() else None
+
+    def _nested_header_matches_target(nested_text: str) -> str:
+        if "\x01" not in nested_text:
+            return ""
+        nested_instruction = nested_text.split("\x01", 1)[1].strip()
+        if nested_instruction and title_matches_para(target_title, nested_instruction):
+            return nested_instruction
+        return ""
+
+    def _is_target_routing_header(nested_instruction: str) -> bool:
+        return bool(
+            re.search(
+                r"\btehakse\s+(?:järgmised\s+)?muudatused\b",
+                nested_instruction,
+                re.IGNORECASE,
+            )
         )
-        amendment_item_label = old_format_item_label(op_text)
+
+    def _ends_nested_wrapper_payload(op_text: str) -> bool:
+        """Return True when this inner item closes the outer inserted § body."""
+        return bool(
+            re.search(
+                r'[”"ˮ]\s*[.;]?\s*[”"ˮ]\s*[.;]?\s*$',
+                op_text,
+            )
+        )
+
+    def _tag_nested_ops(
+        ops: list[LegalOperation],
+        *,
+        amendment_item_label: str | None,
+        header_carried: bool,
+    ) -> list[LegalOperation]:
+        tagged: list[LegalOperation] = []
         for op in ops:
             if (
                 op.action == StructuralAction.META
@@ -2736,12 +2787,74 @@ def old_format_collect_nested_direct_target_ops(
                 continue
             tags = [
                 *op.provenance_tags,
-                "ee_nested_direct_target_law_clause",
+                _EE_NESTED_DIRECT_TARGET_LAW_CLAUSE_RULE,
             ]
-            if amendment_item_label:
-                tags.append(f"old_format_amendment_item:{amendment_item_label}")
-            lowered.append(replace(op, provenance_tags=tuple(tags), sequence=global_seq))
-            global_seq += 1
+            if header_carried:
+                tags.append(_EE_NESTED_DIRECT_TARGET_HEADER_CARRY_RULE)
+            item_tag = f"old_format_amendment_item:{amendment_item_label}" if amendment_item_label else ""
+            if item_tag and item_tag not in tags:
+                tags.append(item_tag)
+            witness_rule_id = op.witness_rule_id
+            if header_carried and op.action is not StructuralAction.META and witness_rule_id is None:
+                witness_rule_id = _EE_NESTED_DIRECT_TARGET_HEADER_CARRY_RULE
+            tagged.append(
+                replace(
+                    op,
+                    provenance_tags=tuple(tags),
+                    witness_rule_id=witness_rule_id,
+                )
+            )
+        return tagged
+
+    for op_text in parse_html_op_items(full_html):
+        item_label = old_format_item_label(op_text)
+        item_label_value = _numeric_item_label(op_text)
+        if (
+            active_outer_label is not None
+            and item_label_value is not None
+            and item_label_value > active_outer_label
+        ):
+            active_outer_label = None
+
+        nested = _extract_quoted_content(op_text)
+        if nested:
+            nested_instruction = _nested_header_matches_target(nested)
+            if nested_instruction:
+                if _is_target_routing_header(nested_instruction):
+                    active_outer_label = item_label_value
+                    continue
+                ops = extract_ee_ops(
+                    nested_instruction,
+                    replace(source, raw_text=nested_instruction[:200]),
+                    seq_start=global_seq,
+                )
+                tagged = _tag_nested_ops(
+                    ops,
+                    amendment_item_label=item_label,
+                    header_carried=False,
+                )
+                lowered.extend(tagged)
+                global_seq += len(tagged)
+                continue
+
+        if active_outer_label is None:
+            continue
+
+        ops, global_seq, _ = old_format_lower_op_texts(
+            [op_text],
+            replace(source, raw_text=op_text[:200]),
+            seq_start=global_seq,
+            base_act_name=target_title,
+            target_title=target_title,
+        )
+        tagged = _tag_nested_ops(
+            ops,
+            amendment_item_label=item_label,
+            header_carried=True,
+        )
+        lowered.extend(tagged)
+        if _ends_nested_wrapper_payload(op_text):
+            active_outer_label = None
 
     return lowered, global_seq
 

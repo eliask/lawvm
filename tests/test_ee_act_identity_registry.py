@@ -471,6 +471,56 @@ def test_nested_direct_target_law_clause_replays_owned_sentence_replace() -> Non
     assert "old_format_amendment_item:59" in op.provenance_tags
 
 
+def test_nested_direct_target_law_clause_carries_header_only_within_inserted_wrapper() -> None:
+    xml = """
+    <oigusakt xmlns="muutmisseadus_1_10.02.2010">
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>1</paragrahvNr>
+          <paragrahvPealkiri>Rakendamise seaduse muutmine</paragrahvPealkiri>
+          <sisuTekst>
+            <HTMLKonteiner><![CDATA[
+              <p><b>242)</b> seadust täiendatakse §-ga 135<sup>1</sup> järgmises sõnastuses:</p>
+              <p>„<b>§ 135<sup>1</sup>. Ühistranspordiseaduse muutmine</b></p>
+              <p>Ühistranspordiseaduses tehakse järgmised muudatused:</p>
+              <p><b>1)</b> paragrahvi 1 täiendatakse lõikega 5 järgmises sõnastuses:</p>
+              <p>„(5) Käesolevas seaduses reguleeritud ettevõtja majandustegevusele kohaldatakse majandustegevuse seadustiku üldosa seadust.”;</p>
+              <p><b>2)</b> paragrahvi 2 punkti 1 täiendatakse neljanda lausega järgmises sõnastuses:</p>
+              <p>„Ühistransporditeenuse osutaja on üldhuviteenuse osutaja.”.”.</p>
+            ]]></HTMLKonteiner>
+          </sisuTekst>
+        </paragrahv>
+        <paragrahv>
+          <paragrahvNr>2</paragrahvNr>
+          <paragrahvPealkiri>Alkoholiseaduse muutmine</paragrahvPealkiri>
+          <sisuTekst>
+            <HTMLKonteiner><![CDATA[
+              <p><b>1)</b> paragrahvi 3 lõige 1 muudetakse ja sõnastatakse järgmiselt: „Võõras tekst.”;</p>
+            ]]></HTMLKonteiner>
+          </sisuTekst>
+        </paragrahv>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test/nested_direct_target_header_carry",
+        target_title="Ühistranspordiseadus",
+    )
+
+    assert [(op.action.value, op.target.path) for op in ops] == [
+        ("insert", (("section", "1"), ("subsection", "5"))),
+        ("insert", (("section", "2"), ("item", "1"))),
+    ]
+    assert all("ee_nested_direct_target_law_clause" in op.provenance_tags for op in ops)
+    assert all("ee_nested_direct_target_law_clause_header_carry" in op.provenance_tags for op in ops)
+    assert ops[0].payload is not None
+    assert ops[0].payload.text.startswith("(5) Käesolevas seaduses reguleeritud ettevõtja")
+    assert ops[1].payload is not None
+    assert ops[1].payload.text == "Ühistransporditeenuse osutaja on üldhuviteenuse osutaja."
+
+
 def test_registry_evidence_wins_for_omnibus_filter_when_strict_title_match_fails(
     monkeypatch,
 ) -> None:
