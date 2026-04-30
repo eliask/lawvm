@@ -1185,3 +1185,18 @@ Corpus witnesses:
 
 - `125082023001` inserts `§ 9^1` into `Gümnaasiumivõrgu korrastamine perioodil 2014-2020`; the inserted body later references `§ 25 punkt 8`.
 - `113122023001` inserts `§ 9^1` into `Kaugküttesüsteemide investeeringute toetamise tingimused`; the inserted body later references `§ 27 lõike 2 punkt 8`.
+
+## 62. Publication DB strips bounded electronic-appendix publication notes
+
+Some older RT surfaces carry display/legal-basis notes inline with the section
+text:
+
+`Määruse lisad on avaldatud elektroonilises Riigi Teatajas. Alus: "Riigi Teataja seaduse" §4 lõige 2 ...`
+
+When removing exactly that bounded note makes the replay and oracle section
+texts equal, the publication DB classifies the row as:
+
+- `publication_note_projection`
+
+This is reporting metadata only. It does not mutate replay or oracle text and it
+does not close broader directive footnote tails or other legal text.

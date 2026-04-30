@@ -80,6 +80,7 @@ _OUTREACH_PRESENTATION_BUCKETS = frozenset(
         "appendix_display_pathology",
         "presentation_omitted_text_placeholder",
         "presentation_punctuation_whitespace",
+        "publication_note_projection",
     }
 )
 _OUTREACH_SOURCE_SURFACE_BUCKETS = frozenset(
@@ -549,6 +550,57 @@ def _classify_punctuation_whitespace_only(divergences: list[dict[str, Any]]) -> 
         divergence["open_current"] = 0
 
 
+_RT_PUBLICATION_NOTE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\s*Määruse\s+lisad\s+on\s+avaldatud\s+elektroonilises\s+Riigi\s+Teatajas\.\s*"
+        r"Alus:\s*\"Riigi\s+Teataja\s+seaduse\"\s*§\s*4\s+lõige\s+2\s+ja\s+"
+        r"riigisekretäri\s+\d{1,2}\.\d{1,2}\.\d{4}\.\s*a\s+resolutsioon\s+nr\s+"
+        r"[\d–-]+/\d+[\d–-]*\.",
+        re.IGNORECASE,
+    ),
+)
+
+
+def _without_rt_publication_notes(text: str) -> str:
+    projected = text
+    for pattern in _RT_PUBLICATION_NOTE_PATTERNS:
+        projected = pattern.sub(" ", projected)
+    return " ".join(projected.split()).strip()
+
+
+def _classify_publication_note_projection(divergences: list[dict[str, Any]]) -> None:
+    """Close rows explained by RT publication/legal-basis display notes only.
+
+    Older RT surfaces can carry appendix publication notes or directive footnote
+    text inline in the replay/source surface while the consolidated comparison
+    omits that display note. This is deliberately exact: after removing only the
+    bounded note patterns, the full section text must match.
+    """
+    for divergence in divergences:
+        if divergence.get("residual_bucket"):
+            continue
+        replay_text = divergence.get("replay_text")
+        oracle_text = divergence.get("oracle_text")
+        if replay_text is None or oracle_text is None:
+            continue
+        replay_surface = str(replay_text)
+        oracle_surface = str(oracle_text)
+        replay_projected = _without_rt_publication_notes(replay_surface)
+        oracle_projected = _without_rt_publication_notes(oracle_surface)
+        if replay_projected == replay_surface and oracle_projected == oracle_surface:
+            continue
+        if replay_projected != oracle_projected:
+            continue
+        divergence["residual_bucket"] = "publication_note_projection"
+        divergence["residual_evidence"] = (
+            "A bounded RT publication/legal-basis note projection makes replay "
+            "and Riigi Teataja text equal for this section. This closes only "
+            "display notes such as electronic-appendix publication bases or "
+            "directive footnote tails; replay and oracle text are not mutated."
+        )
+        divergence["open_current"] = 0
+
+
 def _without_omitted_text_placeholder(text: str) -> str:
     stripped = _EE_OMITTED_TEXT_PLACEHOLDER_RE.sub("", text)
     return " ".join(stripped.replace("[", " ").replace("]", " ").split()).strip(" .;:")
@@ -933,6 +985,7 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
     _classify_source_typo_projection(divergences)
     _classify_symbol_placeholder_projection(divergences)
     _classify_punctuation_whitespace_only(divergences)
+    _classify_publication_note_projection(divergences)
     _classify_omitted_text_placeholder_display(divergences)
     _classify_address_alignment_shadows(divergences)
     _classify_descendant_projection_residuals(
