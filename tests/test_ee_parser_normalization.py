@@ -1909,6 +1909,49 @@ def test_parse_ee_statute_keeps_section_level_reavahetus_items_structural() -> N
     ]
 
 
+def test_parse_ee_statute_merges_section_level_reavahetus_items_before_unlabeled_loige_tail() -> None:
+    xml = """
+    <tyviseadus xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
+      <aktinimi>
+        <nimi>
+          <pealkiri>Testmäärus</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>1</paragrahvNr>
+          <kuvatavNr>§ 1.</kuvatavNr>
+          <sisuTekst>
+            <tavatekst>Pangad on:<reavahetus/>1) Swedbank AS<reavahetus/>2) AS SEB Pank<reavahetus/>3) AS LHV Pank</tavatekst>
+          </sisuTekst>
+          <loige>
+            <loigeNr/>
+            <kuvatavNr/>
+            <sisuTekst>
+              <tavatekst>4) Luminor Bank AS</tavatekst>
+            </sisuTekst>
+          </loige>
+        </paragrahv>
+      </sisu>
+    </tyviseadus>
+    """.encode("utf-8")
+
+    statute = parse_ee_statute(xml, "ee/test")
+    subsection = statute.body.children[0].children[0]
+
+    assert subsection.text == "Pangad on:"
+    assert [(item.label, item.text) for item in subsection.children] == [
+        ("1", "Swedbank AS"),
+        ("2", "AS SEB Pank"),
+        ("3", "AS LHV Pank"),
+        ("4", "Luminor Bank AS"),
+    ]
+    assert "ee_section_level_reavahetus_items_attached_to_first_subsection" in subsection.attrs[
+        "source_cleanup_rules"
+    ]
+    assert subsection.attrs["section_level_reavahetus_item_labels"] == ("1", "2", "3")
+
+
 def test_parse_ee_statute_recovers_real_section_level_reavahetus_items() -> None:
     archive = open_rt_archive(readonly=True)
     statute = parse_ee_statute(fetch_rt_xml("128032013017", archive), "128032013017")
@@ -1922,6 +1965,34 @@ def test_parse_ee_statute_recovers_real_section_level_reavahetus_items() -> None
     assert [item.label for item in subsection_11.children] == ["1", "2", "3", "4"]
     assert "vastutab osakonnale pandud ülesannete täitmise eest" in (subsection_11.children[0].text or "")
     assert {"3_1", "3_2"}.issubset({item.label for item in subsection_16.children})
+
+
+def test_parse_ee_statute_recovers_real_section_level_reavahetus_items_before_unlabeled_loige_tail() -> None:
+    archive = open_rt_archive(readonly=True)
+    statute = parse_ee_statute(fetch_rt_xml("129112022006", archive), "129112022006")
+    archive.close()
+
+    section_1 = next(child for child in statute.body.children if child.kind == IRNodeKind.SECTION and child.label == "1")
+    section_2 = next(child for child in statute.body.children if child.kind == IRNodeKind.SECTION and child.label == "2")
+
+    subsection_1 = section_1.children[0]
+    subsection_2 = section_2.children[0]
+
+    assert subsection_1.text == (
+        "Eestis tegutsevad muud süsteemselt olulised krediidiasutused krediidiasustuste "
+        "seaduse § 86 48 tähenduses on:"
+    )
+    assert [(item.label, item.text) for item in subsection_1.children] == [
+        ("1", "Swedbank AS"),
+        ("2", "AS SEB Pank"),
+        ("3", "AS LHV Pank"),
+        ("4", "Luminor Bank AS"),
+    ]
+    assert [item.label for item in subsection_2.children] == ["1", "2", "3", "4"]
+    assert subsection_2.children[0].text == "Swedbank AS: 2%"
+    assert "ee_section_level_reavahetus_items_attached_to_first_subsection" in subsection_1.attrs[
+        "source_cleanup_rules"
+    ]
 
 
 def test_parse_ee_statute_drops_reavahetus_item_amendment_history_notes() -> None:
