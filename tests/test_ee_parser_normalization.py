@@ -5986,6 +5986,59 @@ def test_parse_ee_amendment_ops_materializes_pollumajandusministeerium_name_subs
     assert maaelu_ops[0].payload.attrs.get("case_inflected") is True
 
 
+def test_parse_ee_amendment_ops_materializes_old_format_direct_title_case_inflected_rewrite() -> None:
+    xml = """
+    <oigusakt xmlns="http://www.riigiteataja.ee/ns/akt/1.0">
+      <sisu>
+        <HTMLKonteiner><![CDATA[
+          <p><b>§ 44. Maaeluministri määruse „Teadlaste ja kalurite koostöötoetus“ muutmine</b></p>
+          <p>Maaeluministri määruses nr 9 „Teadlaste ja kalurite koostöötoetus“
+          ning selle lisades 1 ja 3 asendatakse sõna „Maaeluministeerium“
+          tekstiosaga „Regionaal- ja Põllumajandusministeerium“ vastavas käändes.</p>
+          <p><b>§ 45. Muu määruse muutmine</b></p>
+          <p>Muu määruses asendatakse sõna „Maaeluministeerium“ tekstiosaga „Võõras“.</p>
+        ]]></HTMLKonteiner>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test/old-format-direct-title-case-inflected",
+        target_title="Teadlaste ja kalurite koostöötoetus",
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [(StructuralAction.TEXT_REPLACE, ())]
+    assert ops[0].payload is not None
+    assert ops[0].payload.attrs["old_text"] == "Maaeluministeerium"
+    assert ops[0].payload.text == "Regionaal- ja Põllumajandusministeerium"
+    assert ops[0].payload.attrs["all_occurrences"] is True
+    assert ops[0].payload.attrs["case_inflected"] is True
+    assert ops[0].payload.attrs["source_family"] == "ee_old_format_direct_title_case_inflected_text_replace"
+    assert ops[0].text_patch is not None
+    assert "old_format_target_header:" in " ".join(ops[0].provenance_tags)
+
+
+def test_parse_ee_amendment_ops_routes_2023_teadlased_ministry_rewrite() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("104072023001", archive),
+        "ee/104072023001",
+        target_title="Teadlaste ja kalurite koostöötoetus",
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == ()
+    assert op.payload is not None
+    assert op.payload.attrs["old_text"] == "Maaeluministeerium"
+    assert op.payload.text == "Regionaal- ja Põllumajandusministeerium"
+    assert op.payload.attrs["case_inflected"] is True
+    assert op.text_patch is not None
+
+
 def test_parse_ee_amendment_ops_keeps_dedicated_target_ops_alongside_generic_reorg_ops() -> None:
     xml = """
     <oigusakt xmlns="muutmisseadus_1_10.02.2010">

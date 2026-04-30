@@ -1150,6 +1150,34 @@ compile under:
 That rule records title-surface scope in the text rewrite witness; it does not
 invent a provision address.
 
+## 58.1. Old-format direct-title wrappers can carry case-inflected global rewrites
+
+Some omnibus ministry-name acts use one paragraph per target wrapper section:
+
+`§ N. ... „TARGET” muutmine`
+
+followed by an unnumbered body paragraph saying that in the target regulation
+and its appendices a ministry name is replaced by another ministry name
+`vastavas käändes`.
+
+Once the wrapper header has been admitted by exact/registry title evidence, the
+body clause is a whole-regulation typed text rewrite. It must not be parsed as a
+payload-less text op, and the second paragraph must not be smuggled into a
+structural replacement payload.
+
+Corpus witness:
+
+- `104072023001` wrapper § 44 targets `113052020006`
+  `Teadlaste ja kalurite koostöötoetus`;
+- it replaces `Maaeluministeerium` with
+  `Regionaal- ja Põllumajandusministeerium` in the target and appendices,
+  `vastavas käändes`;
+- oracle `104072023045` expects the renamed ministry in § 5 and § 9.
+
+The named extraction rule is:
+
+- `ee_old_format_direct_title_case_inflected_text_replace`
+
 ## 59. Compact coordinated agency spacing is a replay morphology variant
 
 Riigi Teataja source/oracle surfaces sometimes collapse coordinated agency names
