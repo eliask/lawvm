@@ -2600,6 +2600,44 @@ def test_parse_ee_amendment_ops_keeps_real_multi_paragraph_chapter_insert_payloa
     assert "ei kohaldata enne nimetatud muudatuste jõustumist" in chapter_insert.payload.text
 
 
+@pytest.mark.parametrize(
+    ("source_id", "target_title", "repealed_title"),
+    [
+        (
+            "127062025004",
+            "Tallinna Konstantin Pätsi Vabaõhukooli põhimäärus",
+            "Maarjamaa Hariduskolleegiumi põhimäärus",
+        ),
+        (
+            "127062025003",
+            "Tartu Hiie Kooli põhimäärus",
+            "Tartu Emajõe Kooli põhimäärus",
+        ),
+    ],
+)
+def test_parse_ee_amendment_ops_keeps_conjoined_chapter_and_section_insert_payload(
+    source_id: str,
+    target_title: str,
+    repealed_title: str,
+) -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml(source_id, archive),
+        f"ee/{source_id}",
+        target_title=target_title,
+    )
+    archive.close()
+
+    chapter_insert = next(op for op in ops if op.target.path == (("chapter", "7"),))
+
+    assert chapter_insert.action is StructuralAction.INSERT
+    assert chapter_insert.witness_rule_id == "ee_quoted_act_chapter_insert_target"
+    assert "ee_embedded_open_quote_payload_section_header" in chapter_insert.provenance_tags
+    assert chapter_insert.payload is not None
+    assert "§ 22. Määruse kehtetuks tunnistamine" in chapter_insert.payload.text
+    assert repealed_title in chapter_insert.payload.text
+
+
 def test_parse_ee_amendment_ops_keeps_old_format_section_insert_payload_before_commencement() -> None:
     archive = open_rt_archive(readonly=True)
     ops = parse_ee_amendment_ops(

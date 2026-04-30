@@ -689,16 +689,17 @@ def split_embedded_act_sections(html_block: str) -> list[str]:
 
     def _current_has_unclosed_payload_quote() -> bool:
         text = "\n".join(plain_html_text(para) for para in current)
-        marker_matches = list(re.finditer(
-            r"(?:järgmises\s+sõnastuses|järgnevas\s+sõnastuses|järgmiselt)\s*:\s*",
-            text,
-            re.IGNORECASE | re.DOTALL,
-        ))
-        if marker_matches:
-            tail = text[marker_matches[-1].end():].lstrip()
-            if tail.startswith(("„", '"', "“", "«", "ˮ")):
-                return not bool(re.search(r'[“”"»ˮ]\s*[.;:]?\s*$', tail))
-        return text.count("„") > text.count("“") + text.count("”")
+        return _has_unclosed_payload_quote_after_formula(text)
+
+    def _current_claims_inner_section_insert() -> bool:
+        text = "\n".join(plain_html_text(para) for para in current)
+        return bool(
+            re.search(
+                r"\b(?:sinna\s+)?lisatakse\s+§\s*\d",
+                text,
+                re.IGNORECASE,
+            )
+        )
 
     for para_html in paras:
         plain = plain_html_text(para_html)
@@ -708,6 +709,13 @@ def split_embedded_act_sections(html_block: str) -> list[str]:
             re.match(r"^§\s*\d+\.\s+", plain)
             and any(kw in plain.lower() for kw in ("muutmine", "kehtetuks tunnistamine", "täiendamine"))
         ) or bool(intro_fragment and _looks_like_embedded_act_section_intro(plain))
+        if (
+            starts_from_paragraph_header
+            and current
+            and (_current_has_unclosed_payload_quote() or _current_claims_inner_section_insert())
+        ):
+            current.append(para_html)
+            continue
         if starts_from_paragraph_header:
             if current:
                 sections.append("\n".join(current))
@@ -747,7 +755,7 @@ def split_embedded_act_sections(html_block: str) -> list[str]:
                     plain.count("„") + plain.count("«") + plain.count('"')
                     - plain.count("”") - plain.count("»")
                 )
-                if quote_balance <= 0:
+                if quote_balance <= 0 and not _current_claims_inner_section_insert():
                     sections.append("\n".join(current))
                     current = []
                     current_started_from_intro = False

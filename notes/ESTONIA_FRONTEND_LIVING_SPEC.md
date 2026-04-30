@@ -1269,6 +1269,9 @@ Corpus witness:
 
 - `130052025004` inserts chapter 10 / § 28 into `106112024004`; oracle
   `130052025012` contains the full transitional provision.
+- `127062025004` and `127062025003` insert `7. peatükk` and conjoin
+  `sinna lisatakse § 22`; the section header and body remain part of the
+  chapter payload.
 
 ## 66. Old-format open quoted payload section headers stay in the item
 
