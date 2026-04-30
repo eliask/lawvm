@@ -1269,3 +1269,26 @@ Corpus witness:
 
 - `130052025004` inserts chapter 10 / § 28 into `106112024004`; oracle
   `130052025012` contains the full transitional provision.
+
+## 66. Old-format open quoted payload section headers stay in the item
+
+Some old-format `HTMLKonteiner` bodies are flat paragraph streams. An
+amendment item can insert a new section with payload text beginning:
+
+`... täiendatakse §-ga 31 järgmises sõnastuses: „§ 31. ...`
+
+The inserted payload header can look like a top-level target-act section header
+because it names the current regulation. The old-format section splitter must
+not split at that header while the quoted payload is still open. Extraction tags
+the affected item with:
+
+- `ee_old_format_open_quote_payload_section_header`
+
+This rule preserves the claimed inserted section payload and prevents the
+following commencement section from being smuggled into it.
+
+Corpus witness:
+
+- `129062012059` inserts § 31 into `110112010011`; oracle `129062012064`
+  contains the inserted section. The following `§ 2. Määrus jõustub...` is
+  commencement metadata and must not become payload text.
