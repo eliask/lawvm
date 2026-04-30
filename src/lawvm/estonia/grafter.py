@@ -2501,7 +2501,10 @@ def _parse_cross_act_transitional_section_repeals(
     )
     ops: List[LegalOperation] = []
     for match in pattern.finditer(text):
-        labels = _expand_ee_numeric_list(match.group("labels").strip(" .;"))
+        labels_surface = match.group("labels").strip(" .;")
+        if re.search(r"\bl[oõ]i(?:ge|ked|ke|kes|kest|gete)\b|\bpunkt(?:i|id|e)?\b", labels_surface, re.IGNORECASE):
+            continue
+        labels = _expand_ee_numeric_list(labels_surface)
         if not labels:
             continue
         witness = match.group(0).strip()
@@ -2696,14 +2699,7 @@ def _parse_parenthesized_target_html_block_ops(
         )
 
     def _out_of_body_clause(op_text: str) -> bool:
-        stripped = re.sub(r"^\(?\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\)\s*", "", op_text).strip()
-        lower = stripped.lower()
-        return bool(
-            re.match(r"^määruse\s+(?:kolmas\s+)?normitehnili\w*\s+märkus", lower)
-            or re.match(r"^seaduse\s+(?:kolmas\s+)?normitehnili\w*\s+märkus", lower)
-            or re.match(r"^(?:määruse|seaduse)\s+(?:senise\s+)?lisa(?:s|d|ga)?\b", lower)
-            or re.match(r"^lisa(?:s|d|ga)?\b", lower)
-        )
+        return _tr_is_out_of_body_appendix_or_note_clause(op_text)
 
     ops: list[LegalOperation] = []
     global_seq = 1

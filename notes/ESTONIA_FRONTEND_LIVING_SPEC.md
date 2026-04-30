@@ -1318,3 +1318,47 @@ Corpus witness:
 - `119052022010` replaces § 2 of `109072013008`; oracle `119052022011`
   contains the § 2 list items. The following appendix-clause publication note is
   not a second § 2 body replacement.
+
+## 68. Out-of-body appendix clauses must not inherit the previous body section
+
+Old and new EE amendment HTML can list an appendix addition immediately after a
+body-section replacement:
+
+- `2) paragrahvi 3 tekst sõnastatakse järgmiselt: ...`
+- `3) määrust täiendatakse lisaga ... (lisatud);`
+
+The appendix item is not a `section:3` operation merely because `section:3` was
+the last body target. It must be emitted as an explicit non-body/meta clause
+under `ee_out_of_body_appendix_clause_not_section_scoped` or
+`ee_old_format_out_of_body_appendix_clause_not_section_scoped`.
+
+Do not attach the target-act routing intro to such a clause in a way that makes
+generic extraction reinterpret it as a body replacement. The intro identifies
+the amended act; it does not authorize section-scope carry into the appendix.
+
+Corpus witness:
+
+- `112092023001` changes `121122022022`; oracle `112092023005` keeps the
+  replaced § 3 body. The following `määrust täiendatakse lisaga ... (lisatud)`
+  item is a publication-side appendix clause, not another § 3 replacement.
+
+## 69. Cross-act transitional helper is section-only, not mixed-list recovery
+
+The fallback cross-act transitional repeal helper is only allowed for clauses
+that name a target act and then list whole sections, for example:
+
+- `§-d 2-4, 6 ja 7 tunnistatakse kehtetuks`
+
+It must not parse a mixed section/subsection clause such as:
+
+- `§-d 1-5, § 6 lõiked 1-3 ning 6-10, §-d 7-10, § 11 lõiked ...`
+
+Those mixed clauses belong to the normal structural parser. If the helper also
+fires, it creates duplicate broad section repeals and malformed labels such as
+`section:§-d 7-10`, which can delete legal siblings not claimed by the source.
+
+Corpus witness:
+
+- `113102015002` changes `126082015026`; oracle `113102015004` is fully
+  consistent when the normal mixed-repeal parser owns the clause and the
+  cross-act section-only helper stays silent.

@@ -71,6 +71,7 @@ def _is_out_of_body_appendix_or_note_clause(text: str) -> bool:
     stripped = _strip_old_format_item_prefix(text).lower()
     return bool(
         re.match(r"^(?:määruse|seaduse)\s+(?:senise\s+)?lisa(?:s|d|ga)?\b", stripped)
+        or re.match(r"^(?:määrust|seadust)\s+täiendatakse\s+(?:senise\s+)?lisa(?:ga|dega)?\b", stripped)
         or re.match(r"^lisa(?:s|d|ga)?\b", stripped)
         or re.match(r"^(?:määruse|seaduse)\s+(?:kolmas\s+)?normitehnili\w*\s+märkus", stripped)
     )
@@ -1057,14 +1058,15 @@ def new_format_lower_op_texts(
             global_seq += 1
             continue
         if _is_out_of_body_appendix_or_note_clause(original_op_text):
-            lowered.append(
-                _non_body_meta_op(
-                    source=source,
-                    source_text=original_op_text,
-                    sequence=global_seq,
-                    rule_id=_EE_OUT_OF_BODY_APPENDIX_CLAUSE_RULE,
-                )
+            meta_op = _non_body_meta_op(
+                source=source,
+                source_text=original_op_text,
+                sequence=global_seq,
+                rule_id=_EE_OUT_OF_BODY_APPENDIX_CLAUSE_RULE,
             )
+            if rule_tags:
+                meta_op = replace(meta_op, provenance_tags=(*meta_op.provenance_tags, *rule_tags))
+            lowered.append(meta_op)
             global_seq += 1
             continue
         effective, section_heading_stripped = _strip_html_amendment_section_heading_wrapper(
@@ -1419,13 +1421,11 @@ def new_format_collect_op_texts(
                 wrapper_instruction = _html_wrapper_instruction(html)
                 if item_texts and wrapper_instruction:
                     for item_text in item_texts:
-                        if _is_target_act_routing_intro(wrapper_instruction) and old_format_has_section_ref(
-                            item_text,
+                        if _is_target_act_routing_intro(wrapper_instruction) and (
+                            old_format_has_section_ref(item_text)
+                            or _is_out_of_body_appendix_or_note_clause(item_text)
                         ):
-                            combined = _with_op_text_rule(
-                                item_text,
-                                _EE_NEW_FORMAT_TARGET_ACT_HEADER_NOT_WRAPPER_RULE,
-                            )
+                            combined = _with_op_text_rule(item_text, _EE_NEW_FORMAT_TARGET_ACT_HEADER_NOT_WRAPPER_RULE)
                         else:
                             combined = f"{wrapper_instruction} {item_text}".strip()
                         if (
