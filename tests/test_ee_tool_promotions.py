@@ -726,6 +726,42 @@ def test_ee_publication_db_classifies_punctuation_whitespace_only_rows() -> None
     assert divergences[1]["open_current"] == 1
 
 
+def test_ee_publication_db_classifies_publication_note_projection_rows() -> None:
+    divergences = [
+        {
+            "address": "chapter:6/section:19",
+            "replay_text": (
+                "Rakendussätted Esimene lause. Määruse lisad on avaldatud "
+                "elektroonilises Riigi Teatajas. Alus: \"Riigi Teataja seaduse\" "
+                "§4 lõige 2 ja riigisekretäri 1.09.2008. a resolutsioon nr "
+                "17–1/08–05359. Teine lause."
+            ),
+            "oracle_text": "Rakendussätted Esimene lause. Teine lause.",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+        {
+            "address": "chapter:4/section:13",
+            "replay_text": "Määruse jõustumine Sisuline tekst. 1Euroopa Parlamendi muu viide.",
+            "oracle_text": "Määruse jõustumine Teine sisuline tekst.",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+    ]
+
+    ee_publication_db._classify_publication_note_projection(divergences)
+
+    assert divergences[0]["residual_bucket"] == "publication_note_projection"
+    assert divergences[0]["open_current"] == 0
+    assert "publication/legal-basis note" in divergences[0]["residual_evidence"]
+    assert divergences[1]["residual_bucket"] is None
+    assert divergences[1]["open_current"] == 1
+
+
 def test_ee_publication_db_classifies_omitted_text_placeholder_display_rows() -> None:
     divergences = [
         {
