@@ -1382,9 +1382,10 @@ The payload witness family is:
 
 ## 71. Elative section targets can carry sentence-scope deletion
 
-Clauses such as `§-st 6 jäetakse välja teine lause` target a sentence inside a
-section, not the section as a whole. The elative `§-st` supplies the section
-target, while `teine lause` supplies sentence scope.
+Clauses such as `§-st 6 jäetakse välja teine lause` and
+`§ 12 tekstist jäetakse välja teine lause` target a sentence inside a section,
+not the section as a whole. The elative `§-st` or explicit `tekstist` supplies
+section text scope, while `teine lause` supplies sentence scope.
 
 This must lower to a sentence-scoped `REPLACE` with empty payload and
 `sentence_target_meta`, not a structural section repeal.
@@ -1392,6 +1393,8 @@ This must lower to a sentence-scoped `REPLACE` with empty payload and
 Corpus witness:
 
 - `114082018004` changes `102112016003`; oracle `114082018005` keeps § 6 and
+  removes only its second sentence.
+- `129122020040` changes `108022017004`; oracle `129122020047` keeps § 12 and
   removes only its second sentence.
 
 ## 72. Case-inflected agency renames preserve nominative before `ise`
