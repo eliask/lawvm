@@ -1413,6 +1413,8 @@ def _classify_verb(text: str) -> str:
 
     # Simple amend with no explicit new text phrasing → still a replace
     if 'muudetakse' in t:
+        if re.search(r"\basendatakse\b", normalized_text, re.IGNORECASE) and _extract_text_replace_pairs(normalized_text):
+            return "text_replace"
         return "replace"
 
     # Insert / supplement: täiendatakse
@@ -2153,6 +2155,22 @@ def _extract_after_anchor_text_delete_pair(text: str) -> tuple[str, str] | None:
 def _extract_after_anchor_text_replace_pair(text: str) -> tuple[str, str] | None:
     """Extract OLD->NEW when ``pärast sõna X`` is a replacement anchor, not payload."""
     normalized = html.unescape(text)
+    anchored_first = re.search(
+        r'\bp[aä]rast\s+(?:sõn[au]|tekstiosa|lauseosa|arvu)\s+'
+        r'[„"“](?P<anchor>[^„”“"]+)[”"“]\s+'
+        r'\basendatakse\b[^.;]{0,180}\b'
+        r'(?:sõn(?:a|ad|u)|tekstiosa|lauseosa|arv[a-z]*)\s+'
+        r'[„"“](?P<old>[^„”“"]+)[”"“]\s+'
+        r'(?:sõn(?:a|aga|adega)|tekstiosaga|lauseosaga|arvuga)\s+'
+        r'[„"“](?P<new>[^„”“"]+)[”"“]',
+        normalized,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if anchored_first is not None:
+        old = anchored_first.group("old").strip()
+        new = anchored_first.group("new").strip()
+        if old and new:
+            return old, new
     if not re.search(
         r'\basendatakse\b[^.;]{0,180}\bp[aä]rast\s+'
         r'(?:sõn[au]|tekstiosa|lauseosa|arvu)\b',

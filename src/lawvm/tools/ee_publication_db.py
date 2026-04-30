@@ -558,6 +558,12 @@ _RT_PUBLICATION_NOTE_PATTERNS: tuple[re.Pattern[str], ...] = (
         r"[\d–-]+/\d+[\d–-]*\.",
         re.IGNORECASE,
     ),
+    re.compile(
+        r"\s*\d+\s*Euroopa\s+Parlamendi\s+ja\s+(?:EL\s+)?nõukogu\s+direktiiv\s+"
+        r"\d{4}/\d+/(?:EÜ|EL)\s+.+?"
+        r"\(ELT\s+L\s+\d+,\s*\d{1,2}\.\d{1,2}\.\d{4},\s*lk\s+[\d–-]+\)\.",
+        re.IGNORECASE,
+    ),
 )
 
 

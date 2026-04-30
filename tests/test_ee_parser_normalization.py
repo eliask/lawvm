@@ -1537,6 +1537,43 @@ def test_extract_ee_ops_treats_after_word_as_text_replace_anchor() -> None:
     )
 
 
+def test_extract_ee_ops_treats_muudetakse_after_word_replace_as_text_replace() -> None:
+    text = (
+        "paragrahvi 7 lõige 2 muudetakse ja pärast sõna „kui” "
+        "asendatakse lauseosa „31. mai” lauseosaga „30. november”."
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "7"), ("subsection", "2"))
+    assert _payload(ops[0]).attrs["old_text"] == "31. mai"
+    assert _payload(ops[0]).text == "30. november"
+    assert _payload(ops[0]).attrs["rewrite_mode"] == "replace"
+    assert _payload(ops[0]).attrs["source_family"] == "ee_text_replace_after_anchor_clause"
+    assert ops[0].witness_rule_id == "ee_text_replace_after_anchor_clause"
+
+
+def test_parse_ee_amendment_ops_keeps_archive_after_word_replace_as_text_replace() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("128052025010", archive),
+        "ee/128052025010",
+        target_title="Toetuse andmise tingimused ja kord rohevesiniku kasutuselevõtuks ühistranspordisektoris",
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "7"), ("subsection", "2"))
+    assert _payload(ops[0]).attrs["old_text"] == "31. mai"
+    assert _payload(ops[0]).text == "30. november"
+    assert _payload(ops[0]).attrs["rewrite_mode"] == "replace"
+    assert _payload(ops[0]).attrs["source_family"] == "ee_text_replace_after_anchor_clause"
+    assert ops[0].witness_rule_id == "ee_text_replace_after_anchor_clause"
+
+
 def test_extract_ee_ops_keeps_quoted_target_title_before_text_replace_verb() -> None:
     text = (
         "paragrahvis 1, § 3 lõikes 2, § 12 lõikes 1, § 15 lõikes 2, "
