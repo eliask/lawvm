@@ -62,6 +62,11 @@ from lawvm.core.ir import (
     TextSelector,
 )
 from lawvm.core.semantic_types import FacetKind
+from lawvm.estonia.text_morphology import (
+    _EE_ARUANDED_ARUANNE_FORMS_RULE,
+    _EE_ARUANDED_HEADING_AGREEMENT_RULE,
+    case_inflected_phrase_source_family,
+)
 
 
 _EE_OPTIONAL_TARGET_LABEL_SPACE_RULE = "ee_optional_target_label_space"
@@ -1013,17 +1018,6 @@ _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE = "ee_senine_text_subsection_renumber_b
 _EE_QUOTED_ACT_CHAPTER_INSERT_RULE = "ee_quoted_act_chapter_insert_target"
 _EE_FRAKTSIONEERITUD_TYPO_DELETE_RULE = "ee_fraktsioneeritud_source_typo_delete_variant"
 _EE_LOCAL_KOHTKUTE_SOURCE_SURFACE_DELETE_RULE = "ee_lokaal_kohtkute_source_surface_delete_variant"
-_EE_OLEMASOLEV_TAHKEL_KUTUSEL_PHRASE_FORMS_RULE = "ee_case_inflected_olemasolev_tahkel_kutusel_phrase_forms"
-_EE_VOLITATUD_VASTUTAV_FORMS_RULE = "ee_case_inflected_volitatud_vastutav_forms"
-_EE_TAOTLUSVOOR_COORDINATION_FORMS_RULE = "ee_case_inflected_taotlusvoor_coordination_forms"
-_EE_MIXED_ACRONYM_SUFFIX_CASE_REWRITE_RULE = "ee_case_inflected_mixed_acronym_suffix_case"
-_EE_NETO_OMAVAHEND_PREFIX_FORMS_RULE = "ee_case_inflected_neto_omavahend_prefix_forms"
-_EE_KYSK_RTK_FORMS_RULE = "ee_case_inflected_kysk_riigi_tugiteenuste_keskus_forms"
-_EE_ARUANDED_ARUANNE_FORMS_RULE = "ee_case_inflected_aruanded_aruanne_forms"
-_EE_ARUANDED_HEADING_AGREEMENT_RULE = "ee_case_inflected_aruanded_heading_agreement"
-_EE_RIIKLIK_REGISTER_INFOSUSTEEM_FORMS_RULE = (
-    "ee_case_inflected_riiklik_register_infosusteem_forms"
-)
 _EE_QUOTED_LEGAL_TITLE_PROTECTION_RULE = "ee_text_replace_quoted_legal_title_protection"
 _EE_NORMITEHNILINE_MARKUS_INSERT_AFTER_RULE = "ee_normitehniline_markus_insert_after_anchor"
 _EE_NORMITEHNILINE_MARKUS_OPTIONAL_EU_MARKER_RULE = "ee_normitehniline_markus_optional_eu_marker_anchor"
@@ -1050,33 +1044,6 @@ def _is_lokaal_kohtkute_source_surface_delete_variant(old_text: str | None, new_
         "peab ehitisregistrisse olema märgitud lokaal- või kohtküte ja energiaallika "
         "liigina tahkekütus"
     )
-
-
-def _case_inflected_phrase_source_family(old_text: str | None, new_text: str | None) -> str:
-    if old_text == "olemasolev tahkel kütusel põhinev kütteseade" and new_text == "olemasolev kütteseade":
-        return _EE_OLEMASOLEV_TAHKEL_KUTUSEL_PHRASE_FORMS_RULE
-    if old_text == "volitatud" and new_text == "vastutav":
-        return _EE_VOLITATUD_VASTUTAV_FORMS_RULE
-    if (
-        old_text == "teine ja viies taotlusvoor"
-        and new_text == "teine, viies ja järgnevad taotlusvoorud"
-    ):
-        return _EE_TAOTLUSVOOR_COORDINATION_FORMS_RULE
-    if old_text == "neto-omavahend" and new_text == "omavahend":
-        return _EE_NETO_OMAVAHEND_PREFIX_FORMS_RULE
-    if old_text == "KÜSK" and new_text == "Riigi Tugiteenuste Keskus":
-        return _EE_KYSK_RTK_FORMS_RULE
-    if old_text == "aruanded" and new_text == "aruanne":
-        return _EE_ARUANDED_ARUANNE_FORMS_RULE
-    if (
-        old_text
-        and old_text.casefold() == "riiklik pensionikindlustuse register"
-        and new_text == "sotsiaalkaitse infosüsteem"
-    ):
-        return _EE_RIIKLIK_REGISTER_INFOSUSTEEM_FORMS_RULE
-    if new_text and re.fullmatch(r"[A-ZÕÄÖÜŠŽ]{2,}-[a-zäöõüšž]+", new_text.strip()):
-        return _EE_MIXED_ACRONYM_SUFFIX_CASE_REWRITE_RULE
-    return ""
 
 
 def _split_section_renumber_labels(surface: str) -> tuple[str, ...]:
@@ -3676,7 +3643,7 @@ def _set_text_replace_payload_attrs(
         source_family = "ee_insert_after_source_phrase_surface_variants"
     case_inflected = _should_case_inflect_text_replace(clean, old_text, new_text)
     if not source_family and case_inflected:
-        source_family = _case_inflected_phrase_source_family(old_text, new_text)
+        source_family = case_inflected_phrase_source_family(old_text, new_text)
     if re.search(r"\bläbivalt\b", clean, re.IGNORECASE) or case_inflected:
         attrs["all_occurrences"] = True
     if (

@@ -1206,6 +1206,24 @@ The named rule is:
 
 - `ee_case_inflected_riiklik_register_infosusteem_forms`
 
+## 59.2 Case-aware text rewrite morphology is frontend-owned, not grafter logic
+
+Estonian `vastavas käändes` rewrites are represented as typed text-rewrite
+payloads with source witnesses. The tree walker applies those payloads, but it
+does not own the Estonian morphology or exception-family tables.
+
+The boundary is:
+
+- `peg.py` parses the source and annotates `case_inflected` plus `source_family`;
+- `text_morphology.py` owns generic Estonian text-rewrite variant generation,
+  explicit source-witnessed exception families, and the shared rule IDs;
+- `grafter.py` applies the generated variants within the operation target
+  region.
+
+Irreducible forms should become named morphology families or unresolved
+findings. They should not be reintroduced as anonymous branches in the tree
+mutation code.
+
 ## 60. Publication DB outreach triage is a projection, not adjudication
 
 The EE publication DB stores a separate outreach projection on each divergence:
