@@ -1248,6 +1248,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- explain ---
     explain_p = sub.add_parser(
         "explain",
+        parents=_P,
         help="divergence explainer: blame + diff + johtolause + diagnosis",
         description=(
             "For each diverging provision, shows the last amendment to touch it, "
@@ -1315,6 +1316,17 @@ def _build_parser() -> argparse.ArgumentParser:
             "show CompileFacade summary (observations, temporal_events, quirks_used, "
             "source_completeness_issues, strictness) built from the replay PhaseResult"
         ),
+    )
+    explain_p.add_argument(
+        "--oracle-id",
+        metavar="ID",
+        default="",
+        help="[-j ee] explicit EE oracle/consolidated aktViide",
+    )
+    explain_p.add_argument(
+        "--json",
+        action="store_true",
+        help="[-j ee] emit JSON",
     )
 
     # --- classify ---
@@ -2651,6 +2663,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- ops ---
     ops_p = sub.add_parser(
         "ops",
+        parents=_P,
         help="list compiled operations with provenance",
         description=(
             "Show all operations compiled during replay, with their source amendment "
@@ -2674,6 +2687,29 @@ def _build_parser() -> argparse.ArgumentParser:
         default="finlex_oracle",
         choices=["finlex_oracle", "legal_pit"],
         help="replay mode (default: finlex_oracle)",
+    )
+    ops_p.add_argument(
+        "--oracle-id",
+        metavar="ID",
+        default="",
+        help="[-j ee] explicit EE oracle/consolidated aktViide; used to derive --as-of",
+    )
+    ops_p.add_argument(
+        "--as-of",
+        metavar="YYYY-MM-DD",
+        default="",
+        help="[-j ee] replay cutoff date when no --oracle-id is supplied",
+    )
+    ops_p.add_argument(
+        "--json",
+        action="store_true",
+        help="[-j ee] emit JSON",
+    )
+    ops_p.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="[-j ee] show replay progress on stderr",
     )
 
     # --- replay-debug ---
@@ -5476,9 +5512,26 @@ def main() -> None:
         trace_section_main(args)
 
     elif args.command == "explain":
-        from lawvm.tools.explain import main as explain_main
+        j = getattr(args, "jurisdiction", "fi")
+        if j == "ee":
+            if not getattr(args, "oracle_id", ""):
+                print("ERROR: lawvm explain -j ee requires --oracle-id", file=sys.stderr)
+                raise SystemExit(2)
+            from lawvm.tools.ee_explain import main as ee_explain_main
 
-        explain_main(args)
+            args.base_id = args.statute_id
+            args.oracle_id = args.oracle_id
+            ee_explain_main(args)
+        elif j == "fi":
+            if getattr(args, "json", False):
+                print("ERROR: lawvm explain --json is currently only supported for -j ee", file=sys.stderr)
+                raise SystemExit(2)
+            from lawvm.tools.explain import main as explain_main
+
+            explain_main(args)
+        else:
+            print(f"ERROR: lawvm explain does not yet support -j {j}", file=sys.stderr)
+            raise SystemExit(2)
 
     elif args.command == "classify":
         from lawvm.tools.classify import main as classify_main

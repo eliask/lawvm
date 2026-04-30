@@ -12,6 +12,7 @@ from lawvm.tools import (
     ee_corpus,
     ee_publication_db,
     ee_pair_status,
+    ops,
 )
 
 
@@ -60,6 +61,24 @@ def test_cli_parser_accepts_promoted_ee_tools() -> None:
     args = parser.parse_args(["bench", "-j", "ee", "--laws-only"])
     assert args.include_decrees is False
 
+    args = parser.parse_args(
+        ["ops", "-j", "ee", "102032022002", "--oracle-id", "125082023003", "--json"]
+    )
+    assert args.command == "ops"
+    assert args.jurisdiction == "ee"
+    assert args.statute_id == "102032022002"
+    assert args.oracle_id == "125082023003"
+    assert args.json is True
+
+    args = parser.parse_args(
+        ["explain", "-j", "ee", "102032022002", "--oracle-id", "125082023003", "--json"]
+    )
+    assert args.command == "explain"
+    assert args.jurisdiction == "ee"
+    assert args.statute_id == "102032022002"
+    assert args.oracle_id == "125082023003"
+    assert args.json is True
+
     args = parser.parse_args(["ee-publication-db", "--limit", "10", "--workers", "2"])
     assert args.command == "ee-publication-db"
     assert args.corpus == "data/estonia/current_replayable_corpus.csv"
@@ -76,6 +95,25 @@ def test_cli_parser_accepts_promoted_ee_tools() -> None:
 
 def test_ee_bench_defaults_to_current_replayable_corpus() -> None:
     assert ee_bench._CORPUS_CSV.name == "current_replayable_corpus.csv"
+
+
+def test_ee_ops_command_emits_compiled_ops_json(capsys) -> None:
+    ops._ops_ee_sync(
+        "102032022002",
+        source_filter="125082023001",
+        target_filter="section:9_1",
+        oracle_id="125082023003",
+        as_of="",
+        verbose=False,
+        emit_json=True,
+    )
+
+    out = capsys.readouterr().out
+    assert '"jurisdiction": "ee"' in out
+    assert '"ops_total": 1' in out
+    assert '"source_statute": "ee/125082023001"' in out
+    assert '"target": "section:9_1"' in out
+    assert '"witness_rule_id": "ee_act_citation_section_insert_target"' in out
 
 
 def test_ee_chain_quality_run_chain_prints_totals(capsys, monkeypatch) -> None:

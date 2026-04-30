@@ -87,8 +87,10 @@ def _build_ee_explain_payload(base_id: str, oracle_id: str, verbose: bool = Fals
         for a in getattr(pair_plan, "amendments_to_apply", []):
             applied_amendments.append(
                 {
-                    "source_id": getattr(a, "source_id", str(a)),
-                    "effective_date": getattr(a, "effective_date", ""),
+                    "source_id": getattr(a, "source_id", None)
+                    or getattr(a, "aktViide", str(a)),
+                    "effective_date": getattr(a, "effective_date", None)
+                    or getattr(a, "joustumine", ""),
                 }
             )
 
