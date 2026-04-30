@@ -5805,6 +5805,48 @@ def _ee_global_text_replace(
     return _walk(body)
 
 
+def _ee_global_text_replace_with_spec(
+    body: IRNode,
+    spec: EETextRewriteSpec,
+    *,
+    excluded_paths: object = None,
+) -> IRNode:
+    """Apply a typed statute-wide text rewrite while preserving global skips."""
+
+    def _walk(node: IRNode, current_path: tuple[tuple[str, str], ...] = ()) -> IRNode:
+        node_path = current_path
+        if node.label is not None:
+            node_path = current_path + ((str(node.kind), node.label),)
+        if _ee_path_is_excluded(node_path, excluded_paths):
+            return node
+        skip_title = node.kind == IRNodeKind.SECTION and bool(node.attrs.get("kehtetu"))
+        if node.text and not skip_title:
+            new_text = _ee_apply_text_replace_spec(
+                node.text,
+                spec,
+                case_inflected=spec.case_inflected,
+                capitalize_sentence_start=node.kind != IRNodeKind.ITEM,
+            )
+            if new_text is None:
+                new_text = node.text
+        else:
+            new_text = node.text
+        new_children = [_walk(child, node_path) for child in node.children]
+        text_changed = new_text != node.text
+        children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children))
+        if not text_changed and not children_changed:
+            return node
+        return IRNode(
+            kind=node.kind,
+            label=node.label,
+            text=new_text,
+            attrs=dict(node.attrs),
+            children=tuple(new_children),
+        )
+
+    return _walk(body)
+
+
 def _ee_global_generic_minister_plural_replace(
     body: IRNode,
     *,
@@ -10082,10 +10124,9 @@ def _ee_apply_op(
                     )
 
                 return _walk(body)
-            return _ee_global_text_replace(
+            return _ee_global_text_replace_with_spec(
                 body,
-                old,
-                rewrite_spec.new_text.replace("\x01", ""),
+                rewrite_spec,
                 excluded_paths=excluded_paths,
             )
         return body

@@ -3668,7 +3668,7 @@ def _set_text_replace_payload_attrs(
     case_inflected = _should_case_inflect_text_replace(clean, old_text, new_text)
     if not source_family and case_inflected:
         source_family = _case_inflected_phrase_source_family(old_text, new_text)
-    if "läbivalt" in _instruction_preamble(clean).lower() or case_inflected:
+    if re.search(r"\bläbivalt\b", clean, re.IGNORECASE) or case_inflected:
         attrs["all_occurrences"] = True
     if (
         rewrite_mode == "insert_after"

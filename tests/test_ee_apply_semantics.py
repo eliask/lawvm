@@ -253,6 +253,33 @@ def test_text_replace_capitalized_source_surface_does_not_rewrite_lowercase_occu
     )
 
 
+def test_global_lowercase_text_replace_rewrites_sentence_initial_capitalized_match() -> None:
+    body = _body_with_section_and_subsection(
+        "8",
+        "2",
+        "Kliimaminister võib käskkirjaga täpsustada toetatavaid valdkondi.",
+    )
+    op = LegalOperation(
+        op_id="ee_test_global_lowercase_sentence_initial",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=()),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="valdkonna eest vastutav minister",
+            attrs={
+                "old_text": "kliimaminister",
+                "rewrite_mode": "replace",
+            },
+        ),
+    )
+
+    result = _ee_apply_op(body, op)
+    subsection = result.children[0].children[0].children[0]
+
+    assert subsection.text == "Valdkonna eest vastutav minister võib käskkirjaga täpsustada toetatavaid valdkondi."
+
+
 def test_text_replace_exact_target_recovers_one_character_source_typo_in_phrase() -> None:
     body = _body_with_section_and_subsection(
         "38",
