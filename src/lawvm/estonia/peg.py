@@ -148,6 +148,19 @@ def _normalize_num(raw: str) -> str:
     return re.sub(r'(\d)\s+(\d)', r'\1_\2', normalized)
 
 
+def _normalize_section_symbol_case_suffixes(text: str) -> str:
+    """Normalize RT dash variants in section-symbol case forms, e.g. §–st -> §-st."""
+    normalized = text
+    for suffix in ("des", "st", "ga", "s", "i", "d"):
+        normalized = re.sub(
+            rf"§\s*[–‒‑-]\s*{suffix}\b",
+            f"§-{suffix}",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+    return normalized
+
+
 _EE_ORDINAL_WORD_NUMS = {
     "esimese": "1",
     "teise": "2",
@@ -307,7 +320,9 @@ def parse_target(text: str) -> Optional[LegalAddress]:
     # first Estonian open-quote „ or "järgmises sõnastuses:" / "järgmiselt:").
     # This prevents body cross-references like "käesoleva paragrahvi 1. lõikes"
     # inside quoted replacement text from contaminating the target address.
-    preamble = _strip_embedded_reference_wrapper(_instruction_preamble(text))
+    preamble = _normalize_section_symbol_case_suffixes(
+        _strip_embedded_reference_wrapper(_instruction_preamble(text))
+    )
 
     # Section: paragrahvi N (genitive), paragrahvis N (inessive),
     #          paragrahvist N (elative, "jäetakse välja" constructions),
@@ -340,7 +355,7 @@ def parse_target(text: str) -> Optional[LegalAddress]:
     if not m_sect:
         # Final fallback: search full text (covers cases where no preamble
         # marker is present and the clause has no quoted content at all)
-        section_context = _strip_embedded_reference_wrapper(text)
+        section_context = _normalize_section_symbol_case_suffixes(_strip_embedded_reference_wrapper(text))
         m_sect = re.search(
             r'\bparagrahvi(?:s|st)?\s+(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)',
             section_context, re.IGNORECASE
@@ -456,16 +471,12 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
         r'".*?"',
     ):
         preamble = re.sub(pat, ' ', preamble, flags=re.DOTALL)
-    preamble = _strip_embedded_reference_wrapper(preamble)
-    preamble = re.sub(r"§\s*[–‒‑-]\s*s\b", "§-s", preamble, flags=re.IGNORECASE)
-    preamble = re.sub(r"§\s*[–‒‑-]\s*i\b", "§-i", preamble, flags=re.IGNORECASE)
-    preamble = re.sub(r"§\s*[–‒‑-]\s*d\b", "§-d", preamble, flags=re.IGNORECASE)
-    preamble = re.sub(r"§\s*[–‒‑-]\s*des\b", "§-des", preamble, flags=re.IGNORECASE)
+    preamble = _normalize_section_symbol_case_suffixes(_strip_embedded_reference_wrapper(preamble))
     preamble = re.sub(r"\bl[oõ]igetest\b", "lõigetes", preamble, flags=re.IGNORECASE)
     preamble = re.sub(r'\s+', ' ', preamble).strip()
     chunks = re.split(
         r'(?:,\s*|\s+(?:ning|ja)\s+)'
-        r'(?=(?:§(?:-s|-i|-des)?\s*\d|\bparagrahvi(?:s|st)?\s+\d|\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s+lõike))',
+        r'(?=(?:§(?:-s|-st|-i|-des)?\s*\d|\bparagrahvi(?:s|st)?\s+\d|\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*\s+lõike))',
         preamble,
         flags=re.IGNORECASE,
     )
@@ -494,7 +505,7 @@ def _extract_multiple_explicit_targets(text: str) -> List[LegalAddress]:
             continue
 
         m_same_section_mixed = re.search(
-            r'(?:\bparagrahvi(?:s|st)?\s+|§(?:-i)?\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+',
+            r'(?:\bparagrahvi(?:s|st)?\s+|§(?:-i|-st)?\s*)(\d[\d\s¹²³⁴⁵⁶⁷⁸⁹⁰]*)\s+',
             chunk,
             re.IGNORECASE,
         )
@@ -1581,7 +1592,9 @@ def _extract_payload_after_marker(text: str) -> Optional[str]:
     payload = re.sub(r'^[\u201c\u201e\u201d"\u00ab\u00bb\u02ee]\s*', '', payload)
     payload = re.sub(r'\s*[.;]\s*$', '', payload)
     if starts_wrapper_quote:
-        payload = re.sub(r'\s*[\u201c\u201d\u00bb"\u02ee]\s*$', '', payload)
+        stripped_payload = re.sub(r'\s*[\u201c\u201d\u00bb"\u02ee]\s*$', '', payload)
+        if stripped_payload.count("\u201e") < payload.count("\u201e"):
+            payload = stripped_payload
     if not re.search(r'[\u201e\u00ab"]', payload) or payload.startswith("\u201e"):
         payload = re.sub(r'\s*[\u201c\u201d\u00bb"\u02ee]\s*$', '', payload)
     return payload.strip() or None
@@ -1759,6 +1772,23 @@ def _marker_payload_starts_with_ascii_quote(text: str) -> bool:
     if marker is None:
         return False
     return text[marker.end():].lstrip().startswith('"')
+
+
+def _marker_payload_has_terminal_wrapper_quote(text: str) -> bool:
+    """Return true when marker payload's outer quote follows terminal punctuation."""
+    matches = list(re.finditer(
+        r'(?:järgmises\s+sõnastuses|järgnevas\s+sõnastuses|järgmiselt)\s*:\s*',
+        text,
+        re.IGNORECASE | re.DOTALL,
+    ))
+    if not matches:
+        return False
+    raw_payload = text[matches[-1].end():].strip()
+    if not re.match(r'^[\u201c\u201e\u201d"\u00ab\u00bb\u02ee]', raw_payload):
+        return False
+    if len(re.findall(r'(?:^|\s)\d[\d\s_]*\)\s+', raw_payload)) < 2:
+        return False
+    return bool(re.search(r'[.;:]\s*[\u201c\u201d\u00bb"\u02ee]\s*$', raw_payload))
 
 
 def _payload_marker_has_preceding_quoted_title(text: str) -> bool:
@@ -1976,7 +2006,7 @@ def _split_plural_item_payload(content: str) -> Optional[dict[str, tuple[str, bo
         return None
 
     prefix = stripped[:matches[0].start()].strip()
-    chunks: dict[str, str] = {}
+    chunks: dict[str, tuple[str, bool]] = {}
     for idx, match in enumerate(matches):
         raw_label = match.group(1).strip()
         norm_label = re.sub(r'\s+', '_', raw_label)
@@ -5727,6 +5757,9 @@ def extract_ee_ops(
         content = _extract_quoted_content(clean)
         marker_payload_recovered = False
         marker_payload = _extract_payload_after_marker(clean) if action in ("replace", "insert") else None
+        marker_payload_terminal_wrapper_quote = (
+            _marker_payload_has_terminal_wrapper_quote(clean) if action in ("replace", "insert") else False
+        )
         split_content = None
         missing_replace_item_labels: set[str] = set()
         if action in ("replace", "insert") and content:
@@ -5804,14 +5837,22 @@ def extract_ee_ops(
                     payload_text, wrapper_tail_stripped = split_content[item_label]
                 else:
                     payload_text = content
-                payload_attrs = (
+                payload_attrs: dict[str, object] = (
                     {"source_family": "ee_explicit_item_replacement_terminal_preserved"}
                     if addr.path
                     and addr.path[-1][0] == "item"
                     and payload_text.rstrip().endswith((".", ";"))
                     else {}
                 )
-                if wrapper_tail_stripped:
+                terminal_wrapper_quote_stripped = (
+                    wrapper_tail_stripped
+                    or (
+                        split_content is not None
+                        and marker_payload_terminal_wrapper_quote
+                        and addr == target_addrs[-1]
+                    )
+                )
+                if terminal_wrapper_quote_stripped:
                     payload_attrs["payload_normalization_rule"] = _EE_PLURAL_ITEM_PAYLOAD_OUTER_QUOTE_TAIL_RULE
                 if marker_payload_recovered:
                     payload_attrs["source_family"] = _EE_PLURAL_ITEM_MARKER_PAYLOAD_INNER_QUOTE_RULE

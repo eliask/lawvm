@@ -1565,3 +1565,93 @@ Corpus witness:
   sentence-initial `Kliimaminister` in § 8(2) to `Valdkonna eest vastutav
   minister`, from the source clause `asendatakse sõna „kliimaminister”
   läbivalt sõnadega „valdkonna eest vastutav minister”.`
+
+## 75. Case-aware rewrite agreement postpasses require a matched selector
+
+EE case-aware `TEXT_REPLACE` may run morphology/agreement postpasses only after
+the source selector actually changed the live text. If the selector is absent,
+the operation is a no-op for that surface. Agreement projection must not mutate
+replacement-like live text merely because it resembles the new phrase.
+
+This prevents broad same-source renames from hijacking later, narrower rewrite
+targets at string granularity.
+
+Corpus witness:
+
+- `106122017001` changes `107072011007`; oracle `111122019011` expects the
+  later `Veterinaar- ja Toiduameti kohalik asutus` rewrite to produce
+  `Veterinaar- ja Toiduametit`.
+- The earlier broader selector `Veterinaar- ja Toiduameti kohaliku asutuse juht`
+  must not partially mutate `Veterinaar- ja Toiduameti kohalikku asutust`.
+
+## 76. Section/item targets may recover only to a unique descendant item
+
+Some EE source clauses spell an item target as `section:item` even though the
+live ontology stores the item under a subsection. Replay may recover that target
+only if the named section contains exactly one descendant item with the explicit
+item label.
+
+This recovery must emit adjudication:
+
+- `ee_section_item_replace_unique_descendant_item`
+
+The adjudication records the source target and recovered target. It is not a
+general fallback from item to subsection or section, and ambiguity remains a
+failed/unresolved target.
+
+Corpus witness:
+
+- `118042013002` changes `130122011047`; oracle `113122013023` expects the
+  explicit `§ 7` / `punkt 7^1` replacement to land on the unique descendant
+  item `chapter:2/section:7/subsection:1/item:7_1`.
+
+Strictness:
+
+- This is quirks-mode recovery today. A future EE strict profile should reject
+  it unless the profile explicitly allows unique-descendant target recovery.
+
+## 77. Old-format commencement defaults are temporal provenance, not hidden filtering
+
+When an old-format EE act has a whole-act commencement default and section/item
+exceptions, unstamped operations in an amendment section inherit the whole-act
+default only when that default is the active reference slice. Section-specific
+and item-specific dates remain owned by their explicit commencement clauses.
+
+Stamped operations must carry one of these provenance tags:
+
+- `ee_old_format_commencement_item_effective`
+- `ee_old_format_commencement_section_effective`
+- `ee_old_format_commencement_whole_act_default`
+
+Corpus witness:
+
+- `104012021004` changes `104012021044`; oracle `104012021045` expects § 15
+  items 1-4 to apply on `2021-02-01` under the whole-act default, while item 5
+  is item-stamped.
+- The same source also contains unrelated delayed sections/items, so the
+  presence of section effects elsewhere cannot suppress default ownership for
+  § 15.
+
+Strictness:
+
+- The tags are sufficient evidence for quirks replay. Strict mode should treat
+  default ownership as acceptable only when the whole-act default and target
+  amendment section are explicit in the source witness.
+
+## 78. Out-of-body appendix/note clauses are meta operations, not body replay
+
+EE source clauses that replace, establish, or repeal appendices/notes through
+an out-of-body lane must remain visible as `META` operations with source-family
+payload evidence. They must not be dropped merely because there is no body
+target, and they must not be replayed as body mutations.
+
+Owned family:
+
+- `ee_out_of_body_appendix_or_note_clause`
+
+Corpus witness:
+
+- `113092017001` changes `106012015009`; oracle `113092017002` exposes
+  `Jahitunnistuse ... kord` appendix material via the appendix lane. The source
+  clause `lisa 5 kehtestatakse uues sõnastuses` is preserved as meta evidence
+  rather than a failed body operation.

@@ -1256,7 +1256,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     "chapter:2/section:5",
                     "chapter:2/section:5/subsection:1",
                     "chapter:2/section:5/subsection:1/item:5",
-                    "chapter:2/section:5/subsection:1/item:8",
                 ),
                 bucket="source_oracle_drift",
                 evidence=(
@@ -1264,11 +1263,9 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
                     "matching § 1 target only, the remaining § 5(1) residuals "
                     "are source/oracle drift. Source act 129032014003 § 1 item "
                     "3 repeals § 5(1) item 5, and source act 130042015004 § 1 "
-                    "does not reinsert or rewrite that item. Source act "
-                    "130042015004 § 1 item 8 rewrites § 5(1) item 8 with only "
-                    "the first manure/nitrogen sentence, while oracle "
-                    "130042015007 keeps the repealed training item and retains "
-                    "additional old nitraaditundlik-area sentences under item 8."
+                    "does not reinsert or rewrite that item. Oracle 130042015007 "
+                    "keeps the repealed training item, while replay preserves the "
+                    "source-backed repeal."
                 ),
             ),
         ),
@@ -2141,23 +2138,6 @@ _KNOWN_EE_RESIDUALS: dict[tuple[str, str], EEPairResidualInventory] = {
             build_address_list_family(
                 addresses=(
                     "chapter:4",
-                    "chapter:4/section:22_1",
-                    "chapter:4/section:22_1/subsection:3",
-                    "chapter:4/section:22_1/subsection:3/item:2",
-                ),
-                bucket="source_oracle_drift",
-                evidence=(
-                    "Oracle 113122013023 already includes the extra sentence in "
-                    "§ 22^1(3) item 2 stating that undocumented income may be "
-                    "confirmed by the applicant's signature. That wording is source-"
-                    "backed only by later act 113122014002, whose commencement "
-                    "section 8 delays the change to 2016-01-01. The comparison lane "
-                    "here is 2013-12-23, so replay correctly excludes that future "
-                    "sentence while the oracle shows it early."
-                ),
-            ),
-            build_address_list_family(
-                addresses=(
                     "chapter:4/section:23_1",
                     "chapter:4/section:23_1/subsection:5",
                     "chapter:4/section:23_1/subsection:5/item:1",

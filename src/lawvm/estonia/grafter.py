@@ -35,7 +35,7 @@ from __future__ import annotations
 import html as _html
 import re
 from dataclasses import dataclass, replace
-from typing import AbstractSet, Any, List, Literal, Optional, cast
+from typing import AbstractSet, Any, List, Literal, Optional, Sequence, cast
 import xml.etree.ElementTree as ET
 
 from lawvm.core.ir import (
@@ -2213,7 +2213,7 @@ def parse_ee_amendment_ops(
     def _mark_no_target_out_of_body_ops(ops: List[LegalOperation]) -> List[LegalOperation]:
         updated: List[LegalOperation] = []
         for op in ops:
-            if op.action is StructuralAction.META or op.target.path:
+            if op.target.path:
                 updated.append(op)
                 continue
             no_target_text = ""
@@ -2221,7 +2221,17 @@ def parse_ee_amendment_ops(
                 if tag.startswith("no_target: "):
                     no_target_text = tag.removeprefix("no_target: ")
                     break
+            if (
+                no_target_text
+                and not _tr_is_out_of_body_appendix_or_note_clause(no_target_text)
+                and op.source is not None
+                and op.source.raw_text
+            ):
+                no_target_text = op.source.raw_text
             if not no_target_text or not _tr_is_out_of_body_appendix_or_note_clause(no_target_text):
+                updated.append(op)
+                continue
+            if op.action is StructuralAction.META and op.payload is not None:
                 updated.append(op)
                 continue
             updated.append(
@@ -2265,11 +2275,16 @@ def parse_ee_amendment_ops(
             if op.action is not StructuralAction.META and op.target.path
         }) < sum(1 for op in preambul_ops if op.action is not StructuralAction.META and op.target.path)
         if old_has_numbered_item_witness and preambul_targets_more_duplicate_body_slots:
+            preferred_rule_id = (
+                numbered_item_rule_id
+                if _substantive_op_count(old_format_ops) == 1
+                else rule_id
+            )
             return [
                 replace(
                     op,
-                    provenance_tags=(*op.provenance_tags, numbered_item_rule_id),
-                    witness_rule_id=op.witness_rule_id or numbered_item_rule_id,
+                    provenance_tags=(*op.provenance_tags, preferred_rule_id),
+                    witness_rule_id=op.witness_rule_id or preferred_rule_id,
                 )
                 for op in old_format_ops
             ]
@@ -2313,11 +2328,16 @@ def parse_ee_amendment_ops(
             preambul_meta_count = sum(1 for op in preambul_ops if op.action is StructuralAction.META)
             old_meta_count = sum(1 for op in old_format_ops if op.action is StructuralAction.META)
             if old_meta_count < preambul_meta_count:
+                preferred_rule_id = (
+                    numbered_item_rule_id
+                    if old_has_numbered_item_witness and _substantive_op_count(old_format_ops) == 1
+                    else rule_id
+                )
                 return [
                     replace(
                         op,
-                        provenance_tags=(*op.provenance_tags, rule_id),
-                        witness_rule_id=op.witness_rule_id or rule_id,
+                        provenance_tags=(*op.provenance_tags, preferred_rule_id),
+                        witness_rule_id=op.witness_rule_id or preferred_rule_id,
                     )
                     for op in old_format_ops
                 ]
@@ -3117,9 +3137,16 @@ def _parse_muutmisseadus_plain_paragraph_item_ops(
     """Recover explicit new-format HTML amendment items written as plain <p>N)</p> paragraphs."""
     ns_str = ns_str or NS_AMEND
 
-    def _collect_op_texts_with_plain_items(**kwargs: object) -> list[str]:
+    def _collect_op_texts_with_plain_items(
+        *,
+        para: ET.Element,
+        ns_str: str,
+        embedded_target_sections: Sequence[str],
+    ) -> list[str]:
         return _tr_new_format_collect_op_texts(
-            **kwargs,
+            para=para,
+            ns_str=ns_str,
+            embedded_target_sections=embedded_target_sections,
             allow_plain_paragraph_items=True,
         )
 
@@ -3487,6 +3514,8 @@ def _parse_old_format_amendment_ops(
                             direct_texts.append(plain)
                 direct_text = " ".join(direct_texts).strip()
                 if direct_text and (
+                    _tr_is_out_of_body_appendix_or_note_clause(direct_text)
+                    or
                     any(
                         kw in direct_text.lower()
                         for kw in (
@@ -3508,7 +3537,7 @@ def _parse_old_format_amendment_ops(
                     source = OperationSource(
                         statute_id=source_id,
                         title=target_title,
-                        raw_text=direct_text[:200],
+                        raw_text=direct_text,
                     )
                     clause_texts = _tr_split_plaintext_numbered_op_texts(direct_text)
                     if clause_texts:
@@ -3639,7 +3668,7 @@ def _parse_old_format_amendment_ops(
                     source = OperationSource(
                         statute_id=source_id,
                         title=target_title,
-                        raw_text=direct_text[:200],
+                        raw_text=direct_text,
                     )
                     clause_texts = _tr_split_plaintext_numbered_op_texts(direct_body_text)
                     if clause_texts:
@@ -3838,6 +3867,10 @@ def _parse_old_format_amendment_ops(
         lookup_act_identity=lookup_ee_act_identity,
         split_wrapper_blocks=_tr_split_old_format_wrapper_blocks,
     )
+    if not ops:
+        plaintext_ops = _parse_plaintext_old_format_sections()
+        if plaintext_ops:
+            return plaintext_ops
     if has_earlier_same_act_slice and not _old_format_target_has_ref_owned_slice(
         target_section_labels=target_section_labels,
         item_effects=item_effects,
@@ -4272,6 +4305,11 @@ def _old_format_plain_intro_target_section(text: str) -> str | None:
     return _normalize_num(matches[-1].group(1))
 
 
+_EE_OLD_FORMAT_COMMENCEMENT_ITEM_EFFECTIVE_RULE = "ee_old_format_commencement_item_effective"
+_EE_OLD_FORMAT_COMMENCEMENT_SECTION_EFFECTIVE_RULE = "ee_old_format_commencement_section_effective"
+_EE_OLD_FORMAT_COMMENCEMENT_WHOLE_ACT_DEFAULT_RULE = "ee_old_format_commencement_whole_act_default"
+
+
 def _apply_old_format_commencement_effects(
     root: ET.Element,
     ops: List[LegalOperation],
@@ -4297,22 +4335,33 @@ def _apply_old_format_commencement_effects(
         if not amendment_section and len(target_section_labels) == 1:
             amendment_section = target_section_labels[0]
         amendment_item = _old_format_provenance_value(op, "old_format_amendment_item:")
-        effective = item_effects.get((amendment_section, amendment_item)) or section_effects.get(
-            amendment_section,
-            "",
-        )
+        effective = ""
+        rule_id = ""
+        if (amendment_section, amendment_item) in item_effects:
+            effective = item_effects[(amendment_section, amendment_item)]
+            rule_id = _EE_OLD_FORMAT_COMMENCEMENT_ITEM_EFFECTIVE_RULE
+        elif amendment_section in section_effects:
+            effective = section_effects[amendment_section]
+            rule_id = _EE_OLD_FORMAT_COMMENCEMENT_SECTION_EFFECTIVE_RULE
         if (
             not effective
             and fallback_effective
             and whole_act_effective == fallback_effective
             and amendment_section
-            and any(section_label == amendment_section for section_label, _item_label in item_effects)
         ):
             effective = whole_act_effective
+            rule_id = _EE_OLD_FORMAT_COMMENCEMENT_WHOLE_ACT_DEFAULT_RULE
         if not effective:
             updated_ops.append(op)
             continue
-        updated_ops.append(replace(op, source=replace(source, effective=effective)))
+        tags = op.provenance_tags if rule_id in op.provenance_tags else (*op.provenance_tags, rule_id)
+        updated_ops.append(
+            replace(
+                op,
+                source=replace(source, effective=effective),
+                provenance_tags=tags,
+            )
+        )
     return updated_ops
 
 
@@ -4897,6 +4946,7 @@ _EE_PLURAL_ITEM_REPLACE_MISSING_LABEL_REPEAL_RULE = "ee_plural_item_replace_miss
 _EE_PLURAL_ITEM_REPLACE_RANGE_OMITS_INSERTED_LABELS_RULE = "ee_plural_item_replace_range_omits_inserted_labels"
 _EE_PLURAL_SUBSECTION_REPLACE_EXTRA_PAYLOAD_LABEL_RULE = "ee_plural_subsection_replace_extra_payload_label"
 _EE_INLINE_ITEM_REPLACE_SINGLETON_SUBSECTION_RULE = "ee_inline_item_replace_singleton_subsection"
+_EE_SECTION_ITEM_REPLACE_UNIQUE_DESCENDANT_RULE = "ee_section_item_replace_unique_descendant_item"
 _EE_TEXT_REPLACE_UNIQUE_DESCENDANT_ITEM_RULE = "ee_text_replace_unique_descendant_item_by_old_text"
 _EE_TEXT_REPLACE_NUMBERED_SUBSECTION_BY_OLD_TEXT_RULE = (
     "ee_text_replace_numbered_subsection_for_item_target_by_old_text"
@@ -5690,7 +5740,7 @@ def _ee_apply_text_replace_spec(
                 after_sep = ""
             new_text = f"{old_text}{after_sep}{new_text}"
 
-    replace_kwargs = {
+    replace_kwargs: dict[str, object] = {
         "mode": mode,
         "case_inflected": inflected,
         "all_occurrences": spec.all_occurrences,
@@ -6609,7 +6659,11 @@ def _ee_apply_text_replace_value(
         for token, value in placeholders.items():
             working = working.replace(token, value)
         replaced = working
-    if case_inflected:
+    # Agreement postpasses refine a matched selector.  Running them after a
+    # no-op would let replacement-like live text be mutated by an absent source
+    # surface, which is target hijacking at string granularity.
+    selector_rewrite_changed = replaced != text
+    if case_inflected and selector_rewrite_changed:
         old_forms = _ee_phrase_forms(old)
         new_forms = _ee_phrase_forms(new)
         if (
@@ -6935,7 +6989,7 @@ def _ee_resolve_numbered_subsection_for_item_target_by_old_text(
     target_label = path[1][1]
     matches: list[tree_ops.Path] = []
     for child in section.children:
-        if child.kind != IRNodeKind.SUBSECTION or child.label != target_label:
+        if child.kind != IRNodeKind.SUBSECTION or child.label is None or child.label != target_label:
             continue
         replacement = _ee_apply_text_replace_spec(
             child.text or "",
@@ -7008,6 +7062,35 @@ def _ee_replace_inline_item_in_singleton_subsection(
         children=tuple(subsection.children),
     )
     return tree_ops.replace_at(body, subsection_path, updated_subsection)
+
+
+def _ee_resolve_section_item_unique_descendant_path(
+    body: IRNode,
+    path: tree_ops.Path,
+) -> Optional[tree_ops.Path]:
+    """Resolve ``section/item`` targets to a unique descendant item in that section."""
+    if len(path) != 2 or path[0][0] != "section" or path[1][0] != "item":
+        return None
+    section_path = _ee_resolve_full_path(body, (path[0],))
+    if section_path is None:
+        return None
+    section = tree_ops.resolve(body, section_path)
+    if section is None or section.kind != IRNodeKind.SECTION:
+        return None
+    item_label = path[1][1]
+    matches: list[tree_ops.Path] = []
+
+    def _walk(node: IRNode, current_path: tree_ops.Path) -> None:
+        for child in node.children:
+            child_path = current_path + ((str(child.kind), child.label or ""),)
+            if child.kind == IRNodeKind.ITEM and child.label == item_label:
+                matches.append(child_path)
+            _walk(child, child_path)
+
+    _walk(section, section_path)
+    if len(matches) != 1:
+        return None
+    return matches[0]
 
 
 def _ee_normalize_heading_text(text: str) -> str:
@@ -7380,8 +7463,9 @@ def _ee_apply_op(
             excluded_paths = parsed_rewrite.exclude_paths or None
             excluded_heading_paths = payload.attrs.get("exclude_heading_paths") if payload is not None else None
             if rewrite_spec.case_inflected:
+                active_rewrite_spec = rewrite_spec
 
-                def _walk(
+                def _walk_case_inflected(
                     node: IRNode,
                     current_chapter: str | None = None,
                     current_path: tuple[tuple[str, str], ...] = (),
@@ -7405,14 +7489,14 @@ def _ee_apply_op(
                     if node.text and not skip_title and in_scope:
                         new_text = _ee_apply_text_replace_spec(
                             node.text,
-                            rewrite_spec,
+                            active_rewrite_spec,
                             capitalize_sentence_start=node.kind != IRNodeKind.ITEM,
                         )
                         if node.kind in {IRNodeKind.CHAPTER, IRNodeKind.DIVISION, IRNodeKind.SECTION}:
-                            new_text = _ee_apply_heading_agreement_projection(new_text, rewrite_spec)
+                            new_text = _ee_apply_heading_agreement_projection(new_text, active_rewrite_spec)
                     else:
                         new_text = node.text
-                    new_children = [_walk(c, chapter_label, node_path) for c in node.children]
+                    new_children = [_walk_case_inflected(c, chapter_label, node_path) for c in node.children]
                     text_changed = new_text != node.text
                     children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children))
                     if not text_changed and not children_changed:
@@ -7425,10 +7509,10 @@ def _ee_apply_op(
                         children=tuple(new_children),
                     )
 
-                return _walk(body)
+                return _walk_case_inflected(body)
             if rewrite_spec.source_family == _EE_NORMITEHNILINE_MARKUS_INSERT_AFTER_RULE:
 
-                def _walk(
+                def _walk_normitehniline(
                     node: IRNode,
                     current_path: tuple[tuple[str, str], ...] = (),
                 ) -> IRNode:
@@ -7445,7 +7529,7 @@ def _ee_apply_op(
                         )
                     else:
                         new_text = node.text
-                    new_children = [_walk(c, node_path) for c in node.children]
+                    new_children = [_walk_normitehniline(c, node_path) for c in node.children]
                     text_changed = new_text != node.text
                     children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children))
                     if not text_changed and not children_changed:
@@ -7453,15 +7537,15 @@ def _ee_apply_op(
                     return IRNode(
                         kind=node.kind,
                         label=node.label,
-                        text=new_text,
+                        text=new_text or "",
                         attrs=dict(node.attrs),
                         children=tuple(new_children),
                     )
 
-                return _walk(body)
+                return _walk_normitehniline(body)
             if scope_chapters is not None or excluded_paths is not None:
 
-                def _walk(
+                def _walk_scoped(
                     node: IRNode,
                     current_chapter: str | None = None,
                     current_path: tuple[tuple[str, str], ...] = (),
@@ -7501,7 +7585,7 @@ def _ee_apply_op(
                             new_text = node.text
                     else:
                         new_text = node.text
-                    new_children = [_walk(c, chapter_label, node_path) for c in node.children]
+                    new_children = [_walk_scoped(c, chapter_label, node_path) for c in node.children]
                     text_changed = new_text != node.text
                     children_changed = any(nc is not oc for nc, oc in zip(new_children, node.children))
                     if not text_changed and not children_changed:
@@ -7509,12 +7593,12 @@ def _ee_apply_op(
                     return IRNode(
                         kind=node.kind,
                         label=node.label,
-                        text=new_text,
+                        text=new_text or "",
                         attrs=dict(node.attrs),
                         children=tuple(new_children),
                     )
 
-                return _walk(body)
+                return _walk_scoped(body)
             return _ee_global_text_replace_with_spec(
                 body,
                 rewrite_spec,
@@ -8111,6 +8195,22 @@ def _ee_apply_op(
                 )
                 if recovered_body is not body:
                     return recovered_body
+                recovered_path = _ee_resolve_section_item_unique_descendant_path(body, path)
+                if recovered_path is not None:
+                    full_path = recovered_path
+                    _append_ee_replay_adjudication(
+                        adjudications_out,
+                        kind=_EE_SECTION_ITEM_REPLACE_UNIQUE_DESCENDANT_RULE,
+                        message=(
+                            "EE replay resolved an explicit section/item replacement "
+                            "to the unique descendant item with that label inside the section."
+                        ),
+                        op=op,
+                        detail={
+                            "source_target": str(op.target),
+                            "recovered_target": "/".join(f"{kind}:{label}" for kind, label in recovered_path),
+                        },
+                    )
             if full_path is not None:
                 target_node = tree_ops.resolve(body, full_path)
                 if target_node is None:
@@ -9285,6 +9385,7 @@ def _ee_apply_op(
 
     elif action == "text_replace":
         full_path = _ee_resolve_full_path(body, path)
+        rewrite_spec: EETextRewriteSpec | None = None
         if payload is not None:
             rewrite_spec = _ee_read_text_replace_spec(payload)
             if rewrite_spec is None:
@@ -9345,6 +9446,8 @@ def _ee_apply_op(
         if full_path is not None:
             node = tree_ops.resolve(body, full_path)
             if node is not None and payload is not None:
+                if rewrite_spec is None:
+                    return body
                 if rewrite_spec.old_text:
                     note_text = _op_instruction_note_text(op)
                     from lawvm.estonia.ee_instruction_waist import (
@@ -9872,6 +9975,15 @@ def apply_ee_ops(
                             for adjudication in adjudications_out
                         )
                     )
+                    or (
+                        action == "replace"
+                        and adjudications_out is not None
+                        and any(
+                            adjudication.op_id == op.op_id
+                            and adjudication.kind == _EE_SECTION_ITEM_REPLACE_UNIQUE_DESCENDANT_RULE
+                            for adjudication in adjudications_out
+                        )
+                    )
                 )
         if not target_resolved:
             _append_ee_replay_adjudication(
@@ -9976,6 +10088,18 @@ def apply_ee_ops(
                     continue  # skip the leaf-based path below
                 if op.action == "renumber" and op.destination is not None and op.destination.path:
                     op_target_path = list(op.destination.path)
+                if (
+                    action == "replace"
+                    and adjudications_out is not None
+                    and any(
+                        adjudication.op_id == op.op_id
+                        and adjudication.kind == _EE_SECTION_ITEM_REPLACE_UNIQUE_DESCENDANT_RULE
+                        for adjudication in adjudications_out
+                    )
+                ):
+                    recovered_snapshot_path = _ee_resolve_section_item_unique_descendant_path(body, tuple(op.target.path))
+                    if recovered_snapshot_path is not None:
+                        op_target_path = list(recovered_snapshot_path)
                 leaf_kind, leaf_label = op_target_path[-1]
                 full_path = tree_ops.find(body, leaf_kind, leaf_label)
                 if full_path is not None:

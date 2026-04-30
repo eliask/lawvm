@@ -117,7 +117,7 @@ class TextAmend:
     """
 
     action: StructuralAction  # StructuralAction.TEXT_REPLACE or TEXT_REPEAL
-    target: LegalAddress  # provision containing the text
+    target: LegalAddress  # provision containing the text; empty path means statute-wide/root text scope
     text_patch: TextPatchSpec  # authoritative structured text patch
 
     def __post_init__(self) -> None:
@@ -128,8 +128,6 @@ class TextAmend:
             raise ValueError(
                 f"TextAmend requires text_replace/text_repeal action, got {self.action!r}"
             )
-        if not self.target.path:
-            raise ValueError("TextAmend.target must have a non-empty path")
 
 
 @dataclass(frozen=True)
