@@ -27,6 +27,25 @@ def test_lookup_ee_act_identity_finds_exact_akt_viide_and_alias() -> None:
     assert "Ehitusseadus" in by_id.aliases
 
 
+def test_lookup_ee_act_identity_extracts_quoted_wrapper_title_surface() -> None:
+    old_title = (
+        "Vanglaametnikule või muule vanglatöötajale Justiitsministeeriumi ametniku poolt "
+        "korralduste andmise ja vanglas teenistusülesannete täitmise kord"
+    )
+    wrapper_header = (
+        "Justiitsministri 4. augusti 2008. määruse nr 41 "
+        "„Vanglaametnikule või muule vanglatöötajale Justiits- ja Digiministeeriumi "
+        "ametniku poolt korralduste andmise ja vanglas teenistusülesannete täitmise kord” "
+        "muutmine"
+    )
+
+    record = lookup_ee_act_identity(title=old_title, alias=wrapper_header)
+
+    assert record is not None
+    assert record.akt_viide == "ee/122042022003"
+    assert record.source_family == "title_relabel_alias"
+
+
 def test_target_resolution_module_uses_registry_evidence_before_title_heuristics(
     monkeypatch,
 ) -> None:
@@ -558,6 +577,37 @@ def test_registry_evidence_wins_for_untitled_omnibus_attachment_when_heuristics_
         "9": "repeal",
         "10": "text_replace",
     }
+
+
+def test_title_relabel_alias_routes_2025_justice_regulation_wrapper() -> None:
+    from lawvm.estonia.fetch import fetch_rt_xml, open_rt_archive
+
+    archive = open_rt_archive(readonly=True)
+    source_xml = fetch_rt_xml("118072025001", archive=archive)
+    target = (
+        "Vanglaametnikule või muule vanglatöötajale Justiitsministeeriumi ametniku poolt "
+        "korralduste andmise ja vanglas teenistusülesannete täitmise kord"
+    )
+
+    ops = parse_ee_amendment_ops(source_xml, "ee/118072025001", target_title=target)
+    item_ops = [
+        op for op in ops
+        if op.target.path[:2] == (("section", "2"), ("subsection", "2"))
+    ]
+
+    assert [(op.action.value, op.target.path) for op in item_ops] == [
+        ("replace", (("section", "2"), ("subsection", "2"), ("item", "3"))),
+        ("replace", (("section", "2"), ("subsection", "2"), ("item", "4"))),
+    ]
+    assert item_ops[0].payload is not None
+    assert item_ops[0].payload.text.startswith("3) vanglatöö korraldamise talituse juhatajal")
+    assert item_ops[1].payload is not None
+    assert item_ops[1].payload.text.startswith("4) sisekontrolli ja teabe talituse juhatajal")
+    assert {
+        op.payload.attrs.get("source_family")
+        for op in item_ops
+        if op.payload is not None
+    } == {"ee_explicit_item_replacement_terminal_preserved"}
 
 
 def test_registry_evidence_wins_for_constitutional_review_when_title_heuristic_fails(

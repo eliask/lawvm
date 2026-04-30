@@ -72,6 +72,28 @@ _EE_ACT_IDENTITY_REGISTRY: tuple[EEActIdentityRecord, ...] = (
             "an alias for this record.",
         ),
     ),
+    EEActIdentityRecord(
+        akt_viide="ee/122042022003",
+        canonical_title=(
+            "Vanglaametnikule või muule vanglatöötajale Justiits- ja Digiministeeriumi "
+            "ametniku poolt korralduste andmise ja vanglas teenistusülesannete täitmise kord"
+        ),
+        title_variants=(
+            "Vanglaametnikule või muule vanglatöötajale Justiits- ja Digiministeeriumi "
+            "ametniku poolt korralduste andmise ja vanglas teenistusülesannete täitmise kord",
+        ),
+        aliases=(
+            "Vanglaametnikule või muule vanglatöötajale Justiitsministeeriumi ametniku poolt "
+            "korralduste andmise ja vanglas teenistusülesannete täitmise kord",
+        ),
+        source_family="title_relabel_alias",
+        effective_from="2025-08-01",
+        notes=(
+            "Source act 118072025001 targets the post-rename Justiits- ja Digiministeeriumi "
+            "title surface, while replay pair 122042022003 -> 118072025011 starts from the "
+            "older Justiitsministeeriumi title surface.",
+        ),
+    ),
 )
 
 
@@ -146,18 +168,20 @@ def lookup_ee_act_identity(
                 return record
 
     normalized_candidates = [
-        _normalize_identity_text(value)
+        surface
         for value in (title, alias)
-        if _normalize_identity_text(value)
+        for surface in _identity_surfaces(value)
+        if surface
     ]
     if not normalized_candidates:
         return None
 
     for record in registry:
         record_candidates = {
-            _normalize_identity_text(candidate)
+            surface
             for candidate in _record_titles(record)
             if candidate
+            for surface in _identity_surfaces(candidate)
         }
         if any(candidate in record_candidates for candidate in normalized_candidates):
             return record
