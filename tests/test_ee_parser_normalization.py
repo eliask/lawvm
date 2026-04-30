@@ -2600,6 +2600,29 @@ def test_parse_ee_amendment_ops_keeps_real_multi_paragraph_chapter_insert_payloa
     assert "ei kohaldata enne nimetatud muudatuste jõustumist" in chapter_insert.payload.text
 
 
+def test_parse_ee_amendment_ops_keeps_old_format_section_insert_payload_before_commencement() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("129062012059", archive),
+        "ee/129062012059",
+        target_title=(
+            "Nõuded krediidi- ja finantseerimisasutuse poolt kehtestatavatele "
+            "protseduurireeglitele ning nende rakendamisele ja täitmise kontrollimisele"
+        ),
+    )
+    archive.close()
+
+    section_insert = next(op for op in ops if op.target.path == (("section", "31"),))
+
+    assert section_insert.action is StructuralAction.INSERT
+    assert section_insert.payload is not None
+    assert "ee_old_format_open_quote_payload_section_header" in section_insert.provenance_tags
+    assert section_insert.witness_rule_id == "ee_old_format_open_quote_payload_section_header"
+    assert "Krediidi- ja finantseerimisasutuse tegevuse" in section_insert.payload.text
+    assert "hiljemalt 2012. aasta 1. oktoobriks" in section_insert.payload.text
+    assert "Määrus jõustub" not in section_insert.payload.text
+
+
 def test_extract_ee_ops_fans_out_mixed_text_replace_targets() -> None:
     ops = extract_ee_ops(
         (

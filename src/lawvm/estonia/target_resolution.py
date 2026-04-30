@@ -47,8 +47,13 @@ _EE_OUT_OF_BODY_APPENDIX_CLAUSE_RULE = "ee_out_of_body_appendix_clause_not_secti
 _EE_NEW_FORMAT_TARGET_ACT_HEADER_NOT_WRAPPER_RULE = "ee_new_format_target_act_header_not_wrapper_instruction"
 _EE_HTML_AMENDMENT_SECTION_HEADING_WRAPPER_STRIPPED_RULE = "ee_html_amendment_section_heading_wrapper_stripped"
 _EE_EMBEDDED_OPEN_QUOTE_SECTION_HEADER_RULE = "ee_embedded_open_quote_payload_section_header"
+_EE_OLD_FORMAT_OPEN_QUOTE_SECTION_HEADER_RULE = "ee_old_format_open_quote_payload_section_header"
 _OP_TEXT_RULE_PREFIX = "\x1eLAWVM_RULE:"
 _OP_TEXT_RULE_SUFFIX = "\x1f"
+
+
+def _with_op_text_rule(text: str, rule_id: str) -> str:
+    return f"{_OP_TEXT_RULE_PREFIX}{rule_id}{_OP_TEXT_RULE_SUFFIX}{text}"
 
 
 def _registry_record_matches_all(record: object, *surfaces: str) -> bool:
@@ -804,6 +809,21 @@ def _has_embedded_open_quote_payload_section_header(html_block: str) -> bool:
     return False
 
 
+def _has_unclosed_payload_quote_after_formula(text: str) -> bool:
+    marker_matches = list(
+        re.finditer(
+            r"(?:järgmises\s+sõnastuses|järgnevas\s+sõnastuses|järgmiselt)\s*:\s*",
+            text,
+            re.IGNORECASE | re.DOTALL,
+        )
+    )
+    if marker_matches:
+        tail = text[marker_matches[-1].end():].lstrip()
+        if tail.startswith(("„", '"', "“", "«", "ˮ")):
+            return not bool(re.search(r'[“”"»ˮ]\s*[.;:]?\s*$', tail))
+    return text.count("„") > text.count("“") + text.count("”")
+
+
 def _item_has_embedded_open_quote_payload_section_header(item_text: str) -> bool:
     marker_matches = list(re.finditer(
         r"(?:järgmises\s+sõnastuses|järgnevas\s+sõnastuses|järgmiselt)\s*:\s*",
@@ -1328,9 +1348,6 @@ def new_format_collect_op_texts(
         ):
             op_texts.append(item_text)
 
-    def _with_op_text_rule(text: str, rule_id: str) -> str:
-        return f"{_OP_TEXT_RULE_PREFIX}{rule_id}{_OP_TEXT_RULE_SUFFIX}{text}"
-
     def _is_target_act_routing_intro(intro: str) -> bool:
         """True for an act-level amendment header, not an executable wrapper."""
         if not intro:
@@ -1672,12 +1689,16 @@ def split_old_format_paragraph_sections(html: str) -> list[str]:
     current: list[str] = []
     saw_header = False
 
+    def _current_has_unclosed_payload_quote() -> bool:
+        text = "\n".join(strip_old_format_html_text(para) for para in current)
+        return _has_unclosed_payload_quote_after_formula(text)
+
     for para in paras:
         plain = strip_old_format_html_text(para)
         starts_section = bool(header_pat.match(plain)) and any(
             marker in plain[:220].lower() for marker in act_markers
         )
-        if starts_section:
+        if starts_section and not _current_has_unclosed_payload_quote():
             if current:
                 sections_out.append("\n".join(current))
             current = [para]
@@ -2064,6 +2085,7 @@ def old_format_extract_op_texts(content_block: str, block_header_text: str) -> l
     if _old_format_header_names_specific_act(block_header_text):
         first_para_m = re.match(r"\s*(<p\b[^>]*>.*?</p>)", content_block, re.DOTALL | re.IGNORECASE)
         if first_para_m is not None:
+            first_para_plain = strip_old_format_html_text(first_para_m.group(1))
             rest = content_block[first_para_m.end():]
             rest_first_para_m = re.match(r"\s*(<p\b[^>]*>.*?</p>)", rest, re.DOTALL | re.IGNORECASE)
             rest_first_plain = (
@@ -2071,11 +2093,16 @@ def old_format_extract_op_texts(content_block: str, block_header_text: str) -> l
                 if rest_first_para_m is not None
                 else ""
             )
-            if not old_format_is_section_header_text(rest_first_plain):
+            if not old_format_item_label(first_para_plain) and not old_format_is_section_header_text(rest_first_plain):
                 item_source_block = rest
     op_texts = _parse_html_op_items_with_plain_recovery(item_source_block)
     if op_texts:
-        return op_texts
+        return [
+            _with_op_text_rule(text, _EE_OLD_FORMAT_OPEN_QUOTE_SECTION_HEADER_RULE)
+            if _item_has_embedded_open_quote_payload_section_header(text)
+            else text
+            for text in op_texts
+        ]
 
     body_html = re.sub(
         r"^\s*(?:<[^>]+>\s*)?<(?:b|strong)>.*?</(?:b|strong)>\s*(?:</[^>]+>\s*<[^>]+>\s*)?",
@@ -2295,13 +2322,18 @@ def old_format_split_sections(full_html: str) -> list[str]:
         )
         if len(candidates) > 1:
             filtered = [candidates[0]]
+
+            def _filtered_tail_has_unclosed_payload_quote() -> bool:
+                text = strip_old_format_html_text(filtered[-1])
+                return _has_unclosed_payload_quote_after_formula(text)
+
             for sec in candidates[1:]:
                 m = re.match(
                     header_start_p + r"\s*" + sect_p + r"\s*\d+[^<]*?" + bold_close_p,
                     sec,
                     flags=re.IGNORECASE,
                 )
-                if m:
+                if m and not _filtered_tail_has_unclosed_payload_quote():
                     first_para_m = re.match(
                         r"\s*(<p\b[^>]*>.*?</p>)",
                         sec,
@@ -2369,9 +2401,13 @@ def old_format_prepare_work_section(
     if re.search(r"normitehnili\w*\s+märkus\w*", work_header_text, re.IGNORECASE):
         return None
 
+    first_para_has_items = bool(
+        work_first_para_m is not None
+        and parse_html_op_items(work_first_para_m.group(1), allow_plain_paragraph_items=True)
+    )
     content_section = (
         work_section[work_first_para_m.end():]
-        if has_subblocks and work_first_para_m is not None
+        if has_subblocks and work_first_para_m is not None and not first_para_has_items
         else work_section
     )
     content_blocks, use_block_header = old_format_split_content_blocks(
@@ -2412,6 +2448,15 @@ def old_format_lower_op_texts(
     last_section = initial_last_section
 
     for op_text in op_texts:
+        rule_tags: list[str] = []
+        while op_text.startswith(_OP_TEXT_RULE_PREFIX):
+            end = op_text.find(_OP_TEXT_RULE_SUFFIX)
+            if end < 0:
+                break
+            rule_id = op_text[len(_OP_TEXT_RULE_PREFIX):end]
+            if rule_id:
+                rule_tags.append(rule_id)
+            op_text = op_text[end + len(_OP_TEXT_RULE_SUFFIX):]
         amendment_item_label = old_format_item_label(op_text)
         effective = op_text
         normalization_rule_id: str | None = None
@@ -2513,7 +2558,10 @@ def old_format_lower_op_texts(
                 tags.append(f"old_format_amendment_item:{amendment_item_label}")
             if base_act_name:
                 tags.append(f"base_act: {base_act_name}")
+            tags.extend(rule_tags)
             witness_rule_id = op.witness_rule_id
+            if rule_tags and op.action is not StructuralAction.META and witness_rule_id is None:
+                witness_rule_id = rule_tags[0]
             if normalization_rule_id is not None:
                 tags.append(normalization_rule_id)
                 if op.action is not StructuralAction.META and witness_rule_id is None:
