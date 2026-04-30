@@ -4906,6 +4906,9 @@ _EE_NETO_OMAVAHEND_PREFIX_FORMS_RULE = "ee_case_inflected_neto_omavahend_prefix_
 _EE_KYSK_RTK_FORMS_RULE = "ee_case_inflected_kysk_riigi_tugiteenuste_keskus_forms"
 _EE_ARUANDED_ARUANNE_FORMS_RULE = "ee_case_inflected_aruanded_aruanne_forms"
 _EE_ARUANDED_HEADING_AGREEMENT_RULE = "ee_case_inflected_aruanded_heading_agreement"
+_EE_RIIKLIK_REGISTER_INFOSUSTEEM_FORMS_RULE = (
+    "ee_case_inflected_riiklik_register_infosusteem_forms"
+)
 _EE_NORMITEHNILINE_MARKUS_INSERT_AFTER_RULE = "ee_normitehniline_markus_insert_after_anchor"
 _EE_NORMITEHNILINE_MARKUS_OPTIONAL_EU_MARKER_RULE = "ee_normitehniline_markus_optional_eu_marker_anchor"
 _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE = "ee_plaintext_numbered_clause_split"
@@ -8255,6 +8258,30 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         for old_form, new_form in form_pairs.items():
             variants.setdefault(old_form, new_form)
 
+    def _add_riiklik_register_infosusteem_forms() -> None:
+        """Own the 2016 register-to-information-system rewrite with explicit phrase forms."""
+        if (
+            not case_inflected
+            or old.casefold() != "riiklik pensionikindlustuse register"
+            or new != "sotsiaalkaitse infosüsteem"
+        ):
+            return
+        lower_pairs = {
+            "riiklik pensionikindlustuse register": "sotsiaalkaitse infosüsteem",
+            "riikliku pensionikindlustuse registri": "sotsiaalkaitse infosüsteemi",
+            "riiklikku pensionikindlustuse registrit": "sotsiaalkaitse infosüsteemi",
+            "riikliku pensionikindlustuse registrisse": "sotsiaalkaitse infosüsteemi",
+            "riiklikku pensionikindlustuse registrisse": "sotsiaalkaitse infosüsteemi",
+            "riiklikus pensionikindlustuse registris": "sotsiaalkaitse infosüsteemis",
+            "riiklikust pensionikindlustuse registrist": "sotsiaalkaitse infosüsteemist",
+            "riiklikule pensionikindlustuse registrile": "sotsiaalkaitse infosüsteemile",
+            "riiklikul pensionikindlustuse registril": "sotsiaalkaitse infosüsteemil",
+            "riiklikult pensionikindlustuse registrilt": "sotsiaalkaitse infosüsteemilt",
+        }
+        for old_form, new_form in lower_pairs.items():
+            variants.setdefault(old_form, new_form)
+            variants.setdefault(old_form.capitalize(), new_form.capitalize())
+
     def _strip_wrapping_quotes(surface: str) -> str | None:
         stripped = surface.strip()
         if len(stripped) < 2:
@@ -8320,6 +8347,7 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
         _add_neto_omavahend_prefix_forms()
         _add_kysk_riigi_tugiteenuste_keskus_forms()
         _add_aruanded_aruanne_forms()
+        _add_riiklik_register_infosusteem_forms()
         old_norm = _ee_normalize_text_replace_surface(old)
         new_norm = _ee_normalize_text_replace_surface(new)
         if old_norm and old_norm not in variants:
@@ -8485,13 +8513,6 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
                 "ametist": "ametikohalt",
             }
             for old_form, new_form in office_position_forms.items():
-                if old_form not in variants:
-                    variants[old_form] = new_form
-        if old == "Riiklik pensionikindlustuse register" and new == "sotsiaalkaitse infosüsteem":
-            register_name_forms = {
-                "Riiklikku pensionikindlustuse registrisse": "sotsiaalkaitse infosüsteemi",
-            }
-            for old_form, new_form in register_name_forms.items():
                 if old_form not in variants:
                     variants[old_form] = new_form
         if old == "õppekogunemine" and new == "reservteenistus":

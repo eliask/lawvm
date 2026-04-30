@@ -10310,6 +10310,34 @@ def test_parse_ee_amendment_ops_collects_xml_alampunkt_items_for_new_format_omni
     assert _payload(ops[3]).text == "kutsehaigestumise teatis"
 
 
+def test_parse_ee_amendment_ops_marks_2016_register_infosusteem_rewrite_family() -> None:
+    archive = open_rt_archive(readonly=True)
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("108122016002", archive),
+        "ee/108122016002",
+        target_title=(
+            "Pensionistaaži andmete kogumise ja riiklikku pensionikindlustuse "
+            "registrisse kandmise kord"
+        ),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPLACE, ()),
+        (StructuralAction.TEXT_REPLACE, ()),
+        (StructuralAction.REPLACE, (("section", "4"), ("subsection", "2"))),
+    ]
+    assert ops[0].target.special is FacetKind.HEADING
+    assert _payload(ops[0]).attrs["source_family"] == "ee_statute_title_replace"
+    assert _payload(ops[1]).attrs["old_text"] == "riiklik pensionikindlustuse register"
+    assert _payload(ops[1]).text == "sotsiaalkaitse infosüsteem"
+    assert _payload(ops[1]).attrs["case_inflected"] is True
+    assert (
+        _payload(ops[1]).attrs["source_family"]
+        == "ee_case_inflected_riiklik_register_infosusteem_forms"
+    )
+
+
 def test_parse_ee_amendment_ops_slices_parenthesized_multi_regulation_block() -> None:
     archive = open_rt_archive(readonly=True)
 

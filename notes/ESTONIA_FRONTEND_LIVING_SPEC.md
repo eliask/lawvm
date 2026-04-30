@@ -1190,6 +1190,22 @@ without both expected spaces:
 Case-inflected text replacement may match the compact `-ja` form for the same
 declined agency phrase. This belongs to text morphology, not target resolution.
 
+## 59.1 Register-to-information-system illative forms are owned morphology
+
+RT 2016 amendment `108122016002` changes the statute title and then applies a
+whole-regulation case-inflected rewrite:
+
+`riiklik pensionikindlustuse register` -> `sotsiaalkaitse infosüsteem`
+
+The live regulation uses forms such as `riiklikku pensionikindlustuse
+registrisse` in title/body positions. Generic phrase declension must not invent
+`registerit`/`registerisse`-style surfaces and miss the witnessed illative.
+LawVM owns this as an apply-time morphology family, not target recovery.
+
+The named rule is:
+
+- `ee_case_inflected_riiklik_register_infosusteem_forms`
+
 ## 60. Publication DB outreach triage is a projection, not adjudication
 
 The EE publication DB stores a separate outreach projection on each divergence:
