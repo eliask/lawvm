@@ -1445,3 +1445,21 @@ Corpus witness:
 
 - `128052025010` changes `114052024004`; oracle `128052025011` changes only
   the date phrase in § 7(2).
+
+## 74. Global text rewrites use typed rewrite semantics
+
+Global `TEXT_REPLACE` operations with an empty target address still need the
+same typed rewrite semantics as exact-target rewrites. They must not fall back
+to case-sensitive Python `str.replace`, because lower-case source surfaces can
+legitimately match sentence-initial capitalized live text.
+
+The parser also treats `läbivalt` anywhere in the clause as an
+all-occurrences witness. In old-format direct-title clauses the word may occur
+after the quoted old surface, not in the pre-quote instruction preamble.
+
+Corpus witness:
+
+- `113062025001` changes `116042024004`; oracle `113062025018` rewrites
+  sentence-initial `Kliimaminister` in § 8(2) to `Valdkonna eest vastutav
+  minister`, from the source clause `asendatakse sõna „kliimaminister”
+  läbivalt sõnadega „valdkonna eest vastutav minister”.`

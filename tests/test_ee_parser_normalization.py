@@ -1555,6 +1555,24 @@ def test_extract_ee_ops_treats_muudetakse_after_word_replace_as_text_replace() -
     assert ops[0].witness_rule_id == "ee_text_replace_after_anchor_clause"
 
 
+def test_extract_ee_ops_marks_lahbivalt_after_old_quote_as_all_occurrences() -> None:
+    text = (
+        "Keskkonnaministri 23. veebruari 2021. a määruses nr 8 "
+        "„Rohetehnoloogia ettevõtluse arendamise programmide toetamise tingimused ja kord” "
+        "asendatakse sõna „kliimaminister” läbivalt sõnadega "
+        "„valdkonna eest vastutav minister”."
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert _payload(ops[0]).attrs["old_text"] == "kliimaminister"
+    assert _payload(ops[0]).text == "valdkonna eest vastutav minister"
+    assert _payload(ops[0]).attrs["all_occurrences"] is True
+    assert _payload(ops[0]).attrs["source_family"] == "ee_direct_title_global_text_replace"
+
+
 def test_parse_ee_amendment_ops_keeps_archive_after_word_replace_as_text_replace() -> None:
     archive = open_rt_archive(readonly=True)
 
