@@ -1243,3 +1243,29 @@ Corpus witness:
 - `105082025001` inserts chapter 6 into `116072021008`; oracle
   `105082025007` contains the resulting `6. peatükk / § 24` transitional
   provisions.
+
+## 65. Embedded target sections do not split inside open quoted payloads
+
+Some new-format omnibus HTML embeds one target act section as paragraphs. A
+chapter insertion payload can itself contain a paragraph-level section heading:
+
+`... täiendatakse 10. peatükiga järgmises sõnastuses:`
+
+followed by a quoted chapter heading paragraph, a `§ 28` heading paragraph, and
+only then the closing quote in the body paragraph. The embedded-section splitter
+must keep that `§ 28` paragraph inside the same amendment item; otherwise replay
+inserts only the chapter heading and drops the section payload.
+
+The source-shape rule is:
+
+- `ee_embedded_open_quote_payload_section_header`
+
+This is extraction ownership only. The executable target remains the explicit
+chapter insert rule, for example:
+
+- `ee_quoted_act_chapter_insert_target`
+
+Corpus witness:
+
+- `130052025004` inserts chapter 10 / § 28 into `106112024004`; oracle
+  `130052025012` contains the full transitional provision.
