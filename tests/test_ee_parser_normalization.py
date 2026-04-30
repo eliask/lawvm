@@ -39,7 +39,7 @@ from lawvm.core.ir import (
 )
 from lawvm.core.semantic_types import FacetKind, TextPatchKindEnum, IRNodeKind
 from lawvm.estonia.peg import extract_ee_ops, parse_html_op_items, parse_target
-from lawvm.estonia.target_resolution import split_embedded_act_sections
+from lawvm.estonia.target_resolution import split_embedded_act_sections, split_plaintext_numbered_op_texts
 
 
 def _payload(op):
@@ -3725,6 +3725,43 @@ def test_parse_ee_amendment_ops_materializes_generic_justice_ministry_reorg() ->
     assert ops[0].payload.attrs.get("old_text") == "Justiitsministeerium"
     assert ops[0].payload.text == "Justiits- ja Digiministeerium"
     assert ops[0].payload.attrs.get("case_inflected") is True
+
+
+def test_split_plaintext_numbered_op_texts_recovers_inessive_section_clause() -> None:
+    text = (
+        "Rahandusministri määruses tehakse järgmised muudatused: "
+        "1) paragrahv 10 sõnastatakse järgmiselt: "
+        "„Andmekogu vastutaval töötlejal on lubatud esitada päringuid.“; "
+        "2) paragrahvis 11 asendatakse sõna „kaks“ sõnaga „kolm“."
+    )
+
+    assert split_plaintext_numbered_op_texts(text) == [
+        (
+            "1) paragrahv 10 sõnastatakse järgmiselt: "
+            "„Andmekogu vastutaval töötlejal on lubatud esitada päringuid.“;"
+        ),
+        '2) paragrahvis 11 asendatakse sõna „kaks“ sõnaga „kolm“.',
+    ]
+
+
+def test_parse_ee_amendment_ops_splits_plain_tavatekst_inessive_section_clause() -> None:
+    archive = open_rt_archive(readonly=True)
+    target_title = "Tolli automaatse numbrituvastussüsteemi andmekogu põhimäärus"
+
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("117072015009", archive),
+        "ee/117072015009",
+        target_title=target_title,
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.REPLACE, (("section", "10"),)),
+        (StructuralAction.TEXT_REPLACE, (("section", "11"),)),
+    ]
+    assert ops[1].payload is not None
+    assert ops[1].payload.attrs["old_text"] == "kaks"
+    assert ops[1].payload.text == "kolm"
+    assert "old_format_amendment_item:2" in ops[1].provenance_tags
 
 
 def test_extract_ee_ops_flattens_division_jaotis_insert_into_section_inserts() -> None:
