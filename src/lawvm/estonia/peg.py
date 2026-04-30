@@ -1010,6 +1010,7 @@ _EE_PLURAL_SECTION_INSERT_PAYLOAD_SPLIT_RULE = "ee_plural_section_insert_payload
 _EE_EXPLICIT_MIXED_STRUCTURAL_REPEAL_LIST_RULE = "ee_explicit_mixed_structural_repeal_list"
 _EE_SUBSECTION_TABLE_ONLY_REPLACE_RULE = "ee_subsection_table_only_replace_preserve_intro"
 _EE_SENINE_TEXT_SUBSECTION_RENUMBER_RULE = "ee_senine_text_subsection_renumber_before_insert"
+_EE_QUOTED_ACT_CHAPTER_INSERT_RULE = "ee_quoted_act_chapter_insert_target"
 _EE_FRAKTSIONEERITUD_TYPO_DELETE_RULE = "ee_fraktsioneeritud_source_typo_delete_variant"
 _EE_LOCAL_KOHTKUTE_SOURCE_SURFACE_DELETE_RULE = "ee_lokaal_kohtkute_source_surface_delete_variant"
 _EE_OLEMASOLEV_TAHKEL_KUTUSEL_PHRASE_FORMS_RULE = "ee_case_inflected_olemasolev_tahkel_kutusel_phrase_forms"
@@ -4727,6 +4728,16 @@ def extract_ee_ops(
             re.IGNORECASE,
         )
     )
+    quoted_act_chapter_insert = bool(
+        re.search(
+            r'\b(?:seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)'
+            r'(?:\s+nr\s+\d[\d\s./-]*)?'
+            r'(?:\s+[\u201e"«][^\u201c\u201d"»\n]{1,240}[\u201c\u201d"»])?'
+            r'\s+täiendatakse\s+\d+[\d\s]*[.]\s*peatükiga',
+            clean,
+            re.IGNORECASE,
+        )
+    )
     statute_level_insert = bool(
         re.search(r'\b' + act_ref + r'\s+täiendatakse\s+§[‑–‒-](?:de)?ga', clean, re.IGNORECASE)
         or re.search(r'\b' + act_ref + r'\s+täiendatakse\s+paragrahviga', clean, re.IGNORECASE)
@@ -4750,6 +4761,8 @@ def extract_ee_ops(
         # Also: "seadust täiendatakse N 1. ja N 2. peatükiga ..." (multi-chapter insert)
         # Whole-chapter insert — handled specially below
         or re.search(r'\b(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)\s+täiendatakse\s+\d+[\d\s]*[.]\s*(?:ja\s+\d+[\d\s]*[.]\s*)*peatükiga', clean, re.IGNORECASE)
+        # Also: "Maaeluministri ... määrust nr 45 „Title” täiendatakse 6. peatükiga ...".
+        or quoted_act_chapter_insert
         # Also: "määrust täiendatakse peatükiga N 1 järgmises sõnastuses".
         or re.search(r'\b(seadus[a-z]*|seadustik[a-z]*|määrus[a-z]*)\s+täiendatakse\s+peatükiga\s+\d+[\d\s]*', clean, re.IGNORECASE)
         # Also: "seadust täiendatakse III 1. osaga järgmises sõnastuses:" (part insert)
@@ -5003,6 +5016,9 @@ def extract_ee_ops(
                     paired = [(ch_labels[0], content)]
                 for ch_label, ch_content in paired:
                     addr = LegalAddress(path=(("chapter", ch_label),))
+                    provenance_tags = (clean[:200],)
+                    if quoted_act_chapter_insert:
+                        provenance_tags = (*provenance_tags, _EE_QUOTED_ACT_CHAPTER_INSERT_RULE)
                     ops.append(LegalOperation(
                         op_id=f"ee-insert-chapter-{ch_label}-{source.statute_id}",
                         sequence=seq,
@@ -5010,7 +5026,12 @@ def extract_ee_ops(
                         target=addr,
                         payload=IRNode(kind=IRNodeKind.CONTENT, text=ch_content),
                         source=source,
-                        provenance_tags=(clean[:200],),
+                        provenance_tags=provenance_tags,
+                        witness_rule_id=(
+                            _EE_QUOTED_ACT_CHAPTER_INSERT_RULE
+                            if quoted_act_chapter_insert
+                            else None
+                        ),
                     ))
                     seq += 1
                 return ops
