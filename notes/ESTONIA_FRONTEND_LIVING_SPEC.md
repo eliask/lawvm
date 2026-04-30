@@ -1193,13 +1193,26 @@ text:
 
 `Määruse lisad on avaldatud elektroonilises Riigi Teatajas. Alus: "Riigi Teataja seaduse" §4 lõige 2 ...`
 
-When removing exactly that bounded note makes the replay and oracle section
-texts equal, the publication DB classifies the row as:
+Some older RT surfaces also carry bounded directive footnote tails inline in
+the final section text, for example a leading footnote marker followed by a
+European Parliament/Council directive citation ending in an `ELT L ... lk ...`
+publication reference.
+
+When removing exactly one of those bounded notes makes the replay and oracle
+section texts equal, the publication DB classifies the row as:
 
 - `publication_note_projection`
 
 This is reporting metadata only. It does not mutate replay or oracle text and it
 does not close broader directive footnote tails or other legal text.
+
+Corpus witness:
+
+- `113062014005 -> 126022019015` carries a `1 Euroopa Parlamendi ja EL
+  nõukogu direktiiv 2002/19/EÜ ... (ELT L 108, 24.04.2002, lk 7–20).`
+  directive footnote tail in the base § 12 XML, while the oracle omits it; the
+  sole amendment `126022019001` only performs an agency rename and does not
+  authorize deleting the footnote.
 
 ## 63. Section-level line-break list prefixes can belong to the first subsection
 
@@ -1410,3 +1423,25 @@ Corpus witness:
 
 - `103092021001` changes `105082014018`; oracle `103092021009` has
   `Transpordiameti poolt ... Transpordiamet ise`.
+
+## 73. `muudetakse ja pärast sõna ... asendatakse` preserves text-rewrite intent
+
+Some clauses start with `muudetakse` but the actual executable change is a
+phrase replacement after an anchor:
+
+- `paragrahvi 7 lõige 2 muudetakse ja pärast sõna „kui” asendatakse lauseosa
+  „31. mai” lauseosaga „30. november”.`
+
+This must lower to `TEXT_REPLACE` on the explicit provision target with
+`rewrite_mode=replace` and witness family:
+
+- `ee_text_replace_after_anchor_clause`
+
+It must not become a structural subsection replacement. The anchor identifies
+where the phrase replacement occurs; it does not make the new phrase an
+insert-after payload.
+
+Corpus witness:
+
+- `128052025010` changes `114052024004`; oracle `128052025011` changes only
+  the date phrase in § 7(2).

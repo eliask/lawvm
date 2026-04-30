@@ -743,6 +743,21 @@ def test_ee_publication_db_classifies_publication_note_projection_rows() -> None
             "open_current": 1,
         },
         {
+            "address": "chapter:4/section:12",
+            "replay_text": (
+                "Määruse jõustumine Määrus jõustub 2006. aasta 1. jaanuaril. "
+                "1Euroopa Parlamendi ja EL nõukogu direktiiv 2002/19/EÜ "
+                "elektroonilistele sidevõrkudele ja nendega seotud vahenditele "
+                "juurdepääsu ja vastastikuse sidumise kohta (juurdepääsu "
+                "käsitlev direktiiv) (ELT L 108, 24.04.2002, lk 7–20)."
+            ),
+            "oracle_text": "Määruse jõustumine Määrus jõustub 2006. aasta 1. jaanuaril.",
+            "residual_bucket": None,
+            "residual_evidence": None,
+            "alignment_peer_addresses": "",
+            "open_current": 1,
+        },
+        {
             "address": "chapter:4/section:13",
             "replay_text": "Määruse jõustumine Sisuline tekst. 1Euroopa Parlamendi muu viide.",
             "oracle_text": "Määruse jõustumine Teine sisuline tekst.",
@@ -758,8 +773,11 @@ def test_ee_publication_db_classifies_publication_note_projection_rows() -> None
     assert divergences[0]["residual_bucket"] == "publication_note_projection"
     assert divergences[0]["open_current"] == 0
     assert "publication/legal-basis note" in divergences[0]["residual_evidence"]
-    assert divergences[1]["residual_bucket"] is None
-    assert divergences[1]["open_current"] == 1
+    assert divergences[1]["residual_bucket"] == "publication_note_projection"
+    assert divergences[1]["open_current"] == 0
+    assert "publication/legal-basis note" in divergences[1]["residual_evidence"]
+    assert divergences[2]["residual_bucket"] is None
+    assert divergences[2]["open_current"] == 1
 
 
 def test_ee_publication_db_classifies_omitted_text_placeholder_display_rows() -> None:
