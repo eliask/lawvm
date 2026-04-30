@@ -342,6 +342,7 @@ def _classify_replay_coverage_gaps(
     *,
     amendments_failed: list[str],
     unsupported_action_sources: list[str],
+    unparsed_operation_sources: list[str],
     n_ops: int,
     comparison_class: str,
 ) -> None:
@@ -367,6 +368,14 @@ def _classify_replay_coverage_gaps(
             "unsupported action for this pair; unsupported source refs: "
             f"{sources}. Treat these rows as replay/action coverage debt, not "
             "as Riigi Teataja candidate divergences."
+        )
+    elif unparsed_operation_sources:
+        sources = ", ".join(sorted(set(unparsed_operation_sources)))
+        evidence = (
+            "LawVM preserved at least one source instruction that the Estonia "
+            "frontend did not parse into an executable operation; unparsed "
+            f"source refs: {sources}. Treat these rows as amendment-extraction "
+            "coverage debt, not as Riigi Teataja candidate divergences."
         )
     elif n_ops == 0 and comparison_class == "commensurable_delta" and divergences:
         evidence = (
@@ -979,6 +988,11 @@ def _score_publication_pair(row: dict[str, str], archive: Any) -> tuple[dict[str
             str(adjudication.source_statute)
             for adjudication in getattr(result, "adjudications", ())
             if getattr(adjudication, "kind", "") == "ee_replay_unsupported_action"
+        ],
+        unparsed_operation_sources=[
+            str(adjudication.source_statute)
+            for adjudication in getattr(result, "adjudications", ())
+            if getattr(adjudication, "kind", "") == "ee_replay_unparsed_operation_skipped"
         ],
         n_ops=result.n_ops,
         comparison_class=result.comparison_class,

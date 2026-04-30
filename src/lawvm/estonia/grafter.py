@@ -2231,7 +2231,16 @@ def parse_ee_amendment_ops(
             if not no_target_text or not _tr_is_out_of_body_appendix_or_note_clause(no_target_text):
                 updated.append(op)
                 continue
-            if op.action is StructuralAction.META and op.payload is not None:
+            payload_source_family = (
+                op.payload.attrs.get("source_family")
+                if op.action is StructuralAction.META and op.payload is not None
+                else None
+            )
+            if (
+                op.action is StructuralAction.META
+                and op.payload is not None
+                and payload_source_family != _EE_UNPARSED_OPERATION_CLAUSE_RULE
+            ):
                 updated.append(op)
                 continue
             updated.append(
@@ -4958,6 +4967,7 @@ _EE_PLAINTEXT_NUMBERED_CLAUSE_SPLIT_RULE = "ee_plaintext_numbered_clause_split"
 _EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
 _EE_PARENTHESIZED_TARGET_HTML_BLOCK_RULE = "ee_parenthesized_target_html_block_sliced"
 _EE_OUT_OF_BODY_APPENDIX_OR_NOTE_RULE = "ee_out_of_body_appendix_or_note_clause"
+_EE_UNPARSED_OPERATION_CLAUSE_RULE = "ee_unparsed_operation_clause"
 _EE_INSERT_AFTER_TERMINAL_PUNCTUATION_RULE = "ee_insert_after_terminal_punctuation_boundary"
 
 
@@ -9894,6 +9904,32 @@ def apply_ee_ops(
         reordered_ops.extend(persistent_postpass_ops)
     for op in reordered_ops:
         action = op.action.value if hasattr(op.action, "value") else op.action
+        if action == "meta":
+            detail: dict[str, str] = {"action": action, "target": str(op.target)}
+            if op.payload is not None and op.payload.attrs:
+                source_family = op.payload.attrs.get("source_family")
+                if source_family:
+                    detail["source_family"] = str(source_family)
+                parser_action = op.payload.attrs.get("parser_action")
+                if parser_action:
+                    detail["parser_action"] = str(parser_action)
+            if detail.get("source_family") == _EE_UNPARSED_OPERATION_CLAUSE_RULE:
+                _append_ee_replay_adjudication(
+                    adjudications_out,
+                    kind="ee_replay_unparsed_operation_skipped",
+                    message="EE replay preserved an unparsed source operation without mutating the body.",
+                    op=op,
+                    detail=detail,
+                )
+                continue
+            _append_ee_replay_adjudication(
+                adjudications_out,
+                kind="ee_replay_meta_non_body_skipped",
+                message="EE replay preserved a non-body meta operation without mutating the body.",
+                op=op,
+                detail=detail,
+            )
+            continue
         if is_statute_title_address(op.target):
             if action != "replace" or op.payload is None:
                 _append_ee_replay_adjudication(

@@ -8873,6 +8873,64 @@ def test_apply_ee_ops_records_unsupported_action() -> None:
     assert adjudications[0].detail["action"] == "text_repeal"
 
 
+def test_apply_ee_ops_records_meta_as_non_body_skip_not_unsupported() -> None:
+    statute = IRStatute(
+        statute_id="ee/test",
+        title="Test",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+    )
+    op = LegalOperation(
+        op_id="ee-meta",
+        sequence=1,
+        action=StructuralAction.META,
+        target=LegalAddress(path=()),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="appendix lane",
+            attrs={"source_family": "ee_out_of_body_appendix_or_note_clause"},
+        ),
+        source=OperationSource(statute_id="2026/1"),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = apply_ee_ops(statute, [op], adjudications_out=adjudications)
+
+    assert replayed == statute
+    assert [adjudication.kind for adjudication in adjudications] == ["ee_replay_meta_non_body_skipped"]
+    assert adjudications[0].op_id == "ee-meta"
+    assert adjudications[0].detail["action"] == "meta"
+    assert adjudications[0].detail["source_family"] == "ee_out_of_body_appendix_or_note_clause"
+
+
+def test_apply_ee_ops_records_unparsed_meta_as_coverage_skip_not_non_body() -> None:
+    statute = IRStatute(
+        statute_id="ee/test",
+        title="Test",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+    )
+    op = LegalOperation(
+        op_id="ee-unknown-1-ee/test",
+        sequence=1,
+        action=StructuralAction.META,
+        target=LegalAddress(path=()),
+        payload=IRNode(
+            kind=IRNodeKind.CONTENT,
+            text="unparsed instruction",
+            attrs={"source_family": "ee_unparsed_operation_clause", "parser_action": "unknown"},
+        ),
+        source=OperationSource(statute_id="2026/1"),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = apply_ee_ops(statute, [op], adjudications_out=adjudications)
+
+    assert replayed == statute
+    assert [adjudication.kind for adjudication in adjudications] == ["ee_replay_unparsed_operation_skipped"]
+    assert adjudications[0].op_id == "ee-unknown-1-ee/test"
+    assert adjudications[0].detail["source_family"] == "ee_unparsed_operation_clause"
+    assert adjudications[0].detail["parser_action"] == "unknown"
+
+
 def test_apply_ee_ops_renumbers_existing_section_before_inserting_new_same_label_section() -> None:
     statute = IRStatute(
         statute_id="ee/test",
