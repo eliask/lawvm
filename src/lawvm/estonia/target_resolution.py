@@ -44,6 +44,7 @@ _EE_STATUTE_TITLE_REPLACE_RULE = "ee_statute_title_replace"
 _EE_TITLE_CLAUSE_UNRESOLVED_NON_BODY_RULE = "ee_title_clause_unresolved_non_body"
 _EE_OLD_FORMAT_OUT_OF_BODY_APPENDIX_CLAUSE_RULE = "ee_old_format_out_of_body_appendix_clause_not_section_scoped"
 _EE_OUT_OF_BODY_APPENDIX_CLAUSE_RULE = "ee_out_of_body_appendix_clause_not_section_scoped"
+_EE_UNPARSED_OPERATION_CLAUSE_RULE = "ee_unparsed_operation_clause"
 _EE_NEW_FORMAT_TARGET_ACT_HEADER_NOT_WRAPPER_RULE = "ee_new_format_target_act_header_not_wrapper_instruction"
 _EE_HTML_AMENDMENT_SECTION_HEADING_WRAPPER_STRIPPED_RULE = "ee_html_amendment_section_heading_wrapper_stripped"
 _EE_EMBEDDED_OPEN_QUOTE_SECTION_HEADER_RULE = "ee_embedded_open_quote_payload_section_header"
@@ -179,6 +180,14 @@ def _mark_old_format_out_of_body_clause(op: LegalOperation, source_text: str) ->
         ),
         provenance_tags=tags,
         witness_rule_id=_EE_OLD_FORMAT_OUT_OF_BODY_APPENDIX_CLAUSE_RULE,
+    )
+
+
+def _is_unparsed_operation_meta(op: LegalOperation) -> bool:
+    return (
+        op.action is StructuralAction.META
+        and op.payload is not None
+        and op.payload.attrs.get("source_family") == _EE_UNPARSED_OPERATION_CLAUSE_RULE
     )
 
 
@@ -2571,7 +2580,7 @@ def old_format_lower_op_texts(
             for op in ops
             if not (
                 op.action == StructuralAction.META
-                and op.payload is None
+                and (op.payload is None or _is_unparsed_operation_meta(op))
                 and op.op_id.startswith("ee-unknown-")
             )
         ]
@@ -2781,7 +2790,7 @@ def old_format_collect_nested_direct_target_ops(
         for op in ops:
             if (
                 op.action == StructuralAction.META
-                and op.payload is None
+                and (op.payload is None or _is_unparsed_operation_meta(op))
                 and op.op_id.startswith("ee-unknown-")
             ):
                 continue

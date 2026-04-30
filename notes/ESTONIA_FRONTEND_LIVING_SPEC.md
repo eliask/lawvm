@@ -1649,9 +1649,42 @@ Owned family:
 
 - `ee_out_of_body_appendix_or_note_clause`
 
+Replay must record these as:
+
+- `ee_replay_meta_non_body_skipped`
+
+They must not be reported as `ee_replay_unsupported_action`, because the source
+instruction has been classified as non-body evidence rather than an unsupported
+operative body mutation.
+
 Corpus witness:
 
 - `113092017001` changes `106012015009`; oracle `113092017002` exposes
   `Jahitunnistuse ... kord` appendix material via the appendix lane. The source
   clause `lisa 5 kehtestatakse uues sõnastuses` is preserved as meta evidence
   rather than a failed body operation.
+
+## 79. Unparsed operation clauses are coverage debt, not non-body meta
+
+If the Estonia parser cannot classify a source instruction into an executable
+body operation, it may preserve the clause as a `META` carrier only as an
+evidence lane. This does not mean the clause is non-body law.
+
+Owned family:
+
+- `ee_unparsed_operation_clause`
+
+Replay must record these as:
+
+- `ee_replay_unparsed_operation_skipped`
+
+Publication triage must treat current divergences with this adjudication as
+`replay_coverage_gap`, with `unparsed source refs` evidence. They must not be
+reported as `ee_replay_meta_non_body_skipped`, because that would falsely
+classify an unknown source instruction as a proven appendix/preamble/non-body
+lane.
+
+Strictness:
+
+- Strict mode should block unparsed operation clauses for body replay. Quirks
+  mode may continue only with the skipped-operation adjudication preserved.

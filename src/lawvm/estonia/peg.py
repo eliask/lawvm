@@ -71,6 +71,7 @@ from lawvm.estonia.text_morphology import (
 
 _EE_OPTIONAL_TARGET_LABEL_SPACE_RULE = "ee_optional_target_label_space"
 _EE_SECTION_INTRO_REPLACE_TO_FIRST_SUBSECTION_RULE = "ee_section_intro_replace_to_first_subsection"
+_EE_UNPARSED_OPERATION_CLAUSE_RULE = "ee_unparsed_operation_clause"
 _EE_SUPERSCRIPT_DIGITS = "".join(
     chr(cp)
     for cp in range(sys.maxunicode + 1)
@@ -6262,6 +6263,11 @@ def extract_ee_ops(
                 sequence=seq,
                 action=StructuralAction.META,
                 target=LegalAddress(path=()),
+                payload=IRNode(
+                    kind=IRNodeKind.CONTENT,
+                    text=clean,
+                    attrs={"source_family": rule_id},
+                ),
                 source=source,
                 provenance_tags=(clean[:200], rule_id),
                 witness_rule_id=rule_id,
@@ -6353,8 +6359,17 @@ def extract_ee_ops(
             sequence=seq,
             action=_to_structural_action(action),
             target=LegalAddress(path=()),
+            payload=IRNode(
+                kind=IRNodeKind.CONTENT,
+                text=clean,
+                attrs={
+                    "source_family": _EE_UNPARSED_OPERATION_CLAUSE_RULE,
+                    "parser_action": action,
+                },
+            ),
             source=source,
-            provenance_tags=(f"no_target: {clean[:200]}",),
+            provenance_tags=(f"no_target: {clean[:200]}", _EE_UNPARSED_OPERATION_CLAUSE_RULE),
+            witness_rule_id=_EE_UNPARSED_OPERATION_CLAUSE_RULE,
         ))
         return ops
     if action == "text_replace" and not target.path:
@@ -7201,6 +7216,25 @@ def extract_ee_ops(
         return ops
 
     # Standard single-provision op
+    if action == "unknown":
+        if payload is None:
+            payload = IRNode(
+                kind=IRNodeKind.CONTENT,
+                text=clean,
+                attrs={
+                    "source_family": _EE_UNPARSED_OPERATION_CLAUSE_RULE,
+                    "parser_action": action,
+                },
+            )
+        else:
+            payload = replace(
+                payload,
+                attrs={
+                    **payload.attrs,
+                    "source_family": _EE_UNPARSED_OPERATION_CLAUSE_RULE,
+                    "parser_action": action,
+                },
+            )
     standard_text_patch = None
     if action == "text_replace" and payload is not None:
         standard_text_patch = _typed_text_replace_patch(

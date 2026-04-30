@@ -3388,7 +3388,8 @@ def test_extract_ee_ops_does_not_invent_section_renumber_for_appendix_replacemen
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.META
     assert ops[0].target.path == ()
-    assert ops[0].payload is None
+    assert ops[0].payload is not None
+    assert ops[0].payload.attrs["source_family"] == "ee_unparsed_operation_clause"
 
 
 def test_parse_ee_amendment_ops_preserves_real_appendix_only_clause_as_meta() -> None:
@@ -4885,7 +4886,8 @@ def test_extract_ee_ops_keeps_appendix_addition_out_of_body_replay() -> None:
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.META
     assert ops[0].target.path == ()
-    assert ops[0].payload is None
+    assert ops[0].payload is not None
+    assert ops[0].payload.attrs["source_family"] == "ee_appendix_addition_not_body_replay"
     assert ops[0].witness_rule_id == "ee_appendix_addition_not_body_replay"
 
 
@@ -11386,6 +11388,46 @@ def test_parse_ee_amendment_ops_keeps_out_of_body_appendix_clause_from_inherited
     assert "ee_out_of_body_appendix_clause_not_section_scoped" in ops[1].provenance_tags
     assert "ee_new_format_target_act_header_not_wrapper_instruction" in ops[1].provenance_tags
     assert "ee_old_format_carried_section_scope" not in ops[1].provenance_tags
+
+
+def test_extract_ee_ops_appendix_addition_meta_has_source_family_payload() -> None:
+    ops = extract_ee_ops(
+        "1) määrust täiendatakse lisaga 1;",
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [(StructuralAction.META, ())]
+    assert _payload(ops[0]).text == "määrust täiendatakse lisaga 1;"
+    assert _payload(ops[0]).attrs["source_family"] == "ee_appendix_addition_not_body_replay"
+    assert ops[0].witness_rule_id == "ee_appendix_addition_not_body_replay"
+
+
+def test_extract_ee_ops_unparsed_clause_has_source_family_payload() -> None:
+    ops = extract_ee_ops(
+        "1) rakendatakse tagasiulatuvalt 1. jaanuarist 2020;",
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [(StructuralAction.META, ())]
+    assert _payload(ops[0]).text == "rakendatakse tagasiulatuvalt 1. jaanuarist 2020;"
+    assert _payload(ops[0]).attrs["source_family"] == "ee_unparsed_operation_clause"
+    assert _payload(ops[0]).attrs["parser_action"] == "unknown"
+    assert ops[0].witness_rule_id == "ee_unparsed_operation_clause"
+
+
+def test_extract_ee_ops_targeted_unparsed_clause_has_source_family_payload() -> None:
+    ops = extract_ee_ops(
+        "1) § 1 lõike 3 punktis 3;",
+        OperationSource(statute_id="ee/test"),
+    )
+
+    assert [(op.action, op.target.path) for op in ops] == [
+        (StructuralAction.META, (("section", "1"), ("subsection", "3"), ("item", "3"))),
+    ]
+    assert _payload(ops[0]).text == "§ 1 lõike 3 punktis 3;"
+    assert _payload(ops[0]).attrs["source_family"] == "ee_unparsed_operation_clause"
+    assert _payload(ops[0]).attrs["parser_action"] == "unknown"
+    assert ops[0].witness_rule_id == "ee_unparsed_operation_clause"
 
 
 def test_parse_ee_amendment_ops_keeps_real_112092023001_appendix_clause_from_section_body() -> None:
