@@ -1578,6 +1578,36 @@ def test_replay_ee_to_pit_adjudicates_spent_repeal_clause_presentation_drift() -
     assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": len(divergence_addresses)}
 
 
+def test_replay_ee_to_pit_adjudicates_source_oracle_inflection_surface_drift() -> None:
+    from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.residual_reporting import build_ee_residual_summary
+    from lawvm.estonia.replay import replay_ee_to_pit
+
+    archive = open_rt_archive(readonly=True)
+
+    result = replay_ee_to_pit(
+        "104022011014",
+        "2012-02-18",
+        archive=archive,
+        oracle_id="115022012004",
+    )
+
+    assert result.error is None
+    divergence_addresses = tuple(str(div.address) for div in result.divergences)
+    assert divergence_addresses == ("section:12_1", "section:12_1/subsection:1")
+    assert "sätestatu." in (result.divergences[1].ops_text or "")
+    assert "sätestatut." in (result.divergences[1].consolidated_text or "")
+    residual_summary = build_ee_residual_summary(
+        base_id="104022011014",
+        oracle_id="115022012004",
+        divergence_addresses=divergence_addresses,
+    )
+    assert residual_summary is not None
+    assert residual_summary.unknown_current_divergence_count == 0
+    assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
+    assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": len(divergence_addresses)}
+
+
 def test_replay_ee_to_pit_closes_new_format_xml_alampunkt_omnibus_items() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
