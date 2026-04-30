@@ -39,6 +39,7 @@ from lawvm.core.ir import (
 )
 from lawvm.core.semantic_types import FacetKind, TextPatchKindEnum, IRNodeKind
 from lawvm.estonia.peg import extract_ee_ops, parse_html_op_items, parse_target
+from lawvm.estonia.target_resolution import split_embedded_act_sections
 
 
 def _payload(op):
@@ -2558,6 +2559,45 @@ def test_parse_ee_amendment_ops_emits_real_quoted_act_chapter_insert() -> None:
     assert chapter_insert.payload is not None
     assert "§ 24. Rakendussätted" in chapter_insert.payload.text
     assert "Lõiget 1 kohaldatakse alates 2025. aasta 1. maist." in chapter_insert.payload.text
+
+
+def test_split_embedded_act_sections_keeps_section_header_inside_open_quoted_payload() -> None:
+    html = (
+        '<p>Ettevõtlus- ja infotehnoloogiaministri määruses nr 14 '
+        '„Ettevõtja tootearenduse toetuse andmise tingimused ja kord” '
+        'tehakse järgmised muudatused:</p>'
+        '<p><b>1)</b> määrust täiendatakse 10. peatükiga järgmises sõnastuses:</p>'
+        '<p align="center">„<b>10. peatükk<br/>Määruse rakendamine</b></p>'
+        '<p><b>§ 28. Määruse rakendamine</b></p>'
+        '<p>Käesoleva määruse muudatusi ei kohaldata taotlustele.”.</p>'
+    )
+
+    sections = split_embedded_act_sections(html)
+
+    assert len(sections) == 1
+    assert "§ 28. Määruse rakendamine" in sections[0]
+    assert "ei kohaldata taotlustele" in sections[0]
+
+
+def test_parse_ee_amendment_ops_keeps_real_multi_paragraph_chapter_insert_payload() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("130052025004", archive),
+        "ee/130052025004",
+        target_title="Ettevõtja tootearenduse toetuse andmise tingimused ja kord",
+    )
+    archive.close()
+
+    subsection_replace = next(op for op in ops if op.target.path == (("section", "1"), ("subsection", "6")))
+    chapter_insert = next(op for op in ops if op.target.path == (("chapter", "10"),))
+
+    assert subsection_replace.witness_rule_id != "ee_embedded_open_quote_payload_section_header"
+    assert chapter_insert.action is StructuralAction.INSERT
+    assert chapter_insert.witness_rule_id == "ee_quoted_act_chapter_insert_target"
+    assert "ee_embedded_open_quote_payload_section_header" in chapter_insert.provenance_tags
+    assert chapter_insert.payload is not None
+    assert "§ 28. Määruse rakendamine" in chapter_insert.payload.text
+    assert "ei kohaldata enne nimetatud muudatuste jõustumist" in chapter_insert.payload.text
 
 
 def test_extract_ee_ops_fans_out_mixed_text_replace_targets() -> None:

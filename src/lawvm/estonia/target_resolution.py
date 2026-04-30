@@ -46,6 +46,7 @@ _EE_OLD_FORMAT_OUT_OF_BODY_APPENDIX_CLAUSE_RULE = "ee_old_format_out_of_body_app
 _EE_OUT_OF_BODY_APPENDIX_CLAUSE_RULE = "ee_out_of_body_appendix_clause_not_section_scoped"
 _EE_NEW_FORMAT_TARGET_ACT_HEADER_NOT_WRAPPER_RULE = "ee_new_format_target_act_header_not_wrapper_instruction"
 _EE_HTML_AMENDMENT_SECTION_HEADING_WRAPPER_STRIPPED_RULE = "ee_html_amendment_section_heading_wrapper_stripped"
+_EE_EMBEDDED_OPEN_QUOTE_SECTION_HEADER_RULE = "ee_embedded_open_quote_payload_section_header"
 _OP_TEXT_RULE_PREFIX = "\x1eLAWVM_RULE:"
 _OP_TEXT_RULE_SUFFIX = "\x1f"
 
@@ -680,6 +681,20 @@ def split_embedded_act_sections(html_block: str) -> list[str]:
     saw_header = False
     current_started_from_intro = False
     quote_balance = 0
+
+    def _current_has_unclosed_payload_quote() -> bool:
+        text = "\n".join(plain_html_text(para) for para in current)
+        marker_matches = list(re.finditer(
+            r"(?:järgmises\s+sõnastuses|järgnevas\s+sõnastuses|järgmiselt)\s*:\s*",
+            text,
+            re.IGNORECASE | re.DOTALL,
+        ))
+        if marker_matches:
+            tail = text[marker_matches[-1].end():].lstrip()
+            if tail.startswith(("„", '"', "“", "«", "ˮ")):
+                return not bool(re.search(r'[“”"»ˮ]\s*[.;:]?\s*$', tail))
+        return text.count("„") > text.count("“") + text.count("”")
+
     for para_html in paras:
         plain = plain_html_text(para_html)
         intro_fragment = extract_intro_statute_fragment(plain.lstrip('„"« '))
@@ -703,7 +718,11 @@ def split_embedded_act_sections(html_block: str) -> list[str]:
             continue
         if current:
             bare_section_header = bool(re.match(r"^§\s*\d+\.\s+", plain))
-            if bare_section_header and not current_started_from_intro:
+            if (
+                bare_section_header
+                and not current_started_from_intro
+                and not _current_has_unclosed_payload_quote()
+            ):
                 sections.append("\n".join(current))
                 current = []
                 current_started_from_intro = False
@@ -755,6 +774,48 @@ def split_embedded_paragraph_headers(html_block: str) -> list[str]:
     if current:
         sections.append("\n".join(current))
     return sections if saw_header else []
+
+
+def _has_embedded_open_quote_payload_section_header(html_block: str) -> bool:
+    """Detect paragraph-level section headers that belong to an open quoted payload."""
+    paras = re.findall(r"<p\b[^>]*>.*?</p>", html_block, flags=re.DOTALL | re.IGNORECASE)
+    if not paras:
+        return False
+    accumulated: list[str] = []
+    for para_html in paras:
+        plain = plain_html_text(para_html)
+        if re.match(r"^§\s*\d+\.\s+", plain):
+            text = "\n".join(accumulated)
+            marker_matches = list(re.finditer(
+                r"(?:järgmises\s+sõnastuses|järgnevas\s+sõnastuses|järgmiselt)\s*:\s*",
+                text,
+                re.IGNORECASE | re.DOTALL,
+            ))
+            if marker_matches:
+                tail = text[marker_matches[-1].end():].lstrip()
+                if tail.startswith(("„", '"', "“", "«", "ˮ")) and not re.search(
+                    r'[“”"»ˮ]\s*[.;:]?\s*$',
+                    tail,
+                ):
+                    return True
+            if text.count("„") > text.count("“") + text.count("”"):
+                return True
+        accumulated.append(plain)
+    return False
+
+
+def _item_has_embedded_open_quote_payload_section_header(item_text: str) -> bool:
+    marker_matches = list(re.finditer(
+        r"(?:järgmises\s+sõnastuses|järgnevas\s+sõnastuses|järgmiselt)\s*:\s*",
+        item_text,
+        re.IGNORECASE | re.DOTALL,
+    ))
+    if not marker_matches:
+        return False
+    tail = item_text[marker_matches[-1].end():].lstrip()
+    if not tail.startswith(("„", '"', "“", "«", "ˮ")):
+        return False
+    return bool(re.search(r"§\s*\d+\s*\.\s+", tail))
 
 
 def collect_embedded_target_sections(
@@ -1325,6 +1386,7 @@ def new_format_collect_op_texts(
             for html in html_sections:
                 st_html.append(html)
                 html_blocks.append(html)
+                html_has_open_quote_section_header = _has_embedded_open_quote_payload_section_header(html)
                 item_texts = parse_html_op_items(
                     html,
                     allow_plain_paragraph_items=allow_plain_paragraph_items,
@@ -1341,10 +1403,27 @@ def new_format_collect_op_texts(
                             )
                         else:
                             combined = f"{wrapper_instruction} {item_text}".strip()
+                        if (
+                            html_has_open_quote_section_header
+                            and _item_has_embedded_open_quote_payload_section_header(combined)
+                        ):
+                            combined = _with_op_text_rule(
+                                combined,
+                                _EE_EMBEDDED_OPEN_QUOTE_SECTION_HEADER_RULE,
+                            )
                         if combined not in op_texts:
                             op_texts.append(combined)
                 else:
-                    op_texts.extend(item_texts)
+                    for item_text in item_texts:
+                        if (
+                            html_has_open_quote_section_header
+                            and _item_has_embedded_open_quote_payload_section_header(item_text)
+                        ):
+                            item_text = _with_op_text_rule(
+                                item_text,
+                                _EE_EMBEDDED_OPEN_QUOTE_SECTION_HEADER_RULE,
+                            )
+                        op_texts.append(item_text)
 
         st_tava: list[str] = []
         for t in st.findall(_ns(ns_str, "tavatekst")):
