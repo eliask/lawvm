@@ -62,6 +62,7 @@ from lawvm.estonia.peg import (
     extract_ee_ops,
     parse_html_op_items,
 )
+from lawvm.estonia.ee_instruction_waist import make_text_rewrite_witness
 from lawvm.estonia.ee_instruction_waist import read_item_selection_meta
 from lawvm.estonia.ee_instruction_waist import read_payload_rewrite_meta
 from lawvm.estonia.ee_instruction_waist import to_ee_parsed_instructions
@@ -3241,6 +3242,55 @@ def _parse_old_format_direct_title_unnumbered_text_replace_ops(
     full_html = "\n".join(html_blocks)
     paragraphs = re.findall(r"<p\b[^>]*>(.*?)</p>", full_html, flags=re.IGNORECASE | re.DOTALL)
     rule_id = "ee_old_format_direct_title_unnumbered_text_replace"
+    case_inflected_rule_id = "ee_old_format_direct_title_case_inflected_text_replace"
+
+    def _direct_title_rewrite_op(body_text: str) -> LegalOperation | None:
+        match = re.search(
+            r"\basendatakse\s+"
+            r"(?:läbivalt\s+)?(?:sõna|sõnad|tekstiosa)\s+"
+            r"[„\"“]([^„”“\"]+)[”\"“]\s+"
+            r"(?:sõnaga|sõnadega|tekstiosaga)\s+"
+            r"[„\"“]([^„”“\"]+)[”\"“]"
+            r"(?P<tail>[^.]*?)(?:\.|$)",
+            body_text,
+            re.IGNORECASE,
+        )
+        if match is None:
+            return None
+        old_text = match.group(1).strip()
+        new_text = match.group(2).strip()
+        if not old_text or not new_text:
+            return None
+        case_inflected = bool(re.search(r"\bvastavas\s+käändes\b", match.group("tail"), re.IGNORECASE))
+        payload_attrs: dict[str, object] = {
+            "old_text": old_text,
+            "all_occurrences": True,
+            "source_family": case_inflected_rule_id if case_inflected else rule_id,
+            "rewrite_witness": make_text_rewrite_witness(
+                body_text,
+                old_surface=old_text,
+                new_surface=new_text,
+                case_inflected=case_inflected,
+                source_family=case_inflected_rule_id if case_inflected else rule_id,
+            ),
+        }
+        if case_inflected:
+            payload_attrs["case_inflected"] = True
+        return LegalOperation(
+            op_id=f"ee-old-format-direct-title-text-replace-{source_id}",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=()),
+            payload=IRNode(kind=IRNodeKind.CONTENT, text=new_text, attrs=payload_attrs),
+            source=OperationSource(statute_id=source_id, title=target_title, raw_text=body_text[:200]),
+            provenance_tags=(
+                body_text[:200],
+                case_inflected_rule_id if case_inflected else rule_id,
+            ),
+            text_patch=_typed_text_replace_patch(old_text, new_text),
+            witness_rule_id=case_inflected_rule_id if case_inflected else rule_id,
+        )
+
     for idx, paragraph_html in enumerate(paragraphs[:-1]):
         header_text = _html.unescape(re.sub(r"<[^>]+>", " ", paragraph_html))
         header_text = header_text.replace("\xa0", " ")
@@ -3262,13 +3312,30 @@ def _parse_old_format_direct_title_unnumbered_text_replace_ops(
         ):
             continue
 
+        direct_rewrite_op = _direct_title_rewrite_op(body_text)
+        if direct_rewrite_op is not None:
+            return [
+                replace(
+                    direct_rewrite_op,
+                    provenance_tags=(
+                        *direct_rewrite_op.provenance_tags,
+                        rule_id,
+                        f"old_format_target_header:{header_text[:160]}",
+                    ),
+                )
+            ]
+
         source = OperationSource(
             statute_id=source_id,
             title=target_title,
             raw_text=body_text[:200],
         )
         ops = extract_ee_ops(body_text, source, seq_start=1)
-        text_replace_ops = [op for op in ops if op.action is StructuralAction.TEXT_REPLACE]
+        text_replace_ops = [
+            op
+            for op in ops
+            if op.action is StructuralAction.TEXT_REPLACE and op.payload is not None and op.text_patch is not None
+        ]
         if not text_replace_ops:
             continue
         return [
