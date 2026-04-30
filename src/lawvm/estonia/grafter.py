@@ -8725,7 +8725,7 @@ def _ee_replace_ambiguous_genitive_phrase(text: str, old: str, new: str) -> str:
         semantic_next_words = next_words[1:] if joiner and next_words else next_words
         if not next_word:
             return False
-        if next_word in {"kohustatud", "nimetatakse", "päeva", "tööpäeva"}:
+        if next_word in {"ise", "kohustatud", "nimetatakse", "päeva", "tööpäeva"}:
             return False
         if next_word.endswith(nonfinite_suffixes):
             return False

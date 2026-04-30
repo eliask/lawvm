@@ -1393,3 +1393,17 @@ Corpus witness:
 
 - `114082018004` changes `102112016003`; oracle `114082018005` keeps § 6 and
   removes only its second sentence.
+
+## 72. Case-inflected agency renames preserve nominative before `ise`
+
+When a global `vastavas käändes` agency rename sees a nominative agency name
+followed by `ise`, the name remains nominative. The phrase is appositional
+(`Maanteeamet ise`), not a genitive modifier.
+
+This exception is still bounded by the exact old/new rewrite surfaces. It must
+not prevent genuine genitive rewrites such as `Maanteeameti poolt`.
+
+Corpus witness:
+
+- `103092021001` changes `105082014018`; oracle `103092021009` has
+  `Transpordiameti poolt ... Transpordiamet ise`.

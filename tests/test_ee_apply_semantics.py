@@ -10590,6 +10590,27 @@ def test_case_inflected_rewrite_preserves_nominative_after_arvates_temporal_phra
     )
 
 
+def test_case_inflected_rewrite_preserves_nominative_before_ise_apposition() -> None:
+    text = (
+        "Masina või toote tüübikinnituseks vajalikke ekspertiise teostab "
+        "Maanteeameti poolt tunnustatud katsekoda või ekspert, võimaluse korral "
+        "Maanteeamet ise."
+    )
+
+    replaced = _ee_apply_text_replace_value(
+        text,
+        "Maanteeamet",
+        "Transpordiamet",
+        case_inflected=True,
+    )
+
+    assert replaced == (
+        "Masina või toote tüübikinnituseks vajalikke ekspertiise teostab "
+        "Transpordiameti poolt tunnustatud katsekoda või ekspert, võimaluse korral "
+        "Transpordiamet ise."
+    )
+
+
 def test_case_inflected_rewrite_handles_plural_id_to_jad_family() -> None:
     text = (
         "Pedagoogidele, kelle palgad kaetakse riigieelarvest, nähakse tööalaseks "
