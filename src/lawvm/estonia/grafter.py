@@ -742,6 +742,9 @@ _EE_DROP_ORPHAN_APPENDIX_MARKER_RULE = "ee_drop_orphan_appendix_marker_html"
 _EE_DROP_REPEALED_RANGE_RESIDUE_RULE = "ee_drop_repealed_range_residue"
 _EE_SINGLETON_EMPTY_SECTION_LABEL_RULE = "ee_singleton_empty_section_label_to_1"
 _EE_SECTION_LEVEL_INTRO_TO_FIRST_SUBSECTION_RULE = "ee_section_level_intro_attached_to_first_subsection"
+_EE_SECTION_LEVEL_REAVAHETUS_ITEMS_TO_FIRST_SUBSECTION_RULE = (
+    "ee_section_level_reavahetus_items_attached_to_first_subsection"
+)
 _EE_HTML_TABLE_TEXT_RULE = "ee_html_table_text_materialized"
 _EE_HTML_TABLE_NUMBERED_ITEMS_RULE = "ee_html_table_numbered_items_materialized"
 _EE_HTML_PARAGRAPH_NUMBERED_ITEMS_RULE = "ee_html_paragraph_numbered_items_materialized"
@@ -1100,17 +1103,45 @@ def _extract_reavahetus_items(el: ET.Element, ns_str: str) -> List[IRNode]:
 def _extract_reavahetus_intro_text(el: ET.Element, ns_str: str) -> str:
     """Return text before the first reavahetus item list in an element."""
     intro_parts: list[str] = []
+
+    def _tavatekst_prefix_before_item_list(tavatekst: ET.Element) -> tuple[str, bool]:
+        parts: list[str] = []
+        if _looks_like_reavahetus_item_tail(tavatekst.text or ""):
+            return "", True
+        if tavatekst.text:
+            parts.append(tavatekst.text)
+        for child in tavatekst:
+            local = child.tag.split("}")[1] if "}" in child.tag else child.tag
+            if local == "reavahetus":
+                if _looks_like_reavahetus_item_tail(child.tail or ""):
+                    text = re.sub(r"\s+", " ", "".join(parts)).replace("\xa0", " ").strip()
+                    return _normalize_ee_statute_surface_text(text), True
+                if child.tail:
+                    parts.append(child.tail)
+                continue
+            if local in _INLINE_TAGS:
+                child_text = "".join(str(_t) for _t in child.itertext())
+                if child_text:
+                    if local in ("sup", "sub"):
+                        parts.append(" ")
+                    parts.append(child_text)
+                if child.tail:
+                    parts.append(child.tail)
+                continue
+            if child.tail:
+                parts.append(child.tail)
+        text = re.sub(r"\s+", " ", "".join(parts)).replace("\xa0", " ").strip()
+        return _normalize_ee_statute_surface_text(text), False
+
     for st in el.findall(_ns(ns_str, "sisuTekst")):
         for tavatekst in st.findall(_ns(ns_str, "tavatekst")):
-            for child in tavatekst:
-                local = child.tag.split("}")[1] if "}" in child.tag else child.tag
-                if local != "reavahetus":
-                    continue
-                tail = (child.tail or "").replace("\xa0", " ").strip()
-                if re.match(r"^\d[\d\s]*\)", tail):
-                    if tavatekst.text:
-                        intro_parts.append(tavatekst.text.replace("\xa0", " ").strip())
-                    return " ".join(part for part in intro_parts if part).strip()
+            text, found_item_list = _tavatekst_prefix_before_item_list(tavatekst)
+            if found_item_list:
+                if text:
+                    intro_parts.append(text)
+                return " ".join(part for part in intro_parts if part).strip()
+            if text:
+                intro_parts.append(text)
     return " ".join(part for part in intro_parts if part).strip()
 
 
@@ -1155,9 +1186,7 @@ def _parse_subsection(el: ET.Element, ns_str: str, default_nr: int = 1) -> IRNod
             # Rebuild sub_text as intro-only: the tavatekst.text before the first
             # <reavahetus/> separator, not the full _sisuTekst_text which also
             # captures sibling <viide> content that belongs to reavahetus items.
-            intro_text = _extract_reavahetus_intro_text(el, ns_str)
-            if intro_text:
-                sub_text = intro_text
+            sub_text = _extract_reavahetus_intro_text(el, ns_str)
     used_html_paragraph_item_children = False
     if not children:
         html_intro_text, html_paragraph_item_children = _extract_numbered_html_paragraph_item_children(el, ns_str)
@@ -1412,21 +1441,42 @@ def _parse_section(el: ET.Element, ns_str: str) -> IRNode:
             elif node.attrs.get("source_cleanup_rule") == _EE_DROP_REPEALED_RANGE_RESIDUE_RULE:
                 dropped_repealed_residues.append(str(node.attrs["dropped_repealed_residue"]))
     if children:
-        section_intro = _section_level_sisutekst_text(el, ns_str)
+        section_reavahetus_items = _extract_reavahetus_items(el, ns_str)
+        section_intro = (
+            _extract_reavahetus_intro_text(el, ns_str)
+            if section_reavahetus_items
+            else _section_level_sisutekst_text(el, ns_str)
+        )
         if section_intro:
             first = children[0]
             first_rules = tuple(first.attrs.get("source_cleanup_rules", ()))
+            source_cleanup_rules = (
+                *first_rules,
+                _EE_SECTION_LEVEL_INTRO_TO_FIRST_SUBSECTION_RULE,
+            )
+            first_children = tuple(first.children)
+            section_reavahetus_labels: tuple[str, ...] = ()
+            if section_reavahetus_items:
+                existing_labels = {child.label for child in first.children if child.label}
+                prefix_labels = tuple(item.label or "" for item in section_reavahetus_items)
+                if all(label and label not in existing_labels for label in prefix_labels):
+                    first_children = tuple((*section_reavahetus_items, *first.children))
+                    source_cleanup_rules = (
+                        *source_cleanup_rules,
+                        _EE_SECTION_LEVEL_REAVAHETUS_ITEMS_TO_FIRST_SUBSECTION_RULE,
+                    )
+                    section_reavahetus_labels = prefix_labels
             first_attrs = {
                 **first.attrs,
-                "source_cleanup_rules": (
-                    *first_rules,
-                    _EE_SECTION_LEVEL_INTRO_TO_FIRST_SUBSECTION_RULE,
-                ),
+                "source_cleanup_rules": source_cleanup_rules,
                 "section_level_intro_text": section_intro,
             }
+            if section_reavahetus_labels:
+                first_attrs["section_level_reavahetus_item_labels"] = section_reavahetus_labels
             children[0] = replace(
                 first,
                 text=" ".join(part for part in (section_intro, first.text) if part).strip(),
+                children=first_children,
                 attrs=first_attrs,
             )
 

@@ -1200,3 +1200,24 @@ texts equal, the publication DB classifies the row as:
 
 This is reporting metadata only. It does not mutate replay or oracle text and it
 does not close broader directive footnote tails or other legal text.
+
+## 63. Section-level line-break list prefixes can belong to the first subsection
+
+Some old `tyviseadus` RT XML serializes the beginning of a list directly under
+`paragrahv/sisuTekst` and the tail of the same list as an unnumbered `loige`.
+The legal surface is one subsection-level item list, but the transport shape is
+split across parent and child XML nodes.
+
+The parser may attach the direct section-level `reavahetus` items to the first
+subsection only when the item labels are explicit and do not collide with the
+first subsection's existing children. The subsection records:
+
+- `ee_section_level_reavahetus_items_attached_to_first_subsection`
+- `section_level_reavahetus_item_labels`
+
+Corpus witness:
+
+- `129112022006` stores § 1 items 1-3 and § 2 items 1-3 in direct section
+  `sisuTekst`, while item 4 is an unnumbered `loige`; oracle `106122024011`
+  materializes all items as subsection children after source act `106122024001`
+  inserts items 5 and 6.
