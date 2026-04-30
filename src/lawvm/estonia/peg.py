@@ -1424,6 +1424,11 @@ def _classify_verb(text: str) -> str:
             or 'pärast tekstiosa' in t
             or 'pärast lauseosa' in t
             or 'pärast arvu' in t
+            or 'peale sõna' in t
+            or 'peale sõnu' in t
+            or 'peale tekstiosa' in t
+            or 'peale lauseosa' in t
+            or 'peale arvu' in t
             or 'enne sõna' in t
             or 'enne sõnu' in t
             or 'enne tekstiosa' in t
@@ -1454,6 +1459,11 @@ def _classify_verb(text: str) -> str:
             or 'pärast tekstiosa' in t
             or 'pärast lauseosa' in t
             or 'pärast arvu' in t
+            or 'peale sõna' in t
+            or 'peale sõnu' in t
+            or 'peale tekstiosa' in t
+            or 'peale lauseosa' in t
+            or 'peale arvu' in t
             or 'enne sõna' in t
             or 'enne sõnu' in t
             or 'enne tekstiosa' in t
@@ -2027,7 +2037,7 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
     if after_anchor_pair is not None:
         return after_anchor_pair
     if re.search(
-        r'\bt[aä]iendatakse\b[^.;]{0,180}\b(?:p[aä]rast|enne)\s+'
+        r'\bt[aä]iendatakse\b[^.;]{0,180}\b(?:p[aä]rast|peale|enne)\s+'
         r'(?:sõn[au]|tekstiosa|lauseosa|arvu)\b[^.;]{0,180}'
         r'\b(?:sõn(?:a|adega)|tekstiosaga|lauseosaga|arvuga)\b',
         text,
@@ -2117,6 +2127,7 @@ def _extract_text_replace_args(text: str) -> Tuple[Optional[str], Optional[str]]
 
 _EE_AFTER_ANCHOR_TEXT_REPLACE_RULE = "ee_text_replace_after_anchor_clause"
 _EE_INSERT_AFTER_TERMINAL_PUNCTUATION_RULE = "ee_insert_after_terminal_punctuation_boundary"
+_EE_PEALE_INSERT_AFTER_SYNONYM_RULE = "ee_peale_sona_insert_after_synonym"
 
 
 def _extract_after_anchor_text_delete_pair(text: str) -> tuple[str, str] | None:
@@ -2191,7 +2202,7 @@ def _extract_text_replace_pairs(text: str) -> List[Tuple[str, str]]:
     if after_anchor_pair is not None:
         return [after_anchor_pair]
     if re.search(
-        r'\bt[aä]iendatakse\b[^.;]{0,180}\b(?:p[aä]rast|enne)\s+'
+        r'\bt[aä]iendatakse\b[^.;]{0,180}\b(?:p[aä]rast|peale|enne)\s+'
         r'(?:sõn[au]|tekstiosa|lauseosa|arvu)\b[^.;]{0,180}'
         r'\b(?:sõn(?:a|adega)|tekstiosaga|lauseosaga|arvuga)\b',
         text,
@@ -3528,7 +3539,7 @@ def _normalize_text_replace_args(
             and re.search(r'\benne\s+arvu\b', text, re.IGNORECASE)):
         return old_text, f"{new_text}{old_text}"
     if (old_text is not None and new_text is not None
-            and re.search(r'\bpärast\s+arvu\b', text, re.IGNORECASE)):
+            and re.search(r'\b(?:pärast|peale)\s+arvu\b', text, re.IGNORECASE)):
         separator = '' if re.match(r'^[\s–‒\-.,;:)]', new_text) else ' '
         return old_text, f"{old_text}{separator}{new_text}"
     if (old_text is not None and new_text is not None
@@ -3538,7 +3549,7 @@ def _normalize_text_replace_args(
         old_text is not None
         and new_text is not None
         and (
-            re.search(r'\bpärast\s+(?:sõn[au]|tekstiosa|lauseosa)\b', text, re.IGNORECASE)
+            re.search(r'\b(?:pärast|peale)\s+(?:sõn[au]|tekstiosa|lauseosa)\b', text, re.IGNORECASE)
             or re.search(
                 r'\b(?:sõn[au]|tekstiosa|lauseosa)\s+[„"«”][^„”“"«»]{0,240}'
                 r'[”"»“]\s+j[aä]rel\b',
@@ -3568,7 +3579,7 @@ def _infer_text_replace_mode(
         if re.search(r'\benne\s+(?:sõn[au][a-z]*|tekstiosa|lauseosa|arvu)\b', text, re.IGNORECASE):
             return "insert_before"
         if (
-            re.search(r'\bpärast\s+(?:sõn[au][a-z]*|tekstiosa|lauseosa|arvu)\b', text, re.IGNORECASE)
+            re.search(r'\b(?:pärast|peale)\s+(?:sõn[au][a-z]*|tekstiosa|lauseosa|arvu)\b', text, re.IGNORECASE)
             or re.search(
                 r'\b(?:sõn[au][a-z]*|tekstiosa|lauseosa|arvu)\s+[„"«”][^„”“"«»]{0,240}'
                 r'[”"»“]\s+j[aä]rel\b',
@@ -3604,6 +3615,16 @@ def _set_text_replace_payload_attrs(
     attrs["rewrite_mode"] = rewrite_mode
     if not source_family and _extract_after_anchor_text_replace_pair(clean) is not None:
         source_family = _EE_AFTER_ANCHOR_TEXT_REPLACE_RULE
+    if (
+        not source_family
+        and rewrite_mode == "insert_after"
+        and re.search(
+            r'\bpeale\s+(?:sõn[au][a-z]*|tekstiosa|lauseosa|arvu)\b',
+            clean,
+            re.IGNORECASE,
+        )
+    ):
+        source_family = _EE_PEALE_INSERT_AFTER_SYNONYM_RULE
     if (
         not source_family
         and rewrite_mode == "insert_after"

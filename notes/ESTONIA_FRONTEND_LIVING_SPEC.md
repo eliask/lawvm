@@ -1362,3 +1362,20 @@ Corpus witness:
 - `113102015002` changes `126082015026`; oracle `113102015004` is fully
   consistent when the normal mixed-repeal parser owns the clause and the
   cross-act section-only helper stays silent.
+
+## 70. `peale sõna` is an insert-after text rewrite synonym
+
+Some Estonian amendment clauses use `peale sõna` where the usual source formula
+uses `pärast sõna`. Example from `121102025007`:
+
+- target: `§ 4 lõike 2 punkt 7`
+- anchor: `veoteed`
+- inserted tail: `, samuti liikluspiiranguga teelõiku, ...`
+
+This is not a structural insertion of a duplicate item and it must not append
+text after the existing item terminator. It is a bounded text rewrite on the
+explicit target, equivalent to `pärast sõna`.
+
+The payload witness family is:
+
+- `ee_peale_sona_insert_after_synonym`

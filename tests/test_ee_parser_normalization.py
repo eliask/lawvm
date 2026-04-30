@@ -6545,6 +6545,54 @@ def test_extract_ee_ops_treats_insert_after_sonu_as_insert_after_mode() -> None:
     assert ops[0].payload.text == "teenuse korralduse, terrorismiohvrile,"
 
 
+def test_extract_ee_ops_treats_peale_sona_textosa_as_insert_after_mode() -> None:
+    text = (
+        "paragrahvi 4 lõike 2 punkti 7 täiendatakse peale sõna „veoteed” "
+        "tekstiosaga „, samuti liikluspiiranguga teelõiku, kui eriloa omanikule "
+        "on sellel liiklemiseks antud liiklusseaduse § 12 lõike 5 alusel "
+        "kehtestatud õigusakti kohaselt liikluskeelu alane luba”;"
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "4"), ("subsection", "2"), ("item", "7"))
+    assert op.payload is not None
+    assert op.payload.attrs["old_text"] == "veoteed"
+    assert op.payload.attrs["rewrite_mode"] == "insert_after"
+    assert op.payload.attrs["source_family"] == "ee_peale_sona_insert_after_synonym"
+    assert op.witness_rule_id == "ee_peale_sona_insert_after_synonym"
+    assert op.payload.text.startswith("veoteed, samuti liikluspiiranguga teelõiku")
+
+
+def test_parse_ee_amendment_ops_lowers_peale_sona_archive_clause_as_text_replace() -> None:
+    archive = open_rt_archive(readonly=True)
+    xml = fetch_rt_xml("121102025007", archive)
+    title = (
+        "Eriveo tingimused ning eriveo teostamise ja erilubade väljaandmise kord "
+        "ning tee omanikule tekitatud kulutuste hüvitamise, eriloa menetlustasu "
+        "ja eritasu määrad"
+    )
+
+    ops = parse_ee_amendment_ops(xml, "ee/121102025007", target_title=title)
+
+    target_ops = [
+        op
+        for op in ops
+        if op.target.path == (("section", "4"), ("subsection", "2"), ("item", "7"))
+    ]
+    assert len(target_ops) == 1
+    op = target_ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.payload is not None
+    assert op.payload.attrs["old_text"] == "veoteed"
+    assert op.payload.attrs["rewrite_mode"] == "insert_after"
+    assert op.payload.attrs["source_family"] == "ee_peale_sona_insert_after_synonym"
+    assert op.witness_rule_id == "ee_peale_sona_insert_after_synonym"
+
+
 def test_extract_ee_ops_treats_lisatakse_after_sona_as_insert_after_mode() -> None:
     ops = extract_ee_ops(
         (
