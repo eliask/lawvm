@@ -2523,6 +2523,43 @@ def test_parse_ee_amendment_ops_keeps_real_bare_statute_insert_target_before_pay
     assert "§ 5 lõikes 1" in section_insert.payload.text
 
 
+def test_extract_ee_ops_emits_quoted_act_chapter_insert_before_payload_section_scope() -> None:
+    text = (
+        "Maaeluministri 20. juuli 2016. a määrust nr 45 "
+        "„Põllumajandustoodete töötlemise ja turustamise investeeringutoetus "
+        "suurprojektide elluviimiseks” täiendatakse 6. peatükiga järgmises "
+        "sõnastuses: „6. peatükk Rakendussätted § 24. Rakendussätted\x01 "
+        "(1) Toetuse saaja. (2) Teine.”."
+    )
+
+    ops = extract_ee_ops(text, OperationSource(statute_id="ee/test", raw_text=text))
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("chapter", "6"),)
+    assert ops[0].witness_rule_id == "ee_quoted_act_chapter_insert_target"
+    assert ops[0].payload is not None
+    assert ops[0].payload.text.startswith("6. peatükk Rakendussätted § 24")
+
+
+def test_parse_ee_amendment_ops_emits_real_quoted_act_chapter_insert() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("105082025001", archive),
+        "ee/105082025001",
+        target_title="Põllumajandustoodete töötlemise ja turustamise investeeringutoetus suurprojektide elluviimiseks",
+    )
+    archive.close()
+
+    chapter_insert = next(op for op in ops if op.target.path == (("chapter", "6"),))
+
+    assert chapter_insert.action is StructuralAction.INSERT
+    assert chapter_insert.witness_rule_id == "ee_quoted_act_chapter_insert_target"
+    assert chapter_insert.payload is not None
+    assert "§ 24. Rakendussätted" in chapter_insert.payload.text
+    assert "Lõiget 1 kohaldatakse alates 2025. aasta 1. maist." in chapter_insert.payload.text
+
+
 def test_extract_ee_ops_fans_out_mixed_text_replace_targets() -> None:
     ops = extract_ee_ops(
         (

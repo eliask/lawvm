@@ -1221,3 +1221,25 @@ Corpus witness:
   `sisuTekst`, while item 4 is an unnumbered `loige`; oracle `106122024011`
   materializes all items as subsection children after source act `106122024001`
   inserts items 5 and 6.
+
+## 64. Quoted-act chapter inserts keep chapter scope before payload sections
+
+Some amendment clauses cite a target regulation number and quoted title before
+the operative verb:
+
+`... määrust nr 45 „Title” täiendatakse 6. peatükiga järgmises sõnastuses: ...`
+
+The explicit source target is the new chapter, not the first section or
+subsection appearing inside the quoted chapter payload. The parser therefore
+emits one chapter insert operation under:
+
+- `ee_quoted_act_chapter_insert_target`
+
+This prevents payload-local markers such as `§ 24` and `(1)` from hijacking
+the operation target.
+
+Corpus witness:
+
+- `105082025001` inserts chapter 6 into `116072021008`; oracle
+  `105082025007` contains the resulting `6. peatükk / § 24` transitional
+  provisions.
