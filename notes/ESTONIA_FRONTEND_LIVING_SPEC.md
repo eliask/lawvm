@@ -1295,3 +1295,26 @@ Corpus witness:
 - `129062012059` inserts § 31 into `110112010011`; oracle `129062012064`
   contains the inserted section. The following `§ 2. Määrus jõustub...` is
   commencement metadata and must not become payload text.
+
+## 67. Numbered body items beat duplicate preamble recovery
+
+Some single-target amendment HTML has a normal numbered body item followed by
+an out-of-body appendix clause:
+
+`1) paragrahvi 2 tekst sõnastatakse...`
+
+`2) määruse lisa kehtestatakse uues sõnastuses (lisatud).`
+
+Preamble recovery can otherwise treat the appendix clause as another body
+replacement for the previously seen section and overwrite the real section
+payload. When old-format numbered-item extraction owns the body item and
+preamble recovery produces duplicate body mutations for the same target, the
+numbered-item extraction wins under:
+
+- `ee_old_format_numbered_items_preferred_over_preambul_recovery`
+
+Corpus witness:
+
+- `119052022010` replaces § 2 of `109072013008`; oracle `119052022011`
+  contains the § 2 list items. The following appendix-clause publication note is
+  not a second § 2 body replacement.

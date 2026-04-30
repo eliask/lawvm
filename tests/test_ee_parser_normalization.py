@@ -2661,6 +2661,30 @@ def test_parse_ee_amendment_ops_keeps_old_format_section_insert_payload_before_c
     assert "Määrus jõustub" not in section_insert.payload.text
 
 
+def test_parse_ee_amendment_ops_prefers_numbered_body_item_over_appendix_preamble_recovery() -> None:
+    archive = open_rt_archive(readonly=True)
+    ops = parse_ee_amendment_ops(
+        fetch_rt_xml("119052022010", archive),
+        "ee/119052022010",
+        target_title=(
+            "Töödeldud loomset proteiini, dikaltsiumfosfaati, trikaltsiumfosfaati või "
+            "veretooteid sisaldava sööda tootmise ja söötmise loa taotluse sisu- ja "
+            "vorminõuded ning taotluse menetlemise kord"
+        ),
+    )
+    archive.close()
+
+    body_ops = [op for op in ops if op.action is not StructuralAction.META]
+
+    assert len(body_ops) == 1
+    assert body_ops[0].action is StructuralAction.REPLACE
+    assert body_ops[0].target.path == (("section", "2"),)
+    assert body_ops[0].payload is not None
+    assert "soovib toota sööta" in body_ops[0].payload.text
+    assert "määruse lisa kehtestatakse" not in body_ops[0].payload.text
+    assert "ee_old_format_numbered_items_preferred_over_preambul_recovery" in body_ops[0].provenance_tags
+
+
 def test_extract_ee_ops_fans_out_mixed_text_replace_targets() -> None:
     ops = extract_ee_ops(
         (
