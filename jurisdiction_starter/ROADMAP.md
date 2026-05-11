@@ -11,12 +11,17 @@ It is written to keep the frontend honest at every milestone.
 The intended end state is:
 
 - source-honest archival of all important source families,
+- archive-first or clone-first local replay substrate,
+- inventory-first corpus reporting,
 - typed source record and capability reporting,
 - current-surface IR parse,
 - official-act or structured-amendment semantic lowering,
 - explicit clause/payload/effect waists,
+- preserved unsupported, skipped, and rejected rows,
 - deterministic replay with typed adjudications,
 - verification against an independent oracle,
+- findings JSONL with stable rule ids,
+- evidence-pack summaries separating claims from non-claims,
 - historical rebuild/recovery for contaminated current surfaces,
 - reporting that partitions replay defects from source sparsity.
 
@@ -29,11 +34,14 @@ If the jurisdiction cannot reach that end state with public sources, the roadmap
 ## M0. Inventory honesty
 Deliverables:
 - P0 inventory
+- local substrate manifest
 - source metadata report
 - current/public/historical availability map
+- skipped/unsupported source-unit rows
 
 Exit gate:
 - reviewers know exactly what source families exist.
+- reviewers know which source units are claimable and which are non-claims.
 
 ## M1. Acquisition and provenance
 Deliverables:
@@ -103,6 +111,8 @@ Deliverables:
 - P11 work queues / progress reports
 - coverage and blocker reports
 - agent task decomposition
+- findings JSONL
+- evidence-pack claim/non-claim summaries
 
 Exit gate:
 - the jurisdiction can scale by bounded task cards.
@@ -142,14 +152,18 @@ You likely get:
 The frontend is near LawVM ideal when all are true:
 
 - [ ] base seed source is honest
+- [ ] replay substrate is local and inventoried before claims
 - [ ] amendment semantics source is honest
 - [ ] current IR exists
 - [ ] official-act / structured-amendment surface exists
 - [ ] clause surface exists
 - [ ] payload surface exists
 - [ ] canonical effects exist
+- [ ] unsupported, skipped, and rejected rows remain visible
 - [ ] replay exists with invariants and typed skips
 - [ ] verification exists with partitions
+- [ ] findings JSONL uses stable rule ids
+- [ ] evidence-pack summary separates claims from non-claims
 - [ ] historical recovery plan exists
 - [ ] reports/work queues exist
 - [ ] agents can work via bounded task cards without re-deriving architecture

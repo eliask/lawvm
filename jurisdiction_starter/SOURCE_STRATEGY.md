@@ -52,6 +52,9 @@ For each source family, define:
 
 - real locator form,
 - canonical logical locator form,
+- local substrate form (`archive`, `extracted_archive`, `git_clone`,
+  `fixture_dir`, `manifest`, or explicit `blocked`),
+- local path or manifest field that will identify the bytes or git object,
 - storage class (`html`, `xml`, `pdf`, `json`, `text`, etc.),
 - immutability expectations,
 - refresh TTL,
@@ -60,6 +63,20 @@ For each source family, define:
 ### Required rule
 
 Raw source bytes must remain archived separately from any cleaned or derived text.
+
+Replay, verification, and audit jobs consume local substrate only. Network
+fetching is an acquisition phase that must produce a local archive, clone,
+fixture, or manifest before replay begins.
+
+### Local substrate table
+
+| Source family | Local substrate | Required identity | Replay role | If absent, emitted row/status |
+|---|---|---|---|---|
+|  |  | content hash / git object / archive member | base / amendment / oracle / witness / auxiliary | skipped / unsupported / blocked |
+|  |  |  |  |  |
+
+The table records what LawVM reads. It does not itself prove legal authority;
+authority remains a frontend-local source-role claim.
 
 ---
 
@@ -131,3 +148,23 @@ Template:
 > 4. `<oracle or explicit absence>`
 
 If any one of those is absent, the frontend must downgrade its capability claim.
+
+---
+
+## 9. Inventory-first contract
+
+Before the frontend claims parsing, replay, or verification support, it must be
+able to inventory the declared local substrate.
+
+Inventory must preserve:
+
+- input roots and source artifact ids,
+- discovered statute, publication, amendment, transition, or local unit ids,
+- artifact-to-unit links,
+- source role for each artifact,
+- content hash or git object id where available,
+- omitted, skipped, unsupported, or blocked artifact records with reasons,
+- assumptions used to group artifacts into transitions.
+
+An empty accepted-operation set is still meaningful if the inventory explains
+which units existed and why they were not claimable.

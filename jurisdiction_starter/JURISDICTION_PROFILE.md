@@ -23,18 +23,20 @@ Anything uncertain should be labeled as uncertain. Do not fill gaps with assumpt
 
 For each source family, say whether it exists, how trustworthy it is, and what role it can play.
 
-| Source family | Exists? | Trust level | Covers current? | Covers history? | Replay semantics? | Verification oracle? | Notes |
-|---|---|---:|---:|---:|---:|---:|---|
-| Current consolidated text |  |  |  |  |  |  |  |
-| Official promulgation acts |  |  |  |  |  |  |  |
-| Amendment register |  |  |  |  |  |  |  |
-| Structured amendment feed |  |  |  |  |  |  |  |
-| Commencement / in-force source |  |  |  |  |  |  |  |
-| Parliamentary package / preparatory works |  |  |  |  |  |  |  |
-| Historical snapshots |  |  |  |  |  |  |  |
-| Official PDF scan only |  |  |  |  |  |  |  |
+| Source family | Exists? | Local substrate | Trust level | Covers current? | Covers history? | Replay semantics? | Verification oracle? | Notes |
+|---|---|---|---:|---:|---:|---:|---:|---|
+| Current consolidated text |  | archive / clone / fixture / manifest / blocked |  |  |  |  |  |  |
+| Official promulgation acts |  | archive / clone / fixture / manifest / blocked |  |  |  |  |  |  |
+| Amendment register |  | archive / clone / fixture / manifest / blocked |  |  |  |  |  |  |
+| Structured amendment feed |  | archive / clone / fixture / manifest / blocked |  |  |  |  |  |  |
+| Commencement / in-force source |  | archive / clone / fixture / manifest / blocked |  |  |  |  |  |  |
+| Parliamentary package / preparatory works |  | archive / clone / fixture / manifest / blocked |  |  |  |  |  |  |
+| Historical snapshots |  | archive / clone / fixture / manifest / blocked |  |  |  |  |  |  |
+| Official PDF scan only |  | archive / clone / fixture / manifest / blocked |  |  |  |  |  |  |
 
 Write a short paragraph explaining the trustworthy source chain for this jurisdiction.
+If a source family has no local substrate plan, say which skipped, unsupported,
+or blocked inventory row will represent that absence.
 
 ---
 
@@ -154,6 +156,10 @@ Template:
 > We aim first to support `<instrument family>` for `<date range>` using `<base source>` as the base seed, `<amendment source>` for semantic lowering, and `<oracle source>` for verification. The first supported effect families are `<...>`. The frontend explicitly does not yet support `<...>`.
 
 This paragraph should be short and strict.
+
+Also state the first evidence claim:
+
+> The first evidence pack will claim only rows with status `<accepted/replayed/audited>`. Rows with status `<unsupported/skipped/rejected/failed/unresolved>` remain non-claims and are counted separately.
 
 ---
 

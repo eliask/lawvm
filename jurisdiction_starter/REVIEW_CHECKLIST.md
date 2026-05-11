@@ -7,9 +7,11 @@ Use this before merging any meaningful frontend work.
 ## A. Constitution checks
 
 - [ ] The change preserves source honesty.
+- [ ] Replay/audit consumes local archive, clone, fixture, or manifest substrate.
 - [ ] The change does not collapse multiple phase claims into one opaque parser/replayer.
 - [ ] The change does not use the oracle as replay substrate.
 - [ ] Unsupported phenomena became typed adjudications or blocked capability.
+- [ ] Skipped and rejected rows remain visible with reasons.
 - [ ] Provenance is still recoverable.
 
 ---
@@ -18,6 +20,7 @@ Use this before merging any meaningful frontend work.
 
 - [ ] The owning phase is clear.
 - [ ] Inputs/outputs are explicit.
+- [ ] Inventory is emitted before replay or verification claims.
 - [ ] The new artifact is serializable.
 - [ ] The artifact is inspectable without re-running the whole stack.
 - [ ] Compression, if any, still emits a synthetic equivalent artifact.
@@ -29,6 +32,7 @@ Use this before merging any meaningful frontend work.
 - [ ] Source pathology is not mislabeled as replay defect.
 - [ ] Compare-shape is not mislabeled as replay defect.
 - [ ] Replay bug claims have replay-owned evidence.
+- [ ] Findings JSONL contains stable rule ids for new findings.
 - [ ] New local kinds are genuinely local.
 - [ ] No catch-all bucket was introduced.
 
@@ -40,6 +44,8 @@ Use this before merging any meaningful frontend work.
 - [ ] The fixture would fail without the new behavior.
 - [ ] Improvement is not due only to compare normalization.
 - [ ] Unsupported cases remain visible in reports.
+- [ ] Skipped/rejected cases remain visible in reports.
+- [ ] Evidence-pack summary separates claim and non-claim counts.
 - [ ] End-state verification still uses an independent oracle.
 
 ---

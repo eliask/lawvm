@@ -30,6 +30,8 @@ Agents may work independently only if all of the following exist:
 - completed `PHASE_PLAN.md`,
 - completed `ADJUDICATION_PLAN.md`,
 - completed `EVAL_PLAN.md`,
+- declared local substrate and inventory manifest shape,
+- declared findings JSONL rule-id policy,
 - a concrete task card for the bounded unit of work,
 - at least one fixture for the task.
 
@@ -61,6 +63,7 @@ Every agent task must end with:
 
 - code changes,
 - updated artifact schema or example if needed,
+- inventory, row, finding, or evidence-pack impact explicitly stated,
 - at least one fixture,
 - a machine-readable report or test result,
 - a short note stating what remains unsupported.
@@ -99,6 +102,8 @@ The agent must stop and escalate when:
 - a new adjudication family seems necessary,
 - the task needs unbounded heuristics across multiple phases,
 - the agent can only proceed by using current text as historical proof,
+- the task would drop unsupported, skipped, or rejected rows from evidence,
+- the task would treat live network fetches as replay substrate,
 - the task would require changing shared LawVM core types materially.
 
 ---
@@ -121,9 +126,12 @@ Reject the change if any of these are true:
 Independent agent development becomes realistic when the jurisdiction starter has already done the hard cognitive work:
 
 - source families are ranked,
+- local substrate and inventory outputs are declared,
 - waists are explicit,
 - artifacts are named,
 - unsupported space is declared,
+- rejected and skipped row handling is declared,
+- findings JSONL and evidence-pack summary rules are declared,
 - evals are ready,
 - task units are small.
 

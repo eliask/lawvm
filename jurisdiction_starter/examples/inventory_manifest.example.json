@@ -1,0 +1,54 @@
+{
+  "kind": "<code>_inventory_manifest",
+  "contract_version": "corpus_replay_evidence_v0",
+  "corpus_id": "<CORPUS ID>",
+  "frontend_id": "<code>",
+  "run_id": "<RUN ID>",
+  "input_roots": [
+    {
+      "root_id": "root-archive-1",
+      "substrate_kind": "archive",
+      "path": "data/<code>/<archive>.zip"
+    }
+  ],
+  "source_artifacts": [
+    {
+      "artifact_id": "artifact-amending-act-1",
+      "source_family": "official_promulgation_act",
+      "source_role": "primary",
+      "jurisdiction_source_id": "<AMENDING ACT ID>",
+      "local_path": "data/<code>/<archive>.zip",
+      "archive_member": "acts/<AMENDING ACT ID>.xml",
+      "content_sha256": "<sha256>",
+      "status": "inventoried"
+    }
+  ],
+  "source_units": [
+    {
+      "source_unit_id": "unit-amending-act-1-section-2",
+      "artifact_id": "artifact-amending-act-1",
+      "unit_kind": "amendment_section",
+      "locator": "xml:/act/body/section[2]",
+      "status": "eligible"
+    },
+    {
+      "source_unit_id": "unit-amending-act-1-annex-1",
+      "artifact_id": "artifact-amending-act-1",
+      "unit_kind": "annex",
+      "locator": "xml:/act/annex[1]",
+      "status": "skipped",
+      "reason": "annex parsing is outside the first replay milestone",
+      "blocking": false,
+      "finding_ids": [
+        "finding-skipped-annex-lane"
+      ]
+    }
+  ],
+  "transition_assumptions": [
+    {
+      "assumption_id": "assumption-1",
+      "message": "This example groups one amending act with one base act for one transition.",
+      "finding_ids": []
+    }
+  ]
+}

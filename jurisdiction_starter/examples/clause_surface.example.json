@@ -5,6 +5,9 @@
   "clauses": [
     {
       "clause_id": "c1",
+      "source_artifact_id": "artifact-amending-act-1",
+      "source_unit_id": "unit-amending-act-1-section-2",
+      "source_locator": "xml:/act/body/section[2]",
       "instruction_family": "replace_section",
       "raw_text": "Section 3 shall have the following wording",
       "target_hints": [
@@ -13,7 +16,24 @@
           "label": "3"
         }
       ],
-      "confidence": "direct"
+      "confidence": "direct",
+      "status": "accepted",
+      "finding_ids": []
+    },
+    {
+      "clause_id": "c2",
+      "source_artifact_id": "artifact-amending-act-1",
+      "source_unit_id": "unit-amending-act-1-section-4",
+      "source_locator": "xml:/act/body/section[4]",
+      "instruction_family": "unknown_table_edit",
+      "raw_text": "The table is amended as follows...",
+      "target_hints": [],
+      "confidence": "unresolved",
+      "status": "rejected",
+      "rejection_reason": "target family not proved by this parser milestone",
+      "finding_ids": [
+        "finding-rejected-table-target"
+      ]
     }
   ]
 }

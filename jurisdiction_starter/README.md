@@ -16,6 +16,7 @@ This starter is downstream of:
 - `notes/LAWVM_CONSTITUTION.md`
 - `notes/CROSS_JURISDICTION_ARCHITECTURE.md`
 - `notes/SOURCE_PATHOLOGY_AND_ADJUDICATION_SPEC.md`
+- `notes/CORPUS_REPLAY_EVIDENCE_CONTRACT.md`
 
 Those documents govern this starter. If this starter conflicts with them, the
 current LawVM constitution and cross-jurisdiction contracts win.
@@ -45,9 +46,14 @@ The starter is considered ready when a reviewer can answer all of the following 
 - What is the base-source story?
 - What is the amendment-source story?
 - What is the verification/oracle story?
+- What local archive, clone, fixture, or manifest is the replay substrate?
+- What inventory manifest is emitted before any replay claim?
+- Where are unsupported, skipped, and rejected rows preserved?
+- Where is findings JSONL emitted, and which stable rule ids can appear?
 - What phases are real, compressed, synthetic, or blocked?
 - What are the first executable artifacts?
 - What does “replay-capable” mean for this jurisdiction?
+- What evidence-pack summary separates claimed rows from non-claimed rows?
 - What evidence would prove that a divergence is source-sparse rather than replay-bug?
 
 ---
@@ -62,6 +68,8 @@ It is not for:
 - writing production code directly,
 - hiding gaps behind optimistic TODOs,
 - claiming replay support from current text alone,
+- treating network acquisition as replay,
+- reporting only accepted operations,
 - letting agents improvise architecture from exemplars.
 
 ---
@@ -77,6 +85,32 @@ A completed starter should make it easy to derive:
 - review criteria for whether the work followed LawVM philosophy.
 
 If this directory is good, an agent should be able to build one bounded phase with high assurance and low architectural drift.
+
+---
+
+## Corpus evidence floor
+
+Every jurisdiction starter must declare the minimum evidence surfaces from
+`notes/CORPUS_REPLAY_EVIDENCE_CONTRACT.md`.
+
+Required starter commitments:
+
+- Replay and audit consume a local source substrate: archive files, extracted
+  archive directories, local git clones, fixture directories, or manifests that
+  point to them. Live network reads belong to acquisition, not replay.
+- Inventory comes first. A run must be able to emit an inventory manifest before
+  parser, compiler, replay, or verification claims are made.
+- Unsupported, skipped, and rejected source units or operation-shaped rows are
+  preserved with status, reason, blocking disposition, and source locator. They
+  must not disappear from reports just because they were not accepted.
+- Findings JSONL is the shared low-friction evidence stream. Stable `rule_id`
+  values matter more than prose messages.
+- Evidence-pack summaries distinguish claimed rows from non-claimed rows:
+  accepted/replayed/audited claims are counted separately from unsupported,
+  skipped, rejected, failed, blocked, unresolved, or non-claim rows.
+
+Example surfaces live under `examples/` and should be copied or narrowed for the
+jurisdiction rather than weakened.
 
 ---
 
