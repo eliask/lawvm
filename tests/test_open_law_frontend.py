@@ -620,6 +620,8 @@ def test_evidence_pack_writes_summary_and_machine_reports(tmp_path) -> None:
     assert "## What LawVM Claims" in summary_text
     assert "- source clone HEAD:" in summary_text
     assert "- codified clone HEAD:" in summary_text
+    assert "- LawVM generator commit:" in summary_text
+    assert "- LawVM generator dirty:" in summary_text
     assert '"clean_replace"' in pack.exemplars_path.read_text(encoding="utf-8")
     manifest = json.loads((tmp_path / "pack" / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["local_repositories"]["source"]["label"] == "maryland-dsd/law-xml"
