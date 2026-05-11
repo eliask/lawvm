@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from lawvm.tools import bench_curate
 
 
@@ -107,6 +109,34 @@ def test_bench_curate_partitions_source_pathology_from_structured_rows_when_code
     assert core == ""
     assert suspect == "43,1994/1472"
     assert "DESTRUCTIVE_SHAPE_LOSS_RISK@35 §#partial_body_only" in audit
+
+
+def test_bench_curate_rejects_malformed_structured_source_pathology_rows(tmp_path):
+    corpus = tmp_path / "bench_corpus.csv"
+    corpus.write_text("43,1994/1472\n", encoding="utf-8")
+
+    strict_run = tmp_path / "strict.csv"
+    strict_run.write_text(
+        "\n".join(
+            [
+                "statute_id,n_canonical,n_failed,n_projection_rows,n_source_pathologies,projection_kinds,source_pathology_codes,source_pathology_rows_json,fail_reasons,source_incomplete,chain_length,source_available,elapsed_s,error",
+                '1994/1472,0,0,2,1,ELAB.STRICT_REJECTED_SOURCE_PATHOLOGY,,\"[{""code"":""DESTRUCTIVE_SHAPE_LOSS_RISK""},""silently-dropped-before"",42]\",APPLY.SOURCE_PATHOLOGY_DETECTED,0,43,1,0.50,',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    args = SimpleNamespace(
+        corpus=str(corpus),
+        output_dir=str(tmp_path),
+        run=None,
+        strict_run=[str(strict_run)],
+        oracle_suspect_check="off",
+    )
+
+    with pytest.raises(ValueError, match="non-object entries at indexes: 1, 2"):
+        bench_curate.main(args)
 
 
 def test_bench_curate_ignores_projection_kind_only_source_pathology_from_strict_run(tmp_path):

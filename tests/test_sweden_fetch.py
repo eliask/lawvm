@@ -37,6 +37,7 @@ from lawvm.sweden.fetch import (
     ingest_se_scraped_doc_html_map,
     load_se_bundle_from_archive,
     load_se_current_ir_from_archive,
+    load_se_backfill_official_history_from_archive,
     load_se_official_act_from_archive,
     load_se_official_clause_surface_from_archive,
     load_se_official_elaboration_from_archive,
@@ -58,6 +59,7 @@ from lawvm.sweden.fetch import (
     se_official_payload_surface_locator,
     se_rk_current_url,
     se_bundle_manifest_locator,
+    se_backfill_official_history_locator,
     se_official_doc_locator,
     se_official_pdf_locator,
     se_current_ir_locator,
@@ -1277,6 +1279,20 @@ def test_load_se_official_ops_rejects_non_object_entries() -> None:
 
     with pytest.raises(ValueError, match="non-object op entries at indexes: 1, 2"):
         load_se_official_ops_from_archive(archive, "2026:286")
+
+
+def test_load_se_backfill_official_history_rejects_non_object_entries() -> None:
+    archive = _FakeArchive(
+        stored={
+            se_backfill_official_history_locator(): json.dumps(
+                [{"sfs_id": "2026:286"}, "silently-dropped-before", 42],
+                ensure_ascii=False,
+            ).encode("utf-8")
+        }
+    )
+
+    with pytest.raises(ValueError, match="non-object entries at indexes: 1, 2"):
+        load_se_backfill_official_history_from_archive(archive)
 
 
 def test_build_se_official_effects_plan_records_planned_canonical_effects_without_lowering() -> None:

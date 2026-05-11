@@ -959,7 +959,13 @@ def load_se_backfill_official_history_from_archive(archive: _ArchiveLike) -> Opt
     data = json.loads(raw.decode("utf-8"))
     if not isinstance(data, list):
         raise ValueError(f"archive locator {se_backfill_official_history_locator()} did not decode to a JSON array")
-    return [item for item in data if isinstance(item, dict)]
+    malformed_indexes = [index for index, item in enumerate(data) if not isinstance(item, dict)]
+    if malformed_indexes:
+        indexes = ", ".join(str(index) for index in malformed_indexes)
+        raise ValueError(
+            f"archive locator {se_backfill_official_history_locator()} contains non-object entries at indexes: {indexes}"
+        )
+    return data
 
 
 def load_se_backfill_official_completeness_from_archive(archive: _ArchiveLike) -> Optional[dict]:

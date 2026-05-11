@@ -14,7 +14,7 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple, cast
 
 from lawvm.finland.corpus import (
     get_consolidated_oracle_suspect_cache_only,
@@ -113,7 +113,17 @@ def _parse_source_pathology_rows_json(raw: str) -> List[Dict[str, Any]]:
         return []
     if not isinstance(loaded, list):
         return []
-    return [item for item in loaded if isinstance(item, dict)]
+    rows: List[Dict[str, Any]] = []
+    malformed_indexes: list[int] = []
+    for index, item in enumerate(loaded):
+        if isinstance(item, dict):
+            rows.append(cast(Dict[str, Any], item))
+            continue
+        malformed_indexes.append(index)
+    if malformed_indexes:
+        indexes = ", ".join(str(index) for index in malformed_indexes)
+        raise ValueError(f"source_pathology_rows_json contains non-object entries at indexes: {indexes}")
+    return rows
 
 
 def _format_source_pathology_detail(

@@ -391,7 +391,17 @@ def _normalize_compiler_observations(
 def _compiler_projection_rows(
     projection_rows: Iterable[Dict[str, Any]] | None,
 ) -> List[Dict[str, Any]]:
-    return [dict(row) for row in (projection_rows or ()) if isinstance(row, dict)]
+    rows: List[Dict[str, Any]] = []
+    malformed_indexes: list[int] = []
+    for index, row in enumerate(projection_rows or ()):
+        if isinstance(row, dict):
+            rows.append(dict(row))
+            continue
+        malformed_indexes.append(index)
+    if malformed_indexes:
+        indexes = ", ".join(str(index) for index in malformed_indexes)
+        raise ValueError(f"compiler projection rows contain non-object entries at indexes: {indexes}")
+    return rows
 
 
 def _compiler_observation_summary(
@@ -788,11 +798,29 @@ def _claim_trigger_pairs(claims: Iterable[Dict]) -> List[str]:
     return sorted(pairs)
 
 
+def _bundle_dict_rows(bundle: Dict, field: str) -> List[Dict[str, Any]]:
+    raw_rows = bundle.get(field, []) or []
+    if not isinstance(raw_rows, list):
+        raise ValueError(f"evidence bundle field {field} did not decode to a JSON array")
+    rows: List[Dict[str, Any]] = []
+    malformed_indexes: list[int] = []
+    for index, item in enumerate(raw_rows):
+        if isinstance(item, dict):
+            rows.append(dict(item))
+            continue
+        malformed_indexes.append(index)
+    if malformed_indexes:
+        statute_id = str(bundle.get("statute_id") or "")
+        indexes = ", ".join(str(index) for index in malformed_indexes)
+        raise ValueError(
+            f"evidence bundle {statute_id} field {field} contains non-object entries at indexes: {indexes}"
+        )
+    return rows
+
+
 def _evidence_context_diagnostics(bundle: Dict) -> List[Dict[str, str]]:
     diagnostics: List[Dict[str, str]] = []
-    for item in bundle.get("evidence_context_diagnostics", []) or []:
-        if not isinstance(item, dict):
-            continue
+    for item in _bundle_dict_rows(bundle, "evidence_context_diagnostics"):
         diagnostics.append({
             "kind": str(item.get("kind") or ""),
             "rail": str(item.get("rail") or ""),
@@ -1278,7 +1306,7 @@ def _review_bundles(
                 if str(item.get("selected_kind") or "")
             }
         )
-        source_pathologies = [item for item in (bundle.get("source_pathologies") or []) if isinstance(item, dict)]
+        source_pathologies = _bundle_dict_rows(bundle, "source_pathologies")
         evidence_context_diagnostics = _evidence_context_diagnostics(bundle)
         rows.append(
             {

@@ -1951,12 +1951,17 @@ def _load_manual_override_counts(path: Path) -> dict[str, int]:
         return counts
     if not isinstance(loaded, list):
         return counts
-    for entry in loaded:
+    malformed_indexes: list[int] = []
+    for index, entry in enumerate(loaded):
         if not isinstance(entry, dict):
+            malformed_indexes.append(index)
             continue
         amendment_id = str(entry.get("amendment_id", "")).strip()
         if amendment_id:
             counts[amendment_id] = counts.get(amendment_id, 0) + 1
+    if malformed_indexes:
+        indexes = ", ".join(str(index) for index in malformed_indexes)
+        raise ValueError(f"manual corrigendum overrides contain non-object entries at indexes: {indexes}")
     return counts
 
 
@@ -1969,7 +1974,17 @@ def _load_manual_override_entries(path: Path) -> list[dict]:
         return []
     if not isinstance(loaded, list):
         return []
-    return [entry for entry in loaded if isinstance(entry, dict)]
+    entries: list[dict] = []
+    malformed_indexes: list[int] = []
+    for index, entry in enumerate(loaded):
+        if isinstance(entry, dict):
+            entries.append(entry)
+            continue
+        malformed_indexes.append(index)
+    if malformed_indexes:
+        indexes = ", ".join(str(index) for index in malformed_indexes)
+        raise ValueError(f"manual corrigendum overrides contain non-object entries at indexes: {indexes}")
+    return entries
 
 
 def _manual_entry_matches_row(manual_entry: dict, row: dict) -> bool:
@@ -4284,4 +4299,3 @@ def register_cli(sub: Any) -> None:
         "--json", action="store_true",
         help="emit JSON instead of plain text",
     )
-
