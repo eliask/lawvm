@@ -74,6 +74,51 @@ def test_report_query_filters_direct_finding_rows_by_rule_and_phase(tmp_path) ->
     assert payload[0]["validation_issues"] == []
 
 
+def test_report_query_expands_nested_evidence_finding_rows(tmp_path) -> None:
+    path = tmp_path / "bundle.jsonl"
+    path.write_text(
+        json.dumps({
+            "statute_id": "1990/1295",
+            "evidence": {
+                "finding_rows": [
+                    {
+                        "finding_id": "finland:1990/1295:legal_pit:evidence_context_degraded:chain_completeness",
+                        "frontend_id": "finland",
+                        "family": "evidence_context_degraded",
+                        "rule_id": "evidence_context_degraded:chain_completeness",
+                        "phase": "evidence_context",
+                        "message": "chain rail offline",
+                        "source_artifact_id": "1990/1295",
+                        "blocking": True,
+                        "strict_disposition": "block",
+                        "quirks_disposition": "record_degraded",
+                        "evidence": {
+                            "kind": "evidence_context_degraded",
+                            "rail": "chain_completeness",
+                        },
+                    }
+                ],
+            },
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    records = load_report_query_records((path,), validate=True)
+    selected = filter_report_query_records(
+        records,
+        ReportQueryFilters(
+            rule_id="evidence_context_degraded:chain_completeness",
+            phase="evidence_context",
+            blocking=True,
+        ),
+    )
+
+    assert len(selected) == 1
+    assert selected[0].validation_issues == ()
+    assert "evidence_context_degraded:chain_completeness" in format_report_query_rows(selected)
+
+
 def test_report_query_validation_reports_malformed_rows(tmp_path) -> None:
     path = tmp_path / "bad.jsonl"
     path.write_text(

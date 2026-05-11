@@ -72,6 +72,8 @@ class ReviewRowView:
     source_pathologies: tuple[dict[str, Any], ...] = ()
     alternative_replay_sections: tuple[str, ...] = ()
     html_noncommensurable_reason: str = ""
+    evidence_context_degradation_count: int = 0
+    evidence_context_degradation_rails: tuple[str, ...] = ()
     sparse_leftover_labels: tuple[str, ...] = ()
     sparse_blockers: tuple[dict[str, Any], ...] = ()
     sparse_slot_binding_count: int = 0
@@ -108,7 +110,10 @@ class ReviewSummaryView:
     by_source_pathology_diagnostic_reason: dict[str, int] = field(default_factory=dict)
     by_alternative_replay_section: dict[str, int] = field(default_factory=dict)
     by_html_noncommensurable_reason: dict[str, int] = field(default_factory=dict)
+    by_evidence_context_degradation_rail: dict[str, int] = field(default_factory=dict)
+    by_evidence_context_degradation_exception: dict[str, int] = field(default_factory=dict)
     by_mixed_replay_risk_reason: dict[str, int] = field(default_factory=dict)
+    evidence_context_degraded_count: int = 0
     rows: tuple[ReviewRowView, ...] = ()
 
 
@@ -231,6 +236,12 @@ def _coerce_review_rows(raw: object) -> tuple[ReviewRowView, ...]:
                 ),
                 alternative_replay_sections=_coerce_str_tuple(mapping.get("alternative_replay_sections", ())),
                 html_noncommensurable_reason=str(mapping.get("html_noncommensurable_reason") or ""),
+                evidence_context_degradation_count=int(
+                    mapping.get("evidence_context_degradation_count", 0) or 0
+                ),
+                evidence_context_degradation_rails=_coerce_str_tuple(
+                    mapping.get("evidence_context_degradation_rails", ())
+                ),
                 sparse_leftover_labels=_coerce_str_tuple(mapping.get("sparse_leftover_labels", ())),
                 sparse_blockers=tuple(
                     item2 for item2 in mapping.get("sparse_blockers", ()) or () if isinstance(item2, dict)
@@ -279,7 +290,14 @@ def _coerce_review_summary(review: object) -> ReviewSummaryView:
         by_source_pathology_diagnostic_reason=_coerce_int_map(review_map.get("by_source_pathology_diagnostic_reason", {})),
         by_alternative_replay_section=_coerce_int_map(review_map.get("by_alternative_replay_section", {})),
         by_html_noncommensurable_reason=_coerce_int_map(review_map.get("by_html_noncommensurable_reason", {})),
+        by_evidence_context_degradation_rail=_coerce_int_map(
+            review_map.get("by_evidence_context_degradation_rail", {})
+        ),
+        by_evidence_context_degradation_exception=_coerce_int_map(
+            review_map.get("by_evidence_context_degradation_exception", {})
+        ),
         by_mixed_replay_risk_reason=_coerce_int_map(review_map.get("by_mixed_replay_risk_reason", {})),
+        evidence_context_degraded_count=int(review_map.get("evidence_context_degraded_count", 0) or 0),
         rows=_coerce_review_rows(review_map.get("rows", ())),
     )
 
@@ -818,6 +836,19 @@ def _print_evidence_bundle(bundle: Dict) -> None:
         print(f"Fail reasons : {', '.join(bundle['strict_fail_reasons'])}")
     print(f"Primary tier : {bundle['primary_proof_tier']}")
     print(f"Tiers        : {', '.join(bundle['proof_tiers'])}")
+    evidence_context_diagnostics = [
+        item
+        for item in bundle.get("evidence_context_diagnostics", []) or []
+        if isinstance(item, dict)
+    ]
+    if evidence_context_diagnostics:
+        print("Evidence context degraded:")
+        for item in evidence_context_diagnostics:
+            print(
+                "  "
+                f"{item.get('rail', '')} {item.get('exception_type', '')}: "
+                f"{item.get('message', '')}"
+            )
     compiler_observations = _coerce_compiler_observations(bundle.get("compiler_observations"))
     if any(
         (
@@ -1117,6 +1148,18 @@ def _print_review_summary(review: Dict) -> None:
             print(f"  {reason:<34} {count}")
         print()
 
+    if summary.by_evidence_context_degradation_rail:
+        print("Evidence Context Degraded Rails:")
+        for rail, count in summary.by_evidence_context_degradation_rail.items():
+            print(f"  {rail:<34} {count}")
+        print()
+
+    if summary.by_evidence_context_degradation_exception:
+        print("Evidence Context Degradation Exceptions:")
+        for exception_type, count in summary.by_evidence_context_degradation_exception.items():
+            print(f"  {exception_type:<34} {count}")
+        print()
+
     if summary.by_mixed_replay_risk_reason:
         print("Mixed Replay Risk Reasons:")
         for reason, count in summary.by_mixed_replay_risk_reason.items():
@@ -1140,6 +1183,7 @@ def _print_review_summary(review: Dict) -> None:
         source_pathologies = _summarize_source_pathologies(row.source_pathologies)
         alternative_replay_sections = ", ".join(row.alternative_replay_sections) or "-"
         html_noncommensurable_reason = row.html_noncommensurable_reason or "-"
+        evidence_context_rails = ", ".join(row.evidence_context_degradation_rails) or "-"
         leftover_labels = ", ".join(row.sparse_leftover_labels) or "-"
         sparse_blockers = ", ".join(
             f"{item.get('source_statute', '')}@{item.get('section', '')}"
@@ -1155,6 +1199,8 @@ def _print_review_summary(review: Dict) -> None:
             f"source_pathology=[{source_pathologies}] "
             f"alternative_replay=[{alternative_replay_sections}] "
             f"html_noncommensurable=[{html_noncommensurable_reason}] "
+            f"evidence_context_degraded={row.evidence_context_degradation_count} "
+            f"evidence_context_rails=[{evidence_context_rails}] "
             f"sparse_bindings={row.sparse_slot_binding_count} "
             f"sparse_leftovers={row.sparse_leftover_count} "
             f"sparse_leftover_labels=[{leftover_labels}] "

@@ -1180,6 +1180,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="keep only bundles containing this HTML/XML noncommensurable reason",
     )
     evidence_review_p.add_argument(
+        "--evidence-context-degraded",
+        action="store_true",
+        help="keep only bundles where an evidence-context rail degraded",
+    )
+    evidence_review_p.add_argument(
+        "--evidence-context-rail",
+        default="",
+        help="keep only bundles where this evidence-context rail degraded",
+    )
+    evidence_review_p.add_argument(
         "--trigger-source", default="", help="keep only bundles with this trigger observation source"
     )
     evidence_review_p.add_argument(
