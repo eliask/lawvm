@@ -2428,11 +2428,25 @@ def _append_no_replay_adjudication(
     )
 
 
+def _no_path_label(path: tree_ops.Path) -> str:
+    return "/".join(f"{kind}:{label}" for kind, label in path)
+
+
+def _no_replay_payload_detail(payload: Optional[IRNode]) -> dict[str, str]:
+    if payload is None:
+        return {}
+    return {
+        "payload_kind": _no_kind_value(payload.kind),
+        "payload_label": payload.label or "",
+    }
+
+
 def apply_no_ops(
     statute: IRStatute,
     ops: List[LegalOperation],
     adjudications_out: Optional[List[CompileAdjudication]] = None,
     strict_invariants: bool = True,
+    strict_action_family: bool = False,
 ) -> IRStatute:
     """Apply a minimal structural Norway operation set to a statute tree.
 
@@ -2533,6 +2547,28 @@ def apply_no_ops(
         raise ValueError(
             f"Norway replay invariant violation after {op.action} {op.target.path!r} "
             f"from {source_id or '<unknown>'}: {joined}"
+        )
+
+    def _record_action_family_recovery(
+        *,
+        kind: str,
+        message: str,
+        op: LegalOperation,
+        detail: dict[str, str],
+    ) -> None:
+        _append_no_replay_adjudication(
+            adjudications_out,
+            kind=kind,
+            message=message,
+            op=op,
+            detail=detail,
+        )
+        if not strict_action_family:
+            return
+        source_id = op.source.statute_id if op.source else ""
+        raise ValueError(
+            f"Norway replay action-family recovery {kind} after {op.action} "
+            f"{op.target.path!r} from {source_id or '<unknown>'}"
         )
 
     for op, renumber_sources in ordered_ops:
@@ -2664,6 +2700,19 @@ def apply_no_ops(
                             op.target.leaf_label(),
                         )
                     ):
+                        _record_action_family_recovery(
+                            kind="no_replay_replace_recovered_by_insert",
+                            message="Norway replay recovered missing-target replace by inserting a sentence.",
+                            op=op,
+                            detail={
+                                "rule_id": "no_replace_missing_sentence_append_to_resolved_parent",
+                                "original_action": "replace",
+                                "executed_action": "insert",
+                                "target": str(op.target),
+                                "insert_parent_path": _no_path_label(resolved_parent),
+                                **_no_replay_payload_detail(payload),
+                            },
+                        )
                         body = tree_ops.insert_sorted(
                             body,
                             resolved_parent,
@@ -2689,6 +2738,19 @@ def apply_no_ops(
                             op.target.leaf_label(),
                         )
                     ):
+                        _record_action_family_recovery(
+                            kind="no_replay_replace_recovered_by_insert",
+                            message="Norway replay recovered missing-target replace by inserting a sentence.",
+                            op=op,
+                            detail={
+                                "rule_id": "no_replace_missing_sentence_append_to_shallow_host",
+                                "original_action": "replace",
+                                "executed_action": "insert",
+                                "target": str(op.target),
+                                "insert_parent_path": _no_path_label(shallow_host_path),
+                                **_no_replay_payload_detail(payload),
+                            },
+                        )
                         body = tree_ops.insert_sorted(
                             body,
                             shallow_host_path,
@@ -2716,6 +2778,19 @@ def apply_no_ops(
                             )
                             is None
                         ):
+                            _record_action_family_recovery(
+                                kind="no_replay_replace_recovered_by_insert",
+                                message="Norway replay recovered missing-target replace by inserting an item.",
+                                op=op,
+                                detail={
+                                    "rule_id": "no_replace_missing_last_item_append_to_parent",
+                                    "original_action": "replace",
+                                    "executed_action": "insert",
+                                    "target": str(op.target),
+                                    "insert_parent_path": _no_path_label(resolved_parent),
+                                    **_no_replay_payload_detail(append_payload),
+                                },
+                            )
                             body = tree_ops.insert_sorted(
                                 body,
                                 resolved_parent,
@@ -2759,6 +2834,19 @@ def apply_no_ops(
                         )
                         if inferred_section_parent is not None:
                             parent_path = inferred_section_parent
+                    _record_action_family_recovery(
+                        kind="no_replay_replace_recovered_by_insert",
+                        message="Norway replay recovered missing-target replace by inserting a section.",
+                        op=op,
+                        detail={
+                            "rule_id": "no_replace_missing_section_insert",
+                            "original_action": "replace",
+                            "executed_action": "insert",
+                            "target": str(op.target),
+                            "insert_parent_path": _no_path_label(parent_path),
+                            **_no_replay_payload_detail(payload),
+                        },
+                    )
                     body = tree_ops.insert_sorted(
                         body,
                         parent_path,
@@ -2819,6 +2907,19 @@ def apply_no_ops(
         elif op.action is StructuralAction.INSERT and op.payload is not None:
             payload = op.payload
             if resolved_path is not None:
+                _record_action_family_recovery(
+                    kind="no_replay_insert_occupied_target_replaced",
+                    message="Norway replay recovered insert into an occupied target by replacing that target.",
+                    op=op,
+                    detail={
+                        "rule_id": "no_insert_occupied_target_replace",
+                        "original_action": "insert",
+                        "executed_action": "replace",
+                        "target": str(op.target),
+                        "resolved_path": _no_path_label(resolved_path),
+                        **_no_replay_payload_detail(payload),
+                    },
+                )
                 body = tree_ops.replace_at(body, resolved_path, payload)
                 _assert_no_invariant_violations(op)
                 continue
@@ -2867,6 +2968,20 @@ def apply_no_ops(
                 payload.label,
             )
             if direct_existing_path is not None:
+                _record_action_family_recovery(
+                    kind="no_replay_insert_occupied_direct_child_replaced",
+                    message="Norway replay recovered insert into an occupied direct child by replacing that child.",
+                    op=op,
+                    detail={
+                        "rule_id": "no_insert_occupied_direct_child_replace",
+                        "original_action": "insert",
+                        "executed_action": "replace",
+                        "target": str(op.target),
+                        "parent_path": _no_path_label(parent_path),
+                        "occupied_child_path": _no_path_label(direct_existing_path),
+                        **_no_replay_payload_detail(payload),
+                    },
+                )
                 body = tree_ops.replace_at(
                     body,
                     direct_existing_path,

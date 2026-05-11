@@ -7,6 +7,7 @@ import tarfile
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.norway.index import build_no_amendment_index, save_no_amendment_index
 from lawvm.norway.replay import _effective_date_from_amendment, replay_no_to_pit
+from lawvm.tools.replay_payloads import build_no_replay_payload
 
 
 _BASE_XML = """<?xml version="1.0" encoding="utf-8"?>
@@ -65,6 +66,22 @@ def _amendment_xml(date_in_force: str | None) -> bytes:
 """.encode("utf-8")
 
 
+def _occupied_insert_amendment_xml(date_in_force: str) -> bytes:
+    return f"""<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <dd class="dateInForce">{date_in_force}</dd>
+    <article class="document-change" data-document="lov/2025-01-01-1">
+      <article class="change" data-add-new-part="lov/2025-01-01-1/§2/nummer/1">
+        <article class="defaultP">I loven skal ny nr. 1 tilfoyes.</article>
+        <li data-li-identifier="1." data-name="1.">erstattet krav</li>
+      </article>
+    </article>
+  </body>
+</html>
+""".encode("utf-8")
+
+
 def _write_archive(
     archive_path,
     members: list[tuple[str, bytes]],
@@ -116,6 +133,33 @@ def test_replay_no_to_pit_applies_effective_amendments(tmp_path) -> None:
         ("2", "to krav"),
         ("3", "tredje krav"),
     ]
+
+
+def test_replay_no_to_pit_surfaces_action_family_adjudications(tmp_path) -> None:
+    archive_path = tmp_path / "lovtidend-avd1-2001-2025.tar.bz2"
+    _write_archive(
+        archive_path,
+        [
+            ("lti/2025/nl-20250101-001.xml", _BASE_XML),
+            ("lti/2025/nl-20250202-005.xml", _occupied_insert_amendment_xml("2025-02-10")),
+        ],
+    )
+
+    result = replay_no_to_pit(
+        "no/lov/2025-01-01-1",
+        as_of="2025-02-15",
+        data_dir=tmp_path,
+    )
+
+    assert result.error is None
+    assert [(item.kind, item.detail["rule_id"]) for item in result.adjudications] == [
+        ("no_replay_insert_occupied_target_replaced", "no_insert_occupied_target_replace")
+    ]
+    payload = build_no_replay_payload(result)
+    assert payload["adjudications_count"] == 1
+    assert payload["adjudication_kind_counts"] == {
+        "no_replay_insert_occupied_target_replaced": 1
+    }
 
 
 def test_replay_no_to_pit_skips_future_amendments(tmp_path) -> None:

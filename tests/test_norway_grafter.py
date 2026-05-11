@@ -1973,14 +1973,18 @@ def test_apply_no_ops_treats_missing_section_replace_as_insert() -> None:
         ),
         source=OperationSource(statute_id="no/lovtid/2023-12-15-91"),
     )
+    adjudications: list[CompileAdjudication] = []
 
-    updated = apply_no_ops(statute, [op])
+    updated = apply_no_ops(statute, [op], adjudications_out=adjudications)
 
     chapter = updated.body.children[0]
     assert [child.label for child in chapter.children if child.kind is IRNodeKind.SECTION] == ["3", "3a", "4"]
     inserted = next(child for child in chapter.children if child.kind is IRNodeKind.SECTION and child.label == "3a")
     assert [(child.kind, child.label, child.text) for child in inserted.children] == [
         (IRNodeKind.SUBSECTION, "1", "new section text"),
+    ]
+    assert [(item.kind, item.detail["rule_id"]) for item in adjudications] == [
+        ("no_replay_replace_recovered_by_insert", "no_replace_missing_section_insert")
     ]
 
 
@@ -2048,8 +2052,9 @@ def test_apply_no_ops_appends_next_sentence_on_replace_when_target_missing() -> 
         payload=IRNode(kind=IRNodeKind.SENTENCE, label="3", text="Tredje punktum."),
         source=OperationSource(statute_id="no/lovtid/2025-12-22-123"),
     )
+    adjudications: list[CompileAdjudication] = []
 
-    updated = apply_no_ops(statute, [op])
+    updated = apply_no_ops(statute, [op], adjudications_out=adjudications)
 
     subsection = updated.body.children[0].children[0]
     assert subsection.text == ""
@@ -2057,6 +2062,9 @@ def test_apply_no_ops_appends_next_sentence_on_replace_when_target_missing() -> 
         (IRNodeKind.SENTENCE, "1", "Første punktum."),
         (IRNodeKind.SENTENCE, "2", "Andre punktum."),
         (IRNodeKind.SENTENCE, "3", "Tredje punktum."),
+    ]
+    assert [(item.kind, item.detail["rule_id"]) for item in adjudications] == [
+        ("no_replay_replace_recovered_by_insert", "no_replace_missing_sentence_append_to_resolved_parent")
     ]
 
 
@@ -2086,14 +2094,18 @@ def test_apply_no_ops_appends_last_item_on_replace_when_target_missing() -> None
         payload=IRNode(kind=IRNodeKind.ITEM, label="last", text="Tredje vilkår."),
         source=OperationSource(statute_id="no/lovtid/2025-01-28-3"),
     )
+    adjudications: list[CompileAdjudication] = []
 
-    updated = apply_no_ops(statute, [op])
+    updated = apply_no_ops(statute, [op], adjudications_out=adjudications)
 
     subsection = updated.body.children[0].children[0]
     assert [(child.kind, child.label, child.text) for child in subsection.children] == [
         (IRNodeKind.ITEM, "1", "Første vilkår."),
         (IRNodeKind.ITEM, "2", "Andre vilkår."),
         (IRNodeKind.ITEM, "3", "Tredje vilkår."),
+    ]
+    assert [(item.kind, item.detail["rule_id"]) for item in adjudications] == [
+        ("no_replay_replace_recovered_by_insert", "no_replace_missing_last_item_append_to_parent")
     ]
 
 
@@ -2259,11 +2271,15 @@ def test_apply_no_ops_insert_reuses_existing_target_as_replace() -> None:
         payload=IRNode(kind=IRNodeKind.SECTION, label="16", text="replacement section 16"),
         source=source,
     )
+    adjudications: list[CompileAdjudication] = []
 
-    updated = apply_no_ops(statute, [op])
+    updated = apply_no_ops(statute, [op], adjudications_out=adjudications)
 
     chapter_4 = updated.body.children[0]
     assert [(child.label, child.text) for child in chapter_4.children] == [("16", "replacement section 16")]
+    assert [(item.kind, item.detail["rule_id"]) for item in adjudications] == [
+        ("no_replay_insert_occupied_target_replaced", "no_insert_occupied_target_replace")
+    ]
 
 
 def test_apply_no_ops_renumber_chain_avoids_duplicate_sections() -> None:
@@ -2571,10 +2587,83 @@ def test_apply_no_ops_exact_target_insert_does_not_duplicate_section() -> None:
             source=source,
         ),
     ]
+    adjudications: list[CompileAdjudication] = []
 
-    updated = apply_no_ops(statute, ops)
+    updated = apply_no_ops(statute, ops, adjudications_out=adjudications)
 
     assert [(child.label, child.text) for child in updated.body.children] == [("4", "duplicate")]
+    assert [(item.kind, item.detail["rule_id"]) for item in adjudications] == [
+        ("no_replay_insert_occupied_target_replaced", "no_insert_occupied_target_replace")
+    ]
+
+
+def test_apply_no_ops_direct_child_insert_replacement_is_adjudicated() -> None:
+    statute = IRStatute(
+        statute_id="no/lov/2025-01-01-1",
+        title="Direct child insert-as-replace test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="5",
+                    children=(IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(IRNode(kind=IRNodeKind.ITEM, label="1", text="old item"),),
+                        ),),
+                ),),
+        ),
+    )
+    source = OperationSource(statute_id="no/lovtid/2025-06-20-90")
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="insert-item-1",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "5"), ("item", "9"))),
+        payload=IRNode(kind=IRNodeKind.ITEM, label="1", text="new item"),
+        source=source,
+    )
+
+    updated = apply_no_ops(statute, [op], adjudications_out=adjudications)
+
+    item = updated.body.children[0].children[0].children[0]
+    assert item.text == "new item"
+    assert [(item.kind, item.detail["rule_id"]) for item in adjudications] == [
+        ("no_replay_insert_occupied_direct_child_replaced", "no_insert_occupied_direct_child_replace")
+    ]
+    assert adjudications[0].detail["target"] == "section:5/item:9"
+    assert adjudications[0].detail["occupied_child_path"] == "section:5/subsection:1/item:1"
+
+
+def test_apply_no_ops_strict_action_family_rejects_recovery() -> None:
+    statute = IRStatute(
+        statute_id="no/lov/2025-01-01-1",
+        title="Strict action family test",
+        body=IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="4", text="base"),)),
+    )
+    source = OperationSource(statute_id="no/lovtid/2025-06-20-90")
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="dup",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "4"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="4", text="duplicate"),
+        source=source,
+    )
+
+    with pytest.raises(ValueError, match="action-family recovery"):
+        apply_no_ops(
+            statute,
+            [op],
+            adjudications_out=adjudications,
+            strict_action_family=True,
+        )
+
+    assert [(item.kind, item.detail["rule_id"]) for item in adjudications] == [
+        ("no_replay_insert_occupied_target_replaced", "no_insert_occupied_target_replace")
+    ]
 
 
 def test_apply_no_ops_collects_missing_target_adjudication() -> None:

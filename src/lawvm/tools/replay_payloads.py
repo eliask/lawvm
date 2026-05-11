@@ -35,6 +35,7 @@ def build_no_replay_payload(
     index_stale: bool = False,
     replayed_text: str | None = None,
 ) -> dict[str, Any]:
+    adjudications = list(getattr(result, "adjudications", []) or [])
     return {
         "jurisdiction": "no",
         "base_id": result.base_id,
@@ -43,7 +44,8 @@ def build_no_replay_payload(
         "error": _text_or_none(getattr(result, "error", None)),
         "mode": "replay",
         "ops_count": int(getattr(result, "n_ops", 0) or 0),
-        "adjudications_count": 0,
+        "adjudications_count": len(adjudications),
+        "adjudication_kind_counts": _adjudication_kind_counts(adjudications),
         "source": {
             "archive": archive_path,
             "index": index_path,
