@@ -60,6 +60,7 @@ def build_no_replay_payload(
             "future": len(getattr(result, "amendments_skipped_future", []) or []),
             "contingent": len(getattr(result, "amendments_skipped_contingent", []) or []),
             "unknown_effective": len(getattr(result, "amendments_skipped_unknown_effective", []) or []),
+            "missing_source": len(getattr(result, "amendments_skipped_missing_source", []) or []),
         },
         "applied_amendments": list(getattr(result, "amendments_applied", []) or []),
         "failed_amendments": [],
@@ -67,6 +68,7 @@ def build_no_replay_payload(
             "future": list(getattr(result, "amendments_skipped_future", []) or []),
             "contingent": list(getattr(result, "amendments_skipped_contingent", []) or []),
             "unknown_effective": list(getattr(result, "amendments_skipped_unknown_effective", []) or []),
+            "missing_source": list(getattr(result, "amendments_skipped_missing_source", []) or []),
         },
         "oracle": {
             "available": False,

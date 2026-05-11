@@ -41,6 +41,7 @@ from lawvm.norway.sources import (
 from lawvm.replay_adjudication import CompileAdjudication
 
 _ISO_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+NO_REPLAY_MISSING_AMENDMENT_SOURCE = "no_replay_missing_amendment_source"
 
 
 # Back-compat for tests and call sites that imported the helper from replay.py.
@@ -59,6 +60,7 @@ class NOReplayResult:
     amendments_skipped_future: List[str] = field(default_factory=list)
     amendments_skipped_contingent: List[str] = field(default_factory=list)
     amendments_skipped_unknown_effective: List[str] = field(default_factory=list)
+    amendments_skipped_missing_source: List[str] = field(default_factory=list)
     adjudications: List[CompileAdjudication] = field(default_factory=list)
     n_ops: int = 0
     error: Optional[str] = None
@@ -147,7 +149,20 @@ def replay_no_to_pit(
 
         html_bytes = load_no_amendment_bytes(source_id, data_dir)
         if html_bytes is None:
-            result.amendments_skipped_unknown_effective.append(source_id)
+            result.amendments_skipped_missing_source.append(source_id)
+            result.adjudications.append(
+                CompileAdjudication(
+                    kind=NO_REPLAY_MISSING_AMENDMENT_SOURCE,
+                    message="Norway replay skipped amendment: source bytes not found.",
+                    source_statute=source_id,
+                    detail={
+                        "rule_id": NO_REPLAY_MISSING_AMENDMENT_SOURCE,
+                        "phase": "acquisition",
+                        "source_id": source_id,
+                        "effective_date": effective_date,
+                    },
+                )
+            )
             continue
         heading_groups.extend(parse_no_heading_groups(html_bytes, norm_base_id))
         groups = [
