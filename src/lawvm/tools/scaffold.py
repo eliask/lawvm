@@ -1,16 +1,12 @@
-"""lawvm scaffold — generate a new jurisdiction adapter skeleton.
+"""lawvm scaffold - generate a blocked, contract-first jurisdiction starter.
 
 Usage:
-    lawvm scaffold <jurisdiction>   # e.g. lawvm scaffold norway
+    lawvm scaffold <jurisdiction>
 
-Creates src/lawvm/<jurisdiction>/ with:
-  __init__.py       package + re-exports
-  grafter.py        parse_statute / parse_amendment_ops / apply_ops stubs
-  test_<jur>.py     minimal smoke test harness
-
-The generated interface follows the Estonia adapter pattern (the most minimal
-complete implementation). Fill in the stubs; the test harness checks imports
-and NotImplementedError behaviour at every step.
+The generated package is intentionally non-executing. It creates a local
+adapter shell that can emit blocked P5 clause-surface artifacts for inventoried
+source units, but it does not parse clauses, lower payloads, apply operations,
+or claim replay support.
 """
 from __future__ import annotations
 
@@ -18,183 +14,141 @@ import re
 import sys
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Templates
-# ---------------------------------------------------------------------------
 
-_GRAFTER_TMPL = '''\
-"""{display} frontend for LawVM.
+_STARTER_TMPL = '''\
+"""{display} contract-first starter for LawVM.
 
-Three entry points (required interface):
-
-  parse_{jur}_statute(xml_bytes, statute_id) -> IRStatute
-      Parse a base act into the canonical IRStatute / IRNode body tree.
-
-  parse_{jur}_amendment_ops(xml_bytes, source_id) -> List[LegalOperation]
-      Parse an amendment act, extracting each operation as LegalOperation.
-
-  apply_{jur}_ops(statute, ops) -> IRStatute
-      Apply a list of LegalOperations to an IRStatute.
-
-Data source:
-  TODO: describe acquisition URL/auth/format
-
-XML schema notes:
-  TODO: describe root element, namespace, section/chapter hierarchy
-
-See also: docs/{jur}-pilot.md for recon notes (create when starting).
+This module is a transparency bridge, not a replay frontend. It preserves
+inventoried amendment source units as blocked P5 clause-surface evidence until
+the jurisdiction has source-backed parsing, payload, lowering, and replay
+phases.
 """
 from __future__ import annotations
 
-from typing import List
+from collections.abc import Iterable
 
-from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, OperationSource
-
-
-# ---------------------------------------------------------------------------
-# Base act parser
-# ---------------------------------------------------------------------------
-
-def parse_{jur}_statute(xml_bytes: bytes, statute_id: str) -> IRStatute:
-    """Parse a base act XML document into a canonical IRStatute.
-
-    Steps to implement:
-    1. Parse XML (ET.fromstring / lxml).
-    2. Walk section/chapter hierarchy → build IRNode tree.
-    3. Return IRStatute(statute_id=statute_id, body=root_irnode).
-
-    TODO: implement
-    """
-    raise NotImplementedError("parse_{jur}_statute not yet implemented")
-
-
-# ---------------------------------------------------------------------------
-# Amendment ops extractor
-# ---------------------------------------------------------------------------
-
-def parse_{jur}_amendment_ops(xml_bytes: bytes, source_id: str) -> List[LegalOperation]:
-    """Parse an amendment act XML document into a list of LegalOperations.
-
-    Steps to implement:
-    1. Locate the enacting clause / amendment table.
-    2. Extract each operation: action (replace/repeal/insert), target address.
-    3. Build LegalAddress(path=...) and LegalOperation for each.
-
-    TODO: implement
-    """
-    raise NotImplementedError("parse_{jur}_amendment_ops not yet implemented")
-
-
-# ---------------------------------------------------------------------------
-# Apply
-# ---------------------------------------------------------------------------
-
-def apply_{jur}_ops(statute: IRStatute, ops: List[LegalOperation]) -> IRStatute:
-    """Apply a list of LegalOperations to an IRStatute.
-
-    Steps to implement:
-    1. For each op, locate the target node in statute.body.
-    2. Replace / repeal / insert based on op.action.
-    3. Return updated IRStatute (immutable preferred — deepcopy body first).
-
-    For complex Finnish-style ops consider using lawvm.core.timeline helpers.
-
-    TODO: implement
-    """
-    raise NotImplementedError("apply_{jur}_ops not yet implemented")
-'''
-
-_INIT_TMPL = '''\
-"""{display} frontend package."""
-from lawvm.{jur}.grafter import (
-    parse_{jur}_statute,
-    parse_{jur}_amendment_ops,
-    apply_{jur}_ops,
+from jurisdiction_starter.p5_runtime_scaffold import (
+    StarterP5RuntimeScaffold,
+    StarterP5SourceUnit,
+    build_blocked_p5_runtime_scaffold,
 )
 
-__all__ = [
-    "parse_{jur}_statute",
-    "parse_{jur}_amendment_ops",
-    "apply_{jur}_ops",
-]
+
+FRONTEND_ID = "{jur}"
+
+
+def build_blocked_clause_surface(
+    *,
+    run_id: str,
+    source_id: str,
+    source_units: Iterable[StarterP5SourceUnit],
+    base_id: str | None = None,
+) -> StarterP5RuntimeScaffold:
+    """Emit explicit non-claim P5 evidence for inventoried source units.
+
+    This helper deliberately reports zero accepted operation/effect rows and
+    zero replay attempts. Replace it only after the frontend has real,
+    source-backed P5 parsing and lowering.
+    """
+
+    return build_blocked_p5_runtime_scaffold(
+        frontend_id=FRONTEND_ID,
+        run_id=run_id,
+        source_id=source_id,
+        base_id=base_id,
+        source_units=source_units,
+    )
 '''
 
+
+_INIT_TMPL = '''\
+"""{display} LawVM starter package.
+
+Generated by `lawvm scaffold`. This package exposes only blocked P5 evidence
+scaffolding and does not claim replay support.
+"""
+from lawvm.{jur}.starter import FRONTEND_ID, build_blocked_clause_surface
+
+__all__ = ["FRONTEND_ID", "build_blocked_clause_surface"]
+'''
+
+
 _TEST_TMPL = '''\
-"""Minimal smoke tests for the {display} frontend.
+"""Generated smoke tests for the {display} starter package.
 
-Run:
-    cd LawVM && uv run python src/lawvm/{jur}/test_{jur}.py
-
-These are interface-contract tests. They verify imports work and stubs are
-properly stubbed. Replace with real end-to-end tests as you implement.
+Run from the LawVM checkout after generation:
+    uv run python src/lawvm/{jur}/test_{jur}.py
 """
 from __future__ import annotations
 
-import importlib
 import sys
 
-
-_FN_NAMES = [
-    "parse_{jur}_statute",
-    "parse_{jur}_amendment_ops",
-    "apply_{jur}_ops",
-]
+from jurisdiction_starter.p5_runtime_scaffold import StarterP5SourceUnit
 
 
-def test_imports() -> None:
-    """Adapter module must be importable and export all required functions."""
-    mod = importlib.import_module("lawvm.{jur}.grafter")
-    missing = [fn for fn in _FN_NAMES if not hasattr(mod, fn)]
-    assert not missing, f"Missing from grafter.py: {{missing}}"
-    print("PASS  imports")
+def test_blocked_clause_surface_is_non_claim() -> None:
+    from lawvm.{jur}.starter import FRONTEND_ID, build_blocked_clause_surface
 
+    artifact = build_blocked_clause_surface(
+        run_id="run-1",
+        source_id="source-1",
+        base_id="base-1",
+        source_units=(
+            StarterP5SourceUnit(
+                source_artifact_id="source-1.xml",
+                source_unit_id="unit-1",
+                source_locator="xml:/act/body/section[1]",
+                raw_text="Example operative-looking text.",
+            ),
+        ),
+    )
 
-def test_stubs_raise_not_implemented() -> None:
-    """Stubs must raise NotImplementedError before real implementation exists."""
-    import lawvm.{jur}.grafter as g
-    for fn_name in _FN_NAMES:
-        fn = getattr(g, fn_name)
-        try:
-            fn(b"<stub/>", "test/1")
-        except NotImplementedError:
-            pass  # expected
-        except Exception:
-            pass  # also acceptable — stub may attempt parse and fail gracefully
-
-
-def test_package_init() -> None:
-    """Package __init__.py must re-export all three entry points."""
-    import lawvm.{jur} as pkg
-    missing = [fn for fn in _FN_NAMES if not hasattr(pkg, fn)]
-    assert not missing, f"Missing from __init__.py: {{missing}}"
-    print("PASS  package_init")
+    assert FRONTEND_ID == "{jur}"
+    assert artifact.evidence_pack_summary["claim_summary"]["operation_effect_rows"] == 0
+    assert artifact.evidence_pack_summary["claim_summary"]["replay_attempts"] == 0
+    assert artifact.findings[0]["strict_disposition"] == "block"
 
 
 if __name__ == "__main__":
-    sys.path.insert(0, str(__import__("pathlib").Path(__file__).parents[4]))  # repo src/
-    test_imports()
-    test_stubs_raise_not_implemented()
-    test_package_init()
-    print("\\nAll scaffold tests passed.")
+    test_blocked_clause_surface_is_non_claim()
+    print("PASS blocked non-claim starter")
+    sys.exit(0)
 '''
 
 
-# ---------------------------------------------------------------------------
-# Scaffold generator
-# ---------------------------------------------------------------------------
+_README_TMPL = '''\
+# {display} LawVM Starter
+
+This generated package is a blocked, contract-first starter. It does not parse
+clauses, lower operations, apply amendments, or claim replay support.
+
+The only generated runtime helper is `build_blocked_clause_surface(...)`, which
+wraps inventoried amendment source units in explicit blocked P5 evidence rows.
+
+Next steps:
+
+1. Fill out `jurisdiction_starter/` evidence-surface questions for this source
+   regime.
+2. Write source acquisition and inventory code before parsing operative text.
+3. Replace blocked P5 rows only when a source-backed clause parser exists.
+4. Add findings, strict-mode behavior, and regression tests for every recovery.
+'''
+
 
 def _validate_jurisdiction(name: str) -> str:
     """Return lower-case snake_case name or raise ValueError."""
-    cleaned = re.sub(r'[^a-z0-9_]', '', name.lower().replace('-', '_'))
-    if not cleaned or not re.match(r'^[a-z]', cleaned):
+
+    cleaned = re.sub(r"[^a-z0-9_]", "", name.lower().replace("-", "_"))
+    if not cleaned or re.match(r"^[a-z]", cleaned) is None:
         raise ValueError(f"Invalid jurisdiction name: {name!r} (must start with a letter, a-z/0-9/_ only)")
     return cleaned
 
 
 def scaffold(jurisdiction: str, src_root: Path) -> None:
-    """Create jurisdiction adapter skeleton under src_root/lawvm/<jurisdiction>/."""
+    """Create a blocked jurisdiction starter under src_root/lawvm/<jurisdiction>/."""
+
     jur = _validate_jurisdiction(jurisdiction)
-    display = jurisdiction.title()
+    display = jurisdiction.replace("_", " ").replace("-", " ").title()
 
     dest = src_root / "lawvm" / jur
     if dest.exists():
@@ -202,23 +156,24 @@ def scaffold(jurisdiction: str, src_root: Path) -> None:
         sys.exit(1)
 
     dest.mkdir(parents=True)
-
     files = {
         "__init__.py": _INIT_TMPL.format(jur=jur, display=display),
-        "grafter.py":  _GRAFTER_TMPL.format(jur=jur, display=display),
+        "starter.py": _STARTER_TMPL.format(jur=jur, display=display),
         f"test_{jur}.py": _TEST_TMPL.format(jur=jur, display=display),
+        "README.md": _README_TMPL.format(jur=jur, display=display),
     }
-    for fname, content in files.items():
-        (dest / fname).write_text(content, encoding="utf-8")
-        print(f"  created  {dest / fname}")
+    for filename, content in files.items():
+        path = dest / filename
+        path.write_text(content, encoding="utf-8")
+        print(f"  created  {path}")
 
-    print(f"\nScaffold created: {dest}")
+    print(f"\nBlocked starter created: {dest}")
     print("Next steps:")
-    print("  1. Fill in grafter.py (parse + apply)")
+    print("  1. Inventory source units; do not parse or replay yet.")
     print(f"  2. Run: cd LawVM && uv run python src/lawvm/{jur}/test_{jur}.py")
-    print(f"  3. Create docs/{jur}-pilot.md with acquisition recon")
+    print("  3. Use jurisdiction_starter/ to document source surfaces and phase gates.")
 
 
 def main(args) -> None:
-    src_root = Path(__file__).parents[2]  # src/
+    src_root = Path(__file__).parents[2]
     scaffold(args.jurisdiction, src_root)
