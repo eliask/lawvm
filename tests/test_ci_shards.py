@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 
 def _load_test_shard_module():
     script_path = Path(__file__).resolve().parents[1] / "scripts" / "test_shard.py"
@@ -32,6 +34,21 @@ def test_test_shard_assigns_every_bounded_file_once() -> None:
 
     assert sorted(assigned) == expected
     assert len(assigned) == len(set(assigned))
+
+
+def test_test_shard_validate_rejects_unassigned_tests(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    module = _load_test_shard_module()
+    real_files = module._all_test_files()
+    monkeypatch.setattr(
+        module,
+        "_all_test_files",
+        lambda: [*real_files, "test_new_surface.py"],
+    )
+
+    assert module.validate() == 1
+    captured = capsys.readouterr()
+    assert "Tests not assigned to an explicit shard" in captured.err
+    assert "test_new_surface.py" in captured.err
 
 
 def test_test_shard_keeps_known_expensive_files_explicitly_excluded() -> None:

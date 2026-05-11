@@ -39,6 +39,8 @@ def test_release_docs_do_not_expose_developer_local_paths() -> None:
 
 
 def test_release_scripts_have_valid_shell_syntax() -> None:
+    subprocess.run(("bash", "-n", "scripts/ci_sharded.sh"), check=True)
+    subprocess.run(("bash", "-n", "scripts/test_shard.sh"), check=True)
     subprocess.run(("bash", "-n", "scripts/release_hygiene.sh"), check=True)
     subprocess.run(("bash", "-n", "scripts/build_release_archive.sh"), check=True)
     subprocess.run(("bash", "-n", "scripts/verify_release_archive.sh"), check=True)

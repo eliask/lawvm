@@ -268,10 +268,16 @@ def validate() -> int:
 
     missing_exclusions = sorted(set(EXCLUDED_TESTS) - files)
     unknown_excluded = sorted(set(EXCLUDED_TESTS) & set(assigned))
+    assignments = shard_assignments()
+    unassigned_errors = assignments["misc"]
     if missing_exclusions:
         print("Excluded tests do not exist:", ", ".join(missing_exclusions), file=sys.stderr)
     if unknown_excluded:
         print("Excluded tests were also assigned:", ", ".join(unknown_excluded), file=sys.stderr)
+    if unassigned_errors:
+        print("Tests not assigned to an explicit shard:", file=sys.stderr)
+        for filename in unassigned_errors:
+            print(f"  {filename}", file=sys.stderr)
     if duplicate_errors:
         print("Tests matched multiple explicit shards:", file=sys.stderr)
         for item in duplicate_errors:
@@ -280,12 +286,11 @@ def validate() -> int:
         print("Shard patterns matched no files:", file=sys.stderr)
         for item in dead_patterns:
             print(f"  {item}", file=sys.stderr)
-    assignments = shard_assignments()
     for shard in sorted(assignments):
         print(f"{shard}: {len(assignments[shard])}")
     for filename, reason in sorted(EXCLUDED_TESTS.items()):
         print(f"excluded: {filename} ({reason})")
-    return 1 if missing_exclusions or unknown_excluded or duplicate_errors or dead_patterns else 0
+    return 1 if missing_exclusions or unknown_excluded or unassigned_errors or duplicate_errors or dead_patterns else 0
 
 
 def run_shard(shard: str, *, pytest_args: list[str]) -> int:

@@ -26,6 +26,14 @@ For the canonical bounded local CI gate:
 ./scripts/ci.sh
 ```
 
+For targeted or matrix-style runs, list and run bounded pytest shards:
+
+```bash
+./scripts/test_shard.sh list
+./scripts/test_shard.sh run norway
+./scripts/ci_sharded.sh
+```
+
 The CI gate includes release hygiene in dirty-worktree mode. To run only the
 release-surface checks while you have local edits:
 
