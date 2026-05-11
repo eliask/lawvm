@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -85,3 +86,46 @@ def test_test_shard_plan_is_jsonable_and_filterable() -> None:
             "reason": "gold corpus suite; intentionally outside bounded non-network CI",
         },
     ]
+
+
+def test_test_shard_timing_record_is_jsonable() -> None:
+    module = _load_test_shard_module()
+
+    record = module.shard_timing_record(
+        shard="finland",
+        file_count=50,
+        elapsed_seconds=123.4567,
+        exit_code=0,
+    )
+
+    assert record == {
+        "kind": "lawvm_pytest_shard_timing",
+        "shard": "finland",
+        "file_count": 50,
+        "elapsed_seconds": 123.457,
+        "exit_code": 0,
+        "status": "passed",
+    }
+    json.dumps(record)
+
+
+def test_test_shard_appends_timing_jsonl(tmp_path: Path) -> None:
+    module = _load_test_shard_module()
+    out = tmp_path / "nested" / "timings.jsonl"
+    record = module.shard_timing_record(
+        shard="tools",
+        file_count=42,
+        elapsed_seconds=1.0,
+        exit_code=1,
+    )
+
+    module.append_shard_timing_record(out, record)
+
+    assert json.loads(out.read_text(encoding="utf-8")) == {
+        "kind": "lawvm_pytest_shard_timing",
+        "shard": "tools",
+        "file_count": 42,
+        "elapsed_seconds": 1.0,
+        "exit_code": 1,
+        "status": "failed",
+    }

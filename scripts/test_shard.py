@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -295,7 +296,30 @@ def validate() -> int:
     return 1 if missing_exclusions or unknown_excluded or unassigned_errors or duplicate_errors or dead_patterns else 0
 
 
-def run_shard(shard: str, *, pytest_args: list[str]) -> int:
+def shard_timing_record(
+    *,
+    shard: str,
+    file_count: int,
+    elapsed_seconds: float,
+    exit_code: int,
+) -> dict[str, Any]:
+    return {
+        "kind": "lawvm_pytest_shard_timing",
+        "shard": shard,
+        "file_count": file_count,
+        "elapsed_seconds": round(elapsed_seconds, 3),
+        "exit_code": exit_code,
+        "status": "passed" if exit_code == 0 else "failed",
+    }
+
+
+def append_shard_timing_record(path: Path, record: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, sort_keys=True) + "\n")
+
+
+def run_shard(shard: str, *, pytest_args: list[str], timing_jsonl: str | None = None) -> int:
     assignments = shard_assignments()
     if shard == "all":
         filenames = [
@@ -332,7 +356,22 @@ def run_shard(shard: str, *, pytest_args: list[str]) -> int:
         *pytest_args,
     ]
     print(f"=== shard {shard}: {len(filenames)} files ===", flush=True)
-    return subprocess.call(cmd, cwd=REPO_ROOT)
+    started = time.perf_counter()
+    exit_code = subprocess.call(cmd, cwd=REPO_ROOT)
+    elapsed = time.perf_counter() - started
+    record = shard_timing_record(
+        shard=shard,
+        file_count=len(filenames),
+        elapsed_seconds=elapsed,
+        exit_code=exit_code,
+    )
+    print(
+        f"=== shard {shard} {record['status']}: {record['elapsed_seconds']:.3f}s ===",
+        flush=True,
+    )
+    if timing_jsonl:
+        append_shard_timing_record(Path(timing_jsonl), record)
+    return exit_code
 
 
 def list_shards() -> int:
@@ -419,6 +458,11 @@ def main(argv: list[str] | None = None) -> int:
     plan_parser.add_argument("shard", nargs="?", default="all")
     plan_parser.add_argument("--json", action="store_true", dest="json_output")
     run_parser = subparsers.add_parser("run")
+    run_parser.add_argument(
+        "--timing-jsonl",
+        default=os.environ.get("LAWVM_SHARD_TIMING_JSONL"),
+        help="append a JSONL timing record for this shard run",
+    )
     run_parser.add_argument("shard")
     run_parser.add_argument("pytest_args", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
@@ -432,7 +476,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "plan":
         return print_plan(args.shard, json_output=args.json_output)
     if args.command == "run":
-        return run_shard(args.shard, pytest_args=args.pytest_args)
+        return run_shard(args.shard, pytest_args=args.pytest_args, timing_jsonl=args.timing_jsonl)
     raise AssertionError(args.command)
 
 
