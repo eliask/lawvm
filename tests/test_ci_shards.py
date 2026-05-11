@@ -129,3 +129,27 @@ def test_test_shard_appends_timing_jsonl(tmp_path: Path) -> None:
         "exit_code": 1,
         "status": "failed",
     }
+
+
+def test_test_shard_filters_files_when_pytest_selectors_are_supplied() -> None:
+    module = _load_test_shard_module()
+
+    selected, unknown = module.filter_filenames_by_pytest_selectors(
+        ["test_a.py", "test_b.py"],
+        ["--", "tests/test_b.py::test_specific", "-k", "specific"],
+    )
+
+    assert selected == ["test_b.py"]
+    assert unknown == []
+
+
+def test_test_shard_reports_selectors_outside_selected_shard() -> None:
+    module = _load_test_shard_module()
+
+    selected, unknown = module.filter_filenames_by_pytest_selectors(
+        ["test_a.py"],
+        ["tests/test_b.py"],
+    )
+
+    assert selected == []
+    assert unknown == ["test_b.py"]

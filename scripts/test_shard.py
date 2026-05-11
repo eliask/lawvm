@@ -319,6 +319,32 @@ def append_shard_timing_record(path: Path, record: dict[str, Any]) -> None:
         fh.write(json.dumps(record, sort_keys=True) + "\n")
 
 
+def _pytest_selector_filename(arg: str) -> str | None:
+    if not arg or arg == "--" or arg.startswith("-"):
+        return None
+    selector_path = arg.split("::", 1)[0]
+    path = Path(selector_path)
+    if path.suffix != ".py":
+        return None
+    return path.name
+
+
+def filter_filenames_by_pytest_selectors(filenames: list[str], pytest_args: list[str]) -> tuple[list[str], list[str]]:
+    """Narrow shard files when explicit pytest file/node selectors are supplied."""
+
+    selected_names = [
+        filename
+        for arg in pytest_args
+        if (filename := _pytest_selector_filename(arg)) is not None
+    ]
+    if not selected_names:
+        return filenames, []
+    available = set(filenames)
+    unknown = sorted({filename for filename in selected_names if filename not in available})
+    selected = [filename for filename in filenames if filename in set(selected_names)]
+    return selected, unknown
+
+
 def run_shard(shard: str, *, pytest_args: list[str], timing_jsonl: str | None = None) -> int:
     assignments = shard_assignments()
     if shard == "all":
@@ -334,6 +360,13 @@ def run_shard(shard: str, *, pytest_args: list[str], timing_jsonl: str | None = 
             print(f"Unknown shard {shard!r}. Choices: {choices}", file=sys.stderr)
             return 2
         filenames = assignments[shard]
+    filenames, unknown_selectors = filter_filenames_by_pytest_selectors(filenames, pytest_args)
+    if unknown_selectors:
+        print(
+            f"Selectors outside shard {shard!r}: {', '.join(unknown_selectors)}",
+            file=sys.stderr,
+        )
+        return 2
     if not filenames:
         print(f"Shard {shard} has no test files.")
         return 0
