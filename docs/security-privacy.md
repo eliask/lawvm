@@ -19,6 +19,7 @@ Before a public tag, build the release artifact from tracked files only:
 
 ```bash
 ./scripts/build_release_archive.sh
+./scripts/verify_release_archive.sh .tmp/release/lawvm-<commit>.tar.gz
 ```
 
 The helper runs the release hygiene gate first and then creates a `git archive`
@@ -27,6 +28,9 @@ cache files are not included. It also writes checksum sidecars:
 
 - `OUT_TAR_GZ.sha256`
 - `OUT_TAR_GZ.manifest.json`
+
+The verifier checks the checksum sidecar, manifest digest and commit fields,
+archive prefix, and member path safety.
 
 This tracked source archive is distinct from Python wheel/sdist artifacts. Use
 `uv build` when validating installable package artifacts; the release hygiene

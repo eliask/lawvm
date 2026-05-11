@@ -136,6 +136,8 @@ For release hygiene:
 - `./scripts/release_hygiene.sh`
 - `./scripts/build_release_archive.sh` for a tracked-file source archive plus
   checksum sidecars
+- `./scripts/verify_release_archive.sh` to verify a release archive and its
+  sidecars after handoff
 
 ## Quick Start
 
