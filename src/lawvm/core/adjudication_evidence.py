@@ -40,6 +40,12 @@ def _adjudication_phase(kind: str, detail: Mapping[str, Any]) -> str:
     return "compile"
 
 
+def _bool_detail(value: Any, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    return default
+
+
 def _adjudication_finding_id(
     *,
     frontend_id: str,
@@ -69,6 +75,11 @@ def adjudication_finding_evidence_rows(
         op_id = text_or_none(getattr(adjudication, "op_id", None)) or ""
         source_statute = text_or_none(getattr(adjudication, "source_statute", None)) or base_id
         rule_id = text_or_none(detail.get("rule_id")) or kind
+        blocking = _bool_detail(detail.get("blocking"), default=True)
+        strict_disposition = text_or_none(detail.get("strict_disposition")) or (
+            "block" if blocking else "record"
+        )
+        quirks_disposition = text_or_none(detail.get("quirks_disposition")) or "record"
         rows.append(
             CorpusFindingEvidenceRow(
                 finding_id=_adjudication_finding_id(
@@ -87,9 +98,9 @@ def adjudication_finding_evidence_rows(
                 source_artifact_id=source_statute,
                 source_unit_id=op_id,
                 related_row_ids=(op_id,) if op_id else (),
-                blocking=True,
-                strict_disposition="block",
-                quirks_disposition="record",
+                blocking=blocking,
+                strict_disposition=strict_disposition,
+                quirks_disposition=quirks_disposition,
                 evidence={
                     "base_id": base_id,
                     "as_of": as_of,
