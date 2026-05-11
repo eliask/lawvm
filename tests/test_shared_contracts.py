@@ -1,4 +1,11 @@
-from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow, CorpusOperationEvidenceRow, CorpusRowStatus, EvidenceSummary
+from lawvm.core.evidence_contracts import (
+    CorpusFindingEvidenceRow,
+    CorpusOperationEvidenceRow,
+    CorpusRowStatus,
+    EvidenceSummary,
+    validate_corpus_finding_evidence_row,
+    validate_corpus_operation_evidence_row,
+)
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
 from lawvm.core.replay_contracts import ReplayAmendmentStep, ReplaySummary, ReplayTextView
 from lawvm.core.verification_contracts import (
@@ -90,6 +97,8 @@ def test_corpus_operation_evidence_row_to_dict_preserves_unsupported_status() ->
         effect_family="expire",
         status=CorpusRowStatus.UNSUPPORTED,
         blocking=True,
+        strict_disposition="block",
+        quirks_disposition="record_unsupported",
         finding_ids=("open_law_expire_lifecycle_not_replayed",),
     )
 
@@ -97,6 +106,7 @@ def test_corpus_operation_evidence_row_to_dict_preserves_unsupported_status() ->
 
     assert data["status"] == "unsupported"
     assert data["finding_ids"] == ("open_law_expire_lifecycle_not_replayed",)
+    assert validate_corpus_operation_evidence_row(data) == ()
 
 
 def test_corpus_finding_evidence_row_to_dict_is_json_friendly() -> None:
@@ -107,6 +117,9 @@ def test_corpus_finding_evidence_row_to_dict_is_json_friendly() -> None:
         rule_id="open_law_expire_lifecycle_not_replayed",
         phase="lifecycle",
         message="recorded",
+        strict_disposition="block",
+        quirks_disposition="record",
+        blocking=True,
         evidence={"path": ("a", "b")},
     )
 
@@ -114,6 +127,60 @@ def test_corpus_finding_evidence_row_to_dict_is_json_friendly() -> None:
 
     assert data["rule_id"] == "open_law_expire_lifecycle_not_replayed"
     assert data["evidence"] == {"path": ("a", "b")}
+    assert validate_corpus_finding_evidence_row(data) == ()
+
+
+def test_corpus_operation_evidence_validation_rejects_unexplained_non_claim() -> None:
+    issues = validate_corpus_operation_evidence_row({
+        "row_id": "row-1",
+        "frontend_id": "starter",
+        "source_artifact_id": "act.xml",
+        "status": "unsupported",
+        "blocking": True,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+        "finding_ids": (),
+        "detail": {},
+    })
+
+    assert "unsupported row must carry finding_ids or reason-bearing detail" in issues
+    assert "blocking row must have blocking strict_disposition" in issues
+
+
+def test_corpus_operation_evidence_validation_rejects_blocking_match_without_justification() -> None:
+    issues = validate_corpus_operation_evidence_row({
+        "row_id": "row-1",
+        "frontend_id": "starter",
+        "source_artifact_id": "act.xml",
+        "status": "matched",
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+        "finding_ids": ("positive_projection",),
+        "detail": {},
+    })
+
+    assert issues == ("matched row cannot be blocking without blocking_justification detail",)
+
+
+def test_corpus_finding_evidence_validation_rejects_bad_shapes() -> None:
+    issues = validate_corpus_finding_evidence_row({
+        "finding_id": "",
+        "frontend_id": "starter",
+        "rule_id": "starter.rule",
+        "phase": "P1",
+        "message": "bad",
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+        "blocking": "yes",
+        "evidence": [],
+        "related_row_ids": "row-1",
+    })
+
+    assert "finding_id is required" in issues
+    assert "blocking must be a boolean" in issues
+    assert "evidence must be a mapping" in issues
+    assert "related_row_ids must be a list or tuple" in issues
 
 
 def test_to_wire_jsonable_normalizes_nested_runtime_shapes() -> None:

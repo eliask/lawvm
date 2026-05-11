@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import subprocess
 
+from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row, validate_corpus_operation_evidence_row
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.open_law.audit import audit_open_law_snapshot, replay_open_law_ops, resolve_open_law_path
@@ -452,6 +454,99 @@ def test_corpus_audit_flags_annotation_operation_with_body_mutation(tmp_path) ->
     assert [finding.kind for finding in report.operation_rows[0].findings] == ["open_law_metadata_unexplained_body_mutation"]
 
 
+def test_corpus_audit_projects_only_generated_hidden_history_metadata(tmp_path) -> None:
+    source_repo = tmp_path / "law-xml"
+    codified_repo = tmp_path / "law-xml-codified"
+    _git_init(source_repo)
+    _git_init(codified_repo)
+    action = """
+    <document xmlns="https://open.law/schemas/library" xmlns:codify="https://open.law/schemas/codify">
+      <codify:replace doc="Code of Maryland Regulations" path="10|41|02|annos">
+        <annotations><annotation type="History">New history.</annotation></annotations>
+      </codify:replace>
+    </document>
+    """
+    _write(source_repo / "editorial-actions" / "annos.xml", action)
+    _git_commit_all(source_repo, "source")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/before", ()))
+    _write(
+        codified_repo / "us/md/exec/comar/10/41/02.xml",
+        _chapter_xml("Old text.").replace("</container>", "<annotations><annotation type=\"History\">Old history.</annotation></annotations></container>"),
+    )
+    _git_commit_all(codified_repo, "before")
+    _git_branch(codified_repo, "publication/before")
+
+    generated_history = (
+        '<annotation type="History" display="false" doc="Maryland Register, Volume 53, Issue 1" '
+        'path="regulations|final|25-242-F" eff="2026-01-19"/>'
+    )
+    generated_editor_history = '<annotation type="History" display="false" doc="Editor Action 2026-03-09" path="" eff="2026-03-09"/>'
+    _write(codified_repo / "index.xml", _index_xml("publication/after", ("editorial-actions/annos.xml",)))
+    _write(codified_repo / "editorial-actions" / "annos.xml", action)
+    _write(
+        codified_repo / "us/md/exec/comar/10/41/02.xml",
+        _chapter_xml("Old text.").replace(
+            "</container>",
+            f"<annotations><annotation type=\"History\">New history.</annotation>{generated_history}{generated_editor_history}</annotations></container>",
+        ),
+    )
+    _git_commit_all(codified_repo, "after")
+    _git_branch(codified_repo, "publication/after")
+
+    report = audit_maryland_transition("publication/before", "publication/after", repos=make_maryland_repos(source_repo, codified_repo))
+
+    assert report.summary["metadata_matched"] == 1
+    assert [finding.kind for finding in report.operation_rows[0].findings] == [
+        "open_law_metadata_generated_history_projection",
+        "open_law_metadata_target_replayed",
+    ]
+
+
+def test_corpus_audit_does_not_project_generic_display_false_metadata(tmp_path) -> None:
+    source_repo = tmp_path / "law-xml"
+    codified_repo = tmp_path / "law-xml-codified"
+    _git_init(source_repo)
+    _git_init(codified_repo)
+    action = """
+    <document xmlns="https://open.law/schemas/library" xmlns:codify="https://open.law/schemas/codify">
+      <codify:replace doc="Code of Maryland Regulations" path="10|41|02|annos">
+        <annotations><annotation type="History">New history.</annotation></annotations>
+      </codify:replace>
+    </document>
+    """
+    _write(source_repo / "editorial-actions" / "annos.xml", action)
+    _git_commit_all(source_repo, "source")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/before", ()))
+    _write(
+        codified_repo / "us/md/exec/comar/10/41/02.xml",
+        _chapter_xml("Old text.").replace("</container>", "<annotations><annotation type=\"History\">Old history.</annotation></annotations></container>"),
+    )
+    _git_commit_all(codified_repo, "before")
+    _git_branch(codified_repo, "publication/before")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/after", ("editorial-actions/annos.xml",)))
+    _write(codified_repo / "editorial-actions" / "annos.xml", action)
+    _write(
+        codified_repo / "us/md/exec/comar/10/41/02.xml",
+        _chapter_xml("Old text.").replace(
+            "</container>",
+            (
+                "<annotations><annotation type=\"History\">New history.</annotation>"
+                "<annotation type=\"Authority\" display=\"false\">Hidden authority.</annotation></annotations></container>"
+            ),
+        ),
+    )
+    _git_commit_all(codified_repo, "after")
+    _git_branch(codified_repo, "publication/after")
+
+    report = audit_maryland_transition("publication/before", "publication/after", repos=make_maryland_repos(source_repo, codified_repo))
+
+    assert report.summary["metadata_diverged"] == 1
+    assert [finding.kind for finding in report.operation_rows[0].findings] == ["open_law_metadata_snapshot_mismatch"]
+
+
 def test_corpus_audit_records_register_expire_as_lifecycle_lane(tmp_path) -> None:
     source_repo = tmp_path / "law-xml"
     codified_repo = tmp_path / "law-xml-codified"
@@ -513,6 +608,18 @@ def test_evidence_pack_writes_summary_and_machine_reports(tmp_path) -> None:
     assert (tmp_path / "pack" / "findings.jsonl").exists()
     assert "## What LawVM Claims" in pack.summary_path.read_text(encoding="utf-8")
     assert '"clean_replace"' in pack.exemplars_path.read_text(encoding="utf-8")
+    operation_rows = [
+        json.loads(line)
+        for line in (tmp_path / "pack" / "operation_audits.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    finding_rows = [
+        json.loads(line)
+        for line in (tmp_path / "pack" / "findings.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert all(validate_corpus_operation_evidence_row(row["evidence_row"]) == () for row in operation_rows)
+    assert all(validate_corpus_finding_evidence_row(row["evidence_row"]) == () for row in finding_rows)
 
 
 def _chapter_xml(text: str) -> str:
