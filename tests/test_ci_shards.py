@@ -172,10 +172,16 @@ def test_test_shard_maps_source_modules_to_frontend_shards() -> None:
     assert module.affected_shards(
         [
             "src/lawvm/finland/frontend_compile.py",
-            "src/lawvm/core/timeline.py",
             "scripts/ci.sh",
         ]
-    ) == ["core", "finland", "tools"]
+    ) == ["finland", "tools"]
+
+
+def test_test_shard_maps_core_and_dependency_changes_to_all() -> None:
+    module = _load_test_shard_module()
+
+    assert module.affected_shards(["src/lawvm/core/timeline.py"]) == ["all"]
+    assert module.affected_shards(["pyproject.toml"]) == ["all"]
 
 
 def test_test_shard_affected_plan_defaults_to_all_for_unknown_paths() -> None:
