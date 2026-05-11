@@ -44,7 +44,9 @@ SQLite/DB/DuckDB files, and Parquet exports.
 Full Finland replay workflows require local Finlex archives imported into
 `data/*.farchive`. Those archives are not shipped in the repository. Open Law
 demo workflows clone public Git repositories into `.tmp/open_law/repos/` and
-record local clone identity in the generated evidence-pack manifest.
+record local clone identity in the generated evidence-pack manifest. The Open
+Law pack records the LawVM generator commit and repository label/remote, not
+the local LawVM worktree path.
 
 ## Recommended Pre-Release Scan
 
