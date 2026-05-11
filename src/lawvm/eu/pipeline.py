@@ -96,10 +96,10 @@ def apply_eu_ops(
       - repeal:  find target node, remove it
       - insert:  find parent container, insert payload at sorted position
 
-    Operations that cannot be resolved (target not found, missing payload, unsupported
-    action) are skipped with a warning and emitted as compile adjudications when
-    ``adjudications_out`` is provided. Returns a new IRStatute; the original is
-    not mutated.
+    Operations that cannot be resolved (target not found, missing payload,
+    unsupported action) are skipped and emitted as compile adjudications when
+    ``adjudications_out`` is provided. Returns a new IRStatute with replay stats
+    in metadata; the original is not mutated.
 
     Args:
         base: The parsed baseline IRStatute (from parse_eu_regulation_ir).
@@ -174,7 +174,6 @@ def apply_eu_ops(
 
         if action == StructuralAction.REPLACE.value:
             if op.payload is None:
-                print(f"  [EU replay] SKIP replace {target}: no payload")
                 _append_eu_replay_adjudication(
                     adjudications_out,
                     kind="eu_replay_text_payload_missing",
@@ -193,7 +192,6 @@ def apply_eu_ops(
                 scope_label=path_steps[0][1] if len(path_steps) > 1 else None,
             )
             if found is None:
-                print(f"  [EU replay] SKIP replace {target}: target not found")
                 _append_eu_replay_adjudication(
                     adjudications_out,
                     kind="eu_replay_target_not_found",
@@ -218,7 +216,6 @@ def apply_eu_ops(
                 scope_label=path_steps[0][1] if len(path_steps) > 1 else None,
             )
             if found is None:
-                print(f"  [EU replay] SKIP repeal {target}: target not found")
                 _append_eu_replay_adjudication(
                     adjudications_out,
                     kind="eu_replay_target_not_found",
@@ -236,7 +233,6 @@ def apply_eu_ops(
 
         elif action == StructuralAction.INSERT.value:
             if op.payload is None:
-                print(f"  [EU replay] SKIP insert {target}: no payload")
                 _append_eu_replay_adjudication(
                     adjudications_out,
                     kind="eu_replay_text_payload_missing",
@@ -253,7 +249,6 @@ def apply_eu_ops(
                 parent_label = path_steps[-2][1]
                 parent_path = tree_ops.find(body, parent_kind, parent_label)
                 if parent_path is None:
-                    print(f"  [EU replay] SKIP insert {target}: parent not found")
                     _append_eu_replay_adjudication(
                         adjudications_out,
                         kind="eu_replay_parent_not_found",
@@ -278,7 +273,6 @@ def apply_eu_ops(
 
         elif action in ("text_replace", "text_repeal", "renumber"):
             # Not yet supported for EU pipeline
-            print(f"  [EU replay] SKIP {action} {target}: not implemented")
             _append_eu_replay_adjudication(
                 adjudications_out,
                 kind="eu_replay_unsupported_action",
@@ -301,7 +295,6 @@ def apply_eu_ops(
             continue
 
         else:
-            print(f"  [EU replay] SKIP unknown action {action!r} for {target}")
             _append_eu_replay_adjudication(
                 adjudications_out,
                 kind="eu_replay_unknown_action",
@@ -311,14 +304,16 @@ def apply_eu_ops(
             )
             skipped += 1
 
-    print(f"  [EU replay] Applied {applied} ops, skipped {skipped}")
+    metadata = dict(base.metadata)
+    metadata["eu_replay_applied_op_count"] = applied
+    metadata["eu_replay_skipped_op_count"] = skipped
 
     return IRStatute(
         statute_id=base.statute_id,
         title=base.title,
         body=body,
         supplements=list(base.supplements),
-        metadata=dict(base.metadata),
+        metadata=metadata,
     )
 
 

@@ -219,6 +219,22 @@ class TestChainCompletenessStatus:
         assert status.is_complete is False
         assert "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET:1" in status.incompleteness_reasons
 
+    def test_unresolved_apply_boundary_blocks_chain_completeness(self) -> None:
+        status = ChainCompletenessStatus(
+            section_label="1",
+            is_complete=False,
+            blockers=[
+                CompletenessBlocker(
+                    kind="REPLAY_APPLY_BOUNDARY_UNRESOLVED",
+                    scope_kind="section",
+                    scope_ref="1",
+                    source_statute="2020/100",
+                )
+            ],
+        )
+        assert status.is_complete is False
+        assert "REPLAY_APPLY_BOUNDARY_UNRESOLVED:1" in status.incompleteness_reasons
+
     def test_unresolved_dates(self) -> None:
         status = _status_from_sources(
             section_label="1",
@@ -374,7 +390,7 @@ class TestComputeChainCompleteness:
     def test_boundary_violations_only_poison_touched_sections_when_touch_map_exists(self) -> None:
         result = compute_chain_completeness(
             section_labels=["section:1", "section:2"],
-            strict_fail_reasons=["REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"],
+            strict_fail_reasons=["REPLAY_APPLY_BOUNDARY_UNRESOLVED"],
             failed_ops=[],
             compiled_ops=[
                 {
@@ -384,7 +400,7 @@ class TestComputeChainCompleteness:
             ],
         )
         assert result["section:1"].is_complete is False
-        assert _blocker_sources(result["section:1"], "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET") == ["2020/100"]
+        assert _blocker_sources(result["section:1"], "REPLAY_APPLY_BOUNDARY_UNRESOLVED") == ["2020/100"]
         assert result["section:2"].is_complete is True
 
     def test_boundary_violations_fall_back_to_statute_wide_when_no_touch_map(self) -> None:
