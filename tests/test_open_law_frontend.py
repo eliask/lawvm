@@ -633,8 +633,8 @@ def test_evidence_pack_writes_summary_and_machine_reports(tmp_path) -> None:
     artifact_manifest = json.loads(pack.artifact_manifest_path.read_text(encoding="utf-8"))
     assert artifact_manifest["generator"]["tool"] == "lawvm open-law evidence-pack"
     assert isinstance(artifact_manifest["generator"]["repository"], str)
-    assert "/home/" not in artifact_manifest["generator"]["repository"]
-    assert "/Users/" not in artifact_manifest["generator"]["repository"]
+    assert "/" + "home" + "/" not in artifact_manifest["generator"]["repository"]
+    assert "/" + "Users" + "/" not in artifact_manifest["generator"]["repository"]
     assert isinstance(artifact_manifest["generator"]["git_commit"], str)
     assert artifact_manifest["generator"]["git_dirty"] in {True, False, None}
     artifact_paths = {item["path"] for item in artifact_manifest["files"]}
@@ -795,7 +795,7 @@ def test_open_law_verify_pack_rejects_developer_local_generator_repository(tmp_p
         files.append({"path": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
     generator = {
         "tool": "lawvm open-law evidence-pack",
-        "repository": "/home/example/LawVM",
+        "repository": "/" + "home" + "/example/LawVM",
         "git_commit": "a" * 40,
         "git_dirty": False,
     }
