@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 
+import pytest
 
 from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row
 from lawvm.replay_adjudication import CompileAdjudication
@@ -1262,6 +1263,20 @@ def test_compile_se_official_ops_to_archive_stores_json_array() -> None:
     loaded = load_se_official_ops_from_archive(archive, "2026:286")
     assert loaded is not None
     assert loaded[0]["action"] == "replace"
+
+
+def test_load_se_official_ops_rejects_non_object_entries() -> None:
+    archive = _FakeArchive(
+        stored={
+            se_official_ops_locator("2026:286"): json.dumps(
+                [{"action": "replace"}, "silently-dropped-before", 42],
+                ensure_ascii=False,
+            ).encode("utf-8")
+        }
+    )
+
+    with pytest.raises(ValueError, match="non-object op entries at indexes: 1, 2"):
+        load_se_official_ops_from_archive(archive, "2026:286")
 
 
 def test_build_se_official_effects_plan_records_planned_canonical_effects_without_lowering() -> None:
