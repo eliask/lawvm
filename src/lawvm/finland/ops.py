@@ -466,6 +466,7 @@ def temporary_signal_for_op(op: "AmendmentOp | ResolvedOp") -> bool:
 class LegalOperationConversionSkip:
     """Visible reason why one LegalOperation has no structural AmendmentOp."""
 
+    finding_kind: str
     op_id: str
     action: str
     target_path: Tuple[Tuple[str, str], ...]
@@ -494,6 +495,7 @@ def classify_legal_operation_conversion_skip(
 
     if target_kinds and target_kinds <= {"nimike", "appendix"}:
         return LegalOperationConversionSkip(
+            finding_kind="ELAB.REJECTED_OPERATION",
             op_id=lo.op_id,
             action=action,
             target_path=target_path,
@@ -502,9 +504,11 @@ def classify_legal_operation_conversion_skip(
                 "LegalOperation target uses an unsupported Finland top-level "
                 "nimike/appendix structural lane; no AmendmentOp was emitted."
             ),
+            blocking=True,
         )
     if not target_kinds and lo.text_patch is not None:
         return LegalOperationConversionSkip(
+            finding_kind="ELAB.LAW_LEVEL_TEXT_PATCH_SEPARATE_LANE",
             op_id=lo.op_id,
             action=action,
             target_path=target_path,
@@ -516,11 +520,13 @@ def classify_legal_operation_conversion_skip(
         )
     if not target_kinds:
         return LegalOperationConversionSkip(
+            finding_kind="ELAB.REJECTED_OPERATION",
             op_id=lo.op_id,
             action=action,
             target_path=target_path,
             reason_code="ELAB.EMPTY_LEGAL_OPERATION_TARGET",
             message="LegalOperation had an empty target path; no AmendmentOp was emitted.",
+            blocking=True,
         )
 
     return None
