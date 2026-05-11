@@ -5,9 +5,10 @@ from argparse import Namespace
 from types import SimpleNamespace
 
 from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row
-from lawvm.core.ir import LegalAddress
+from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction
 from lawvm.core.timeline import ConsistencyDivergence
-from lawvm.tools import cli, ee_replay, no_replay
+from lawvm.tools import cli, ee_replay, no_replay, uk_replay
 from lawvm.tools.replay_payloads import build_uk_replay_payload
 
 
@@ -185,6 +186,15 @@ def test_build_uk_replay_payload_shape() -> None:
         n_versions=120,
         pit_materialized_eids=38,
         timeline_mode="ops_first",
+        adjudications=[
+            SimpleNamespace(
+                kind="uk_replay_payload_missing",
+                message="UK replay skipped op",
+                op_id="op-1",
+                source_statute="ukpga/2020/1",
+                detail={"rule_id": "uk_replay_payload_missing", "phase": "replay"},
+            )
+        ],
     )
 
     assert payload["jurisdiction"] == "uk"
@@ -192,3 +202,106 @@ def test_build_uk_replay_payload_shape() -> None:
     assert payload["oracle"]["eid_similarity"] == 0.75
     assert payload["timeline"]["mode"] == "ops_first"
     assert payload["timeline"]["versions"] == 120
+    assert payload["adjudications_count"] == 1
+    assert payload["adjudication_kind_counts"] == {"uk_replay_payload_missing": 1}
+    evidence_row = payload["evidence"]["finding_rows"][0]
+    assert evidence_row["frontend_id"] == "uk"
+    assert evidence_row["rule_id"] == "uk_replay_payload_missing"
+    assert evidence_row["phase"] == "replay"
+    assert evidence_row["source_artifact_id"] == "ukpga/2020/1"
+    assert evidence_row["source_unit_id"] == "op-1"
+    assert validate_corpus_finding_evidence_row(evidence_row) == ()
+
+
+def test_uk_replay_main_threads_replay_adjudications_into_json(monkeypatch, tmp_path, capsys) -> None:
+    import farchive
+
+    db_path = tmp_path / "uk.farchive"
+    db_path.write_text("placeholder", encoding="utf-8")
+    base_ir = IRStatute(
+        statute_id="ukpga/1998/42",
+        title="Human Rights Act 1998",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="Base text",
+                    attrs={"eId": "section-1"},
+                ),
+            ),
+        ),
+    )
+
+    class _FakeArchive:
+        def __init__(self, _path):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def get(self, url):
+            if str(url).endswith("/enacted/data.xml"):
+                return b"<Legislation>" + (b"x" * 120) + b"</Legislation>"
+            return None
+
+    class _FakePipeline:
+        def __init__(self, _repo_root):
+            pass
+
+        def compile_ops_for_statute(self, statute_id, *, pit_date, archive):
+            assert statute_id == "ukpga/1998/42"
+            return [
+                LegalOperation(
+                    op_id="op-1",
+                    sequence=1,
+                    action=StructuralAction.REPLACE,
+                    target=LegalAddress(path=(("section", "99"),)),
+                )
+            ]
+
+        def apply_ops(self, base, ops, **kwargs):
+            adjudications_out = kwargs["adjudications_out"]
+            adjudications_out.append(
+                SimpleNamespace(
+                    kind="uk_replay_target_not_found",
+                    message="UK replay skipped target",
+                    op_id=ops[0].op_id,
+                    source_statute="ukpga/2020/1",
+                    detail={"phase": "replay", "target": "section:99"},
+                )
+            )
+            return base
+
+    monkeypatch.setattr(farchive, "Farchive", _FakeArchive)
+    monkeypatch.setattr("lawvm.uk_legislation.uk_grafter.parse_uk_statute_ir_bytes", lambda *args, **kwargs: base_ir)
+    monkeypatch.setattr("lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive", lambda *args, **kwargs: [])
+    monkeypatch.setattr("lawvm.uk_legislation.uk_amendment_replay.UKReplayPipeline", _FakePipeline)
+    monkeypatch.setattr("lawvm.core.timeline_consistency.ingest_uk_snapshots", lambda *args, **kwargs: {})
+
+    uk_replay.main(
+        SimpleNamespace(
+            statute_id="ukpga/1998/42",
+            pit_date=None,
+            enacted_only=False,
+            verbose=False,
+            fetch_missing=False,
+            json=True,
+            db=str(db_path),
+            timeline=False,
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["adjudications_count"] == 1
+    assert payload["adjudication_kind_counts"] == {"uk_replay_target_not_found": 1}
+    evidence_row = payload["evidence"]["finding_rows"][0]
+    assert evidence_row["frontend_id"] == "uk"
+    assert evidence_row["phase"] == "replay"
+    assert evidence_row["source_unit_id"] == "op-1"
+    assert evidence_row["evidence"]["as_of"] == "latest"
+    assert validate_corpus_finding_evidence_row(evidence_row) == ()

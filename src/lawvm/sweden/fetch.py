@@ -21,6 +21,7 @@ from lawvm.core.ir import IRNode, IRStatute, LegalOperation
 from lawvm.core.ir_helpers import ir_statute_from_dict
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
 from lawvm.core import tree_ops
+from lawvm.core.adjudication_evidence import adjudication_finding_evidence_rows
 from lawvm.sweden.grafter import SESourceRecord, parse_se_source_record, parse_se_statute
 from lawvm.sweden.grafter import (
     apply_se_ops,
@@ -2080,6 +2081,12 @@ def check_se_official_replay(
     replay_adjudications: list = []
     replayed = apply_se_ops(replay_base_statute, ops, adjudications_out=replay_adjudications)
     skipped_op_ids = {item.op_id for item in replay_adjudications if item.op_id}
+    finding_rows = adjudication_finding_evidence_rows(
+        replay_adjudications,
+        frontend_id="sweden",
+        base_id=resolved_base_sfs_id,
+        as_of=effective_date,
+    )
 
     post_sections = se_section_text_map(comparison_post_statute)
     replay_sections = se_section_text_map(replayed)
@@ -2215,6 +2222,9 @@ def check_se_official_replay(
             if violation not in baseline_invariants
         ],
         "adjudications": [asdict(item) for item in replay_adjudications],
+        "evidence": {
+            "finding_rows": [row.to_dict() for row in finding_rows],
+        },
         "rows": rows,
     }
 
