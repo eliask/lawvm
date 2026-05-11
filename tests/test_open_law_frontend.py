@@ -686,10 +686,11 @@ def test_open_law_verify_pack_checks_artifacts_and_evidence_rows(tmp_path, capsy
 
     write_maryland_evidence_pack(tmp_path / "pack", repos=make_maryland_repos(source_repo, codified_repo))
 
-    _print_verify_pack(Namespace(report_dir=str(tmp_path / "pack"), json=False))
+    _print_verify_pack(Namespace(report_dir=str(tmp_path / "pack"), require_clean_generator=False, json=False))
 
     out = capsys.readouterr().out
-    assert "files=6 operation_rows=1 finding_rows=0 issues=0" in out
+    assert "files=6 operation_rows=1 finding_rows=0 generator_clean=" in out
+    assert "issues=0" in out
 
 
 def test_open_law_verify_pack_fails_on_checksum_mismatch(tmp_path) -> None:
@@ -709,7 +710,54 @@ def test_open_law_verify_pack_fails_on_checksum_mismatch(tmp_path) -> None:
     (pack_dir / "manifest.json").write_text("tampered\n", encoding="utf-8")
 
     with pytest.raises(SystemExit):
-        _print_verify_pack(Namespace(report_dir=str(pack_dir), json=False))
+        _print_verify_pack(Namespace(report_dir=str(pack_dir), require_clean_generator=False, json=False))
+
+
+def test_open_law_verify_pack_can_require_clean_generator(tmp_path, capsys) -> None:
+    pack_dir = tmp_path / "pack"
+    pack_dir.mkdir()
+    summary = {
+        "operation_rows": 0,
+        "matched": 0,
+        "diverged": 0,
+        "planning_failed": 0,
+        "metadata_unsupported": 0,
+        "metadata_matched": 0,
+        "metadata_diverged": 0,
+        "lifecycle_unsupported": 0,
+        "snapshot_missing": 0,
+        "findings": 0,
+        "unexplained_paths": 0,
+    }
+    (pack_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+    (pack_dir / "summary.json").write_text(json.dumps(summary) + "\n", encoding="utf-8")
+    (pack_dir / "operation_audits.jsonl").write_text("", encoding="utf-8")
+    (pack_dir / "findings.jsonl").write_text("", encoding="utf-8")
+    (pack_dir / "exemplars.json").write_text("{}\n", encoding="utf-8")
+    (pack_dir / "summary.md").write_text("# Summary\n", encoding="utf-8")
+    files = []
+    for name in ("manifest.json", "summary.json", "operation_audits.jsonl", "findings.jsonl", "exemplars.json", "summary.md"):
+        data = (pack_dir / name).read_bytes()
+        files.append({"path": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+    generator = {
+        "tool": "lawvm open-law evidence-pack",
+        "repository": "/repo",
+        "git_commit": "a" * 40,
+        "git_dirty": True,
+    }
+    manifest_path = pack_dir / "evidence_pack_manifest.json"
+    manifest_path.write_text(json.dumps({"generator": generator, "files": files}) + "\n", encoding="utf-8")
+
+    _print_verify_pack(Namespace(report_dir=str(pack_dir), require_clean_generator=False, json=False))
+    assert "issues=0" in capsys.readouterr().out
+
+    with pytest.raises(SystemExit):
+        _print_verify_pack(Namespace(report_dir=str(pack_dir), require_clean_generator=True, json=False))
+
+    generator["git_dirty"] = False
+    manifest_path.write_text(json.dumps({"generator": generator, "files": files}) + "\n", encoding="utf-8")
+    _print_verify_pack(Namespace(report_dir=str(pack_dir), require_clean_generator=True, json=False))
+    assert "generator_clean=True" in capsys.readouterr().out
 
 
 def test_open_law_verify_pack_fails_on_stale_summary_even_when_checksum_matches(tmp_path) -> None:
@@ -743,7 +791,7 @@ def test_open_law_verify_pack_fails_on_stale_summary_even_when_checksum_matches(
     _refresh_pack_manifest_entry(pack.artifact_manifest_path, pack.summary_json_path)
 
     with pytest.raises(SystemExit):
-        _print_verify_pack(Namespace(report_dir=str(tmp_path / "pack"), json=False))
+        _print_verify_pack(Namespace(report_dir=str(tmp_path / "pack"), require_clean_generator=False, json=False))
 
 
 def test_open_law_explain_text_includes_evidence_dispositions(tmp_path, capsys) -> None:

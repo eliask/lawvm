@@ -40,6 +40,10 @@ uv run lawvm open-law explain \
 uv run lawvm open-law verify-pack \
   --report-dir .tmp/open_law/evidence-pack
 
+uv run lawvm open-law verify-pack \
+  --report-dir .tmp/open_law/evidence-pack \
+  --require-clean-generator
+
 uv run lawvm report query \
   .tmp/open_law/evidence-pack/operation_audits.jsonl \
   --status unsupported \
@@ -62,3 +66,7 @@ matches, 11 metadata matches, 1 lifecycle unsupported row, and 0 divergences.
 Treat those counts as dated observations, not stable release guarantees; the
 generated `manifest.json` is the source witness for the exact clone commits and
 remotes behind a run.
+
+Use `--require-clean-generator` for a pack you intend to hand to someone else:
+it rejects packs whose `evidence_pack_manifest.json` does not name a full,
+clean LawVM git commit.
