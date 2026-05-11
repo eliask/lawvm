@@ -232,6 +232,18 @@ def test_replay_no_to_pit_skips_future_amendments(tmp_path) -> None:
     assert result.amendments_applied == []
     assert result.amendments_skipped_future == ["no/lovtid/2025-02-02-5"]
     assert result.n_ops == 0
+    assert [(item.kind, item.detail["phase"]) for item in result.adjudications] == [
+        ("no_replay_future_effective_skipped", "temporal")
+    ]
+    payload = build_no_replay_payload(result)
+    assert payload["adjudication_kind_counts"] == {
+        "no_replay_future_effective_skipped": 1
+    }
+    evidence_row = payload["evidence"]["finding_rows"][0]
+    assert evidence_row["rule_id"] == "no_replay_future_effective_skipped"
+    assert evidence_row["phase"] == "temporal"
+    assert evidence_row["source_artifact_id"] == "no/lovtid/2025-02-02-5"
+    assert validate_corpus_finding_evidence_row(evidence_row) == ()
 
     _chapter, sections = _chapter_sections(result)
     assert [section.label for section in sections] == ["1", "2"]

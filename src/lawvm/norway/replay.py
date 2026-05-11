@@ -44,6 +44,7 @@ _ISO_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 NO_REPLAY_MISSING_AMENDMENT_SOURCE = "no_replay_missing_amendment_source"
 NO_REPLAY_CONTINGENT_COMMENCEMENT_SKIPPED = "no_replay_contingent_commencement_skipped"
 NO_REPLAY_UNKNOWN_EFFECTIVE_SKIPPED = "no_replay_unknown_effective_skipped"
+NO_REPLAY_FUTURE_EFFECTIVE_SKIPPED = "no_replay_future_effective_skipped"
 
 
 # Back-compat for tests and call sites that imported the helper from replay.py.
@@ -173,6 +174,21 @@ def replay_no_to_pit(
             continue
         if effective_date > as_of:
             result.amendments_skipped_future.append(source_id)
+            result.adjudications.append(
+                CompileAdjudication(
+                    kind=NO_REPLAY_FUTURE_EFFECTIVE_SKIPPED,
+                    message="Norway replay skipped amendment: effective date is after the requested point in time.",
+                    source_statute=source_id,
+                    detail={
+                        "rule_id": NO_REPLAY_FUTURE_EFFECTIVE_SKIPPED,
+                        "phase": "temporal",
+                        "source_id": source_id,
+                        "effective_status": entry.effective_status,
+                        "effective_date": effective_date,
+                        "as_of": as_of,
+                    },
+                )
+            )
             continue
 
         html_bytes = load_no_amendment_bytes(source_id, data_dir)
