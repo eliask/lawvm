@@ -7,6 +7,7 @@
 #   ./scripts/test_shard.sh files norway
 #   ./scripts/test_shard.sh plan norway --json
 #   ./scripts/test_shard.sh run norway
+#   ./scripts/test_shard.sh run --timing-jsonl .tmp/shard-timings.jsonl norway
 #   ./scripts/test_shard.sh run norway -- -k action_family
 
 set -euo pipefail

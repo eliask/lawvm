@@ -7,6 +7,7 @@
 #   ./scripts/ci_sharded.sh
 #   LAWVM_CI_SHARDS="norway sweden eu" ./scripts/ci_sharded.sh
 #   LAWVM_CI_SHARDS="norway,sweden,eu" ./scripts/ci_sharded.sh
+#   LAWVM_CI_TIMING_JSONL=.tmp/ci-shard-timings.jsonl ./scripts/ci_sharded.sh
 
 set -euo pipefail
 
@@ -14,6 +15,12 @@ cd "$(git rev-parse --show-toplevel)"
 
 SHARDS="${LAWVM_CI_SHARDS:-core estonia eu evidence finland norway properties starter sweden tools uk}"
 SHARDS="${SHARDS//,/ }"
+TIMING_JSONL="${LAWVM_CI_TIMING_JSONL:-}"
+if [[ -n "$TIMING_JSONL" ]]; then
+    mkdir -p "$(dirname "$TIMING_JSONL")"
+    : > "$TIMING_JSONL"
+    export LAWVM_SHARD_TIMING_JSONL="$TIMING_JSONL"
+fi
 
 echo "=== [1/6] ruff check ==="
 uv run ruff check src/lawvm/ tests/ scripts/test_shard.py --no-fix 2>&1 || {
@@ -66,3 +73,6 @@ echo "=== [6/6] release hygiene ==="
 
 echo ""
 echo "=== SHARDED CI GREEN ==="
+if [[ -n "$TIMING_JSONL" ]]; then
+    echo "Timing JSONL: $TIMING_JSONL"
+fi
