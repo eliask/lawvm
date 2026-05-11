@@ -184,9 +184,34 @@ def test_replay_no_to_pit_surfaces_action_family_adjudications(tmp_path) -> None
     assert evidence_row["frontend_id"] == "norway"
     assert evidence_row["rule_id"] == "no_insert_occupied_target_replace"
     assert evidence_row["phase"] == "replay"
+    assert evidence_row["blocking"] is True
     assert evidence_row["strict_disposition"] == "block"
     assert evidence_row["quirks_disposition"] == "record"
     assert validate_corpus_finding_evidence_row(evidence_row) == ()
+
+
+def test_replay_no_to_pit_strict_action_family_rejects_recovery(tmp_path) -> None:
+    archive_path = tmp_path / "lovtidend-avd1-2001-2025.tar.bz2"
+    _write_archive(
+        archive_path,
+        [
+            ("lti/2025/nl-20250101-001.xml", _BASE_XML),
+            ("lti/2025/nl-20250202-005.xml", _occupied_insert_amendment_xml("2025-02-10")),
+        ],
+    )
+
+    result = replay_no_to_pit(
+        "no/lov/2025-01-01-1",
+        as_of="2025-02-15",
+        data_dir=tmp_path,
+        strict_action_family=True,
+    )
+
+    assert result.error is not None
+    assert "action-family recovery" in result.error
+    assert [(item.kind, item.detail["rule_id"]) for item in result.adjudications] == [
+        ("no_replay_insert_occupied_target_replaced", "no_insert_occupied_target_replace")
+    ]
 
 
 def test_replay_no_to_pit_surfaces_parse_action_family_promotion(tmp_path) -> None:
@@ -243,6 +268,9 @@ def test_replay_no_to_pit_skips_future_amendments(tmp_path) -> None:
     assert evidence_row["rule_id"] == "no_replay_future_effective_skipped"
     assert evidence_row["phase"] == "temporal"
     assert evidence_row["source_artifact_id"] == "no/lovtid/2025-02-02-5"
+    assert evidence_row["blocking"] is False
+    assert evidence_row["strict_disposition"] == "record"
+    assert evidence_row["quirks_disposition"] == "record"
     assert validate_corpus_finding_evidence_row(evidence_row) == ()
 
     _chapter, sections = _chapter_sections(result)

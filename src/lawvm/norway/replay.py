@@ -92,6 +92,7 @@ def replay_no_to_pit(
     index: Optional[NOAmendmentIndex] = None,
     index_path: Optional[Path] = None,
     commencement_path: Optional[Path] = None,
+    strict_action_family: bool = False,
     verbose: bool = False,
 ) -> NOReplayResult:
     """Replay Norway amendment acts through ``as_of`` using local public archives."""
@@ -186,6 +187,9 @@ def replay_no_to_pit(
                         "effective_status": entry.effective_status,
                         "effective_date": effective_date,
                         "as_of": as_of,
+                        "blocking": False,
+                        "strict_disposition": "record",
+                        "quirks_disposition": "record",
                     },
                 )
             )
@@ -254,7 +258,12 @@ def replay_no_to_pit(
             )
         )
     try:
-        result.replayed = apply_no_ops(base_statute, ops, adjudications_out=result.adjudications)
+        result.replayed = apply_no_ops(
+            base_statute,
+            ops,
+            adjudications_out=result.adjudications,
+            strict_action_family=strict_action_family,
+        )
         if heading_groups:
             result.replayed = apply_no_heading_groups(result.replayed, heading_groups)
     except ValueError as exc:
