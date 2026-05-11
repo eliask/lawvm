@@ -6,6 +6,8 @@ from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
+from lawvm.core.adjudication_evidence import adjudication_finding_evidence_rows
+
 if TYPE_CHECKING:
     import argparse
     from lawvm.replay_adjudication import CompileAdjudication
@@ -107,6 +109,12 @@ def main(args: "argparse.Namespace") -> None:
             and adj.detail.get("phase")
         }
     )
+    finding_rows = adjudication_finding_evidence_rows(
+        result.adjudications,
+        frontend_id="eu",
+        base_id=result.celex,
+        as_of=pit_date or "latest",
+    )
     payload = {
         "celex": result.celex,
         "ops": len(result.ops),
@@ -117,6 +125,9 @@ def main(args: "argparse.Namespace") -> None:
             _serialize_adjudication(adj) for adj in result.adjudications
         ],
         "timelines": len(result.timelines) if result.timelines is not None else None,
+        "evidence": {
+            "finding_rows": [row.to_dict() for row in finding_rows],
+        },
     }
 
     if output_format == "json":

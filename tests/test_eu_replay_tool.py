@@ -8,6 +8,7 @@ from argparse import Namespace
 from types import SimpleNamespace
 import pytest
 
+from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row
 from lawvm.tools import cli
 from lawvm.tools import eu_replay
 
@@ -140,6 +141,17 @@ def test_eu_replay_tool_supports_json(monkeypatch, capsys) -> None:
     assert payload["adjudications"] == 1
     assert payload["text_duplication_phases"] == ["materialized"]
     assert payload["adjudications_data"][0]["op_id"] == "op-dup"
+    evidence_row = payload["evidence"]["finding_rows"][0]
+    assert evidence_row["frontend_id"] == "eu"
+    assert evidence_row["family"] == "text_duplication_warning"
+    assert evidence_row["rule_id"] == "text_duplication_warning"
+    assert evidence_row["phase"] == "materialized"
+    assert evidence_row["source_artifact_id"] == "32016R0679"
+    assert evidence_row["source_unit_id"] == "op-dup"
+    assert evidence_row["strict_disposition"] == "block"
+    assert evidence_row["quirks_disposition"] == "record"
+    assert evidence_row["evidence"]["as_of"] == "latest"
+    assert validate_corpus_finding_evidence_row(evidence_row) == ()
 
 
 def test_eu_replay_tool_forwards_cache_dir(monkeypatch, capsys) -> None:
