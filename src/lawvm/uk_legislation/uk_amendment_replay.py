@@ -7233,12 +7233,15 @@ def _prepare_replay_uk_ops(
     filtered_ops: list[LegalOperation] = []
     for op in ops:
         if str(op.target.special or "") == "whole_act":
+            if _action_name(op.action) == "repeal":
+                filtered_ops.append(op)
+                continue
             if verbose:
-                print("  replay_uk_ops: skipping whole_act repeal")
+                print("  replay_uk_ops: skipping unsupported whole_act op")
             _append_uk_replay_adjudication(
                 adjudications_out,
                 kind="uk_replay_unsupported_action",
-                message="UK replay prepare step skipped whole-act target before replay apply.",
+                message="UK replay prepare step skipped unsupported whole-act target before replay apply.",
                 op=op,
                 detail={
                     "action": _action_name(op.action),
