@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from argparse import Namespace
 import hashlib
 import json
 import subprocess
@@ -15,6 +16,7 @@ from lawvm.open_law.local_git import make_maryland_repos
 from lawvm.open_law.models import OpenLawAction
 from lawvm.open_law.planner import plan_maryland_comar_operation
 from lawvm.open_law.xml import parse_open_law_xml, wrap_open_law_body_with_prefix
+from lawvm.tools.open_law import _print_explain
 
 
 _BASE_XML = """<?xml version='1.0' encoding='utf-8'?>
@@ -646,6 +648,38 @@ def test_evidence_pack_writes_summary_and_machine_reports(tmp_path) -> None:
     ]
     assert all(validate_corpus_operation_evidence_row(row["evidence_row"]) == () for row in operation_rows)
     assert all(validate_corpus_finding_evidence_row(row["evidence_row"]) == () for row in finding_rows)
+
+
+def test_open_law_explain_text_includes_evidence_dispositions(tmp_path, capsys) -> None:
+    report_dir = tmp_path / "report"
+    report_dir.mkdir()
+    row = {
+        "op_id": "editorial-actions/example.xml:1",
+        "status": "lifecycle_unsupported",
+        "action": "expire",
+        "codify_path": ["regulations", "emergency", "25-138-E"],
+        "before_branch": "publication/before",
+        "after_branch": "publication/after",
+        "action_path": "editorial-actions/example.xml",
+        "xml_path": "",
+        "expire_date": "2026-11-20",
+        "changed_path_count": 0,
+        "unexplained_path_count": 0,
+        "snapshot_matches_replay": False,
+        "evidence_row": {
+            "status": "unsupported",
+            "canonical_family": "",
+            "strict_disposition": "block",
+            "quirks_disposition": "record_unsupported",
+        },
+        "findings": [],
+    }
+    (report_dir / "operation_audits.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    _print_explain(Namespace(report_dir=str(report_dir), op_id="", status="", limit=1, json=False))
+
+    out = capsys.readouterr().out
+    assert "evidence: status=unsupported canonical=- strict=block quirks=record_unsupported" in out
 
 
 def _chapter_xml(text: str) -> str:
