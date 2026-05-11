@@ -6,6 +6,7 @@ from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.open_law.audit import audit_open_law_snapshot, replay_open_law_ops, resolve_open_law_path
 from lawvm.open_law.corpus_audit import audit_maryland_corpus, audit_maryland_transition
+from lawvm.open_law.evidence_pack import write_maryland_evidence_pack
 from lawvm.open_law.codify import parse_open_law_codify_ops
 from lawvm.open_law.local_git import make_maryland_repos
 from lawvm.open_law.models import OpenLawAction
@@ -386,6 +387,40 @@ def test_corpus_audit_does_not_claim_annotation_metadata_targets_as_body_replay(
     assert report.summary["metadata_unsupported"] == 1
     assert report.operation_rows[0].status == "metadata_unsupported"
     assert [finding.kind for finding in report.operation_rows[0].findings] == ["open_law_metadata_target_not_body_replay"]
+
+
+def test_evidence_pack_writes_summary_and_machine_reports(tmp_path) -> None:
+    source_repo = tmp_path / "law-xml"
+    codified_repo = tmp_path / "law-xml-codified"
+    _git_init(source_repo)
+    _git_init(codified_repo)
+    _write(source_repo / "editorial-actions" / "old.xml", _REPLACE_XML.replace("New text.", "Ignored old text."))
+    _write(source_repo / "editorial-actions" / "new.xml", _REPLACE_XML)
+    _git_commit_all(source_repo, "source")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/2026-01-01", ("editorial-actions/old.xml",)))
+    _write(codified_repo / "editorial-actions" / "old.xml", _REPLACE_XML.replace("New text.", "Ignored old text."))
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("Old text."))
+    _git_commit_all(codified_repo, "before")
+    _git_branch(codified_repo, "publication/2026-01-01.2026-01-01")
+
+    _write(
+        codified_repo / "index.xml",
+        _index_xml("publication/2026-01-02", ("editorial-actions/old.xml", "editorial-actions/new.xml")),
+    )
+    _write(codified_repo / "editorial-actions" / "new.xml", _REPLACE_XML)
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("New text."))
+    _git_commit_all(codified_repo, "after")
+    _git_branch(codified_repo, "publication/2026-01-02.2026-01-02")
+
+    pack = write_maryland_evidence_pack(tmp_path / "pack", repos=make_maryland_repos(source_repo, codified_repo))
+
+    assert pack.report.summary["matched"] == 1
+    assert (tmp_path / "pack" / "manifest.json").exists()
+    assert (tmp_path / "pack" / "operation_audits.jsonl").exists()
+    assert (tmp_path / "pack" / "findings.jsonl").exists()
+    assert "## What LawVM Claims" in pack.summary_path.read_text(encoding="utf-8")
+    assert '"clean_replace"' in pack.exemplars_path.read_text(encoding="utf-8")
 
 
 def _chapter_xml(text: str) -> str:

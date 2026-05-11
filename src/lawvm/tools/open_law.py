@@ -11,6 +11,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.open_law.audit import audit_open_law_snapshot, replay_open_law_ops
 from lawvm.open_law.corpus_audit import audit_maryland_corpus, audit_maryland_transition, write_corpus_report, write_inventory
+from lawvm.open_law.evidence_pack import write_maryland_evidence_pack
 from lawvm.open_law.codify import parse_open_law_codify_ops
 from lawvm.open_law.local_git import MarylandLocalRepos, make_maryland_repos
 from lawvm.open_law.models import OpenLawFinding, OpenLawOperation
@@ -34,7 +35,10 @@ def main(args: Namespace) -> None:
     if command == "corpus-audit":
         _print_corpus_audit(args)
         return
-    raise SystemExit("open-law requires a subcommand: ops, replay, audit, inventory, or corpus-audit")
+    if command == "evidence-pack":
+        _print_evidence_pack(args)
+        return
+    raise SystemExit("open-law requires a subcommand: ops, replay, audit, inventory, corpus-audit, or evidence-pack")
 
 
 def _print_ops(args: Namespace) -> None:
@@ -151,6 +155,42 @@ def _print_corpus_audit(args: Namespace) -> None:
         )
     )
     print(f"wrote {out_dir}")
+
+
+def _print_evidence_pack(args: Namespace) -> None:
+    repos = _maryland_repos(args)
+    pack = write_maryland_evidence_pack(
+        Path(args.out),
+        repos=repos,
+        limit=args.limit,
+        strict=args.strict,
+    )
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "summary": pack.report.summary,
+                    "summary_path": str(pack.summary_path),
+                    "exemplars_path": str(pack.exemplars_path),
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        return
+    print(
+        " ".join(
+            (
+                f"operation_rows={pack.report.summary['operation_rows']}",
+                f"matched={pack.report.summary['matched']}",
+                f"diverged={pack.report.summary['diverged']}",
+                f"metadata_unsupported={pack.report.summary['metadata_unsupported']}",
+                f"planning_failed={pack.report.summary['planning_failed']}",
+                f"unexplained_paths={pack.report.summary['unexplained_paths']}",
+            )
+        )
+    )
+    print(f"wrote {pack.summary_path}")
 
 
 def _op_json(op: OpenLawOperation) -> dict[str, Any]:

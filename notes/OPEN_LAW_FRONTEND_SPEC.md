@@ -133,7 +133,7 @@ This is the first meaningful audit product for Open Law:
 > Given declared structured codification operations and a publication snapshot,
 > did the publication artifact follow from the declared operations?
 
-## 6. Meeting Prototype Target
+## 6. Demo Prototype Target
 
 Use Maryland's public repositories as a corpus.
 
@@ -145,7 +145,7 @@ Observed public corpus shape on 2026-05-11:
 - operation mix: 35 `replace`, 3 `replace-or-insert`, 1 `expire`;
 - `law-xml-codified`: 45 publication branches.
 
-The meeting prototype should demonstrate:
+The demo prototype should demonstrate:
 
 1. parse a Maryland Open Law XML subtree;
 2. parse one `editorial-actions/*.xml` file;
