@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 from lxml import etree
 
 def parse_metadata_effects(xml_path: str) -> list[dict[str, object]]:
@@ -38,7 +41,8 @@ def parse_metadata_effects(xml_path: str) -> list[dict[str, object]]:
     return effects
 
 if __name__ == "__main__":
-    path = "/home/elias/c/civos/book/LawVM/uk/data/raw/ukpga/1998/29/current/data.xml"
+    repo_root = Path(__file__).resolve().parents[1]
+    path = sys.argv[1] if len(sys.argv) > 1 else str(repo_root / "uk/data/raw/ukpga/1998/29/current/data.xml")
     effects = parse_metadata_effects(path)
 
     # Filter for 2018/12 (the candidate repeal)

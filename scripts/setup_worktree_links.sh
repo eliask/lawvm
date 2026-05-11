@@ -4,7 +4,7 @@
 # LawVM depends on large gitignored data (corpus zips, bench runs, caches)
 # that won't exist in fresh worktrees. This script detects
 # if we're in a worktree and symlinks to the canonical data in the primary
-# working tree (civos-uk-eu).
+# working tree selected by LAWVM_CANONICAL_DATA_ROOT or git worktree metadata.
 #
 # Safe to run multiple times (idempotent). Safe to run in the main repo
 # (no-ops when not in a worktree, or when already set up).
@@ -42,13 +42,13 @@ GIT_DIR_ABS="$(cd "$LAWVM_DIR" && cd "$GIT_DIR" && pwd)"
 GIT_COMMON_ABS="$(cd "$LAWVM_DIR" && cd "$GIT_COMMON" && pwd)"
 
 # --- Find canonical LawVM data source ---
-# The canonical data lives in civos-uk-eu/book/LawVM (the primary working tree).
-# We find it by enumerating worktrees and picking the one that has our data.
+# We find the canonical data checkout from LAWVM_CANONICAL_DATA_ROOT or by
+# enumerating worktrees and picking the one that has our data.
 CANONICAL=""
 
-# Strategy 1: Check the known path directly
-if [[ -d "/home/elias/c/civos-uk-eu/book/LawVM/data/zips" ]]; then
-    CANONICAL="/home/elias/c/civos-uk-eu/book/LawVM"
+# Strategy 1: honor an explicit canonical data checkout.
+if [[ -n "${LAWVM_CANONICAL_DATA_ROOT:-}" && -d "$LAWVM_CANONICAL_DATA_ROOT/data/zips" ]]; then
+    CANONICAL="$LAWVM_CANONICAL_DATA_ROOT"
 fi
 
 # Strategy 2: Walk git worktree list to find one with data

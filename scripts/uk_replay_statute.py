@@ -6,6 +6,9 @@ from lawvm.uk_legislation.uk_grafter import parse_uk_statute_ir
 from lawvm.uk_legislation.uk_amendment_replay import UKReplayPipeline
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
 def get_all_eids(nodes, pit_date=None):
     eids = set()
     for n in nodes:
@@ -26,7 +29,7 @@ def main():
 
     statute_id = args.statute_id
     pit_date = args.pit_date
-    repo_root = Path('/home/elias/c/civos/book/LawVM')
+    repo_root = REPO_ROOT
 
     # 1. Load Base IR (Enacted)
     base_xml = repo_root / f"uk/data/raw/{statute_id}/enacted/data.xml"

@@ -34,6 +34,10 @@ def test_release_docs_do_not_expose_developer_local_paths() -> None:
     assert offenders == []
 
 
+def test_release_hygiene_script_has_valid_shell_syntax() -> None:
+    subprocess.run(("bash", "-n", "scripts/release_hygiene.sh"), check=True)
+
+
 def _tracked_markdown_files() -> tuple[Path, ...]:
     output = subprocess.check_output(("git", "ls-files", "*.md"), text=True)
     return tuple(Path(line) for line in output.splitlines() if line)

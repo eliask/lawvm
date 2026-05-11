@@ -130,6 +130,11 @@ For Open Law demo work:
 - [notes/OPEN_LAW_FRONTEND_SPEC.md](notes/OPEN_LAW_FRONTEND_SPEC.md)
 - [notes/OPEN_LAW_CORPUS_REPLAY_PLAN.md](notes/OPEN_LAW_CORPUS_REPLAY_PLAN.md)
 
+For release hygiene:
+
+- [docs/security-privacy.md](docs/security-privacy.md)
+- `./scripts/release_hygiene.sh`
+
 ## Quick Start
 
 LawVM uses `uv`.

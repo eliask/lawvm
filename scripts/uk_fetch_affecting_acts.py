@@ -3,6 +3,10 @@ import sys
 from pathlib import Path
 from lawvm.uk_legislation.uk_amendment_replay import load_effects_for_statute, build_acquisition_manifest, fetch_affecting_act
 
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python3 scripts/uk_fetch_affecting_acts.py <statute_id> [--dry-run]")
@@ -10,7 +14,7 @@ def main():
 
     statute_id = sys.argv[1]
     dry_run = "--dry-run" in sys.argv
-    repo_root = Path('/home/elias/c/civos/book/LawVM')
+    repo_root = REPO_ROOT
     raw_dir = repo_root / 'uk/data/raw/effects/affected'
 
     if not (raw_dir / statute_id).exists():
