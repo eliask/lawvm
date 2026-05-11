@@ -20,15 +20,23 @@ Run a small test module first:
 uv run pytest tests/test_ir_jsonable.py -q --override-ini="addopts="
 ```
 
-For the broader local gate:
+For the canonical bounded local CI gate:
 
 ```bash
-uv run pytest tests/ -q --override-ini="addopts="
+./scripts/ci.sh
+```
+
+For release-surface checks while you have local edits:
+
+```bash
+./scripts/release_hygiene.sh --allow-dirty
 ```
 
 Many corpus tests and replay commands depend on local archived source data.
 The public repository includes small corpus indexes and fixtures, not the full
-source archives.
+source archives. A full unfiltered pytest run is useful before major releases,
+but it is heavier and may require optional local corpora or network-marked
+lanes.
 
 ## Archive-Free Demo
 

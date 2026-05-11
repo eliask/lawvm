@@ -78,3 +78,10 @@ publishing, or automated legal decision-making.
 - [docs/benchmark-methodology.md](docs/benchmark-methodology.md)
 - [docs/jurisdictions.md](docs/jurisdictions.md)
 - [docs/project-history.md](docs/project-history.md)
+- [docs/security-privacy.md](docs/security-privacy.md)
+
+Before tagging or publishing a source snapshot, run:
+
+```bash
+./scripts/release_hygiene.sh
+```

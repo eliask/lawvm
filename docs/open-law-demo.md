@@ -52,7 +52,8 @@ uv run lawvm report query \
 - `diverged` rows, if present, are audit cases; they are not automatically
   official errors.
 
-The current local-clone smoke on 2026-05-11 produced 39 operation rows: 27 body
+One local-clone smoke on 2026-05-11 produced 39 operation rows: 27 body
 matches, 11 metadata matches, 1 lifecycle unsupported row, and 0 divergences.
-Treat those counts as dated observations from public repositories, not stable
-release guarantees.
+Treat those counts as dated observations, not stable release guarantees; the
+generated `manifest.json` is the source witness for the exact clone commits and
+remotes behind a run.
