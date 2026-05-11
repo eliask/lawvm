@@ -375,6 +375,7 @@ def check_all_timeline_invariants(
 InvariantKind = Literal[
     "overlapping_permanent",
     "temporary_missing_expiry",
+    "temporary_bad_interval",
     "temporary_overlap",
     "expiry_chain_non_monotone",
     "ir_without_timeline",
@@ -564,7 +565,7 @@ def check_all_timeline_invariants_typed(
                 source_info = f" (source={v.source.statute_id})" if v.source else ""
                 typed_violations.append(
                     _typed_violation_from_address(
-                        kind="temporary_overlap",
+                        kind="temporary_bad_interval",
                         address=address,
                         message=(
                             f"{address}: temporary version has expires="

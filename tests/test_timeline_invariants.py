@@ -68,6 +68,25 @@ def _tl(address: LegalAddress, versions: list[ProvisionVersion]) -> ProvisionTim
     return ProvisionTimeline(address=address, versions=versions)
 
 
+def _forged_pv(
+    effective: str,
+    *,
+    expires: str,
+    variant_kind: Literal["permanent", "temporary"] = "temporary",
+) -> ProvisionVersion:
+    """Construct a corrupted imported version without running post-init guards."""
+    version = object.__new__(ProvisionVersion)
+    version.effective = effective
+    version.enacted = effective
+    version.expires = expires
+    version.variant_kind = variant_kind
+    version.content = IRNode(kind=IRNodeKind.SECTION, label="1", text="forged")
+    version.source = OperationSource(statute_id="test/forged")
+    version.applicability = ()
+    version.content_hash = ""
+    return version
+
+
 # ---------------------------------------------------------------------------
 # 1. check_no_overlapping_permanent_versions
 # ---------------------------------------------------------------------------
@@ -158,6 +177,21 @@ def test_temporary_expires_before_effective() -> None:
 
     with pytest.raises(ValueError, match="expires.*before effective"):
         _pv("2022-06-01", expires="2022-01-01", variant_kind="temporary", text="backwards")
+
+
+def test_typed_temporary_bad_interval_is_not_overlap() -> None:
+    """Corrupt imported temporaries should not be classified as real overlaps."""
+    addr = _addr(("section", "6"))
+    timelines = {addr: _tl(addr, [_forged_pv("2022-06-01", expires="2022-01-01")])}
+
+    typed = check_all_timeline_invariants_typed(
+        IRNode(kind=IRNodeKind.BODY, children=()),
+        timelines,
+        "2025-01-01",
+    )
+
+    assert any(v.kind == "temporary_bad_interval" for v in typed)
+    assert all(v.kind != "temporary_overlap" for v in typed)
 
 
 def test_temporary_overlap() -> None:
