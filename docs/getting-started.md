@@ -26,7 +26,8 @@ For the canonical bounded local CI gate:
 ./scripts/ci.sh
 ```
 
-For release-surface checks while you have local edits:
+The CI gate includes release hygiene in dirty-worktree mode. To run only the
+release-surface checks while you have local edits:
 
 ```bash
 ./scripts/release_hygiene.sh --allow-dirty

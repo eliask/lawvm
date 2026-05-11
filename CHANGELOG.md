@@ -18,6 +18,8 @@ Release target date: not fixed.
   creating a `git archive` from `HEAD`.
 - Package-build checks in release hygiene for wheel/sdist metadata, pinned
   `farchive` provenance, analytics extras, and generated rulebook package data.
+- Canonical local CI now runs release hygiene in dirty-worktree mode after the
+  bounded non-network test suite.
 - Public framing for Finland findings as reported candidate divergences, not
   confirmed official errors.
 - Estonia replayable corpus and publication SQLite export tooling for browsing
