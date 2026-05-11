@@ -12,7 +12,7 @@ from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.open_law.audit import audit_open_law_snapshot, replay_open_law_ops, resolve_open_law_path
 from lawvm.open_law.corpus_audit import audit_maryland_corpus, audit_maryland_transition
-from lawvm.open_law.evidence_pack import write_maryland_evidence_pack
+from lawvm.open_law.evidence_pack import _shareable_git_remote_url, write_maryland_evidence_pack
 from lawvm.open_law.codify import parse_open_law_codify_ops
 from lawvm.open_law.local_git import make_maryland_repos
 from lawvm.open_law.models import OpenLawAction
@@ -662,6 +662,11 @@ def test_evidence_pack_writes_summary_and_machine_reports(tmp_path) -> None:
     ]
     assert all(validate_corpus_operation_evidence_row(row["evidence_row"]) == () for row in operation_rows)
     assert all(validate_corpus_finding_evidence_row(row["evidence_row"]) == () for row in finding_rows)
+
+
+def test_open_law_generator_remote_normalizes_github_ssh_url() -> None:
+    assert _shareable_git_remote_url("git@github.com:eliask/lawvm.git") == "https://github.com/eliask/lawvm.git"
+    assert _shareable_git_remote_url("https://github.com/eliask/lawvm.git") == "https://github.com/eliask/lawvm.git"
 
 
 def test_open_law_verify_pack_checks_artifacts_and_evidence_rows(tmp_path, capsys) -> None:
