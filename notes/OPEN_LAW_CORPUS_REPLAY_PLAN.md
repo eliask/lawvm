@@ -176,6 +176,9 @@ uv run lawvm open-law evidence-pack \
   --source-repo .tmp/open_law/repos/law-xml \
   --codified-repo .tmp/open_law/repos/law-xml-codified \
   --out .tmp/open_law/evidence-pack
+
+uv run lawvm open-law verify-pack \
+  --report-dir .tmp/open_law/evidence-pack
 ```
 
 Outputs:

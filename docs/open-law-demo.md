@@ -36,6 +36,9 @@ uv run lawvm open-law explain \
   --report-dir .tmp/open_law/evidence-pack \
   --limit 5
 
+uv run lawvm open-law verify-pack \
+  --report-dir .tmp/open_law/evidence-pack
+
 uv run lawvm report query \
   .tmp/open_law/evidence-pack/operation_audits.jsonl \
   --status unsupported \

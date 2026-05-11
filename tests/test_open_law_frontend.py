@@ -5,6 +5,8 @@ import hashlib
 import json
 import subprocess
 
+import pytest
+
 from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row, validate_corpus_operation_evidence_row
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.core.semantic_types import IRNodeKind
@@ -16,7 +18,7 @@ from lawvm.open_law.local_git import make_maryland_repos
 from lawvm.open_law.models import OpenLawAction
 from lawvm.open_law.planner import plan_maryland_comar_operation
 from lawvm.open_law.xml import parse_open_law_xml, wrap_open_law_body_with_prefix
-from lawvm.tools.open_law import _print_explain
+from lawvm.tools.open_law import _print_explain, _print_verify_pack
 
 
 _BASE_XML = """<?xml version='1.0' encoding='utf-8'?>
@@ -652,6 +654,58 @@ def test_evidence_pack_writes_summary_and_machine_reports(tmp_path) -> None:
     ]
     assert all(validate_corpus_operation_evidence_row(row["evidence_row"]) == () for row in operation_rows)
     assert all(validate_corpus_finding_evidence_row(row["evidence_row"]) == () for row in finding_rows)
+
+
+def test_open_law_verify_pack_checks_artifacts_and_evidence_rows(tmp_path, capsys) -> None:
+    source_repo = tmp_path / "law-xml"
+    codified_repo = tmp_path / "law-xml-codified"
+    _git_init(source_repo)
+    _git_init(codified_repo)
+    _write(source_repo / "editorial-actions" / "old.xml", _REPLACE_XML.replace("New text.", "Ignored old text."))
+    _write(source_repo / "editorial-actions" / "new.xml", _REPLACE_XML)
+    _git_commit_all(source_repo, "source")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/2026-01-01", ("editorial-actions/old.xml",)))
+    _write(codified_repo / "editorial-actions" / "old.xml", _REPLACE_XML.replace("New text.", "Ignored old text."))
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("Old text."))
+    _git_commit_all(codified_repo, "before")
+    _git_branch(codified_repo, "publication/2026-01-01.2026-01-01")
+
+    _write(
+        codified_repo / "index.xml",
+        _index_xml("publication/2026-01-02", ("editorial-actions/old.xml", "editorial-actions/new.xml")),
+    )
+    _write(codified_repo / "editorial-actions" / "new.xml", _REPLACE_XML)
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("New text."))
+    _git_commit_all(codified_repo, "after")
+    _git_branch(codified_repo, "publication/2026-01-02.2026-01-02")
+
+    write_maryland_evidence_pack(tmp_path / "pack", repos=make_maryland_repos(source_repo, codified_repo))
+
+    _print_verify_pack(Namespace(report_dir=str(tmp_path / "pack"), json=False))
+
+    out = capsys.readouterr().out
+    assert "files=6 operation_rows=1 finding_rows=0 issues=0" in out
+
+
+def test_open_law_verify_pack_fails_on_checksum_mismatch(tmp_path) -> None:
+    pack_dir = tmp_path / "pack"
+    pack_dir.mkdir()
+    (pack_dir / "manifest.json").write_text("original\n", encoding="utf-8")
+    (pack_dir / "summary.json").write_text("{}\n", encoding="utf-8")
+    (pack_dir / "operation_audits.jsonl").write_text("", encoding="utf-8")
+    (pack_dir / "findings.jsonl").write_text("", encoding="utf-8")
+    (pack_dir / "exemplars.json").write_text("{}\n", encoding="utf-8")
+    (pack_dir / "summary.md").write_text("# Summary\n", encoding="utf-8")
+    files = []
+    for name in ("manifest.json", "summary.json", "operation_audits.jsonl", "findings.jsonl", "exemplars.json", "summary.md"):
+        data = (pack_dir / name).read_bytes()
+        files.append({"path": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+    (pack_dir / "evidence_pack_manifest.json").write_text(json.dumps({"files": files}) + "\n", encoding="utf-8")
+    (pack_dir / "manifest.json").write_text("tampered\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit):
+        _print_verify_pack(Namespace(report_dir=str(pack_dir), json=False))
 
 
 def test_open_law_explain_text_includes_evidence_dispositions(tmp_path, capsys) -> None:
