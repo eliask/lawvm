@@ -348,6 +348,17 @@ class TestFromPhaseResult:
 
         assert any(issue.kind == "missing_replace_target" for issue in result.issues)
         assert target not in result.timelines or len(result.timelines[target].versions) == 0
+        artifact = result.to_wire_artifact(producer="tests.compile_facade", version="wire-1")
+        payload = cast(Any, artifact.payload)
+        assert artifact.schema == "lawvm.timeline_compilation_result"
+        assert artifact.status == ProcessingStatus(
+            kind="partial",
+            blockers=("timeline.missing_replace_target",),
+        )
+        assert payload["issues"][0]["rule_id"] == "timeline.missing_replace_target"
+        assert payload["issues"][0]["phase"] == "timeline"
+        assert payload["issues"][0]["strict_disposition"] == "block"
+        assert payload["issues"][0]["quirks_disposition"] == "record"
 
     def test_facade_compile_timelines_ex_preserves_unsupported_facet_target_issue(self):
         base = IRStatute(
@@ -795,6 +806,10 @@ class TestFromPhaseResult:
         result = facade.compile_timelines_ex(base, base_date="2000-01-01")
         timelines = result.timelines
         assert result.issues == ()
+        artifact = result.to_wire_artifact(producer="tests.compile_facade", version="wire-1")
+        payload = cast(Any, artifact.payload)
+        assert artifact.status == ProcessingStatus(kind="complete")
+        assert payload["issues"] == ()
 
         active_2007 = select_active_version(timelines[target], "2007-01-01")
         assert active_2007 is not None
@@ -943,6 +958,15 @@ class TestFromPhaseResult:
 
         assert any(issue.kind == "missing_replace_payload" for issue in result.issues)
         assert result.statute.body.children[0].text == "Base text"
+        artifact = result.to_wire_artifact(producer="tests.compile_facade", version="wire-1")
+        payload = cast(Any, artifact.payload)
+        assert artifact.schema == "lawvm.materialization_result"
+        assert artifact.status == ProcessingStatus(
+            kind="partial",
+            blockers=("timeline.missing_replace_payload",),
+        )
+        assert payload["issues"][0]["rule_id"] == "timeline.missing_replace_payload"
+        assert payload["issues"][0]["strict_disposition"] == "block"
 
     def test_output_string_raises_type_error(self):
         pr = _pr(output="not ops")
