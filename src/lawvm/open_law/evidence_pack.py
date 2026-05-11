@@ -25,6 +25,10 @@ class OpenLawEvidencePack:
 
     out_dir: Path
     report: OpenLawCorpusAuditReport
+    manifest_path: Path
+    summary_json_path: Path
+    operation_audits_path: Path
+    findings_path: Path
     summary_path: Path
     exemplars_path: Path
     artifact_manifest_path: Path
@@ -83,6 +87,10 @@ def write_maryland_evidence_pack(
     return OpenLawEvidencePack(
         out_dir=out_dir,
         report=report,
+        manifest_path=out_dir / "manifest.json",
+        summary_json_path=out_dir / "summary.json",
+        operation_audits_path=out_dir / "operation_audits.jsonl",
+        findings_path=out_dir / "findings.jsonl",
         summary_path=summary_path,
         exemplars_path=exemplars_path,
         artifact_manifest_path=artifact_manifest_path,
