@@ -743,17 +743,20 @@ def test_open_law_verify_pack_can_require_clean_generator(tmp_path, capsys) -> N
     (pack_dir / "operation_audits.jsonl").write_text("", encoding="utf-8")
     (pack_dir / "findings.jsonl").write_text("", encoding="utf-8")
     (pack_dir / "exemplars.json").write_text("{}\n", encoding="utf-8")
-    (pack_dir / "summary.md").write_text("# Summary\n", encoding="utf-8")
-    files = []
-    for name in ("manifest.json", "summary.json", "operation_audits.jsonl", "findings.jsonl", "exemplars.json", "summary.md"):
-        data = (pack_dir / name).read_bytes()
-        files.append({"path": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
     generator = {
         "tool": "lawvm open-law evidence-pack",
         "repository": "/repo",
         "git_commit": "a" * 40,
         "git_dirty": True,
     }
+    (pack_dir / "summary.md").write_text(
+        f"# Summary\n\n- LawVM generator commit: `{generator['git_commit']}`\n- LawVM generator repository: `{generator['repository']}`\n",
+        encoding="utf-8",
+    )
+    files = []
+    for name in ("manifest.json", "summary.json", "operation_audits.jsonl", "findings.jsonl", "exemplars.json", "summary.md"):
+        data = (pack_dir / name).read_bytes()
+        files.append({"path": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
     manifest_path = pack_dir / "evidence_pack_manifest.json"
     manifest_path.write_text(json.dumps({"generator": generator, "files": files}) + "\n", encoding="utf-8")
 
@@ -887,6 +890,41 @@ def test_open_law_verify_pack_fails_on_stale_summary_even_when_checksum_matches(
     summary["matched"] = 0
     pack.summary_json_path.write_text(json.dumps(summary) + "\n", encoding="utf-8")
     _refresh_pack_manifest_entry(pack.artifact_manifest_path, pack.summary_json_path)
+
+    with pytest.raises(SystemExit):
+        _print_verify_pack(Namespace(report_dir=str(tmp_path / "pack"), require_clean_generator=False, json=False))
+
+
+def test_open_law_verify_pack_fails_on_summary_md_missing_provenance_even_when_checksum_matches(tmp_path) -> None:
+    source_repo = tmp_path / "law-xml"
+    codified_repo = tmp_path / "law-xml-codified"
+    _git_init(source_repo)
+    _git_init(codified_repo)
+    _write(source_repo / "editorial-actions" / "old.xml", _REPLACE_XML.replace("New text.", "Ignored old text."))
+    _write(source_repo / "editorial-actions" / "new.xml", _REPLACE_XML)
+    _git_commit_all(source_repo, "source")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/2026-01-01", ("editorial-actions/old.xml",)))
+    _write(codified_repo / "editorial-actions" / "old.xml", _REPLACE_XML.replace("New text.", "Ignored old text."))
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("Old text."))
+    _git_commit_all(codified_repo, "before")
+    _git_branch(codified_repo, "publication/2026-01-01.2026-01-01")
+
+    _write(
+        codified_repo / "index.xml",
+        _index_xml("publication/2026-01-02", ("editorial-actions/old.xml", "editorial-actions/new.xml")),
+    )
+    _write(codified_repo / "editorial-actions" / "new.xml", _REPLACE_XML)
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("New text."))
+    _git_commit_all(codified_repo, "after")
+    _git_branch(codified_repo, "publication/2026-01-02.2026-01-02")
+
+    pack = write_maryland_evidence_pack(tmp_path / "pack", repos=make_maryland_repos(source_repo, codified_repo))
+    artifact_manifest = json.loads(pack.artifact_manifest_path.read_text(encoding="utf-8"))
+    commit = artifact_manifest["generator"]["git_commit"]
+    summary_text = pack.summary_path.read_text(encoding="utf-8")
+    pack.summary_path.write_text(summary_text.replace(commit, "missing-generator-commit"), encoding="utf-8")
+    _refresh_pack_manifest_entry(pack.artifact_manifest_path, pack.summary_path)
 
     with pytest.raises(SystemExit):
         _print_verify_pack(Namespace(report_dir=str(tmp_path / "pack"), require_clean_generator=False, json=False))
