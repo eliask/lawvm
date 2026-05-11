@@ -34,8 +34,9 @@ def test_release_docs_do_not_expose_developer_local_paths() -> None:
     assert offenders == []
 
 
-def test_release_hygiene_script_has_valid_shell_syntax() -> None:
+def test_release_scripts_have_valid_shell_syntax() -> None:
     subprocess.run(("bash", "-n", "scripts/release_hygiene.sh"), check=True)
+    subprocess.run(("bash", "-n", "scripts/build_release_archive.sh"), check=True)
 
 
 def _tracked_markdown_files() -> tuple[Path, ...]:

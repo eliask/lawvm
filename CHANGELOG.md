@@ -14,6 +14,8 @@ Release target date: not fixed.
 - Release hygiene script for dirty-worktree checks, public-doc link checks,
   credential-pattern scans, developer-local path scans, and large tracked file
   scans.
+- Tracked-file-only release archive helper that runs release hygiene before
+  creating a `git archive` from `HEAD`.
 - Public framing for Finland findings as reported candidate divergences, not
   confirmed official errors.
 - Estonia replayable corpus and publication SQLite export tooling for browsing
