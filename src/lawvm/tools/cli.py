@@ -5333,6 +5333,61 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     ep_p.add_argument("--limit", type=int, metavar="N", help="process only first N statutes")
 
+    # --- open-law ---
+    open_law_p = sub.add_parser(
+        "open-law",
+        help="inspect and audit Open Law Library XML operations",
+        description=(
+            "Parse Open Law Library XML and codify:* action files. "
+            "This frontend audits structured Open Law operations; it does not "
+            "infer amendments from prose."
+        ),
+    )
+    open_law_sub = open_law_p.add_subparsers(dest="open_law_command", metavar="<open-law-command>")
+    open_law_ops_p = open_law_sub.add_parser("ops", help="list codify operations in an Open Law action XML file")
+    open_law_ops_p.add_argument("action_xml", help="path to editorial-actions/*.xml")
+    open_law_ops_p.add_argument("--json", action="store_true", help="emit JSON")
+    open_law_replay_p = open_law_sub.add_parser("replay", help="replay Open Law codify operations over one XML tree")
+    open_law_replay_p.add_argument("base_xml", help="path to base Open Law XML")
+    open_law_replay_p.add_argument("action_xml", help="path to editorial-actions/*.xml")
+    open_law_replay_p.add_argument(
+        "--path-prefix",
+        default="",
+        metavar="A|B",
+        help="explicit carried parent path for partial subtree files, e.g. 10|41",
+    )
+    open_law_replay_p.add_argument("--strict", action="store_true", help="mark unsupported actions as blocking")
+    open_law_replay_p.add_argument("--text", action="store_true", help="include materialized text in output")
+    open_law_replay_p.add_argument("--json", action="store_true", help="emit JSON")
+    open_law_audit_p = open_law_sub.add_parser(
+        "audit",
+        help="compare replay of Open Law actions against an after XML snapshot",
+    )
+    open_law_audit_p.add_argument("before_xml", help="path to before Open Law XML")
+    open_law_audit_p.add_argument("after_xml", help="path to after Open Law XML")
+    open_law_audit_p.add_argument("action_xml", help="path to editorial-actions/*.xml")
+    open_law_audit_p.add_argument(
+        "--path-prefix",
+        default="",
+        metavar="A|B",
+        help="explicit carried parent path for partial subtree files, e.g. 10|41",
+    )
+    open_law_audit_p.add_argument("--strict", action="store_true", help="mark unsupported actions as blocking")
+    open_law_audit_p.add_argument("--json", action="store_true", help="emit JSON")
+    open_law_inv_p = open_law_sub.add_parser("inventory", help="write Maryland Open Law local-repo inventory manifest")
+    open_law_inv_p.add_argument("--source-repo", required=True, metavar="PATH", help="local maryland-dsd/law-xml clone")
+    open_law_inv_p.add_argument("--codified-repo", required=True, metavar="PATH", help="local law-xml-codified clone")
+    open_law_inv_p.add_argument("--out", default=".tmp/open_law/report", metavar="DIR", help="output directory")
+    open_law_corpus_p = open_law_sub.add_parser("corpus-audit", help="audit Maryland publication transitions")
+    open_law_corpus_p.add_argument("--source-repo", required=True, metavar="PATH", help="local maryland-dsd/law-xml clone")
+    open_law_corpus_p.add_argument("--codified-repo", required=True, metavar="PATH", help="local law-xml-codified clone")
+    open_law_corpus_p.add_argument("--before-branch", default="", metavar="BRANCH", help="before publication branch")
+    open_law_corpus_p.add_argument("--after-branch", default="", metavar="BRANCH", help="after publication branch")
+    open_law_corpus_p.add_argument("--out", default=".tmp/open_law/report", metavar="DIR", help="output directory")
+    open_law_corpus_p.add_argument("--limit", type=int, metavar="N", help="audit only first N operations")
+    open_law_corpus_p.add_argument("--strict", action="store_true", help="mark unsupported actions as blocking")
+    open_law_corpus_p.add_argument("--json", action="store_true", help="emit summary JSON")
+
     # --- sql ---
     sql_p = sub.add_parser(
         "sql",
@@ -6234,6 +6289,11 @@ def main() -> None:
         from lawvm.tools.export_parquet import main as export_proj_main
 
         export_proj_main(args)
+
+    elif args.command == "open-law":
+        from lawvm.tools.open_law import main as open_law_main
+
+        open_law_main(args)
 
     elif args.command == "sql":
         from lawvm.tools.sql_query import main as sql_main
