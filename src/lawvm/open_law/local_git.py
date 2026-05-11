@@ -19,6 +19,25 @@ class GitTreeEntry:
 
 
 @dataclass(frozen=True)
+class LocalGitRemote:
+    """One configured git remote URL."""
+
+    name: str
+    url: str
+
+
+@dataclass(frozen=True)
+class LocalGitRepoIdentity:
+    """Reproducibility identity for a local git checkout."""
+
+    label: str
+    head_commit: str
+    current_branch: str
+    branch_count: int
+    remotes: Tuple[LocalGitRemote, ...] = ()
+
+
+@dataclass(frozen=True)
 class LocalGitRepo:
     """Read a local git checkout without mutating it."""
 
@@ -59,6 +78,17 @@ class LocalGitRepo:
         origin_ref = f"origin/{ref}"
         return self._git("rev-parse", "--verify", f"{origin_ref}^{{commit}}").strip()
 
+    def identity(self, *, label: str) -> LocalGitRepoIdentity:
+        """Return local checkout identity for evidence-pack reproducibility."""
+
+        return LocalGitRepoIdentity(
+            label=label,
+            head_commit=self._git("rev-parse", "HEAD").strip(),
+            current_branch=self._git("branch", "--show-current").strip(),
+            branch_count=len(self.list_branches()),
+            remotes=self._remotes(),
+        )
+
     def _ref_exists(self, ref: str) -> bool:
         result = subprocess.run(
             ("git", "-C", str(self.path), "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"),
@@ -71,6 +101,22 @@ class LocalGitRepo:
 
     def _git(self, *args: str) -> str:
         return subprocess.check_output(("git", "-C", str(self.path), *args), text=True)
+
+    def _remotes(self) -> Tuple[LocalGitRemote, ...]:
+        result = subprocess.run(
+            ("git", "-C", str(self.path), "config", "--get-regexp", r"^remote\..*\.url$"),
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        remotes: list[LocalGitRemote] = []
+        for line in result.stdout.splitlines():
+            key, url = line.split(maxsplit=1)
+            parts = key.split(".")
+            if len(parts) == 3:
+                remotes.append(LocalGitRemote(name=parts[1], url=url))
+        return tuple(sorted(remotes, key=lambda remote: remote.name))
 
 
 @dataclass(frozen=True)
@@ -86,6 +132,23 @@ def make_maryland_repos(source_repo: str | Path, codified_repo: str | Path) -> M
         source=LocalGitRepo(Path(source_repo)),
         codified=LocalGitRepo(Path(codified_repo)),
     )
+
+
+def maryland_repos_identity_to_jsonable(repos: MarylandLocalRepos) -> dict[str, object]:
+    return {
+        "source": _repo_identity_to_jsonable(repos.source.identity(label="maryland-dsd/law-xml")),
+        "codified": _repo_identity_to_jsonable(repos.codified.identity(label="maryland-dsd/law-xml-codified")),
+    }
+
+
+def _repo_identity_to_jsonable(identity: LocalGitRepoIdentity) -> dict[str, object]:
+    return {
+        "label": identity.label,
+        "head_commit": identity.head_commit,
+        "current_branch": identity.current_branch,
+        "branch_count": identity.branch_count,
+        "remotes": [{"name": remote.name, "url": remote.url} for remote in identity.remotes],
+    }
 
 
 def _looks_like_commit(ref: str) -> bool:
