@@ -176,6 +176,10 @@ def _print_evidence_pack(args: Namespace) -> None:
             json.dumps(
                 {
                     "summary": pack.report.summary,
+                    "manifest_path": str(pack.manifest_path),
+                    "summary_json_path": str(pack.summary_json_path),
+                    "operation_audits_path": str(pack.operation_audits_path),
+                    "findings_path": str(pack.findings_path),
                     "summary_path": str(pack.summary_path),
                     "exemplars_path": str(pack.exemplars_path),
                     "artifact_manifest_path": str(pack.artifact_manifest_path),

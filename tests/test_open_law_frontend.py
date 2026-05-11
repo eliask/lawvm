@@ -606,6 +606,10 @@ def test_evidence_pack_writes_summary_and_machine_reports(tmp_path) -> None:
     pack = write_maryland_evidence_pack(tmp_path / "pack", repos=make_maryland_repos(source_repo, codified_repo))
 
     assert pack.report.summary["matched"] == 1
+    assert pack.manifest_path == tmp_path / "pack" / "manifest.json"
+    assert pack.summary_json_path == tmp_path / "pack" / "summary.json"
+    assert pack.operation_audits_path == tmp_path / "pack" / "operation_audits.jsonl"
+    assert pack.findings_path == tmp_path / "pack" / "findings.jsonl"
     assert (tmp_path / "pack" / "manifest.json").exists()
     assert (tmp_path / "pack" / "evidence_pack_manifest.json").exists()
     assert (tmp_path / "pack" / "operation_audits.jsonl").exists()
