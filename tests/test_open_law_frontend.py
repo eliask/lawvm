@@ -629,6 +629,10 @@ def test_evidence_pack_writes_summary_and_machine_reports(tmp_path) -> None:
     assert manifest["local_repositories"]["codified"]["label"] == "maryland-dsd/law-xml-codified"
     assert len(manifest["local_repositories"]["codified"]["head_commit"]) == 40
     artifact_manifest = json.loads(pack.artifact_manifest_path.read_text(encoding="utf-8"))
+    assert artifact_manifest["generator"]["tool"] == "lawvm open-law evidence-pack"
+    assert isinstance(artifact_manifest["generator"]["repository"], str)
+    assert isinstance(artifact_manifest["generator"]["git_commit"], str)
+    assert artifact_manifest["generator"]["git_dirty"] in {True, False, None}
     artifact_paths = {item["path"] for item in artifact_manifest["files"]}
     assert artifact_paths == {
         "manifest.json",

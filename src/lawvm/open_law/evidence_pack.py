@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Tuple, TypedDict, cast
@@ -248,8 +249,39 @@ def _write_artifact_manifest(out_dir: Path, file_names: Tuple[str, ...]) -> Path
             }
         )
     manifest_path = out_dir / "evidence_pack_manifest.json"
-    manifest_path.write_text(json.dumps({"files": files}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps({"generator": _lawvm_generator_identity(), "files": files}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
     return manifest_path
+
+
+def _lawvm_generator_identity() -> dict[str, object]:
+    """Return local LawVM code identity for generated evidence packs."""
+
+    repo_root = Path(__file__).resolve().parents[3]
+    inside = subprocess.run(
+        ("git", "-C", str(repo_root), "rev-parse", "--is-inside-work-tree"),
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        return {
+            "tool": "lawvm open-law evidence-pack",
+            "repository": str(repo_root),
+            "git_commit": "",
+            "git_dirty": None,
+        }
+    commit = subprocess.check_output(("git", "-C", str(repo_root), "rev-parse", "HEAD"), text=True).strip()
+    status = subprocess.check_output(("git", "-C", str(repo_root), "status", "--short"), text=True)
+    return {
+        "tool": "lawvm open-law evidence-pack",
+        "repository": str(repo_root),
+        "git_commit": commit,
+        "git_dirty": bool(status.strip()),
+    }
 
 
 def _sized_len(value: object) -> int:

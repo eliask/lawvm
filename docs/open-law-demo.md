@@ -16,8 +16,9 @@ git clone https://github.com/maryland-dsd/law-xml-codified.git .tmp/open_law/rep
 ```
 
 The commands below operate on the local clones. The generated evidence pack
-records clone HEAD commits and remotes in `manifest.json`, and generated file
-checksums in `evidence_pack_manifest.json`.
+records clone HEAD commits and remotes in `manifest.json`, and records LawVM
+generator identity plus generated file checksums in
+`evidence_pack_manifest.json`.
 
 ## Build Evidence
 

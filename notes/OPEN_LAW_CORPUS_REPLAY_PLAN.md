@@ -184,7 +184,8 @@ uv run lawvm open-law verify-pack \
 Outputs:
 
 - `manifest.json`
-- `evidence_pack_manifest.json` when using `evidence-pack`
+- `evidence_pack_manifest.json` when using `evidence-pack`; includes LawVM
+  generator identity plus generated artifact checksums
 - `operation_audits.jsonl`
 - `findings.jsonl`
 - `summary.json`
