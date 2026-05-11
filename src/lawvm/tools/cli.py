@@ -30,7 +30,7 @@ Subcommands:
     uk-replay <statute_id>   UK amendment replay with timeline integration.
     eu-replay                   Replay one EU CELEX act against discovered affecting acts and report adjudications.
     eu-reul map|resolve         Bridge CELEX/EULI references to EU retained-law ids.
-    scaffold  <jurisdiction> Generate a new jurisdiction adapter skeleton.
+    scaffold  <jurisdiction> Generate a blocked jurisdiction starter skeleton.
     export                  Batch export graph to Neo4j CSV or JSON-LD.
     coverage  [statute_id]  Corpus coverage audit ("Is The Law Complete?").
     bench-curate           Partition Finland bench corpus into core/suspect/notruth/pending.
@@ -4363,11 +4363,11 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- scaffold ---
     scaffold_p = sub.add_parser(
         "scaffold",
-        help="generate a new jurisdiction adapter skeleton",
+        help="generate a blocked jurisdiction starter skeleton",
         description=(
-            "Create src/lawvm/<jurisdiction>/ with grafter.py stubs "
-            "(parse_statute / parse_amendment_ops / apply_ops), "
-            "__init__.py, and a minimal test harness."
+            "Create src/lawvm/<jurisdiction>/ with contract-first blocked P5 "
+            "starter helpers. The generated package preserves inventoried source "
+            "units as non-claim evidence and does not claim replay support."
         ),
     )
     scaffold_p.add_argument(
