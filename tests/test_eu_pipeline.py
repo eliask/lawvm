@@ -114,7 +114,7 @@ def _duplicate_text_statute() -> IRStatute:
     )
 
 
-def test_apply_eu_ops_records_payload_and_target_missing_adjudications() -> None:
+def test_apply_eu_ops_records_payload_and_target_missing_adjudications(capsys) -> None:
     baseline = _baseline_statute()
     adjudications: list[CompileAdjudication] = []
     ops = [
@@ -136,7 +136,7 @@ def test_apply_eu_ops_records_payload_and_target_missing_adjudications() -> None
         ),
     ]
 
-    apply_eu_ops(baseline, ops, adjudications_out=adjudications)
+    replayed = apply_eu_ops(baseline, ops, adjudications_out=adjudications)
 
     assert [a.kind for a in adjudications] == [
         "eu_replay_text_payload_missing",
@@ -145,6 +145,9 @@ def test_apply_eu_ops_records_payload_and_target_missing_adjudications() -> None
     assert adjudications[0].op_id == "replace-no-payload"
     assert adjudications[1].detail["target"] == "section:9"
     assert adjudications[1].source_statute == "2026/2"
+    assert replayed.metadata["eu_replay_applied_op_count"] == 0
+    assert replayed.metadata["eu_replay_skipped_op_count"] == 2
+    assert capsys.readouterr().out == ""
 
 
 def test_apply_eu_ops_records_insert_parent_not_found() -> None:
@@ -243,13 +246,15 @@ def test_apply_eu_ops_records_new_apply_step_duplication_warning() -> None:
         ),
     ]
 
-    apply_eu_ops(baseline, ops, adjudications_out=adjudications)
+    replayed = apply_eu_ops(baseline, ops, adjudications_out=adjudications)
 
     duplication_adjudications = [
         adjudication
         for adjudication in adjudications
         if adjudication.kind == "text_duplication_warning"
     ]
+    assert replayed.metadata["eu_replay_applied_op_count"] == 1
+    assert replayed.metadata["eu_replay_skipped_op_count"] == 0
     assert len(duplication_adjudications) == 1
     assert duplication_adjudications[0].op_id == "replace-introduces-duplication"
     assert duplication_adjudications[0].source_statute == "2026/11"

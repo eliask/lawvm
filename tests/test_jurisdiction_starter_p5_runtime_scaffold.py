@@ -8,6 +8,10 @@ from jurisdiction_starter.p5_runtime_scaffold import (
     StarterP5SourceUnit,
     build_blocked_p5_runtime_scaffold,
 )
+from lawvm.core.evidence_contracts import (
+    validate_corpus_finding_evidence_row,
+    validate_corpus_operation_evidence_row,
+)
 
 
 def test_blocked_p5_runtime_scaffold_emits_non_claim_rows_for_every_source_unit() -> None:
@@ -123,3 +127,44 @@ def test_blocked_p5_runtime_scaffold_rejects_generated_clause_id_collision() -> 
                 ),
             ),
         )
+
+
+def test_blocked_p5_runtime_scaffold_findings_validate_against_shared_contract() -> None:
+    artifact = build_blocked_p5_runtime_scaffold(
+        frontend_id="starter",
+        run_id="run-1",
+        source_id="amending-act-1",
+        base_id=None,
+        source_units=(
+            StarterP5SourceUnit(
+                source_artifact_id="artifact-1",
+                source_unit_id="unit-1",
+                source_locator="xml:/act/body/section[1]",
+                raw_text="Section 3 is amended.",
+            ),
+        ),
+    )
+
+    assert validate_corpus_finding_evidence_row(artifact.findings[0]) == ()
+
+
+def test_starter_example_jsonl_rows_validate_against_shared_contract() -> None:
+    import json
+    from pathlib import Path
+
+    examples = Path("jurisdiction_starter/examples")
+    operation_rows = [
+        json.loads(line)
+        for line in (examples / "operation_effect_rows.example.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    finding_rows = [
+        json.loads(line)
+        for line in (examples / "findings.example.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert operation_rows
+    assert finding_rows
+    assert all(validate_corpus_operation_evidence_row(row) == () for row in operation_rows)
+    assert all(validate_corpus_finding_evidence_row(row) == () for row in finding_rows)

@@ -1679,6 +1679,7 @@ def test_apply_se_ops_replaces_section_text_on_materialized_base() -> None:
     section_map = se_section_text_map(replayed)
     assert section_map["2"] == "Nya lydelsen."
     assert section_map["8"] == "Också ny lydelse."
+    assert replayed.metadata["applied_op_count"] == 2
 
 
 def test_apply_se_ops_records_replay_failures_as_adjudications() -> None:
@@ -1750,7 +1751,7 @@ def test_apply_se_ops_records_replay_failures_as_adjudications() -> None:
         ),
     ]
     adjudications: list[CompileAdjudication] = []
-    apply_se_ops(statute, ops, adjudications_out=adjudications)
+    replayed = apply_se_ops(statute, ops, adjudications_out=adjudications)
 
     assert [adj.kind for adj in adjudications] == [
         "se_replay_payload_missing",
@@ -1764,6 +1765,7 @@ def test_apply_se_ops_records_replay_failures_as_adjudications() -> None:
     assert adjudications[1].detail["target"] == "9"
     assert adjudications[3].source_statute == "2026:999"
     assert adjudications[3].detail["target_kind"] == "article"
+    assert replayed.metadata["applied_op_count"] == 0
 
 
 def test_apply_se_ops_records_renumber_and_heading_skip_adjudications() -> None:

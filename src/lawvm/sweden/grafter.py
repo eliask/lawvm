@@ -2697,6 +2697,7 @@ def apply_se_ops(
     """Apply the currently supported Sweden op subset to an IRStatute."""
     body = statute.body
     supplements = list(statute.supplements)
+    applied_op_count = 0
     for op in ops:
         leaf_kind = op.target.leaf_kind()
         if leaf_kind == "section":
@@ -2713,9 +2714,11 @@ def apply_se_ops(
                         )
                         continue
                     body = _insert_se_heading_before_section(body, op.target.leaf_label(), heading)
+                    applied_op_count += 1
                     continue
                 if op.action is StructuralAction.REPEAL:
                     body = _remove_se_heading_before_section(body, op.target.leaf_label())
+                    applied_op_count += 1
                     continue
                 _append_se_replay_adjudication(
                     adjudications_out,
@@ -2770,6 +2773,7 @@ def apply_se_ops(
                 body = tree_ops.remove_at(body, section_path)
                 parent_path = _find_se_section_parent_path(body, destination_label)
                 body = tree_ops.insert_sorted(body, list(parent_path), moved, sort_key_fn=_se_label_sort_key)
+                applied_op_count += 1
                 continue
             if op.action is StructuralAction.REPEAL:
                 section_label = op.target.leaf_label()
@@ -2784,6 +2788,7 @@ def apply_se_ops(
                     )
                     continue
                 body = tree_ops.remove_at(body, section_path)
+                applied_op_count += 1
                 continue
             if op.action is StructuralAction.TEXT_REPLACE:
                 section_label = op.target.leaf_label()
@@ -2848,6 +2853,7 @@ def apply_se_ops(
                     )
                     continue
                 body = tree_ops.replace_at(body, section_path, replaced_section)
+                applied_op_count += 1
                 continue
             if op.payload is None or op.payload.kind is not IRNodeKind.SECTION:
                 _append_se_replay_adjudication(
@@ -2871,6 +2877,7 @@ def apply_se_ops(
                     )
                     continue
                 body = tree_ops.replace_at(body, section_path, op.payload)
+                applied_op_count += 1
                 continue
             if op.action is StructuralAction.INSERT:
                 if section_path is not None:
@@ -2884,6 +2891,7 @@ def apply_se_ops(
                     continue
                 parent_path = _find_se_section_parent_path(body, section_label)
                 body = tree_ops.insert_sorted(body, list(parent_path), op.payload, sort_key_fn=_se_label_sort_key)
+                applied_op_count += 1
                 continue
             _append_se_replay_adjudication(
                 adjudications_out,
@@ -2914,6 +2922,7 @@ def apply_se_ops(
                     )
                     continue
                 supplements.pop(existing_index)
+                applied_op_count += 1
                 continue
             if op.payload is None or op.payload.kind is not IRNodeKind.APPENDIX:
                 _append_se_replay_adjudication(
@@ -2935,6 +2944,7 @@ def apply_se_ops(
                     )
                     continue
                 supplements[existing_index] = op.payload
+                applied_op_count += 1
                 continue
             if op.action is StructuralAction.INSERT:
                 if existing_index is not None:
@@ -2947,6 +2957,7 @@ def apply_se_ops(
                     )
                     continue
                 supplements = _insert_se_appendix_sorted(supplements, op.payload)
+                applied_op_count += 1
                 continue
             _append_se_replay_adjudication(
                 adjudications_out,
@@ -2964,7 +2975,7 @@ def apply_se_ops(
             detail={"target_kind": leaf_kind, "target": op.target.leaf_label(), "action": op.action},
         )
     metadata = dict(statute.metadata)
-    metadata["applied_op_count"] = metadata.get("applied_op_count", 0) + len(ops)
+    metadata["applied_op_count"] = metadata.get("applied_op_count", 0) + applied_op_count
     invariant_violations = se_statute_invariant_violations(
         IRStatute(
             statute_id=statute.statute_id,

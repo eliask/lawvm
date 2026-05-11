@@ -2883,6 +2883,24 @@ def test_strict_fail_reasons_detect_apply_boundary_violation_findings() -> None:
     assert "REPLAY_SKIPPED_OP_MUTATED_TREE" in reasons
 
 
+def test_strict_fail_reasons_detect_unresolved_apply_boundary_findings() -> None:
+    reasons = strict_fail_reasons_from_finding_ledger(
+        default_finland_strict_profile(),
+        compiled_ops=[],
+        canonical_ops=[],
+        failures=[],
+        findings=[
+            _runtime_violation(
+                "REPLAY_APPLY_BOUNDARY_UNRESOLVED",
+                stage="apply",
+                message="applied replay op mutated the tree without a resolved target boundary",
+            )
+        ],
+    )
+
+    assert "REPLAY_APPLY_BOUNDARY_UNRESOLVED" in reasons
+
+
 def test_strict_fail_reasons_ignore_text_duplication_warning_findings() -> None:
     reasons = strict_fail_reasons_from_finding_ledger(
         default_finland_strict_profile(),
