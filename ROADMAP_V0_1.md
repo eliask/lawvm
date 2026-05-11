@@ -53,7 +53,7 @@ Unstable in v0.1:
   determinations.
 - Public docs include the alpha status, unstable API warning, and legal
   disclaimer.
-- Public docs include getting started, benchmark methodology, jurisdiction
-  maturity, project history, and security/privacy audit pages.
+- Public docs include getting started, Open Law demo, benchmark methodology,
+  jurisdiction maturity, project history, and security/privacy notes.
 - The public tree does not track internal archives, private correspondence,
   local source archives, or generated databases.

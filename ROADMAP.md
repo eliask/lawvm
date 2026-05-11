@@ -22,8 +22,8 @@ divergence workflow; it does not claim stable public APIs or legal authority.
 ## v0.1 After Release
 
 - Cut and publish `v0.1.0` from a clean commit.
-- Add a small archive-free demo fixture that exercises parse, lower, replay,
-  evidence, and point-in-time materialization without requiring local corpora.
+- Extend the archive-free Open Law demo toward a fuller parse/lower/replay/
+  evidence narrative without requiring Finland local corpora.
 - Freeze a public Finland benchmark artifact with the exact input manifest,
   comparison surface, commit, command, and output summary.
 - Convert the highest-value remaining Finland corpus cases into owned
