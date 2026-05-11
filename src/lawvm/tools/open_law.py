@@ -354,6 +354,7 @@ def _verify_evidence_pack(report_dir: Path) -> dict[str, Any]:
     for record in (*operation_records, *finding_records):
         for issue in record.validation_issues:
             issues.append(f"{record.source_path}:{record.line_no}: {issue}")
+    issues.extend(_summary_consistency_issues(report_dir, operation_records, finding_records))
 
     return {
         "files": verified_files,
@@ -368,6 +369,41 @@ def _load_pack_report_rows(path: Path, issues: list[str]) -> tuple[Any, ...]:
         issues.append(f"missing {path}")
         return ()
     return load_report_query_records((path,), validate=True)
+
+
+def _summary_consistency_issues(report_dir: Path, operation_records: tuple[Any, ...], finding_records: tuple[Any, ...]) -> list[str]:
+    summary_path = report_dir / "summary.json"
+    if not summary_path.exists():
+        return [f"missing {summary_path}"]
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    if not isinstance(summary, Mapping):
+        return ["summary.json is not an object"]
+    expected = {
+        "operation_rows": len(operation_records),
+        "matched": _count_status(operation_records, "matched"),
+        "diverged": _count_status(operation_records, "diverged"),
+        "planning_failed": _count_status(operation_records, "planning_failed"),
+        "metadata_unsupported": _count_status(operation_records, "metadata_unsupported"),
+        "metadata_matched": _count_status(operation_records, "metadata_matched"),
+        "metadata_diverged": _count_status(operation_records, "metadata_diverged"),
+        "lifecycle_unsupported": _count_status(operation_records, "lifecycle_unsupported"),
+        "snapshot_missing": _count_status(operation_records, "snapshot_missing"),
+        "findings": len(finding_records),
+        "unexplained_paths": sum(_int_field(record.original.get("unexplained_path_count")) for record in operation_records),
+    }
+    return [
+        f"summary mismatch for {key}: expected {value}, got {summary.get(key)!r}"
+        for key, value in expected.items()
+        if summary.get(key) != value
+    ]
+
+
+def _count_status(records: tuple[Any, ...], status: str) -> int:
+    return sum(1 for record in records if record.original.get("status") == status)
+
+
+def _int_field(value: object) -> int:
+    return value if isinstance(value, int) else 0
 
 
 def _select_explain_rows(
