@@ -82,6 +82,25 @@ def _occupied_insert_amendment_xml(date_in_force: str) -> bytes:
 """.encode("utf-8")
 
 
+def _replace_renumber_amendment_xml(date_in_force: str) -> bytes:
+    return f"""<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <dd class="dateInForce">{date_in_force}</dd>
+    <article class="document-change" data-document="lov/2025-01-01-1">
+      <article class="change" data-change-part="lov/2025-01-01-1/§2/nummer/3">
+        <article class="defaultP">§ 2 nr. 3 skal lyde:</article>
+        <li data-li-identifier="3." data-name="3.">tredje krav</li>
+      </article>
+      <article class="change" data-move-part="lov/2025-01-01-1/§2/nummer/3;;lov/2025-01-01-1/§2/nummer/4">
+        <article class="defaultP">Nåværende § 2 nr. 3 blir nytt nr. 4.</article>
+      </article>
+    </article>
+  </body>
+</html>
+""".encode("utf-8")
+
+
 def _write_archive(
     archive_path,
     members: list[tuple[str, bytes]],
@@ -160,6 +179,29 @@ def test_replay_no_to_pit_surfaces_action_family_adjudications(tmp_path) -> None
     assert payload["adjudication_kind_counts"] == {
         "no_replay_insert_occupied_target_replaced": 1
     }
+
+
+def test_replay_no_to_pit_surfaces_parse_action_family_promotion(tmp_path) -> None:
+    archive_path = tmp_path / "lovtidend-avd1-2001-2025.tar.bz2"
+    _write_archive(
+        archive_path,
+        [
+            ("lti/2025/nl-20250101-001.xml", _BASE_XML),
+            ("lti/2025/nl-20250202-005.xml", _replace_renumber_amendment_xml("2025-02-10")),
+        ],
+    )
+
+    result = replay_no_to_pit(
+        "no/lov/2025-01-01-1",
+        as_of="2025-02-15",
+        data_dir=tmp_path,
+    )
+
+    assert result.error is None
+    kinds = [item.kind for item in result.adjudications]
+    assert "no_parse_replace_promoted_to_insert_for_same_target_renumber" in kinds
+    payload = build_no_replay_payload(result)
+    assert payload["adjudication_kind_counts"]["no_parse_replace_promoted_to_insert_for_same_target_renumber"] == 1
 
 
 def test_replay_no_to_pit_skips_future_amendments(tmp_path) -> None:

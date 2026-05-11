@@ -1640,6 +1640,7 @@ def test_parse_no_amendment_ops_promotes_replace_plus_same_target_renumber_to_in
     ]
     assert ops[0].payload is not None
     assert ops[0].payload.text == "Den tillitsvalgte skal legge ved en erklæring fra den nye kandidaten."
+    assert "no_parse_replace_promoted_to_insert_for_same_target_renumber" in ops[0].provenance_tags
 
 
 def test_apply_no_ops_replaces_inserts_and_repeals() -> None:

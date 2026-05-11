@@ -24,6 +24,7 @@ from lawvm.norway.commencement import (
     load_no_commencement_overrides,
 )
 from lawvm.norway.grafter import (
+    NO_PARSE_REPLACE_PROMOTED_TO_INSERT_FOR_RENUMBER,
     apply_no_heading_groups,
     apply_no_ops,
     iter_no_document_change_ops,
@@ -173,6 +174,26 @@ def replay_no_to_pit(
             result.amendments_applied.append(source_id)
 
     result.n_ops = len(ops)
+    for op in ops:
+        if NO_PARSE_REPLACE_PROMOTED_TO_INSERT_FOR_RENUMBER not in op.provenance_tags:
+            continue
+        result.adjudications.append(
+            CompileAdjudication(
+                kind=NO_PARSE_REPLACE_PROMOTED_TO_INSERT_FOR_RENUMBER,
+                message=(
+                    "Norway parser promoted replace to insert because the same target "
+                    "is also renumbered in the amendment group."
+                ),
+                source_statute=op.source.statute_id if op.source else "",
+                op_id=op.op_id,
+                detail={
+                    "rule_id": NO_PARSE_REPLACE_PROMOTED_TO_INSERT_FOR_RENUMBER,
+                    "original_action": "replace",
+                    "executed_action": "insert",
+                    "target": str(op.target),
+                },
+            )
+        )
     try:
         result.replayed = apply_no_ops(base_statute, ops, adjudications_out=result.adjudications)
         if heading_groups:
