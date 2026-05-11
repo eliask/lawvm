@@ -64,6 +64,7 @@ def write_maryland_evidence_pack(
     write_inventory(out_dir, repos=repos)
     write_corpus_report(report, out_dir)
     manifest = maryland_manifest_to_jsonable(inventory, repos=repos)
+    generator = _lawvm_generator_identity()
 
     exemplars = _pick_exemplars(report.operation_rows)
     exemplars_path = out_dir / "exemplars.json"
@@ -71,7 +72,7 @@ def write_maryland_evidence_pack(
 
     summary_path = out_dir / "summary.md"
     summary_path.write_text(
-        _summary_markdown(manifest, report, exemplars, strict=strict),
+        _summary_markdown(manifest, report, exemplars, generator=generator, strict=strict),
         encoding="utf-8",
     )
     artifact_manifest_path = _write_artifact_manifest(
@@ -84,6 +85,7 @@ def write_maryland_evidence_pack(
             "exemplars.json",
             "summary.md",
         ),
+        generator=generator,
     )
     return OpenLawEvidencePack(
         out_dir=out_dir,
@@ -136,6 +138,7 @@ def _summary_markdown(
     report: OpenLawCorpusAuditReport,
     exemplars: dict[str, EvidenceRowSummary],
     *,
+    generator: dict[str, object],
     strict: bool,
 ) -> str:
     operation_counts = manifest.get("operation_counts", {})
@@ -155,6 +158,7 @@ def _summary_markdown(
         f"- strict mode: `{strict}`",
     ]
     lines.extend(_repository_identity_lines(manifest))
+    lines.extend(_generator_identity_lines(generator))
     lines.extend(
         [
             "",
@@ -234,7 +238,7 @@ def _summary_markdown(
     return "\n".join(lines)
 
 
-def _write_artifact_manifest(out_dir: Path, file_names: Tuple[str, ...]) -> Path:
+def _write_artifact_manifest(out_dir: Path, file_names: Tuple[str, ...], *, generator: dict[str, object]) -> Path:
     """Write checksums for generated evidence-pack artifacts."""
 
     files: list[dict[str, object]] = []
@@ -250,7 +254,7 @@ def _write_artifact_manifest(out_dir: Path, file_names: Tuple[str, ...]) -> Path
         )
     manifest_path = out_dir / "evidence_pack_manifest.json"
     manifest_path.write_text(
-        json.dumps({"generator": _lawvm_generator_identity(), "files": files}, indent=2, ensure_ascii=False) + "\n",
+        json.dumps({"generator": generator, "files": files}, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
     return manifest_path
@@ -319,4 +323,17 @@ def _repository_identity_lines(manifest: dict[str, object]) -> list[str]:
                         remote_bits.append(f"{remote_name}={remote_url}")
             if remote_bits:
                 lines.append(f"- {key} clone remotes: `{', '.join(remote_bits)}`")
+    return lines
+
+
+def _generator_identity_lines(generator: dict[str, object]) -> list[str]:
+    commit = generator.get("git_commit")
+    dirty = generator.get("git_dirty")
+    repository = generator.get("repository")
+    lines = [
+        f"- LawVM generator commit: `{commit}`",
+        f"- LawVM generator dirty: `{dirty}`",
+    ]
+    if isinstance(repository, str) and repository:
+        lines.append(f"- LawVM generator repository: `{repository}`")
     return lines
