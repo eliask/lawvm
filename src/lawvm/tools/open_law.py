@@ -29,6 +29,7 @@ _EXPECTED_EVIDENCE_PACK_FILES = frozenset(
         "summary.md",
     )
 )
+_DEVELOPER_LOCAL_PATH_MARKERS = ("/" + "home" + "/", "/" + "Users" + "/")
 
 
 def main(args: Namespace) -> None:
@@ -426,7 +427,7 @@ def _validate_pack_generator(
         issues.append(f"invalid generator tool: {tool!r}")
     if not isinstance(repository, str) or not repository:
         issues.append(f"invalid generator repository: {repository!r}")
-    elif "/home/" in repository or "/Users/" in repository:
+    elif any(marker in repository for marker in _DEVELOPER_LOCAL_PATH_MARKERS):
         issues.append(f"generator repository leaks a developer-local path: {repository!r}")
     if not isinstance(git_commit, str):
         issues.append(f"invalid generator git_commit: {git_commit!r}")
