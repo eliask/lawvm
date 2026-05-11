@@ -5,6 +5,7 @@ import json
 import tarfile
 
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row
 from lawvm.norway.index import NOAmendmentIndex, NOAmendmentIndexEntry, build_no_amendment_index, save_no_amendment_index
 from lawvm.norway.replay import _effective_date_from_amendment, replay_no_to_pit
 from lawvm.tools.replay_payloads import build_no_replay_payload
@@ -179,6 +180,13 @@ def test_replay_no_to_pit_surfaces_action_family_adjudications(tmp_path) -> None
     assert payload["adjudication_kind_counts"] == {
         "no_replay_insert_occupied_target_replaced": 1
     }
+    evidence_row = payload["evidence"]["finding_rows"][0]
+    assert evidence_row["frontend_id"] == "norway"
+    assert evidence_row["rule_id"] == "no_insert_occupied_target_replace"
+    assert evidence_row["phase"] == "replay"
+    assert evidence_row["strict_disposition"] == "block"
+    assert evidence_row["quirks_disposition"] == "record"
+    assert validate_corpus_finding_evidence_row(evidence_row) == ()
 
 
 def test_replay_no_to_pit_surfaces_parse_action_family_promotion(tmp_path) -> None:
@@ -300,6 +308,11 @@ def test_replay_no_to_pit_marks_missing_source_separately(tmp_path) -> None:
     assert payload["adjudication_kind_counts"] == {
         "no_replay_missing_amendment_source": 1
     }
+    evidence_row = payload["evidence"]["finding_rows"][0]
+    assert evidence_row["rule_id"] == "no_replay_missing_amendment_source"
+    assert evidence_row["phase"] == "acquisition"
+    assert evidence_row["source_artifact_id"] == "no/lovtid/2025-02-02-5"
+    assert validate_corpus_finding_evidence_row(evidence_row) == ()
 
 
 def test_effective_date_from_amendment_marks_contingent_force() -> None:
