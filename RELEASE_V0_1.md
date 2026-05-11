@@ -84,4 +84,5 @@ Before tagging or publishing a source snapshot, run:
 
 ```bash
 ./scripts/release_hygiene.sh
+./scripts/build_release_archive.sh
 ```

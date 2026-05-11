@@ -15,8 +15,15 @@ public documentation, and small corpus indexes. It should not contain:
 - downloaded legal source archives unless they are explicitly public fixtures;
 - `.tmp/` investigation packets or agent work queues.
 
-Before a public tag, build the release artifact from tracked files only and run
-a scan on that exact artifact.
+Before a public tag, build the release artifact from tracked files only:
+
+```bash
+./scripts/build_release_archive.sh
+```
+
+The helper runs the release hygiene gate first and then creates a `git archive`
+from `HEAD`. Dirty working-tree files, `.tmp/`, local corpora, and untracked
+cache files are not included.
 
 ## Local Data
 
