@@ -36,6 +36,8 @@ from lawvm.core.ir import (
 )
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
 
+NO_PARSE_REPLACE_PROMOTED_TO_INSERT_FOR_RENUMBER = "no_parse_replace_promoted_to_insert_for_same_target_renumber"
+
 
 def _no_action_value(action: StructuralAction | str) -> str:
     """Normalize action to string value for comparisons and serialization."""
@@ -1665,9 +1667,18 @@ def _promote_no_replace_with_following_renumber_insert(
             op.action is StructuralAction.REPLACE
             and op.payload is not None
             and op.target.path in renumber_targets
-            and op.payload.kind == op.target.leaf_kind()
+            and _no_kind_value(op.payload.kind) == op.target.leaf_kind()
         ):
-            promoted.append(dc_replace(op, action=StructuralAction.INSERT))
+            promoted.append(
+                dc_replace(
+                    op,
+                    action=StructuralAction.INSERT,
+                    provenance_tags=(
+                        *op.provenance_tags,
+                        NO_PARSE_REPLACE_PROMOTED_TO_INSERT_FOR_RENUMBER,
+                    ),
+                )
+            )
             continue
         promoted.append(op)
     return promoted
