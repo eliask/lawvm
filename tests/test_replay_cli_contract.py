@@ -284,7 +284,7 @@ def test_uk_replay_main_threads_replay_adjudications_into_json(monkeypatch, tmp_
     monkeypatch.setattr("lawvm.core.timeline_consistency.ingest_uk_snapshots", lambda *args, **kwargs: {})
 
     uk_replay.main(
-        SimpleNamespace(
+        Namespace(
             statute_id="ukpga/1998/42",
             pit_date=None,
             enacted_only=False,

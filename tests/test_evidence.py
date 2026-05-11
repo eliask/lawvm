@@ -4,6 +4,7 @@ import json
 import pytest
 import warnings
 from types import SimpleNamespace
+from typing import Any
 
 from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row
 from lawvm.tools.classify_result import ClassifyResult
@@ -3671,12 +3672,14 @@ def test_compiler_observation_summary_uses_invariant_apply_rows_for_helper_suppo
 
 
 def test_compiler_observation_summary_rejects_malformed_projection_rows() -> None:
+    projection_rows: list[Any] = [
+        {"kind": "PARSE.TARGET_GUESSING"},
+        "silently-dropped-before",
+        42,
+    ]
+
     with pytest.raises(ValueError, match="non-object entries at indexes: 1, 2"):
         _compiler_observation_summary(
             replay_meta={},
-            projection_rows=[
-                {"kind": "PARSE.TARGET_GUESSING"},
-                "silently-dropped-before",
-                42,
-            ],
+            projection_rows=projection_rows,
         )
