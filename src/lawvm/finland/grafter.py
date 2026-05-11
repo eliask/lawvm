@@ -4624,7 +4624,10 @@ def compile_amendment_ops(
     from lawvm.core.effect_lowering import (
         lower_effect_intents_to_temporal_events as _lower_effect_intents_to_temporal_events,
     )
-    from lawvm.finland.effect_lowering import lower_johto_effects as _lower_johto_effects
+    from lawvm.finland.effect_lowering import (
+        UnsupportedMetaClause as _UnsupportedMetaClause,
+        lower_johto_effects as _lower_johto_effects,
+    )
 
     profile = get_replay_profile(replay_mode)
     source_title = source_title or _tree_title(muutos_tree)
@@ -4688,7 +4691,24 @@ def compile_amendment_ops(
     _lowered_temporal_events: tuple = ()
     _activation_rules: list["ActivationRule"] = []
     if johto:
-        _lowered_effect_intents = tuple(_lower_johto_effects(johto))
+        _unsupported_meta_clauses: list[_UnsupportedMetaClause] = []
+        _lowered_effect_intents = tuple(
+            _lower_johto_effects(
+                johto,
+                unsupported_out=_unsupported_meta_clauses,
+            )
+        )
+        all_findings.extend(
+            Finding(
+                kind=record.rule_id,
+                role="observation",
+                stage=record.phase,
+                detail=record.as_detail(),
+                source_statute=source_ref,
+                blocking=record.blocking,
+            )
+            for record in _unsupported_meta_clauses
+        )
         # The lowering bridge now carries OperationSource provenance on each
         # TemporalEvent via source_ref/source_title/source_issue_date/
         # source_effective_date; keep group_id as the batch key for now.
