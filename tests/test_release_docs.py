@@ -50,6 +50,7 @@ def test_release_archive_script_emits_verification_sidecars() -> None:
     assert '>"${out}.sha256"' in script
     assert ".manifest.json" in script
     assert '"git_commit"' in script
+    assert './scripts/verify_release_archive.sh "$out"' in script
 
 
 def test_release_archive_verifier_checks_sidecars(tmp_path) -> None:
