@@ -134,6 +134,7 @@ For release hygiene:
 
 - [docs/security-privacy.md](docs/security-privacy.md)
 - `./scripts/release_hygiene.sh`
+- `./scripts/build_release_archive.sh`
 
 ## Quick Start
 
