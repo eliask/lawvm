@@ -399,6 +399,14 @@ class TestNormalizeAndCompileOps:
         assert findings[0].source_statute == "2010/100"
         assert findings[0].detail["target_path"] == (("nimike", ""),)
         assert findings[0].detail["source"] == "AmendmentOp.from_lo"
+        obligations = [
+            finding
+            for finding in _findings(result, "obligation")
+            if finding.kind == "ELAB.STRICT_REJECTED_OPERATION"
+            and finding.detail.get("reason_code") == "ELAB.UNSUPPORTED_TOP_LEVEL_TARGET"
+        ]
+        assert len(obligations) == 1
+        assert obligations[0].blocking is True
 
     def test_conversion_surfaces_law_level_text_patch_separate_lane(
         self,
@@ -449,12 +457,14 @@ class TestNormalizeAndCompileOps:
         findings = [
             finding
             for finding in _findings(result, "observation")
-            if finding.kind == "ELAB.REJECTED_OPERATION"
+            if finding.kind == "ELAB.LAW_LEVEL_TEXT_PATCH_SEPARATE_LANE"
             and finding.detail.get("reason_code") == "ELAB.LAW_LEVEL_TEXT_PATCH_SEPARATE_LANE"
         ]
         assert len(findings) == 1
         assert findings[0].detail["op_id"] == "law-level-text"
         assert findings[0].detail["target_path"] == ()
+        assert findings[0].blocking is False
+        assert _findings(result, "obligation") == ()
 
     def test_empty_johtolause_returns_no_ops(self) -> None:
         master = _make_master()

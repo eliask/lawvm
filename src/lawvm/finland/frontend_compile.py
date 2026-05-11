@@ -1500,21 +1500,35 @@ def normalize_and_compile_ops(
             )
         return findings
 
-    def _legal_operation_conversion_skip_finding(lo: LegalOperation) -> Finding | None:
+    def _legal_operation_conversion_skip_findings(lo: LegalOperation) -> List[Finding]:
         skip = classify_legal_operation_conversion_skip(lo)
         if skip is None:
-            return None
-        return Finding(
-            kind="ELAB.REJECTED_OPERATION",
-            role="observation",
+            return []
+        detail = {
+            **skip.as_detail(),
+            "source": "AmendmentOp.from_lo",
+        }
+        findings = [
+            Finding(
+                kind=skip.finding_kind,
+                role="observation",
+                stage="frontend_compile",
+                detail=detail,
+                source_statute=amendment_id,
+                blocking=False,
+            )
+        ]
+        if not skip.blocking:
+            return findings
+        findings.append(Finding(
+            kind="ELAB.STRICT_REJECTED_OPERATION",
+            role="obligation",
             stage="frontend_compile",
-            detail={
-                **skip.as_detail(),
-                "source": "AmendmentOp.from_lo",
-            },
+            detail=detail,
             source_statute=amendment_id,
-            blocking=skip.blocking,
-        )
+            blocking=True,
+        ))
+        return findings
 
     # Normalize typography before any structural parsing: em-dash → en-dash,
     # horizontal space variants (NBSP, thin space, etc.) → plain space.
@@ -1581,9 +1595,7 @@ def normalize_and_compile_ops(
         for i, lo in enumerate(legal_ops):
             converted_ops = AmendmentOp.from_lo(lo, i)
             if not converted_ops:
-                skipped_finding = _legal_operation_conversion_skip_finding(lo)
-                if skipped_finding is not None:
-                    frontend_findings_out.append(skipped_finding)
+                frontend_findings_out.extend(_legal_operation_conversion_skip_findings(lo))
             ops.extend(converted_ops)
         ops, target_version_findings = _attach_target_version_selectors(
             ops,
