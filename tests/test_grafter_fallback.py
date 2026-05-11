@@ -972,6 +972,64 @@ def test_replay_xml_projects_apply_mutation_boundary_violations(monkeypatch) -> 
     assert replay_boundary_findings[0].detail.get("declared_recovery_rule_ids") == []
 
 
+def test_replay_xml_projects_legacy_apply_mutation_boundary_findings_without_meta(monkeypatch) -> None:
+    state = _replay_state(IRNode(kind=IRNodeKind.BODY))
+    plan = SimpleNamespace(
+        ctx=SimpleNamespace(
+            id="1996/1261",
+            title="Test title",
+            base_observations=(),
+            base_xml_bytes=_base_process_muutoslaki_xml(),
+            base_ir=state.ir,
+        ),
+        amendment_ids=["1996/1261"],
+        amendment_records=[],
+        cutoff_date=None,
+        oracle_version_amendment_id="",
+        oracle_suspect="",
+    )
+
+    def fake_prepare_replay_plan(*_args, **_kwargs):
+        return plan
+
+    def fake_execute_replay_plan(*_args, mutation_events_out=None, **_kwargs):
+        from lawvm.finland.apply_events import ApplyMutationEvent
+
+        assert mutation_events_out is not None
+        mutation_events_out.append(
+            ApplyMutationEvent(
+                op_id="skipped_tree_touch",
+                source_statute="1996/1261",
+                action="replace",
+                helper="apply_op",
+                outcome="skipped",
+                consumed_paths=((("section", "7"),),),
+            )
+        )
+        return state
+
+    monkeypatch.setattr("lawvm.finland.grafter.prepare_replay_plan", fake_prepare_replay_plan)
+    monkeypatch.setattr("lawvm.finland.grafter.execute_replay_plan", fake_execute_replay_plan)
+
+    result = replay_xml(
+        "1996/1261",
+        mode="legal_pit",
+        corpus=_corpus_store({"1996/1261": _base_process_muutoslaki_xml()}),
+        quiet=True,
+        build_full_products=False,
+    )
+
+    replay_boundary_findings = [finding for finding in result.findings if finding.kind == "REPLAY_SKIPPED_OP_MUTATED_TREE"]
+    assert len(replay_boundary_findings) == 1
+    assert replay_boundary_findings[0].role == "violation"
+    assert replay_boundary_findings[0].blocking is True
+    assert replay_boundary_findings[0].detail == {
+        "message": "Apply mutation boundary accounting violated.",
+        "violation": "REPLAY_SKIPPED_OP_MUTATED_TREE op_id=skipped_tree_touch helper=apply_op touched=1",
+        "barrier_code": "REPLAY_SKIPPED_OP_MUTATED_TREE",
+    }
+
+
 def test_apply_mutation_boundary_violation_helper_emits_native_kind() -> None:
     finding = _apply_mutation_boundary_violation_finding(
         violation="REPLAY_SKIPPED_OP_MUTATED_TREE op_id=skipped_tree_touch helper=apply_op touched=1",
