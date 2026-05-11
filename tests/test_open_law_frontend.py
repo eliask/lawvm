@@ -1,0 +1,439 @@
+from __future__ import annotations
+
+import subprocess
+
+from lawvm.core.ir_helpers import irnode_to_text
+from lawvm.core.semantic_types import IRNodeKind
+from lawvm.open_law.audit import audit_open_law_snapshot, replay_open_law_ops, resolve_open_law_path
+from lawvm.open_law.corpus_audit import audit_maryland_corpus, audit_maryland_transition
+from lawvm.open_law.codify import parse_open_law_codify_ops
+from lawvm.open_law.local_git import make_maryland_repos
+from lawvm.open_law.models import OpenLawAction
+from lawvm.open_law.planner import plan_maryland_comar_operation
+from lawvm.open_law.xml import parse_open_law_xml, wrap_open_law_body_with_prefix
+
+
+_BASE_XML = """<?xml version='1.0' encoding='utf-8'?>
+<document xmlns="https://open.law/schemas/library" id="Code of Maryland Regulations">
+  <heading>Code of Maryland Regulations</heading>
+  <container>
+    <prefix>Title</prefix>
+    <num>10</num>
+    <heading>Maryland Department of Health</heading>
+    <container>
+      <prefix>Subtitle</prefix>
+      <num>41</num>
+      <heading>Board of Examiners</heading>
+      <container>
+        <prefix>Chapter</prefix>
+        <num>02</num>
+        <heading>Code of Ethics</heading>
+        <section>
+          <prefix>Regulation</prefix>
+          <num>.04</num>
+          <heading>Special Responsibilities.</heading>
+          <para>
+            <num>A.</num>
+            <text>Old text.</text>
+          </para>
+        </section>
+      </container>
+    </container>
+  </container>
+</document>
+"""
+
+
+_REPLACE_XML = """<?xml version='1.0' encoding='utf-8'?>
+<document xmlns="https://open.law/schemas/library"
+    xmlns:codify="https://open.law/schemas/codify"
+    id="Editor Action 2026-01-22">
+  <meta>
+    <effective>2026-01-22</effective>
+  </meta>
+  <codify:replace history="false" doc="Code of Maryland Regulations" path="10|41|02|.04">
+    <section>
+      <prefix>Regulation</prefix>
+      <num>.04</num>
+      <heading>Special Responsibilities.</heading>
+      <para>
+        <num>A.</num>
+        <text>New text.</text>
+      </para>
+    </section>
+  </codify:replace>
+</document>
+"""
+
+
+def test_parse_open_law_xml_preserves_direct_path_labels() -> None:
+    tree = parse_open_law_xml(_BASE_XML)
+
+    resolved = resolve_open_law_path(tree, ("10", "41", "02", ".04"))
+
+    assert resolved.status == "resolved"
+    assert resolved.tree_path == (
+        ("hcontainer", "10"),
+        ("hcontainer", "41"),
+        ("hcontainer", "02"),
+        ("section", ".04"),
+    )
+
+
+def test_parse_codify_replace_operation() -> None:
+    ops = parse_open_law_codify_ops(_REPLACE_XML, source_id="editorial-actions/2026-01-22.xml")
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is OpenLawAction.REPLACE
+    assert op.doc == "Code of Maryland Regulations"
+    assert op.path == ("10", "41", "02", ".04")
+    assert op.effective == "2026-01-22"
+    assert op.history is False
+    assert op.payload is not None
+    assert op.payload.kind is IRNodeKind.SECTION
+    assert op.payload.label == ".04"
+
+
+def test_replay_codify_replace_changes_exact_declared_target() -> None:
+    tree = parse_open_law_xml(_BASE_XML)
+    ops = parse_open_law_codify_ops(_REPLACE_XML, source_id="editorial-actions/2026-01-22.xml")
+
+    result = replay_open_law_ops(tree, ops)
+
+    assert not result.findings
+    assert len(result.mutations) == 1
+    assert result.mutations[0].open_law_path == ("10", "41", "02", ".04")
+    section = result.tree.children[1].children[2].children[2].children[2]
+    assert section.kind is IRNodeKind.SECTION
+    assert "New text." in irnode_to_text(section)
+    assert "Old text." not in irnode_to_text(section)
+
+
+def test_replay_missing_target_emits_blocking_finding_without_mutation() -> None:
+    tree = parse_open_law_xml(_BASE_XML)
+    xml = _REPLACE_XML.replace("10|41|02|.04", "10|41|99|.04")
+    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/2026-01-22.xml")
+
+    result = replay_open_law_ops(tree, ops)
+
+    assert result.tree == tree
+    assert not result.mutations
+    assert [finding.kind for finding in result.findings] == ["open_law_target_missing"]
+    assert result.findings[0].blocking is True
+
+
+def test_unsupported_codify_action_is_visible_and_non_mutating_in_quirks_mode() -> None:
+    tree = parse_open_law_xml(_BASE_XML)
+    xml = _REPLACE_XML.replace("codify:replace", "codify:expire").replace("</codify:replace>", "</codify:expire>")
+    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/2026-01-22.xml")
+
+    result = replay_open_law_ops(tree, ops)
+
+    assert result.tree == tree
+    assert not result.mutations
+    assert ops[0].action is OpenLawAction.EXPIRE
+    assert [finding.kind for finding in result.findings] == ["open_law_unsupported_codify_action"]
+    assert result.findings[0].blocking is False
+
+
+def test_replace_or_insert_inserts_missing_target_with_visible_finding() -> None:
+    tree = parse_open_law_xml(_BASE_XML)
+    xml = _REPLACE_XML.replace("codify:replace", "codify:replace-or-insert").replace(
+        "</codify:replace>", "</codify:replace-or-insert>"
+    ).replace(
+        "<num>.04</num>", "<num>.05</num>"
+    ).replace(
+        "path=\"10|41|02|.04\"", "path=\"10|41|02|.05\""
+    )
+    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/2026-01-22.xml")
+
+    result = replay_open_law_ops(tree, ops)
+
+    assert ops[0].action is OpenLawAction.REPLACE_OR_INSERT
+    assert [finding.kind for finding in result.findings] == ["open_law_replace_or_insert_inserted_missing_target"]
+    assert len(result.mutations) == 1
+    assert result.mutations[0].tree_path[-1] == ("section", ".05")
+
+
+def test_unsupported_codify_action_blocks_in_strict_mode() -> None:
+    tree = parse_open_law_xml(_BASE_XML)
+    xml = _REPLACE_XML.replace("codify:replace", "codify:expire").replace("</codify:replace>", "</codify:expire>")
+    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/2026-01-22.xml")
+
+    result = replay_open_law_ops(tree, ops, strict=True)
+
+    assert ops[0].action is OpenLawAction.EXPIRE
+    assert [finding.kind for finding in result.findings] == ["open_law_unsupported_codify_action"]
+    assert result.findings[0].blocking is True
+
+
+def test_snapshot_audit_accepts_publication_that_matches_declared_replace() -> None:
+    before = parse_open_law_xml(_BASE_XML)
+    after = parse_open_law_xml(_BASE_XML.replace("Old text.", "New text."))
+    ops = parse_open_law_codify_ops(_REPLACE_XML, source_id="editorial-actions/2026-01-22.xml")
+
+    result = audit_open_law_snapshot(before, after, ops)
+
+    assert result.snapshot_matches_replay is True
+    assert result.unexplained_paths == ()
+    assert not result.findings
+
+
+def test_snapshot_audit_ignores_annotations_as_text_state_compare_projection() -> None:
+    before = parse_open_law_xml(_BASE_XML)
+    after = parse_open_law_xml(
+        _BASE_XML.replace("Old text.", "New text.").replace(
+            "</section>",
+            '<annotations><annotation type="History" display="false"/></annotations></section>',
+        )
+    )
+    ops = parse_open_law_codify_ops(_REPLACE_XML, source_id="editorial-actions/2026-01-22.xml")
+
+    result = audit_open_law_snapshot(before, after, ops)
+
+    assert result.snapshot_matches_replay is True
+    assert result.unexplained_paths == ()
+    assert [finding.kind for finding in result.findings] == ["open_law_snapshot_annotation_projection"]
+
+
+def test_snapshot_audit_names_typography_projection_without_claiming_legal_mutation() -> None:
+    before = parse_open_law_xml(_BASE_XML.replace("Old text.", '"Old" text.'))
+    after = parse_open_law_xml(_BASE_XML.replace("Old text.", "“Old” text."))
+    ops = ()
+
+    result = audit_open_law_snapshot(before, after, ops)
+
+    assert result.snapshot_matches_replay is True
+    assert result.unexplained_paths == ()
+    assert [finding.kind for finding in result.findings] == ["open_law_snapshot_typography_projection"]
+
+
+def test_snapshot_audit_flags_publication_change_outside_declared_target() -> None:
+    before = parse_open_law_xml(_BASE_XML)
+    after = parse_open_law_xml(_BASE_XML.replace("Maryland Department of Health", "Changed Title"))
+    ops = parse_open_law_codify_ops(_REPLACE_XML, source_id="editorial-actions/2026-01-22.xml")
+
+    result = audit_open_law_snapshot(before, after, ops)
+
+    assert result.snapshot_matches_replay is False
+    assert result.unexplained_paths == ((("hcontainer", "10"), ("heading", "")),)
+    assert [finding.kind for finding in result.findings] == [
+        "open_law_publication_snapshot_mismatch",
+        "open_law_unexplained_publication_mutation",
+    ]
+
+
+def test_explicit_path_prefix_wraps_partial_subtree_without_guessing() -> None:
+    partial = parse_open_law_xml(
+        """
+        <container xmlns="https://open.law/schemas/library">
+          <prefix>Chapter</prefix>
+          <num>02</num>
+          <section><num>.04</num><text>Chapter-only file.</text></section>
+        </container>
+        """
+    )
+
+    wrapped = wrap_open_law_body_with_prefix(partial, ("10", "41"))
+    resolved = resolve_open_law_path(wrapped, ("10", "41", "02", ".04"))
+
+    assert resolved.status == "resolved"
+    assert resolved.tree_path == (
+        ("hcontainer", "10"),
+        ("hcontainer", "41"),
+        ("hcontainer", "02"),
+        ("section", ".04"),
+    )
+
+
+def test_planner_maps_heading_and_annotation_targets() -> None:
+    ops = parse_open_law_codify_ops(
+        """
+        <document xmlns="https://open.law/schemas/library" xmlns:codify="https://open.law/schemas/codify">
+          <codify:replace doc="Code of Maryland Regulations" path="10|21|heading"><heading>Subtitle</heading></codify:replace>
+          <codify:replace doc="Code of Maryland Regulations" path="10|27|02|annos"><annotations/></codify:replace>
+        </document>
+        """,
+        source_id="test.xml",
+    )
+
+    subtitle_heading = plan_maryland_comar_operation(ops[0])
+    chapter_annos = plan_maryland_comar_operation(ops[1])
+
+    assert subtitle_heading.xml_path == "us/md/exec/comar/10/21/index.xml"
+    assert subtitle_heading.path_prefix == ("10",)
+    assert chapter_annos.xml_path == "us/md/exec/comar/10/27/02.xml"
+    assert chapter_annos.path_prefix == ("10", "27")
+
+
+def test_heading_and_annotations_resolve_as_explicit_path_segments() -> None:
+    tree = parse_open_law_xml(
+        """
+        <container xmlns="https://open.law/schemas/library">
+          <num>02</num>
+          <heading>Old heading</heading>
+          <annotations><annotation type="History">History note</annotation></annotations>
+        </container>
+        """
+    )
+
+    wrapped = wrap_open_law_body_with_prefix(tree, ("10", "27"))
+
+    assert resolve_open_law_path(wrapped, ("10", "27", "02", "heading")).status == "resolved"
+    assert resolve_open_law_path(wrapped, ("10", "27", "02", "annos")).status == "resolved"
+
+
+def test_corpus_transition_uses_only_new_after_branch_actions(tmp_path) -> None:
+    source_repo = tmp_path / "law-xml"
+    codified_repo = tmp_path / "law-xml-codified"
+    _git_init(source_repo)
+    _git_init(codified_repo)
+    _write(source_repo / "editorial-actions" / "old.xml", _REPLACE_XML.replace("New text.", "Ignored old text."))
+    _write(source_repo / "editorial-actions" / "new.xml", _REPLACE_XML)
+    _git_commit_all(source_repo, "source")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/before", ("editorial-actions/old.xml",)))
+    _write(codified_repo / "editorial-actions" / "old.xml", _REPLACE_XML.replace("New text.", "Ignored old text."))
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("Old text."))
+    _git_commit_all(codified_repo, "before")
+    _git_branch(codified_repo, "publication/before")
+
+    _write(
+        codified_repo / "index.xml",
+        _index_xml("publication/after", ("editorial-actions/old.xml", "editorial-actions/new.xml")),
+    )
+    _write(codified_repo / "editorial-actions" / "new.xml", _REPLACE_XML)
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("New text."))
+    _git_commit_all(codified_repo, "after")
+    _git_branch(codified_repo, "publication/after")
+
+    repos = make_maryland_repos(source_repo, codified_repo)
+    report = audit_maryland_transition("publication/before", "publication/after", repos=repos)
+
+    assert report.summary["operation_rows"] == 1
+    assert report.summary["matched"] == 1
+    assert report.operation_rows[0].action_path == "editorial-actions/new.xml"
+
+
+def test_corpus_audit_uses_suffixed_snapshots_over_rolling_publication_refs(tmp_path) -> None:
+    source_repo = tmp_path / "law-xml"
+    codified_repo = tmp_path / "law-xml-codified"
+    _git_init(source_repo)
+    _git_init(codified_repo)
+    _write(source_repo / "editorial-actions" / "old.xml", _REPLACE_XML.replace("New text.", "Ignored old text."))
+    _write(source_repo / "editorial-actions" / "new.xml", _REPLACE_XML)
+    _git_commit_all(source_repo, "source")
+
+    _write(
+        codified_repo / "index.xml",
+        _index_xml("publication/2026-01-01", ("editorial-actions/old.xml", "editorial-actions/new.xml")),
+    )
+    _write(codified_repo / "editorial-actions" / "old.xml", _REPLACE_XML.replace("New text.", "Ignored old text."))
+    _write(codified_repo / "editorial-actions" / "new.xml", _REPLACE_XML)
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("New text."))
+    _git_commit_all(codified_repo, "rolling")
+    _git_branch(codified_repo, "publication/2026-01-01")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/2026-01-01", ("editorial-actions/old.xml",)))
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("Old text."))
+    _git_commit_all(codified_repo, "before snapshot")
+    _git_branch(codified_repo, "publication/2026-01-01.2026-01-01")
+
+    _write(
+        codified_repo / "index.xml",
+        _index_xml("publication/2026-01-02", ("editorial-actions/old.xml", "editorial-actions/new.xml")),
+    )
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("New text."))
+    _git_commit_all(codified_repo, "after snapshot")
+    _git_branch(codified_repo, "publication/2026-01-02.2026-01-02")
+
+    report = audit_maryland_corpus(repos=make_maryland_repos(source_repo, codified_repo))
+
+    assert report.summary["operation_rows"] == 1
+    assert report.summary["matched"] == 1
+    assert report.operation_rows[0].before_branch == "publication/2026-01-01.2026-01-01"
+    assert report.operation_rows[0].after_branch == "publication/2026-01-02.2026-01-02"
+
+
+def test_corpus_audit_does_not_claim_annotation_metadata_targets_as_body_replay(tmp_path) -> None:
+    source_repo = tmp_path / "law-xml"
+    codified_repo = tmp_path / "law-xml-codified"
+    _git_init(source_repo)
+    _git_init(codified_repo)
+    action = """
+    <document xmlns="https://open.law/schemas/library" xmlns:codify="https://open.law/schemas/codify">
+      <codify:replace doc="Code of Maryland Regulations" path="10|41|02|annos">
+        <annotations><annotation type="History">New history.</annotation></annotations>
+      </codify:replace>
+    </document>
+    """
+    _write(source_repo / "editorial-actions" / "annos.xml", action)
+    _git_commit_all(source_repo, "source")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/before", ()))
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("Old text."))
+    _git_commit_all(codified_repo, "before")
+    _git_branch(codified_repo, "publication/before")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/after", ("editorial-actions/annos.xml",)))
+    _write(codified_repo / "editorial-actions" / "annos.xml", action)
+    _git_commit_all(codified_repo, "after")
+    _git_branch(codified_repo, "publication/after")
+
+    report = audit_maryland_transition("publication/before", "publication/after", repos=make_maryland_repos(source_repo, codified_repo))
+
+    assert report.summary["metadata_unsupported"] == 1
+    assert report.operation_rows[0].status == "metadata_unsupported"
+    assert [finding.kind for finding in report.operation_rows[0].findings] == ["open_law_metadata_target_not_body_replay"]
+
+
+def _chapter_xml(text: str) -> str:
+    return f"""
+    <container xmlns="https://open.law/schemas/library">
+      <prefix>Chapter</prefix>
+      <num>02</num>
+      <heading>Code of Ethics</heading>
+      <section><prefix>Regulation</prefix><num>.04</num><heading>Special Responsibilities.</heading><para><num>A.</num><text>{text}</text></para></section>
+    </container>
+    """
+
+
+def _index_xml(publication: str, action_paths: tuple[str, ...]) -> str:
+    includes = "\n".join(f'<xi:include href="./{path}"/>' for path in action_paths)
+    return f"""
+    <library xmlns="https://open.law/schemas/library" xmlns:xi="http://www.w3.org/2001/XInclude">
+      <meta>
+        <build>
+          <repositories><repository name="maryland-dsd/law-xml" commit="abcdef1"/></repositories>
+          <platform version="test" reproducible="true"/>
+          <build-date>2026-01-01</build-date>
+          <codified-date>2026-01-01</codified-date>
+          <publication>{publication}</publication>
+        </build>
+      </meta>
+      <collection name="editorial-actions" display="false">{includes}</collection>
+    </library>
+    """
+
+
+def _write(path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _git_init(path) -> None:
+    path.mkdir(parents=True)
+    subprocess.run(("git", "init", "-q", str(path)), check=True)
+    subprocess.run(("git", "-C", str(path), "checkout", "-q", "-b", "main"), check=True)
+    subprocess.run(("git", "-C", str(path), "config", "user.email", "test@example.invalid"), check=True)
+    subprocess.run(("git", "-C", str(path), "config", "user.name", "Test"), check=True)
+
+
+def _git_commit_all(path, message: str) -> None:
+    subprocess.run(("git", "-C", str(path), "add", "."), check=True)
+    subprocess.run(("git", "-C", str(path), "commit", "-q", "-m", message), check=True)
+
+
+def _git_branch(path, branch: str) -> None:
+    subprocess.run(("git", "-C", str(path), "branch", branch), check=True)
