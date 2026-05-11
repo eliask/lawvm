@@ -37,6 +37,7 @@ from lawvm.norway.sources import (
     load_no_original_lti_bytes,
     resolve_no_source_path,
 )
+from lawvm.replay_adjudication import CompileAdjudication
 
 _ISO_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 
@@ -57,6 +58,7 @@ class NOReplayResult:
     amendments_skipped_future: List[str] = field(default_factory=list)
     amendments_skipped_contingent: List[str] = field(default_factory=list)
     amendments_skipped_unknown_effective: List[str] = field(default_factory=list)
+    adjudications: List[CompileAdjudication] = field(default_factory=list)
     n_ops: int = 0
     error: Optional[str] = None
 
@@ -172,7 +174,7 @@ def replay_no_to_pit(
 
     result.n_ops = len(ops)
     try:
-        result.replayed = apply_no_ops(base_statute, ops)
+        result.replayed = apply_no_ops(base_statute, ops, adjudications_out=result.adjudications)
         if heading_groups:
             result.replayed = apply_no_heading_groups(result.replayed, heading_groups)
     except ValueError as exc:
