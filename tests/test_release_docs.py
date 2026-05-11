@@ -39,6 +39,14 @@ def test_release_scripts_have_valid_shell_syntax() -> None:
     subprocess.run(("bash", "-n", "scripts/build_release_archive.sh"), check=True)
 
 
+def test_release_archive_script_emits_verification_sidecars() -> None:
+    script = Path("scripts/build_release_archive.sh").read_text(encoding="utf-8")
+    assert 'sha256sum "$out"' in script
+    assert '>"${out}.sha256"' in script
+    assert ".manifest.json" in script
+    assert '"git_commit"' in script
+
+
 def _tracked_markdown_files() -> tuple[Path, ...]:
     output = subprocess.check_output(("git", "ls-files", "*.md"), text=True)
     return tuple(Path(line) for line in output.splitlines() if line)

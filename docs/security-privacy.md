@@ -23,11 +23,15 @@ Before a public tag, build the release artifact from tracked files only:
 
 The helper runs the release hygiene gate first and then creates a `git archive`
 from `HEAD`. Dirty working-tree files, `.tmp/`, local corpora, and untracked
-cache files are not included.
+cache files are not included. It also writes checksum sidecars:
+
+- `OUT_TAR_GZ.sha256`
+- `OUT_TAR_GZ.manifest.json`
 
 This tracked source archive is distinct from Python wheel/sdist artifacts. Use
 `uv build` when validating installable package artifacts; the release hygiene
-gate runs that build and checks release-relevant package metadata.
+gate runs that build and checks release-relevant package metadata, CLI entry
+points, and packaged generated assets.
 
 ## Local Data
 
