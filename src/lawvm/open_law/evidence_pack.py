@@ -274,7 +274,7 @@ def _lawvm_generator_identity() -> dict[str, object]:
     if inside.returncode != 0 or inside.stdout.strip() != "true":
         return {
             "tool": "lawvm open-law evidence-pack",
-            "repository": str(repo_root),
+            "repository": repo_root.name,
             "git_commit": "",
             "git_dirty": None,
         }
@@ -282,10 +282,24 @@ def _lawvm_generator_identity() -> dict[str, object]:
     status = subprocess.check_output(("git", "-C", str(repo_root), "status", "--short"), text=True)
     return {
         "tool": "lawvm open-law evidence-pack",
-        "repository": str(repo_root),
+        "repository": _lawvm_repository_label(repo_root),
         "git_commit": commit,
         "git_dirty": bool(status.strip()),
     }
+
+
+def _lawvm_repository_label(repo_root: Path) -> str:
+    """Return a shareable repository identity without leaking local paths."""
+
+    remote = subprocess.run(
+        ("git", "-C", str(repo_root), "config", "--get", "remote.origin.url"),
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    remote_url = remote.stdout.strip()
+    return remote_url or repo_root.name
 
 
 def _sized_len(value: object) -> int:

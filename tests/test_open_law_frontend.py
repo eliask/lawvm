@@ -633,6 +633,8 @@ def test_evidence_pack_writes_summary_and_machine_reports(tmp_path) -> None:
     artifact_manifest = json.loads(pack.artifact_manifest_path.read_text(encoding="utf-8"))
     assert artifact_manifest["generator"]["tool"] == "lawvm open-law evidence-pack"
     assert isinstance(artifact_manifest["generator"]["repository"], str)
+    assert "/home/" not in artifact_manifest["generator"]["repository"]
+    assert "/Users/" not in artifact_manifest["generator"]["repository"]
     assert isinstance(artifact_manifest["generator"]["git_commit"], str)
     assert artifact_manifest["generator"]["git_dirty"] in {True, False, None}
     artifact_paths = {item["path"] for item in artifact_manifest["files"]}
@@ -760,6 +762,50 @@ def test_open_law_verify_pack_can_require_clean_generator(tmp_path, capsys) -> N
     manifest_path.write_text(json.dumps({"generator": generator, "files": files}) + "\n", encoding="utf-8")
     _print_verify_pack(Namespace(report_dir=str(pack_dir), require_clean_generator=True, json=False))
     assert "generator_clean=True" in capsys.readouterr().out
+
+
+def test_open_law_verify_pack_rejects_developer_local_generator_repository(tmp_path) -> None:
+    pack_dir = tmp_path / "pack"
+    pack_dir.mkdir()
+    summary = {
+        "operation_rows": 0,
+        "matched": 0,
+        "diverged": 0,
+        "planning_failed": 0,
+        "metadata_unsupported": 0,
+        "metadata_matched": 0,
+        "metadata_diverged": 0,
+        "lifecycle_unsupported": 0,
+        "snapshot_missing": 0,
+        "findings": 0,
+        "unexplained_paths": 0,
+    }
+    for name, text in {
+        "manifest.json": "{}\n",
+        "summary.json": json.dumps(summary) + "\n",
+        "operation_audits.jsonl": "",
+        "findings.jsonl": "",
+        "exemplars.json": "{}\n",
+        "summary.md": "# Summary\n",
+    }.items():
+        (pack_dir / name).write_text(text, encoding="utf-8")
+    files = []
+    for name in ("manifest.json", "summary.json", "operation_audits.jsonl", "findings.jsonl", "exemplars.json", "summary.md"):
+        data = (pack_dir / name).read_bytes()
+        files.append({"path": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+    generator = {
+        "tool": "lawvm open-law evidence-pack",
+        "repository": "/home/example/LawVM",
+        "git_commit": "a" * 40,
+        "git_dirty": False,
+    }
+    (pack_dir / "evidence_pack_manifest.json").write_text(
+        json.dumps({"generator": generator, "files": files}) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit):
+        _print_verify_pack(Namespace(report_dir=str(pack_dir), require_clean_generator=True, json=False))
 
 
 def test_open_law_verify_pack_requires_canonical_manifest_file_set(tmp_path) -> None:
