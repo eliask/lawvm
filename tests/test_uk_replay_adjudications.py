@@ -243,13 +243,31 @@ def test_replay_uk_ops_collects_adjudications() -> None:
     assert adjudications[0].op_id == "uk_test_replay_api_collects"
 
 
-def test_replay_uk_ops_records_prepare_filtered_whole_act_target() -> None:
+def test_replay_uk_ops_applies_whole_act_repeal() -> None:
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="uk_test_whole_act_repeal",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(), special=FacetKind.WHOLE_ACT),
+        source=_source(),
+    )
+
+    replayed = replay_uk_ops(_base_statute(), [op], adjudications_out=adjudications)
+
+    assert adjudications == []
+    assert replayed.body.children == ()
+    assert replayed.supplements == ()
+
+
+def test_replay_uk_ops_records_prepare_filtered_unsupported_whole_act_target() -> None:
     adjudications: list[CompileAdjudication] = []
     op = LegalOperation(
         op_id="uk_test_whole_act_prepare_filter",
         sequence=1,
-        action=StructuralAction.REPEAL,
+        action=StructuralAction.REPLACE,
         target=LegalAddress(path=(), special=FacetKind.WHOLE_ACT),
+        payload=IRNode(kind=IRNodeKind.BODY),
         source=_source(),
     )
 
@@ -259,7 +277,7 @@ def test_replay_uk_ops_records_prepare_filtered_whole_act_target() -> None:
     assert adjudications[0].kind == "uk_replay_unsupported_action"
     assert adjudications[0].op_id == "uk_test_whole_act_prepare_filter"
     assert adjudications[0].detail == {
-        "action": "repeal",
+        "action": "replace",
         "target": "/whole_act",
         "reason": "whole_act_prepare_filter",
     }
