@@ -437,7 +437,7 @@ class TestProvisionVersionPostInitExhaustive:
 
     EFFECTIVE_VALUES = ["2020-01-01", ""]
     EXPIRES_VALUES = ["", "2019-06-01", "2020-01-01", "2025-12-31"]
-    VARIANT_KINDS = ["permanent", "temporary"]
+    VARIANT_KINDS: tuple[Literal["permanent", "temporary"], ...] = ("permanent", "temporary")
 
     def test_all_combinations(self) -> None:
         """Enumerate all (effective, expires, variant_kind) combinations.

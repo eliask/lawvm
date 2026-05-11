@@ -25,6 +25,10 @@ The helper runs the release hygiene gate first and then creates a `git archive`
 from `HEAD`. Dirty working-tree files, `.tmp/`, local corpora, and untracked
 cache files are not included.
 
+This tracked source archive is distinct from Python wheel/sdist artifacts. Use
+`uv build` when validating installable package artifacts; the release hygiene
+gate runs that build and checks release-relevant package metadata.
+
 ## Local Data
 
 Full Finland replay workflows require local Finlex archives imported into

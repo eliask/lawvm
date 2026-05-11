@@ -16,6 +16,8 @@ Release target date: not fixed.
   scans.
 - Tracked-file-only release archive helper that runs release hygiene before
   creating a `git archive` from `HEAD`.
+- Package-build checks in release hygiene for wheel/sdist metadata, pinned
+  `farchive` provenance, analytics extras, and generated rulebook package data.
 - Public framing for Finland findings as reported candidate divergences, not
   confirmed official errors.
 - Estonia replayable corpus and publication SQLite export tooling for browsing

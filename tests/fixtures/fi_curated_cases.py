@@ -1421,7 +1421,11 @@ def run_curated_tests(nlp=None, verbose: bool = False) -> bool:
 
         expected = tc["expected"]
         ok = actual == expected
-        tc_features: set[str] = set(tc.get("features", set()))  # ty: ignore[invalid-argument-type]
+        raw_features = tc.get("features", ())
+        if isinstance(raw_features, (set, list, tuple)):
+            tc_features = {str(feature) for feature in raw_features}
+        else:
+            tc_features = set()
 
         if is_xfail:
             if ok:

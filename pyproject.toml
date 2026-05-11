@@ -3,7 +3,8 @@ name = "lawvm"
 version = "0.1.0"
 description = "Executable legal amendment replay and proof-carrying statute history tooling."
 requires-python = ">=3.11"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
   "PyYAML>=6.0",
   "lxml>=5.1.0",
@@ -12,10 +13,14 @@ dependencies = [
   "zstandard>=0.21",
   "icontract>=2.7.3",
   "ortools>=9.15.6755",
-  "farchive",
+  "farchive @ git+https://github.com/eliask/farchive.git@5ec162e9d80a1ba96b0e6116198bc396b2950430",
 ]
 
 [project.optional-dependencies]
+analytics = [
+  "duckdb>=1.0",
+  "pyarrow>=15.0",
+]
 test = [
   "pytest>=8.0",
   "hypothesis>=6.100",
@@ -29,20 +34,20 @@ lawvm-us-bootstrap = "lawvm.us_federal.bootstrap:main"
 lawvm-fi-amendments = "lawvm.finland.amendment_index:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 #[tool.uv]
 #exclude-newer = "7 days"
-
-[tool.uv.sources]
-farchive = { git = "https://github.com/eliask/farchive.git", rev = "5ec162e9d80a1ba96b0e6116198bc396b2950430" }
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"lawvm.finland.rulebook" = ["generated/*.json", "generated/*.md"]
 
 # =============================================================================
 # Quality tooling

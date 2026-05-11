@@ -38,6 +38,24 @@ source archives. A full unfiltered pytest run is useful before major releases,
 but it is heavier and may require optional local corpora or network-marked
 lanes.
 
+## Python Package Artifacts
+
+LawVM is primarily developed from the repository with `uv sync`, but the v0.1
+tree also builds ordinary Python package artifacts:
+
+```bash
+uv build --out-dir .tmp/package-build
+```
+
+The release hygiene gate builds the wheel and sdist, checks that package
+metadata uses the pinned `farchive` source, and verifies that package-local
+generated rulebook assets are included. Optional local analytics commands such
+as `lawvm sql` and Parquet export need:
+
+```bash
+uv sync --extra analytics
+```
+
 ## Archive-Free Demo
 
 The Open Law Maryland demo uses public git repositories and does not require

@@ -23,11 +23,91 @@ if [ "$ALLOW_DIRTY" = "0" ] && [ -n "$(git status --short)" ]; then
     exit 1
 fi
 
-echo "=== [1/4] release docs ==="
+echo "=== [1/5] release docs ==="
 uv run python -m pytest tests/test_release_docs.py -q --override-ini="addopts="
 
 echo ""
-echo "=== [2/4] credential patterns in tracked files ==="
+echo "=== [2/5] package build metadata ==="
+build_log="$(mktemp .tmp/release-build-log.XXXXXX)"
+tmp_build_dir="$(mktemp -d .tmp/release-build.XXXXXX)"
+trap 'rm -rf "$tmp_build_dir" "$build_log"' EXIT
+UV_CACHE_DIR="${UV_CACHE_DIR:-.tmp/uv-cache}" uv build --out-dir "$tmp_build_dir" >"$build_log" 2>&1 || {
+    cat "$build_log"
+    echo "FAIL: package build failed"
+    exit 1
+}
+python3 - "$build_log" "$tmp_build_dir" <<'PY'
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+import tarfile
+import zipfile
+
+log_path = Path(sys.argv[1])
+build_dir = Path(sys.argv[2])
+log = log_path.read_text(encoding="utf-8", errors="replace")
+allowed = {
+    "warning: build_py: byte-compiling is disabled, skipping.",
+    "warning: install_lib: byte-compiling is disabled, skipping.",
+}
+offenders = [
+    line
+    for line in log.splitlines()
+    if (
+        line.strip().lower().startswith("warning:")
+        or "deprecationwarning" in line.lower()
+        or "setuptoolsdeprecationwarning" in line.lower()
+    )
+    and line.strip().lower() not in allowed
+]
+if offenders:
+    print(log)
+    raise SystemExit("FAIL: package build emitted release-relevant warnings")
+
+wheel_paths = sorted(build_dir.glob("*.whl"))
+sdist_paths = sorted(build_dir.glob("*.tar.gz"))
+if len(wheel_paths) != 1 or len(sdist_paths) != 1:
+    raise SystemExit("FAIL: package build did not produce exactly one wheel and one sdist")
+
+with zipfile.ZipFile(wheel_paths[0]) as wheel:
+    wheel_names = set(wheel.namelist())
+    metadata_name = next(name for name in wheel_names if name.endswith(".dist-info/METADATA"))
+    metadata = wheel.read(metadata_name).decode("utf-8")
+
+required_metadata = (
+    "License-Expression: MIT",
+    "Requires-Dist: farchive @ git+https://github.com/eliask/farchive.git@5ec162e9d80a1ba96b0e6116198bc396b2950430",
+    'Provides-Extra: analytics',
+    'Requires-Dist: duckdb>=1.0; extra == "analytics"',
+    'Requires-Dist: pyarrow>=15.0; extra == "analytics"',
+)
+missing_metadata = [line for line in required_metadata if line not in metadata]
+if missing_metadata:
+    raise SystemExit("FAIL: wheel metadata missing: " + ", ".join(missing_metadata))
+
+required_package_data = (
+    "lawvm/finland/rulebook/generated/RULEBOOK.md",
+    "lawvm/finland/rulebook/generated/RULE_INDEX.json",
+)
+missing_package_data = [name for name in required_package_data if name not in wheel_names]
+if missing_package_data:
+    raise SystemExit("FAIL: wheel missing package data: " + ", ".join(missing_package_data))
+
+with tarfile.open(sdist_paths[0], "r:gz") as sdist:
+    sdist_names = set(sdist.getnames())
+sdist_missing = [
+    name
+    for name in required_package_data
+    if not any(member.endswith("/" + name) for member in sdist_names)
+]
+if sdist_missing:
+    raise SystemExit("FAIL: sdist missing package data: " + ", ".join(sdist_missing))
+PY
+echo "PASS: package build metadata"
+
+echo ""
+echo "=== [3/5] credential patterns in tracked files ==="
 python3 - <<'PY'
 from __future__ import annotations
 
@@ -67,7 +147,7 @@ print("PASS: no credential-like tracked-file literals")
 PY
 
 echo ""
-echo "=== [3/4] developer-local paths in tracked files ==="
+echo "=== [4/5] developer-local paths in tracked files ==="
 python3 - <<'PY'
 from __future__ import annotations
 
@@ -101,7 +181,7 @@ print("PASS: no developer-local tracked-file paths")
 PY
 
 echo ""
-echo "=== [4/4] large tracked files ==="
+echo "=== [5/5] large tracked files ==="
 python3 - <<'PY'
 from __future__ import annotations
 
