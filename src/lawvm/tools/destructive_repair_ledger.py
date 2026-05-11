@@ -10,6 +10,8 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from lawvm.core.observation_registry import get_finding_spec
+
 
 @dataclass(frozen=True)
 class DestructiveRepairLedgerEntry:
@@ -62,8 +64,16 @@ LEDGER_ENTRIES: tuple[DestructiveRepairLedgerEntry, ...] = (
         mutation_type="post_apply_boundary_violation",
         target_region="declared_target_region",
         can_mutate_outside_target=True,
-        finding_emitted="REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET",
-        strict_barrier="REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET",
+        finding_emitted=(
+            "REPLAY_SKIPPED_OP_MUTATED_TREE / REPLAY_FAILED_OP_MUTATED_TREE / "
+            "REPLAY_MISSING_PRIMARY_TARGET_CONSUMPTION / REPLAY_APPLY_BOUNDARY_UNRESOLVED / "
+            "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"
+        ),
+        strict_barrier=(
+            "REPLAY_SKIPPED_OP_MUTATED_TREE / REPLAY_FAILED_OP_MUTATED_TREE / "
+            "REPLAY_MISSING_PRIMARY_TARGET_CONSUMPTION / REPLAY_APPLY_BOUNDARY_UNRESOLVED / "
+            "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET"
+        ),
         known_corpus_examples=("boundary violation event stream",),
         status="should_fail",
     ),
@@ -175,6 +185,29 @@ LEDGER_ENTRIES: tuple[DestructiveRepairLedgerEntry, ...] = (
 
 def build_ledger() -> tuple[DestructiveRepairLedgerEntry, ...]:
     return LEDGER_ENTRIES
+
+
+def ledger_finding_codes(entry: DestructiveRepairLedgerEntry) -> tuple[str, ...]:
+    """Return distinct finding/strict-barrier codes referenced by a ledger row."""
+    codes: list[str] = []
+    for field in (entry.finding_emitted, entry.strict_barrier):
+        for code in field.split("/"):
+            stripped = code.strip()
+            if stripped and stripped not in codes:
+                codes.append(stripped)
+    return tuple(codes)
+
+
+def validate_ledger_registry(
+    entries: tuple[DestructiveRepairLedgerEntry, ...],
+) -> tuple[str, ...]:
+    """Return ledger rows whose referenced finding codes are not registered."""
+    errors: list[str] = []
+    for entry in entries:
+        for code in ledger_finding_codes(entry):
+            if get_finding_spec(code) is None:
+                errors.append(f"{entry.family}: unregistered finding code {code}")
+    return tuple(errors)
 
 
 def render_markdown(entries: tuple[DestructiveRepairLedgerEntry, ...]) -> str:

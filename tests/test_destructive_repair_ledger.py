@@ -5,7 +5,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from lawvm.tools.destructive_repair_ledger import build_ledger, main, render_markdown
+from lawvm.tools.destructive_repair_ledger import (
+    DestructiveRepairLedgerEntry,
+    build_ledger,
+    ledger_finding_codes,
+    main,
+    render_markdown,
+    validate_ledger_registry,
+)
 
 
 def test_build_ledger_contains_seeded_tranche0_families() -> None:
@@ -39,6 +46,33 @@ def test_build_ledger_contains_seeded_tranche0_families() -> None:
     assert families["base_digit_reset_split"].finding_emitted == "BASE_DIGIT_RESET_SPLIT"
     assert families["base_duplicate_tail_split"].status == "safe"
     assert families["base_duplicate_tail_split"].finding_emitted == "BASE_DUPLICATE_TAIL_SPLIT"
+    assert "REPLAY_SKIPPED_OP_MUTATED_TREE" in ledger_finding_codes(families["apply_mutation_boundary"])
+    assert "REPLAY_APPLY_BOUNDARY_TOUCH_OUTSIDE_TARGET" in ledger_finding_codes(
+        families["apply_mutation_boundary"]
+    )
+
+
+def test_ledger_referenced_findings_are_registered() -> None:
+    assert validate_ledger_registry(build_ledger()) == ()
+
+
+def test_ledger_registry_validation_reports_unknown_codes() -> None:
+    entry = DestructiveRepairLedgerEntry(
+        family="bad_family",
+        function="bad",
+        file="bad.py",
+        mutation_type="drop",
+        target_region="target",
+        can_mutate_outside_target=False,
+        finding_emitted="NOT_A_REGISTERED_FINDING",
+        strict_barrier="",
+        known_corpus_examples=(),
+        status="unsafe",
+    )
+
+    assert validate_ledger_registry((entry,)) == (
+        "bad_family: unregistered finding code NOT_A_REGISTERED_FINDING",
+    )
 
 
 def test_render_markdown_includes_seeded_rows() -> None:
