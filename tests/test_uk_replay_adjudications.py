@@ -1,5 +1,6 @@
 """UK replay adjudication emission tests."""
 from __future__ import annotations
+from lawvm.core.adjudication_evidence import adjudication_finding_evidence_rows
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, TextPatchKindEnum, TextPatchSpec, TextSelector, StructuralAction
 
 from lawvm.core.ir import IRNode
@@ -289,10 +290,21 @@ def test_replay_uk_ops_collects_text_duplication_warnings() -> None:
 
     replay_uk_ops(_duplicate_text_statute(), [], adjudications_out=adjudications)
 
-    duplicate_phases = [
-        adjudication.detail.get("phase")
-        for adjudication in adjudications
-        if adjudication.kind == "text_duplication_warning"
+    duplication_adjudications = [
+        adjudication for adjudication in adjudications if adjudication.kind == "text_duplication_warning"
     ]
 
-    assert duplicate_phases == ["replay_fold"]
+    assert [adjudication.detail.get("phase") for adjudication in duplication_adjudications] == ["replay_fold"]
+    assert duplication_adjudications[0].detail["blocking"] is False
+    assert duplication_adjudications[0].detail["strict_disposition"] == "record"
+    assert duplication_adjudications[0].detail["quirks_disposition"] == "record"
+
+    evidence_rows = adjudication_finding_evidence_rows(
+        duplication_adjudications,
+        frontend_id="uk",
+        base_id="ukpga/2000/1",
+        as_of="2026-05-12",
+    )
+    assert evidence_rows[0].blocking is False
+    assert evidence_rows[0].strict_disposition == "record"
+    assert evidence_rows[0].quirks_disposition == "record"

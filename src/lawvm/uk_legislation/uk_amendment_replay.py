@@ -331,6 +331,10 @@ def _uk_adjudication_from_finding(finding: Finding) -> CompileAdjudication:
     """Project replay-lint findings into the UK replay compatibility bag."""
     detail = dict(finding.detail)
     message = str(detail.pop("message", "") or "")
+    blocking = bool(finding.blocking)
+    detail.setdefault("blocking", blocking)
+    detail.setdefault("strict_disposition", "block" if blocking else "record")
+    detail.setdefault("quirks_disposition", "record")
     return CompileAdjudication(
         kind=str(finding.kind or ""),
         message=message,
