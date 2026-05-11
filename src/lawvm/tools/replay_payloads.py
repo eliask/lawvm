@@ -18,6 +18,14 @@ def _text_or_none(value: Any) -> str | None:
     return text if text else None
 
 
+def _adjudication_kind_counts(adjudications: Iterable[Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for adjudication in adjudications:
+        kind = _text_or_none(getattr(adjudication, "kind", None)) or "unknown"
+        counts[kind] = counts.get(kind, 0) + 1
+    return dict(sorted(counts.items()))
+
+
 def build_no_replay_payload(
     result: Any,
     *,
@@ -92,6 +100,7 @@ def build_ee_replay_payload(
     residual_by_address = {}
     if residual_summary is not None:
         residual_by_address = getattr(residual_summary, "record_by_address", {}) or {}
+    adjudications = list(getattr(result, "adjudications", []) or [])
     divergences = []
     for divergence in list(getattr(result, "divergences", []) or []):
         address = _address_to_str(getattr(divergence, "address", ""))
@@ -114,7 +123,8 @@ def build_ee_replay_payload(
         "error": _text_or_none(getattr(result, "error", None)),
         "mode": "replay",
         "ops_count": int(getattr(result, "n_ops", 0) or 0),
-        "adjudications_count": len(list(getattr(result, "adjudications", []) or [])),
+        "adjudications_count": len(adjudications),
+        "adjudication_kind_counts": _adjudication_kind_counts(adjudications),
         "source": {
             "archive": archive_path,
             "index": None,
