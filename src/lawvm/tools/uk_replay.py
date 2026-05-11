@@ -96,6 +96,7 @@ def main(args: "argparse.Namespace") -> None:
     timelines = {}
     n_ops = 0
     similarity: Optional[float] = None
+    replay_adjudications: list = []
 
     with Farchive(db_path) as archive:
         if fetch_missing:
@@ -195,6 +196,7 @@ def main(args: "argparse.Namespace") -> None:
                 text_map=text_map,
                 verbose=verbose,
                 lo_ops_out=lo_ops_out,
+                adjudications_out=replay_adjudications,
             )
 
         # ── 4. EID similarity score ───────────────────────────────────────
@@ -313,6 +315,7 @@ def main(args: "argparse.Namespace") -> None:
             n_versions=n_versions if timelines else None,
             pit_materialized_eids=len(pit_eids) if pit_eids is not None else None,
             timeline_mode="ops_first" if use_timeline and not enacted_only else "states_first",
+            adjudications=replay_adjudications,
         )
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return

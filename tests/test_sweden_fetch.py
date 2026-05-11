@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import json
 
 
+from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.core.ir import (
     TextPatchKindEnum,
@@ -2325,6 +2326,16 @@ def test_check_se_official_replay_collects_skipped_replay_ops_as_adjudications()
     assert result["adjudications"][0]["kind"] == "se_replay_unsupported_target_kind"
     assert result["adjudications"][0]["op_id"] == "unsupported-article"
     assert result["adjudications"][0]["detail"]["action"] == "replace"
+    evidence_row = result["evidence"]["finding_rows"][0]
+    assert evidence_row["frontend_id"] == "sweden"
+    assert evidence_row["family"] == "se_replay_unsupported_target_kind"
+    assert evidence_row["rule_id"] == "se_replay_unsupported_target_kind"
+    assert evidence_row["phase"] == "replay"
+    assert evidence_row["source_artifact_id"] == "2026:286"
+    assert evidence_row["source_unit_id"] == "unsupported-article"
+    assert evidence_row["strict_disposition"] == "block"
+    assert evidence_row["quirks_disposition"] == "record"
+    assert validate_corpus_finding_evidence_row(evidence_row) == ()
 
 
 def test_check_se_official_replay_accepts_official_oracle_when_current_surface_drifts() -> None:
