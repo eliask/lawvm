@@ -478,6 +478,20 @@ def _sec1_fallback_process_muutoslaki_xml() -> bytes:
     """.encode("utf-8")
 
 
+def _vts_skipped_process_muutoslaki_xml() -> bytes:
+    return """
+    <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <meta>
+        <lifecycle>
+          <eventRef date="2026-01-01" />
+        </lifecycle>
+      </meta>
+      <dateEntryIntoForce date="2026-01-01" />
+      <formula name="enactingClause">Eduskunnan päätöksen mukaisesti säädetään:</formula>
+    </akn>
+    """.encode("utf-8")
+
+
 def test_process_muutoslaki_flags_missing_temporal_coverage(monkeypatch) -> None:
     state = _replay_state(IRNode(kind=IRNodeKind.BODY))
     ctx = _statute_context(state.ir)
@@ -5334,6 +5348,53 @@ def test_process_muutoslaki_applies_cross_statute_vts_repeal_without_payload_ir(
         finding.detail.get("reason_code") == "UNSUPPORTED_PAYLOAD_MISSING_PAYLOAD_IR"
         for finding in rejected
     )
+
+
+def test_process_muutoslaki_projects_vts_skipped_targets_as_findings(monkeypatch) -> None:
+    from lawvm.finland.vts import VTS_SKIPPED_TARGET_RULE_ID, VtsSkippedTarget
+
+    state = _replay_state(IRNode(kind=IRNodeKind.BODY))
+    ctx = _statute_context(state.ir)
+
+    def fake_extract_vts_repeals_fallback(*_args, skipped_targets_out=None, **_kwargs):
+        assert skipped_targets_out is not None
+        skipped_targets_out.append(
+            VtsSkippedTarget(
+                rule_id=VTS_SKIPPED_TARGET_RULE_ID,
+                reason_code="unsafe_kohta_only_bare_section_parse",
+                source_reason="whole-section repeal suppressed",
+                source_statute="1996/1261",
+                source_excerpt="6 §:n 3 kohta.",
+                target_section="6",
+            )
+        )
+        return []
+
+    monkeypatch.setattr("lawvm.finland.grafter.extract_vts_repeals_fallback", fake_extract_vts_repeals_fallback)
+    monkeypatch.setattr("lawvm.finland.grafter.normalize_and_compile_ops", lambda *_args, **_kwargs: PhaseResult(output=[]))
+    monkeypatch.setattr("lawvm.finland.grafter.compile_amendment_ops", lambda *_args, **_kwargs: PhaseResult(output=[]))
+    monkeypatch.setattr("lawvm.finland.grafter.apply_ops_to_tree", lambda *_args, **_kwargs: state)
+
+    phase = process_muutoslaki(
+        "1996/1261",
+        state,
+        ctx,
+        replay_mode="legal_pit",
+        parent_id="1996/1261",
+        corpus=_corpus_store({"1996/1261": _vts_skipped_process_muutoslaki_xml()}),
+    )
+
+    findings = [
+        finding
+        for finding in phase.findings()
+        if finding.kind == VTS_SKIPPED_TARGET_RULE_ID
+    ]
+    assert len(findings) == 1
+    assert findings[0].role == "observation"
+    assert findings[0].blocking is False
+    assert findings[0].stage == "frontend_extraction"
+    assert findings[0].detail["reason_code"] == "unsafe_kohta_only_bare_section_parse"
+    assert findings[0].detail["target_section"] == "6"
 
 
 def test_resolve_applicable_amendment_records_re_admits_oracle_reflected_source_vts_child() -> None:

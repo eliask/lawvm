@@ -8,8 +8,8 @@ AmendmentOp, but not on XMLStatute or any replay state.
 from __future__ import annotations
 
 import re
-from dataclasses import replace as dc_replace
-from typing import List, Optional, Set, TYPE_CHECKING
+from dataclasses import dataclass, replace as dc_replace
+from typing import List, Literal, Optional, Set, TYPE_CHECKING
 
 import lxml.etree as etree
 
@@ -18,6 +18,57 @@ from lawvm.finland.address_parse import ParsedLegalAddress, parse_legal_addresse
 
 if TYPE_CHECKING:
     from lawvm.core.compile_result import StrictProfile
+
+VtsSkippedTargetReason = Literal[
+    "unsupported_special_target",
+    "unsupported_subitem_target",
+    "standalone_target_without_section",
+    "unsafe_kohta_only_bare_section_parse",
+]
+
+VTS_SKIPPED_TARGET_RULE_ID = "PARSE.VTS_SKIPPED_TARGET_UNSUPPORTED"
+
+
+@dataclass(frozen=True)
+class VtsSkippedTarget:
+    """Typed visibility record for a VTS target intentionally not lowered.
+
+    VTS extraction must not silently widen unsupported child/facet targets into
+    whole-section repeals. This record preserves the parsed target and source
+    reason whenever the extractor skips one of those targets.
+    """
+
+    rule_id: str
+    reason_code: VtsSkippedTargetReason
+    source_reason: str
+    source_statute: str
+    source_excerpt: str
+    target_section: str
+    target_chapter: str | None = None
+    target_paragraph: int | None = None
+    target_item: str | None = None
+    target_subitem: str | None = None
+    target_special: str = ""
+    phase: str = "frontend_extraction"
+    family: str = "unsupported_target"
+    blocking: bool = False
+
+    def as_detail(self) -> dict[str, object]:
+        return {
+            "rule_id": self.rule_id,
+            "reason_code": self.reason_code,
+            "source_reason": self.source_reason,
+            "source_excerpt": self.source_excerpt,
+            "target_section": self.target_section,
+            "target_chapter": self.target_chapter,
+            "target_paragraph": self.target_paragraph,
+            "target_item": self.target_item,
+            "target_subitem": self.target_subitem,
+            "target_special": self.target_special,
+            "phase": self.phase,
+            "family": self.family,
+            "blocking": self.blocking,
+        }
 
 
 # op-keyword set — used to gate VTS fallback (must contain operative verbs
@@ -115,6 +166,34 @@ def _vts_candidate_containers(tree: etree._Element) -> List[etree._Element]:
         + tree.findall('.//{*}hcontainer[@eId="entryIntoForce"]')
         + tree.findall('.//{*}hcontainer[@name="conclusions"]')
         + tree.findall(".//{*}conclusions")
+    )
+
+
+def _record_vts_skipped_target(
+    skipped_targets_out: Optional[List[VtsSkippedTarget]],
+    *,
+    reason_code: VtsSkippedTargetReason,
+    source_reason: str,
+    source_statute: str,
+    source_excerpt: str,
+    addr: ParsedLegalAddress,
+) -> None:
+    if skipped_targets_out is None:
+        return
+    skipped_targets_out.append(
+        VtsSkippedTarget(
+            rule_id=VTS_SKIPPED_TARGET_RULE_ID,
+            reason_code=reason_code,
+            source_reason=source_reason,
+            source_statute=source_statute,
+            source_excerpt=re.sub(r"\s+", " ", source_excerpt).strip()[:240],
+            target_section=addr.section,
+            target_chapter=addr.chapter,
+            target_paragraph=addr.subsection,
+            target_item=addr.item,
+            target_subitem=addr.subitem,
+            target_special=addr.special,
+        )
     )
 
 
@@ -477,6 +556,7 @@ def extract_voimaantulo_repeals(
     xml_bytes: bytes,
     parent_id: str,
     parent_title: str = "",
+    skipped_targets_out: Optional[List[VtsSkippedTarget]] = None,
 ) -> List[AmendmentOp]:
     """Extract repeal operations from voimaantulosäännös (transitional provisions).
 
@@ -495,9 +575,11 @@ def extract_voimaantulo_repeals(
     This is a QUIRKS-mode feature: the caller should gate it behind
     ``strict_profile is None``.
 
-    Returns a (possibly empty) list of ``AmendmentOp`` objects.  All returned
-    ops carry ``op_type='REPEAL'`` and typed ``voimaantulo_repeal=True``
-    provenance.
+    If ``skipped_targets_out`` is provided, unsupported or unsafe parsed
+    targets are appended as ``VtsSkippedTarget`` records instead of disappearing
+    silently. Returns a (possibly empty) list of ``AmendmentOp`` objects.  All
+    returned ops carry ``op_type='REPEAL'`` and typed
+    ``voimaantulo_repeal=True`` provenance.
     """
     fragment = _voimaantulo_repeal_fragment_for_parent(xml_bytes, parent_id, parent_title=parent_title)
     if not fragment:
@@ -576,17 +658,52 @@ def extract_voimaantulo_repeals(
             if addr.chapter is not None and not addr.section:
                 # Chapter refs already handled above
                 continue
-            if addr.special or addr.subitem is not None:
-                # Skip special refs and alakohta depth for now.
+            if addr.special:
+                # Skip facet refs for now; VTS has no safe facet repeal carrier.
+                _record_vts_skipped_target(
+                    skipped_targets_out,
+                    reason_code="unsupported_special_target",
+                    source_reason="VTS repeal target names a facet; the extractor will not widen it into a whole-section repeal.",
+                    source_statute=parent_id,
+                    source_excerpt=fragment,
+                    addr=addr,
+                )
+                continue
+            if addr.subitem is not None:
+                # Skip alakohta depth for now; AmendmentOp has no subitem carrier.
+                _record_vts_skipped_target(
+                    skipped_targets_out,
+                    reason_code="unsupported_subitem_target",
+                    source_reason="VTS repeal target reaches alakohta depth; AmendmentOp has no subitem carrier, so no broader repeal was emitted.",
+                    source_statute=parent_id,
+                    source_excerpt=fragment,
+                    addr=addr,
+                )
                 continue
             if not addr.section:
                 # Skip standalone momentti refs with no section context.
+                _record_vts_skipped_target(
+                    skipped_targets_out,
+                    reason_code="standalone_target_without_section",
+                    source_reason="VTS repeal target lacks section context; the extractor will not infer a host section.",
+                    source_statute=parent_id,
+                    source_excerpt=fragment,
+                    addr=addr,
+                )
                 continue
             if fragment_has_kohta_only and addr.subsection is None and addr.item is None:
                 # The fragment mentions items (kohdat) but the address parser
                 # produced a bare section ref — skip to avoid a false
                 # whole-section repeal. Tracked as a known limitation in
                 # address_parse until "N kohta" (no momentin) is supported.
+                _record_vts_skipped_target(
+                    skipped_targets_out,
+                    reason_code="unsafe_kohta_only_bare_section_parse",
+                    source_reason="VTS fragment mentions kohta without momentti but parsed as a bare section; whole-section repeal suppressed.",
+                    source_statute=parent_id,
+                    source_excerpt=fragment,
+                    addr=addr,
+                )
                 continue
             dedup_key = (
                 addr.section,
@@ -627,6 +744,7 @@ def extract_vts_cross_statute_repeals(
     parent_id: str,
     parent_title: str,
     strict_profile: "Optional[StrictProfile]",
+    skipped_targets_out: Optional[List[VtsSkippedTarget]] = None,
 ) -> Optional[List[AmendmentOp]]:
     """Heuristic #38: VTS cross-statute repeal.
 
@@ -634,7 +752,12 @@ def extract_vts_cross_statute_repeals(
     quirks replay modes. ``strict_profile`` is retained for API compatibility.
     """
     if parent_id:
-        return extract_voimaantulo_repeals(xml_bytes, parent_id, parent_title=parent_title)
+        return extract_voimaantulo_repeals(
+            xml_bytes,
+            parent_id,
+            parent_title=parent_title,
+            skipped_targets_out=skipped_targets_out,
+        )
     return None
 
 
@@ -644,6 +767,7 @@ def extract_vts_repeals_fallback(
     parent_id: str,
     parent_title: str,
     strict_profile: "Optional[StrictProfile]",
+    skipped_targets_out: Optional[List[VtsSkippedTarget]] = None,
 ) -> Optional[List[AmendmentOp]]:
     """Heuristic #37: voimaantulosäännös repeal extraction.
 
@@ -654,5 +778,10 @@ def extract_vts_repeals_fallback(
     if any(kw in johto.lower() for kw in _VTS_OP_KEYWORDS):
         return None
     if parent_id:
-        return extract_voimaantulo_repeals(xml_bytes, parent_id, parent_title=parent_title)
+        return extract_voimaantulo_repeals(
+            xml_bytes,
+            parent_id,
+            parent_title=parent_title,
+            skipped_targets_out=skipped_targets_out,
+        )
     return None

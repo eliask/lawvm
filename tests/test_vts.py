@@ -2,7 +2,10 @@
 import re
 
 from lawvm.corpus_store import get_corpus_store
+from lawvm.core.observation_registry import get_finding_spec
 from lawvm.finland.vts import (
+    VTS_SKIPPED_TARGET_RULE_ID,
+    VtsSkippedTarget,
     _expand_section_range_vts,
     _parent_title_variants,
     _vts_extract_after_citation,
@@ -442,6 +445,42 @@ def test_extract_voimaantulo_repeals_subsection_item_target() -> None:
     assert op.target_section == "6"
     assert op.target_paragraph == 1
     assert op.target_item == "3"
+
+
+def test_extract_voimaantulo_repeals_records_skipped_alakohta_target() -> None:
+    xml = _vts_xml("6 §:n 1 momentin 3 kohdan a alakohta.")
+    skipped: list[VtsSkippedTarget] = []
+    ops = extract_voimaantulo_repeals(xml, "1979/925", skipped_targets_out=skipped)
+
+    assert ops == []
+    assert len(skipped) == 1
+    record = skipped[0]
+    assert record.rule_id == VTS_SKIPPED_TARGET_RULE_ID
+    assert record.reason_code == "unsupported_subitem_target"
+    assert record.source_statute == "1979/925"
+    assert record.target_section == "6"
+    assert record.target_paragraph == 1
+    assert record.target_item == "3"
+    assert record.target_subitem == "a"
+    assert record.blocking is False
+    assert get_finding_spec(record.rule_id) is not None
+    assert record.as_detail()["reason_code"] == "unsupported_subitem_target"
+
+
+def test_extract_voimaantulo_repeals_records_skipped_kohta_only_bare_section_target() -> None:
+    xml = _vts_xml("6 §:n 3 kohta.")
+    skipped: list[VtsSkippedTarget] = []
+    ops = extract_voimaantulo_repeals(xml, "1979/925", skipped_targets_out=skipped)
+
+    assert ops == []
+    assert len(skipped) == 1
+    record = skipped[0]
+    assert record.rule_id == VTS_SKIPPED_TARGET_RULE_ID
+    assert record.reason_code == "unsafe_kohta_only_bare_section_parse"
+    assert record.target_section == "6"
+    assert record.target_paragraph is None
+    assert record.target_item is None
+    assert "whole-section repeal suppressed" in record.source_reason
 
 
 def test_extract_voimaantulo_repeals_keeps_chapter_scope_across_grouped_refs() -> None:
