@@ -88,6 +88,18 @@ def _load_openapi_snapshot(path: Path) -> dict[str, Any]:
     return loaded
 
 
+def _openapi_server_urls(servers: Any, *, source: Path) -> list[str]:
+    if servers is None:
+        return []
+    if not isinstance(servers, list):
+        raise ValueError(f"{source} OpenAPI servers field did not decode to a JSON array")
+    malformed_indexes = [index for index, server in enumerate(servers) if not isinstance(server, dict)]
+    if malformed_indexes:
+        indexes = ", ".join(str(index) for index in malformed_indexes)
+        raise ValueError(f"{source} OpenAPI servers field contains non-object entries at indexes: {indexes}")
+    return [str(server.get("url", "")) for server in servers]
+
+
 def normalize_openapi() -> None:
     repo = _repo_root()
     openapi_dir = repo / "uk" / "openapi"
@@ -106,7 +118,7 @@ def normalize_openapi() -> None:
                 name=source.stem,
                 title=str(info.get("title", "")),
                 version=str(info.get("version", "")),
-                server_urls=[str(server.get("url", "")) for server in servers if isinstance(server, dict)],
+                server_urls=_openapi_server_urls(servers, source=source),
                 path_count=len(spec.get("paths", {})),
             )
         )
