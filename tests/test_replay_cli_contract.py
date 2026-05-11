@@ -4,6 +4,7 @@ import json
 from argparse import Namespace
 from types import SimpleNamespace
 
+from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row
 from lawvm.core.ir import LegalAddress
 from lawvm.core.timeline import ConsistencyDivergence
 from lawvm.tools import cli, ee_replay, no_replay
@@ -120,7 +121,13 @@ def test_ee_replay_main_emits_normalized_json(monkeypatch, capsys) -> None:
             n_ops_missing=0,
             n_con_missing=0,
             adjudications=[
-                SimpleNamespace(kind="ee_replay_unsupported_action"),
+                SimpleNamespace(
+                    kind="ee_replay_unsupported_action",
+                    message="Replay skipped unsupported action",
+                    op_id="op-1",
+                    source_statute="a1",
+                    detail={"rule_id": "ee_replay_unsupported_action", "phase": "replay"},
+                ),
                 SimpleNamespace(kind="ee_replay_unsupported_action"),
                 SimpleNamespace(kind="ee_text_replace_ambiguous"),
             ],
@@ -151,6 +158,15 @@ def test_ee_replay_main_emits_normalized_json(monkeypatch, capsys) -> None:
         "ee_replay_unsupported_action": 2,
         "ee_text_replace_ambiguous": 1,
     }
+    evidence_row = payload["evidence"]["finding_rows"][0]
+    assert evidence_row["frontend_id"] == "estonia"
+    assert evidence_row["rule_id"] == "ee_replay_unsupported_action"
+    assert evidence_row["phase"] == "replay"
+    assert evidence_row["source_artifact_id"] == "a1"
+    assert evidence_row["source_unit_id"] == "op-1"
+    assert evidence_row["strict_disposition"] == "block"
+    assert evidence_row["quirks_disposition"] == "record"
+    assert validate_corpus_finding_evidence_row(evidence_row) == ()
     assert payload["divergences"][0]["address"] == "chapter:1/section:6/subsection:2"
 
 
