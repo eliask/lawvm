@@ -58,3 +58,30 @@ def test_test_shard_keeps_known_expensive_files_explicitly_excluded() -> None:
         "test_citation_routing.py": "large skip-heavy/gold-style corpus route inventory",
         "test_pipeline_gold.py": "gold corpus suite; intentionally outside bounded non-network CI",
     }
+
+
+def test_test_shard_plan_is_jsonable_and_filterable() -> None:
+    module = _load_test_shard_module()
+
+    plan = module.shard_plan("norway")
+
+    assert plan["kind"] == "lawvm_pytest_shard_plan"
+    assert plan["selected"] == "norway"
+    assert plan["shards"] == [
+        {
+            "name": "norway",
+            "patterns": list(module.SHARD_PATTERNS["norway"]),
+            "files": [f"tests/{filename}" for filename in module.shard_assignments()["norway"]],
+            "file_count": len(module.shard_assignments()["norway"]),
+        }
+    ]
+    assert plan["excluded_tests"] == [
+        {
+            "file": "tests/test_citation_routing.py",
+            "reason": "large skip-heavy/gold-style corpus route inventory",
+        },
+        {
+            "file": "tests/test_pipeline_gold.py",
+            "reason": "gold corpus suite; intentionally outside bounded non-network CI",
+        },
+    ]

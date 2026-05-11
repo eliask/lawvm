@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -355,6 +357,57 @@ def list_files(shard: str) -> int:
     return 0
 
 
+def shard_plan(shard: str = "all") -> dict[str, Any]:
+    assignments = shard_assignments()
+    if shard != "all" and shard not in assignments:
+        choices = ", ".join(["all", *sorted(assignments)])
+        raise ValueError(f"Unknown shard {shard!r}. Choices: {choices}")
+    selected = sorted(assignments) if shard == "all" else [shard]
+    shards: list[dict[str, Any]] = [
+        {
+            "name": name,
+            "patterns": list(SHARD_PATTERNS.get(name, ())),
+            "files": [f"tests/{filename}" for filename in assignments[name]],
+            "file_count": len(assignments[name]),
+        }
+        for name in selected
+    ]
+    assigned_count = sum(len(assignments[name]) for name in selected)
+    return {
+        "kind": "lawvm_pytest_shard_plan",
+        "selected": shard,
+        "assigned_file_count": assigned_count,
+        "shards": shards,
+        "excluded_tests": [
+            {
+                "file": f"tests/{filename}",
+                "reason": reason,
+            }
+            for filename, reason in sorted(EXCLUDED_TESTS.items())
+        ],
+    }
+
+
+def print_plan(shard: str, *, json_output: bool = False) -> int:
+    try:
+        plan = shard_plan(shard)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if json_output:
+        print(json.dumps(plan, indent=2, sort_keys=True))
+        return 0
+    for item in plan["shards"]:
+        print(f"{item['name']}: {item['file_count']} files")
+        for filename in item["files"]:
+            print(f"  {filename}")
+    if shard == "all":
+        print(f"assigned: {plan['assigned_file_count']}")
+        for item in plan["excluded_tests"]:
+            print(f"excluded: {item['file']} ({item['reason']})")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -362,6 +415,9 @@ def main(argv: list[str] | None = None) -> int:
     subparsers.add_parser("list")
     list_files_parser = subparsers.add_parser("files")
     list_files_parser.add_argument("shard")
+    plan_parser = subparsers.add_parser("plan")
+    plan_parser.add_argument("shard", nargs="?", default="all")
+    plan_parser.add_argument("--json", action="store_true", dest="json_output")
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("shard")
     run_parser.add_argument("pytest_args", nargs=argparse.REMAINDER)
@@ -373,6 +429,8 @@ def main(argv: list[str] | None = None) -> int:
         return list_shards()
     if args.command == "files":
         return list_files(args.shard)
+    if args.command == "plan":
+        return print_plan(args.shard, json_output=args.json_output)
     if args.command == "run":
         return run_shard(args.shard, pytest_args=args.pytest_args)
     raise AssertionError(args.command)
