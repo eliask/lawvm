@@ -5387,6 +5387,13 @@ def _build_parser() -> argparse.ArgumentParser:
     open_law_corpus_p.add_argument("--limit", type=int, metavar="N", help="audit only first N operations")
     open_law_corpus_p.add_argument("--strict", action="store_true", help="mark unsupported actions as blocking")
     open_law_corpus_p.add_argument("--json", action="store_true", help="emit summary JSON")
+    open_law_pack_p = open_law_sub.add_parser("evidence-pack", help="write a Maryland Open Law demo evidence pack")
+    open_law_pack_p.add_argument("--source-repo", required=True, metavar="PATH", help="local maryland-dsd/law-xml clone")
+    open_law_pack_p.add_argument("--codified-repo", required=True, metavar="PATH", help="local law-xml-codified clone")
+    open_law_pack_p.add_argument("--out", default=".tmp/open_law/evidence-pack", metavar="DIR", help="output directory")
+    open_law_pack_p.add_argument("--limit", type=int, metavar="N", help="audit only first N operations")
+    open_law_pack_p.add_argument("--strict", action="store_true", help="mark unsupported actions as blocking")
+    open_law_pack_p.add_argument("--json", action="store_true", help="emit summary JSON")
 
     # --- sql ---
     sql_p = sub.add_parser(

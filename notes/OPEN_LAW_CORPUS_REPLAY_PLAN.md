@@ -167,12 +167,22 @@ Command target:
 uv run lawvm open-law corpus-audit --out .tmp/open_law/report
 ```
 
+Demo/evidence-pack command:
+
+```bash
+uv run lawvm open-law evidence-pack \
+  --source-repo .tmp/open_law/repos/law-xml \
+  --codified-repo .tmp/open_law/repos/law-xml-codified \
+  --out .tmp/open_law/evidence-pack
+```
+
 Outputs:
 
 - `manifest.json`
 - `operation_audits.jsonl`
 - `findings.jsonl`
 - `summary.json`
+- `summary.md` and `exemplars.json` when using `evidence-pack`
 
 Metrics:
 
@@ -212,13 +222,14 @@ publication subtree.
 
 ## 9. Stop Conditions
 
-Minimum before the meeting:
+Minimum demo target:
 
 - inventory command works against local clones of the public repositories;
 - operation path planner covers all current `codify:replace` paths or emits
   typed planning failures;
 - corpus audit runs over at least all supported `codify:replace` actions;
 - report distinguishes replay success from unsupported and unplanned cases;
+- evidence-pack command emits a human-readable summary and exemplar rows;
 - spec notes clearly state claim boundaries.
 
 Full target:
