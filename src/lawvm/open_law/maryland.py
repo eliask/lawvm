@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Tuple
 
 from lawvm.open_law.codify import parse_open_law_codify_ops
-from lawvm.open_law.local_git import MarylandLocalRepos
+from lawvm.open_law.local_git import MarylandLocalRepos, maryland_repos_identity_to_jsonable
 
 MARYLAND_SOURCE_REPO = "maryland-dsd/law-xml"
 MARYLAND_CODIFIED_REPO = "maryland-dsd/law-xml-codified"
@@ -176,6 +176,12 @@ def inventory_to_jsonable(inventory: MarylandInventory) -> dict[str, object]:
         "source_editorial_actions": list(inventory.source_editorial_actions),
         "operation_counts": dict(inventory.operation_counts),
     }
+
+
+def maryland_manifest_to_jsonable(inventory: MarylandInventory, *, repos: MarylandLocalRepos) -> dict[str, object]:
+    manifest = inventory_to_jsonable(inventory)
+    manifest["local_repositories"] = maryland_repos_identity_to_jsonable(repos)
+    return manifest
 
 
 def _publication_sort_key(branch: str) -> tuple[str, str]:

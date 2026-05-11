@@ -606,8 +606,18 @@ def test_evidence_pack_writes_summary_and_machine_reports(tmp_path) -> None:
     assert (tmp_path / "pack" / "manifest.json").exists()
     assert (tmp_path / "pack" / "operation_audits.jsonl").exists()
     assert (tmp_path / "pack" / "findings.jsonl").exists()
-    assert "## What LawVM Claims" in pack.summary_path.read_text(encoding="utf-8")
+    summary_text = pack.summary_path.read_text(encoding="utf-8")
+    assert "## What LawVM Claims" in summary_text
+    assert "- source clone HEAD:" in summary_text
+    assert "- codified clone HEAD:" in summary_text
     assert '"clean_replace"' in pack.exemplars_path.read_text(encoding="utf-8")
+    manifest = json.loads((tmp_path / "pack" / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["local_repositories"]["source"]["label"] == "maryland-dsd/law-xml"
+    assert len(manifest["local_repositories"]["source"]["head_commit"]) == 40
+    assert manifest["local_repositories"]["source"]["current_branch"] == "main"
+    assert manifest["local_repositories"]["source"]["remotes"] == []
+    assert manifest["local_repositories"]["codified"]["label"] == "maryland-dsd/law-xml-codified"
+    assert len(manifest["local_repositories"]["codified"]["head_commit"]) == 40
     operation_rows = [
         json.loads(line)
         for line in (tmp_path / "pack" / "operation_audits.jsonl").read_text(encoding="utf-8").splitlines()

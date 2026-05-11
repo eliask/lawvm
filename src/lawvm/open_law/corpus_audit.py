@@ -23,7 +23,7 @@ from lawvm.open_law.audit import (
 from lawvm.open_law.codify import parse_open_law_codify_ops
 from lawvm.open_law.maryland import (
     build_maryland_inventory,
-    inventory_to_jsonable,
+    maryland_manifest_to_jsonable,
     plan_maryland_publication_transitions,
 )
 from lawvm.open_law.local_git import MarylandLocalRepos
@@ -143,7 +143,7 @@ def write_inventory(out_dir: Path, *, repos: MarylandLocalRepos) -> None:
     inventory = build_maryland_inventory(repos)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "manifest.json").write_text(
-        json.dumps(inventory_to_jsonable(inventory), indent=2, ensure_ascii=False) + "\n",
+        json.dumps(maryland_manifest_to_jsonable(inventory, repos=repos), indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
 

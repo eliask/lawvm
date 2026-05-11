@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple, TypedDict
+from typing import Mapping, Tuple, TypedDict, cast
 
 from lawvm.open_law.corpus_audit import (
     OpenLawCorpusAuditReport,
@@ -15,7 +15,7 @@ from lawvm.open_law.corpus_audit import (
     write_inventory,
 )
 from lawvm.open_law.local_git import MarylandLocalRepos
-from lawvm.open_law.maryland import build_maryland_inventory, inventory_to_jsonable
+from lawvm.open_law.maryland import build_maryland_inventory, maryland_manifest_to_jsonable
 
 
 @dataclass(frozen=True)
@@ -56,6 +56,7 @@ def write_maryland_evidence_pack(
     report = audit_maryland_corpus(repos=repos, limit=limit, strict=strict)
     write_inventory(out_dir, repos=repos)
     write_corpus_report(report, out_dir)
+    manifest = maryland_manifest_to_jsonable(inventory, repos=repos)
 
     exemplars = _pick_exemplars(report.operation_rows)
     exemplars_path = out_dir / "exemplars.json"
@@ -63,7 +64,7 @@ def write_maryland_evidence_pack(
 
     summary_path = out_dir / "summary.md"
     summary_path.write_text(
-        _summary_markdown(inventory_to_jsonable(inventory), report, exemplars, strict=strict),
+        _summary_markdown(manifest, report, exemplars, strict=strict),
         encoding="utf-8",
     )
     return OpenLawEvidencePack(
@@ -108,15 +109,15 @@ def _row_summary(row: OpenLawOperationAuditRow) -> EvidenceRowSummary:
 
 
 def _summary_markdown(
-    inventory: dict[str, object],
+    manifest: dict[str, object],
     report: OpenLawCorpusAuditReport,
     exemplars: dict[str, EvidenceRowSummary],
     *,
     strict: bool,
 ) -> str:
-    operation_counts = inventory.get("operation_counts", {})
-    branch_count = _sized_len(inventory.get("publication_branches", ()))
-    action_count = _sized_len(inventory.get("source_editorial_actions", ()))
+    operation_counts = manifest.get("operation_counts", {})
+    branch_count = _sized_len(manifest.get("publication_branches", ()))
+    action_count = _sized_len(manifest.get("source_editorial_actions", ()))
     lines = [
         "# Open Law Maryland Evidence Pack",
         "",
@@ -129,12 +130,17 @@ def _summary_markdown(
         f"- source editorial action files: {action_count}",
         f"- operation counts: `{json.dumps(operation_counts, sort_keys=True)}`",
         f"- strict mode: `{strict}`",
-        "",
-        "## Corpus Audit Summary",
-        "",
-        "| metric | count |",
-        "| --- | ---: |",
     ]
+    lines.extend(_repository_identity_lines(manifest))
+    lines.extend(
+        [
+            "",
+            "## Corpus Audit Summary",
+            "",
+            "| metric | count |",
+            "| --- | ---: |",
+        ]
+    )
     for key in (
         "operation_rows",
         "matched",
@@ -209,3 +215,33 @@ def _sized_len(value: object) -> int:
     if isinstance(value, tuple):
         return len(value)
     return 0
+
+
+def _repository_identity_lines(manifest: dict[str, object]) -> list[str]:
+    repos = manifest.get("local_repositories")
+    if not isinstance(repos, Mapping):
+        return []
+    repo_map = cast("Mapping[str, object]", repos)
+    lines: list[str] = []
+    for key in ("source", "codified"):
+        item = repo_map.get(key)
+        if not isinstance(item, Mapping):
+            continue
+        repo_item = cast("Mapping[str, object]", item)
+        head = repo_item.get("head_commit")
+        branch_count = repo_item.get("branch_count")
+        if isinstance(head, str) and isinstance(branch_count, int):
+            lines.append(f"- {key} clone HEAD: `{head}` across {branch_count} local branches/refs")
+        remotes = repo_item.get("remotes")
+        if isinstance(remotes, list) and remotes:
+            remote_bits: list[str] = []
+            for remote in remotes:
+                if isinstance(remote, Mapping):
+                    remote_item = cast("Mapping[str, object]", remote)
+                    remote_name = remote_item.get("name")
+                    remote_url = remote_item.get("url")
+                    if isinstance(remote_name, str) and isinstance(remote_url, str):
+                        remote_bits.append(f"{remote_name}={remote_url}")
+            if remote_bits:
+                lines.append(f"- {key} clone remotes: `{', '.join(remote_bits)}`")
+    return lines
