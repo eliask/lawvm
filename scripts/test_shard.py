@@ -237,6 +237,8 @@ TOOLING_SHARD_PREFIXES = (
 )
 GLOBAL_CHANGE_PATHS = frozenset({"pyproject.toml", "uv.lock"})
 
+ALL_SHARDS = ("all",)
+
 
 def _all_test_files() -> list[str]:
     return sorted(path.name for path in TEST_DIR.glob("test_*.py"))
@@ -478,45 +480,97 @@ def shard_plan(shard: str = "all") -> dict[str, Any]:
     }
 
 
-def affected_shards(paths: list[str]) -> list[str]:
-    """Map changed repo paths to a conservative bounded-test shard set."""
+def affected_path_plan(raw_path: str) -> dict[str, Any]:
+    path = raw_path.strip()
+    normalized = path.replace("\\", "/")
+    filename = Path(normalized).name
+    if not path:
+        return {
+            "path": raw_path,
+            "shards": list(ALL_SHARDS),
+            "reason": "empty input path is not mapped to a bounded shard; run all affected shards",
+        }
+    if normalized in GLOBAL_CHANGE_PATHS:
+        return {
+            "path": raw_path,
+            "shards": list(ALL_SHARDS),
+            "reason": "global dependency change forces all affected shards",
+        }
+    if normalized.startswith("tests/") and filename.startswith("test_") and filename.endswith(".py"):
+        if filename in EXCLUDED_TESTS:
+            return {
+                "path": raw_path,
+                "shards": list(ALL_SHARDS),
+                "reason": f"excluded test: {EXCLUDED_TESTS[filename]}; run all affected shards",
+            }
+        matches = explicit_matches(filename)
+        if matches:
+            return {
+                "path": raw_path,
+                "shards": sorted(matches),
+                "reason": "test file matches explicit shard pattern",
+            }
+        return {
+            "path": raw_path,
+            "shards": ["misc"],
+            "reason": "test file has no explicit shard pattern and maps to misc",
+        }
+    for prefix, shards in SOURCE_SHARD_PREFIXES:
+        if normalized.startswith(prefix):
+            if shards == ALL_SHARDS:
+                return {
+                    "path": raw_path,
+                    "shards": list(ALL_SHARDS),
+                    "reason": f"core/dependency prefix {prefix} forces all affected shards",
+                }
+            return {
+                "path": raw_path,
+                "shards": list(shards),
+                "reason": f"known frontend prefix {prefix} maps to {', '.join(shards)}",
+            }
+    if normalized.startswith(TOOLING_SHARD_PREFIXES):
+        prefixes = ", ".join(TOOLING_SHARD_PREFIXES)
+        return {
+            "path": raw_path,
+            "shards": ["tools"],
+            "reason": f"tools prefix {prefixes} maps to tools",
+        }
+    return {
+        "path": raw_path,
+        "shards": list(ALL_SHARDS),
+        "reason": "unknown path is not mapped to a bounded shard; run all affected shards",
+    }
 
-    if not paths:
-        return ["all"]
+
+def affected_path_plans(paths: list[str]) -> list[dict[str, Any]]:
+    return [affected_path_plan(path) for path in paths]
+
+
+def _affected_shards_from_path_plans(path_plans: list[dict[str, Any]]) -> list[str]:
     affected: set[str] = set()
-    for raw_path in paths:
-        path = raw_path.strip()
-        if not path:
-            continue
-        normalized = path.replace("\\", "/")
-        filename = Path(normalized).name
-        if normalized in GLOBAL_CHANGE_PATHS:
-            affected.add("all")
-            continue
-        if normalized.startswith("tests/") and filename.startswith("test_") and filename.endswith(".py"):
-            if filename in EXCLUDED_TESTS:
-                continue
-            matches = explicit_matches(filename)
-            affected.update(matches or ["misc"])
-            continue
-        for prefix, shards in SOURCE_SHARD_PREFIXES:
-            if normalized.startswith(prefix):
-                affected.update(shards)
-                break
-        else:
-            if normalized.startswith(TOOLING_SHARD_PREFIXES):
-                affected.add("tools")
+    for item in path_plans:
+        affected.update(item["shards"])
     if not affected or "all" in affected:
         return ["all"]
     return sorted(affected)
 
 
+def affected_shards(paths: list[str]) -> list[str]:
+    """Map changed repo paths to a conservative bounded-test shard set."""
+
+    if not paths:
+        return ["all"]
+    return _affected_shards_from_path_plans(affected_path_plans(paths))
+
+
 def affected_plan(paths: list[str]) -> dict[str, Any]:
-    shards = affected_shards(paths)
+    path_plans = affected_path_plans(paths)
+    shards = _affected_shards_from_path_plans(path_plans)
     return {
         "kind": "lawvm_pytest_affected_shards",
         "input_paths": list(paths),
         "shards": shards,
+        "paths": path_plans,
     }
 
 

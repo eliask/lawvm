@@ -191,4 +191,113 @@ def test_test_shard_affected_plan_defaults_to_all_for_unknown_paths() -> None:
         "kind": "lawvm_pytest_affected_shards",
         "input_paths": ["notes/ARCHITECTURE.md"],
         "shards": ["all"],
+        "paths": [
+            {
+                "path": "notes/ARCHITECTURE.md",
+                "shards": ["all"],
+                "reason": "unknown path is not mapped to a bounded shard; run all affected shards",
+            }
+        ],
+    }
+
+
+def test_test_shard_affected_plan_explains_core_and_dependency_all() -> None:
+    module = _load_test_shard_module()
+
+    assert module.affected_plan(
+        [
+            "src/lawvm/core/timeline.py",
+            "uv.lock",
+        ]
+    ) == {
+        "kind": "lawvm_pytest_affected_shards",
+        "input_paths": [
+            "src/lawvm/core/timeline.py",
+            "uv.lock",
+        ],
+        "shards": ["all"],
+        "paths": [
+            {
+                "path": "src/lawvm/core/timeline.py",
+                "shards": ["all"],
+                "reason": "core/dependency prefix src/lawvm/core/ forces all affected shards",
+            },
+            {
+                "path": "uv.lock",
+                "shards": ["all"],
+                "reason": "global dependency change forces all affected shards",
+            },
+        ],
+    }
+
+
+def test_test_shard_affected_plan_explains_frontend_and_tool_shards() -> None:
+    module = _load_test_shard_module()
+
+    assert module.affected_plan(
+        [
+            "src/lawvm/finland/frontend_compile.py",
+            "scripts/ci.sh",
+        ]
+    ) == {
+        "kind": "lawvm_pytest_affected_shards",
+        "input_paths": [
+            "src/lawvm/finland/frontend_compile.py",
+            "scripts/ci.sh",
+        ],
+        "shards": ["finland", "tools"],
+        "paths": [
+            {
+                "path": "src/lawvm/finland/frontend_compile.py",
+                "shards": ["finland"],
+                "reason": "known frontend prefix src/lawvm/finland/ maps to finland",
+            },
+            {
+                "path": "scripts/ci.sh",
+                "shards": ["tools"],
+                "reason": "tools prefix scripts/ maps to tools",
+            },
+        ],
+    }
+
+
+def test_test_shard_affected_plan_explains_unknown_and_excluded_all() -> None:
+    module = _load_test_shard_module()
+
+    assert module.affected_shards(
+        [
+            "src/lawvm/finland/frontend_compile.py",
+            "notes/ARCHITECTURE.md",
+        ]
+    ) == ["all"]
+    assert module.affected_shards(
+        [
+            "src/lawvm/finland/frontend_compile.py",
+            "tests/test_pipeline_gold.py",
+        ]
+    ) == ["all"]
+    assert module.affected_plan(
+        [
+            "notes/ARCHITECTURE.md",
+            "tests/test_pipeline_gold.py",
+        ]
+    ) == {
+        "kind": "lawvm_pytest_affected_shards",
+        "input_paths": [
+            "notes/ARCHITECTURE.md",
+            "tests/test_pipeline_gold.py",
+        ],
+        "shards": ["all"],
+        "paths": [
+            {
+                "path": "notes/ARCHITECTURE.md",
+                "shards": ["all"],
+                "reason": "unknown path is not mapped to a bounded shard; run all affected shards",
+            },
+            {
+                "path": "tests/test_pipeline_gold.py",
+                "shards": ["all"],
+                "reason": "excluded test: gold corpus suite; intentionally outside bounded non-network CI; run all affected shards",
+            },
+        ],
     }
