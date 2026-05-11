@@ -8,7 +8,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Tuple
 
-from lawvm.open_law.audit import OpenLawSnapshotAuditResult, audit_open_law_snapshot
+from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow, CorpusOperationEvidenceRow, CorpusRowStatus
+from lawvm.core.ir import IRNode
+from lawvm.core.ir_helpers import _kind_str
+from lawvm.core.tree_ops import resolve_required
+from lawvm.open_law.audit import (
+    OpenLawSnapshotAuditResult,
+    TreePath,
+    audit_open_law_snapshot,
+    diff_ir_paths,
+    replay_open_law_ops,
+    resolve_open_law_path,
+)
 from lawvm.open_law.codify import parse_open_law_codify_ops
 from lawvm.open_law.maryland import (
     build_maryland_inventory,
@@ -16,7 +27,7 @@ from lawvm.open_law.maryland import (
     plan_maryland_publication_transitions,
 )
 from lawvm.open_law.local_git import MarylandLocalRepos
-from lawvm.open_law.models import OpenLawFinding, OpenLawOperation
+from lawvm.open_law.models import OpenLawAction, OpenLawFinding, OpenLawOperation
 from lawvm.open_law.planner import OpenLawFilePlan, plan_maryland_comar_operation
 from lawvm.open_law.xml import parse_open_law_xml, wrap_open_law_body_with_prefix
 
@@ -33,6 +44,7 @@ class OpenLawOperationAuditRow:
     codify_path: Tuple[str, ...]
     xml_path: str
     status: str
+    expire_date: str = ""
     snapshot_matches_replay: bool = False
     changed_path_count: int = 0
     unexplained_path_count: int = 0
@@ -119,6 +131,7 @@ def write_corpus_report(report: OpenLawCorpusAuditReport, out_dir: Path) -> None
                             "message": finding.message,
                             "path": list(finding.path),
                             "blocking": finding.blocking,
+                            "evidence_row": _finding_evidence_row(row, finding).to_dict(),
                         },
                         ensure_ascii=False,
                     )
@@ -145,10 +158,12 @@ def _audit_one_operation(
     strict: bool,
 ) -> OpenLawOperationAuditRow:
     plan = plan_maryland_comar_operation(op)
+    if op.action is OpenLawAction.EXPIRE:
+        return _lifecycle_lane_row(before_branch, after_branch, action_path, op)
     if plan.status != "planned":
         return _finding_row(before_branch, after_branch, action_path, op, plan)
     if op.path and op.path[-1] == "annos":
-        return _metadata_lane_row(before_branch, after_branch, action_path, op, plan)
+        return _audit_metadata_operation(repos, before_branch, after_branch, action_path, op, plan, strict=strict)
     before_xml = _read_snapshot_xml(repos, before_branch, plan.xml_path, before_branch, after_branch, action_path, op)
     if isinstance(before_xml, OpenLawOperationAuditRow):
         return before_xml
@@ -171,12 +186,12 @@ def _audit_action_operations(
     rows: list[OpenLawOperationAuditRow] = []
     grouped_ops: dict[tuple[str, Tuple[str, ...]], list[tuple[OpenLawOperation, OpenLawFilePlan]]] = {}
     for op in ops:
+        if op.action is OpenLawAction.EXPIRE:
+            rows.append(_lifecycle_lane_row(before_branch, after_branch, action_path, op))
+            continue
         plan = plan_maryland_comar_operation(op)
         if plan.status != "planned":
             rows.append(_finding_row(before_branch, after_branch, action_path, op, plan))
-            continue
-        if op.path and op.path[-1] == "annos":
-            rows.append(_metadata_lane_row(before_branch, after_branch, action_path, op, plan))
             continue
         grouped_ops.setdefault((plan.xml_path, plan.path_prefix), []).append((op, plan))
 
@@ -190,15 +205,32 @@ def _audit_action_operations(
         if isinstance(after_xml, OpenLawOperationAuditRow):
             rows.extend(_snapshot_failure_rows(after_xml, planned_ops))
             continue
-        result = _audit_snapshots(
-            before_xml,
-            after_xml,
-            tuple(op for op, _plan in planned_ops),
-            representative_plan,
-            strict=strict,
-        )
-        for op, plan in planned_ops:
+        body_planned_ops = tuple((op, plan) for op, plan in planned_ops if not (op.path and op.path[-1] == "annos"))
+        metadata_planned_ops = tuple((op, plan) for op, plan in planned_ops if op.path and op.path[-1] == "annos")
+        if body_planned_ops:
+            result = _audit_snapshots(
+                before_xml,
+                after_xml,
+                tuple(op for op, _plan in body_planned_ops),
+                representative_plan,
+                strict=strict,
+            )
+        for op, plan in body_planned_ops:
             rows.append(_audited_row(before_branch, after_branch, action_path, op, plan, result))
+        companion_ops = tuple(op for op, _plan in planned_ops)
+        for op, plan in metadata_planned_ops:
+            rows.append(
+                _audit_metadata_operation(
+                    repos,
+                    before_branch,
+                    after_branch,
+                    action_path,
+                    op,
+                    plan,
+                    companion_ops=companion_ops,
+                    strict=strict,
+                )
+            )
     return tuple(rows)
 
 
@@ -245,6 +277,143 @@ def _audit_snapshots(
     before = wrap_open_law_body_with_prefix(parse_open_law_xml(before_xml), plan.path_prefix)
     after = wrap_open_law_body_with_prefix(parse_open_law_xml(after_xml), plan.path_prefix)
     return audit_open_law_snapshot(before, after, ops, strict=strict)
+
+
+def _audit_metadata_operation(
+    repos: MarylandLocalRepos,
+    before_branch: str,
+    after_branch: str,
+    action_path: str,
+    op: OpenLawOperation,
+    plan: OpenLawFilePlan,
+    *,
+    companion_ops: Tuple[OpenLawOperation, ...] | None = None,
+    strict: bool,
+) -> OpenLawOperationAuditRow:
+    before_xml = _read_snapshot_xml(repos, before_branch, plan.xml_path, before_branch, after_branch, action_path, op)
+    if isinstance(before_xml, OpenLawOperationAuditRow):
+        return before_xml
+    after_xml = _read_snapshot_xml(repos, after_branch, plan.xml_path, before_branch, after_branch, action_path, op)
+    if isinstance(after_xml, OpenLawOperationAuditRow):
+        return after_xml
+    before = wrap_open_law_body_with_prefix(parse_open_law_xml(before_xml), plan.path_prefix)
+    after = wrap_open_law_body_with_prefix(parse_open_law_xml(after_xml), plan.path_prefix)
+    replay_ops = companion_ops if companion_ops is not None else (op,)
+    replay = replay_open_law_ops(before, replay_ops, strict=strict)
+    projected_before = _project_generated_metadata_history(before)
+    projected_after = _project_generated_metadata_history(after)
+    projected_replay = _project_generated_metadata_history(replay.tree)
+    resolved = resolve_open_law_path(after, op.path)
+    findings = list(replay.findings)
+    if projected_before != before or projected_after != after or projected_replay != replay.tree:
+        findings.append(
+            OpenLawFinding(
+                kind="open_law_metadata_generated_history_projection",
+                message="Generated hidden Open Law history annotations were projected out for declared metadata replay comparison.",
+                op_id=op.op_id,
+                path=op.path,
+                blocking=strict,
+            )
+        )
+    if resolved.status != "resolved":
+        findings.append(
+            OpenLawFinding(
+                kind=f"open_law_metadata_target_{resolved.status}",
+                message=resolved.message,
+                op_id=op.op_id,
+                path=op.path,
+                blocking=True,
+            )
+        )
+        return OpenLawOperationAuditRow(
+            before_branch=before_branch,
+            after_branch=after_branch,
+            action_path=action_path,
+            op_id=op.op_id,
+            action=op.action.value,
+            codify_path=op.path,
+            xml_path=plan.xml_path,
+            status="metadata_diverged",
+            findings=tuple(findings),
+        )
+    changed_paths = diff_ir_paths(projected_before, projected_after)
+    allowed_prefixes = tuple(mutation.tree_path for mutation in replay.mutations)
+    unexplained_paths = tuple(path for path in changed_paths if not any(_path_has_prefix(path, prefix) for prefix in allowed_prefixes))
+    replay_resolved = resolve_open_law_path(projected_replay, op.path)
+    if replay_resolved.status != "resolved":
+        findings.append(
+            OpenLawFinding(
+                kind=f"open_law_metadata_replay_target_{replay_resolved.status}",
+                message=replay_resolved.message,
+                op_id=op.op_id,
+                path=op.path,
+                blocking=True,
+            )
+        )
+        return OpenLawOperationAuditRow(
+            before_branch=before_branch,
+            after_branch=after_branch,
+            action_path=action_path,
+            op_id=op.op_id,
+            action=op.action.value,
+            codify_path=op.path,
+            xml_path=plan.xml_path,
+            status="metadata_diverged",
+            changed_path_count=len(changed_paths),
+            unexplained_path_count=len(unexplained_paths),
+            findings=tuple(findings),
+        )
+    replay_node = resolve_required(projected_replay, replay_resolved.tree_path)
+    after_node = resolve_required(projected_after, resolved.tree_path)
+    if replay_node == after_node and not unexplained_paths:
+        findings.append(
+            OpenLawFinding(
+                kind="open_law_metadata_target_replayed",
+                message="Open Law annotations metadata target matched replay of the declared codify operation.",
+                op_id=op.op_id,
+                path=op.path,
+                blocking=False,
+            )
+        )
+        status = "metadata_matched"
+        snapshot_matches_replay = True
+    else:
+        if replay_node != after_node:
+            findings.append(
+                OpenLawFinding(
+                    kind="open_law_metadata_snapshot_mismatch",
+                    message="Open Law annotations metadata target does not match replay of the declared codify operation.",
+                    op_id=op.op_id,
+                    path=op.path,
+                    blocking=True,
+                )
+            )
+        if unexplained_paths:
+            findings.append(
+                OpenLawFinding(
+                    kind="open_law_metadata_unexplained_body_mutation",
+                    message="Metadata operation coincided with changes outside the declared annotations target.",
+                    op_id=op.op_id,
+                    path=op.path,
+                    blocking=True,
+                )
+            )
+        status = "metadata_diverged"
+        snapshot_matches_replay = False
+    return OpenLawOperationAuditRow(
+        before_branch=before_branch,
+        after_branch=after_branch,
+        action_path=action_path,
+        op_id=op.op_id,
+        action=op.action.value,
+        codify_path=op.path,
+        xml_path=plan.xml_path,
+        status=status,
+        snapshot_matches_replay=snapshot_matches_replay,
+        changed_path_count=len(changed_paths),
+        unexplained_path_count=len(unexplained_paths),
+        findings=tuple(findings),
+    )
 
 
 def _audited_row(
@@ -313,16 +482,18 @@ def _finding_row(
     )
 
 
-def _metadata_lane_row(
+def _lifecycle_lane_row(
     before_branch: str,
     after_branch: str,
     action_path: str,
     op: OpenLawOperation,
-    plan: OpenLawFilePlan,
 ) -> OpenLawOperationAuditRow:
     finding = OpenLawFinding(
-        kind="open_law_metadata_target_not_body_replay",
-        message="Operation targets Open Law annotations metadata; corpus body replay does not claim this lane yet.",
+        kind="open_law_expire_lifecycle_not_replayed",
+        message=(
+            "Open Law codify:expire is a lifecycle operation; this frontend records it "
+            f"with expire_date={op.expire_date or '-'} but does not replay expiry semantics yet."
+        ),
         op_id=op.op_id,
         path=op.path,
         blocking=True,
@@ -334,10 +505,33 @@ def _metadata_lane_row(
         op_id=op.op_id,
         action=op.action.value,
         codify_path=op.path,
-        xml_path=plan.xml_path,
-        status="metadata_unsupported",
+        xml_path="",
+        status="lifecycle_unsupported",
+        expire_date=op.expire_date,
         findings=(finding,),
     )
+
+
+def _path_has_prefix(path: TreePath, prefix: TreePath) -> bool:
+    return len(path) >= len(prefix) and path[: len(prefix)] == prefix
+
+
+def _project_generated_metadata_history(node: IRNode) -> IRNode:
+    children = tuple(
+        projected
+        for child in node.children
+        for projected in (_project_generated_metadata_child(child),)
+        if projected is not None
+    )
+    if children == node.children:
+        return node
+    return IRNode(kind=node.kind, label=node.label, text=node.text, attrs=dict(node.attrs), children=children)
+
+
+def _project_generated_metadata_child(node: IRNode) -> IRNode | None:
+    if _kind_str(node.kind) == "content" and node.attrs.get("open_law_attr_display") == "false":
+        return None
+    return _project_generated_metadata_history(node)
 
 
 def _report(rows: Tuple[OpenLawOperationAuditRow, ...]) -> OpenLawCorpusAuditReport:
@@ -347,6 +541,9 @@ def _report(rows: Tuple[OpenLawOperationAuditRow, ...]) -> OpenLawCorpusAuditRep
         "diverged": sum(1 for row in rows if row.status == "diverged"),
         "planning_failed": sum(1 for row in rows if row.status == "planning_failed"),
         "metadata_unsupported": sum(1 for row in rows if row.status == "metadata_unsupported"),
+        "metadata_matched": sum(1 for row in rows if row.status == "metadata_matched"),
+        "metadata_diverged": sum(1 for row in rows if row.status == "metadata_diverged"),
+        "lifecycle_unsupported": sum(1 for row in rows if row.status == "lifecycle_unsupported"),
         "snapshot_missing": sum(1 for row in rows if row.status == "snapshot_missing"),
         "findings": sum(len(row.findings) for row in rows),
         "unexplained_paths": sum(row.unexplained_path_count for row in rows),
@@ -364,6 +561,8 @@ def _row_jsonable(row: OpenLawOperationAuditRow) -> dict[str, object]:
         "codify_path": list(row.codify_path),
         "xml_path": row.xml_path,
         "status": row.status,
+        "expire_date": row.expire_date,
+        "evidence_row": _operation_evidence_row(row).to_dict(),
         "snapshot_matches_replay": row.snapshot_matches_replay,
         "changed_path_count": row.changed_path_count,
         "unexplained_path_count": row.unexplained_path_count,
@@ -377,3 +576,96 @@ def _row_jsonable(row: OpenLawOperationAuditRow) -> dict[str, object]:
             for finding in row.findings
         ],
     }
+
+
+def _operation_evidence_row(row: OpenLawOperationAuditRow) -> CorpusOperationEvidenceRow:
+    return CorpusOperationEvidenceRow(
+        row_id=row.op_id,
+        frontend_id="open_law_maryland",
+        source_artifact_id=row.action_path,
+        source_unit_id=f"{row.before_branch}->{row.after_branch}",
+        source_locator="|".join(row.codify_path),
+        effect_family=row.action,
+        canonical_family=row.action if row.status in {"matched", "metadata_matched"} else "",
+        original_target="|".join(row.codify_path),
+        resolved_target=row.xml_path,
+        status=_shared_status(row.status),
+        blocking=any(finding.blocking for finding in row.findings),
+        strict_disposition=_strict_disposition(row),
+        quirks_disposition=_quirks_disposition(row),
+        finding_ids=tuple(finding.kind for finding in row.findings),
+        detail={
+            "status": row.status,
+            "expire_date": row.expire_date,
+            "snapshot_matches_replay": row.snapshot_matches_replay,
+            "changed_path_count": row.changed_path_count,
+            "unexplained_path_count": row.unexplained_path_count,
+        },
+    )
+
+
+def _finding_evidence_row(row: OpenLawOperationAuditRow, finding: OpenLawFinding) -> CorpusFindingEvidenceRow:
+    return CorpusFindingEvidenceRow(
+        finding_id=f"{row.op_id}:{finding.kind}",
+        frontend_id="open_law_maryland",
+        family=finding.kind,
+        rule_id=finding.kind,
+        phase=_finding_phase(row.status),
+        message=finding.message,
+        source_artifact_id=row.action_path,
+        source_unit_id=f"{row.before_branch}->{row.after_branch}",
+        related_row_ids=(row.op_id,),
+        blocking=finding.blocking,
+        strict_disposition="block" if finding.blocking else "record",
+        quirks_disposition="record",
+        evidence={
+            "codify_path": "|".join(finding.path or row.codify_path),
+            "status": row.status,
+        },
+    )
+
+
+def _shared_status(status: str) -> CorpusRowStatus:
+    if status in {"matched", "metadata_matched"}:
+        return CorpusRowStatus.MATCHED
+    if status in {"diverged", "metadata_diverged"}:
+        return CorpusRowStatus.DIVERGED
+    if status in {"lifecycle_unsupported", "metadata_unsupported"}:
+        return CorpusRowStatus.UNSUPPORTED
+    if status in {"planning_failed", "snapshot_missing"}:
+        return CorpusRowStatus.FAILED
+    return CorpusRowStatus.ACCEPTED
+
+
+def _strict_disposition(row: OpenLawOperationAuditRow) -> str:
+    if row.status in {"matched", "metadata_matched"}:
+        return "record"
+    if row.status in {"lifecycle_unsupported", "metadata_unsupported", "planning_failed", "snapshot_missing"}:
+        return "block"
+    if row.status in {"diverged", "metadata_diverged"}:
+        return "block"
+    return "record"
+
+
+def _quirks_disposition(row: OpenLawOperationAuditRow) -> str:
+    if row.status in {"matched", "metadata_matched"}:
+        return "record"
+    if row.status == "lifecycle_unsupported":
+        return "record_unsupported"
+    if row.status in {"planning_failed", "snapshot_missing"}:
+        return "record_failure"
+    if row.status in {"diverged", "metadata_diverged"}:
+        return "record_divergence"
+    return "record"
+
+
+def _finding_phase(status: str) -> str:
+    if status in {"matched", "diverged"}:
+        return "audit"
+    if status.startswith("metadata_"):
+        return "metadata_audit"
+    if status == "lifecycle_unsupported":
+        return "lifecycle"
+    if status == "planning_failed":
+        return "planning"
+    return "corpus_audit"

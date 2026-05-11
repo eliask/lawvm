@@ -38,7 +38,10 @@ def main(args: Namespace) -> None:
     if command == "evidence-pack":
         _print_evidence_pack(args)
         return
-    raise SystemExit("open-law requires a subcommand: ops, replay, audit, inventory, corpus-audit, or evidence-pack")
+    if command == "explain":
+        _print_explain(args)
+        return
+    raise SystemExit("open-law requires a subcommand: ops, replay, audit, inventory, corpus-audit, evidence-pack, or explain")
 
 
 def _print_ops(args: Namespace) -> None:
@@ -148,6 +151,9 @@ def _print_corpus_audit(args: Namespace) -> None:
                 f"diverged={report.summary['diverged']}",
                 f"planning_failed={report.summary['planning_failed']}",
                 f"metadata_unsupported={report.summary['metadata_unsupported']}",
+                f"metadata_matched={report.summary['metadata_matched']}",
+                f"metadata_diverged={report.summary['metadata_diverged']}",
+                f"lifecycle_unsupported={report.summary['lifecycle_unsupported']}",
                 f"snapshot_missing={report.summary['snapshot_missing']}",
                 f"findings={report.summary['findings']}",
                 f"unexplained_paths={report.summary['unexplained_paths']}",
@@ -185,12 +191,42 @@ def _print_evidence_pack(args: Namespace) -> None:
                 f"matched={pack.report.summary['matched']}",
                 f"diverged={pack.report.summary['diverged']}",
                 f"metadata_unsupported={pack.report.summary['metadata_unsupported']}",
+                f"metadata_matched={pack.report.summary['metadata_matched']}",
+                f"metadata_diverged={pack.report.summary['metadata_diverged']}",
+                f"lifecycle_unsupported={pack.report.summary['lifecycle_unsupported']}",
                 f"planning_failed={pack.report.summary['planning_failed']}",
                 f"unexplained_paths={pack.report.summary['unexplained_paths']}",
             )
         )
     )
     print(f"wrote {pack.summary_path}")
+
+
+def _print_explain(args: Namespace) -> None:
+    report_dir = Path(args.report_dir)
+    rows = _read_jsonl(report_dir / "operation_audits.jsonl")
+    selected = _select_explain_rows(rows, op_id=args.op_id, status=args.status, limit=args.limit)
+    if args.json:
+        print(json.dumps(selected, indent=2, ensure_ascii=False))
+        return
+    if not selected:
+        print("no matching Open Law audit rows")
+        return
+    for row in selected:
+        print(f"{row['op_id']} {row['status']} {row['action']} {'|'.join(row['codify_path'])}")
+        print(f"  transition: {row['before_branch']} -> {row['after_branch']}")
+        print(f"  action file: {row['action_path']}")
+        if row.get("xml_path"):
+            print(f"  xml: {row['xml_path']}")
+        if row.get("expire_date"):
+            print(f"  expire_date: {row['expire_date']}")
+        print(
+            "  counts: "
+            f"changed={row['changed_path_count']} unexplained={row['unexplained_path_count']} "
+            f"snapshot_matches_replay={row['snapshot_matches_replay']}"
+        )
+        for finding in row["findings"]:
+            print(f"  finding {finding['kind']}: {finding['message']}")
 
 
 def _op_json(op: OpenLawOperation) -> dict[str, Any]:
@@ -202,6 +238,7 @@ def _op_json(op: OpenLawOperation) -> dict[str, Any]:
         "path": list(op.path),
         "source_id": op.source_id,
         "effective": op.effective,
+        "expire_date": op.expire_date,
         "history": op.history,
         "applicability": op.applicability,
         "payload_kind": str(op.payload.kind) if op.payload is not None else "",
@@ -222,6 +259,31 @@ def _finding_json(finding: OpenLawFinding) -> dict[str, Any]:
 
 def _read_text(path: str) -> str:
     return Path(path).read_text(encoding="utf-8")
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        raise SystemExit(f"missing Open Law report file: {path}")
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _select_explain_rows(
+    rows: list[dict[str, Any]],
+    *,
+    op_id: str,
+    status: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    selected = []
+    for row in rows:
+        if op_id and row.get("op_id") != op_id:
+            continue
+        if status and row.get("status") != status:
+            continue
+        selected.append(row)
+        if len(selected) >= limit:
+            break
+    return selected
 
 
 def _read_open_law_tree(path: str, path_prefix: str) -> IRNode:

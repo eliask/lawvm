@@ -36,6 +36,7 @@ def parse_open_law_codify_ops(xml_text: str, *, source_id: str = "") -> Tuple[Op
                 path=path,
                 source_id=op_source_id,
                 effective=effective,
+                expire_date=element.attrib.get("date", ""),
                 history=_parse_bool(element.attrib.get("history", "true")),
                 applicability=element.attrib.get("applicability", ""),
                 payload=payload,

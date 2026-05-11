@@ -81,7 +81,7 @@ def _convert_element(element: ET.Element) -> IRNode:
         return _convert_annotations(element)
     if local == "annotation":
         attrs = _attrs(element)
-        attrs.update({key: value for key, value in element.attrib.items() if key in {"type", "subtype", "effective"}})
+        attrs.update({f"open_law_attr_{key}": value for key, value in sorted(element.attrib.items())})
         return IRNode(kind=IRNodeKind.CONTENT, text=_collapse_itertext(element), attrs=attrs)
     return IRNode(kind=IRNodeKind.CONTENT, text=_collapse_itertext(element), attrs=_attrs(element))
 

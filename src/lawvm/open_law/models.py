@@ -32,6 +32,7 @@ class OpenLawOperation:
     path: Tuple[str, ...]
     source_id: str
     effective: str = ""
+    expire_date: str = ""
     history: bool = True
     applicability: str = ""
     payload: IRNode | None = None

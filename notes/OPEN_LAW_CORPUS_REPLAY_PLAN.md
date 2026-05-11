@@ -77,17 +77,16 @@ Currently executable:
 
 - `codify:replace`
 - `codify:replace-or-insert`
+- annotation metadata targets under `annos`, in a separate metadata lane
 
 Currently typed unsupported:
 
-- `codify:expire`
-- annotation metadata targets as a body-replay claim;
+- `codify:expire` as a recorded lifecycle lane, not a body mutation;
 - unknown `codify:*`
 
 Near-term additions:
 
 - executable `expire` with tombstone/lifecycle semantics;
-- metadata-lane audit for `annos` operations;
 - `applicability` parsed into a frontend-local typed field, not interpreted by
   core until its vocabulary is known.
 
@@ -259,10 +258,13 @@ reports:
   "operation_rows": 39,
   "matched": 27,
   "diverged": 0,
-  "planning_failed": 1,
-  "metadata_unsupported": 11,
+  "planning_failed": 0,
+  "metadata_unsupported": 0,
+  "metadata_matched": 11,
+  "metadata_diverged": 0,
+  "lifecycle_unsupported": 1,
   "snapshot_missing": 0,
-  "findings": 66,
+  "findings": 78,
   "unexplained_paths": 0
 }
 ```
@@ -271,7 +273,9 @@ Interpretation:
 
 - all currently supported body-text COMAR operations replay against their
   publication snapshots;
+- all currently observed annotation metadata operations replay in the metadata
+  lane without authorizing body mutations;
 - no supported body-text operation has unexplained publication mutation paths;
-- 11 `annos` operations are intentionally classified as metadata-lane work;
 - 1 `expire` operation targets a Maryland Register emergency regulation rather
-  than COMAR and remains an explicit planning failure.
+  than COMAR and remains an explicit lifecycle record without replayed expiry
+  semantics.
