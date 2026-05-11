@@ -182,3 +182,14 @@ If those answers are not written down here, the frontend is not ready to build.
 ## Suggested next step after this folder is filled
 
 Create the initial repo layout described in `FILE_MAP.md`, then generate one task card from `TASK_CARD_TEMPLATE.md` for the first bounded phase artifact.
+
+## Runtime scaffold for blocked P5 work
+
+`p5_runtime_scaffold.py` provides a narrow runtime helper for jurisdictions
+that have inventoried amendment source units but have not implemented P5 clause
+surface parsing. It emits blocked clause-surface rows, blocking P5 findings,
+and a non-claim summary with zero operation/effect rows and zero replay
+attempts.
+
+Use it only as a transparency bridge. It does not parse clauses, lower payloads,
+emit canonical effects, or claim replay support.
