@@ -262,6 +262,64 @@ def test_replay_no_to_pit_marks_unknown_effective_dates(tmp_path) -> None:
     assert result.amendments_applied == []
     assert result.amendments_skipped_unknown_effective == ["no/lovtid/2025-02-02-5"]
     assert result.n_ops == 0
+    assert [(item.kind, item.detail["phase"]) for item in result.adjudications] == [
+        ("no_replay_unknown_effective_skipped", "temporal")
+    ]
+    payload = build_no_replay_payload(result)
+    assert payload["adjudication_kind_counts"] == {
+        "no_replay_unknown_effective_skipped": 1
+    }
+    evidence_row = payload["evidence"]["finding_rows"][0]
+    assert evidence_row["rule_id"] == "no_replay_unknown_effective_skipped"
+    assert evidence_row["phase"] == "temporal"
+    assert evidence_row["source_artifact_id"] == "no/lovtid/2025-02-02-5"
+    assert validate_corpus_finding_evidence_row(evidence_row) == ()
+
+
+def test_replay_no_to_pit_surfaces_contingent_commencement_skip(tmp_path) -> None:
+    archive_path = tmp_path / "lovtidend-avd1-2001-2025.tar.bz2"
+    _write_archive(
+        archive_path,
+        [
+            ("lti/2025/nl-20250101-001.xml", _BASE_XML),
+        ],
+    )
+    index = NOAmendmentIndex(
+        data_dir=str(tmp_path),
+        entries=[
+            NOAmendmentIndexEntry(
+                source_id="no/lovtid/2025-02-02-5",
+                archive="lovtidend-avd1-2001-2025.tar.bz2",
+                member_name="lti/2025/nl-20250202-005.xml",
+                effective_status="contingent",
+                effective_date=None,
+                base_ids=("no/lov/2025-01-01-1",),
+                n_ops=1,
+            )
+        ],
+    )
+
+    result = replay_no_to_pit(
+        "no/lov/2025-01-01-1",
+        as_of="2025-12-31",
+        data_dir=tmp_path,
+        index=index,
+    )
+
+    assert result.error is None
+    assert result.amendments_skipped_contingent == ["no/lovtid/2025-02-02-5"]
+    assert [(item.kind, item.detail["phase"]) for item in result.adjudications] == [
+        ("no_replay_contingent_commencement_skipped", "temporal")
+    ]
+    payload = build_no_replay_payload(result)
+    assert payload["adjudication_kind_counts"] == {
+        "no_replay_contingent_commencement_skipped": 1
+    }
+    evidence_row = payload["evidence"]["finding_rows"][0]
+    assert evidence_row["rule_id"] == "no_replay_contingent_commencement_skipped"
+    assert evidence_row["phase"] == "temporal"
+    assert evidence_row["source_artifact_id"] == "no/lovtid/2025-02-02-5"
+    assert validate_corpus_finding_evidence_row(evidence_row) == ()
 
 
 def test_replay_no_to_pit_marks_missing_source_separately(tmp_path) -> None:

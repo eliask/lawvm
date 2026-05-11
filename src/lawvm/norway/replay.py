@@ -42,6 +42,8 @@ from lawvm.replay_adjudication import CompileAdjudication
 
 _ISO_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 NO_REPLAY_MISSING_AMENDMENT_SOURCE = "no_replay_missing_amendment_source"
+NO_REPLAY_CONTINGENT_COMMENCEMENT_SKIPPED = "no_replay_contingent_commencement_skipped"
+NO_REPLAY_UNKNOWN_EFFECTIVE_SKIPPED = "no_replay_unknown_effective_skipped"
 
 
 # Back-compat for tests and call sites that imported the helper from replay.py.
@@ -139,9 +141,35 @@ def replay_no_to_pit(
         effective_date = entry.effective_date
         if entry.effective_status == "contingent":
             result.amendments_skipped_contingent.append(source_id)
+            result.adjudications.append(
+                CompileAdjudication(
+                    kind=NO_REPLAY_CONTINGENT_COMMENCEMENT_SKIPPED,
+                    message="Norway replay skipped amendment: commencement is contingent and unresolved.",
+                    source_statute=source_id,
+                    detail={
+                        "rule_id": NO_REPLAY_CONTINGENT_COMMENCEMENT_SKIPPED,
+                        "phase": "temporal",
+                        "source_id": source_id,
+                        "effective_status": entry.effective_status,
+                    },
+                )
+            )
             continue
         if entry.effective_status in {"missing", "unknown"} or effective_date is None:
             result.amendments_skipped_unknown_effective.append(source_id)
+            result.adjudications.append(
+                CompileAdjudication(
+                    kind=NO_REPLAY_UNKNOWN_EFFECTIVE_SKIPPED,
+                    message="Norway replay skipped amendment: effective date is missing or unknown.",
+                    source_statute=source_id,
+                    detail={
+                        "rule_id": NO_REPLAY_UNKNOWN_EFFECTIVE_SKIPPED,
+                        "phase": "temporal",
+                        "source_id": source_id,
+                        "effective_status": entry.effective_status,
+                    },
+                )
+            )
             continue
         if effective_date > as_of:
             result.amendments_skipped_future.append(source_id)
