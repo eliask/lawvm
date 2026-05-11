@@ -178,6 +178,7 @@ def _print_evidence_pack(args: Namespace) -> None:
                     "summary": pack.report.summary,
                     "summary_path": str(pack.summary_path),
                     "exemplars_path": str(pack.exemplars_path),
+                    "artifact_manifest_path": str(pack.artifact_manifest_path),
                 },
                 indent=2,
                 ensure_ascii=False,

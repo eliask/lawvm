@@ -181,6 +181,7 @@ uv run lawvm open-law evidence-pack \
 Outputs:
 
 - `manifest.json`
+- `evidence_pack_manifest.json` when using `evidence-pack`
 - `operation_audits.jsonl`
 - `findings.jsonl`
 - `summary.json`
