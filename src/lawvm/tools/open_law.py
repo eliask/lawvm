@@ -19,6 +19,17 @@ from lawvm.open_law.models import OpenLawFinding, OpenLawOperation
 from lawvm.open_law.xml import parse_open_law_xml, wrap_open_law_body_with_prefix
 from lawvm.tools.report_query import load_report_query_records
 
+_EXPECTED_EVIDENCE_PACK_FILES = frozenset(
+    (
+        "manifest.json",
+        "summary.json",
+        "operation_audits.jsonl",
+        "findings.jsonl",
+        "exemplars.json",
+        "summary.md",
+    )
+)
+
 
 def main(args: Namespace) -> None:
     command = args.open_law_command
@@ -344,6 +355,7 @@ def _verify_evidence_pack(report_dir: Path, *, require_clean_generator: bool = F
         issues.append("evidence_pack_manifest.json has no files list")
 
     verified_files = 0
+    listed_paths: set[str] = set()
     for file_record in files:
         if not isinstance(file_record, Mapping):
             issues.append("evidence_pack_manifest.json contains a non-object file record")
@@ -357,6 +369,7 @@ def _verify_evidence_pack(report_dir: Path, *, require_clean_generator: bool = F
         if Path(path_value).is_absolute() or ".." in Path(path_value).parts:
             issues.append(f"unsafe artifact manifest path: {path_value}")
             continue
+        listed_paths.add(path_value)
         artifact_path = report_dir / path_value
         if not artifact_path.exists():
             issues.append(f"missing artifact: {path_value}")
@@ -368,6 +381,12 @@ def _verify_evidence_pack(report_dir: Path, *, require_clean_generator: bool = F
         if digest != sha256_value:
             issues.append(f"sha256 mismatch for {path_value}: expected {sha256_value}, got {digest}")
         verified_files += 1
+    missing_files = sorted(_EXPECTED_EVIDENCE_PACK_FILES - listed_paths)
+    extra_files = sorted(listed_paths - _EXPECTED_EVIDENCE_PACK_FILES)
+    if missing_files:
+        issues.append(f"evidence_pack_manifest.json missing canonical file entries: {', '.join(missing_files)}")
+    if extra_files:
+        issues.append(f"evidence_pack_manifest.json contains unexpected file entries: {', '.join(extra_files)}")
 
     operation_records = _load_pack_report_rows(report_dir / "operation_audits.jsonl", issues)
     finding_records = _load_pack_report_rows(report_dir / "findings.jsonl", issues)

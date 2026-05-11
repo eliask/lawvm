@@ -98,6 +98,37 @@ def test_release_archive_verifier_checks_sidecars(tmp_path) -> None:
     assert result.returncode == 1
 
 
+def test_release_archive_verifier_rejects_unsafe_link_targets(tmp_path) -> None:
+    archive = tmp_path / "lawvm-abcdef1.tar.gz"
+    prefix = "lawvm-abcdef1/"
+    with tarfile.open(archive, "w:gz") as tar:
+        root = tarfile.TarInfo(prefix.rstrip("/"))
+        root.type = tarfile.DIRTYPE
+        tar.addfile(root)
+        link = tarfile.TarInfo(prefix + "escape")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "../outside"
+        tar.addfile(link)
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    archive.with_suffix(archive.suffix + ".sha256").write_text(f"{digest}  {archive.name}\n", encoding="utf-8")
+    archive.with_suffix(archive.suffix + ".manifest.json").write_text(
+        json.dumps(
+            {
+                "archive": archive.name,
+                "archive_prefix": prefix,
+                "git_commit": "abcdef1" + "0" * 33,
+                "git_short": "abcdef1",
+                "sha256": digest,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(("bash", "scripts/verify_release_archive.sh", str(archive)), check=False)
+    assert result.returncode == 1
+
+
 def test_release_hygiene_blocks_tracked_local_artifact_paths() -> None:
     script = Path("scripts/release_hygiene.sh").read_text(encoding="utf-8")
     assert '".tmp/"' in script
