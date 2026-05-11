@@ -462,6 +462,70 @@ def temporary_signal_for_op(op: "AmendmentOp | ResolvedOp") -> bool:
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class LegalOperationConversionSkip:
+    """Visible reason why one LegalOperation has no structural AmendmentOp."""
+
+    op_id: str
+    action: str
+    target_path: Tuple[Tuple[str, str], ...]
+    reason_code: str
+    message: str
+    blocking: bool = False
+
+    def as_detail(self) -> dict[str, object]:
+        return {
+            "op_id": self.op_id,
+            "action": self.action,
+            "target_path": self.target_path,
+            "reason_code": self.reason_code,
+            "message": self.message,
+        }
+
+
+def classify_legal_operation_conversion_skip(
+    lo: _LegalOperation,
+) -> LegalOperationConversionSkip | None:
+    """Classify LegalOperation inputs that are intentionally not structural ops."""
+
+    target_path = tuple(lo.target.path)
+    target_kinds = frozenset(kind for kind, _ in target_path)
+    action = str(lo.action.value)
+
+    if target_kinds and target_kinds <= {"nimike", "appendix"}:
+        return LegalOperationConversionSkip(
+            op_id=lo.op_id,
+            action=action,
+            target_path=target_path,
+            reason_code="ELAB.UNSUPPORTED_TOP_LEVEL_TARGET",
+            message=(
+                "LegalOperation target uses an unsupported Finland top-level "
+                "nimike/appendix structural lane; no AmendmentOp was emitted."
+            ),
+        )
+    if not target_kinds and lo.text_patch is not None:
+        return LegalOperationConversionSkip(
+            op_id=lo.op_id,
+            action=action,
+            target_path=target_path,
+            reason_code="ELAB.LAW_LEVEL_TEXT_PATCH_SEPARATE_LANE",
+            message=(
+                "Law-level text patch LegalOperation is handled outside "
+                "structural AmendmentOp conversion; no AmendmentOp was emitted."
+            ),
+        )
+    if not target_kinds:
+        return LegalOperationConversionSkip(
+            op_id=lo.op_id,
+            action=action,
+            target_path=target_path,
+            reason_code="ELAB.EMPTY_LEGAL_OPERATION_TARGET",
+            message="LegalOperation had an empty target path; no AmendmentOp was emitted.",
+        )
+
+    return None
+
+
 @dataclass(init=False)
 class AmendmentOp:
     """Compiled amendment operation for the Finland replay engine.
@@ -695,7 +759,8 @@ class AmendmentOp:
     def from_lo(cls, lo: _LegalOperation, idx: int) -> List[AmendmentOp]:
         """Create AmendmentOp(s) from a LegalOperation.
 
-        Returns [] for unsupported top-level targets (nimike, appendix).
+        Returns [] only for inputs classified by
+        classify_legal_operation_conversion_skip().
         Section ranges (e.g. '12―14') are expanded into one op each.
         Target fields are derived from lo.target.
         """
@@ -714,23 +779,12 @@ class AmendmentOp:
 
         target = lo.target
         path_dict = {k: v for k, v in target.path}
-        target_kinds = {k for k, _ in target.path}
-        # Skip unsupported top-level targets (non-empty nimike/appendix-only sets).
-        # Empty targets (law-level text replacements) are currently not processed
-        # through the normal section-group pipeline (TODO: implement law-level text
-        # replacement). For now, silently skip them during ops generation.
-        if target_kinds and target_kinds <= {"nimike", "appendix"}:
+        skip = classify_legal_operation_conversion_skip(lo)
+        if skip is not None:
             logging.getLogger("lawvm.finland.ops").debug(
-                "Skipping unsupported target kind %s in %s",
-                target_kinds,
+                "Skipping LegalOperation conversion for %s: %s",
                 lo.op_id,
-            )
-            return []
-        if not target_kinds:
-            # Law-level text replacement (empty target path)
-            logging.getLogger("lawvm.finland.ops").debug(
-                "Skipping law-level text replacement in %s (not yet implemented)",
-                lo.op_id,
+                skip.reason_code,
             )
             return []
 

@@ -37,6 +37,7 @@ from lawvm.finland.grafter import (
 from lawvm.finland.fallback_op_ids import stamp_fallback_op_ids
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.johtolause.peg3 import extract_ops_diagnostic
+from lawvm.finland.ops import classify_legal_operation_conversion_skip
 from lawvm.core.clause_ast import (
     ClauseAST, VerbGroup, ScopedBlock, RefAmend, TextAmend, LabelAmend, MetaClause,
 )
@@ -272,9 +273,18 @@ def dump_extract(sid: str, source_mid: str, after_normalize: bool = False,
     if legal_ops:
         if master:
             legal_ops = _assign_chapter_scope_from_johtolause(legal_ops, johto, cast(Any, master))
-        ops = [op for i, lo in enumerate(legal_ops) for op in AmendmentOp.from_lo(lo, i)]
+        skipped_los = []
+        ops = []
+        for i, lo in enumerate(legal_ops):
+            converted_ops = AmendmentOp.from_lo(lo, i)
+            if not converted_ops:
+                skip = classify_legal_operation_conversion_skip(lo)
+                if skip is not None:
+                    skipped_los.append(skip)
+            ops.extend(converted_ops)
     else:
         ops = []
+        skipped_los = []
 
     if not ops:
         fallback = parse_ops_fallback_heuristic(johto)
@@ -286,6 +296,8 @@ def dump_extract(sid: str, source_mid: str, after_normalize: bool = False,
     print(f"Compiled AmendmentOps ({len(ops)}):")
     for op in ops:
         print(f"  {op.description()}")
+    for skip in skipped_los:
+        print(f"  (skipped LO {skip.op_id}: {skip.reason_code})")
     print()
 
     if not after_normalize:

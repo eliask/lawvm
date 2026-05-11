@@ -373,6 +373,89 @@ class TestNormalizeAndCompileOps:
         assert op.source_statute == "2010/100"
         assert _findings(result, "obligation") == ()
 
+    def test_conversion_surfaces_skipped_top_level_structural_target(self) -> None:
+        master = _make_master((_section("1 §", [_subsection("1", "Vanha teksti.")]),))
+        muutos_tree = _make_muutos_tree((_section("1 §", [_subsection("1", "Uusi teksti.")]),))
+
+        result = normalize_and_compile_ops(
+            johto="muutetaan nimike ja 1 § seuraavasti:",
+            muutos_tree=muutos_tree,
+            master=master,
+            amendment_id="2010/100",
+            source_title="Laki muuttamisesta",
+            used_sec1_fallback=False,
+            parent_id="2000/1",
+        )
+
+        assert any(op.target_section == "1" for op in result.output)
+        findings = [
+            finding
+            for finding in _findings(result, "observation")
+            if finding.kind == "ELAB.REJECTED_OPERATION"
+            and finding.detail.get("reason_code") == "ELAB.UNSUPPORTED_TOP_LEVEL_TARGET"
+        ]
+        assert len(findings) == 1
+        assert findings[0].blocking is False
+        assert findings[0].source_statute == "2010/100"
+        assert findings[0].detail["target_path"] == (("nimike", ""),)
+        assert findings[0].detail["source"] == "AmendmentOp.from_lo"
+
+    def test_conversion_surfaces_law_level_text_patch_separate_lane(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import lawvm.finland.frontend_compile as frontend_compile
+
+        master = _make_master()
+        muutos_tree = _make_muutos_tree()
+        lo = LegalOperation(
+            op_id="law-level-text",
+            sequence=0,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=()),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="vanha"),
+                replacement="uusi",
+            ),
+        )
+        monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [lo])
+        monkeypatch.setattr(frontend_compile, "parse_johtolause_clause", lambda _johto, statute_id="": None)
+        monkeypatch.setattr(frontend_compile, "parse_ops_fallback_heuristic", lambda _johto: [])
+        monkeypatch.setattr(frontend_compile, "_extract_root_replace_ops_from_body_fallback", lambda _johto, _tree: [])
+        monkeypatch.setattr(
+            frontend_compile,
+            "_extract_enacting_formula_body_replace_ops_fallback",
+            lambda _johto, _tree, _master: [],
+        )
+        monkeypatch.setattr(frontend_compile, "parse_ops_title_fallback", lambda _title: [])
+        monkeypatch.setattr(
+            frontend_compile,
+            "_extract_enacting_formula_body_insert_ops_fallback",
+            lambda _johto, _tree, _master: [],
+        )
+
+        result = frontend_compile.normalize_and_compile_ops(
+            johto="sana vanha korvataan sanalla uusi",
+            muutos_tree=muutos_tree,
+            master=master,
+            amendment_id="2010/100",
+            source_title="Laki muuttamisesta",
+            used_sec1_fallback=False,
+            parent_id="2000/1",
+        )
+
+        assert result.output == []
+        findings = [
+            finding
+            for finding in _findings(result, "observation")
+            if finding.kind == "ELAB.REJECTED_OPERATION"
+            and finding.detail.get("reason_code") == "ELAB.LAW_LEVEL_TEXT_PATCH_SEPARATE_LANE"
+        ]
+        assert len(findings) == 1
+        assert findings[0].detail["op_id"] == "law-level-text"
+        assert findings[0].detail["target_path"] == ()
+
     def test_empty_johtolause_returns_no_ops(self) -> None:
         master = _make_master()
         muutos_tree = _make_muutos_tree()
