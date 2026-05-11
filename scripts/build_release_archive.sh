@@ -54,6 +54,7 @@ out.with_suffix(out.suffix + ".manifest.json").write_text(
     encoding="utf-8",
 )
 PY
+./scripts/verify_release_archive.sh "$out"
 echo "Wrote tracked-file-only archive: $out"
 echo "SHA256: $digest"
 echo "Wrote checksum: ${out}.sha256"
