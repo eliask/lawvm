@@ -86,3 +86,7 @@ Before tagging or publishing a source snapshot, run:
 ./scripts/release_hygiene.sh
 ./scripts/build_release_archive.sh
 ```
+
+The archive helper writes a tracked-file source archive from `HEAD`, a
+`.sha256` checksum sidecar, and a small JSON manifest recording the source
+commit and archive digest.

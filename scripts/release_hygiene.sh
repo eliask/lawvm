@@ -74,6 +74,8 @@ with zipfile.ZipFile(wheel_paths[0]) as wheel:
     wheel_names = set(wheel.namelist())
     metadata_name = next(name for name in wheel_names if name.endswith(".dist-info/METADATA"))
     metadata = wheel.read(metadata_name).decode("utf-8")
+    entry_points_name = next(name for name in wheel_names if name.endswith(".dist-info/entry_points.txt"))
+    entry_points = wheel.read(entry_points_name).decode("utf-8")
 
 required_metadata = (
     "License-Expression: MIT",
@@ -85,6 +87,17 @@ required_metadata = (
 missing_metadata = [line for line in required_metadata if line not in metadata]
 if missing_metadata:
     raise SystemExit("FAIL: wheel metadata missing: " + ", ".join(missing_metadata))
+
+required_entry_points = (
+    "lawvm = lawvm.tools.cli:main",
+    "lawvm-uk-bootstrap = lawvm.uk_legislation.bootstrap:main",
+    "lawvm-eu-cellar = lawvm.eu.cellar:main",
+    "lawvm-us-bootstrap = lawvm.us_federal.bootstrap:main",
+    "lawvm-fi-amendments = lawvm.finland.amendment_index:main",
+)
+missing_entry_points = [line for line in required_entry_points if line not in entry_points]
+if missing_entry_points:
+    raise SystemExit("FAIL: wheel entry points missing: " + ", ".join(missing_entry_points))
 
 required_package_data = (
     "lawvm/finland/rulebook/generated/RULEBOOK.md",

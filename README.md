@@ -134,7 +134,8 @@ For release hygiene:
 
 - [docs/security-privacy.md](docs/security-privacy.md)
 - `./scripts/release_hygiene.sh`
-- `./scripts/build_release_archive.sh`
+- `./scripts/build_release_archive.sh` for a tracked-file source archive plus
+  checksum sidecars
 
 ## Quick Start
 

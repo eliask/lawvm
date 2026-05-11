@@ -49,9 +49,9 @@ uv build --out-dir .tmp/package-build
 ```
 
 The release hygiene gate builds the wheel and sdist, checks that package
-metadata uses the pinned `farchive` source, and verifies that package-local
-generated rulebook assets are included. Optional local analytics commands such
-as `lawvm sql` and Parquet export need:
+metadata uses the pinned `farchive` source, verifies expected CLI entry points,
+and checks that package-local generated rulebook assets are included. Optional
+local analytics commands such as `lawvm sql` and Parquet export need:
 
 ```bash
 uv sync --extra analytics
