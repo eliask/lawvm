@@ -47,6 +47,16 @@ def test_release_archive_script_emits_verification_sidecars() -> None:
     assert '"git_commit"' in script
 
 
+def test_release_hygiene_blocks_tracked_local_artifact_paths() -> None:
+    script = Path("scripts/release_hygiene.sh").read_text(encoding="utf-8")
+    assert '".tmp/"' in script
+    assert '".farchive"' in script
+    assert '".sqlite"' in script
+    assert '".duckdb"' in script
+    assert '".parquet"' in script
+    assert "FAIL: tracked generated/local artifact paths found" in script
+
+
 def _tracked_markdown_files() -> tuple[Path, ...]:
     output = subprocess.check_output(("git", "ls-files", "*.md"), text=True)
     return tuple(Path(line) for line in output.splitlines() if line)

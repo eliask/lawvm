@@ -31,7 +31,9 @@ cache files are not included. It also writes checksum sidecars:
 This tracked source archive is distinct from Python wheel/sdist artifacts. Use
 `uv build` when validating installable package artifacts; the release hygiene
 gate runs that build and checks release-relevant package metadata, CLI entry
-points, and packaged generated assets.
+points, and packaged generated assets. The same release hygiene gate also
+rejects tracked local/generated artifact paths such as `.tmp/`, `.farchive`,
+SQLite/DB/DuckDB files, and Parquet exports.
 
 ## Local Data
 
