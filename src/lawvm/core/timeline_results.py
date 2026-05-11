@@ -41,6 +41,7 @@ TimelineIssueKind = Literal[
     "missing_renumber_source",
     "missing_insert_payload",
     "missing_replace_payload",
+    "missing_replace_target",
     "unsupported_facet_target",
     "unsupported_text_action",
     "duplicate_normalized_sibling_override",
