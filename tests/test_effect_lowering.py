@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime as dt
 
 from lawvm.core.compile_result import TemporalEvent, TemporalScope
+from lawvm.core.observation_registry import get_finding_spec
 from lawvm.core.effect_intent import (
     Applicability,
     Commencement,
@@ -35,6 +36,8 @@ from lawvm.core.phase_result import PhaseResult
 from lawvm.core.clause_ast import MetaClause
 from lawvm.core.semantic_types import MetaClauseKind, IRNodeKind
 from lawvm.finland.effect_lowering import (
+    UNSUPPORTED_META_CLAUSE_RULE_ID,
+    UnsupportedMetaClause,
     extract_meta_clauses,
     lower_johto_effects,
     lower_meta_clause,
@@ -385,12 +388,20 @@ def test_lower_effect_intents_to_temporal_events_projects_multiple_variants() ->
     assert events[1].expires == "2026-12-31"
 
 
-def test_lower_johto_effects_drops_valtuutus():
-    """Valtuutus clauses are silently dropped (lower_meta_clause returns None)."""
+def test_lower_johto_effects_records_unsupported_valtuutus():
+    """Valtuutus clauses are non-executable effects, but the drop is visible."""
     johto = "muutetaan 1 §. Tarkemmista säännöksistä voidaan antaa tarkempia säännöksiä asetuksella."
-    intents = lower_johto_effects(johto)
-    # valtuutus → None → dropped
+    unsupported: list[UnsupportedMetaClause] = []
+
+    intents = lower_johto_effects(johto, unsupported_out=unsupported)
+
     assert len(intents) == 0
+    assert len(unsupported) == 1
+    assert unsupported[0].rule_id == UNSUPPORTED_META_CLAUSE_RULE_ID
+    assert unsupported[0].reason_code == "delegation_clause_not_executable_effect"
+    assert unsupported[0].clause_kind == "delegation"
+    assert unsupported[0].blocking is False
+    assert get_finding_spec(unsupported[0].rule_id) is not None
 
 
 def test_lower_johto_effects_multiple():
@@ -476,6 +487,37 @@ def test_compile_amendment_ops_emits_temporal_events_without_retaining_effect_in
         and o.kind in {"Commencement", "Expiry", "Suspension", "Applicability", "Revival"}
     ]
     assert effect_obs == []
+
+
+def test_compile_amendment_ops_surfaces_unsupported_meta_clause() -> None:
+    from lawvm.finland.grafter import compile_amendment_ops
+    import lxml.etree as etree
+
+    muutos_xml = b"""<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <act name="amendment"><body/></act>
+    </akomaNtoso>"""
+    muutos_tree = etree.fromstring(muutos_xml)
+    state = _make_minimal_replay_state()
+
+    result = compile_amendment_ops(
+        master=state,
+        ops=[],
+        muutos_tree=muutos_tree,
+        johto="Asetuksella voidaan antaa tarkempia säännöksiä.",
+        replay_mode="finlex_oracle",
+        source_ref="2026/1",
+    )
+
+    findings = [
+        finding
+        for finding in result.findings()
+        if finding.kind == UNSUPPORTED_META_CLAUSE_RULE_ID
+    ]
+    assert len(findings) == 1
+    assert findings[0].role == "observation"
+    assert findings[0].source_statute == "2026/1"
+    assert findings[0].detail["reason_code"] == "delegation_clause_not_executable_effect"
+    assert result.temporal_events == ()
 
 
 def test_compile_amendment_ops_no_effect_intents_without_johto():

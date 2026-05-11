@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-from typing import List, Optional
+from dataclasses import dataclass
+from typing import List, Literal, Optional
 
 from lawvm.core.clause_ast import MetaClause
 from lawvm.core.effect_intent import (
@@ -23,6 +24,38 @@ from lawvm.core.effect_intent import (
     Expiry,
 )
 from lawvm.core.semantic_types import MetaClauseKind
+
+UNSUPPORTED_META_CLAUSE_RULE_ID = "PARSE.META_CLAUSE_UNSUPPORTED"
+
+UnsupportedMetaClauseReason = Literal[
+    "delegation_clause_not_executable_effect",
+    "unsupported_meta_clause_kind",
+]
+
+
+@dataclass(frozen=True)
+class UnsupportedMetaClause:
+    """Typed visibility record for parsed meta clauses with no executable carrier."""
+
+    rule_id: str
+    reason_code: UnsupportedMetaClauseReason
+    clause_kind: str
+    raw_text: str
+    phase: str = "frontend_extraction"
+    family: str = "unsupported_meta_clause"
+    blocking: bool = False
+
+    def as_detail(self) -> dict[str, object]:
+        return {
+            "rule_id": self.rule_id,
+            "reason_code": self.reason_code,
+            "clause_kind": self.clause_kind,
+            "raw_text": self.raw_text,
+            "phase": self.phase,
+            "family": self.family,
+            "blocking": self.blocking,
+        }
+
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -123,6 +156,20 @@ def lower_meta_clause(clause: MetaClause) -> Optional[EffectIntent]:
     return None
 
 
+def _unsupported_meta_clause_record(clause: MetaClause) -> UnsupportedMetaClause:
+    reason_code: UnsupportedMetaClauseReason = (
+        "delegation_clause_not_executable_effect"
+        if clause.kind == MetaClauseKind.DELEGATION
+        else "unsupported_meta_clause_kind"
+    )
+    return UnsupportedMetaClause(
+        rule_id=UNSUPPORTED_META_CLAUSE_RULE_ID,
+        reason_code=reason_code,
+        clause_kind=clause.kind.value,
+        raw_text=clause.raw_text,
+    )
+
+
 _META_SENTENCE_PATTERNS: List[tuple[MetaClauseKind, re.Pattern]] = [
     (
         MetaClauseKind.TRANSITION,
@@ -177,10 +224,16 @@ def extract_meta_clauses(johto: str) -> List[MetaClause]:
     return result
 
 
-def lower_johto_effects(johto: str) -> List[EffectIntent]:
+def lower_johto_effects(
+    johto: str,
+    *,
+    unsupported_out: Optional[List[UnsupportedMetaClause]] = None,
+) -> List[EffectIntent]:
     intents: List[EffectIntent] = []
     for clause in extract_meta_clauses(johto):
         intent = lower_meta_clause(clause)
         if intent is not None:
             intents.append(intent)
+        elif unsupported_out is not None:
+            unsupported_out.append(_unsupported_meta_clause_record(clause))
     return intents
