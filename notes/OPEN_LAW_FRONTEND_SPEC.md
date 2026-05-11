@@ -100,7 +100,10 @@ Annotation metadata targets under `annos` replay in a separate metadata lane.
 They may compare metadata subtrees and named projections, but they do not
 authorize body-text mutation. Generated hidden Open Law history annotations may
 be projected out with `open_law_metadata_generated_history_projection` for
-metadata comparison only.
+metadata comparison only. That projection is limited to empty `History`
+annotations with `display="false"`, a `doc`, a `path` attribute, and `eff` or
+`effective` date evidence; generic `display="false"` metadata is preserved and
+can still cause a metadata-lane divergence.
 
 `codify:expire` operations are visible in a lifecycle lane with their declared
 expiry date. The current frontend records

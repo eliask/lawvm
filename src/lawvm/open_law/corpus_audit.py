@@ -529,9 +529,23 @@ def _project_generated_metadata_history(node: IRNode) -> IRNode:
 
 
 def _project_generated_metadata_child(node: IRNode) -> IRNode | None:
-    if _kind_str(node.kind) == "content" and node.attrs.get("open_law_attr_display") == "false":
+    if _is_generated_hidden_history_annotation(node):
         return None
     return _project_generated_metadata_history(node)
+
+
+def _is_generated_hidden_history_annotation(node: IRNode) -> bool:
+    if _kind_str(node.kind) != "content":
+        return False
+    if node.text.strip():
+        return False
+    return (
+        node.attrs.get("open_law_attr_type") == "History"
+        and node.attrs.get("open_law_attr_display") == "false"
+        and bool(node.attrs.get("open_law_attr_doc"))
+        and "open_law_attr_path" in node.attrs
+        and bool(node.attrs.get("open_law_attr_eff") or node.attrs.get("open_law_attr_effective"))
+    )
 
 
 def _report(rows: Tuple[OpenLawOperationAuditRow, ...]) -> OpenLawCorpusAuditReport:
