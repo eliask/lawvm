@@ -6,12 +6,14 @@
 # Usage:
 #   ./scripts/ci_sharded.sh
 #   LAWVM_CI_SHARDS="norway sweden eu" ./scripts/ci_sharded.sh
+#   LAWVM_CI_SHARDS="norway,sweden,eu" ./scripts/ci_sharded.sh
 
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
 SHARDS="${LAWVM_CI_SHARDS:-core estonia eu evidence finland norway properties starter sweden tools uk}"
+SHARDS="${SHARDS//,/ }"
 
 echo "=== [1/6] ruff check ==="
 uv run ruff check src/lawvm/ tests/ scripts/test_shard.py --no-fix 2>&1 || {
