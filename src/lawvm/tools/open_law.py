@@ -395,6 +395,8 @@ def _verify_evidence_pack(report_dir: Path, *, require_clean_generator: bool = F
         for issue in record.validation_issues:
             issues.append(f"{record.source_path}:{record.line_no}: {issue}")
     issues.extend(_summary_consistency_issues(report_dir, operation_records, finding_records))
+    if isinstance(manifest, Mapping):
+        issues.extend(_human_summary_provenance_issues(report_dir, cast("Mapping[str, object]", manifest)))
 
     return {
         "files": verified_files,
@@ -484,6 +486,47 @@ def _summary_consistency_issues(report_dir: Path, operation_records: tuple[Any, 
         for key, value in expected.items()
         if summary.get(key) != value
     ]
+
+
+def _human_summary_provenance_issues(report_dir: Path, artifact_manifest: Mapping[str, object]) -> list[str]:
+    summary_path = report_dir / "summary.md"
+    inventory_path = report_dir / "manifest.json"
+    if not summary_path.exists():
+        return [f"missing {summary_path}"]
+    text = summary_path.read_text(encoding="utf-8")
+    issues: list[str] = []
+
+    generator = artifact_manifest.get("generator")
+    if isinstance(generator, Mapping):
+        generator_map = cast("Mapping[str, object]", generator)
+        for key in ("git_commit", "repository"):
+            value = generator_map.get(key)
+            if isinstance(value, str) and value and value not in text:
+                issues.append(f"summary.md does not mention generator {key}: {value}")
+
+    if not inventory_path.exists():
+        return issues
+    inventory_text = inventory_path.read_text(encoding="utf-8")
+    try:
+        inventory = json.loads(inventory_text)
+    except json.JSONDecodeError as exc:
+        issues.append(f"manifest.json is not valid JSON: {exc.msg}")
+        return issues
+    if not isinstance(inventory, Mapping):
+        return issues
+    repos = inventory.get("local_repositories")
+    if not isinstance(repos, Mapping):
+        return issues
+    repo_map = cast("Mapping[str, object]", repos)
+    for key in ("source", "codified"):
+        repo = repo_map.get(key)
+        if not isinstance(repo, Mapping):
+            continue
+        repo_item = cast("Mapping[str, object]", repo)
+        head = repo_item.get("head_commit")
+        if isinstance(head, str) and head and head not in text:
+            issues.append(f"summary.md does not mention {key} head_commit: {head}")
+    return issues
 
 
 def _count_status(records: tuple[Any, ...], status: str) -> int:
