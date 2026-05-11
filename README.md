@@ -87,8 +87,8 @@ Release docs:
 - [src/lawvm/sweden/](src/lawvm/sweden/): Sweden source/current/official-act lane.
 - [src/lawvm/tools/](src/lawvm/tools/): developer CLI surface.
 - [notes/](notes/): current public specs and architecture records.
-- [docs/](docs/): public getting-started, benchmark, jurisdiction, security, and
-  history docs.
+- [docs/](docs/): public getting-started, Open Law demo, benchmark,
+  jurisdiction, security/privacy, and history docs.
 - [jurisdiction_starter/](jurisdiction_starter/): contract-first starter for new frontends.
 
 The public v0.1 tree intentionally keeps only the current release-facing docs
@@ -105,8 +105,10 @@ For release status and roadmap:
 - [ROADMAP_V1_0.md](ROADMAP_V1_0.md)
 - [CHANGELOG.md](CHANGELOG.md)
 - [docs/getting-started.md](docs/getting-started.md)
+- [docs/open-law-demo.md](docs/open-law-demo.md)
 - [docs/benchmark-methodology.md](docs/benchmark-methodology.md)
 - [docs/jurisdictions.md](docs/jurisdictions.md)
+- [docs/security-privacy.md](docs/security-privacy.md)
 
 For architecture:
 
@@ -117,11 +119,16 @@ For architecture:
 
 For Finland:
 
-- [notes/FINLAND_ARCHITECTURAL_COHERENCE.md](notes/FINLAND_ARCHITECTURAL_COHERENCE.md)
 - [notes/FINLAND_FRONTEND_ELABORATION_ARCHITECTURE.md](notes/FINLAND_FRONTEND_ELABORATION_ARCHITECTURE.md)
 - [notes/FINLAND_CLAUSE_AST_SPEC.md](notes/FINLAND_CLAUSE_AST_SPEC.md)
 - [notes/FINLAND_PAYLOAD_IR_SPEC.md](notes/FINLAND_PAYLOAD_IR_SPEC.md)
 - [notes/FINLAND_ELABORATION_RULES.md](notes/FINLAND_ELABORATION_RULES.md)
+
+For Open Law demo work:
+
+- [docs/open-law-demo.md](docs/open-law-demo.md)
+- [notes/OPEN_LAW_FRONTEND_SPEC.md](notes/OPEN_LAW_FRONTEND_SPEC.md)
+- [notes/OPEN_LAW_CORPUS_REPLAY_PLAN.md](notes/OPEN_LAW_CORPUS_REPLAY_PLAN.md)
 
 ## Quick Start
 

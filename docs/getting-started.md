@@ -30,7 +30,30 @@ Many corpus tests and replay commands depend on local archived source data.
 The public repository includes small corpus indexes and fixtures, not the full
 source archives.
 
-## Example Commands
+## Archive-Free Demo
+
+The Open Law Maryland demo uses public git repositories and does not require
+Finlex `.farchive` data:
+
+```bash
+git clone https://github.com/maryland-dsd/law-xml.git .tmp/open_law/repos/law-xml
+git clone https://github.com/maryland-dsd/law-xml-codified.git .tmp/open_law/repos/law-xml-codified
+
+uv run lawvm open-law evidence-pack \
+  --source-repo .tmp/open_law/repos/law-xml \
+  --codified-repo .tmp/open_law/repos/law-xml-codified \
+  --out .tmp/open_law/evidence-pack \
+  --json
+
+uv run lawvm open-law explain \
+  --report-dir .tmp/open_law/evidence-pack \
+  --limit 5
+```
+
+See [open-law-demo.md](open-law-demo.md) for the claim boundary and follow-up
+queries.
+
+## Archive-Backed Finland Commands
 
 ```bash
 uv run lawvm replay 2002/738 --as-of 2024-01-01

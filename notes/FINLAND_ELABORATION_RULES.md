@@ -361,7 +361,7 @@ Validated by:
 - `1988/161` / `2008/732` / `14 §`
 - current `SubsectionSlotMap` and `_elaborate_sparse_subsection_payload(...)`
   extraction in
-  [payload_normalize.py](/home/elias/c/civos/book/LawVM/src/lawvm/finland/payload_normalize.py)
+  [payload_normalize.py](../src/lawvm/finland/payload_normalize.py)
 
 Rule:
 

@@ -275,7 +275,7 @@ Current validated consequence:
 
 Current implementation bridge:
 
-- [payload_normalize.py](/home/elias/c/civos/book/LawVM/src/lawvm/finland/payload_normalize.py)
+- [payload_normalize.py](../src/lawvm/finland/payload_normalize.py)
   now exposes `SubsectionSlotMap` as an explicit slot-assignment object
 - this is not yet the final payload IR; it is an intermediate refactor step that
   names the elaboration boundary and removes some raw `id(op) -> subsection`
