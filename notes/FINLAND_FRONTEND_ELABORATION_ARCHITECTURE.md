@@ -26,7 +26,7 @@ This is the target architecture.
 This document is normative for phase boundaries.
 Current-code ownership and migration debt belong in:
 
-- [FINLAND_ARCHITECTURAL_COHERENCE.md](FINLAND_ARCHITECTURAL_COHERENCE.md)
+- [LAWVM_ARCHITECTURE_INDEX.md](LAWVM_ARCHITECTURE_INDEX.md)
 
 ## 1. Problem Statement
 

@@ -134,7 +134,7 @@ JurisdictionPack pattern from the archived universal frontend model.
 - **UK: 86.2%** (N=329 curated)
 
 FI remaining failures: invariant-heavy mixed cases, not broad replay bugs.
-2010+ PROVED_REPLAY_BUG = 0. See archive/historical/FINLAND_COMPREHENSIVE_HANDOFF_2026-04-01.md.
+2010+ PROVED_REPLAY_BUG = 0.
 
 ## 8. Essential Commands
 

@@ -29,8 +29,10 @@ the architecture, keep it explanatory.
 - [../ROADMAP_V1_0.md](../ROADMAP_V1_0.md)
 - [../CHANGELOG.md](../CHANGELOG.md)
 - [../docs/getting-started.md](../docs/getting-started.md)
+- [../docs/open-law-demo.md](../docs/open-law-demo.md)
 - [../docs/benchmark-methodology.md](../docs/benchmark-methodology.md)
 - [../docs/jurisdictions.md](../docs/jurisdictions.md)
+- [../docs/security-privacy.md](../docs/security-privacy.md)
 - [../README.md](../README.md)
 
 ## Normative Core
@@ -45,7 +47,6 @@ the architecture, keep it explanatory.
 
 ## Finland Reference Frontend
 
-- [FINLAND_ARCHITECTURAL_COHERENCE.md](FINLAND_ARCHITECTURAL_COHERENCE.md)
 - [FINLAND_FRONTEND_ELABORATION_ARCHITECTURE.md](FINLAND_FRONTEND_ELABORATION_ARCHITECTURE.md)
 - [FINLAND_CLAUSE_AST_SPEC.md](FINLAND_CLAUSE_AST_SPEC.md)
 - [FINLAND_PAYLOAD_IR_SPEC.md](FINLAND_PAYLOAD_IR_SPEC.md)
@@ -55,20 +56,15 @@ the architecture, keep it explanatory.
 
 ## Other Frontends
 
-- [ESTONIA_ARCHITECTURAL_COHERENCE.md](ESTONIA_ARCHITECTURAL_COHERENCE.md)
 - [ESTONIA_FRONTEND_LIVING_SPEC.md](ESTONIA_FRONTEND_LIVING_SPEC.md)
-- [UK_ARCHITECTURAL_COHERENCE.md](UK_ARCHITECTURAL_COHERENCE.md)
 - [UK_REPLAY_LIVING_SPEC.md](UK_REPLAY_LIVING_SPEC.md)
 - [UK_REPLAY_REGIME_CONTRACT.md](UK_REPLAY_REGIME_CONTRACT.md)
-- [NORWAY_ARCHITECTURAL_COHERENCE.md](NORWAY_ARCHITECTURAL_COHERENCE.md)
-- [SWEDEN_ARCHITECTURAL_COHERENCE.md](SWEDEN_ARCHITECTURAL_COHERENCE.md)
 - [OPEN_LAW_FRONTEND_SPEC.md](OPEN_LAW_FRONTEND_SPEC.md)
 - [OPEN_LAW_CORPUS_REPLAY_PLAN.md](OPEN_LAW_CORPUS_REPLAY_PLAN.md)
 
 ## Evidence and Verification
 
 - [VERIFICATION_PROPERTY_MAP.md](VERIFICATION_PROPERTY_MAP.md)
-- [AUDITOR_SPECS.md](AUDITOR_SPECS.md)
 - [CORPUS_REPLAY_EVIDENCE_CONTRACT.md](CORPUS_REPLAY_EVIDENCE_CONTRACT.md)
 
 ## Theory and Long-Term Design
@@ -80,7 +76,6 @@ the architecture, keep it explanatory.
 - [PROOF_CLAIMS_ALGEBRA.md](PROOF_CLAIMS_ALGEBRA.md)
 - [EVIDENCE_INFERENCE_MODEL.md](EVIDENCE_INFERENCE_MODEL.md)
 - [CONDITIONAL_ENACTMENT_AND_TEMPORAL_EFFECTS.md](CONDITIONAL_ENACTMENT_AND_TEMPORAL_EFFECTS.md)
-- [ADVERSARIAL_AUDIT_PASS.md](ADVERSARIAL_AUDIT_PASS.md)
 
 ## Current Implementation Maps
 
