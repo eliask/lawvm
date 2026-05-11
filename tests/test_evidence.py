@@ -3460,6 +3460,51 @@ def test_evidence_review_filters_context_degradation() -> None:
     assert review["rows"][0]["evidence_context_degradation_rails"] == ["chain_completeness"]
 
 
+def test_evidence_review_rejects_malformed_source_pathology_rows() -> None:
+    bundles = [
+        {
+            "statute_id": "1990/1",
+            "title": "A",
+            "primary_proof_tier": "UNRESOLVED",
+            "proof_tiers": ["UNRESOLVED"],
+            "proof_claims": [],
+            "section_claims": [],
+            "strict_fail_reasons": [],
+            "compiler_observations": {},
+            "source_pathologies": [{"code": "OK"}, "silently-dropped-before", 42],
+            "html_topology": {},
+            "evidence_context_diagnostics": [],
+        }
+    ]
+
+    with pytest.raises(ValueError, match="field source_pathologies contains non-object entries at indexes: 1, 2"):
+        _review_bundles(bundles)
+
+
+def test_evidence_review_rejects_malformed_context_diagnostics() -> None:
+    bundles = [
+        {
+            "statute_id": "1990/1",
+            "title": "A",
+            "primary_proof_tier": "UNRESOLVED",
+            "proof_tiers": ["UNRESOLVED"],
+            "proof_claims": [],
+            "section_claims": [],
+            "strict_fail_reasons": [],
+            "compiler_observations": {},
+            "source_pathologies": [],
+            "html_topology": {},
+            "evidence_context_diagnostics": [{"kind": "OK"}, "silently-dropped-before"],
+        }
+    ]
+
+    with pytest.raises(
+        ValueError,
+        match="field evidence_context_diagnostics contains non-object entries at indexes: 1",
+    ):
+        _review_bundles(bundles)
+
+
 def test_normalize_observation_streams_keeps_apply_mutations_unowned_without_resolved_target() -> None:
     normalized = _normalize_observation_streams(
         apply_mutation_events=[
@@ -3623,3 +3668,15 @@ def test_compiler_observation_summary_uses_invariant_apply_rows_for_helper_suppo
     }
     assert observations["section_bisect_observation_row_count"] == 0
     assert observations["section_bisect_rows_with_observation_support"] == []
+
+
+def test_compiler_observation_summary_rejects_malformed_projection_rows() -> None:
+    with pytest.raises(ValueError, match="non-object entries at indexes: 1, 2"):
+        _compiler_observation_summary(
+            replay_meta={},
+            projection_rows=[
+                {"kind": "PARSE.TARGET_GUESSING"},
+                "silently-dropped-before",
+                42,
+            ],
+        )

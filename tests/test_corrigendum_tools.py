@@ -4,6 +4,8 @@ from argparse import Namespace
 import hashlib
 from pathlib import Path
 
+import pytest
+
 from lawvm.tools import cli
 from lawvm.tools import corrigendum as corr_tools
 from lawvm.tools import oracle_check
@@ -63,6 +65,29 @@ def test_cli_parser_accepts_corrigendum_manual_template() -> None:
     assert args.corrigendum_command == "backfill-meta"
     assert args.update is True
     assert args.json is True
+
+
+def test_manual_corrigendum_overrides_reject_non_object_entries(tmp_path: Path) -> None:
+    manual_yaml = tmp_path / "corrigendum_manual.yaml"
+    manual_yaml.write_text(
+        "\n".join(
+            [
+                "- amendment_id: 991/2012",
+                "  wrong_text: wrong",
+                "  correct_text: right",
+                "- silently-dropped-before",
+                "- 42",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="non-object entries at indexes: 1, 2"):
+        corr_tools._load_manual_override_entries(manual_yaml)
+
+    with pytest.raises(ValueError, match="non-object entries at indexes: 1, 2"):
+        corr_tools._load_manual_override_counts(manual_yaml)
 
 
 def test_corrigendum_manual_template_prints_yaml(capsys, monkeypatch) -> None:
