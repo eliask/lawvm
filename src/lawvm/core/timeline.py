@@ -595,6 +595,18 @@ def compile_timelines(
             if op.action in (StructuralAction.INSERT, StructuralAction.REPEAL):
                 target = op.target
             else:
+                _src_id = op.source.statute_id if op.source else "?"
+                _record_timeline_issue(
+                    issue_sink,
+                    kind="missing_replace_target",
+                    message=(
+                        "compile_timelines: skipping replace-family op from "
+                        f"{_src_id} — target {op.target} is not present in the active timeline"
+                    ),
+                    address=op.target,
+                    source_statute=_src_id,
+                    emit_warnings=emit_warnings,
+                )
                 continue
 
         if op.action is StructuralAction.RENUMBER:

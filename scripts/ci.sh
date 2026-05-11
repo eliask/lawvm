@@ -31,7 +31,7 @@ else
     PYTEST_XDIST_ARGS=(-n "$PYTEST_WORKERS")
 fi
 
-echo "=== [1/5] ruff check ==="
+echo "=== [1/6] ruff check ==="
 uv run ruff check src/lawvm/ tests/ --no-fix 2>&1 || {
     echo "FAIL: ruff found issues. Fix before finishing."
     exit 1
@@ -39,7 +39,7 @@ uv run ruff check src/lawvm/ tests/ --no-fix 2>&1 || {
 echo "PASS: ruff"
 
 echo ""
-echo "=== [2/5] ty check ==="
+echo "=== [2/6] ty check ==="
 uv run ty check src/lawvm/ tests/ 2>&1 || {
     echo "FAIL: ty found type errors."
     exit 1
@@ -47,7 +47,7 @@ uv run ty check src/lawvm/ tests/ 2>&1 || {
 echo "PASS: ty"
 
 echo ""
-echo "=== [3/5] boundary guards ==="
+echo "=== [3/6] boundary guards ==="
 uv run python -m pytest tests/test_conformance.py -v --override-ini="addopts=" 2>&1 || {
     echo "FAIL: boundary guards broken."
     exit 1

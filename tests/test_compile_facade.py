@@ -311,6 +311,44 @@ class TestFromPhaseResult:
         assert any(issue.kind == "missing_insert_payload" for issue in result.issues)
         assert target not in result.timelines or len(result.timelines[target].versions) == 0
 
+    def test_facade_compile_timelines_ex_preserves_missing_replace_target_issue(self):
+        base = IRStatute(
+            statute_id="test/facade-missing-replace-target",
+            title="Facade missing replace target",
+            body=IRNode(kind=IRNodeKind.BODY, children=()),
+        )
+        target = LegalAddress(path=(("section", "9"),))
+        op = LegalOperation(
+            op_id="replace-missing-target",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=target,
+            payload=IRNode(kind=IRNodeKind.SECTION, label="9", text="Replacement"),
+            source=OperationSource(
+                statute_id="2020/9",
+                enacted="2020-01-01",
+                effective="2020-01-01",
+            ),
+            group_id="g:facade-missing-replace-target",
+        )
+        temporal_event = TemporalEvent(
+            event_id="ev:facade-missing-replace-target",
+            group_id="g:facade-missing-replace-target",
+            kind="commence",
+            effective="2020-01-01",
+            activation_rule=ActivationRule(kind="fixed_date", effective_date="2020-01-01"),
+            scope=TemporalScope(target_statute="test/facade-missing-replace-target"),
+        )
+        facade = CompileFacade.from_phase_result(
+            _pr(output=CanonicalBundle(structural_ops=(op,), temporal_events=(temporal_event,))),
+            replay_mode="legal_pit",
+        )
+
+        result = facade.compile_timelines_ex(base, base_date="2000-01-01")
+
+        assert any(issue.kind == "missing_replace_target" for issue in result.issues)
+        assert target not in result.timelines or len(result.timelines[target].versions) == 0
+
     def test_facade_compile_timelines_ex_preserves_unsupported_facet_target_issue(self):
         base = IRStatute(
             statute_id="test/facade-facet-issue",
