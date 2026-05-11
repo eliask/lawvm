@@ -708,6 +708,40 @@ def test_open_law_verify_pack_fails_on_checksum_mismatch(tmp_path) -> None:
         _print_verify_pack(Namespace(report_dir=str(pack_dir), json=False))
 
 
+def test_open_law_verify_pack_fails_on_stale_summary_even_when_checksum_matches(tmp_path) -> None:
+    source_repo = tmp_path / "law-xml"
+    codified_repo = tmp_path / "law-xml-codified"
+    _git_init(source_repo)
+    _git_init(codified_repo)
+    _write(source_repo / "editorial-actions" / "old.xml", _REPLACE_XML.replace("New text.", "Ignored old text."))
+    _write(source_repo / "editorial-actions" / "new.xml", _REPLACE_XML)
+    _git_commit_all(source_repo, "source")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/2026-01-01", ("editorial-actions/old.xml",)))
+    _write(codified_repo / "editorial-actions" / "old.xml", _REPLACE_XML.replace("New text.", "Ignored old text."))
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("Old text."))
+    _git_commit_all(codified_repo, "before")
+    _git_branch(codified_repo, "publication/2026-01-01.2026-01-01")
+
+    _write(
+        codified_repo / "index.xml",
+        _index_xml("publication/2026-01-02", ("editorial-actions/old.xml", "editorial-actions/new.xml")),
+    )
+    _write(codified_repo / "editorial-actions" / "new.xml", _REPLACE_XML)
+    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("New text."))
+    _git_commit_all(codified_repo, "after")
+    _git_branch(codified_repo, "publication/2026-01-02.2026-01-02")
+
+    pack = write_maryland_evidence_pack(tmp_path / "pack", repos=make_maryland_repos(source_repo, codified_repo))
+    summary = json.loads(pack.summary_json_path.read_text(encoding="utf-8"))
+    summary["matched"] = 0
+    pack.summary_json_path.write_text(json.dumps(summary) + "\n", encoding="utf-8")
+    _refresh_pack_manifest_entry(pack.artifact_manifest_path, pack.summary_json_path)
+
+    with pytest.raises(SystemExit):
+        _print_verify_pack(Namespace(report_dir=str(tmp_path / "pack"), json=False))
+
+
 def test_open_law_explain_text_includes_evidence_dispositions(tmp_path, capsys) -> None:
     report_dir = tmp_path / "report"
     report_dir.mkdir()
@@ -738,6 +772,16 @@ def test_open_law_explain_text_includes_evidence_dispositions(tmp_path, capsys) 
 
     out = capsys.readouterr().out
     assert "evidence: status=unsupported canonical=- strict=block quirks=record_unsupported" in out
+
+
+def _refresh_pack_manifest_entry(manifest_path, artifact_path) -> None:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data = artifact_path.read_bytes()
+    for item in manifest["files"]:
+        if item["path"] == artifact_path.name:
+            item["bytes"] = len(data)
+            item["sha256"] = hashlib.sha256(data).hexdigest()
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
 
 
 def _chapter_xml(text: str) -> str:
