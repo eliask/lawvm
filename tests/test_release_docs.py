@@ -51,7 +51,16 @@ def test_canonical_ci_validates_pytest_shard_ownership() -> None:
     script = Path("scripts/ci.sh").read_text(encoding="utf-8")
 
     assert "./scripts/test_shard.sh validate" in script
+    assert "scripts/test_shard.py" in script
     assert "FAIL: pytest shard ownership is invalid." in script
+
+
+def test_sharded_ci_supports_affected_path_selection() -> None:
+    script = Path("scripts/ci_sharded.sh").read_text(encoding="utf-8")
+
+    assert "--affected" in script
+    assert "./scripts/test_shard.sh affected" in script
+    assert "LAWVM_CI_AFFECTED_PATHS" in script
 
 
 def test_release_archive_script_emits_verification_sidecars() -> None:

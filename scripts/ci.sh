@@ -32,7 +32,7 @@ else
 fi
 
 echo "=== [1/6] ruff check ==="
-uv run ruff check src/lawvm/ tests/ --no-fix 2>&1 || {
+uv run ruff check src/lawvm/ tests/ scripts/test_shard.py --no-fix 2>&1 || {
     echo "FAIL: ruff found issues. Fix before finishing."
     exit 1
 }
@@ -40,7 +40,7 @@ echo "PASS: ruff"
 
 echo ""
 echo "=== [2/6] ty check ==="
-uv run ty check src/lawvm/ tests/ 2>&1 || {
+uv run ty check src/lawvm/ tests/ scripts/test_shard.py 2>&1 || {
     echo "FAIL: ty found type errors."
     exit 1
 }

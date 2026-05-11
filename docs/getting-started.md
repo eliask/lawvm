@@ -32,6 +32,7 @@ For targeted or matrix-style runs, list and run bounded pytest shards:
 ./scripts/test_shard.sh list
 ./scripts/test_shard.sh run norway
 ./scripts/ci_sharded.sh
+./scripts/ci_sharded.sh --affected src/lawvm/norway/replay.py tests/test_norway_replay.py
 ```
 
 The CI gate includes release hygiene in dirty-worktree mode. To run only the
