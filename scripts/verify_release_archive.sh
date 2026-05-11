@@ -77,16 +77,20 @@ else:
         errors.append(f"invalid git_short: {git_short!r}")
     if isinstance(archive_prefix, str):
         with tarfile.open(archive, "r:gz") as tar:
-            names = tar.getnames()
-        if not names:
+            members = tar.getmembers()
+        if not members:
             errors.append("archive has no members")
         root_entry = archive_prefix.rstrip("/")
-        for name in names:
-            parts = Path(name).parts
-            if Path(name).is_absolute() or ".." in parts:
-                errors.append(f"unsafe archive member path: {name}")
-            if name != root_entry and not name.startswith(archive_prefix):
-                errors.append(f"archive member outside prefix {archive_prefix!r}: {name}")
+        for member in members:
+            parts = Path(member.name).parts
+            if Path(member.name).is_absolute() or ".." in parts:
+                errors.append(f"unsafe archive member path: {member.name}")
+            if member.name != root_entry and not member.name.startswith(archive_prefix):
+                errors.append(f"archive member outside prefix {archive_prefix!r}: {member.name}")
+            if member.issym() or member.islnk():
+                link_parts = Path(member.linkname).parts
+                if Path(member.linkname).is_absolute() or ".." in link_parts:
+                    errors.append(f"unsafe archive link target for {member.name}: {member.linkname}")
 
 if errors:
     for error in errors:
