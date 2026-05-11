@@ -7383,6 +7383,29 @@ def replay_xml(
         if replay_meta_out is not None and apply_mutation_boundary_violations:
             replay_meta_out["apply_mutation_boundary_violations"] = list(apply_mutation_boundary_violations)
         if apply_mutation_boundary_violations:
+            if not mutation_invariant_reports:
+                seen_apply_boundary_findings = {
+                    (
+                        finding.kind,
+                        str(finding.detail.get("violation") or ""),
+                        parent_id,
+                    )
+                    for finding in replay_findings
+                }
+                for violation in apply_mutation_boundary_violations:
+                    finding = _apply_mutation_boundary_violation_finding(
+                        violation=violation,
+                        source_statute=parent_id,
+                    )
+                    key = (
+                        finding.kind,
+                        str(finding.detail.get("violation") or ""),
+                        parent_id,
+                    )
+                    if key in seen_apply_boundary_findings:
+                        continue
+                    replay_findings.append(finding)
+                    seen_apply_boundary_findings.add(key)
             for violation in apply_mutation_boundary_violations:
                 _replay_print(f"WARNING apply mutation boundary: {violation}")
         if replay_meta_out is not None and _restructure_plans:
