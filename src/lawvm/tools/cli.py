@@ -5394,6 +5394,12 @@ def _build_parser() -> argparse.ArgumentParser:
     open_law_pack_p.add_argument("--limit", type=int, metavar="N", help="audit only first N operations")
     open_law_pack_p.add_argument("--strict", action="store_true", help="mark unsupported actions as blocking")
     open_law_pack_p.add_argument("--json", action="store_true", help="emit summary JSON")
+    open_law_explain_p = open_law_sub.add_parser("explain", help="explain rows from an Open Law corpus report")
+    open_law_explain_p.add_argument("--report-dir", default=".tmp/open_law/evidence-pack", metavar="DIR", help="directory with operation_audits.jsonl")
+    open_law_explain_p.add_argument("--op-id", default="", metavar="ID", help="specific operation row id")
+    open_law_explain_p.add_argument("--status", default="", metavar="STATUS", help="filter rows by status")
+    open_law_explain_p.add_argument("--limit", type=int, default=5, metavar="N", help="maximum rows to print")
+    open_law_explain_p.add_argument("--json", action="store_true", help="emit matching rows as JSON")
 
     # --- sql ---
     sql_p = sub.add_parser(

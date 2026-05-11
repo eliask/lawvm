@@ -96,6 +96,20 @@ def test_parse_codify_replace_operation() -> None:
     assert op.payload.label == ".04"
 
 
+def test_parse_codify_expire_preserves_expire_date() -> None:
+    ops = parse_open_law_codify_ops(
+        """
+        <document xmlns="https://open.law/schemas/library" xmlns:codify="https://open.law/schemas/codify">
+          <codify:expire doc="Maryland Register, Volume 52, Issue 26" path="regulations|emergency|25-138-E" date="2026-11-20"/>
+        </document>
+        """,
+        source_id="editorial-actions/expire.xml",
+    )
+
+    assert ops[0].action is OpenLawAction.EXPIRE
+    assert ops[0].expire_date == "2026-11-20"
+
+
 def test_replay_codify_replace_changes_exact_declared_target() -> None:
     tree = parse_open_law_xml(_BASE_XML)
     ops = parse_open_law_codify_ops(_REPLACE_XML, source_id="editorial-actions/2026-01-22.xml")
@@ -357,7 +371,7 @@ def test_corpus_audit_uses_suffixed_snapshots_over_rolling_publication_refs(tmp_
     assert report.operation_rows[0].after_branch == "publication/2026-01-02.2026-01-02"
 
 
-def test_corpus_audit_does_not_claim_annotation_metadata_targets_as_body_replay(tmp_path) -> None:
+def test_corpus_audit_replays_annotation_metadata_targets_without_body_claim(tmp_path) -> None:
     source_repo = tmp_path / "law-xml"
     codified_repo = tmp_path / "law-xml-codified"
     _git_init(source_repo)
@@ -373,7 +387,10 @@ def test_corpus_audit_does_not_claim_annotation_metadata_targets_as_body_replay(
     _git_commit_all(source_repo, "source")
 
     _write(codified_repo / "index.xml", _index_xml("publication/before", ()))
-    _write(codified_repo / "us/md/exec/comar/10/41/02.xml", _chapter_xml("Old text."))
+    _write(
+        codified_repo / "us/md/exec/comar/10/41/02.xml",
+        _chapter_xml("Old text.").replace("</container>", "<annotations><annotation type=\"History\">Old history.</annotation></annotations></container>"),
+    )
     _git_commit_all(codified_repo, "before")
     _git_branch(codified_repo, "publication/before")
 
@@ -382,11 +399,86 @@ def test_corpus_audit_does_not_claim_annotation_metadata_targets_as_body_replay(
     _git_commit_all(codified_repo, "after")
     _git_branch(codified_repo, "publication/after")
 
+    _write(
+        codified_repo / "us/md/exec/comar/10/41/02.xml",
+        _chapter_xml("Old text.").replace("</container>", "<annotations><annotation type=\"History\">New history.</annotation></annotations></container>"),
+    )
+    _git_commit_all(codified_repo, "after body")
+    _git_branch(codified_repo, "publication/after-with-body")
+
+    report = audit_maryland_transition("publication/before", "publication/after-with-body", repos=make_maryland_repos(source_repo, codified_repo))
+
+    assert report.summary["metadata_matched"] == 1
+    assert report.operation_rows[0].status == "metadata_matched"
+    assert [finding.kind for finding in report.operation_rows[0].findings] == ["open_law_metadata_target_replayed"]
+
+
+def test_corpus_audit_flags_annotation_operation_with_body_mutation(tmp_path) -> None:
+    source_repo = tmp_path / "law-xml"
+    codified_repo = tmp_path / "law-xml-codified"
+    _git_init(source_repo)
+    _git_init(codified_repo)
+    action = """
+    <document xmlns="https://open.law/schemas/library" xmlns:codify="https://open.law/schemas/codify">
+      <codify:replace doc="Code of Maryland Regulations" path="10|41|02|annos">
+        <annotations><annotation type="History">New history.</annotation></annotations>
+      </codify:replace>
+    </document>
+    """
+    _write(source_repo / "editorial-actions" / "annos.xml", action)
+    _git_commit_all(source_repo, "source")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/before", ()))
+    _write(
+        codified_repo / "us/md/exec/comar/10/41/02.xml",
+        _chapter_xml("Old text.").replace("</container>", "<annotations><annotation type=\"History\">Old history.</annotation></annotations></container>"),
+    )
+    _git_commit_all(codified_repo, "before")
+    _git_branch(codified_repo, "publication/before")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/after", ("editorial-actions/annos.xml",)))
+    _write(codified_repo / "editorial-actions" / "annos.xml", action)
+    _write(
+        codified_repo / "us/md/exec/comar/10/41/02.xml",
+        _chapter_xml("Changed body text.").replace("</container>", "<annotations><annotation type=\"History\">New history.</annotation></annotations></container>"),
+    )
+    _git_commit_all(codified_repo, "after")
+    _git_branch(codified_repo, "publication/after")
+
     report = audit_maryland_transition("publication/before", "publication/after", repos=make_maryland_repos(source_repo, codified_repo))
 
-    assert report.summary["metadata_unsupported"] == 1
-    assert report.operation_rows[0].status == "metadata_unsupported"
-    assert [finding.kind for finding in report.operation_rows[0].findings] == ["open_law_metadata_target_not_body_replay"]
+    assert report.summary["metadata_diverged"] == 1
+    assert report.operation_rows[0].unexplained_path_count == 1
+    assert [finding.kind for finding in report.operation_rows[0].findings] == ["open_law_metadata_unexplained_body_mutation"]
+
+
+def test_corpus_audit_records_register_expire_as_lifecycle_lane(tmp_path) -> None:
+    source_repo = tmp_path / "law-xml"
+    codified_repo = tmp_path / "law-xml-codified"
+    _git_init(source_repo)
+    _git_init(codified_repo)
+    action = """
+    <document xmlns="https://open.law/schemas/library" xmlns:codify="https://open.law/schemas/codify">
+      <codify:expire doc="Maryland Register, Volume 52, Issue 26" path="regulations|emergency|25-138-E" date="2026-11-20"/>
+    </document>
+    """
+    _write(source_repo / "editorial-actions" / "expire.xml", action)
+    _git_commit_all(source_repo, "source")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/before", ()))
+    _git_commit_all(codified_repo, "before")
+    _git_branch(codified_repo, "publication/before")
+
+    _write(codified_repo / "index.xml", _index_xml("publication/after", ("editorial-actions/expire.xml",)))
+    _write(codified_repo / "editorial-actions" / "expire.xml", action)
+    _git_commit_all(codified_repo, "after")
+    _git_branch(codified_repo, "publication/after")
+
+    report = audit_maryland_transition("publication/before", "publication/after", repos=make_maryland_repos(source_repo, codified_repo))
+
+    assert report.summary["lifecycle_unsupported"] == 1
+    assert report.operation_rows[0].status == "lifecycle_unsupported"
+    assert report.operation_rows[0].expire_date == "2026-11-20"
 
 
 def test_evidence_pack_writes_summary_and_machine_reports(tmp_path) -> None:

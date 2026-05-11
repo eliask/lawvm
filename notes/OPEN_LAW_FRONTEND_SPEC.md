@@ -86,8 +86,7 @@ Typed behavior:
 
 Current explicitly unsupported families:
 
-- `codify:expire`;
-- annotation metadata targets as a body-replay claim;
+- `codify:expire` as an executable legal lifecycle mutation;
 - any unknown `codify:*` action.
 
 Unsupported actions emit:
@@ -95,8 +94,18 @@ Unsupported actions emit:
 - `open_law_unsupported_codify_action`
 
 Quirks mode records and skips unsupported operation families. Strict mode marks
-unsupported operation families blocking. Annotation metadata targets are visible
-as `open_law_metadata_target_not_body_replay` until the metadata lane exists.
+unsupported operation families blocking.
+
+Annotation metadata targets under `annos` replay in a separate metadata lane.
+They may compare metadata subtrees and named projections, but they do not
+authorize body-text mutation. Generated hidden Open Law history annotations may
+be projected out with `open_law_metadata_generated_history_projection` for
+metadata comparison only.
+
+`codify:expire` operations are visible in a lifecycle lane with their declared
+expiry date. The current frontend records
+`open_law_expire_lifecycle_not_replayed` and does not mutate COMAR or Maryland
+Register text until a tombstone/lifecycle lowering rule exists.
 
 ## 5. Snapshot Audit
 
@@ -152,7 +161,9 @@ The demo prototype should demonstrate:
 3. replay a `codify:replace`;
 4. show the changed target path;
 5. compare replay to an expected publication tree or fixture;
-6. show unsupported actions as findings rather than drops.
+6. show annotation metadata operations as metadata-lane replay, not body replay;
+7. show lifecycle and unknown unsupported actions as findings rather than
+   drops.
 
 Concrete smoke target:
 

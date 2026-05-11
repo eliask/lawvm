@@ -1,4 +1,4 @@
-from lawvm.core.evidence_contracts import EvidenceSummary
+from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow, CorpusOperationEvidenceRow, CorpusRowStatus, EvidenceSummary
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus, to_wire_jsonable
 from lawvm.core.replay_contracts import ReplayAmendmentStep, ReplaySummary, ReplayTextView
 from lawvm.core.verification_contracts import (
@@ -80,6 +80,40 @@ def test_evidence_summary_to_dict_preserves_tuple_fields() -> None:
     assert data["primary_tier"] == "oracle_ready"
     assert data["tiers"] == ("oracle_ready", "strict_fail")
     assert data["claim_kinds"] == ("oracle_stale", "html_xml_drift")
+
+
+def test_corpus_operation_evidence_row_to_dict_preserves_unsupported_status() -> None:
+    row = CorpusOperationEvidenceRow(
+        row_id="row-1",
+        frontend_id="open_law_maryland",
+        source_artifact_id="editorial-actions/x.xml",
+        effect_family="expire",
+        status=CorpusRowStatus.UNSUPPORTED,
+        blocking=True,
+        finding_ids=("open_law_expire_lifecycle_not_replayed",),
+    )
+
+    data = row.to_dict()
+
+    assert data["status"] == "unsupported"
+    assert data["finding_ids"] == ("open_law_expire_lifecycle_not_replayed",)
+
+
+def test_corpus_finding_evidence_row_to_dict_is_json_friendly() -> None:
+    row = CorpusFindingEvidenceRow(
+        finding_id="row-1:finding",
+        frontend_id="open_law_maryland",
+        family="unsupported",
+        rule_id="open_law_expire_lifecycle_not_replayed",
+        phase="lifecycle",
+        message="recorded",
+        evidence={"path": ("a", "b")},
+    )
+
+    data = row.to_dict()
+
+    assert data["rule_id"] == "open_law_expire_lifecycle_not_replayed"
+    assert data["evidence"] == {"path": ("a", "b")}
 
 
 def test_to_wire_jsonable_normalizes_nested_runtime_shapes() -> None:

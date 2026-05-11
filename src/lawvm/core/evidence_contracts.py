@@ -13,6 +13,7 @@ adopted cross-cutting runtime surface.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from enum import Enum
 from typing import Any, Mapping
 
 
@@ -38,4 +39,70 @@ class EvidenceSummary:
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["detail"] = dict(self.detail)
+        return data
+
+
+class CorpusRowStatus(Enum):
+    """Cross-frontend corpus operation/effect row disposition."""
+
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    SKIPPED = "skipped"
+    UNSUPPORTED = "unsupported"
+    FAILED = "failed"
+    MATCHED = "matched"
+    DIVERGED = "diverged"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+@dataclass(frozen=True)
+class CorpusOperationEvidenceRow:
+    """Minimal shared operation/effect row for corpus evidence exports."""
+
+    row_id: str
+    frontend_id: str
+    source_artifact_id: str
+    source_unit_id: str = ""
+    source_locator: str = ""
+    effect_family: str = ""
+    canonical_family: str = ""
+    original_target: str = ""
+    resolved_target: str = ""
+    status: CorpusRowStatus = CorpusRowStatus.ACCEPTED
+    blocking: bool = False
+    strict_disposition: str = ""
+    quirks_disposition: str = ""
+    finding_ids: tuple[str, ...] = ()
+    detail: Mapping[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["status"] = self.status.value
+        data["detail"] = dict(self.detail)
+        return data
+
+
+@dataclass(frozen=True)
+class CorpusFindingEvidenceRow:
+    """Minimal shared finding row for corpus evidence exports."""
+
+    finding_id: str
+    frontend_id: str
+    family: str
+    rule_id: str
+    phase: str
+    message: str
+    source_artifact_id: str = ""
+    source_unit_id: str = ""
+    related_row_ids: tuple[str, ...] = ()
+    blocking: bool = False
+    strict_disposition: str = ""
+    quirks_disposition: str = ""
+    evidence: Mapping[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["evidence"] = dict(self.evidence)
         return data

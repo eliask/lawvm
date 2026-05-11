@@ -357,7 +357,7 @@ For Open Law, this contract means:
 - publication branches, source commits, editorial-action files, and transition
   assumptions belong in the inventory manifest;
 - each `codify:*` action becomes an operation/effect row;
-- unsupported actions such as unimplemented metadata or lifecycle families stay
+- unsupported actions such as unknown or unimplemented lifecycle families stay
   in the output;
 - replay rows record declared target regions and changed paths;
 - audit rows compare replay results to codified publication snapshots;
