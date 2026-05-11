@@ -3309,6 +3309,95 @@ def test_build_evidence_bundle_summarizes_compiler_observations(monkeypatch) -> 
     ]
 
 
+def test_build_evidence_bundle_records_context_degradation(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "lawvm.tools.evidence._classify_statute",
+        lambda statute_id, mode="legal_pit", **_kw: ClassifyResult(
+            sid=statute_id,
+            title="Test",
+            mode=mode,
+            overall_score=0.82,
+            section_score=0.73,
+            section_results=[
+                {
+                    "section": "section:1",
+                    "diagnosis": "REPLAY_MISSING",
+                    "blame_source": "2020/100",
+                    "replay_text": "Replay",
+                    "oracle_text": "Oracle",
+                }
+            ],
+            source_pathologies=[],
+            contingent_effective_sources=[],
+        ),
+    )
+    monkeypatch.setattr(
+        "lawvm.tools.evidence.replay_xml",
+        lambda statute_id, mode="legal_pit", **_kw: SimpleNamespace(
+            source_adjudication=None,
+            materialized_state=SimpleNamespace(ir=None),
+            timelines={},
+        ),
+    )
+    monkeypatch.setattr(
+        "lawvm.tools.evidence.compile_fi_facade_from_replay",
+        lambda **_kw: SimpleNamespace(
+            projection_rows=lambda: (),
+            summary_projection=lambda: SimpleNamespace(strict_fail_reasons=()),
+            bundle=SimpleNamespace(structural_ops=()),
+            source_pathology_rows=lambda: (),
+            strict_profile_name="",
+            finding_ledger=(),
+        ),
+    )
+    monkeypatch.setattr(
+        "lawvm.tools.evidence._audit_html_one",
+        lambda statute_id: SimpleNamespace(
+            missing_from_xml=[],
+            extra_in_xml=[],
+            html_error="",
+            noncommensurable_reason="",
+        ),
+    )
+    monkeypatch.setattr("lawvm.tools.evidence.get_ground_truth_tree", lambda statute_id: object())
+    monkeypatch.setattr("lawvm.tools.evidence._corrigendum_support_for_amendments", lambda mids: [])
+    monkeypatch.setattr(
+        "lawvm.tools.evidence._section_bisect_support",
+        lambda statute_id, mode, section_results, **_kw: [
+            {
+                "section": "section:1",
+                "blame_source": "2020/100",
+            }
+        ],
+    )
+
+    def _raise_section_strict(*_args, **_kwargs):
+        raise RuntimeError("strict rail offline")
+
+    def _raise_chain_completeness(*_args, **_kwargs):
+        raise RuntimeError("chain rail offline")
+
+    monkeypatch.setattr(
+        "lawvm.core.compile_result.compute_section_strict_verdicts",
+        _raise_section_strict,
+    )
+    monkeypatch.setattr(
+        "lawvm.core.chain_completeness.compute_chain_completeness",
+        _raise_chain_completeness,
+    )
+
+    bundle = build_evidence_bundle("1990/1295", mode="legal_pit", include_bisect=True)
+
+    diagnostics = bundle["evidence_context_diagnostics"]
+    assert {
+        (item["rail"], item["exception_type"], item["message"])
+        for item in diagnostics
+    } >= {
+        ("section_strict_verdicts", "RuntimeError", "strict rail offline"),
+        ("chain_completeness", "RuntimeError", "chain rail offline"),
+    }
+
+
 def test_normalize_observation_streams_keeps_apply_mutations_unowned_without_resolved_target() -> None:
     normalized = _normalize_observation_streams(
         apply_mutation_events=[

@@ -118,6 +118,15 @@ _ORACLE_TEMPORARY_SOURCE_RE = re.compile(
 )
 
 
+def _evidence_context_degradation(rail: str, exc: Exception) -> Dict[str, str]:
+    return {
+        "kind": "evidence_context_degraded",
+        "rail": rail,
+        "exception_type": type(exc).__name__,
+        "message": str(exc),
+    }
+
+
 def _witness_for_op(op: object) -> object | None:
     """Return the preferred witness payload for reporting.
 
@@ -3067,6 +3076,7 @@ def build_evidence_bundle(
     projection_rows = _compiler_projection_rows(report_record.get("projection_rows"))
     _strict_reasons = list(report_record.get("strict_fail_reasons") or [])
 
+    _evidence_context_diagnostics: List[Dict[str, str]] = []
 
     section_results = []
     blame_amendment_ids: List[str] = []
@@ -3186,8 +3196,10 @@ def build_evidence_bundle(
                 )
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
-        except Exception:
-            pass  # Graceful degradation — section-local not available
+        except Exception as exc:
+            _evidence_context_diagnostics.append(
+                _evidence_context_degradation("section_strict_verdicts", exc)
+            )
     # C3: Compute section-local invariant violations from timelines
     _section_inv_violations: dict[str, list[dict]] | None = None
     _rr2 = ctx.replay_result
@@ -3215,8 +3227,10 @@ def build_evidence_bundle(
                         )
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
-        except Exception:
-            pass
+        except Exception as exc:
+            _evidence_context_diagnostics.append(
+                _evidence_context_degradation("section_timeline_invariants", exc)
+            )
     # Chain completeness: compute per-section chain completeness certificate
     # (attack #9 guard — missing compiler input can masquerade as oracle drift).
     _chain_completeness_by_section: dict[str, Any] | None = None
@@ -3267,8 +3281,10 @@ def build_evidence_bundle(
             }
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
-        except Exception:
-            pass  # graceful degradation
+        except Exception as exc:
+            _evidence_context_diagnostics.append(
+                _evidence_context_degradation("chain_completeness", exc)
+            )
 
     # A1 proof algebra: typed section claim path (primary, since session 9).
     from lawvm.tools.evidence_claims import build_section_claims_typed
@@ -3306,8 +3322,10 @@ def build_evidence_bundle(
             )
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs — fail loud
-        except Exception:
-            pass  # graceful degradation — drift detection not critical
+        except Exception as exc:
+            _evidence_context_diagnostics.append(
+                _evidence_context_degradation("content_version_drift", exc)
+            )
 
     # A2 typed statute-level proof algebra (primary path).
     # Produces identical output to _build_proof_claims(); keep legacy as fallback.
@@ -3352,8 +3370,10 @@ def build_evidence_bundle(
             _span_anchor_counts = {str(addr): len(sa.anchors) for addr, sa in _all_anchors.items()}
         except (NameError, TypeError, AttributeError):
             raise  # programming bugs -- fail loud
-        except Exception:
-            pass  # graceful degradation -- span anchors not critical
+        except Exception as exc:
+            _evidence_context_diagnostics.append(
+                _evidence_context_degradation("span_anchor_counts", exc)
+            )
 
     # Body pairing analysis: detect foreign/unmatched/repeal-blocked body units
     # across the amendment chain.  Lightweight — reuses amendment XML from corpus.
@@ -3371,8 +3391,10 @@ def build_evidence_bundle(
                 _pairing_findings = _pf_list
     except (NameError, TypeError, AttributeError):
         raise  # programming bugs -- fail loud
-    except Exception:
-        pass  # graceful degradation -- pairing analysis not critical
+    except Exception as exc:
+        _evidence_context_diagnostics.append(
+            _evidence_context_degradation("body_pairing", exc)
+        )
 
     return {
         "statute_id": statute_id,
@@ -3444,6 +3466,7 @@ def build_evidence_bundle(
         "span_anchor_counts": _span_anchor_counts,
         "chain_completeness": _chain_completeness_summary,
         "pairing_findings": _pairing_findings,
+        "evidence_context_diagnostics": _evidence_context_diagnostics,
     }
 
 
