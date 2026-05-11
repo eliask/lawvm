@@ -5348,7 +5348,7 @@ class UKReplayExecutor:
         # Keep legacy warnings visible during replay runs while also recording
         # structured adjudications for downstream analyses.
 
-        if target.special == "whole_act":
+        if str(target.special or "") == "whole_act":
             if _action_name(op.action) == "repeal":
                 self._log("  EXECUTOR: repealing WHOLE ACT")
                 self.statute.body.children = []
@@ -7181,7 +7181,7 @@ def commencement_eid_set(
             addr = _parse_affected_target(part)
 
             # whole_act special: everything is commenced
-            if addr.special == "whole_act":
+            if str(addr.special or "") == "whole_act":
                 for node in all_ir_nodes:
                     commenced.update(_collect_all_eids(node))
                 return commenced
@@ -7227,16 +7227,27 @@ def _prepare_replay_uk_ops(
     ops: list[LegalOperation],
     *,
     verbose: bool = False,
+    adjudications_out: Optional[list[CompileAdjudication]] = None,
 ) -> list[LegalOperation]:
     """Normalize replay ops so every entry point applies the same semantics."""
     filtered_ops: list[LegalOperation] = []
     for op in ops:
-        if op.target.special == "whole_act":
+        if str(op.target.special or "") == "whole_act":
             if verbose:
                 print("  replay_uk_ops: skipping whole_act repeal")
+            _append_uk_replay_adjudication(
+                adjudications_out,
+                kind="uk_replay_unsupported_action",
+                message="UK replay prepare step skipped whole-act target before replay apply.",
+                op=op,
+                detail={
+                    "action": _action_name(op.action),
+                    "target": str(op.target),
+                    "reason": "whole_act_prepare_filter",
+                },
+            )
             continue
         filtered_ops.append(op)
-    return filtered_ops
     return filtered_ops
 
 
@@ -7288,6 +7299,7 @@ def replay_uk_ops(
     _filtered_ops = _prepare_replay_uk_ops(
         ops,
         verbose=verbose,
+        adjudications_out=adjudications_out,
     )
 
     executor = UKReplayExecutor(

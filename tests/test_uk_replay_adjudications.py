@@ -3,7 +3,7 @@ from __future__ import annotations
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, TextPatchKindEnum, TextPatchSpec, TextSelector, StructuralAction
 
 from lawvm.core.ir import IRNode
-from lawvm.core.semantic_types import IRNodeKind
+from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.uk_amendment_replay import UKReplayExecutor, replay_uk_ops
 
@@ -241,6 +241,29 @@ def test_replay_uk_ops_collects_adjudications() -> None:
     assert len(adjudications) == 1
     assert adjudications[0].kind == "uk_replay_malformed_target_gap"
     assert adjudications[0].op_id == "uk_test_replay_api_collects"
+
+
+def test_replay_uk_ops_records_prepare_filtered_whole_act_target() -> None:
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="uk_test_whole_act_prepare_filter",
+        sequence=1,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(), special=FacetKind.WHOLE_ACT),
+        source=_source(),
+    )
+
+    replayed = replay_uk_ops(_base_statute(), [op], adjudications_out=adjudications)
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_unsupported_action"
+    assert adjudications[0].op_id == "uk_test_whole_act_prepare_filter"
+    assert adjudications[0].detail == {
+        "action": "repeal",
+        "target": "/whole_act",
+        "reason": "whole_act_prepare_filter",
+    }
+    assert tuple(child.label for child in replayed.body.children) == ("1",)
 
 
 def test_replay_uk_ops_collects_text_duplication_warnings() -> None:
