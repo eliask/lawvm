@@ -153,3 +153,36 @@ def test_test_shard_reports_selectors_outside_selected_shard() -> None:
 
     assert selected == []
     assert unknown == ["test_b.py"]
+
+
+def test_test_shard_maps_changed_tests_to_explicit_shards() -> None:
+    module = _load_test_shard_module()
+
+    assert module.affected_shards(
+        [
+            "tests/test_norway_replay.py",
+            "tests/test_uk_replay_adjudications.py",
+        ]
+    ) == ["norway", "uk"]
+
+
+def test_test_shard_maps_source_modules_to_frontend_shards() -> None:
+    module = _load_test_shard_module()
+
+    assert module.affected_shards(
+        [
+            "src/lawvm/finland/frontend_compile.py",
+            "src/lawvm/core/timeline.py",
+            "scripts/ci.sh",
+        ]
+    ) == ["core", "finland", "tools"]
+
+
+def test_test_shard_affected_plan_defaults_to_all_for_unknown_paths() -> None:
+    module = _load_test_shard_module()
+
+    assert module.affected_plan(["notes/ARCHITECTURE.md"]) == {
+        "kind": "lawvm_pytest_affected_shards",
+        "input_paths": ["notes/ARCHITECTURE.md"],
+        "shards": ["all"],
+    }

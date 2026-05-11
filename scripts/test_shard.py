@@ -219,6 +219,25 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("src/lawvm/estonia/", ("estonia",)),
+    ("src/lawvm/eu/", ("eu",)),
+    ("src/lawvm/finland/", ("finland",)),
+    ("src/lawvm/norway/", ("norway",)),
+    ("src/lawvm/open_law/", ("starter",)),
+    ("src/lawvm/sweden/", ("sweden",)),
+    ("src/lawvm/uk_legislation/", ("uk",)),
+    ("src/lawvm/tools/", ("tools",)),
+    ("src/lawvm/core/", ("core",)),
+    ("src/lawvm/jurisdiction_starter/", ("starter",)),
+)
+
+TOOLING_SHARD_PREFIXES = (
+    "scripts/",
+    "pyproject.toml",
+    "uv.lock",
+)
+
 
 def _all_test_files() -> list[str]:
     return sorted(path.name for path in TEST_DIR.glob("test_*.py"))
@@ -460,6 +479,53 @@ def shard_plan(shard: str = "all") -> dict[str, Any]:
     }
 
 
+def affected_shards(paths: list[str]) -> list[str]:
+    """Map changed repo paths to a conservative bounded-test shard set."""
+
+    if not paths:
+        return ["all"]
+    affected: set[str] = set()
+    for raw_path in paths:
+        path = raw_path.strip()
+        if not path:
+            continue
+        normalized = path.replace("\\", "/")
+        filename = Path(normalized).name
+        if normalized.startswith("tests/") and filename.startswith("test_") and filename.endswith(".py"):
+            if filename in EXCLUDED_TESTS:
+                continue
+            matches = explicit_matches(filename)
+            affected.update(matches or ["misc"])
+            continue
+        for prefix, shards in SOURCE_SHARD_PREFIXES:
+            if normalized.startswith(prefix):
+                affected.update(shards)
+                break
+        else:
+            if normalized.startswith(TOOLING_SHARD_PREFIXES):
+                affected.add("tools")
+    return sorted(affected) if affected else ["all"]
+
+
+def affected_plan(paths: list[str]) -> dict[str, Any]:
+    shards = affected_shards(paths)
+    return {
+        "kind": "lawvm_pytest_affected_shards",
+        "input_paths": list(paths),
+        "shards": shards,
+    }
+
+
+def print_affected(paths: list[str], *, json_output: bool = False) -> int:
+    plan = affected_plan(paths)
+    if json_output:
+        print(json.dumps(plan, indent=2, sort_keys=True))
+        return 0
+    for shard in plan["shards"]:
+        print(shard)
+    return 0
+
+
 def print_plan(shard: str, *, json_output: bool = False) -> int:
     try:
         plan = shard_plan(shard)
@@ -490,6 +556,9 @@ def main(argv: list[str] | None = None) -> int:
     plan_parser = subparsers.add_parser("plan")
     plan_parser.add_argument("shard", nargs="?", default="all")
     plan_parser.add_argument("--json", action="store_true", dest="json_output")
+    affected_parser = subparsers.add_parser("affected")
+    affected_parser.add_argument("--json", action="store_true", dest="json_output")
+    affected_parser.add_argument("paths", nargs="*")
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument(
         "--timing-jsonl",
@@ -508,6 +577,8 @@ def main(argv: list[str] | None = None) -> int:
         return list_files(args.shard)
     if args.command == "plan":
         return print_plan(args.shard, json_output=args.json_output)
+    if args.command == "affected":
+        return print_affected(args.paths, json_output=args.json_output)
     if args.command == "run":
         return run_shard(args.shard, pytest_args=args.pytest_args, timing_jsonl=args.timing_jsonl)
     raise AssertionError(args.command)
