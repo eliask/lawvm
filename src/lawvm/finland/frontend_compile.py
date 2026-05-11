@@ -30,7 +30,7 @@ import lxml.etree as etree
 if TYPE_CHECKING:
     from lawvm.finland.johtolause import ClauseParseResult
 
-from lawvm.core.ir import OperationSource
+from lawvm.core.ir import LegalOperation, OperationSource
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.core.compile_result import StrictProfile
 from lawvm.core.phase_result import Finding
@@ -38,6 +38,7 @@ from lawvm.core.temporal import ActivationRule, TemporalEvent, TemporalScope
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.ops import FailedOp
 from lawvm.finland.ops import ScopeConfidence
+from lawvm.finland.ops import classify_legal_operation_conversion_skip
 from lawvm.finland.ops import normalize_scope_confidence, projection_scope_confidence
 from lawvm.finland.ops import _lo_with_path_update
 from lawvm.finland.normalize import (
@@ -1499,6 +1500,22 @@ def normalize_and_compile_ops(
             )
         return findings
 
+    def _legal_operation_conversion_skip_finding(lo: LegalOperation) -> Finding | None:
+        skip = classify_legal_operation_conversion_skip(lo)
+        if skip is None:
+            return None
+        return Finding(
+            kind="ELAB.REJECTED_OPERATION",
+            role="observation",
+            stage="frontend_compile",
+            detail={
+                **skip.as_detail(),
+                "source": "AmendmentOp.from_lo",
+            },
+            source_statute=amendment_id,
+            blocking=skip.blocking,
+        )
+
     # Normalize typography before any structural parsing: em-dash → en-dash,
     # horizontal space variants (NBSP, thin space, etc.) → plain space.
     johto = _normalize_fi_parse_text(johto)
@@ -1560,7 +1577,14 @@ def normalize_and_compile_ops(
         legal_ops = _strip_unjustified_chapter_scope_from_unique_sections(legal_ops, johto, master)
         legal_ops = _assign_chapter_scope_from_johtolause(legal_ops, johto, master)
         legal_ops = _assign_scope_from_renumber_destinations(legal_ops)
-        ops = [op for i, lo in enumerate(legal_ops) for op in AmendmentOp.from_lo(lo, i)]
+        ops: List[AmendmentOp] = []
+        for i, lo in enumerate(legal_ops):
+            converted_ops = AmendmentOp.from_lo(lo, i)
+            if not converted_ops:
+                skipped_finding = _legal_operation_conversion_skip_finding(lo)
+                if skipped_finding is not None:
+                    frontend_findings_out.append(skipped_finding)
+            ops.extend(converted_ops)
         ops, target_version_findings = _attach_target_version_selectors(
             ops,
             parse_result=parse_result_local,
