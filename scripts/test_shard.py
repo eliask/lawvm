@@ -228,15 +228,14 @@ SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("src/lawvm/sweden/", ("sweden",)),
     ("src/lawvm/uk_legislation/", ("uk",)),
     ("src/lawvm/tools/", ("tools",)),
-    ("src/lawvm/core/", ("core",)),
+    ("src/lawvm/core/", ("all",)),
     ("src/lawvm/jurisdiction_starter/", ("starter",)),
 )
 
 TOOLING_SHARD_PREFIXES = (
     "scripts/",
-    "pyproject.toml",
-    "uv.lock",
 )
+GLOBAL_CHANGE_PATHS = frozenset({"pyproject.toml", "uv.lock"})
 
 
 def _all_test_files() -> list[str]:
@@ -491,6 +490,9 @@ def affected_shards(paths: list[str]) -> list[str]:
             continue
         normalized = path.replace("\\", "/")
         filename = Path(normalized).name
+        if normalized in GLOBAL_CHANGE_PATHS:
+            affected.add("all")
+            continue
         if normalized.startswith("tests/") and filename.startswith("test_") and filename.endswith(".py"):
             if filename in EXCLUDED_TESTS:
                 continue
@@ -504,7 +506,9 @@ def affected_shards(paths: list[str]) -> list[str]:
         else:
             if normalized.startswith(TOOLING_SHARD_PREFIXES):
                 affected.add("tools")
-    return sorted(affected) if affected else ["all"]
+    if not affected or "all" in affected:
+        return ["all"]
+    return sorted(affected)
 
 
 def affected_plan(paths: list[str]) -> dict[str, Any]:
