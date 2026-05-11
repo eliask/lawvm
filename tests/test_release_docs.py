@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import io
+import json
 import re
 import subprocess
+import tarfile
 from pathlib import Path
 
 
@@ -37,6 +41,7 @@ def test_release_docs_do_not_expose_developer_local_paths() -> None:
 def test_release_scripts_have_valid_shell_syntax() -> None:
     subprocess.run(("bash", "-n", "scripts/release_hygiene.sh"), check=True)
     subprocess.run(("bash", "-n", "scripts/build_release_archive.sh"), check=True)
+    subprocess.run(("bash", "-n", "scripts/verify_release_archive.sh"), check=True)
 
 
 def test_release_archive_script_emits_verification_sidecars() -> None:
@@ -45,6 +50,52 @@ def test_release_archive_script_emits_verification_sidecars() -> None:
     assert '>"${out}.sha256"' in script
     assert ".manifest.json" in script
     assert '"git_commit"' in script
+
+
+def test_release_archive_verifier_checks_sidecars(tmp_path) -> None:
+    archive = tmp_path / "lawvm-abcdef1.tar.gz"
+    prefix = "lawvm-abcdef1/"
+    data = b"hello\n"
+    with tarfile.open(archive, "w:gz") as tar:
+        root = tarfile.TarInfo(prefix.rstrip("/"))
+        root.type = tarfile.DIRTYPE
+        tar.addfile(root)
+        info = tarfile.TarInfo(prefix + "README.md")
+        info.size = len(data)
+        tar.addfile(info, io.BytesIO(data))
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    archive.with_suffix(archive.suffix + ".sha256").write_text(f"{digest}  {archive.name}\n", encoding="utf-8")
+    archive.with_suffix(archive.suffix + ".manifest.json").write_text(
+        json.dumps(
+            {
+                "archive": archive.name,
+                "archive_prefix": prefix,
+                "git_commit": "abcdef1" + "0" * 33,
+                "git_short": "abcdef1",
+                "sha256": digest,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    subprocess.run(("bash", "scripts/verify_release_archive.sh", str(archive)), check=True)
+
+    archive.with_suffix(archive.suffix + ".manifest.json").write_text(
+        json.dumps(
+            {
+                "archive": archive.name,
+                "archive_prefix": prefix,
+                "git_commit": "abcdef1" + "0" * 33,
+                "git_short": "abcdef1",
+                "sha256": "0" * 64,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(("bash", "scripts/verify_release_archive.sh", str(archive)), check=False)
+    assert result.returncode == 1
 
 
 def test_release_hygiene_blocks_tracked_local_artifact_paths() -> None:
