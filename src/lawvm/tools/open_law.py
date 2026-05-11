@@ -6,7 +6,7 @@ import json
 import hashlib
 from argparse import Namespace
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
@@ -216,7 +216,7 @@ def _print_evidence_pack(args: Namespace) -> None:
 
 def _print_verify_pack(args: Namespace) -> None:
     report_dir = Path(args.report_dir)
-    result = _verify_evidence_pack(report_dir)
+    result = _verify_evidence_pack(report_dir, require_clean_generator=args.require_clean_generator)
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
@@ -226,6 +226,7 @@ def _print_verify_pack(args: Namespace) -> None:
                     f"files={result['files']}",
                     f"operation_rows={result['operation_rows']}",
                     f"finding_rows={result['finding_rows']}",
+                    f"generator_clean={result['generator_clean']}",
                     f"issues={len(result['issues'])}",
                 )
             )
@@ -310,14 +311,33 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def _verify_evidence_pack(report_dir: Path) -> dict[str, Any]:
+def _verify_evidence_pack(report_dir: Path, *, require_clean_generator: bool = False) -> dict[str, Any]:
     issues: list[str] = []
     artifact_manifest_path = report_dir / "evidence_pack_manifest.json"
     if not artifact_manifest_path.exists():
         issues.append(f"missing {artifact_manifest_path}")
-        return {"files": 0, "operation_rows": 0, "finding_rows": 0, "issues": issues}
+        return {
+            "files": 0,
+            "operation_rows": 0,
+            "finding_rows": 0,
+            "generator_git_commit": "",
+            "generator_git_dirty": None,
+            "generator_clean": False,
+            "issues": issues,
+        }
 
     manifest = json.loads(artifact_manifest_path.read_text(encoding="utf-8"))
+    generator_git_commit = ""
+    generator_git_dirty: bool | None = None
+    generator_clean = False
+    if not isinstance(manifest, Mapping):
+        issues.append("evidence_pack_manifest.json is not an object")
+    else:
+        generator_issues, generator_git_commit, generator_git_dirty, generator_clean = _validate_pack_generator(
+            manifest,
+            require_clean_generator=require_clean_generator,
+        )
+        issues.extend(generator_issues)
     files_raw = manifest.get("files") if isinstance(manifest, Mapping) else None
     files = files_raw if isinstance(files_raw, list) else []
     if not files:
@@ -360,8 +380,54 @@ def _verify_evidence_pack(report_dir: Path) -> dict[str, Any]:
         "files": verified_files,
         "operation_rows": len(operation_records),
         "finding_rows": len(finding_records),
+        "generator_git_commit": generator_git_commit,
+        "generator_git_dirty": generator_git_dirty,
+        "generator_clean": generator_clean,
         "issues": issues,
     }
+
+
+def _validate_pack_generator(
+    manifest: Mapping[str, object],
+    *,
+    require_clean_generator: bool,
+) -> tuple[list[str], str, bool | None, bool]:
+    generator = manifest.get("generator")
+    if not isinstance(generator, Mapping):
+        return (["evidence_pack_manifest.json has no generator object"], "", None, False)
+    generator_map = cast("Mapping[str, object]", generator)
+
+    issues: list[str] = []
+    tool = generator_map.get("tool")
+    repository = generator_map.get("repository")
+    git_commit = generator_map.get("git_commit")
+    git_dirty = generator_map.get("git_dirty")
+
+    if tool != "lawvm open-law evidence-pack":
+        issues.append(f"invalid generator tool: {tool!r}")
+    if not isinstance(repository, str) or not repository:
+        issues.append(f"invalid generator repository: {repository!r}")
+    if not isinstance(git_commit, str):
+        issues.append(f"invalid generator git_commit: {git_commit!r}")
+        normalized_commit = ""
+    else:
+        normalized_commit = git_commit
+        if normalized_commit and not _is_full_git_commit(normalized_commit):
+            issues.append(f"invalid generator git_commit: {normalized_commit!r}")
+    if isinstance(git_dirty, bool) or git_dirty is None:
+        normalized_dirty = git_dirty
+    else:
+        issues.append(f"invalid generator git_dirty: {git_dirty!r}")
+        normalized_dirty = None
+
+    generator_clean = _is_full_git_commit(normalized_commit) and normalized_dirty is False
+    if require_clean_generator and not generator_clean:
+        issues.append("generator is not a clean git commit")
+    return issues, normalized_commit, normalized_dirty, generator_clean
+
+
+def _is_full_git_commit(value: str) -> bool:
+    return len(value) == 40 and all(char in "0123456789abcdef" for char in value)
 
 
 def _load_pack_report_rows(path: Path, issues: list[str]) -> tuple[Any, ...]:

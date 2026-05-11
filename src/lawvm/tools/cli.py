@@ -5430,6 +5430,11 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help="directory with evidence_pack_manifest.json and JSONL evidence rows",
     )
+    open_law_verify_pack_p.add_argument(
+        "--require-clean-generator",
+        action="store_true",
+        help="require evidence_pack_manifest.json to name a clean LawVM git commit",
+    )
     open_law_verify_pack_p.add_argument("--json", action="store_true", help="emit verification JSON")
     open_law_explain_p = open_law_sub.add_parser("explain", help="explain rows from an Open Law corpus report")
     open_law_explain_p.add_argument("--report-dir", default=".tmp/open_law/evidence-pack", metavar="DIR", help="directory with operation_audits.jsonl")

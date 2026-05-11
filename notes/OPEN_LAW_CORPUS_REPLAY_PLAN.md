@@ -179,13 +179,19 @@ uv run lawvm open-law evidence-pack \
 
 uv run lawvm open-law verify-pack \
   --report-dir .tmp/open_law/evidence-pack
+
+uv run lawvm open-law verify-pack \
+  --report-dir .tmp/open_law/evidence-pack \
+  --require-clean-generator
 ```
 
 Outputs:
 
 - `manifest.json`
 - `evidence_pack_manifest.json` when using `evidence-pack`; includes LawVM
-  generator identity plus generated artifact checksums
+  generator identity plus generated artifact checksums; `verify-pack
+  --require-clean-generator` rejects dirty or commitless generator state for
+  handoff-grade packs
 - `operation_audits.jsonl`
 - `findings.jsonl`
 - `summary.json`
