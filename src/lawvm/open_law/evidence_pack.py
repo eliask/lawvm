@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -299,7 +300,16 @@ def _lawvm_repository_label(repo_root: Path) -> str:
         text=True,
     )
     remote_url = remote.stdout.strip()
-    return remote_url or repo_root.name
+    if not remote_url:
+        return repo_root.name
+    return _shareable_git_remote_url(remote_url)
+
+
+def _shareable_git_remote_url(remote_url: str) -> str:
+    match = re.fullmatch(r"git@github\.com:(?P<owner>[^/]+)/(?P<repo>[^/]+?)(?:\.git)?", remote_url)
+    if match is None:
+        return remote_url
+    return f"https://github.com/{match.group('owner')}/{match.group('repo')}.git"
 
 
 def _sized_len(value: object) -> int:
