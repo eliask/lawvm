@@ -8,8 +8,9 @@
 #   1. ruff check (unused imports, undefined names)
 #   2. ty check
 #   3. boundary guard tests (architectural invariants)
-#   4. bounded non-network pytest suite
-#   5. release hygiene in dirty-worktree mode
+#   4. pytest shard ownership (frontend/module split must stay complete)
+#   5. bounded non-network pytest suite
+#   6. release hygiene in dirty-worktree mode
 #
 # Exit 0 = all green, nonzero = broken.
 
@@ -54,7 +55,15 @@ uv run python -m pytest tests/test_conformance.py -v --override-ini="addopts=" 2
 echo "PASS: boundary guards"
 
 echo ""
-echo "=== [4/5] bounded non-network test suite ==="
+echo "=== [4/6] shard ownership ==="
+./scripts/test_shard.sh validate || {
+    echo "FAIL: pytest shard ownership is invalid."
+    exit 1
+}
+echo "PASS: shard ownership"
+
+echo ""
+echo "=== [5/6] bounded non-network test suite ==="
 uv run python -m pytest tests/ --override-ini="addopts=" -x -q "${PYTEST_XDIST_ARGS[@]}" \
     -m "not network and not slow" \
     --ignore=tests/test_pipeline_gold.py \
@@ -64,7 +73,7 @@ uv run python -m pytest tests/ --override-ini="addopts=" -x -q "${PYTEST_XDIST_A
 }
 
 echo ""
-echo "=== [5/5] release hygiene ==="
+echo "=== [6/6] release hygiene ==="
 ./scripts/release_hygiene.sh --allow-dirty || {
     echo "FAIL: release hygiene gate failed."
     exit 1
