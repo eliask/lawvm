@@ -259,6 +259,9 @@ def test_apply_eu_ops_records_new_apply_step_duplication_warning() -> None:
     assert duplication_adjudications[0].op_id == "replace-introduces-duplication"
     assert duplication_adjudications[0].source_statute == "2026/11"
     assert duplication_adjudications[0].detail["phase"] == "apply_op"
+    assert duplication_adjudications[0].detail["blocking"] is False
+    assert duplication_adjudications[0].detail["strict_disposition"] == "record"
+    assert duplication_adjudications[0].detail["quirks_disposition"] == "record"
     assert isinstance(duplication_adjudications[0].detail["action"], str)
     assert duplication_adjudications[0].detail["action"] == "replace"
     assert duplication_adjudications[0].detail["target"] == "section:2"
@@ -526,6 +529,10 @@ def test_replay_statute_collects_apply_step_and_phase_duplication_adjudications(
     assert duplicate_phases.count("apply_op") == 1
     assert duplicate_phases.count("replay_fold") == 1
     assert duplicate_phases.count("materialized") == 1
+    for adjudication in result.adjudications:
+        if adjudication.kind == "text_duplication_warning":
+            assert adjudication.detail["blocking"] is False
+            assert adjudication.detail["strict_disposition"] == "record"
 
 
 def test_replay_statute_threads_temporal_events_into_compile_timelines(

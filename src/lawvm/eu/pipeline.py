@@ -70,6 +70,10 @@ def _append_eu_replay_adjudication(
 def _eu_adjudication_from_finding(finding: Finding) -> CompileAdjudication:
     """Project replay-lint findings into the EU replay compatibility bag."""
     detail = dict(finding.detail)
+    blocking = bool(finding.blocking)
+    detail.setdefault("blocking", blocking)
+    detail.setdefault("strict_disposition", "block" if blocking else "record")
+    detail.setdefault("quirks_disposition", "record")
     message = str(detail.pop("message", "") or "")
     return CompileAdjudication(
         kind=str(finding.kind or ""),
@@ -161,6 +165,9 @@ def apply_eu_ops(
                         "phase": "apply_op",
                         "action": str(action),
                         "target": str(target),
+                        "blocking": False,
+                        "strict_disposition": "record",
+                        "quirks_disposition": "record",
                         **warning,
                     },
                 )

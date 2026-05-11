@@ -110,7 +110,12 @@ def test_eu_replay_tool_supports_json(monkeypatch, capsys) -> None:
                     message="dup",
                     source_statute="32016R0679",
                     op_id="op-dup",
-                    detail={"phase": "materialized"},
+                    detail={
+                        "phase": "materialized",
+                        "blocking": False,
+                        "strict_disposition": "record",
+                        "quirks_disposition": "record",
+                    },
                 )
             ],
             timelines={},
@@ -148,7 +153,8 @@ def test_eu_replay_tool_supports_json(monkeypatch, capsys) -> None:
     assert evidence_row["phase"] == "materialized"
     assert evidence_row["source_artifact_id"] == "32016R0679"
     assert evidence_row["source_unit_id"] == "op-dup"
-    assert evidence_row["strict_disposition"] == "block"
+    assert evidence_row["blocking"] is False
+    assert evidence_row["strict_disposition"] == "record"
     assert evidence_row["quirks_disposition"] == "record"
     assert evidence_row["evidence"]["as_of"] == "latest"
     assert validate_corpus_finding_evidence_row(evidence_row) == ()
