@@ -197,6 +197,12 @@ def build_ee_replay_payload(
     if residual_summary is not None:
         residual_by_address = getattr(residual_summary, "record_by_address", {}) or {}
     adjudications = list(getattr(result, "adjudications", []) or [])
+    finding_rows = adjudication_finding_evidence_rows(
+        adjudications,
+        frontend_id="estonia",
+        base_id=result.base_id,
+        as_of=result.as_of,
+    )
     divergences = []
     for divergence in list(getattr(result, "divergences", []) or []):
         address = _address_to_str(getattr(divergence, "address", ""))
@@ -221,6 +227,9 @@ def build_ee_replay_payload(
         "ops_count": int(getattr(result, "n_ops", 0) or 0),
         "adjudications_count": len(adjudications),
         "adjudication_kind_counts": _adjudication_kind_counts(adjudications),
+        "evidence": {
+            "finding_rows": [row.to_dict() for row in finding_rows],
+        },
         "source": {
             "archive": archive_path,
             "index": None,
