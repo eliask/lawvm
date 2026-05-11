@@ -69,6 +69,7 @@ the architecture, keep it explanatory.
 
 - [VERIFICATION_PROPERTY_MAP.md](VERIFICATION_PROPERTY_MAP.md)
 - [AUDITOR_SPECS.md](AUDITOR_SPECS.md)
+- [CORPUS_REPLAY_EVIDENCE_CONTRACT.md](CORPUS_REPLAY_EVIDENCE_CONTRACT.md)
 
 ## Theory and Long-Term Design
 
