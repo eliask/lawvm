@@ -226,6 +226,15 @@ def _print_explain(args: Namespace) -> None:
             f"changed={row['changed_path_count']} unexplained={row['unexplained_path_count']} "
             f"snapshot_matches_replay={row['snapshot_matches_replay']}"
         )
+        evidence_row = row.get("evidence_row")
+        if isinstance(evidence_row, dict):
+            print(
+                "  evidence: "
+                f"status={evidence_row.get('status', '')} "
+                f"canonical={evidence_row.get('canonical_family', '') or '-'} "
+                f"strict={evidence_row.get('strict_disposition', '')} "
+                f"quirks={evidence_row.get('quirks_disposition', '')}"
+            )
         for finding in row["findings"]:
             print(f"  finding {finding['kind']}: {finding['message']}")
 
