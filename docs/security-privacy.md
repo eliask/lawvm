@@ -28,14 +28,16 @@ record local clone identity in the generated evidence-pack manifest.
 ## Recommended Pre-Release Scan
 
 ```bash
-git status --short
-git ls-files
-rg -n "(api[_-]?key|secret|token|password|BEGIN PRIVATE KEY|Inbox|External)" .
-find . -type f -size +25M -not -path "./.git/*"
+./scripts/release_hygiene.sh
 ```
 
-The final scan should be run after cleaning or excluding `.tmp/`, `data/`,
-cache directories, and generated databases.
+For local iteration before the worktree is clean:
+
+```bash
+./scripts/release_hygiene.sh --allow-dirty
+```
+
+The final scan should be run on a clean release commit.
 
 ## Legal-Use Boundary
 
