@@ -1,5 +1,5 @@
 {
-  "sfs_id": "<IDENTIFIER>",
+  "jurisdiction_source_id": "<IDENTIFIER>",
   "title": "<OFFICIAL TITLE>",
   "act_type": "<ACT TYPE>",
   "issued_date": "",
@@ -11,6 +11,13 @@
     "official_pdf_url": "",
     "register_url": ""
   },
+  "local_substrate": {
+    "kind": "archive",
+    "path": "data/<code>/<archive>.zip",
+    "archive_member": "<member path>",
+    "content_sha256": "<sha256>"
+  },
+  "artifact_role": "primary",
   "source_confidence": "CURRENT_TEXT_ONLY",
   "source_text_kind": "current_consolidated_html",
   "notes": [

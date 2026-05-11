@@ -1,0 +1,33 @@
+{
+  "kind": "<code>_evidence_pack_summary",
+  "contract_version": "corpus_replay_evidence_v0",
+  "evidence_pack_id": "evidence-pack-example-1",
+  "run_id": "<RUN ID>",
+  "frontend_id": "<code>",
+  "inventory_manifest": "inventory_manifest.example.json",
+  "findings_jsonl": "findings.example.jsonl",
+  "claim_summary": {
+    "artifacts_inventoried": 1,
+    "source_units_discovered": 2,
+    "operation_effect_rows": 3,
+    "accepted_operation_effect_rows": 1,
+    "replay_attempts": 1,
+    "replay_successes": 1,
+    "audit_rows": 1,
+    "verified_matches": 0
+  },
+  "non_claim_summary": {
+    "source_units_skipped": 1,
+    "operation_effect_rows_unsupported": 1,
+    "operation_effect_rows_rejected": 1,
+    "replay_failures": 0,
+    "audit_mismatches": 1,
+    "unresolved_rows": 1,
+    "blocking_findings": 2
+  },
+  "disposition_counts": {
+    "strict_block": 2,
+    "quirks_skip_with_finding": 2,
+    "record_only": 1
+  }
+}

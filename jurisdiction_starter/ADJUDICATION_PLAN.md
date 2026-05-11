@@ -8,6 +8,9 @@ The goal is to stop three different problems from being collapsed into one vague
 2. compare-shape / oracle-shape noise,
 3. replay defect.
 
+It also prevents unsupported, skipped, and rejected source lanes from
+disappearing merely because they are not replay claims.
+
 ---
 
 ## 1. Core rule
@@ -52,6 +55,19 @@ Examples:
 - wrong renumber order,
 - text-replace miss on found target.
 
+### D. Unsupported / skipped / rejected
+Used when the frontend recognizes a source unit, lane, effect, or operation but
+does not accept it as an executable replay claim.
+
+Examples:
+- source lane inventoried but not parsed in the current milestone,
+- recognized operation family is not implemented,
+- language/applicability/body-coverage constraint rejects a parsed row,
+- source unit is skipped before parsing for a declared reason.
+
+These rows are evidence, not successes. They must link to `findings.jsonl` with
+a stable `rule_id`, blocking status, and strict/quirks disposition.
+
 ---
 
 ## 3. Shared-first policy
@@ -84,6 +100,9 @@ If a local kind exists only because the shared kind does not yet exist, say so e
 | replay invariant broken | P8 | replay defect |
 | oracle collapsed wrapper | P9 | compare-shape |
 | sparse source history | P9/P10 | source-sparse / source pathology |
+| skipped inventory unit | P0/P1 | skipped / source pathology |
+| rejected parsed operation | P7/P8 | rejected / source pathology or replay defect |
+| unsupported source lane | P0/P4/P7 | unsupported |
 
 ---
 
@@ -115,9 +134,15 @@ When verification diverges, the report should try to partition into:
 - source_sparse
 - untouched_drift
 - blocked / unsupported
+- skipped
+- rejected
 - error
 
 Define how this jurisdiction will detect each partition.
+
+Non-claim rows must remain separate from replay claims in evidence-pack
+summaries. A row that is unsupported, skipped, or rejected is not a verified
+match even if the final text happens to align with the oracle.
 
 ---
 

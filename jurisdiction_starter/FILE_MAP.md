@@ -13,6 +13,7 @@ src/lawvm/<code>/
     __init__.py
     sources.py
     inventory.py
+    evidence.py             # row/finding/evidence-pack emitters
     fetch.py                # only if live/public fetch is part of the boundary
     grafter.py              # parse current / official artifacts into IR or intermediate surfaces
     replay.py
@@ -33,6 +34,8 @@ Owns:
 - locators,
 - archive iteration,
 - raw artifact loading.
+- local substrate identity: content hashes, git objects, archive members, or
+  fixture paths.
 
 Must not own:
 - replay semantics,
@@ -44,10 +47,23 @@ Owns:
 - source inventory,
 - status summaries,
 - replayability classification at source level.
+- omitted, skipped, unsupported, and blocked source-unit rows.
 
 Must not own:
 - detailed replay,
 - semantic lowering.
+
+### `evidence.py`
+Owns:
+- operation/effect row serialization,
+- replay and audit row serialization,
+- findings JSONL emission,
+- evidence-pack claim/non-claim summaries.
+
+Must not own:
+- parsing doctrine,
+- source authority decisions,
+- replay mutation semantics.
 
 ### `fetch.py`
 Owns:
@@ -91,6 +107,7 @@ Owns:
 - replay-vs-oracle comparison,
 - divergence partitioning,
 - coverage summaries.
+- audit rows and evidence-pack verification summaries.
 
 Must not own:
 - raw effect compilation.
@@ -111,12 +128,13 @@ Recommended order:
 
 1. `sources.py`
 2. `inventory.py`
-3. `grafter.py` current IR
-4. official-act / structured-amendment parse in `grafter.py` or split module
-5. `replay.py`
-6. `verify.py`
-7. `commencement.py`
-8. `source_adjudication.py` refinement and partitioning helpers
+3. `evidence.py` minimal findings and summary emitters
+4. `grafter.py` current IR
+5. official-act / structured-amendment parse in `grafter.py` or split module
+6. `replay.py`
+7. `verify.py`
+8. `commencement.py`
+9. `source_adjudication.py` refinement and partitioning helpers
 
 ---
 

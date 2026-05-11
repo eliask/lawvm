@@ -24,6 +24,9 @@ Examples:
 ### Layer B. Golden fixture tests
 Does a small fixed source bundle produce the expected artifacts across multiple phases?
 
+The bundle must include the local source substrate and expected
+`inventory_manifest.json`, not only final parsed output.
+
 ### Layer C. End-to-end replay tests
 Given a base seed and amending source, does replay reach the expected post-state?
 
@@ -58,6 +61,8 @@ The eval suite must guard against these failure modes:
 - using current consolidated text as the replay base when measuring historical replay,
 - using the same artifact as both replay substrate and oracle,
 - silently skipping hard ops and counting the case as success,
+- dropping rejected or unsupported rows from reports,
+- omitting skipped source units from inventory,
 - accepting benchmark improvements caused only by compare normalization,
 - hiding unsupported cases outside the eval corpus.
 
@@ -70,12 +75,14 @@ State how this jurisdiction’s evals prevent those.
 Choose a small set of metrics.
 
 Recommended:
+- inventory coverage count,
 - artifact parse pass rate,
 - canonical-effect compilation pass rate,
 - replay success rate,
 - verified end-state match rate,
 - divergence partition counts,
-- unsupported/blocked rate.
+- unsupported/skipped/rejected/blocked rate,
+- blocking findings count.
 
 Do not use a single vanity metric.
 
@@ -101,6 +108,7 @@ If the jurisdiction needs extra buckets, add them here.
 
 ### Gate 1: source-legible
 - inventory exists
+- inventory includes skipped/omitted units with reasons
 - source record fixtures pass
 - acquisition and locators are archived
 
@@ -113,16 +121,19 @@ If the jurisdiction needs extra buckets, add them here.
 - official-act / structured-amendment fixtures pass
 - clause/payload/effect artifacts exist
 - unsupported cases are typed
+- rejected operation/effect rows are preserved with source locators
 
 ### Gate 4: replay-legible
 - replay fixtures pass
 - skips become adjudications
 - invariants are checked
+- failures and mutation-boundary violations become findings
 
 ### Gate 5: oracle-legible
 - verification exists
 - partitions are stable
 - source-sparse and replay-defect are not conflated
+- evidence-pack summary reports claim and non-claim counts separately
 
 ---
 
@@ -142,6 +153,12 @@ A benchmark set that contains only successes is not useful.
 ## 8. Reporting outputs
 
 Expected artifacts:
+- `inventory_manifest.json`
+- `operation_effect_rows.jsonl`
+- `replay_rows.jsonl`
+- `audit_rows.jsonl`
+- `findings.jsonl`
+- `evidence_pack_summary.json`
 - `fixture_report.json`
 - `compile_report.json`
 - `replay_report.json`

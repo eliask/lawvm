@@ -34,6 +34,7 @@ Bad:
 List exact artifact(s) or source family(s).
 
 - Input artifact:
+- Local substrate path / manifest:
 - Source family:
 - Example fixture(s):
 
@@ -45,6 +46,10 @@ List exact artifact(s) the task must produce.
 
 - Output artifact:
 - Output schema / file:
+- Inventory row impact:
+- Unsupported/skipped/rejected row impact:
+- Findings JSONL rule ids:
+- Evidence-pack summary impact:
 - New adjudications allowed:
 - Tests / report required:
 
@@ -64,8 +69,11 @@ State what this task must not attempt.
 Concrete pass conditions.
 
 - [ ] Artifact is serialized and inspectable
+- [ ] Inventory-first behavior is preserved
 - [ ] Fixture(s) added
 - [ ] Unsupported cases are typed, not hidden
+- [ ] Skipped and rejected cases are preserved, not hidden
+- [ ] Findings JSONL or explicit no-finding rationale is updated
 - [ ] No doctrine change required
 - [ ] Eval/report updated
 
@@ -79,6 +87,7 @@ Merge must be rejected if:
 - [ ] source honesty was weakened
 - [ ] current surface was used as historical proof
 - [ ] unsupported cases were silently treated as success
+- [ ] skipped or rejected rows disappeared from evidence outputs
 - [ ] adjudication ownership became ambiguous
 
 ---

@@ -5,6 +5,9 @@
   "effects": [
     {
       "effect_id": "e1",
+      "source_artifact_id": "artifact-amending-act-1",
+      "source_unit_id": "unit-amending-act-1-section-2",
+      "source_locator": "xml:/act/body/section[2]",
       "action": "replace",
       "target": {
         "path": [
@@ -15,9 +18,35 @@
         ],
         "special": null
       },
+      "target_scope_confidence": "explicit_source",
       "payload_kind": "section",
+      "status": "accepted",
+      "blocking": false,
+      "strict_disposition": "proceed",
+      "quirks_disposition": "proceed",
+      "finding_ids": [],
       "notes": [
         "example only"
+      ]
+    },
+    {
+      "effect_id": "e2",
+      "source_artifact_id": "artifact-amending-act-1",
+      "source_unit_id": "unit-amending-act-1-section-3",
+      "source_locator": "xml:/act/body/section[3]",
+      "action": "rename_marginal_note",
+      "target": null,
+      "target_scope_confidence": "unresolved",
+      "payload_kind": "metadata",
+      "status": "unsupported",
+      "blocking": true,
+      "strict_disposition": "block",
+      "quirks_disposition": "skip_with_finding",
+      "finding_ids": [
+        "finding-unsupported-metadata-family"
+      ],
+      "notes": [
+        "unsupported rows are preserved as non-claims"
       ]
     }
   ]

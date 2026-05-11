@@ -10,7 +10,7 @@ Do not merely say “supported” or “TODO”. State what artifact exists, who
 
 | Phase | Status | Artifact | Owner | First bounded implementation |
 |---|---|---|---|---|
-| P0 Capability/inventory |  |  |  |  |
+| P0 Capability/inventory |  | `inventory_manifest.json` plus omitted/skipped rows |  |  |
 | P1 Acquisition/archive |  |  |  |  |
 | P2 Source record |  |  |  |  |
 | P3 Current IR parse |  |  |  |  |
@@ -21,7 +21,7 @@ Do not merely say “supported” or “TODO”. State what artifact exists, who
 | P8 Replay/materialization |  |  |  |  |
 | P9 Verification |  |  |  |  |
 | P10 Recovery/historical rebuild |  |  |  |  |
-| P11 Reporting/work queues |  |  |  |  |
+| P11 Reporting/work queues |  | `findings.jsonl`, evidence-pack summary, work queues |  |  |
 
 Allowed statuses:
 - `real`
@@ -38,6 +38,8 @@ For each phase, answer:
 
 - Input artifacts:
 - Output artifacts:
+- Row ids and source links:
+- Unsupported/skipped/rejected row behavior:
 - What this phase may claim:
 - What it may not claim:
 - Main failure modes:
@@ -76,11 +78,15 @@ Document every compression like that.
 
 List any compatibility behavior that will exist.
 
-| Behavior | Why needed | Lives in strict or quirks? | How it will be tested |
-|---|---|---|---|
-|  |  |  |  |
+| Behavior | Why needed | Strict disposition | Quirks disposition | Evidence row / finding | How it will be tested |
+|---|---|---|---|---|---|
+|  |  | block / fail / warn | proceed / warn / block |  |  |
 
 Rule: compare-only normalization must not leak into replay semantics.
+
+Rule: strict and quirks modes may change disposition, but not evidence
+visibility. Unsupported, skipped, rejected, failed, and unresolved rows remain
+in row outputs and `findings.jsonl`.
 
 ---
 
@@ -121,11 +127,14 @@ The jurisdiction cannot claim the following until these are true.
 - P8 exists
 - replay skips are typed
 - invariants are enforced
+- operation/effect rows preserve accepted, rejected, unsupported, skipped, and
+  failed statuses
 
 ### “Verified replay supported”
 - P9 exists
 - divergence partition distinguishes source-sparse vs replay-defect
 - benchmarks use independent oracle
+- evidence-pack summary separates claim rows from non-claim rows
 
 ### “Historical replay supported”
 - P10 strategy exists

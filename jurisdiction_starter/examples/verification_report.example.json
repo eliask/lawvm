@@ -4,18 +4,32 @@
   "replay_status": "replayed",
   "consistent": false,
   "divergence_count": 2,
+  "evidence_pack_id": "evidence-pack-example-1",
+  "local_substrate_manifest": "inventory_manifest.example.json",
   "partitions": {
     "replay_defect": 1,
     "compare_shape_only": 0,
-    "source_sparse": 1
+    "source_sparse": 1,
+    "unsupported": 1,
+    "skipped": 1,
+    "rejected": 1
   },
   "rows": [
     {
+      "audit_row_id": "audit-1",
+      "replay_row_ids": [
+        "replay-1"
+      ],
+      "witness_artifact_id": "artifact-current-oracle-1",
+      "witness_role": "oracle",
       "target_kind": "section",
       "label": "3",
       "classification": "replay_defect",
       "replay_text": "...",
-      "oracle_text": "..."
+      "oracle_text": "...",
+      "finding_ids": [
+        "finding-replay-target-mismatch"
+      ]
     }
   ]
 }
