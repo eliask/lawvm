@@ -119,7 +119,11 @@ def test_ee_replay_main_emits_normalized_json(monkeypatch, capsys) -> None:
             n_mismatch=1,
             n_ops_missing=0,
             n_con_missing=0,
-            adjudications=[],
+            adjudications=[
+                SimpleNamespace(kind="ee_replay_unsupported_action"),
+                SimpleNamespace(kind="ee_replay_unsupported_action"),
+                SimpleNamespace(kind="ee_text_replace_ambiguous"),
+            ],
             replayed=None,
             timelines={},
         ),
@@ -142,6 +146,11 @@ def test_ee_replay_main_emits_normalized_json(monkeypatch, capsys) -> None:
     assert payload["oracle"]["available"] is True
     assert payload["oracle"]["comparison_class"] == "commensurable_delta"
     assert payload["consistency"]["divergence_count"] == 1
+    assert payload["adjudications_count"] == 3
+    assert payload["adjudication_kind_counts"] == {
+        "ee_replay_unsupported_action": 2,
+        "ee_text_replace_ambiguous": 1,
+    }
     assert payload["divergences"][0]["address"] == "chapter:1/section:6/subsection:2"
 
 
