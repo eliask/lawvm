@@ -75,6 +75,9 @@ uv run lawvm open-law evidence-pack \
 uv run lawvm open-law explain \
   --report-dir .tmp/open_law/evidence-pack \
   --limit 5
+
+uv run lawvm open-law verify-pack \
+  --report-dir .tmp/open_law/evidence-pack
 ```
 
 See [open-law-demo.md](open-law-demo.md) for the claim boundary and follow-up

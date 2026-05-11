@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from argparse import Namespace
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import irnode_to_text
@@ -16,6 +17,7 @@ from lawvm.open_law.codify import parse_open_law_codify_ops
 from lawvm.open_law.local_git import MarylandLocalRepos, make_maryland_repos
 from lawvm.open_law.models import OpenLawFinding, OpenLawOperation
 from lawvm.open_law.xml import parse_open_law_xml, wrap_open_law_body_with_prefix
+from lawvm.tools.report_query import load_report_query_records
 
 
 def main(args: Namespace) -> None:
@@ -38,10 +40,15 @@ def main(args: Namespace) -> None:
     if command == "evidence-pack":
         _print_evidence_pack(args)
         return
+    if command == "verify-pack":
+        _print_verify_pack(args)
+        return
     if command == "explain":
         _print_explain(args)
         return
-    raise SystemExit("open-law requires a subcommand: ops, replay, audit, inventory, corpus-audit, evidence-pack, or explain")
+    raise SystemExit(
+        "open-law requires a subcommand: ops, replay, audit, inventory, corpus-audit, evidence-pack, verify-pack, or explain"
+    )
 
 
 def _print_ops(args: Namespace) -> None:
@@ -207,6 +214,28 @@ def _print_evidence_pack(args: Namespace) -> None:
     print(f"wrote {pack.summary_path}")
 
 
+def _print_verify_pack(args: Namespace) -> None:
+    report_dir = Path(args.report_dir)
+    result = _verify_evidence_pack(report_dir)
+    if args.json:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    else:
+        print(
+            " ".join(
+                (
+                    f"files={result['files']}",
+                    f"operation_rows={result['operation_rows']}",
+                    f"finding_rows={result['finding_rows']}",
+                    f"issues={len(result['issues'])}",
+                )
+            )
+        )
+        for issue in result["issues"]:
+            print(f"  issue: {issue}")
+    if result["issues"]:
+        raise SystemExit(1)
+
+
 def _print_explain(args: Namespace) -> None:
     report_dir = Path(args.report_dir)
     rows = _read_jsonl(report_dir / "operation_audits.jsonl")
@@ -279,6 +308,66 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         raise SystemExit(f"missing Open Law report file: {path}")
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _verify_evidence_pack(report_dir: Path) -> dict[str, Any]:
+    issues: list[str] = []
+    artifact_manifest_path = report_dir / "evidence_pack_manifest.json"
+    if not artifact_manifest_path.exists():
+        issues.append(f"missing {artifact_manifest_path}")
+        return {"files": 0, "operation_rows": 0, "finding_rows": 0, "issues": issues}
+
+    manifest = json.loads(artifact_manifest_path.read_text(encoding="utf-8"))
+    files_raw = manifest.get("files") if isinstance(manifest, Mapping) else None
+    files = files_raw if isinstance(files_raw, list) else []
+    if not files:
+        issues.append("evidence_pack_manifest.json has no files list")
+
+    verified_files = 0
+    for file_record in files:
+        if not isinstance(file_record, Mapping):
+            issues.append("evidence_pack_manifest.json contains a non-object file record")
+            continue
+        path_value = file_record.get("path")
+        bytes_value = file_record.get("bytes")
+        sha256_value = file_record.get("sha256")
+        if not isinstance(path_value, str) or not isinstance(bytes_value, int) or not isinstance(sha256_value, str):
+            issues.append(f"invalid artifact manifest file record: {file_record!r}")
+            continue
+        if Path(path_value).is_absolute() or ".." in Path(path_value).parts:
+            issues.append(f"unsafe artifact manifest path: {path_value}")
+            continue
+        artifact_path = report_dir / path_value
+        if not artifact_path.exists():
+            issues.append(f"missing artifact: {path_value}")
+            continue
+        data = artifact_path.read_bytes()
+        if len(data) != bytes_value:
+            issues.append(f"byte count mismatch for {path_value}: expected {bytes_value}, got {len(data)}")
+        digest = hashlib.sha256(data).hexdigest()
+        if digest != sha256_value:
+            issues.append(f"sha256 mismatch for {path_value}: expected {sha256_value}, got {digest}")
+        verified_files += 1
+
+    operation_records = _load_pack_report_rows(report_dir / "operation_audits.jsonl", issues)
+    finding_records = _load_pack_report_rows(report_dir / "findings.jsonl", issues)
+    for record in (*operation_records, *finding_records):
+        for issue in record.validation_issues:
+            issues.append(f"{record.source_path}:{record.line_no}: {issue}")
+
+    return {
+        "files": verified_files,
+        "operation_rows": len(operation_records),
+        "finding_rows": len(finding_records),
+        "issues": issues,
+    }
+
+
+def _load_pack_report_rows(path: Path, issues: list[str]) -> tuple[Any, ...]:
+    if not path.exists():
+        issues.append(f"missing {path}")
+        return ()
+    return load_report_query_records((path,), validate=True)
 
 
 def _select_explain_rows(
