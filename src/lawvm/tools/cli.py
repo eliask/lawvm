@@ -46,6 +46,7 @@ Subcommands:
     ee-explain                      Single-statute deep-dive (divergences + residual buckets + source chain).
     ee-publication-db               Build Estonia divergence SQLite DB from current replayable corpus.
     residual-ledger validate|row    Validate or scaffold Finland residual-ledger CSV rows.
+    report query                    Query shared evidence-row JSONL reports.
     destructive-repair-ledger       Emit the seeded Tranche 0 destructive-repair family ledger.
     ee-inspect-source               Inspect one EE source act, target filtering, and compiled ops.
     ee-corpus acquire|curate|current|replayable|stats  Acquire, curate, or show stats for Estonia corpus artifacts.
@@ -5333,6 +5334,31 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     ep_p.add_argument("--limit", type=int, metavar="N", help="process only first N statutes")
 
+    # --- report ---
+    report_p = sub.add_parser(
+        "report",
+        help="query shared LawVM evidence-row JSONL reports",
+        description=(
+            "Read JSONL report files that either are shared evidence rows or contain an "
+            "evidence_row object. This command filters only the shared evidence envelope; "
+            "frontend-specific rendering remains with frontend tools."
+        ),
+    )
+    report_sub = report_p.add_subparsers(dest="report_command", metavar="<report-command>")
+    report_query_p = report_sub.add_parser("query", help="filter shared evidence-row JSONL reports")
+    report_query_p.add_argument("paths", nargs="+", help="JSONL report path(s)")
+    report_query_p.add_argument("--row-id", default="", metavar="ID", help="operation row_id or finding_id")
+    report_query_p.add_argument("--status", default="", metavar="STATUS", help="shared row status")
+    report_query_p.add_argument("--rule-id", default="", metavar="RULE", help="finding rule_id or operation finding_id")
+    report_query_p.add_argument("--phase", default="", metavar="PHASE", help="finding/report phase")
+    report_query_p.add_argument("--source-artifact", default="", metavar="ID", help="source artifact id")
+    report_query_p.add_argument("--source-unit", default="", metavar="ID", help="source unit id")
+    report_query_p.add_argument("--locator", default="", metavar="LOC", help="source locator or evidence codify_path")
+    report_query_p.add_argument("--blocking", action="store_true", help="keep only blocking rows")
+    report_query_p.add_argument("--limit", type=int, default=20, metavar="N", help="maximum rows to emit")
+    report_query_p.add_argument("--validate", action="store_true", help="validate selected rows against the shared envelope")
+    report_query_p.add_argument("--json", action="store_true", help="emit JSON")
+
     # --- open-law ---
     open_law_p = sub.add_parser(
         "open-law",
@@ -6307,6 +6333,11 @@ def main() -> None:
         from lawvm.tools.open_law import main as open_law_main
 
         open_law_main(args)
+
+    elif args.command == "report":
+        from lawvm.tools.report_query import main as report_query_main
+
+        report_query_main(args)
 
     elif args.command == "sql":
         from lawvm.tools.sql_query import main as sql_main
