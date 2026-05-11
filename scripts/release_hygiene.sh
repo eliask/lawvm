@@ -23,11 +23,11 @@ if [ "$ALLOW_DIRTY" = "0" ] && [ -n "$(git status --short)" ]; then
     exit 1
 fi
 
-echo "=== [1/5] release docs ==="
+echo "=== [1/6] release docs ==="
 uv run python -m pytest tests/test_release_docs.py -q --override-ini="addopts="
 
 echo ""
-echo "=== [2/5] package build metadata ==="
+echo "=== [2/6] package build metadata ==="
 build_log="$(mktemp .tmp/release-build-log.XXXXXX)"
 tmp_build_dir="$(mktemp -d .tmp/release-build.XXXXXX)"
 trap 'rm -rf "$tmp_build_dir" "$build_log"' EXIT
@@ -120,7 +120,7 @@ PY
 echo "PASS: package build metadata"
 
 echo ""
-echo "=== [3/5] credential patterns in tracked files ==="
+echo "=== [3/6] credential patterns in tracked files ==="
 python3 - <<'PY'
 from __future__ import annotations
 
@@ -160,7 +160,7 @@ print("PASS: no credential-like tracked-file literals")
 PY
 
 echo ""
-echo "=== [4/5] developer-local paths in tracked files ==="
+echo "=== [4/6] developer-local paths in tracked files ==="
 python3 - <<'PY'
 from __future__ import annotations
 
@@ -194,7 +194,46 @@ print("PASS: no developer-local tracked-file paths")
 PY
 
 echo ""
-echo "=== [5/5] large tracked files ==="
+echo "=== [5/6] tracked generated/local artifact paths ==="
+python3 - <<'PY'
+from __future__ import annotations
+
+import subprocess
+from pathlib import PurePosixPath
+
+forbidden_prefixes = (
+    ".tmp/",
+    ".pytest_cache/",
+    ".mypy_cache/",
+    ".ruff_cache/",
+)
+forbidden_suffixes = (
+    ".farchive",
+    ".sqlite",
+    ".sqlite3",
+    ".db",
+    ".duckdb",
+    ".parquet",
+)
+forbidden_names = {
+    "lawvm-release.tar.gz",
+}
+offenders: list[str] = []
+for raw in subprocess.check_output(("git", "ls-files", "-z")).split(b"\0"):
+    if not raw:
+        continue
+    name = raw.decode()
+    path = PurePosixPath(name)
+    if name.startswith(forbidden_prefixes) or name.endswith(forbidden_suffixes) or path.name in forbidden_names:
+        offenders.append(name)
+if offenders:
+    print("\n".join(offenders))
+    raise SystemExit("FAIL: tracked generated/local artifact paths found")
+print("PASS: no tracked generated/local artifact paths")
+PY
+
+echo ""
+echo "=== [6/6] large tracked files ==="
 python3 - <<'PY'
 from __future__ import annotations
 
