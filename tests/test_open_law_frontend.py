@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 
@@ -604,6 +605,7 @@ def test_evidence_pack_writes_summary_and_machine_reports(tmp_path) -> None:
 
     assert pack.report.summary["matched"] == 1
     assert (tmp_path / "pack" / "manifest.json").exists()
+    assert (tmp_path / "pack" / "evidence_pack_manifest.json").exists()
     assert (tmp_path / "pack" / "operation_audits.jsonl").exists()
     assert (tmp_path / "pack" / "findings.jsonl").exists()
     summary_text = pack.summary_path.read_text(encoding="utf-8")
@@ -618,6 +620,20 @@ def test_evidence_pack_writes_summary_and_machine_reports(tmp_path) -> None:
     assert manifest["local_repositories"]["source"]["remotes"] == []
     assert manifest["local_repositories"]["codified"]["label"] == "maryland-dsd/law-xml-codified"
     assert len(manifest["local_repositories"]["codified"]["head_commit"]) == 40
+    artifact_manifest = json.loads(pack.artifact_manifest_path.read_text(encoding="utf-8"))
+    artifact_paths = {item["path"] for item in artifact_manifest["files"]}
+    assert artifact_paths == {
+        "manifest.json",
+        "summary.json",
+        "operation_audits.jsonl",
+        "findings.jsonl",
+        "exemplars.json",
+        "summary.md",
+    }
+    assert all(len(item["sha256"]) == 64 for item in artifact_manifest["files"])
+    operation_audits_entry = next(item for item in artifact_manifest["files"] if item["path"] == "operation_audits.jsonl")
+    operation_audits_bytes = (tmp_path / "pack" / "operation_audits.jsonl").read_bytes()
+    assert operation_audits_entry["sha256"] == hashlib.sha256(operation_audits_bytes).hexdigest()
     operation_rows = [
         json.loads(line)
         for line in (tmp_path / "pack" / "operation_audits.jsonl").read_text(encoding="utf-8").splitlines()

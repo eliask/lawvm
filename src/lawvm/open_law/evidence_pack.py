@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +27,7 @@ class OpenLawEvidencePack:
     report: OpenLawCorpusAuditReport
     summary_path: Path
     exemplars_path: Path
+    artifact_manifest_path: Path
 
 
 class EvidenceRowSummary(TypedDict):
@@ -67,11 +69,23 @@ def write_maryland_evidence_pack(
         _summary_markdown(manifest, report, exemplars, strict=strict),
         encoding="utf-8",
     )
+    artifact_manifest_path = _write_artifact_manifest(
+        out_dir,
+        (
+            "manifest.json",
+            "summary.json",
+            "operation_audits.jsonl",
+            "findings.jsonl",
+            "exemplars.json",
+            "summary.md",
+        ),
+    )
     return OpenLawEvidencePack(
         out_dir=out_dir,
         report=report,
         summary_path=summary_path,
         exemplars_path=exemplars_path,
+        artifact_manifest_path=artifact_manifest_path,
     )
 
 
@@ -199,6 +213,8 @@ def _summary_markdown(
             "## Files",
             "",
             "- `manifest.json`: local clone inventory",
+            "- `evidence_pack_manifest.json`: generated artifact checksums",
+            "- `summary.json`: machine-readable corpus summary counts",
             "- `operation_audits.jsonl`: one row per audited operation",
             "- `findings.jsonl`: one row per emitted finding",
             "- `exemplars.json`: selected demo rows",
@@ -207,6 +223,25 @@ def _summary_markdown(
         ]
     )
     return "\n".join(lines)
+
+
+def _write_artifact_manifest(out_dir: Path, file_names: Tuple[str, ...]) -> Path:
+    """Write checksums for generated evidence-pack artifacts."""
+
+    files: list[dict[str, object]] = []
+    for name in file_names:
+        path = out_dir / name
+        data = path.read_bytes()
+        files.append(
+            {
+                "path": name,
+                "bytes": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            }
+        )
+    manifest_path = out_dir / "evidence_pack_manifest.json"
+    manifest_path.write_text(json.dumps({"files": files}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return manifest_path
 
 
 def _sized_len(value: object) -> int:
