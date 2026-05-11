@@ -585,7 +585,11 @@ def verify_no_against_current(
                 else (
                     "blocked_unknown"
                     if replay.amendments_skipped_unknown_effective
-                    else "replayed"
+                    else (
+                        "blocked_missing_source"
+                        if replay.amendments_skipped_missing_source
+                        else "replayed"
+                    )
                 )
             )
         ),

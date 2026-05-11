@@ -5,7 +5,7 @@ import json
 import tarfile
 
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.norway.index import build_no_amendment_index, save_no_amendment_index
+from lawvm.norway.index import NOAmendmentIndex, NOAmendmentIndexEntry, build_no_amendment_index, save_no_amendment_index
 from lawvm.norway.replay import _effective_date_from_amendment, replay_no_to_pit
 from lawvm.tools.replay_payloads import build_no_replay_payload
 
@@ -254,6 +254,52 @@ def test_replay_no_to_pit_marks_unknown_effective_dates(tmp_path) -> None:
     assert result.amendments_applied == []
     assert result.amendments_skipped_unknown_effective == ["no/lovtid/2025-02-02-5"]
     assert result.n_ops == 0
+
+
+def test_replay_no_to_pit_marks_missing_source_separately(tmp_path) -> None:
+    archive_path = tmp_path / "lovtidend-avd1-2001-2025.tar.bz2"
+    _write_archive(
+        archive_path,
+        [
+            ("lti/2025/nl-20250101-001.xml", _BASE_XML),
+        ],
+    )
+    index = NOAmendmentIndex(
+        data_dir=str(tmp_path),
+        entries=[
+            NOAmendmentIndexEntry(
+                source_id="no/lovtid/2025-02-02-5",
+                archive="lovtidend-avd1-2001-2025.tar.bz2",
+                member_name="lti/2025/nl-20250202-005.xml",
+                effective_status="date",
+                effective_date="2025-02-10",
+                base_ids=("no/lov/2025-01-01-1",),
+                n_ops=1,
+            )
+        ],
+    )
+
+    result = replay_no_to_pit(
+        "no/lov/2025-01-01-1",
+        as_of="2025-12-31",
+        data_dir=tmp_path,
+        index=index,
+    )
+
+    assert result.error is None
+    assert result.amendments_applied == []
+    assert result.amendments_skipped_unknown_effective == []
+    assert result.amendments_skipped_missing_source == ["no/lovtid/2025-02-02-5"]
+    assert [(item.kind, item.source_statute, item.detail["phase"]) for item in result.adjudications] == [
+        ("no_replay_missing_amendment_source", "no/lovtid/2025-02-02-5", "acquisition")
+    ]
+    payload = build_no_replay_payload(result)
+    assert payload["amendment_counts"]["unknown_effective"] == 0
+    assert payload["amendment_counts"]["missing_source"] == 1
+    assert payload["skipped_amendments"]["missing_source"] == ["no/lovtid/2025-02-02-5"]
+    assert payload["adjudication_kind_counts"] == {
+        "no_replay_missing_amendment_source": 1
+    }
 
 
 def test_effective_date_from_amendment_marks_contingent_force() -> None:

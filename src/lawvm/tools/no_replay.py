@@ -65,7 +65,8 @@ def main(args: "argparse.Namespace") -> None:
           f"{len(result.amendments_applied)} applied | "
           f"{len(result.amendments_skipped_future)} future | "
           f"{len(result.amendments_skipped_contingent)} contingent | "
-          f"{len(result.amendments_skipped_unknown_effective)} unknown-effective")
+          f"{len(result.amendments_skipped_unknown_effective)} unknown-effective | "
+          f"{len(result.amendments_skipped_missing_source)} missing-source")
     print(f"  ops       : {result.n_ops}")
 
     if result.amendments_applied:
@@ -79,6 +80,10 @@ def main(args: "argparse.Namespace") -> None:
     if result.amendments_skipped_unknown_effective:
         print("  skipped (unknown effective date):")
         for source_id in result.amendments_skipped_unknown_effective:
+            print(f"    {source_id}")
+    if result.amendments_skipped_missing_source:
+        print("  skipped (missing amendment source):")
+        for source_id in result.amendments_skipped_missing_source:
             print(f"    {source_id}")
 
     if getattr(args, "show_text", False) and result.replayed is not None:
