@@ -5,6 +5,7 @@ import pytest
 import warnings
 from types import SimpleNamespace
 
+from lawvm.core.evidence_contracts import validate_corpus_finding_evidence_row
 from lawvm.tools.classify_result import ClassifyResult
 from lawvm.tools._evidence_helpers import (
     _cross_chapter_same_label_oracle_matches,
@@ -29,6 +30,7 @@ from lawvm.tools.evidence import (
     build_evidence_bundle,
     build_oracle_proof_bundle,
     main,
+    _review_bundles,
 )
 from lawvm.tools.evidence_claims import build_section_claims_typed
 from lawvm.tools.evidence_statute_rules import build_proof_claims_typed
@@ -3396,6 +3398,66 @@ def test_build_evidence_bundle_records_context_degradation(monkeypatch) -> None:
         ("section_strict_verdicts", "RuntimeError", "strict rail offline"),
         ("chain_completeness", "RuntimeError", "chain rail offline"),
     }
+    rows = bundle["evidence"]["finding_rows"]
+    assert {
+        (row["rule_id"], row["phase"], row["source_artifact_id"])
+        for row in rows
+    } >= {
+        ("evidence_context_degraded:section_strict_verdicts", "evidence_context", "1990/1295"),
+        ("evidence_context_degraded:chain_completeness", "evidence_context", "1990/1295"),
+    }
+    assert all(validate_corpus_finding_evidence_row(row) == () for row in rows)
+
+
+def test_evidence_review_filters_context_degradation() -> None:
+    bundles = [
+        {
+            "statute_id": "1990/1295",
+            "title": "A",
+            "primary_proof_tier": "UNRESOLVED",
+            "proof_tiers": ["UNRESOLVED"],
+            "proof_claims": [],
+            "section_claims": [],
+            "strict_fail_reasons": [],
+            "compiler_observations": {},
+            "source_pathologies": [],
+            "html_topology": {},
+            "evidence_context_diagnostics": [
+                {
+                    "kind": "evidence_context_degraded",
+                    "rail": "chain_completeness",
+                    "exception_type": "RuntimeError",
+                    "message": "chain rail offline",
+                }
+            ],
+        },
+        {
+            "statute_id": "1991/1",
+            "title": "B",
+            "primary_proof_tier": "UNRESOLVED",
+            "proof_tiers": ["UNRESOLVED"],
+            "proof_claims": [],
+            "section_claims": [],
+            "strict_fail_reasons": [],
+            "compiler_observations": {},
+            "source_pathologies": [],
+            "html_topology": {},
+            "evidence_context_diagnostics": [],
+        },
+    ]
+
+    review = _review_bundles(
+        bundles,
+        evidence_context_degraded_only=True,
+        evidence_context_rail="chain_completeness",
+    )
+
+    assert review["selected_count"] == 1
+    assert review["evidence_context_degraded_count"] == 1
+    assert review["by_evidence_context_degradation_rail"] == {"chain_completeness": 1}
+    assert review["by_evidence_context_degradation_exception"] == {"RuntimeError": 1}
+    assert review["rows"][0]["evidence_context_degradation_count"] == 1
+    assert review["rows"][0]["evidence_context_degradation_rails"] == ["chain_completeness"]
 
 
 def test_normalize_observation_streams_keeps_apply_mutations_unowned_without_resolved_target() -> None:

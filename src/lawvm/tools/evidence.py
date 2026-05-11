@@ -127,6 +127,36 @@ def _evidence_context_degradation(rail: str, exc: Exception) -> Dict[str, str]:
     }
 
 
+def _evidence_context_degradation_rows(
+    *,
+    statute_id: str,
+    mode: str,
+    diagnostics: List[Dict[str, str]],
+) -> List[Dict[str, Any]]:
+    from lawvm.core.evidence_contracts import CorpusFindingEvidenceRow
+
+    rows: List[Dict[str, Any]] = []
+    for diagnostic in diagnostics:
+        rail = str(diagnostic.get("rail") or "unknown")
+        rule_id = f"evidence_context_degraded:{rail}"
+        rows.append(
+            CorpusFindingEvidenceRow(
+                finding_id=f"finland:{statute_id}:{mode}:{rule_id}",
+                frontend_id="finland",
+                family="evidence_context_degraded",
+                rule_id=rule_id,
+                phase="evidence_context",
+                message=str(diagnostic.get("message") or "evidence context rail degraded"),
+                source_artifact_id=statute_id,
+                blocking=True,
+                strict_disposition="block",
+                quirks_disposition="record_degraded",
+                evidence=dict(diagnostic),
+            ).to_dict()
+        )
+    return rows
+
+
 def _witness_for_op(op: object) -> object | None:
     """Return the preferred witness payload for reporting.
 
@@ -758,6 +788,20 @@ def _claim_trigger_pairs(claims: Iterable[Dict]) -> List[str]:
     return sorted(pairs)
 
 
+def _evidence_context_diagnostics(bundle: Dict) -> List[Dict[str, str]]:
+    diagnostics: List[Dict[str, str]] = []
+    for item in bundle.get("evidence_context_diagnostics", []) or []:
+        if not isinstance(item, dict):
+            continue
+        diagnostics.append({
+            "kind": str(item.get("kind") or ""),
+            "rail": str(item.get("rail") or ""),
+            "exception_type": str(item.get("exception_type") or ""),
+            "message": str(item.get("message") or ""),
+        })
+    return diagnostics
+
+
 def _bundle_matches_filters(
     bundle: Dict,
     *,
@@ -785,6 +829,8 @@ def _bundle_matches_filters(
     source_pathology_diagnostic_reason: str = "",
     alternative_replay_section: str = "",
     html_noncommensurable_reason: str = "",
+    evidence_context_degraded_only: bool = False,
+    evidence_context_rail: str = "",
 ) -> bool:
     if primary_tier and str(bundle.get("primary_proof_tier") or "") != primary_tier:
         return False
@@ -944,6 +990,13 @@ def _bundle_matches_filters(
         ((bundle.get("html_topology") or {}).get("noncommensurable_reason") or "")
     ) != html_noncommensurable_reason:
         return False
+    evidence_context_diagnostics = _evidence_context_diagnostics(bundle)
+    if evidence_context_degraded_only and not evidence_context_diagnostics:
+        return False
+    if evidence_context_rail and evidence_context_rail not in {
+        diagnostic["rail"] for diagnostic in evidence_context_diagnostics if diagnostic["rail"]
+    }:
+        return False
     if trigger_source or trigger_field:
         matched = False
         for claim in claims:
@@ -990,6 +1043,8 @@ def _review_bundles(
     source_pathology_diagnostic_reason: str = "",
     alternative_replay_section: str = "",
     html_noncommensurable_reason: str = "",
+    evidence_context_degraded_only: bool = False,
+    evidence_context_rail: str = "",
     actionable_unresolved_only: bool = False,
     nontrivial_unresolved_only: bool = False,
     mixed_replay_risk_only: bool = False,
@@ -1034,6 +1089,8 @@ def _review_bundles(
     by_source_pathology_diagnostic_reason: Counter[str] = Counter()
     by_alternative_replay_section: Counter[str] = Counter()
     by_html_noncommensurable_reason: Counter[str] = Counter()
+    by_evidence_context_degradation_rail: Counter[str] = Counter()
+    by_evidence_context_degradation_exception: Counter[str] = Counter()
     by_unresolved_exclusion_reason: Counter[str] = Counter()
     by_mixed_replay_risk_reason: Counter[str] = Counter()
     by_trigger: Counter[str] = Counter()
@@ -1147,6 +1204,14 @@ def _review_bundles(
         html_noncomm_reason = str(((bundle.get("html_topology") or {}).get("noncommensurable_reason") or ""))
         if html_noncomm_reason:
             by_html_noncommensurable_reason[html_noncomm_reason] += 1
+        evidence_context_diagnostics = _evidence_context_diagnostics(bundle)
+        for diagnostic in evidence_context_diagnostics:
+            rail = diagnostic["rail"]
+            if rail:
+                by_evidence_context_degradation_rail[rail] += 1
+            exception_type = diagnostic["exception_type"]
+            if exception_type:
+                by_evidence_context_degradation_exception[exception_type] += 1
         artifact_summary = dict(bundle.get("artifact_summary") or {})
         for family, count in (artifact_summary.get("by_family") or {}).items():
             family_text = str(family or "")
@@ -1187,6 +1252,8 @@ def _review_bundles(
             source_pathology_diagnostic_reason=source_pathology_diagnostic_reason,
             alternative_replay_section=alternative_replay_section,
             html_noncommensurable_reason=html_noncommensurable_reason,
+            evidence_context_degraded_only=evidence_context_degraded_only,
+            evidence_context_rail=evidence_context_rail,
         ):
             continue
         proof_kinds = sorted(
@@ -1212,6 +1279,7 @@ def _review_bundles(
             }
         )
         source_pathologies = [item for item in (bundle.get("source_pathologies") or []) if isinstance(item, dict)]
+        evidence_context_diagnostics = _evidence_context_diagnostics(bundle)
         rows.append(
             {
                 "statute_id": str(bundle.get("statute_id") or ""),
@@ -1525,6 +1593,11 @@ def _review_bundles(
                 "html_noncommensurable_reason": str(
                     ((bundle.get("html_topology") or {}).get("noncommensurable_reason") or "")
                 ),
+                "evidence_context_degradation_count": len(evidence_context_diagnostics),
+                "evidence_context_degradation_rails": sorted(
+                    {diagnostic["rail"] for diagnostic in evidence_context_diagnostics if diagnostic["rail"]}
+                ),
+                "evidence_context_degradations": evidence_context_diagnostics,
                 "oracle_artifact_count": int(
                     (bundle.get("artifact_summary") or {}).get("total_artifact_count", 0) or 0
                 ),
@@ -1689,6 +1762,8 @@ def _review_bundles(
             "source_pathology_diagnostic_reason": source_pathology_diagnostic_reason,
             "alternative_replay_section": alternative_replay_section,
             "html_noncommensurable_reason": html_noncommensurable_reason,
+            "evidence_context_degraded_only": evidence_context_degraded_only,
+            "evidence_context_rail": evidence_context_rail,
             "actionable_unresolved_only": actionable_unresolved_only,
             "nontrivial_unresolved_only": nontrivial_unresolved_only,
             "mixed_replay_risk_only": mixed_replay_risk_only,
@@ -1720,6 +1795,8 @@ def _review_bundles(
         "by_source_pathology_diagnostic_reason": dict(sorted(by_source_pathology_diagnostic_reason.items())),
         "by_alternative_replay_section": dict(sorted(by_alternative_replay_section.items())),
         "by_html_noncommensurable_reason": dict(sorted(by_html_noncommensurable_reason.items())),
+        "by_evidence_context_degradation_rail": dict(sorted(by_evidence_context_degradation_rail.items())),
+        "by_evidence_context_degradation_exception": dict(sorted(by_evidence_context_degradation_exception.items())),
         "by_unresolved_exclusion_reason": dict(sorted(by_unresolved_exclusion_reason.items())),
         "by_mixed_replay_risk_reason": dict(sorted(by_mixed_replay_risk_reason.items())),
         "by_trigger": dict(sorted(by_trigger.items())),
@@ -1730,6 +1807,9 @@ def _review_bundles(
         "nontrivial_unresolved_count": sum(1 for row in rows if bool(row.get("nontrivial_unresolved", True))),
         "mixed_replay_risk_count": sum(1 for row in rows if bool(row.get("mixed_replay_risk"))),
         "ready_oracle_artifact_count": sum(int(row.get("ready_oracle_artifact_count") or 0) for row in rows),
+        "evidence_context_degraded_count": sum(
+            1 for row in rows if int(row.get("evidence_context_degradation_count") or 0) > 0
+        ),
         "error_rows": error_rows,
         "rows": rows[: max(limit, 0)],
     }
@@ -1960,6 +2040,8 @@ _REVIEW_COUNT_FIELDS = (
     "by_source_pathology_diagnostic_reason",
     "by_alternative_replay_section",
     "by_html_noncommensurable_reason",
+    "by_evidence_context_degradation_rail",
+    "by_evidence_context_degradation_exception",
     "by_oracle_artifact_family",
     "by_oracle_artifact_complexity",
     "by_oracle_artifact_gap",
@@ -2415,6 +2497,7 @@ def _merge_review_summary(acc: Dict, chunk: Dict) -> None:
     acc["actionable_unresolved_count"] += int(chunk.get("actionable_unresolved_count") or 0)
     acc["mixed_replay_risk_count"] += int(chunk.get("mixed_replay_risk_count") or 0)
     acc["ready_oracle_artifact_count"] += int(chunk.get("ready_oracle_artifact_count") or 0)
+    acc["evidence_context_degraded_count"] += int(chunk.get("evidence_context_degraded_count") or 0)
     acc["chain_complete_count"] += int(chunk.get("chain_complete_count") or 0)
     for field in _REVIEW_COUNT_FIELDS:
         dest = Counter(acc.get(field) or {})
@@ -2471,6 +2554,8 @@ def review_live_oracle_corpus(
     source_pathology_diagnostic_reason: str = "",
     alternative_replay_section: str = "",
     html_noncommensurable_reason: str = "",
+    evidence_context_degraded_only: bool = False,
+    evidence_context_rail: str = "",
     actionable_unresolved_only: bool = False,
     nontrivial_unresolved_only: bool = False,
     mixed_replay_risk_only: bool = False,
@@ -2561,6 +2646,8 @@ def review_live_oracle_corpus(
             "source_pathology_diagnostic_reason": source_pathology_diagnostic_reason,
             "alternative_replay_section": alternative_replay_section,
             "html_noncommensurable_reason": html_noncommensurable_reason,
+            "evidence_context_degraded_only": evidence_context_degraded_only,
+            "evidence_context_rail": evidence_context_rail,
             "actionable_unresolved_only": actionable_unresolved_only,
             "nontrivial_unresolved_only": nontrivial_unresolved_only,
             "mixed_replay_risk_only": mixed_replay_risk_only,
@@ -2589,6 +2676,8 @@ def review_live_oracle_corpus(
         "by_source_pathology_diagnostic_reason": {},
         "by_alternative_replay_section": {},
         "by_html_noncommensurable_reason": {},
+        "by_evidence_context_degradation_rail": {},
+        "by_evidence_context_degradation_exception": {},
         "by_oracle_artifact_family": {},
         "by_oracle_artifact_complexity": {},
         "by_oracle_artifact_gap": {},
@@ -2599,6 +2688,7 @@ def review_live_oracle_corpus(
         "actionable_unresolved_count": 0,
         "mixed_replay_risk_count": 0,
         "ready_oracle_artifact_count": 0,
+        "evidence_context_degraded_count": 0,
         "chain_complete_count": 0,
         "error_rows": [],
         "rows": [],
@@ -2693,6 +2783,8 @@ def review_live_oracle_corpus(
         source_pathology_diagnostic_reason=source_pathology_diagnostic_reason,
         alternative_replay_section=alternative_replay_section,
         html_noncommensurable_reason=html_noncommensurable_reason,
+        evidence_context_degraded_only=evidence_context_degraded_only,
+        evidence_context_rail=evidence_context_rail,
         actionable_unresolved_only=actionable_unresolved_only,
         nontrivial_unresolved_only=nontrivial_unresolved_only,
         mixed_replay_risk_only=mixed_replay_risk_only,
@@ -2850,6 +2942,8 @@ def review_bundle_artifacts(
     source_pathology_diagnostic_reason: str = "",
     alternative_replay_section: str = "",
     html_noncommensurable_reason: str = "",
+    evidence_context_degraded_only: bool = False,
+    evidence_context_rail: str = "",
     actionable_unresolved_only: bool = False,
     nontrivial_unresolved_only: bool = False,
     mixed_replay_risk_only: bool = False,
@@ -2885,6 +2979,8 @@ def review_bundle_artifacts(
         source_pathology_diagnostic_reason=source_pathology_diagnostic_reason,
         alternative_replay_section=alternative_replay_section,
         html_noncommensurable_reason=html_noncommensurable_reason,
+        evidence_context_degraded_only=evidence_context_degraded_only,
+        evidence_context_rail=evidence_context_rail,
         actionable_unresolved_only=actionable_unresolved_only,
         nontrivial_unresolved_only=nontrivial_unresolved_only,
         mixed_replay_risk_only=mixed_replay_risk_only,
@@ -3467,6 +3563,13 @@ def build_evidence_bundle(
         "chain_completeness": _chain_completeness_summary,
         "pairing_findings": _pairing_findings,
         "evidence_context_diagnostics": _evidence_context_diagnostics,
+        "evidence": {
+            "finding_rows": _evidence_context_degradation_rows(
+                statute_id=statute_id,
+                mode=mode,
+                diagnostics=_evidence_context_diagnostics,
+            ),
+        },
     }
 
 
@@ -4383,6 +4486,8 @@ def main(args) -> None:
         source_pathology_diagnostic_reason = str(getattr(args, "source_pathology_diagnostic_reason", "") or "")
         alternative_replay_section = str(getattr(args, "alternative_replay_section", "") or "")
         html_noncommensurable_reason = str(getattr(args, "html_noncommensurable_reason", "") or "")
+        evidence_context_degraded_only = bool(getattr(args, "evidence_context_degraded", False))
+        evidence_context_rail = str(getattr(args, "evidence_context_rail", "") or "")
         actionable_unresolved_only = bool(getattr(args, "actionable_unresolved_only", False))
         nontrivial_unresolved_only = bool(getattr(args, "nontrivial_unresolved_only", False))
         mixed_replay_risk_only = bool(getattr(args, "mixed_replay_risk_only", False))
@@ -4417,6 +4522,8 @@ def main(args) -> None:
                 source_pathology_diagnostic_reason=source_pathology_diagnostic_reason,
                 alternative_replay_section=alternative_replay_section,
                 html_noncommensurable_reason=html_noncommensurable_reason,
+                evidence_context_degraded_only=evidence_context_degraded_only,
+                evidence_context_rail=evidence_context_rail,
                 actionable_unresolved_only=actionable_unresolved_only,
                 nontrivial_unresolved_only=nontrivial_unresolved_only,
                 mixed_replay_risk_only=mixed_replay_risk_only,
@@ -4468,6 +4575,8 @@ def main(args) -> None:
                     source_pathology_diagnostic_reason=source_pathology_diagnostic_reason,
                     alternative_replay_section=alternative_replay_section,
                     html_noncommensurable_reason=html_noncommensurable_reason,
+                    evidence_context_degraded_only=evidence_context_degraded_only,
+                    evidence_context_rail=evidence_context_rail,
                     actionable_unresolved_only=actionable_unresolved_only,
                     nontrivial_unresolved_only=nontrivial_unresolved_only,
                     mixed_replay_risk_only=mixed_replay_risk_only,
@@ -4536,6 +4645,8 @@ def main(args) -> None:
                     source_pathology_diagnostic_reason=source_pathology_diagnostic_reason,
                     alternative_replay_section=alternative_replay_section,
                     html_noncommensurable_reason=html_noncommensurable_reason,
+                    evidence_context_degraded_only=evidence_context_degraded_only,
+                    evidence_context_rail=evidence_context_rail,
                     actionable_unresolved_only=actionable_unresolved_only,
                     nontrivial_unresolved_only=nontrivial_unresolved_only,
                     mixed_replay_risk_only=mixed_replay_risk_only,

@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, cast
 
 from lawvm.core.evidence_contracts import (
     validate_corpus_finding_evidence_row,
@@ -39,7 +39,7 @@ class ReportQueryFilters:
 
 
 def load_report_query_records(paths: Iterable[str | Path], *, validate: bool = False) -> tuple[ReportQueryRecord, ...]:
-    """Load JSONL records that either are evidence rows or contain ``evidence_row``."""
+    """Load JSONL records that contain shared evidence rows."""
 
     records: list[ReportQueryRecord] = []
     for path_like in paths:
@@ -50,21 +50,19 @@ def load_report_query_records(paths: Iterable[str | Path], *, validate: bool = F
             original = json.loads(line)
             if not isinstance(original, Mapping):
                 raise ValueError(f"{path}:{line_no}: expected JSON object")
-            evidence_row = original.get("evidence_row", original)
-            if not isinstance(evidence_row, Mapping):
-                raise ValueError(f"{path}:{line_no}: evidence_row must be an object")
-            row_kind = _classify_evidence_row(evidence_row)
-            validation_issues = _validate_evidence_row(evidence_row, row_kind) if validate else ()
-            records.append(
-                ReportQueryRecord(
-                    source_path=str(path),
-                    line_no=line_no,
-                    original=original,
-                    evidence_row=evidence_row,
-                    row_kind=row_kind,
-                    validation_issues=validation_issues,
+            for evidence_row in _iter_embedded_evidence_rows(original, path=str(path), line_no=line_no):
+                row_kind = _classify_evidence_row(evidence_row)
+                validation_issues = _validate_evidence_row(evidence_row, row_kind) if validate else ()
+                records.append(
+                    ReportQueryRecord(
+                        source_path=str(path),
+                        line_no=line_no,
+                        original=original,
+                        evidence_row=evidence_row,
+                        row_kind=row_kind,
+                        validation_issues=validation_issues,
+                    )
                 )
-            )
     return tuple(records)
 
 
@@ -175,6 +173,40 @@ def _classify_evidence_row(row: Mapping[str, Any]) -> str:
     if "finding_id" in row or "rule_id" in row:
         return "finding"
     return "operation"
+
+
+def _iter_embedded_evidence_rows(
+    original: Mapping[str, Any],
+    *,
+    path: str,
+    line_no: int,
+) -> tuple[Mapping[str, Any], ...]:
+    nested = original.get("evidence_row")
+    if nested is not None:
+        if not isinstance(nested, Mapping):
+            raise ValueError(f"{path}:{line_no}: evidence_row must be an object")
+        return (nested,)
+    if "finding_id" in original or "row_id" in original or "rule_id" in original:
+        return (original,)
+
+    evidence = original.get("evidence")
+    rows: list[Mapping[str, Any]] = []
+    if isinstance(evidence, Mapping):
+        for key in ("operation_rows", "finding_rows"):
+            value = evidence.get(key)
+            if value is None:
+                continue
+            if not isinstance(value, list):
+                raise ValueError(f"{path}:{line_no}: evidence.{key} must be a list")
+            for index, row in enumerate(value, start=1):
+                if not isinstance(row, Mapping):
+                    raise ValueError(f"{path}:{line_no}: evidence.{key}[{index}] must be an object")
+                rows.append(cast(Mapping[str, Any], row))
+    if rows:
+        return tuple(rows)
+    if isinstance(evidence, Mapping):
+        return ()
+    return (original,)
 
 
 def _validate_evidence_row(row: Mapping[str, Any], row_kind: str) -> tuple[str, ...]:
