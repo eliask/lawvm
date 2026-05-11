@@ -6,8 +6,9 @@
 #
 # Runs in order (fails fast):
 #   1. ruff check (unused imports, undefined names)
-#   2. boundary guard tests (architectural invariants)
-#   3. full pytest suite
+#   2. ty check
+#   3. boundary guard tests (architectural invariants)
+#   4. bounded non-network pytest suite
 #
 # Exit 0 = all green, nonzero = broken.
 
@@ -52,7 +53,7 @@ uv run python -m pytest tests/test_conformance.py -v --override-ini="addopts=" 2
 echo "PASS: boundary guards"
 
 echo ""
-echo "=== [4/4] full test suite ==="
+echo "=== [4/4] bounded non-network test suite ==="
 uv run python -m pytest tests/ --override-ini="addopts=" -x -q "${PYTEST_XDIST_ARGS[@]}" \
     -m "not network and not slow" \
     --ignore=tests/test_pipeline_gold.py \

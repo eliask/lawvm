@@ -163,7 +163,10 @@ Resolved working assumption:
 Command target:
 
 ```bash
-uv run lawvm open-law corpus-audit --out .tmp/open_law/report
+uv run lawvm open-law corpus-audit \
+  --source-repo .tmp/open_law/repos/law-xml \
+  --codified-repo .tmp/open_law/repos/law-xml-codified \
+  --out .tmp/open_law/report
 ```
 
 Demo/evidence-pack command:
@@ -241,7 +244,7 @@ Full target:
 
 ## 10. Current Corpus Run
 
-As of 2026-05-11, the local-clone corpus audit command:
+As of 2026-05-11, one local-clone corpus audit command:
 
 ```bash
 uv run lawvm open-law corpus-audit \
@@ -251,7 +254,8 @@ uv run lawvm open-law corpus-audit \
   --json
 ```
 
-reports:
+reported the following. Treat the generated `manifest.json` and `summary.json`
+as the source witness for a specific run; public repository heads can change.
 
 ```json
 {

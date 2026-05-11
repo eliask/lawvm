@@ -76,6 +76,7 @@ from pathlib import Path
 
 excluded_prefixes = ("viewer/vendor/",)
 excluded_paths = {"tests/test_release_docs.py"}
+developer_path_markers = ("/" + "home" + "/", "/" + "Users" + "/")
 offenders: list[str] = []
 for raw in subprocess.check_output(("git", "ls-files", "-z")).split(b"\0"):
     if not raw:
@@ -91,7 +92,7 @@ for raw in subprocess.check_output(("git", "ls-files", "-z")).split(b"\0"):
     except UnicodeDecodeError:
         continue
     for line_no, line in enumerate(text.splitlines(), start=1):
-        if "/home/" in line or "/Users/" in line:
+        if any(marker in line for marker in developer_path_markers):
             offenders.append(f"{path}:{line_no}: {line.strip()}")
 if offenders:
     print("\n".join(offenders))

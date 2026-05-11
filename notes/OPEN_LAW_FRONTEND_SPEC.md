@@ -149,7 +149,9 @@ This is the first meaningful audit product for Open Law:
 
 Use Maryland's public repositories as a corpus.
 
-Observed public corpus shape on 2026-05-11:
+Observed public corpus shape from one local-clone run on 2026-05-11. Treat
+the generated evidence-pack `manifest.json` as the source witness for exact
+clone commits; public repository heads can change.
 
 - `law-xml` main: 4516 XML files;
 - 10 `editorial-actions/*.xml`;
