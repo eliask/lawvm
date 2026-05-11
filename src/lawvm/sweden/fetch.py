@@ -1065,7 +1065,17 @@ def load_se_official_ops_from_archive(archive: _ArchiveLike, sfs_id: str) -> Opt
     data = json.loads(raw.decode("utf-8"))
     if not isinstance(data, list):
         raise ValueError(f"archive locator {se_official_ops_locator(sfs_id)} did not decode to a JSON array")
-    return [item for item in data if isinstance(item, dict)]
+    non_object_indexes = [
+        str(index)
+        for index, item in enumerate(data)
+        if not isinstance(item, dict)
+    ]
+    if non_object_indexes:
+        indexes = ", ".join(non_object_indexes)
+        raise ValueError(
+            f"archive locator {se_official_ops_locator(sfs_id)} contained non-object op entries at indexes: {indexes}"
+        )
+    return data
 
 
 def _detect_se_current_surface_contamination(
