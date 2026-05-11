@@ -1957,11 +1957,42 @@ def _build_se_official_effects_plan(intent: SEOfficialElaboratedIntent) -> SEOff
     )
 
 
+def _append_se_official_lowering_adjudication(
+    adjudications_out: list[CompileAdjudication] | None,
+    *,
+    plan: SEOfficialEffectsPlan,
+    item: SEOfficialEffectPlanItem,
+    reason_code: str,
+    message: str,
+) -> None:
+    """Record a planned Sweden effect that could not be lowered to an op."""
+    if adjudications_out is None:
+        return
+    adjudications_out.append(
+        CompileAdjudication(
+            kind="se_official_effect_lowering_skipped",
+            message=message,
+            source_statute=plan.sfs_id,
+            detail={
+                "rule_id": reason_code,
+                "phase": "lowering",
+                "item_kind": item.kind,
+                "target_label": item.target_label,
+                "destination_label": item.destination_label,
+                "payload_label": item.payload_label,
+                "frontier_classification": plan.frontier_classification,
+                "frontier_detail": plan.frontier_detail,
+            },
+        )
+    )
+
+
 def _lower_se_official_effect_plan_item(
     plan: SEOfficialEffectsPlan,
     item: SEOfficialEffectPlanItem,
     source: OperationSource,
     sequence: int,
+    adjudications_out: list[CompileAdjudication] | None = None,
 ) -> tuple[list[LegalOperation], int]:
     """Lower one planned Sweden canonical effect into replay operations."""
     intent = plan.elaboration
@@ -2014,6 +2045,13 @@ def _lower_se_official_effect_plan_item(
             None,
         )
         if provision is None:
+            _append_se_official_lowering_adjudication(
+                adjudications_out,
+                plan=plan,
+                item=item,
+                reason_code="se_official_effect_payload_not_found",
+                message="Sweden official-act lowering skipped planned section effect: payload provision not found.",
+            )
             return [], sequence
         label = _label_norm(provision.label)
         action_kind = StructuralAction.REPLACE if item.kind == "replace_section" else StructuralAction.INSERT
@@ -2044,6 +2082,13 @@ def _lower_se_official_effect_plan_item(
             None,
         )
         if heading is None:
+            _append_se_official_lowering_adjudication(
+                adjudications_out,
+                plan=plan,
+                item=item,
+                reason_code="se_official_effect_payload_not_found",
+                message="Sweden official-act lowering skipped planned heading insert: heading payload not found.",
+            )
             return [], sequence
         label = _label_norm(heading.before_label)
         op = LegalOperation(
@@ -2077,6 +2122,13 @@ def _lower_se_official_effect_plan_item(
             if len(unlabeled_appendices) == 1 and (item.payload_label or item.target_label):
                 appendix = unlabeled_appendices[0]
         if appendix is None:
+            _append_se_official_lowering_adjudication(
+                adjudications_out,
+                plan=plan,
+                item=item,
+                reason_code="se_official_effect_payload_not_found",
+                message="Sweden official-act lowering skipped planned appendix insert: appendix payload not found.",
+            )
             return [], sequence
         label = _label_norm(appendix.label)
         if not label:
@@ -2101,9 +2153,23 @@ def _lower_se_official_effect_plan_item(
         old_text = _normalize_space(patch.selector.match_text if patch is not None else "")
         new_text = _normalize_space(patch.replacement if patch is not None and patch.replacement is not None else "")
         if not old_text or not new_text:
+            _append_se_official_lowering_adjudication(
+                adjudications_out,
+                plan=plan,
+                item=item,
+                reason_code="se_official_effect_text_patch_incomplete",
+                message="Sweden official-act lowering skipped planned text replacement: old or new text missing.",
+            )
             return [], sequence
         text_patch = patch
         if text_patch is None:
+            _append_se_official_lowering_adjudication(
+                adjudications_out,
+                plan=plan,
+                item=item,
+                reason_code="se_official_effect_text_patch_missing",
+                message="Sweden official-act lowering skipped planned text replacement: text_patch missing.",
+            )
             return [], sequence
         op = LegalOperation(
             op_id=f"se_official_text_replace_{surface.sfs_id}_{item.target_label}",
@@ -2355,6 +2421,7 @@ def _lower_se_official_effects_plan(
     plan: SEOfficialEffectsPlan,
     *,
     source_id: str = "",
+    adjudications_out: list[CompileAdjudication] | None = None,
 ) -> list[LegalOperation]:
     """Lower a typed Sweden canonical-effects plan into canonical operations."""
     intent = plan.elaboration
@@ -2385,7 +2452,13 @@ def _lower_se_official_effects_plan(
     ops: list[LegalOperation] = []
     next_sequence = 1
     for item in plan.planned_items:
-        planned_ops, next_sequence = _lower_se_official_effect_plan_item(plan, item, source, next_sequence)
+        planned_ops, next_sequence = _lower_se_official_effect_plan_item(
+            plan,
+            item,
+            source,
+            next_sequence,
+            adjudications_out=adjudications_out,
+        )
         ops.extend(planned_ops)
     return ops
 
@@ -2398,7 +2471,11 @@ def se_statute_invariant_violations(statute: IRStatute) -> list[str]:
     return violations
 
 
-def compile_se_official_act_ops(payload: bytes | str | dict[str, Any], source_id: str = "") -> list[LegalOperation]:
+def compile_se_official_act_ops(
+    payload: bytes | str | dict[str, Any],
+    source_id: str = "",
+    adjudications_out: list[CompileAdjudication] | None = None,
+) -> list[LegalOperation]:
     """Compile a first-pass Sweden amendment op set from official act JSON.
 
     Supported shape:
@@ -2415,7 +2492,7 @@ def compile_se_official_act_ops(payload: bytes | str | dict[str, Any], source_id
     """
     act = _coerce_official_act(payload)
     plan = _build_se_official_effects_plan(_build_se_official_elaboration(act))
-    return _lower_se_official_effects_plan(plan, source_id=source_id)
+    return _lower_se_official_effects_plan(plan, source_id=source_id, adjudications_out=adjudications_out)
 
 
 def _is_node_active_on(node: IRNode, as_of: str) -> bool:

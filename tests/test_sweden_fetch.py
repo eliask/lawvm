@@ -76,10 +76,16 @@ from lawvm.sweden.grafter import (
     _build_se_official_effects_plan,
     _build_se_official_payload_surface,
     _coerce_official_act,
+    _lower_se_official_effects_plan,
     parse_se_official_act_text,
     se_official_act_text_to_dict,
     se_legal_operation_from_dict,
     se_legal_operation_to_dict,
+    SEOfficialClauseSurface,
+    SEOfficialElaboratedIntent,
+    SEOfficialEffectsPlan,
+    SEOfficialEffectPlanItem,
+    SEOfficialPayloadSurface,
 )
 from lawvm.sweden.grafter import (
     apply_se_ops,
@@ -1221,6 +1227,51 @@ def test_compile_se_official_act_ops_emits_repeal_heading_insert_family() -> Non
     assert ops[2].target.path == (("section", "7a"),)
     assert ops[3].target.path == (("section", "7a"),)
     assert ops[3].target.special == FacetKind.HEADING
+
+
+def test_compile_se_official_act_ops_surfaces_planned_effect_missing_payload() -> None:
+    surface = SEOfficialClauseSurface(
+        sfs_id="2026:999",
+        title="Förordning om ändring i förordningen (2026:106) om något",
+        amended_act_sfs_id="2026:106",
+        is_amending_act=True,
+        enacting_clause="Regeringen föreskriver att 2 § ska ha följande lydelse.",
+        replace_section_labels=("2",),
+        effective_date="2026-04-15",
+    )
+    plan = SEOfficialEffectsPlan(
+        sfs_id="2026:999",
+        title=surface.title,
+        amended_act_sfs_id="2026:106",
+        is_amending_act=True,
+        effective_date="2026-04-15",
+        elaboration=SEOfficialElaboratedIntent(
+            clause_surface=surface,
+            payload_surface=SEOfficialPayloadSurface(),
+            issued_date="2026-03-19",
+        ),
+        frontier_classification="supported",
+        planned_items=(
+            SEOfficialEffectPlanItem(
+                kind="replace_section",
+                target_label="2",
+                payload_label="2",
+            ),
+        ),
+        planned_operation_count=1,
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    ops = _lower_se_official_effects_plan(plan, source_id="2026:999", adjudications_out=adjudications)
+
+    assert ops == []
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "se_official_effect_lowering_skipped"
+    assert adjudications[0].source_statute == "2026:999"
+    assert adjudications[0].detail["rule_id"] == "se_official_effect_payload_not_found"
+    assert adjudications[0].detail["phase"] == "lowering"
+    assert adjudications[0].detail["item_kind"] == "replace_section"
+    assert adjudications[0].detail["target_label"] == "2"
 
 
 def test_compile_se_official_ops_to_archive_stores_json_array() -> None:
