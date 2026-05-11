@@ -2893,6 +2893,7 @@ from lawvm.finland.vts import (  # noqa: E402, F401
     _voimaantulo_repeal_fragment_for_parent,
     _vts_extract_after_citation,
     _expand_section_range_vts,
+    VtsSkippedTarget,
     extract_voimaantulo_repeals,
     extract_vts_cross_statute_repeals,
     extract_vts_repeals_fallback,
@@ -5816,6 +5817,7 @@ def process_muutoslaki(
     _compat_sparse_slot_bindings: list[dict[str, object]] = []
     _compat_sparse_leftovers: list[dict[str, object]] = []
     _commencement_expiry_override_notes: list[dict[str, object]] = []
+    _vts_skipped_targets: list[VtsSkippedTarget] = []
     _effective_restructure_plans_out: list[StructuralTransformPlan] = (
         restructure_plans_out if restructure_plans_out is not None else []
     )
@@ -6067,6 +6069,18 @@ def process_muutoslaki(
                 )
                 for o in _compat_elaboration_observations
                 if str(o.get("kind", "")).strip()
+            )
+        if _vts_skipped_targets:
+            merged_findings.extend(
+                Finding(
+                    kind=record.rule_id,
+                    role="observation",
+                    stage=record.phase,
+                    detail=record.as_detail(),
+                    source_statute=record.source_statute or amendment_id,
+                    blocking=record.blocking,
+                )
+                for record in _vts_skipped_targets
             )
         if _compat_failed_ops:
             merged_findings.extend(
@@ -6328,6 +6342,7 @@ def process_muutoslaki(
                 parent_id,
                 ctx.title,
                 strict_profile,
+                skipped_targets_out=_vts_skipped_targets,
             )
             if _vts_cross_ops:
                 ops = _enrich_ops_from_amendment_tree(_vts_cross_ops, amendment_id, muutos_tree)
@@ -6356,6 +6371,7 @@ def process_muutoslaki(
                 parent_id,
                 ctx.title,
                 strict_profile,
+                skipped_targets_out=_vts_skipped_targets,
             )
             if _vts_ops:
                 ops = _enrich_ops_from_amendment_tree(_vts_ops, amendment_id, muutos_tree)
