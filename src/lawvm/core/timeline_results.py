@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Optional
 
+from lawvm.contracts import ArtifactEnvelope, ProcessingStatus
 from lawvm.core.ir import IRStatute, LegalAddress, ProvisionTimeline
 from lawvm.core.provenance import MigrationEvent
 
@@ -67,6 +68,12 @@ class MaterializationCertificate:
     required_dimensions: tuple[str, ...] = ()
 
 
+def _address_wire_path(address: Optional[LegalAddress]) -> tuple[dict[str, str], ...]:
+    if address is None:
+        return ()
+    return tuple({"kind": kind, "label": label} for kind, label in address.path)
+
+
 @dataclass(frozen=True)
 class TimelineIssue:
     """Typed diagnostic emitted while compiling timelines."""
@@ -75,6 +82,42 @@ class TimelineIssue:
     message: str
     address: Optional[LegalAddress] = None
     source_statute: str = ""
+
+    @property
+    def rule_id(self) -> str:
+        """Stable rule/finding identifier for persisted timeline evidence."""
+        return f"timeline.{self.kind}"
+
+    @property
+    def phase(self) -> Literal["timeline"]:
+        return "timeline"
+
+    @property
+    def blocking(self) -> bool:
+        """Timeline issues represent unproven timeline execution in strict mode."""
+        return True
+
+    @property
+    def strict_disposition(self) -> Literal["block"]:
+        return "block"
+
+    @property
+    def quirks_disposition(self) -> Literal["record"]:
+        return "record"
+
+    def to_jsonable_dict(self) -> dict[str, object]:
+        """Return the stable wire shape for this timeline issue."""
+        return {
+            "kind": self.kind,
+            "rule_id": self.rule_id,
+            "phase": self.phase,
+            "message": self.message,
+            "address": _address_wire_path(self.address),
+            "source_statute": self.source_statute,
+            "blocking": self.blocking,
+            "strict_disposition": self.strict_disposition,
+            "quirks_disposition": self.quirks_disposition,
+        }
 
 
 @dataclass(frozen=True)
@@ -92,6 +135,42 @@ class MaterializationResult:
     def is_degraded(self) -> bool:
         return self.status != "materialized"
 
+    def to_wire_artifact(
+        self,
+        *,
+        producer: str = "lawvm.core.timeline",
+        version: str = "1",
+    ) -> ArtifactEnvelope[dict[str, object]]:
+        """Wrap PIT materialization metadata and issues in a durable artifact."""
+        blockers = tuple(issue.rule_id for issue in self.issues if issue.blocking)
+        status = ProcessingStatus(kind="partial", blockers=blockers) if blockers else ProcessingStatus(kind="complete")
+        certificate_payload: Optional[dict[str, object]] = None
+        if self.certificate is not None:
+            certificate_payload = {
+                "as_of": self.certificate.as_of,
+                "query_type": self.certificate.query_type,
+                "territory": self.certificate.territory,
+                "selected_address_count": self.certificate.selected_address_count,
+                "ambiguous_address_count": self.certificate.ambiguous_address_count,
+                "required_dimensions": self.certificate.required_dimensions,
+            }
+        return ArtifactEnvelope(
+            schema="lawvm.materialization_result",
+            producer=producer,
+            version=version,
+            payload={
+                "status": self.status,
+                "statute_id": self.statute.statute_id,
+                "required_dimensions": self.required_dimensions,
+                "ambiguous_addresses": tuple(
+                    _address_wire_path(address) for address in self.ambiguous_addresses
+                ),
+                "issues": tuple(issue.to_jsonable_dict() for issue in self.issues),
+                "certificate": certificate_payload,
+            },
+            status=status,
+        )
+
 
 @dataclass(frozen=True)
 class TimelineCompilationResult:
@@ -99,3 +178,23 @@ class TimelineCompilationResult:
 
     timelines: Timelines
     issues: tuple[TimelineIssue, ...] = ()
+
+    def to_wire_artifact(
+        self,
+        *,
+        producer: str = "lawvm.core.timeline",
+        version: str = "1",
+    ) -> ArtifactEnvelope[dict[str, object]]:
+        """Wrap timeline compilation metadata and issues in a durable artifact."""
+        blockers = tuple(issue.rule_id for issue in self.issues if issue.blocking)
+        status = ProcessingStatus(kind="partial", blockers=blockers) if blockers else ProcessingStatus(kind="complete")
+        return ArtifactEnvelope(
+            schema="lawvm.timeline_compilation_result",
+            producer=producer,
+            version=version,
+            payload={
+                "timelines_count": len(self.timelines),
+                "issues": tuple(issue.to_jsonable_dict() for issue in self.issues),
+            },
+            status=status,
+        )
