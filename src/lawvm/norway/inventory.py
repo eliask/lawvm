@@ -223,8 +223,12 @@ def build_no_missing_base_report(
     base_id: str | None = None,
     min_amendments: int = 1,
 ) -> dict[str, Any]:
+    current_law_title_diagnostics: list[dict[str, Any]] = []
     if current_law_titles is None:
-        current_law_titles = load_no_current_law_titles(inventory.data_dir)
+        current_law_titles = load_no_current_law_titles(
+            inventory.data_dir,
+            diagnostics_out=current_law_title_diagnostics,
+        )
 
     missing_base_source = sorted(
         (
@@ -257,4 +261,9 @@ def build_no_missing_base_report(
         "base_id_filter": base_id or "",
         "min_amendments": min_amendments,
         "laws": laws,
+        "current_law_title_diagnostic_count": len(current_law_title_diagnostics),
+        "current_law_title_diagnostic_rule_counts": dict(
+            Counter(str(row.get("rule_id") or "") for row in current_law_title_diagnostics)
+        ),
+        "current_law_title_diagnostics": current_law_title_diagnostics,
     }
