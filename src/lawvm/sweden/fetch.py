@@ -1840,6 +1840,43 @@ def _older_base_chain_entries(
     return rows
 
 
+def _se_rebuild_chain_blocker_diagnostic(row: dict[str, Any]) -> dict[str, Any] | None:
+    ops_status = str(row.get("ops_status") or "")
+    if ops_status == "compiled":
+        return None
+    match ops_status:
+        case "missing_official_act":
+            rule_id = "se_official_rebuild_chain_missing_official_act"
+            phase = "acquisition"
+            reason = "prior Sweden amendment official act is unavailable"
+        case "unsupported":
+            rule_id = "se_official_rebuild_chain_ops_unsupported"
+            phase = "lowering"
+            reason = "prior Sweden amendment official act uses unsupported effect shape"
+        case "invalid_official_act":
+            rule_id = "se_official_rebuild_chain_invalid_official_act"
+            phase = "extraction"
+            reason = "prior Sweden amendment official act could not be parsed into replayable operations"
+        case _:
+            rule_id = "se_official_rebuild_chain_unknown_ops_status"
+            phase = "replay_planning"
+            reason = "prior Sweden amendment has an unknown rebuild-chain status"
+    return {
+        "rule_id": rule_id,
+        "phase": phase,
+        "family": "source_pathology",
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+        "sfs_id": str(row.get("sfs_id") or ""),
+        "effective_date": str(row.get("effective_date") or ""),
+        "scope_text": str(row.get("scope_text") or ""),
+        "ops_status": ops_status,
+        "error": str(row.get("error") or ""),
+        "reason": reason,
+    }
+
+
 def plan_se_older_base_rebuild(
     archive: _ArchiveLike,
     amending_sfs_id: str,
@@ -1930,6 +1967,11 @@ def plan_se_older_base_rebuild(
     missing_count = sum(1 for item in chain_rows if item["ops_status"] == "missing_official_act")
     unsupported_count = sum(1 for item in chain_rows if item["ops_status"] == "unsupported")
     invalid_count = sum(1 for item in chain_rows if item["ops_status"] == "invalid_official_act")
+    chain_diagnostics = tuple(
+        diagnostic
+        for item in chain_rows
+        if (diagnostic := _se_rebuild_chain_blocker_diagnostic(item)) is not None
+    )
     return {
         "amending_sfs_id": amending_sfs_id,
         "base_sfs_id": resolved_base_sfs_id,
@@ -1942,6 +1984,7 @@ def plan_se_older_base_rebuild(
         "missing_official_count": missing_count,
         "unsupported_count": unsupported_count,
         "invalid_count": invalid_count,
+        "chain_diagnostics": chain_diagnostics,
         "official_chain_ready": bool(base_seed["official_act_available"])
         and all(item["ops_status"] == "compiled" for item in chain_rows),
         "seed_ready": bool(base_seed["official_base_ir_available"]),

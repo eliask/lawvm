@@ -3459,6 +3459,22 @@ def test_plan_se_older_base_rebuild_reports_chain_statuses() -> None:
     assert result["compiled_count"] == 1
     assert result["missing_official_count"] == 1
     assert result["unsupported_count"] == 0
+    assert result["chain_diagnostics"] == (
+        {
+            "rule_id": "se_official_rebuild_chain_missing_official_act",
+            "phase": "acquisition",
+            "family": "source_pathology",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "sfs_id": "2018:11",
+            "effective_date": "2018-03-01",
+            "scope_text": "ny 7 a §",
+            "ops_status": "missing_official_act",
+            "error": "",
+            "reason": "prior Sweden amendment official act is unavailable",
+        },
+    )
     assert result["official_chain_ready"] is False
     assert result["seed_ready"] is False
     assert result["rebuild_ready"] is False
