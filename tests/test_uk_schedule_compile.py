@@ -3509,7 +3509,98 @@ def test_pipeline_compile_ops_skips_instruction_text_reused_as_payload_rows(monk
 
     pipeline = UKReplayPipeline(Path("."))
 
-    assert pipeline.compile_ops_for_statute("ukpga/2001/11", archive=object()) == []
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert pipeline.compile_ops_for_statute(
+        "ukpga/2001/11",
+        archive=object(),
+        lowering_rejections_out=lowering_rejections,
+    ) == []
+    assert lowering_rejections == [
+        {
+            "rule_id": "uk_effect_instruction_text_payload_rejected",
+            "family": "source_pathology_filter",
+            "phase": "lowering",
+            "effect_id": "uk_test_instruction_payload_skip",
+            "affecting_act_id": "uksi/2001/4022",
+            "affected_provisions": "s. 7 8 9",
+            "affecting_provisions": "reg. 20",
+            "effect_type": "substituted",
+            "reason": "UK effect payload reused instruction text rather than source legal payload",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "source_pathology": "instruction_text_reused_as_payload",
+        }
+    ]
+
+
+def test_pipeline_compile_ops_records_structural_effect_lowered_to_no_ops(monkeypatch) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_structural_no_ops",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="s. 57",
+        affecting_uri="/id/uksi/2000/2040",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2000",
+        affecting_number="2040",
+        affecting_provisions="Sch. 2 para. 7",
+        affecting_title="Missing Affecting Act",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: b"<xml/>",
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "extract_provision_element_from_bytes",
+        lambda _xml, _prov, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "compile_effect_to_ir_ops",
+        lambda _effect, _el, sequence=0, **_kwargs: [],
+    )
+
+    pipeline = UKReplayPipeline(Path("."))
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert pipeline.compile_ops_for_statute(
+        "ukpga/2000/10",
+        archive=object(),
+        lowering_rejections_out=lowering_rejections,
+    ) == []
+    assert lowering_rejections == [
+        {
+            "rule_id": "uk_effect_lowering_no_ops_rejected",
+            "family": "lowering_filter",
+            "phase": "lowering",
+            "effect_id": "uk_test_structural_no_ops",
+            "affecting_act_id": "uksi/2000/2040",
+            "affected_provisions": "s. 57",
+            "affecting_provisions": "Sch. 2 para. 7",
+            "effect_type": "inserted",
+            "reason": "UK structural effect lowered to no replay operations",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
 
 
 def test_pipeline_compile_ops_falls_back_to_metadata_for_missing_affecting_xml(monkeypatch) -> None:
