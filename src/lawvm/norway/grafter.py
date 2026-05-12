@@ -1153,10 +1153,19 @@ def parse_no_heading_groups(html_bytes: bytes, base_id: str) -> list[NOHeadingGr
     return groups
 
 
-def parse_no_amendment_ops(html_bytes: bytes, source_id: str) -> List[LegalOperation]:
+def parse_no_amendment_ops(
+    html_bytes: bytes,
+    source_id: str,
+    *,
+    adjudications_out: Optional[List[CompileAdjudication]] = None,
+) -> List[LegalOperation]:
     """Parse Lovdata amendment blocks into LegalOperation objects."""
     ops: list[LegalOperation] = []
-    for _base_id, doc_ops in iter_no_document_change_ops(html_bytes, source_id):
+    for _base_id, doc_ops in iter_no_document_change_ops(
+        html_bytes,
+        source_id,
+        adjudications_out=adjudications_out,
+    ):
         ops.extend(doc_ops)
     return ops
 

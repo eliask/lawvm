@@ -1569,6 +1569,28 @@ def test_iter_no_document_change_ops_skips_structured_cross_base_target_without_
     assert adjudication.detail["raw_target"] == "lov/1967-02-10/§12/ledd/2"
 
 
+def test_parse_no_amendment_ops_forwards_structured_cross_base_skip_adjudication() -> None:
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <article class="document-change" data-document="lov/2022-05-12-28">
+      <article class="change" data-change-part="lov/1967-02-10/§12/ledd/2">
+        <article class="defaultP">12. I lov 10. februar 1967 om behandlingsmåten i forvaltningssaker skal § 12 andre ledd lyde:</article>
+        <article class="legalP">Som fullmektig kan brukes enhver myndig person.</article>
+      </article>
+    </article>
+  </body>
+</html>
+""".encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    ops = parse_no_amendment_ops(xml, "no/lovtid/2024-06-21-46", adjudications_out=adjudications)
+
+    assert ops == []
+    assert [item.kind for item in adjudications] == ["no_parse_cross_base_structured_target_skipped"]
+    assert adjudications[0].detail["target_base"] == "no/lov/1967-02-10"
+
+
 def test_parse_no_amendment_ops_unstructured_supports_mixed_existing_and_new_subsections() -> None:
     xml = """<?xml version="1.0" encoding="utf-8"?>
 <html lang="nb">
