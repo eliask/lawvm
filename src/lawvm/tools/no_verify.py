@@ -51,6 +51,8 @@ def main(args: "argparse.Namespace") -> None:
         "raw_divergence_counts": dict(result.raw_divergence_counts or {}),
         "filtered_divergence_count": int(getattr(result, "filtered_divergence_count", 0) or 0),
         "filtered_divergence_rule_counts": dict(getattr(result, "filtered_divergence_rule_counts", None) or {}),
+        "compare_projection_count": int(getattr(result, "compare_projection_count", 0) or 0),
+        "compare_projection_rule_counts": dict(getattr(result, "compare_projection_rule_counts", None) or {}),
         "indexed_amendment_count": result.indexed_amendment_count,
         "applied_amendment_count": result.applied_amendment_count,
         "replay_op_count": result.replay_op_count,
@@ -100,6 +102,12 @@ def main(args: "argparse.Namespace") -> None:
             }
             for filtered in filtered_divergences
         ]
+        compare_projections = getattr(result, "compare_projections", None) or []
+        if isinstance(max_divergences, int) and max_divergences >= 0:
+            compare_projections = compare_projections[:max_divergences]
+        payload["compare_projections"] = [
+            projection.to_dict() for projection in compare_projections if hasattr(projection, "to_dict")
+        ]
 
     if getattr(args, "json", False):
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -139,6 +147,8 @@ def main(args: "argparse.Namespace") -> None:
         )
     if payload["filtered_divergence_count"]:
         print(f"  filtered divs   : {payload['filtered_divergence_count']}")
+    if payload["compare_projection_count"]:
+        print(f"  projections     : {payload['compare_projection_count']}")
     if getattr(args, "verbose", False):
         for divergence in cast(list[dict[str, Any]], payload.get("divergences", [])):
             address = "/".join(f"{kind}:{label}" for kind, label in divergence["address"])

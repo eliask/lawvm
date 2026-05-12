@@ -64,6 +64,36 @@ class NorwayDivergenceItem:
 
 
 @dataclass(frozen=True)
+class NorwayCompareProjectionItem:
+    surface: str
+    rule_id: str
+    reason: str
+    address: tuple[tuple[str, str], ...]
+    before_kind: str
+    before_label: str | None
+    before_text: str
+    after_text: str
+    before_child_count: int
+    after_child_count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "surface": self.surface,
+            "rule_id": self.rule_id,
+            "family": "editorial_projection",
+            "phase": "oracle_compare",
+            "reason": self.reason,
+            "address": [list(pair) for pair in self.address],
+            "before_kind": self.before_kind,
+            "before_label": self.before_label,
+            "before_text": self.before_text,
+            "after_text": self.after_text,
+            "before_child_count": self.before_child_count,
+            "after_child_count": self.after_child_count,
+        }
+
+
+@dataclass(frozen=True)
 class NorwayDivergencePayload:
     base_id: str
     as_of: str
@@ -75,6 +105,8 @@ class NorwayDivergencePayload:
     divergence_counts: Mapping[str, int] = field(default_factory=dict)
     raw_divergence_count: int = 0
     raw_divergence_counts: Mapping[str, int] = field(default_factory=dict)
+    compare_projection_count: int = 0
+    compare_projection_rule_counts: Mapping[str, int] = field(default_factory=dict)
     indexed_amendment_count: int = 0
     applied_amendment_count: int = 0
     replay_op_count: int = 0
@@ -96,6 +128,8 @@ class NorwayDivergencePayload:
             "divergence_counts": dict(self.divergence_counts),
             "raw_divergence_count": self.raw_divergence_count,
             "raw_divergence_counts": dict(self.raw_divergence_counts),
+            "compare_projection_count": self.compare_projection_count,
+            "compare_projection_rule_counts": dict(self.compare_projection_rule_counts),
             "indexed_amendment_count": self.indexed_amendment_count,
             "applied_amendment_count": self.applied_amendment_count,
             "replay_op_count": self.replay_op_count,
@@ -120,6 +154,8 @@ class NorwayDebugPayload:
     divergence_counts: Mapping[str, int] = field(default_factory=dict)
     raw_divergence_count: int = 0
     raw_divergence_counts: Mapping[str, int] = field(default_factory=dict)
+    compare_projection_count: int = 0
+    compare_projection_rule_counts: Mapping[str, int] = field(default_factory=dict)
     indexed_amendment_count: int = 0
     applied_amendment_count: int = 0
     replay_op_count: int = 0
@@ -137,6 +173,7 @@ class NorwayDebugPayload:
     sources: tuple[NorwayTraceSourceRow, ...] = ()
     ops: tuple[NorwayTraceOpRow, ...] = ()
     divergences: tuple[NorwayDivergenceItem, ...] = ()
+    compare_projections: tuple[NorwayCompareProjectionItem, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -151,6 +188,8 @@ class NorwayDebugPayload:
             "divergence_counts": dict(self.divergence_counts),
             "raw_divergence_count": self.raw_divergence_count,
             "raw_divergence_counts": dict(self.raw_divergence_counts),
+            "compare_projection_count": self.compare_projection_count,
+            "compare_projection_rule_counts": dict(self.compare_projection_rule_counts),
             "indexed_amendment_count": self.indexed_amendment_count,
             "applied_amendment_count": self.applied_amendment_count,
             "replay_op_count": self.replay_op_count,
@@ -168,4 +207,5 @@ class NorwayDebugPayload:
             "sources": [item.to_dict() for item in self.sources],
             "ops": [item.to_dict() for item in self.ops],
             "divergences": [item.to_dict() for item in self.divergences],
+            "compare_projections": [item.to_dict() for item in self.compare_projections],
         }

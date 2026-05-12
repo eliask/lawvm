@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, TYPE_CHECKING, cast
 
 from lawvm.tools.report_models import (
+    NorwayCompareProjectionItem,
     NorwayDivergenceItem,
     NorwayDebugPayload,
     NorwayTraceOpRow,
@@ -19,6 +20,16 @@ if TYPE_CHECKING:
 
 def _format_address(path: list[tuple[str, str]]) -> str:
     return "/".join(f"{kind}:{label}" for kind, label in path)
+
+
+def _projection_address(value: object) -> tuple[tuple[str, str], ...]:
+    if not isinstance(value, list):
+        return ()
+    address: list[tuple[str, str]] = []
+    for pair in value:
+        if isinstance(pair, (list, tuple)) and len(pair) == 2:
+            address.append((str(pair[0]), str(pair[1])))
+    return tuple(address)
 
 
 def _overall_hint(result: Any) -> str:
@@ -160,6 +171,25 @@ def _build_report(
             else (verify_result.divergences or ())
         )
     )
+    projection_rows_source = getattr(verify_result, "compare_projections", None) or ()
+    if isinstance(limit, int) and limit >= 0:
+        projection_rows_source = projection_rows_source[:limit]
+    compare_projections = tuple(
+        NorwayCompareProjectionItem(
+            surface=str(item.get("surface") or ""),
+            rule_id=str(item.get("rule_id") or ""),
+            reason=str(item.get("reason") or ""),
+            address=_projection_address(item.get("address", [])),
+            before_kind=str(item.get("before_kind") or ""),
+            before_label=cast(str | None, item.get("before_label")),
+            before_text=str(item.get("before_text") or ""),
+            after_text=str(item.get("after_text") or ""),
+            before_child_count=int(item.get("before_child_count", 0) or 0),
+            after_child_count=int(item.get("after_child_count", 0) or 0),
+        )
+        for projection in projection_rows_source
+        if isinstance((item := projection.to_dict()), dict)
+    )
     return NorwayDebugPayload(
         base_id=base_id,
         as_of=as_of,
@@ -176,6 +206,8 @@ def _build_report(
         divergence_counts=dict(verify_result.divergence_counts or {}),
         raw_divergence_count=verify_result.raw_divergence_count,
         raw_divergence_counts=dict(verify_result.raw_divergence_counts or {}),
+        compare_projection_count=int(getattr(verify_result, "compare_projection_count", 0) or 0),
+        compare_projection_rule_counts=dict(getattr(verify_result, "compare_projection_rule_counts", None) or {}),
         indexed_amendment_count=verify_result.indexed_amendment_count,
         applied_amendment_count=verify_result.applied_amendment_count,
         replay_op_count=verify_result.replay_op_count,
@@ -193,6 +225,7 @@ def _build_report(
         sources=sources,
         ops=ops,
         divergences=divergences,
+        compare_projections=compare_projections,
     )
 
 
@@ -265,6 +298,8 @@ def main(args: "argparse.Namespace") -> None:
         )
     if report.raw_divergence_count != report.divergence_count:
         print(f"  raw divergences    : {report.raw_divergence_count}")
+    if report.compare_projection_count:
+        print(f"  compare projections: {report.compare_projection_count}")
     if report.path_filters:
         print(f"  path filters       : {', '.join(report.path_filters)}")
     if report.sources:
@@ -284,6 +319,11 @@ def main(args: "argparse.Namespace") -> None:
         print("  divergences:")
         for item in report.divergences:
             print(f"    [{item.hint}|{item.divergence_type}] {item.address_text}")
+    if report.compare_projections:
+        print("  compare projections:")
+        for item in report.compare_projections:
+            address = _format_address(list(item.address))
+            print(f"    [{item.surface}|{item.rule_id}] {address}")
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
