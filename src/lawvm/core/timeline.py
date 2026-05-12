@@ -436,6 +436,37 @@ def compile_timelines(
                 addresses.append(destination)
         return tuple(addresses)
 
+    def _record_empty_same_day_interval(
+        *,
+        address: LegalAddress,
+        source_statute: str,
+        effective: str,
+    ) -> None:
+        _record_timeline_issue(
+            issue_sink,
+            kind="empty_same_day_interval",
+            message=(
+                "compile_timelines: provision version has an empty same-day temporal "
+                f"interval at {effective}; recording the zero-length interval without "
+                "treating it as a strict blocker"
+            ),
+            address=address,
+            source_statute=source_statute,
+            emit_warnings=emit_warnings,
+        )
+
+    def _append_version(
+        timeline: ProvisionTimeline,
+        version: ProvisionVersion,
+    ) -> None:
+        timeline.versions.append(version)
+        if version.expires and version.effective == version.expires:
+            _record_empty_same_day_interval(
+                address=timeline.address,
+                source_statute=version.source.statute_id if version.source and version.source.statute_id else "",
+                effective=version.effective,
+            )
+
     matched_temporal_event_ids = {
         event.event_id
         for op in ops
@@ -674,7 +705,8 @@ def compile_timelines(
                 else list(source_active.applicability)
             )
             migrated_content = _retarget_root_node(source_active.content, destination)
-            timelines[destination].versions.append(
+            _append_version(
+                timelines[destination],
                 ProvisionVersion(
                     effective=effective,
                     enacted=enacted,
@@ -686,7 +718,8 @@ def compile_timelines(
                     content_hash=irnode_content_hash(migrated_content),
                 )
             )
-            timelines[target].versions.append(
+            _append_version(
+                timelines[target],
                 ProvisionVersion(
                     effective=effective,
                     enacted=enacted,
@@ -777,7 +810,8 @@ def compile_timelines(
         else:
             _variant_kind = "permanent"
 
-        timelines[target].versions.append(
+        _append_version(
+            timelines[target],
             ProvisionVersion(
                 effective=effective,
                 enacted=enacted,
