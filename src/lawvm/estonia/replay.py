@@ -324,6 +324,7 @@ def _ee_extract_rewritten_source_paragraph_numbers(
 
 _EE_CANCELLED_PENDING_REF_FILTER_RULE = "ee_cancelled_pending_amendment_ref_filtered"
 _EE_CANCELLED_PENDING_REF_FETCH_FAILED_RULE = "ee_cancelled_pending_ref_source_fetch_failed"
+_EE_CANCELLED_PENDING_REF_METADATA_PARSE_FAILED_RULE = "ee_cancelled_pending_ref_metadata_parse_failed"
 _EE_REF_SLICE_OP_FILTER_RULE = "ee_ref_slice_operation_filtered"
 _EE_AMENDMENT_SOURCE_FETCH_FAILED_RULE = "ee_amendment_source_fetch_failed"
 _EE_AMENDMENT_PARSE_FAILED_RULE = "ee_amendment_parse_failed"
@@ -392,6 +393,31 @@ def _ee_filter_cancelled_pending_refs(
                             "ref_amendment": ref.aktViide,
                             "reason": "pending_ref_source_fetch_failed",
                             "exception_type": type(exc).__name__,
+                        },
+                    )
+            )
+            continue
+        try:
+            ET.fromstring(xml_bytes)
+        except ET.ParseError as exc:
+            if adjudications_out is not None:
+                adjudications_out.append(
+                    _ee_orchestration_adjudication(
+                        kind=_EE_CANCELLED_PENDING_REF_METADATA_PARSE_FAILED_RULE,
+                        message=(
+                            "Could not parse an Estonia pending-amendment source while "
+                            "checking cancellation by same-commencement later acts; retaining "
+                            "the reference and recording the incomplete metadata lane."
+                        ),
+                        source_statute=f"ee/{ref.aktViide}",
+                        phase="metadata_extraction",
+                        family="pending_amendment_cancellation_filter",
+                        blocking=True,
+                        detail={
+                            "ref_amendment": ref.aktViide,
+                            "reason": "pending_ref_metadata_parse_failed",
+                            "exception_type": type(exc).__name__,
+                            "error": str(exc),
                         },
                     )
                 )
