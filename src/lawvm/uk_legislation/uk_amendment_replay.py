@@ -311,18 +311,26 @@ def _append_uk_replay_adjudication(
     kind: str,
     message: str,
     op: LegalOperation,
-    detail: Optional[dict[str, str]] = None,
+    detail: Optional[dict[str, Any]] = None,
 ) -> None:
     """Append a UK replay adjudication when a sink list is available."""
     if adjudications_out is None:
         return
+    detail_payload: dict[str, Any] = dict(detail or {})
+    detail_payload.setdefault("rule_id", str(kind))
+    detail_payload.setdefault("phase", "replay")
+    if kind == "uk_replay_unsupported_action":
+        detail_payload.setdefault("family", "unsupported_or_unresolved_action")
+        detail_payload.setdefault("blocking", True)
+        detail_payload.setdefault("strict_disposition", "block")
+        detail_payload.setdefault("quirks_disposition", "record")
     adjudications_out.append(
         CompileAdjudication(
             kind=str(kind),
             message=message,
             source_statute=op.source.statute_id if op.source else "",
             op_id=op.op_id,
-            detail=detail or {},
+            detail=detail_payload,
         )
     )
 
