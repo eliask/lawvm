@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from lawvm.core.compile_result import TemporalEvent, TemporalScope
 from lawvm.core.ir import (
     IRNode,
@@ -13,7 +15,9 @@ from lawvm.core.ir import (
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.timeline_results import TimelineIssue
+from lawvm.tools.verify import Issue
 from lawvm.tools.verify import _build_verify_facade
+from lawvm.tools.verify import _report
 from lawvm.tools.verify import _timeline_issue_to_issue
 from lawvm.tools.verify import verify_full
 
@@ -111,6 +115,42 @@ def test_verify_timeline_issue_projection_preserves_blocking_severity() -> None:
     assert nonblocking_issue.stage == "timeline"
     assert nonblocking_issue.severity == "warning"
     assert nonblocking_issue.code == "timeline.empty_same_day_interval"
+
+
+def test_verify_report_json_projects_issues_to_shared_contract(capsys) -> None:
+    rc = _report(
+        [
+            Issue(
+                stage="observations",
+                severity="warning",
+                code="observations.unregistered_kind",
+                message="unregistered observation",
+                context="2006/1299 after 2010/1",
+            )
+        ],
+        "2006/1299",
+        "observations",
+        json_output=True,
+        mode="legal_pit",
+    )
+
+    data = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert data["jurisdiction"] == "fi"
+    assert data["base_id"] == "2006/1299"
+    assert data["status"] == "ok"
+    assert data["consistent"] is None
+    assert data["issue_count"] == 1
+    assert data["detail"] == {"stage": "observations", "mode": "legal_pit"}
+    assert data["issues"][0] == {
+        "code": "observations.unregistered_kind",
+        "message": "unregistered observation",
+        "stage": "observations",
+        "severity": "warning",
+        "context": "2006/1299 after 2010/1",
+        "detail": {},
+    }
 
 
 def test_build_verify_facade_dedupes_duplicate_findings() -> None:

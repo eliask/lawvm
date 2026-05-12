@@ -1,14 +1,13 @@
-"""Reserved verification/reporting contracts.
+"""Shared verification/reporting contracts.
 
-These dataclasses are candidate shared wire/reporting shapes, but they are not
-yet the repo's live verification surface. There are currently no production
-importers under ``src/lawvm/``; the only direct consumer is the shared-contract
-shape test.
+These dataclasses are shared wire/reporting shapes for verifier-style tools.
+Frontends may retain local issue types internally, but machine-readable
+verifier output should project into these contracts rather than serializing
+ad hoc text.
 
 API tier
 --------
-Reserved contract header. Stable enough to retain, but not a currently
-adopted cross-cutting runtime surface.
+Stable reporting contract. Keep additive where possible.
 """
 from __future__ import annotations
 
@@ -21,7 +20,7 @@ VerifySeverity = Literal["error", "warning", "info"]
 
 @dataclass(frozen=True)
 class VerifyIssue:
-    """Reserved verification issue shape."""
+    """Shared verification issue shape."""
 
     code: str
     message: str
@@ -38,7 +37,7 @@ class VerifyIssue:
 
 @dataclass(frozen=True)
 class DivergenceRecord:
-    """Reserved divergence row shape for replay-vs-oracle style comparisons."""
+    """Shared divergence row shape for replay-vs-oracle style comparisons."""
 
     address: str
     kind: str
@@ -57,7 +56,7 @@ class DivergenceRecord:
 
 @dataclass(frozen=True)
 class CoverageAttribution:
-    """Reserved summary of touched/untouched divergence attribution."""
+    """Shared summary of touched/untouched divergence attribution."""
 
     touched_path_count: int = 0
     touched_source_count: int = 0
@@ -74,7 +73,7 @@ class CoverageAttribution:
 
 @dataclass(frozen=True)
 class VerifySummary:
-    """Reserved top-level verification result shape."""
+    """Shared top-level verification result shape."""
 
     jurisdiction: str
     base_id: str
