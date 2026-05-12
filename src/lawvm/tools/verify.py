@@ -53,6 +53,7 @@ from lawvm.core.compile_facade import CompileFacade
 from lawvm.core.compile_result import (
     CanonicalBundle,
 )
+from lawvm.core.timeline_results import TimelineIssue
 from lawvm.core.temporal import TemporalEvent
 from lawvm.core.compile_views import (
     quirks_used_from_findings,
@@ -78,6 +79,12 @@ class Issue:
 def _issue(stage, severity, code, message, context="") -> Issue:
     return Issue(stage=stage, severity=severity, code=code,
                  message=message, context=context)
+
+
+def _timeline_issue_to_issue(issue: TimelineIssue, context: str) -> Issue:
+    """Project typed timeline execution diagnostics into verify CLI issues."""
+    severity = "error" if issue.blocking else "warning"
+    return _issue("timeline", severity, issue.rule_id, issue.message, context)
 
 
 def _build_verify_facade(
@@ -365,11 +372,7 @@ def _verify_full(sid: str, mode: Literal["finlex_oracle", "legal_pit"] = "finlex
         pit = materialized.statute
         if compiled_timelines.issues:
             for issue in compiled_timelines.issues:
-                all_issues.append(_issue(
-                    "timeline", "warning", f"timeline.{issue.kind}",
-                    issue.message,
-                    sid,
-                ))
+                all_issues.append(_timeline_issue_to_issue(issue, sid))
         if materialized.is_degraded:
             all_issues.append(_issue(
                 "timeline", "warning", "timeline.degraded_missing_scope",
@@ -380,11 +383,7 @@ def _verify_full(sid: str, mode: Literal["finlex_oracle", "legal_pit"] = "finlex
                 sid,
             ))
         for issue in materialized.issues:
-            all_issues.append(_issue(
-                "timeline", "warning", f"timeline.{issue.kind}",
-                issue.message,
-                sid,
-            ))
+            all_issues.append(_timeline_issue_to_issue(issue, sid))
 
         for violation in check_all_timeline_invariants(pit, compiled_timelines.timelines, pit_date):
             all_issues.append(_issue(
