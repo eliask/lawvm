@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -362,3 +363,30 @@ def test_test_shard_affected_plan_explains_unknown_and_excluded_all() -> None:
             },
         ],
     }
+
+
+def test_ci_sharded_accepts_explicit_shard_flags_and_rejects_affected_mix() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = root / "scripts" / "ci_sharded.sh"
+
+    assert subprocess.run(["bash", "-n", str(script)], check=False).returncode == 0
+    help_result = subprocess.run(
+        [str(script), "--help"],
+        check=False,
+        cwd=root,
+        text=True,
+        capture_output=True,
+    )
+    assert help_result.returncode == 0
+    assert "--shard norway" in help_result.stdout
+    assert "--shards \"norway sweden eu\"" in help_result.stdout
+
+    conflict_result = subprocess.run(
+        [str(script), "--affected", "tests/test_ci_shards.py", "--shard", "tools"],
+        check=False,
+        cwd=root,
+        text=True,
+        capture_output=True,
+    )
+    assert conflict_result.returncode == 2
+    assert "--affected cannot be combined with --shard/--shards" in conflict_result.stderr

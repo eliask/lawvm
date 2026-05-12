@@ -5,6 +5,8 @@
 # Usage:
 #   ./scripts/ci.sh
 #   ./scripts/ci.sh --affected src/lawvm/norway/replay.py tests/test_norway_replay.py
+#   ./scripts/ci.sh --shard norway
+#   ./scripts/ci.sh --shards "norway sweden eu"
 #
 # Delegates to ci_sharded.sh so the canonical gate and shard/matrix gate do
 # not drift. With no arguments this runs all bounded shards; --affected selects
