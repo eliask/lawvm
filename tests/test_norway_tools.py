@@ -185,6 +185,55 @@ def test_no_ingest_tool_emits_json(tmp_path, capsys) -> None:
     assert data["amendment_locators_stored"] == 1
 
 
+def test_no_ingest_tool_reports_skip_existing_entries(tmp_path, capsys) -> None:
+    _write_archive(
+        tmp_path / "gjeldende-lover.tar.bz2",
+        [("nl/nl-20250101-001.xml", b"<html/>")],
+    )
+    _write_archive(
+        tmp_path / "lovtidend-avd1-2025.tar.bz2",
+        [("lti/2025/nl-20250101-001.xml", b"<html/>")],
+    )
+    db_path = tmp_path / "norway.farchive"
+    base_args = Namespace(
+        data_dir=str(tmp_path),
+        db=str(db_path),
+        skip_existing=False,
+        json=True,
+    )
+    no_ingest_main(base_args)
+    capsys.readouterr()
+
+    skip_args = Namespace(
+        data_dir=str(tmp_path),
+        db=str(db_path),
+        skip_existing=True,
+        json=True,
+    )
+    no_ingest_main(skip_args)
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["skipped_existing"] == 3
+    assert data["current_locators_stored"] == 0
+    assert data["original_locators_stored"] == 0
+    assert data["amendment_locators_stored"] == 0
+    assert [entry["kind"] for entry in data["skipped_existing_entries"]] == [
+        "current",
+        "original",
+        "amendment",
+    ]
+    assert {
+        entry["rule_id"] for entry in data["skipped_existing_entries"]
+    } == {"no_ingest_existing_locator_skipped"}
+    assert {
+        entry["phase"] for entry in data["skipped_existing_entries"]
+    } == {"acquisition"}
+    assert {
+        entry["family"] for entry in data["skipped_existing_entries"]
+    } == {"transport_cleanup"}
+    assert all(entry["locator"].startswith("no://") for entry in data["skipped_existing_entries"])
+
+
 def test_no_frontier_tool_emits_json(tmp_path, monkeypatch, capsys) -> None:
     # Pre-import verify BEFORE patching inventory, so verify.py's module-level
     # `from lawvm.norway.inventory import build_no_inventory` binds the real

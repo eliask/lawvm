@@ -17,7 +17,7 @@ import re
 import tarfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, Iterator, Optional, cast
 
 from lxml import etree
 
@@ -447,22 +447,41 @@ def ingest_no_public_archives(
     db_path: Path | None = None,
     *,
     skip_existing: bool = False,
-) -> dict[str, int | str]:
+) -> dict[str, object]:
     """Hydrate a Norway Farchive from local public Lovdata tarballs."""
     db_path = db_path or DEFAULT_NORWAY_DB
     archive = open_no_archive(db_path)
-    report = {
+    skipped_existing_entries: list[dict[str, str]] = []
+    report: dict[str, object] = {
         "source_dir": str(source_dir),
         "db_path": str(db_path),
         "current_locators_stored": 0,
         "original_locators_stored": 0,
         "amendment_locators_stored": 0,
         "skipped_existing": 0,
+        "skipped_existing_entries": skipped_existing_entries,
     }
+
+    def _record_skipped_existing(artifact: NOLocatedArtifact, *, kind: str) -> None:
+        report["skipped_existing"] = cast(int, report["skipped_existing"]) + 1
+        skipped_existing_entries.append(
+            {
+                "rule_id": "no_ingest_existing_locator_skipped",
+                "phase": "acquisition",
+                "family": "transport_cleanup",
+                "reason": "archive already contains locator and skip_existing was enabled",
+                "kind": kind,
+                "locator": artifact.locator,
+                "logical_id": artifact.logical_id,
+                "source_name": artifact.source_name,
+                "member_name": artifact.member_name,
+            }
+        )
+
     try:
         for artifact in _iter_current_artifacts_from_dir(source_dir):
             if skip_existing and archive.has(artifact.locator):
-                report["skipped_existing"] += 1
+                _record_skipped_existing(artifact, kind="current")
                 continue
             archive.store(
                 artifact.locator,
@@ -473,7 +492,7 @@ def ingest_no_public_archives(
             report["current_locators_stored"] += 1
         for artifact in _iter_original_lti_artifacts_from_dir(source_dir):
             if skip_existing and archive.has(artifact.locator):
-                report["skipped_existing"] += 1
+                _record_skipped_existing(artifact, kind="original")
                 continue
             archive.store(
                 artifact.locator,
@@ -484,7 +503,7 @@ def ingest_no_public_archives(
             report["original_locators_stored"] += 1
         for artifact in _iter_amendment_artifacts_from_dir(source_dir):
             if skip_existing and archive.has(artifact.locator):
-                report["skipped_existing"] += 1
+                _record_skipped_existing(artifact, kind="amendment")
                 continue
             archive.store(
                 artifact.locator,
