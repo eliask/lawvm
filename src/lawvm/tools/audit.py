@@ -221,6 +221,11 @@ def _html_has_presentation_range_heading(html_labels: List[str]) -> bool:
     return any(_HTML_PRESENTATION_RANGE_RE.match(label or "") for label in html_labels)
 
 
+def _html_presentation_range_labels(html_labels: List[str]) -> List[str]:
+    """Return merged/range HTML labels that justify range-heading exclusion."""
+    return [label for label in html_labels if _HTML_PRESENTATION_RANGE_RE.match(label or "")]
+
+
 def _finlex_html_url(sid: str) -> str:
     """Construct Finlex HTML URL for a statute."""
     year, num = sid.split("/")
@@ -868,11 +873,20 @@ def cmd_html(args) -> None:
     try:
         if getattr(args, "json", False):
             results = []
-            skipped = 0
+            skipped_range_heading_statutes = []
             for sid in sids:
                 r = _audit_html_one(sid)
                 if exclude_range_headings and _html_has_presentation_range_heading(r.html_labels):
-                    skipped += 1
+                    skipped_range_heading_statutes.append(
+                        {
+                            "sid": r.sid,
+                            "rule_id": "fi_audit_html_presentation_range_heading_excluded",
+                            "phase": "adjudication",
+                            "family": "presentation_cleanup",
+                            "reason": "HTML range-heading presentation quirk excluded from audit denominator",
+                            "html_labels": _html_presentation_range_labels(r.html_labels),
+                        }
+                    )
                     continue
                 results.append(
                     {
@@ -890,7 +904,11 @@ def cmd_html(args) -> None:
             if exclude_range_headings:
                 print(
                     json.dumps(
-                        {"skipped_range_headings": skipped, "results": results},
+                        {
+                            "skipped_range_headings": len(skipped_range_heading_statutes),
+                            "skipped_range_heading_statutes": skipped_range_heading_statutes,
+                            "results": results,
+                        },
                         ensure_ascii=False,
                         indent=2,
                     )

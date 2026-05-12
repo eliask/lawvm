@@ -320,6 +320,79 @@ def test_import_consolidated_zip_warns_and_skips_duplicate_canonical_locator(
     )
     assert len(archive.calls) == 1
     assert archive.calls[0].locator == "finlex://sd-cons/1961/302/fin@20250061/main.xml"
+    assert report.total_skipped == 1
+    assert report.skipped_entries == [
+        {
+            "rule_id": "finlex_import_duplicate_logical_locator",
+            "phase": "acquisition",
+            "family": "source_pathology",
+            "reason": "duplicate logical locator in ZIP; later entry skipped",
+            "source": "consolidated.zip",
+            "entry_name": "akn/fi/act/statute-consolidated/1961/302/fin@20250061/main.xml",
+            "locator": "finlex://sd-cons/1961/302/fin@20250061/main.xml",
+            "previous_entry_name": "akn/fi/act/statute-consolidated/1961/302/fin@/main.xml",
+        },
+    ]
+
+
+def test_import_statute_zip_records_skip_existing_witness(tmp_path: Path) -> None:
+    zip_path = tmp_path / "statute.zip"
+    xml = _statute_xml()
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("akn/fi/act/statute/1988/46/fin@/main.xml", xml)
+
+    locator = "finlex://sd/1988/46/fin/main.xml"
+    archive = _FakeFarchive(current={locator: hashlib.sha256(xml).hexdigest()})
+    report = import_statute_zip(zip_path, archive, skip_existing=True)
+
+    assert report.total_errors == 0
+    assert report.total_imported == 0
+    assert report.total_skipped == 1
+    assert archive.calls == []
+    assert report.skipped_entries == [
+        {
+            "rule_id": "finlex_import_existing_content_skipped",
+            "phase": "acquisition",
+            "family": "transport_cleanup",
+            "reason": "archive already contains identical content and skip_existing was enabled",
+            "source": "statute.zip",
+            "entry_name": "akn/fi/act/statute/1988/46/fin@/main.xml",
+            "locator": locator,
+            "digest": hashlib.sha256(xml).hexdigest(),
+        },
+    ]
+
+
+def test_import_consolidated_zip_records_corrigendum_missing_pit_skip(
+    tmp_path: Path,
+) -> None:
+    zip_path = tmp_path / "consolidated.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(
+            "akn/fi/act/statute-consolidated/1988/46/media/corrigenda/sk46.pdf",
+            b"%PDF-1.7",
+        )
+
+    archive = cast(Any, _FakeFarchive())
+    report = import_consolidated_zip(zip_path, archive)
+
+    assert report.total_errors == 0
+    assert report.total_imported == 0
+    assert report.total_skipped == 1
+    assert archive.calls == []
+    assert report.skipped_entries == [
+        {
+            "rule_id": "finlex_import_corrigendum_pit_missing",
+            "phase": "acquisition",
+            "family": "source_pathology",
+            "reason": "version-agnostic consolidated corrigendum had no family PIT version",
+            "source": "consolidated.zip",
+            "entry_name": "akn/fi/act/statute-consolidated/1988/46/media/corrigenda/sk46.pdf",
+            "sid": "1988/46",
+            "lang": "fin",
+            "filename": "sk46.pdf",
+        },
+    ]
 
 
 def test_import_consolidated_zip_does_not_fail_on_existing_later_observation(

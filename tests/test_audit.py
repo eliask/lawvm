@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from argparse import Namespace
+import json
 
 from lawvm.tools import cli
 from lawvm.tools import audit as audit_tools
@@ -116,8 +117,62 @@ def test_cmd_html_json_excludes_range_heading_rows(capsys, monkeypatch) -> None:
     audit_tools.cmd_html(Namespace(statute_ids=["2010/182"], from_file=None, json=True, exclude_range_headings=True))
 
     out = capsys.readouterr().out
-    assert '"skipped_range_headings": 1' in out
-    assert '"results": []' in out
+    payload = json.loads(out)
+    assert payload["skipped_range_headings"] == 1
+    assert payload["results"] == []
+    assert payload["skipped_range_heading_statutes"] == [
+        {
+            "sid": "2010/182",
+            "rule_id": "fi_audit_html_presentation_range_heading_excluded",
+            "phase": "adjudication",
+            "family": "presentation_cleanup",
+            "reason": "HTML range-heading presentation quirk excluded from audit denominator",
+            "html_labels": ["107 a–108 §"],
+        },
+    ]
+
+
+def test_cmd_html_json_range_heading_skip_keeps_retained_rows(capsys, monkeypatch) -> None:
+    def fake_audit(sid: str) -> audit_tools.HtmlAuditResult:
+        if sid == "2010/182":
+            return audit_tools.HtmlAuditResult(
+                sid=sid,
+                cons_sections=12,
+                cons_eids=["sec_1"],
+                html_sections=13,
+                html_labels=["107 a–108 §"],
+                html_error="",
+                missing_from_xml=["107 a–108 §"],
+                extra_in_xml=[],
+                noncommensurable_reason="",
+            )
+        return audit_tools.HtmlAuditResult(
+            sid=sid,
+            cons_sections=1,
+            cons_eids=["sec_1"],
+            html_sections=1,
+            html_labels=["1 §"],
+            html_error="",
+            missing_from_xml=[],
+            extra_in_xml=[],
+            noncommensurable_reason="",
+        )
+
+    monkeypatch.setattr(audit_tools, "_audit_html_one", fake_audit)
+
+    audit_tools.cmd_html(
+        Namespace(
+            statute_ids=["2010/182", "1995/1552"],
+            from_file=None,
+            json=True,
+            exclude_range_headings=True,
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["skipped_range_headings"] == 1
+    assert [row["sid"] for row in payload["skipped_range_heading_statutes"]] == ["2010/182"]
+    assert [row["sid"] for row in payload["results"]] == ["1995/1552"]
 
 
 def test_audit_html_one_uses_structured_html_labels(monkeypatch) -> None:

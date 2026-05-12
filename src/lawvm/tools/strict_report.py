@@ -494,11 +494,13 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             compile_fi_facade_from_replay,
         )
         from lawvm.finland.grafter import replay_xml
+        from lawvm.finland.strict_profile import default_finland_strict_profile
 
         compiled_ops: list[dict[str, object]] = []
         replay_meta: dict[str, object] = {}
         canonical_ops: list[LegalOperation] = []
         failed_ops: list[FailedOp] = []
+        strict_profile = default_finland_strict_profile()
         master = replay_xml(
             sid,
             quiet=True,
@@ -506,6 +508,8 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             replay_meta_out=replay_meta,
             lo_ops_out=canonical_ops,
             failed_ops_out=failed_ops,
+            strict_profile=strict_profile,
+            strict_johto_temporal=True,
         )
         facade = compile_fi_facade_from_replay(
             parent_id=sid,
@@ -515,6 +519,7 @@ def _compile_one(args: tuple[int, str]) -> dict[str, Any]:
             replay_meta=replay_meta,
             canonical_ops=canonical_ops,
             failed_ops=failed_ops,
+            strict_profile=strict_profile,
         )
         elapsed = time.time() - t0
         source_adjudication = _effective_source_adjudication(
@@ -1046,11 +1051,13 @@ def main(args: Any) -> None:
     show_facade = getattr(args, "facade", False)
     from lawvm.finland.compile import compile_fi_facade_from_replay
     from lawvm.finland.grafter import replay_xml
+    from lawvm.finland.strict_profile import default_finland_strict_profile
 
     compiled_ops: list[dict[str, object]] = []
     replay_meta: dict[str, object] = {}
     canonical_ops: list[LegalOperation] = []
     failed_ops: list[FailedOp] = []
+    strict_profile = default_finland_strict_profile()
     master = replay_xml(
         statute_id,
         mode=mode,
@@ -1059,6 +1066,8 @@ def main(args: Any) -> None:
         replay_meta_out=replay_meta,
         lo_ops_out=canonical_ops,
         failed_ops_out=failed_ops,
+        strict_profile=strict_profile,
+        strict_johto_temporal=True,
     )
     facade = compile_fi_facade_from_replay(
         parent_id=statute_id,
@@ -1068,6 +1077,7 @@ def main(args: Any) -> None:
         replay_meta=replay_meta,
         canonical_ops=canonical_ops,
         failed_ops=failed_ops,
+        strict_profile=strict_profile,
     )
     report_record = report_record_from_facade(
         statute_id=statute_id,
