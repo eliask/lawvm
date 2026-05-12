@@ -57,6 +57,21 @@ else
     SHARDS="$ALL_BOUNDED_SHARDS"
 fi
 SHARDS="${SHARDS//,/ }"
+PYTEST_SELECTORS=()
+if [[ ${#AFFECTED_PATHS[@]} -gt 0 ]]; then
+    only_test_paths=1
+    for path in "${AFFECTED_PATHS[@]}"; do
+        if [[ ! "$path" =~ ^tests/test_.*\.py(::.*)?$ ]]; then
+            only_test_paths=0
+            break
+        fi
+    done
+    # Safe micro-optimization: a source change still runs the full affected
+    # shard; test-only edits in one shard can run just those files/nodes.
+    if [[ "$only_test_paths" -eq 1 && "$SHARDS" != *" "* && "$SHARDS" != "all" ]]; then
+        PYTEST_SELECTORS=("${AFFECTED_PATHS[@]}")
+    fi
+fi
 TIMING_JSONL="${LAWVM_CI_TIMING_JSONL:-}"
 if [[ -n "$TIMING_JSONL" ]]; then
     mkdir -p "$(dirname "$TIMING_JSONL")"
@@ -103,6 +118,13 @@ if [[ ${#AFFECTED_PATHS[@]} -gt 0 ]]; then
 fi
 for shard in $SHARDS; do
     echo ""
+    if [[ ${#PYTEST_SELECTORS[@]} -gt 0 ]]; then
+        ./scripts/test_shard.sh run "$shard" -- "${PYTEST_SELECTORS[@]}" || {
+            echo "FAIL: shard $shard failed."
+            exit 1
+        }
+        continue
+    fi
     ./scripts/test_shard.sh run "$shard" || {
         echo "FAIL: shard $shard failed."
         exit 1

@@ -63,6 +63,8 @@ def test_sharded_ci_supports_affected_path_selection() -> None:
     assert "--affected" in script
     assert "./scripts/test_shard.sh affected" in script
     assert "LAWVM_CI_AFFECTED_PATHS" in script
+    assert "PYTEST_SELECTORS" in script
+    assert 'run "$shard" -- "${PYTEST_SELECTORS[@]}"' in script
 
 
 def test_release_archive_script_emits_verification_sidecars() -> None:
