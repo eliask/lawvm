@@ -76,17 +76,38 @@ class Issue:
     code: str
     message: str
     context: str = ""  # amendment id, path, etc.
+    detail: dict[str, object] | None = None
 
 
-def _issue(stage, severity: VerifySeverity, code, message, context="") -> Issue:
+def _issue(stage, severity: VerifySeverity, code, message, context="", detail: dict[str, object] | None = None) -> Issue:
     return Issue(stage=stage, severity=severity, code=code,
-                 message=message, context=context)
+                 message=message, context=context, detail=detail)
 
 
 def _timeline_issue_to_issue(issue: TimelineIssue, context: str) -> Issue:
     """Project typed timeline execution diagnostics into verify CLI issues."""
     severity = "error" if issue.blocking else "warning"
     return _issue("timeline", severity, issue.rule_id, issue.message, context)
+
+
+def _phase_finding_to_visibility_issue(finding, context: str) -> Issue:
+    """Project non-observation PhaseResult findings into verify JSON visibility."""
+    detail = cast(dict[str, object], {
+        "kind": str(getattr(finding, "kind", "")),
+        "role": str(getattr(finding, "role", "")),
+        "stage": str(getattr(finding, "stage", "")),
+        "source_statute": str(getattr(finding, "source_statute", "") or ""),
+        "blocking": bool(getattr(finding, "blocking", False)),
+        "detail": dict(getattr(finding, "detail", {}) or {}),
+    })
+    return _issue(
+        "observations",
+        "info",
+        "observations.finding",
+        f"PhaseResult finding {detail['kind']!r} is visible outside the observation-role registry.",
+        context,
+        detail=detail,
+    )
 
 
 def _build_verify_facade(
@@ -461,6 +482,7 @@ def verify_observations(
 
         for finding in phase_result.findings():
             if finding.role != "observation":
+                all_issues.append(_phase_finding_to_visibility_issue(finding, f"{sid} after {amendment_id}"))
                 continue
             total_obs += 1
             distinct_kinds.add(finding.kind)
@@ -588,6 +610,7 @@ def _verify_summary(
                 stage=issue.stage,
                 severity=issue.severity,
                 context=issue.context,
+                detail=issue.detail or {},
             )
             for issue in issues
         ),
