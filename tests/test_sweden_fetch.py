@@ -1186,6 +1186,57 @@ def test_compile_se_official_act_ops_records_non_amending_act_skip() -> None:
     assert adjudication.detail["planned_operation_count"] == 1
 
 
+def test_compile_se_official_act_ops_records_malformed_payload_rows() -> None:
+    act = {
+        "sfs_id": "2026:286",
+        "title": "Förordning om ändring i förordningen (2026:106) om något",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2026:106",
+        "is_amending_act": True,
+        "published_date": "2026-03-24",
+        "issued_date": "2026-03-19",
+        "enacting_clause": "Regeringen föreskriver att 2 § förordningen (2026:106) om något ska ha följande lydelse.",
+        "effective_clause": "Denna förordning träder i kraft den 15 april 2026.",
+        "affected_section_labels": ["2"],
+        "provisions": [
+            "not an object",
+            {"label": "", "text": "Unlabeled text"},
+            {"label": "2", "text": "Giltig lydelse."},
+        ],
+        "inserted_headings": [
+            "not an object",
+            {"before_label": "", "text": "Rubrik utan mål"},
+        ],
+        "signatories": [],
+        "footnotes": [],
+    }
+    adjudications: list[CompileAdjudication] = []
+
+    ops = compile_se_official_act_ops(act, source_id="2026:286", adjudications_out=adjudications)
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "2"),)
+    payload_row_adjudications = [
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind == "se_official_act_payload_row_skipped"
+    ]
+    assert [adjudication.detail["rule_id"] for adjudication in payload_row_adjudications] == [
+        "se_official_act_payload_row_invalid_shape",
+        "se_official_act_payload_row_unlabeled",
+        "se_official_act_payload_row_invalid_shape",
+        "se_official_act_payload_row_unlabeled",
+    ]
+    assert [adjudication.detail["row_family"] for adjudication in payload_row_adjudications] == [
+        "provisions",
+        "provisions",
+        "inserted_headings",
+        "inserted_headings",
+    ]
+    assert all(adjudication.detail["phase"] == "payload" for adjudication in payload_row_adjudications)
+    assert all(adjudication.detail["strict_disposition"] == "block" for adjudication in payload_row_adjudications)
+
+
 def test_build_se_official_clause_surface_extracts_targets_without_changing_shape() -> None:
     act = {
         "sfs_id": "2026:286",
