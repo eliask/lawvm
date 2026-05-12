@@ -37,6 +37,7 @@ TimelineIssueKind = Literal[
     "unsupported_applicability_dimension",
     "skipped_contingent_unresolved",
     "ambiguous_missing_scope",
+    "empty_same_day_interval",
     "missing_operation_date",
     "missing_renumber_destination",
     "missing_renumber_source",
@@ -95,11 +96,13 @@ class TimelineIssue:
     @property
     def blocking(self) -> bool:
         """Timeline issues represent unproven timeline execution in strict mode."""
+        if self.kind == "empty_same_day_interval":
+            return False
         return True
 
     @property
-    def strict_disposition(self) -> Literal["block"]:
-        return "block"
+    def strict_disposition(self) -> Literal["block", "record"]:
+        return "block" if self.blocking else "record"
 
     @property
     def quirks_disposition(self) -> Literal["record"]:

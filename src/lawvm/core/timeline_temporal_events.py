@@ -300,6 +300,18 @@ def apply_standalone_temporal_event(
                     emit_warnings=emit_warnings,
                 )
                 continue
+            if active.expires and active.expires == event_date:
+                record_issue(
+                    issue_sink,
+                    kind="empty_same_day_interval",
+                    message=(
+                        "compile_timelines: standalone set_applicability event would "
+                        f"carry an empty same-day interval at {event_date}"
+                    ),
+                    address=address,
+                    source_statute=event.source.statute_id if event.source else "",
+                    emit_warnings=emit_warnings,
+                )
             timeline.versions.append(
                 ProvisionVersion(
                     effective=event_date,
@@ -342,6 +354,18 @@ def apply_standalone_temporal_event(
                     emit_warnings=emit_warnings,
                 )
                 continue
+            if active.effective == event_date:
+                record_issue(
+                    issue_sink,
+                    kind="empty_same_day_interval",
+                    message=(
+                        "compile_timelines: standalone temporal end event creates "
+                        f"an empty same-day interval at {event_date}"
+                    ),
+                    address=address,
+                    source_statute=event.source.statute_id if event.source else "",
+                    emit_warnings=emit_warnings,
+                )
             active.expires = event_date
             active.variant_kind = "temporary"
             continue

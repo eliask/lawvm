@@ -5171,6 +5171,63 @@ def test_compile_timelines_temporal_event_expiry_ignores_provenance_expiry_misma
     assert "temporal_authority_source_expires" not in mismatch_kinds
 
 
+def test_compile_timelines_records_empty_same_day_interval_issue() -> None:
+    """Zero-length temporal overlays are typed timeline evidence, not Python warnings."""
+    base = IRStatute(
+        statute_id="test/same-day-empty",
+        title="Same-day empty interval test",
+        body=IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Base text"),)),
+    )
+    addr = LegalAddress(path=(("section", "1"),))
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        result = compile_timelines_ex(
+            base,
+            [
+                LegalOperation(
+                    op_id="replace_1",
+                    sequence=1,
+                    action=StructuralAction.REPLACE,
+                    target=addr,
+                    payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Updated"),
+                    group_id="g:same-day-empty",
+                    source=OperationSource(statute_id="2010/104", enacted="2010-01-01"),
+                )
+            ],
+            base_date="2000-01-01",
+            temporal_events=(
+                TemporalEvent(
+                    event_id="ev:same-day-commence",
+                    group_id="g:same-day-empty",
+                    kind="commence",
+                    activation_rule=ActivationRule(kind="fixed_date", effective_date="2010-01-01"),
+                    scope=TemporalScope(target_statute="test/same-day-empty"),
+                ),
+                TemporalEvent(
+                    event_id="ev:same-day-expire",
+                    group_id="g:same-day-empty",
+                    kind="expire",
+                    expires="2010-01-01",
+                    scope=TemporalScope(target_statute="test/same-day-empty"),
+                ),
+            ),
+        )
+
+    same_day_issues = [issue for issue in result.issues if issue.kind == "empty_same_day_interval"]
+    assert len(same_day_issues) == 1
+    assert same_day_issues[0].address == addr
+    assert same_day_issues[0].blocking is False
+    assert same_day_issues[0].strict_disposition == "record"
+    assert same_day_issues[0].quirks_disposition == "record"
+    assert same_day_issues[0].rule_id == "timeline.empty_same_day_interval"
+    assert [
+        warning
+        for warning in captured
+        if "empty same-day temporal interval" in str(warning.message)
+    ] == []
+
+
 def test_compile_timelines_embedded_activation_rule_drives_contingent_skip() -> None:
     """Embedded activation rules should own contingent status before legacy fields."""
     base = IRStatute(

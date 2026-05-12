@@ -207,6 +207,14 @@ def test_trigger_coverage_incomplete_registry_code_is_runtime_obligation() -> No
     validate_finding_projection(spec.code, "obligation", True)
 
 
+def test_empty_same_day_interval_registry_code_is_nonblocking_observation() -> None:
+    spec = get_finding_spec("TIME.EMPTY_SAME_DAY_INTERVAL")
+    assert spec is not None
+    assert spec.role == "observation"
+    assert spec.is_barrier is False
+    validate_finding_projection(spec.code, "observation", False)
+
+
 def test_source_corrected_by_patch_registry_code_is_runtime_obligation() -> None:
     spec = get_finding_spec("APPLY.SOURCE_CORRECTED_BY_PATCH")
     assert spec is not None

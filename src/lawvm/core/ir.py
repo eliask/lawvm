@@ -150,16 +150,6 @@ class ProvisionVersion:
         if self.expires and self.effective > self.expires:
             raise ValueError(f"ProvisionVersion expires ({self.expires}) before effective ({self.effective})")
         object.__setattr__(self, "applicability", tuple(self.applicability))
-        if self.expires and self.effective == self.expires:
-            import warnings
-
-            warnings.warn(
-                f"ProvisionVersion effective == expires ({self.effective}) — "
-                f"empty same-day temporal interval "
-                f"(source={self.source.statute_id if self.source and self.source.statute_id else '?'})",
-                stacklevel=2,
-            )
-
 
 @dataclass
 class ProvisionTimeline:
