@@ -3551,6 +3551,23 @@ class UKReplayPipeline:
                                 "nonstructural_replay_candidate_family": nonstructural_candidate_family,
                             }
                         )
+                    elif e.is_applicable_for_replay(applicability_mode=applicability_mode):
+                        lowering_rejections_out.append(
+                            {
+                                "rule_id": "uk_effect_nonstructural_unsupported_no_ops_rejected",
+                                "family": "lowering_filter",
+                                "phase": "lowering",
+                                "effect_id": e.effect_id,
+                                "affecting_act_id": e.affecting_act_id,
+                                "affected_provisions": e.affected_provisions,
+                                "affecting_provisions": e.affecting_provisions,
+                                "effect_type": e.effect_type,
+                                "reason": "UK applicable nonstructural effect row is not replay-supported and lowered to no replay operations",
+                                "blocking": True,
+                                "strict_disposition": "block",
+                                "quirks_disposition": "record",
+                            }
+                        )
                 continue
             if authority_mode == "source_text_only":
                 rejected_ops: list[LegalOperation] = []
