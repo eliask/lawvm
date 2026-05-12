@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from typing import Mapping
+from typing import Any, Mapping
 
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.sweden.grafter import (
@@ -130,6 +130,7 @@ def test_parse_se_source_record_builds_sweden_source_layer_metadata() -> None:
     assert record.parliamentary_links[0].prop_id == "2009/10:165"
     assert record.parliamentary_links[0].bet_id == "2009/10:UbU21"
     assert record.parliamentary_links[0].rskr_id == "2009/10:370"
+    assert record.source_diagnostics == ()
 
 
 def test_parse_se_official_pdf_url_resolves_relative_href_and_enriches_record() -> None:
@@ -161,6 +162,93 @@ def test_parse_se_amendment_register_extracts_scope_and_preparatory_works() -> N
     assert first.has_overgangsbestammelser is True
     assert "26 kap. 10" in first.scope_text
     assert first.parliamentary_links[0].prop_id == "2021/22:45"
+
+
+def test_parse_se_amendment_register_records_malformed_register_shape() -> None:
+    diagnostics: list[dict[str, Any]] = []
+    entries = parse_se_amendment_register(
+        {"beteckning": "2010:800", "andringsforfattningar": {"beteckning": "2022:115"}},
+        diagnostics_out=diagnostics,
+    )
+
+    assert entries == []
+    assert diagnostics == [
+        {
+            "rule_id": "se_official_amendment_register_invalid_shape",
+            "family": "source_pathology",
+            "phase": "extraction",
+            "reason": "official amendment register field did not contain a JSON array",
+            "base_sfs_id": "2010:800",
+            "register_type": "dict",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
+def test_parse_se_amendment_register_records_skipped_non_object_rows() -> None:
+    diagnostics: list[dict[str, Any]] = []
+    entries = parse_se_amendment_register(
+        {
+            "beteckning": "2010:800",
+            "andringsforfattningar": [
+                "not a row",
+                {
+                    "beteckning": "2023:951",
+                    "anteckningar": "ändr. 1 kap. 3 §",
+                    "ikraftDateTime": "2024-07-01T00:00:00",
+                    "rubrik": "Lag (2023:951) om ändring i skollagen (2010:800)",
+                },
+            ],
+        },
+        diagnostics_out=diagnostics,
+    )
+
+    assert [entry.amending_sfs_id for entry in entries] == ["2023:951"]
+    assert diagnostics == [
+        {
+            "rule_id": "se_official_amendment_register_row_invalid_shape",
+            "family": "source_pathology",
+            "phase": "extraction",
+            "reason": "official amendment register row was skipped because it was not a JSON object",
+            "base_sfs_id": "2010:800",
+            "register_type": "list",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "row_index": 0,
+            "row_type": "str",
+        }
+    ]
+
+
+def test_parse_se_source_record_exposes_amendment_register_diagnostics() -> None:
+    record = parse_se_source_record(
+        {
+            "beteckning": "2010:800",
+            "rubrik": "Skollag (2010:800)",
+            "forfattningstypNamn": "Lag",
+            "andringsforfattningar": ["not a row"],
+        }
+    )
+
+    assert record.amendment_register == ()
+    assert record.source_diagnostics == (
+        {
+            "rule_id": "se_official_amendment_register_row_invalid_shape",
+            "family": "source_pathology",
+            "phase": "extraction",
+            "reason": "official amendment register row was skipped because it was not a JSON object",
+            "base_sfs_id": "2010:800",
+            "register_type": "list",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "row_index": 0,
+            "row_type": "str",
+        },
+    )
 
 
 def test_parse_se_statute_preserves_simple_section_and_temporal_marker() -> None:

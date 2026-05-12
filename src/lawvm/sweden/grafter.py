@@ -183,6 +183,7 @@ class SESourceRecord:
     source_confidence: SESourceConfidence = SESourceConfidence.CURRENT_TEXT_ONLY
     parliamentary_links: tuple[SEParliamentaryPackageLink, ...] = ()
     amendment_register: tuple[SEAmendmentRegisterEntry, ...] = ()
+    source_diagnostics: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1037,17 +1038,67 @@ def _classify_source_confidence(document: dict[str, Any]) -> SESourceConfidence:
     return SESourceConfidence.OFFICIAL_PDF_ONLY
 
 
-def parse_se_amendment_register(payload: bytes | str | dict[str, Any]) -> list[SEAmendmentRegisterEntry]:
+def _record_se_amendment_register_diagnostic(
+    diagnostics_out: list[dict[str, Any]] | None,
+    *,
+    rule_id: str,
+    reason: str,
+    base_sfs_id: str,
+    register_type: str,
+    row_index: int | None = None,
+    row_type: str = "",
+) -> None:
+    if diagnostics_out is None:
+        return
+    diagnostic: dict[str, Any] = {
+        "rule_id": rule_id,
+        "family": "source_pathology",
+        "phase": "extraction",
+        "reason": reason,
+        "base_sfs_id": base_sfs_id,
+        "register_type": register_type,
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+    }
+    if row_index is not None:
+        diagnostic["row_index"] = row_index
+        diagnostic["row_type"] = row_type
+    diagnostics_out.append(diagnostic)
+
+
+def parse_se_amendment_register(
+    payload: bytes | str | dict[str, Any],
+    *,
+    diagnostics_out: list[dict[str, Any]] | None = None,
+) -> list[SEAmendmentRegisterEntry]:
     """Parse Sweden amendment-register rows from an RK-style JSON document."""
     document = _coerce_document(payload)
     base_sfs_id = str(document.get("beteckning") or "")
-    rows = document.get("andringsforfattningar") or []
+    raw_rows = document.get("andringsforfattningar")
+    rows = raw_rows if raw_rows is not None else []
     if not isinstance(rows, list):
+        _record_se_amendment_register_diagnostic(
+            diagnostics_out,
+            rule_id="se_official_amendment_register_invalid_shape",
+            reason="official amendment register field did not contain a JSON array",
+            base_sfs_id=base_sfs_id,
+            register_type=type(rows).__name__,
+        )
         return []
 
     entries: list[SEAmendmentRegisterEntry] = []
-    for row in rows:
+    for row_index, row in enumerate(rows):
         if not isinstance(row, dict):
+            _record_se_amendment_register_diagnostic(
+                diagnostics_out,
+                rule_id="se_official_amendment_register_row_invalid_shape",
+                reason="official amendment register row was skipped because it was not a JSON object",
+                base_sfs_id=base_sfs_id,
+                register_type=type(rows).__name__,
+                row_index=row_index,
+                row_type=type(row).__name__,
+            )
             continue
         scope_text = _normalize_space(str(row.get("anteckningar") or ""))
         preparatory_works = _normalize_space(str(row.get("forarbeten") or ""))
@@ -1096,7 +1147,13 @@ def parse_se_source_record(payload: bytes | str | dict[str, Any]) -> SESourceRec
         register = {}
     title = _normalize_space(str(document.get("rubrik") or ""))
     sfs_id = str(document.get("beteckning") or "")
-    amendment_register = tuple(parse_se_amendment_register(document))
+    source_diagnostics: list[dict[str, Any]] = []
+    amendment_register = tuple(
+        parse_se_amendment_register(
+            document,
+            diagnostics_out=source_diagnostics,
+        )
+    )
 
     marker_values: list[str] = []
     effective_date = _date_only(document.get("ikraftDateTime"))
@@ -1128,6 +1185,7 @@ def parse_se_source_record(payload: bytes | str | dict[str, Any]) -> SESourceRec
             str(register.get("forarbeten") or ""),
         ),
         amendment_register=amendment_register,
+        source_diagnostics=tuple(source_diagnostics),
     )
 
 
