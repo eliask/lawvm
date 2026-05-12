@@ -7,6 +7,7 @@ from lawvm.norway.statsrad import (
     build_no_statsrad_commencement_candidate_scan,
     build_no_statsrad_index,
     extract_no_statsrad_articles,
+    extract_statsrad_events,
     fetch_statsrad_url,
     fetch_no_statsrad_articles,
     iter_no_statsrad_event_artifacts,
@@ -72,6 +73,8 @@ class _FakeArchive:
         return self.fetched.get(locator)
 
     def locators(self, pattern: str = "%") -> list[str]:
+        if pattern == "no://statsrad/article/%/raw.html":
+            return sorted(key for key in self.stored if key.endswith("/raw.html"))
         if pattern == "no://statsrad/article/%/record.json":
             return sorted(key for key in self.stored if key.endswith("/record.json"))
         if pattern == "no://statsrad/article/%/events.json":
@@ -227,10 +230,118 @@ def test_extract_no_statsrad_articles_stores_event_json() -> None:
     report = extract_no_statsrad_articles(archive, article_ids=["id3103197"])
 
     assert report["article_count"] == 1
+    assert report["selected_article_count"] == 1
+    assert report["processed_article_count"] == 1
+    assert report["skipped_article_count"] == 0
+    assert report["skipped_article_diagnostics"] == []
     events = json.loads(archive.stored[no_statsrad_article_events_locator("id3103197")].decode("utf-8"))
     assert any(event["event_kind"] == "sanction" for event in events)
     assert any(event["event_kind"] == "commencement" and event["effective_date"] == "2025-07-01" for event in events)
     assert any(event["event_kind"] == "partial_commencement" and event["effective_date"] == "2026-01-01" for event in events)
+
+
+def test_extract_no_statsrad_articles_records_missing_raw_artifact() -> None:
+    archive = _FakeArchive({})
+    archive.store(
+        no_statsrad_article_record_locator("id3103197"),
+        json.dumps({"bulletin_id": "id3103197"}).encode("utf-8"),
+        storage_class="json",
+    )
+    diagnostics: list[dict[str, object]] = []
+
+    report = extract_no_statsrad_articles(
+        archive,
+        article_ids=["id3103197"],
+        diagnostics_out=diagnostics,
+    )
+
+    assert report["article_count"] == 0
+    assert report["selected_article_count"] == 1
+    assert report["processed_article_count"] == 0
+    assert report["skipped_article_count"] == 1
+    assert report["skipped_article_diagnostics"] == diagnostics
+    assert diagnostics == [
+        {
+            "rule_id": "no_statsrad_extract_missing_raw_artifact",
+            "family": "source_pathology",
+            "phase": "acquisition",
+            "locator": no_statsrad_article_raw_locator("id3103197"),
+            "bulletin_id": "id3103197",
+            "reason": "statsrad article raw HTML artifact was missing",
+            "raw_locator": no_statsrad_article_raw_locator("id3103197"),
+            "record_locator": no_statsrad_article_record_locator("id3103197"),
+            "raw_missing": True,
+            "record_missing": False,
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
+def test_extract_no_statsrad_articles_records_missing_record_artifact() -> None:
+    archive = _FakeArchive({})
+    archive.store(no_statsrad_article_raw_locator("id3103197"), _ARTICLE_HTML, storage_class="html")
+    diagnostics: list[dict[str, object]] = []
+
+    report = extract_no_statsrad_articles(
+        archive,
+        article_ids=["id3103197"],
+        diagnostics_out=diagnostics,
+    )
+
+    assert report["article_count"] == 0
+    assert report["selected_article_count"] == 1
+    assert report["processed_article_count"] == 0
+    assert report["skipped_article_count"] == 1
+    assert report["skipped_article_diagnostics"] == diagnostics
+    assert diagnostics == [
+        {
+            "rule_id": "no_statsrad_extract_missing_record_artifact",
+            "family": "source_pathology",
+            "phase": "acquisition",
+            "locator": no_statsrad_article_record_locator("id3103197"),
+            "bulletin_id": "id3103197",
+            "reason": "statsrad article metadata record artifact was missing",
+            "raw_locator": no_statsrad_article_raw_locator("id3103197"),
+            "record_locator": no_statsrad_article_record_locator("id3103197"),
+            "raw_missing": False,
+            "record_missing": True,
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
+def test_extract_statsrad_events_records_missing_record_artifact(monkeypatch) -> None:
+    archive = _FakeArchive({})
+    archive.store(no_statsrad_article_raw_locator("id3103197"), _ARTICLE_HTML, storage_class="html")
+    monkeypatch.setattr("lawvm.norway.statsrad.open_no_archive", lambda path: archive)
+    monkeypatch.setattr("lawvm.norway.statsrad.resolve_no_source_path", lambda path=None: path)
+
+    report = extract_statsrad_events(db_path=None, bulletin_ids=["id3103197"])
+
+    assert report["selected_article_count"] == 1
+    assert report["processed_article_count"] == 0
+    assert report["skipped_article_count"] == 1
+    assert report["skipped_article_diagnostics"] == [
+        {
+            "rule_id": "no_statsrad_extract_missing_record_artifact",
+            "family": "source_pathology",
+            "phase": "acquisition",
+            "locator": no_statsrad_article_record_locator("id3103197"),
+            "bulletin_id": "id3103197",
+            "reason": "statsrad article metadata record artifact was missing",
+            "raw_locator": no_statsrad_article_raw_locator("id3103197"),
+            "record_locator": no_statsrad_article_record_locator("id3103197"),
+            "raw_missing": False,
+            "record_missing": True,
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
 
 
 def test_iter_no_statsrad_event_artifacts_records_malformed_artifacts(monkeypatch) -> None:

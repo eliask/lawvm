@@ -454,6 +454,7 @@ def extract_no_statsrad_articles(
     *,
     article_ids: Iterable[str] | None = None,
     limit: int | None = None,
+    diagnostics_out: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if article_ids is None:
         article_ids = [
@@ -466,11 +467,26 @@ def extract_no_statsrad_articles(
     if limit is not None:
         article_ids = list(article_ids)[:limit]
     extracted = 0
+    skipped_article_diagnostics: list[dict[str, Any]] = []
     for bulletin_id in article_ids:
-        raw_bytes = archive.get(no_statsrad_article_raw_locator(bulletin_id))
-        record_bytes = archive.get(no_statsrad_article_record_locator(bulletin_id))
-        if raw_bytes is None or record_bytes is None:
+        raw_locator = no_statsrad_article_raw_locator(bulletin_id)
+        record_locator = no_statsrad_article_record_locator(bulletin_id)
+        raw_bytes = archive.get(raw_locator)
+        record_bytes = archive.get(record_locator)
+        diagnostic = _statsrad_extract_missing_artifact_diagnostic(
+            bulletin_id=bulletin_id,
+            raw_locator=raw_locator,
+            record_locator=record_locator,
+            raw_missing=raw_bytes is None,
+            record_missing=record_bytes is None,
+        )
+        if diagnostic is not None:
+            skipped_article_diagnostics.append(diagnostic)
+            if diagnostics_out is not None:
+                diagnostics_out.append(diagnostic)
             continue
+        assert raw_bytes is not None
+        assert record_bytes is not None
         record = json.loads(record_bytes.decode("utf-8"))
         events = extract_no_statsrad_events(
             raw_bytes,
@@ -485,7 +501,13 @@ def extract_no_statsrad_articles(
             metadata={"kind": "statsrad_article_events", "bulletin_id": bulletin_id, "event_count": len(events)},
         )
         extracted += 1
-    return {"article_count": extracted}
+    return {
+        "article_count": extracted,
+        "selected_article_count": len(article_ids),
+        "processed_article_count": extracted,
+        "skipped_article_count": len(skipped_article_diagnostics),
+        "skipped_article_diagnostics": skipped_article_diagnostics,
+    }
 
 
 def build_no_statsrad_index_report(
@@ -559,6 +581,40 @@ def _statsrad_event_artifact_diagnostic(
     }
     diagnostic.update(extra)
     return diagnostic
+
+
+def _statsrad_extract_missing_artifact_diagnostic(
+    *,
+    bulletin_id: str,
+    raw_locator: str,
+    record_locator: str,
+    raw_missing: bool,
+    record_missing: bool,
+) -> dict[str, Any] | None:
+    if not raw_missing and not record_missing:
+        return None
+    if raw_missing:
+        rule_id = "no_statsrad_extract_missing_raw_artifact"
+        locator = raw_locator
+        reason = "statsrad article raw HTML artifact was missing"
+    else:
+        rule_id = "no_statsrad_extract_missing_record_artifact"
+        locator = record_locator
+        reason = "statsrad article metadata record artifact was missing"
+    return _statsrad_event_artifact_diagnostic(
+        rule_id=rule_id,
+        locator=locator,
+        bulletin_id=bulletin_id,
+        reason=reason,
+        phase="acquisition",
+        raw_locator=raw_locator,
+        record_locator=record_locator,
+        raw_missing=raw_missing,
+        record_missing=record_missing,
+        blocking=True,
+        strict_disposition="block",
+        quirks_disposition="record",
+    )
 
 
 def _statsrad_bulletin_id_from_event_locator(locator: str) -> str:
@@ -1163,12 +1219,25 @@ def extract_statsrad_events(
         if limit is not None:
             ids = ids[:limit]
         reports: list[dict[str, Any]] = []
+        skipped_article_diagnostics: list[dict[str, Any]] = []
         event_count = 0
         for bulletin_id in ids:
-            raw_bytes = archive.get(no_statsrad_article_raw_locator(bulletin_id))
-            record_bytes = archive.get(no_statsrad_article_record_locator(bulletin_id))
-            if raw_bytes is None or record_bytes is None:
+            raw_locator = no_statsrad_article_raw_locator(bulletin_id)
+            record_locator = no_statsrad_article_record_locator(bulletin_id)
+            raw_bytes = archive.get(raw_locator)
+            record_bytes = archive.get(record_locator)
+            diagnostic = _statsrad_extract_missing_artifact_diagnostic(
+                bulletin_id=bulletin_id,
+                raw_locator=raw_locator,
+                record_locator=record_locator,
+                raw_missing=raw_bytes is None,
+                record_missing=record_bytes is None,
+            )
+            if diagnostic is not None:
+                skipped_article_diagnostics.append(diagnostic)
                 continue
+            assert raw_bytes is not None
+            assert record_bytes is not None
             record = json.loads(record_bytes.decode("utf-8"))
             events = extract_statsrad_events_from_article(
                 raw_bytes,
@@ -1182,7 +1251,10 @@ def extract_statsrad_events(
             event_count += len(events)
         return {
             "source_name": STATSRAD_SOURCE_NAME,
+            "selected_article_count": len(ids),
             "processed_article_count": len(reports),
+            "skipped_article_count": len(skipped_article_diagnostics),
+            "skipped_article_diagnostics": skipped_article_diagnostics,
             "event_count": event_count,
             "articles": reports,
         }
