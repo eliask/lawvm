@@ -445,6 +445,7 @@ def _store_se_backfill_checkpoint(
         (str(row.get("error_kind") or "") for row in reversed(rows) if str(row.get("error_kind") or "")),
         "",
     )
+    non_ok_rows = _se_backfill_non_ok_rows(rows)
     archive_se_backfill_official_checkpoint(
         archive,
         {
@@ -463,6 +464,8 @@ def _store_se_backfill_checkpoint(
             "error_kind_counts": error_kind_counts,
             "frontier_classification_counts": dict(sorted(frontier_classification_counts.items())),
             "frontier_detail_counts": dict(sorted(frontier_detail_counts.items())),
+            "non_ok_count": len(non_ok_rows),
+            "non_ok_rows": non_ok_rows,
             "rows": [
                 {
                     "sfs_id": str(row.get("sfs_id") or ""),
@@ -475,6 +478,37 @@ def _store_se_backfill_checkpoint(
             ],
         },
     )
+
+
+def _se_backfill_non_ok_rows(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
+    result: list[dict[str, str]] = []
+    for row in rows:
+        status = str(row.get("status") or "")
+        if status == "ok" or not status:
+            continue
+        if status == "skipped_complete":
+            rule_id = "se_backfill_official_existing_complete_skipped"
+            family = "transport_cleanup"
+            reason = "Sweden official backfill skipped an already complete source bundle."
+        else:
+            rule_id = "se_backfill_official_error"
+            family = "source_pathology"
+            reason = "Sweden official backfill recorded a source acquisition or compilation error."
+        result.append(
+            {
+                "rule_id": rule_id,
+                "phase": "acquisition",
+                "family": family,
+                "reason": reason,
+                "sfs_id": str(row.get("sfs_id") or ""),
+                "status": status,
+                "error_kind": str(row.get("error_kind") or ""),
+                "error": str(row.get("error") or ""),
+                "frontier_classification": str(row.get("frontier_classification") or ""),
+                "frontier_detail": str(row.get("frontier_detail") or ""),
+            }
+        )
+    return result
 
 
 def _store_se_backfill_status(
@@ -1173,6 +1207,7 @@ def _cmd_backfill_official(args: "argparse.Namespace") -> None:
             error_count=error_count,
         )
         last_row = rows[-1] if rows else {}
+        non_ok_rows = _se_backfill_non_ok_rows(rows)
         chunk_year_counts, chunk_year_status_counts = _se_backfill_year_buckets(rows)
         _store_se_backfill_history(
             archive,
@@ -1205,6 +1240,8 @@ def _cmd_backfill_official(args: "argparse.Namespace") -> None:
                 "dominant_error_kind_count": dominant_error_kind_count,
                 "completion_ratio": (completed_count / chunk_candidate_count) if chunk_candidate_count else 0.0,
                 "error_rate": (error_count / chunk_candidate_count) if chunk_candidate_count else 0.0,
+                "non_ok_count": len(non_ok_rows),
+                "non_ok_rows": non_ok_rows,
                 "checkpoint_locator": checkpoint_locator,
                 "status_locator": se_backfill_official_status_locator(),
                 "last_sfs_id": str(last_row.get("sfs_id") or ""),
