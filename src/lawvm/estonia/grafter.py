@@ -2428,6 +2428,7 @@ def parse_ee_amendment_ops(
             source_id,
             root_ns,
             target_title=target_title,
+            adjudications_out=adjudications_out,
         )
     else:
         old_format_ops = _parse_old_format_amendment_ops(
@@ -2655,6 +2656,7 @@ def _parse_preambul_single_target_ops(
             synthetic_source_id,
             synthetic_ns_str,
             synthetic_target_title,
+            adjudications_out=adjudications_out,
         )
         plain_item_ops = _parse_muutmisseadus_plain_paragraph_item_ops(
             synthetic_root,
@@ -3155,7 +3157,11 @@ def _is_omnibus_amendment(root: ET.Element, ns_str: str, target_title: str) -> b
 
 
 def _parse_muutmisseadus_ops(
-    root: ET.Element, source_id: str, ns_str: str = "", target_title: str = ""
+    root: ET.Element,
+    source_id: str,
+    ns_str: str = "",
+    target_title: str = "",
+    adjudications_out: Optional[list[CompileAdjudication]] = None,
 ) -> List[LegalOperation]:
     """Parse muutmisseadus/muutmismaarus schema amendment XML.
 
@@ -3187,6 +3193,7 @@ def _parse_muutmisseadus_ops(
         extract_ops=extract_ee_ops,
         has_section_ref=_has_section_ref,
         section_from_ops=_section_from_ops,
+        adjudications_out=adjudications_out,
     )
     return all_ops
 
