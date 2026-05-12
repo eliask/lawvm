@@ -313,6 +313,9 @@ def test_replay_no_to_pit_marks_unknown_effective_dates(tmp_path) -> None:
     assert evidence_row["rule_id"] == "no_replay_unknown_effective_skipped"
     assert evidence_row["phase"] == "temporal"
     assert evidence_row["source_artifact_id"] == "no/lovtid/2025-02-02-5"
+    assert evidence_row["blocking"] is True
+    assert evidence_row["strict_disposition"] == "block"
+    assert evidence_row["quirks_disposition"] == "record"
     assert validate_corpus_finding_evidence_row(evidence_row) == ()
 
 
@@ -359,6 +362,9 @@ def test_replay_no_to_pit_surfaces_contingent_commencement_skip(tmp_path) -> Non
     assert evidence_row["rule_id"] == "no_replay_contingent_commencement_skipped"
     assert evidence_row["phase"] == "temporal"
     assert evidence_row["source_artifact_id"] == "no/lovtid/2025-02-02-5"
+    assert evidence_row["blocking"] is True
+    assert evidence_row["strict_disposition"] == "block"
+    assert evidence_row["quirks_disposition"] == "record"
     assert validate_corpus_finding_evidence_row(evidence_row) == ()
 
 
@@ -410,6 +416,9 @@ def test_replay_no_to_pit_marks_missing_source_separately(tmp_path) -> None:
     assert evidence_row["rule_id"] == "no_replay_missing_amendment_source"
     assert evidence_row["phase"] == "acquisition"
     assert evidence_row["source_artifact_id"] == "no/lovtid/2025-02-02-5"
+    assert evidence_row["blocking"] is True
+    assert evidence_row["strict_disposition"] == "block"
+    assert evidence_row["quirks_disposition"] == "record"
     assert validate_corpus_finding_evidence_row(evidence_row) == ()
 
 
