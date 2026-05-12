@@ -1114,7 +1114,15 @@ def test_sweden_hydrate_bulk_command_ingests_scrape_and_hydrates(monkeypatch, tm
     archive = _FakeArchiveContext()
     monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
 
-    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False):
+    def fake_fetch_official(
+        sfs_id: str,
+        archive_obj,
+        *,
+        max_age_hours=float("inf"),
+        force_reextract: bool = False,
+        diagnostics_out=None,
+    ):
+        del diagnostics_out
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf", b"%PDF-1.7 fake")
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf.txt", b"Recovered PDF text")
         archive_obj.store(f"se://sfs/{sfs_id}/official.cleaned.txt", b"Recovered PDF text")
@@ -1197,7 +1205,33 @@ def test_sweden_hydrate_bulk_command_reports_current_diagnostics(monkeypatch, ca
         }
     )
     monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
-    monkeypatch.setattr("lawvm.tools.sweden.fetch_se_official_artifacts", lambda *args, **kwargs: None)
+
+    def fake_fetch_official(
+        sfs_id: str,
+        archive_obj,
+        *,
+        max_age_hours=float("inf"),
+        force_reextract: bool = False,
+        diagnostics_out: list[dict[str, object]] | None = None,
+    ) -> None:
+        del archive_obj, max_age_hours, force_reextract
+        if diagnostics_out is not None:
+            diagnostics_out.append(
+                {
+                    "rule_id": "se_official_artifacts_unavailable",
+                    "family": "source_pathology",
+                    "phase": "acquisition",
+                    "reason": "Sweden official SFS PDF artifact could not be located or fetched",
+                    "sfs_id": sfs_id,
+                    "locator": f"se://sfs/{sfs_id}/official.pdf",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                }
+            )
+        return None
+
+    monkeypatch.setattr("lawvm.tools.sweden.fetch_se_official_artifacts", fake_fetch_official)
 
     def fake_fetch_current(
         sfs_id: str,
@@ -1246,6 +1280,9 @@ def test_sweden_hydrate_bulk_command_reports_current_diagnostics(monkeypatch, ca
     row = payload["rows"][0]
 
     assert row["status"] == "ok"
+    assert row["official_fetched"] is False
+    assert row["official_diagnostic_count"] == 1
+    assert row["official_diagnostics"][0]["rule_id"] == "se_official_artifacts_unavailable"
     assert row["current_fetched"] is False
     assert row["current_diagnostic_count"] == 1
     assert row["current_diagnostics"][0]["rule_id"] == "se_rk_current_no_hits"
@@ -1257,7 +1294,7 @@ def test_sweden_backfill_official_command_generates_candidate_ids(monkeypatch, c
 
     seen: list[str] = []
 
-    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False):
+    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         seen.append(sfs_id)
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf", b"%PDF-1.7 fake")
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf.txt", b"Recovered PDF text")
@@ -1352,7 +1389,7 @@ def test_sweden_backfill_official_command_emits_json(monkeypatch, capsys) -> Non
     monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
     monkeypatch.setattr(
         "lawvm.tools.sweden.fetch_se_official_artifacts",
-        lambda sfs_id, archive_obj, max_age_hours=float("inf"), force_reextract=False: (
+        lambda sfs_id, archive_obj, max_age_hours=float("inf"), force_reextract=False, diagnostics_out=None: (
             archive_obj.store(f"se://sfs/{sfs_id}/official.pdf", b"%PDF-1.7 fake"),
             archive_obj.store(f"se://sfs/{sfs_id}/official.pdf.txt", b"Recovered PDF text"),
             archive_obj.store(f"se://sfs/{sfs_id}/official.cleaned.txt", b"Recovered PDF text"),
@@ -1395,7 +1432,7 @@ def test_sweden_backfill_official_command_writes_and_resumes_checkpoint(monkeypa
 
     seen: list[str] = []
 
-    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False):
+    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         seen.append(sfs_id)
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf", b"%PDF-1.7 fake")
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf.txt", b"Recovered PDF text")
@@ -1483,7 +1520,7 @@ def test_sweden_backfill_official_command_writes_live_status_artifact(monkeypatc
     archive = _FakeArchiveContext()
     monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
 
-    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False):
+    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         status = json.loads(archive_obj.stored[se_backfill_official_status_locator()].decode("utf-8"))
         assert status["current_stage"] == "FETCH_OFFICIAL"
         assert status["current_stage_state"] == "running"
@@ -1538,7 +1575,7 @@ def test_sweden_backfill_official_command_records_error_kind_counts(monkeypatch,
     archive = _FakeArchiveContext()
     monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
 
-    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False):
+    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         if sfs_id == "1999:1":
             raise RuntimeError("temporary failure")
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf", b"%PDF-1.7 fake")
@@ -1619,7 +1656,7 @@ def test_sweden_backfill_official_command_handles_recovered_word_substitution_fa
     archive = _FakeArchiveContext()
     monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
 
-    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False):
+    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         archive_obj.store(
             f"se://sfs/{sfs_id}/official.act.json",
             json.dumps(
@@ -1695,7 +1732,7 @@ def test_sweden_backfill_official_command_classifies_missing_base_act(monkeypatc
     archive = _FakeArchiveContext()
     monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
 
-    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False):
+    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf", b"%PDF-1.7 fake")
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf.txt", b"Recovered PDF text")
         archive_obj.store(f"se://sfs/{sfs_id}/official.cleaned.txt", b"Recovered PDF text")
@@ -1770,7 +1807,7 @@ def test_sweden_backfill_official_command_appends_history_artifact(monkeypatch) 
     archive = _FakeArchiveContext()
     monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
 
-    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False):
+    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf", b"%PDF-1.7 fake")
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf.txt", b"Recovered PDF text")
         archive_obj.store(f"se://sfs/{sfs_id}/official.cleaned.txt", b"Recovered PDF text")
@@ -1831,7 +1868,7 @@ def test_sweden_backfill_official_command_tracks_sweep_and_chunk_sizes(monkeypat
     archive = _FakeArchiveContext()
     monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
 
-    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False):
+    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf", b"%PDF-1.7 fake")
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf.txt", b"Recovered PDF text")
         archive_obj.store(f"se://sfs/{sfs_id}/official.cleaned.txt", b"Recovered PDF text")
@@ -1891,7 +1928,7 @@ def test_sweden_backfill_official_command_prints_priority_range(monkeypatch, cap
     archive = _FakeArchiveContext()
     monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
 
-    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False):
+    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf", b"%PDF-1.7 fake")
         archive_obj.store(f"se://sfs/{sfs_id}/official.pdf.txt", b"Recovered PDF text")
         archive_obj.store(f"se://sfs/{sfs_id}/official.cleaned.txt", b"Recovered PDF text")
@@ -1962,7 +1999,7 @@ def test_sweden_backfill_official_command_records_year_coverage_buckets(monkeypa
     archive = _FakeArchiveContext()
     monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
 
-    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False):
+    def fake_fetch_official(sfs_id: str, archive_obj, *, max_age_hours=float("inf"), force_reextract: bool = False, diagnostics_out=None):
         act: dict[str, object] = {
             "sfs_id": sfs_id,
             "title": f"Förordning om ändring i förordningen ({sfs_id})",
