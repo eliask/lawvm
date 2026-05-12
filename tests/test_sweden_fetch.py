@@ -289,6 +289,78 @@ def test_fetch_official_records_diagnostic_when_pdf_unavailable(monkeypatch) -> 
             "blocking": True,
             "strict_disposition": "block",
             "quirks_disposition": "record",
+            "pdf_source_attempts": (
+                {
+                    "lane": "legacy_direct_guess",
+                    "url": "https://rkrattsdb.gov.se/SFSdoc/26/260286.PDF",
+                    "status": "missing_or_non_pdf",
+                },
+                {
+                    "lane": "legacy_search_result",
+                    "url": "https://rkrattsdb.gov.se/sfspdf/sql_search_rsp.asp",
+                    "status": "no_result",
+                },
+                {
+                    "lane": "official_month_probe",
+                    "url": "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-01/SFS2026-286.pdf",
+                    "status": "missing_or_non_pdf",
+                },
+                {
+                    "lane": "official_month_probe",
+                    "url": "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-02/SFS2026-286.pdf",
+                    "status": "missing_or_non_pdf",
+                },
+                {
+                    "lane": "official_month_probe",
+                    "url": "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-03/SFS2026-286.pdf",
+                    "status": "missing_or_non_pdf",
+                },
+                {
+                    "lane": "official_month_probe",
+                    "url": "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-04/SFS2026-286.pdf",
+                    "status": "missing_or_non_pdf",
+                },
+                {
+                    "lane": "official_month_probe",
+                    "url": "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-05/SFS2026-286.pdf",
+                    "status": "missing_or_non_pdf",
+                },
+                {
+                    "lane": "official_month_probe",
+                    "url": "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-06/SFS2026-286.pdf",
+                    "status": "missing_or_non_pdf",
+                },
+                {
+                    "lane": "official_month_probe",
+                    "url": "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-07/SFS2026-286.pdf",
+                    "status": "missing_or_non_pdf",
+                },
+                {
+                    "lane": "official_month_probe",
+                    "url": "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-08/SFS2026-286.pdf",
+                    "status": "missing_or_non_pdf",
+                },
+                {
+                    "lane": "official_month_probe",
+                    "url": "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-09/SFS2026-286.pdf",
+                    "status": "missing_or_non_pdf",
+                },
+                {
+                    "lane": "official_month_probe",
+                    "url": "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-10/SFS2026-286.pdf",
+                    "status": "missing_or_non_pdf",
+                },
+                {
+                    "lane": "official_month_probe",
+                    "url": "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-11/SFS2026-286.pdf",
+                    "status": "missing_or_non_pdf",
+                },
+                {
+                    "lane": "official_month_probe",
+                    "url": "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-12/SFS2026-286.pdf",
+                    "status": "missing_or_non_pdf",
+                },
+            ),
         }
     ]
 
