@@ -1550,9 +1550,23 @@ def test_iter_no_document_change_ops_skips_structured_cross_base_target_without_
 </html>
 """.encode("utf-8")
 
-    grouped = dict(iter_no_document_change_ops(xml, "no/lovtid/2024-06-21-46"))
+    adjudications: list[CompileAdjudication] = []
+
+    grouped = dict(iter_no_document_change_ops(xml, "no/lovtid/2024-06-21-46", adjudications_out=adjudications))
 
     assert grouped == {}
+    assert len(adjudications) == 1
+    adjudication = adjudications[0]
+    assert adjudication.kind == "no_parse_cross_base_structured_target_skipped"
+    assert adjudication.source_statute == "no/lovtid/2024-06-21-46"
+    assert adjudication.detail["rule_id"] == "no_parse_cross_base_structured_target_skipped"
+    assert adjudication.detail["phase"] == "parse"
+    assert adjudication.detail["strict_disposition"] == "block"
+    assert adjudication.detail["quirks_disposition"] == "record"
+    assert adjudication.detail["base_id"] == "no/lov/2022-05-12-28"
+    assert adjudication.detail["target_base"] == "no/lov/1967-02-10"
+    assert adjudication.detail["action"] == "replace"
+    assert adjudication.detail["raw_target"] == "lov/1967-02-10/§12/ledd/2"
 
 
 def test_parse_no_amendment_ops_unstructured_supports_mixed_existing_and_new_subsections() -> None:
