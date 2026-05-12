@@ -328,6 +328,7 @@ _EE_REF_SLICE_OP_FILTER_RULE = "ee_ref_slice_operation_filtered"
 _EE_AMENDMENT_SOURCE_FETCH_FAILED_RULE = "ee_amendment_source_fetch_failed"
 _EE_AMENDMENT_PARSE_FAILED_RULE = "ee_amendment_parse_failed"
 _EE_TEMPORAL_SOURCE_SCAN_FAILED_RULE = "ee_temporal_source_scan_failed"
+_EE_PENDING_SOURCE_ACT_COMMENCEMENT_FETCH_FAILED_RULE = "ee_pending_source_act_commencement_source_fetch_failed"
 
 
 def _ee_orchestration_adjudication(
@@ -628,16 +629,35 @@ def _ee_precompose_pending_source_act_commencements(
 
     xml_by_ref: dict[str, bytes] = {}
     title_by_ref: dict[str, str] = {}
+    adjudications: list[CompileAdjudication] = []
     for ref in refs:
         try:
             xml_bytes = fetch_rt_xml(ref.aktViide, archive)
-        except Exception:
+        except Exception as exc:
+            adjudications.append(
+                _ee_orchestration_adjudication(
+                    kind=_EE_PENDING_SOURCE_ACT_COMMENCEMENT_FETCH_FAILED_RULE,
+                    message=(
+                        "Estonia pending source-act commencement precomposition skipped "
+                        "an amendment because its source XML could not be fetched."
+                    ),
+                    source_statute=f"ee/{ref.aktViide}",
+                    phase="acquisition",
+                    family="source_pathology",
+                    blocking=True,
+                    detail={
+                        "amendment": ref.aktViide,
+                        "effective": ref.joustumine,
+                        "as_of": as_of,
+                        "error": str(exc),
+                    },
+                )
+            )
             continue
         xml_by_ref[ref.aktViide] = xml_bytes
         title_by_ref[ref.aktViide] = _ee_extract_act_title(xml_bytes)
 
     overrides: dict[str, tuple[str, AmendmentRef]] = {}
-    adjudications: list[CompileAdjudication] = []
     for earlier_ref in sorted(refs, key=lambda ref: (ref.passed, ref.joustumine, ref.aktViide)):
         earlier_title = title_by_ref.get(earlier_ref.aktViide, "")
         if not earlier_title:

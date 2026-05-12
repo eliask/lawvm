@@ -3453,6 +3453,47 @@ def test_precompose_pending_source_act_commencement_defers_future_effective_act(
     assert adjudications[0].detail["new_effective"] == "2013-01-01"
 
 
+def test_precompose_pending_source_act_commencement_records_fetch_failure(monkeypatch) -> None:
+    later_xml = """
+    <oigusakt xmlns="akt_1_10.06.2010">
+      <aktinimi><nimi><pealkiri>Testseaduse muutmise seadus</pealkiri></nimi></aktinimi>
+      <sisu><sisuTekst><HTMLKonteiner><![CDATA[
+        <p><b>§ 9. Seaduse jõustumine</b></p>
+        <p>Käesolev seadus jõustub 2012. aasta 1. jaanuaril.</p>
+      ]]></HTMLKonteiner></sisuTekst></sisu>
+    </oigusakt>
+    """.encode()
+
+    def fake_fetch(akt_viide: str, _archive) -> bytes:
+        if akt_viide == "missing":
+            raise RuntimeError("source unavailable")
+        return later_xml
+
+    monkeypatch.setattr("lawvm.estonia.replay.fetch_rt_xml", fake_fetch)
+
+    refs, adjudications = _ee_precompose_pending_source_act_commencements(
+        (
+            _ref("missing", "2011-02-17", "2012-01-01"),
+            _ref("later", "2011-12-08", "2011-12-23"),
+        ),
+        as_of="2012-02-01",
+        archive=None,
+    )
+
+    assert [ref.aktViide for ref in refs] == ["later", "missing"]
+    assert len(adjudications) == 1
+    adjudication = adjudications[0]
+    assert adjudication.kind == "ee_pending_source_act_commencement_source_fetch_failed"
+    assert adjudication.source_statute == "ee/missing"
+    assert adjudication.detail["rule_id"] == "ee_pending_source_act_commencement_source_fetch_failed"
+    assert adjudication.detail["phase"] == "acquisition"
+    assert adjudication.detail["family"] == "source_pathology"
+    assert adjudication.detail["blocking"] is True
+    assert adjudication.detail["strict_disposition"] == "block"
+    assert adjudication.detail["quirks_disposition"] == "record"
+    assert adjudication.detail["error"] == "source unavailable"
+
+
 def test_precompose_pending_source_act_commencement_keeps_now_effective_override(monkeypatch) -> None:
     earlier_xml = """
     <oigusakt xmlns="akt_1_10.06.2010">
