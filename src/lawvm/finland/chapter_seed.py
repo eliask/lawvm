@@ -13,6 +13,7 @@ that were seeded.  The caller is responsible for propagating the new IR.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
@@ -33,6 +34,62 @@ _MISSING_CHAPTER_SPAN_RE = re.compile(
     r"\bpuuttuu\s+luvut?\s+(\d+)\s*[-–]\s*(\d+)\b",
     re.IGNORECASE,
 )
+
+
+@dataclass(frozen=True)
+class ChapterSeedDiagnostic:
+    """Typed diagnostic for Finland missing-chapter seeding repairs."""
+
+    rule_id: str
+    family: str
+    phase: str
+    reason: str
+    source_statute: str = ""
+    chapter_label: str = ""
+    blocking: bool = True
+    strict_disposition: str = "block"
+    quirks_disposition: str = "record"
+
+    def as_detail(self) -> dict[str, object]:
+        return {
+            "rule_id": self.rule_id,
+            "family": self.family,
+            "phase": self.phase,
+            "reason": self.reason,
+            "source_statute": self.source_statute,
+            "chapter_label": self.chapter_label,
+            "blocking": self.blocking,
+            "strict_disposition": self.strict_disposition,
+            "quirks_disposition": self.quirks_disposition,
+        }
+
+
+def _record_chapter_seed_diagnostic(
+    diagnostics_out: Optional[List[ChapterSeedDiagnostic]],
+    *,
+    rule_id: str,
+    family: str,
+    phase: str,
+    reason: str,
+    source_statute: str = "",
+    chapter_label: str = "",
+    blocking: bool = True,
+    quirks_disposition: str = "record",
+) -> None:
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        ChapterSeedDiagnostic(
+            rule_id=rule_id,
+            family=family,
+            phase=phase,
+            reason=reason,
+            source_statute=source_statute,
+            chapter_label=chapter_label,
+            blocking=blocking,
+            quirks_disposition=quirks_disposition,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +280,7 @@ def seed_missing_chapters(
     ir: IRNode,
     muutoslait: List[str],
     corpus_store: CorpusStore,
+    diagnostics_out: Optional[List[ChapterSeedDiagnostic]] = None,
 ) -> Tuple[IRNode, Set[Tuple[str, str]]]:
     """Seed missing chapters from amendment bodies for partial-base statutes.
 
@@ -266,10 +324,26 @@ def seed_missing_chapters(
     for amendment_id in muutoslait:
         xml_bytes = corpus_store.read_source(amendment_id)
         if xml_bytes is None:
+            _record_chapter_seed_diagnostic(
+                diagnostics_out,
+                rule_id="fi_chapter_seed_source_missing",
+                family="source_pathology",
+                phase="acquisition",
+                reason="Finland chapter seeding skipped amendment because source XML was unavailable",
+                source_statute=amendment_id,
+            )
             continue
         try:
             root = etree.fromstring(xml_bytes)
         except etree.XMLSyntaxError:
+            _record_chapter_seed_diagnostic(
+                diagnostics_out,
+                rule_id="fi_chapter_seed_source_xml_parse_failed",
+                family="source_pathology",
+                phase="acquisition",
+                reason="Finland chapter seeding skipped amendment because source XML could not be parsed",
+                source_statute=amendment_id,
+            )
             continue
         ns = '{http://docs.oasis-open.org/legaldocml/ns/akn/3.0}'
         for ch_el in root.findall(f'.//{ns}chapter'):
@@ -316,6 +390,17 @@ def seed_missing_chapters(
                         amendment_id, ch_ir = seedable[label]
                         new_children.append(ch_ir)
                         seeded_set.add((label, amendment_id))
+                        _record_chapter_seed_diagnostic(
+                            diagnostics_out,
+                            rule_id="fi_chapter_seed_inserted_from_amendment_body",
+                            family="ontology_normalization",
+                            phase="payload_normalization",
+                            reason="Finland chapter seeding inserted a missing chapter from an amendment body before replay",
+                            source_statute=amendment_id,
+                            chapter_label=label,
+                            blocking=False,
+                            quirks_disposition="apply",
+                        )
                     container_changed = True
                 else:
                     # No seeds found for this gap — keep the omission.
@@ -342,6 +427,17 @@ def seed_missing_chapters(
                     amendment_id, ch_ir = seedable[label]
                     new_children.append(ch_ir)
                     seeded_set.add((label, amendment_id))
+                    _record_chapter_seed_diagnostic(
+                        diagnostics_out,
+                        rule_id="fi_chapter_seed_inserted_from_amendment_body",
+                        family="ontology_normalization",
+                        phase="payload_normalization",
+                        reason="Finland chapter seeding inserted a missing chapter from an amendment body before replay",
+                        source_statute=amendment_id,
+                        chapter_label=label,
+                        blocking=False,
+                        quirks_disposition="apply",
+                    )
                     container_changed = True
             else:
                 new_children.append(child)
