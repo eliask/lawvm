@@ -518,6 +518,7 @@ def test_ci_sharded_accepts_explicit_shard_flags_and_rejects_affected_mix() -> N
     assert "--shard norway" in help_result.stdout
     assert "--shards \"norway sweden eu\"" in help_result.stdout
     assert "--shards \"frontends modules\"" in help_result.stdout
+    assert "LAWVM_CI_TIMING_JSONL=0" in help_result.stdout
 
     conflict_result = subprocess.run(
         [str(script), "--affected", "tests/test_ci_shards.py", "--shard", "tools"],
