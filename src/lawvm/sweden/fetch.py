@@ -703,14 +703,20 @@ def fetch_se_official_artifacts(
     - structured parsed act text is archived at `se://.../official.act.json`
     """
     doc_url = se_official_doc_url(sfs_id)
+    pdf_source_attempts: list[dict[str, str]] = []
+    selected_pdf_lane = ""
     doc_html = _se_archive_fetch(archive, doc_url, max_age_hours=max_age_hours, storage_class="html")
     parsed_doc_pdf_url = parse_se_official_pdf_url(doc_html, doc_url) if doc_html else None
+    doc_status = "pdf_link_found" if parsed_doc_pdf_url else ("no_pdf_link" if doc_html else "missing")
     if doc_html and parsed_doc_pdf_url:
         archive.store(se_official_doc_locator(sfs_id), doc_html, storage_class="html")
 
     pdf_url = parsed_doc_pdf_url
+    if pdf_url:
+        selected_pdf_lane = "official_doc_pdf_link"
     if not pdf_url and pdf_url_override:
         pdf_url = pdf_url_override
+        selected_pdf_lane = "explicit_pdf_url_override"
     if not pdf_url:
         rk_html = _se_archive_fetch(
             archive,
@@ -722,9 +728,18 @@ def fetch_se_official_artifacts(
             issue_date = parse_se_rk_issue_date(rk_html)
             if issue_date:
                 pdf_url = guess_se_official_pdf_url(sfs_id, issue_date)
+                selected_pdf_lane = "rk_issue_date_guess"
     pdf_bytes = (
         _se_archive_fetch(archive, pdf_url, max_age_hours=max_age_hours, storage_class="pdf") if pdf_url else None
     )
+    if pdf_url:
+        pdf_source_attempts.append(
+            {
+                "lane": selected_pdf_lane or "unknown",
+                "url": pdf_url,
+                "status": "valid_pdf" if _looks_like_pdf_bytes(pdf_bytes) else "missing_or_non_pdf",
+            }
+        )
     if pdf_bytes is not None and not _looks_like_pdf_bytes(pdf_bytes):
         pdf_bytes = None
     if not pdf_bytes:
@@ -732,20 +747,36 @@ def fetch_se_official_artifacts(
         legacy_direct_bytes = _se_archive_fetch(
             archive, legacy_direct_url, max_age_hours=max_age_hours, storage_class="pdf"
         )
+        pdf_source_attempts.append(
+            {
+                "lane": "legacy_direct_guess",
+                "url": legacy_direct_url,
+                "status": "valid_pdf" if _looks_like_pdf_bytes(legacy_direct_bytes) else "missing_or_non_pdf",
+            }
+        )
         if _looks_like_pdf_bytes(legacy_direct_bytes):
             doc_url = se_legacy_sfspdf_index_url()
             pdf_url = legacy_direct_url
             pdf_bytes = legacy_direct_bytes
+            selected_pdf_lane = "legacy_direct_guess"
     if not pdf_bytes:
         legacy_search_pdf_url = search_se_legacy_pdf_url(sfs_id)
         if legacy_search_pdf_url:
             legacy_search_bytes = _se_archive_fetch(
                 archive, legacy_search_pdf_url, max_age_hours=max_age_hours, storage_class="pdf"
             )
+            pdf_source_attempts.append(
+                {
+                    "lane": "legacy_search_result",
+                    "url": legacy_search_pdf_url,
+                    "status": "valid_pdf" if _looks_like_pdf_bytes(legacy_search_bytes) else "missing_or_non_pdf",
+                }
+            )
             if _looks_like_pdf_bytes(legacy_search_bytes):
                 doc_url = se_legacy_sfspdf_search_url()
                 pdf_url = legacy_search_pdf_url
                 pdf_bytes = legacy_search_bytes
+                selected_pdf_lane = "legacy_search_result"
     if not pdf_bytes:
         for candidate_url in guess_se_official_pdf_url_candidates(sfs_id):
             if candidate_url == pdf_url:
@@ -753,9 +784,17 @@ def fetch_se_official_artifacts(
             candidate_bytes = _se_archive_fetch(
                 archive, candidate_url, max_age_hours=max_age_hours, storage_class="pdf"
             )
+            pdf_source_attempts.append(
+                {
+                    "lane": "official_month_probe",
+                    "url": candidate_url,
+                    "status": "valid_pdf" if _looks_like_pdf_bytes(candidate_bytes) else "missing_or_non_pdf",
+                }
+            )
             if _looks_like_pdf_bytes(candidate_bytes):
                 pdf_url = candidate_url
                 pdf_bytes = candidate_bytes
+                selected_pdf_lane = "official_month_probe"
                 break
     if not pdf_url or not pdf_bytes:
         _record_se_official_artifacts_diagnostic(
@@ -768,6 +807,20 @@ def fetch_se_official_artifacts(
             pdf_url=pdf_url,
         )
         return None
+    if selected_pdf_lane not in {"", "official_doc_pdf_link", "explicit_pdf_url_override"}:
+        _record_se_official_artifacts_diagnostic(
+            diagnostics_out,
+            rule_id="se_official_pdf_source_lane_fallback",
+            sfs_id=sfs_id,
+            locator=se_official_pdf_locator(sfs_id),
+            reason="Sweden official SFS PDF was recovered through a fallback source lane",
+            doc_url=doc_url,
+            pdf_url=pdf_url,
+            blocking=False,
+            doc_status=doc_status,
+            selected_pdf_lane=selected_pdf_lane,
+            pdf_source_attempts=tuple(pdf_source_attempts),
+        )
     archive.store(se_official_pdf_locator(sfs_id), pdf_bytes, storage_class="pdf")
 
     text_url = se_pdf_text_locator(sfs_id)
@@ -855,10 +908,14 @@ def _record_se_official_artifacts_diagnostic(
     pdf_url: str | None,
     phase: str = "acquisition",
     exception_type: str = "",
+    blocking: bool = True,
+    doc_status: str = "",
+    selected_pdf_lane: str = "",
+    pdf_source_attempts: tuple[dict[str, str], ...] = (),
 ) -> None:
     if diagnostics_out is None:
         return
-    diagnostic = {
+    diagnostic: dict[str, Any] = {
         "rule_id": rule_id,
         "family": "source_pathology",
         "phase": phase,
@@ -867,12 +924,18 @@ def _record_se_official_artifacts_diagnostic(
         "locator": locator,
         "doc_url": doc_url,
         "pdf_url": pdf_url or "",
-        "blocking": True,
-        "strict_disposition": "block",
+        "blocking": blocking,
+        "strict_disposition": "block" if blocking else "record",
         "quirks_disposition": "record",
     }
     if exception_type:
         diagnostic["exception_type"] = exception_type
+    if doc_status:
+        diagnostic["doc_status"] = doc_status
+    if selected_pdf_lane:
+        diagnostic["selected_pdf_lane"] = selected_pdf_lane
+    if pdf_source_attempts:
+        diagnostic["pdf_source_attempts"] = pdf_source_attempts
     diagnostics_out.append(diagnostic)
 
 
