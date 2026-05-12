@@ -5111,6 +5111,50 @@ def test_apply_whole_section_replace_bootstrap_respects_target_part_scope() -> N
     assert pathologies[0].detail["recovery_kind"] == "section_replace_bootstrap_gap_establish"
 
 
+def test_apply_whole_section_replace_records_missing_bootstrap_parent() -> None:
+    state = _make_state(
+        _body(
+            IRNode(
+                kind=IRNodeKind.PART,
+                label="iia",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CHAPTER,
+                        label="2",
+                        children=(
+                            IRNode(kind=IRNodeKind.NUM, text="2 luku"),
+                            _sec("3a", _content("part iia chapter 2 text")),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+    op = _op(op_type="REPLACE", target_section="3a", target_chapter="2", target_part="4")
+    pathologies: list[SourcePathology] = []
+
+    result = _apply_whole_section_op(
+        state,
+        op,
+        None,
+        _sec("3a", _content("part 4 chapter 2 replacement")),
+        None,
+        _LEGAL_PIT,
+        "IV osa 2 luku 3a §",
+        source_pathologies_out=pathologies,
+    )
+
+    assert result is None
+    assert len(pathologies) == 1
+    assert pathologies[0].code == "SECTION_REPLACE_BOOTSTRAP_PARENT_MISSING"
+    assert pathologies[0].source_statute == "2020/1"
+    assert pathologies[0].detail["target_part"] == "4"
+    assert pathologies[0].detail["target_chapter"] == "2"
+    assert pathologies[0].detail["target_section"] == "3a"
+    assert pathologies[0].detail["recovery_kind"] == "section_replace_bootstrap_parent_missing"
+    assert pathologies[0].detail["strict_disposition"] == "block"
+
+
 def test_apply_whole_section_replace_does_not_synthesize_root_insert_for_missing_root_section() -> None:
     state = _make_state(
         _body(

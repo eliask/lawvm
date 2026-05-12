@@ -33,6 +33,7 @@ from lawvm.finland.source_pathology import (
     build_container_replace_target_absent_pathology,
     build_destructive_shape_loss_risk_pathology,
     build_partial_whole_section_payload_pathology,
+    build_section_replace_bootstrap_parent_missing_pathology,
     build_sparse_merge_invariant_skip_pathology,
     build_temporary_section_rebase_pathology,
     build_unique_payload_insert_under_live_duplicates_pathology,
@@ -1591,6 +1592,16 @@ def _apply_whole_section_op(
                     target_part=_target_part,
                 )
                 if parent_path is None:
+                    if source_pathologies_out is not None:
+                        source_pathologies_out.append(
+                            build_section_replace_bootstrap_parent_missing_pathology(
+                                source_statute=_source_statute or "",
+                                target_unit_kind=view.target_unit_kind,
+                                target_section=_ts,
+                                target_chapter=_target_chapter or "",
+                                target_part=_target_part or "",
+                            )
+                        )
                     logger.debug(
                         "  %s → section replace bootstrap gap rejected (missing scoped parent)",
                         ctx_label,

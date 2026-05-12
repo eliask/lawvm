@@ -101,6 +101,35 @@ def build_empty_operative_body_pathology(
     )
 
 
+def build_section_replace_bootstrap_parent_missing_pathology(
+    *,
+    source_statute: str,
+    target_unit_kind: TargetUnitKind,
+    target_section: str,
+    target_chapter: str = "",
+    target_part: str = "",
+) -> SourcePathology:
+    """Build a typed source-pathology record for rejected scoped section bootstrap."""
+    return SourcePathology.from_scope(
+        code="SECTION_REPLACE_BOOTSTRAP_PARENT_MISSING",
+        message=(
+            "Whole-section replace could not bootstrap a missing target because the "
+            "explicit scoped parent container was absent; replay refused to insert at an unproven parent."
+        ),
+        source_statute=source_statute,
+        target_unit_kind=target_unit_kind,
+        target_label=_target_label(target_section, target_chapter),
+        detail={
+            "target_part": target_part,
+            "target_chapter": target_chapter,
+            "target_section": target_section,
+            "recovery_kind": "section_replace_bootstrap_parent_missing",
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        },
+    )
+
+
 __all__ = [
     "build_container_replace_target_absent_pathology",
     "build_container_membership_mismatch_pathology",
@@ -116,6 +145,7 @@ __all__ = [
     "build_partial_whole_section_payload_pathology",
     "build_sparse_item_body_missing_pathology",
     "build_malformed_broad_replace_body_pathology",
+    "build_section_replace_bootstrap_parent_missing_pathology",
 ]
 
 
