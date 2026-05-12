@@ -1191,6 +1191,21 @@ def load_effects_for_statute_from_archive(
         if data:
             feed_bytes_list.append(data)
             feed_locators.append(url)
+            continue
+        if parse_rejections_out is not None:
+            parse_rejections_out.append(
+                {
+                    "rule_id": "uk_effect_feed_locator_payload_missing_rejected",
+                    "family": "source_pathology",
+                    "phase": "acquisition",
+                    "statute_id": statute_id,
+                    "feed_locator": url,
+                    "reason": "UK effect feed locator was indexed but payload bytes were missing from the archive.",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                }
+            )
 
     return parse_effects_from_bytes(
         feed_bytes_list,

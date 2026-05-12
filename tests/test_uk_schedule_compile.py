@@ -119,9 +119,9 @@ class _FakeUKArchiveConn:
 
 
 class _FakeUKArchive:
-    def __init__(self, payloads: dict[str, bytes]) -> None:
+    def __init__(self, payloads: dict[str, bytes], *, locators: list[str] | None = None) -> None:
         self._payloads = payloads
-        self._conn = _FakeUKArchiveConn(list(payloads))
+        self._conn = _FakeUKArchiveConn(locators if locators is not None else list(payloads))
 
     def get(self, locator: str) -> bytes | None:
         return self._payloads.get(locator)
@@ -144,6 +144,33 @@ def test_load_effects_from_archive_threads_feed_parse_rejections() -> None:
     assert parse_rejections[0]["feed_locator"] == locator
 
 
+def test_load_effects_from_archive_records_missing_indexed_feed_payload() -> None:
+    locator = "https://www.legislation.gov.uk/changes/affected/ukpga/2000/10/data.feed"
+    archive = _FakeUKArchive({}, locators=[locator])
+    parse_rejections: list[dict[str, Any]] = []
+
+    records = load_effects_for_statute_from_archive(
+        "ukpga/2000/10",
+        archive,
+        parse_rejections_out=parse_rejections,
+    )
+
+    assert records == []
+    assert parse_rejections == [
+        {
+            "rule_id": "uk_effect_feed_locator_payload_missing_rejected",
+            "family": "source_pathology",
+            "phase": "acquisition",
+            "statute_id": "ukpga/2000/10",
+            "feed_locator": locator,
+            "reason": "UK effect feed locator was indexed but payload bytes were missing from the archive.",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
 def test_pipeline_compile_ops_threads_feed_parse_rejections() -> None:
     locator = "https://www.legislation.gov.uk/changes/affected/ukpga/2000/10/data.feed"
     archive = _FakeUKArchive({locator: b"<feed><entry></feed>"})
@@ -159,6 +186,24 @@ def test_pipeline_compile_ops_threads_feed_parse_rejections() -> None:
     assert compiled == []
     assert len(parse_rejections) == 1
     assert parse_rejections[0]["rule_id"] == "uk_effect_feed_xml_parse_rejected"
+    assert parse_rejections[0]["feed_locator"] == locator
+
+
+def test_pipeline_compile_ops_threads_missing_feed_payload_rejection() -> None:
+    locator = "https://www.legislation.gov.uk/changes/affected/ukpga/2000/10/data.feed"
+    archive = _FakeUKArchive({}, locators=[locator])
+    pipeline = UKReplayPipeline(Path("."))
+    parse_rejections: list[dict[str, Any]] = []
+
+    compiled = pipeline.compile_ops_for_statute(
+        "ukpga/2000/10",
+        archive=archive,
+        effect_feed_parse_rejections_out=parse_rejections,
+    )
+
+    assert compiled == []
+    assert len(parse_rejections) == 1
+    assert parse_rejections[0]["rule_id"] == "uk_effect_feed_locator_payload_missing_rejected"
     assert parse_rejections[0]["feed_locator"] == locator
 
 
