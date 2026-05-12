@@ -9,10 +9,12 @@ from types import SimpleNamespace
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.timeline import ingest_consolidated, verify_consistency
+from lawvm.core.timeline_consistency import ConsistencyDivergence
 from lawvm.norway.sources import ingest_no_public_archives
 from lawvm.norway.verify import (
     _infer_no_source_signal,
     _normalize_no_compare_tree,
+    _partition_primary_divergences,
     no_paths_related,
     irnode_to_no_comparison_text,
     normalize_no_comparison_text,
@@ -857,6 +859,32 @@ def test_primary_divergences_suppresses_chapter_only_relocation_pairs() -> None:
 
     assert len(raw_divs) >= 4
     assert _primary_divergences(raw_divs) == []
+    partition = _partition_primary_divergences(raw_divs)
+    filtered_rule_ids = {row.rule_id for row in partition.filtered}
+    assert "no_verify.prefix_descendant_suppressed" in filtered_rule_ids
+    assert "no_verify.chapter_relocation_pair" in filtered_rule_ids
+
+
+def test_primary_divergence_partition_records_prefix_suppression() -> None:
+    parent = ConsistencyDivergence(
+        address=LegalAddress(path=(("section", "1"),)),
+        divergence_type="MISMATCH",
+        ops_text="Parent replay",
+        consolidated_text="Parent current",
+    )
+    child = ConsistencyDivergence(
+        address=LegalAddress(path=(("section", "1"), ("subsection", "1"))),
+        divergence_type="MISMATCH",
+        ops_text="Child replay",
+        consolidated_text="Child current",
+    )
+
+    partition = _partition_primary_divergences([parent, child])
+
+    assert partition.primary == [child]
+    assert len(partition.filtered) == 1
+    assert partition.filtered[0].divergence == parent
+    assert partition.filtered[0].rule_id == "no_verify.prefix_descendant_suppressed"
 
 
 def test_verify_no_against_current_ignores_section_heading_only_drift(tmp_path) -> None:

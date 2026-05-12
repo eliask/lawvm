@@ -2272,6 +2272,68 @@ def test_no_verify_tool_preserves_replay_adjudication_evidence(monkeypatch, caps
     assert row["strict_disposition"] == "block"
 
 
+def test_no_verify_tool_preserves_filtered_divergence_evidence(monkeypatch, capsys) -> None:
+    divergence = SimpleNamespace(
+        address=SimpleNamespace(path=(("section", "1"),)),
+        divergence_type="MISMATCH",
+        ops_text="ops parent",
+        consolidated_text="current parent",
+    )
+    filtered = SimpleNamespace(
+        divergence=divergence,
+        rule_id="no_verify.prefix_descendant_suppressed",
+        reason="Divergence address is a strict prefix of another raw divergence address.",
+    )
+    monkeypatch.setattr(
+        "lawvm.norway.verify.verify_no_against_current",
+        lambda *args, **kwargs: SimpleNamespace(
+            base_id="no/lov/2025-01-01-1",
+            as_of="2025-02-15",
+            current_title="Demo",
+            replay_status="replayed",
+            consistent=True,
+            divergence_count=0,
+            divergence_counts={},
+            raw_divergence_count=1,
+            raw_divergence_counts={"MISMATCH": 1},
+            filtered_divergence_count=1,
+            filtered_divergence_rule_counts={"no_verify.prefix_descendant_suppressed": 1},
+            indexed_amendment_count=1,
+            applied_amendment_count=1,
+            replay_op_count=1,
+            source_signal="",
+            replay=SimpleNamespace(adjudications=[]),
+            error="",
+            divergences=[],
+            filtered_divergences=[filtered],
+        ),
+    )
+    args = Namespace(
+        base_id="no/lov/2025-01-01-1",
+        as_of="2025-02-15",
+        data_dir=None,
+        index=None,
+        commencement=None,
+        verbose=True,
+        max_divergences=10,
+        json=True,
+    )
+
+    no_verify_main(args)
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["filtered_divergence_count"] == 1
+    assert data["filtered_divergence_rule_counts"] == {"no_verify.prefix_descendant_suppressed": 1}
+    assert data["filtered_divergences"] == [
+        {
+            "rule_id": "no_verify.prefix_descendant_suppressed",
+            "reason": "Divergence address is a strict prefix of another raw divergence address.",
+            "address": [["section", "1"]],
+            "divergence_type": "MISMATCH",
+            "ops_text": "ops parent",
+            "consolidated_text": "current parent",
+        }
+    ]
 def test_no_verify_scan_tool_emits_json(tmp_path, capsys) -> None:
     _write_archive(
         tmp_path / "lovtidend-avd1-2001-2025.tar.bz2",
