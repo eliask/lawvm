@@ -5,8 +5,9 @@ from pathlib import Path
 from lawvm.core.compile_result import TemporalEvent, TemporalScope
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.eu.ops_parser import EUOpsParser
 from lawvm.eu.pipeline import EUReplayPipeline, EUReplayResult, apply_eu_ops
+from lawvm.replay_adjudication import CompileAdjudication
 
 
 def test_discover_affecting_acts_deduplicates_filters_and_sorts(monkeypatch) -> None:
@@ -112,6 +113,25 @@ def _duplicate_text_statute() -> IRStatute:
                 IRNode(kind=IRNodeKind.SECTION, label="2", text=shared_text),),
         ),
     )
+
+
+def test_eu_ops_parser_preserves_mixed_corrigendum_and_ordinary_amendment_lanes() -> None:
+    ops = EUOpsParser().extract_ops(
+        "In Article 1, for: old text read: new text; Article 2 is replaced."
+    )
+
+    assert [(op.op_id, op.sequence, op.action.value, str(op.target)) for op in ops] == [
+        ("corrigenda-1", 1, "replace", "article:1"),
+        ("eu-compat-2-1", 2, "replace", "article:2"),
+    ]
+
+
+def test_eu_ops_parser_does_not_duplicate_corrigendum_only_text() -> None:
+    ops = EUOpsParser().extract_ops("In Article 1, for: old text read: new text.")
+
+    assert [(op.op_id, op.sequence, op.action.value, str(op.target)) for op in ops] == [
+        ("corrigenda-1", 1, "replace", "article:1"),
+    ]
 
 
 def test_apply_eu_ops_records_payload_and_target_missing_adjudications(capsys) -> None:

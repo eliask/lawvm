@@ -52,12 +52,12 @@ class EUOpsParser:
     def extract_ops(self, text: str) -> List[LegalOperation]:
         """Extract LegalOperations from amendment text with shallow regexes."""
         corrigenda_ops = self._extract_corrigenda_ops(text)
-        if corrigenda_ops:
-            return corrigenda_ops
+        corrigenda_spans = self._corrigenda_formula_spans(text)
+        ordinary_text = self._mask_spans(text, corrigenda_spans)
 
-        ops: List[LegalOperation] = []
+        ops: List[LegalOperation] = list(corrigenda_ops)
         context_path: List[Tuple[str, str]] = []
-        for segment in re.split(r"[;\n]+", text):
+        for segment in re.split(r"[;\n]+", ordinary_text):
             segment = segment.strip()
             if not segment:
                 continue
@@ -101,6 +101,18 @@ class EUOpsParser:
                 )
 
         return ops
+
+    def _corrigenda_formula_spans(self, text: str) -> List[Tuple[int, int]]:
+        return [match.span() for match in re.finditer(r"for\s*:(.*?)read\s*:(.*?)(;|\.|\n|$)", text, re.S | re.I)]
+
+    def _mask_spans(self, text: str, spans: List[Tuple[int, int]]) -> str:
+        if not spans:
+            return text
+        chars = list(text)
+        for start, end in spans:
+            for index in range(start, end):
+                chars[index] = "\n" if chars[index] in ";\n." else " "
+        return "".join(chars)
 
     def _extract_corrigenda_ops(self, text: str) -> List[LegalOperation]:
         """Specific handling for EU Corrigenda 'for: ... read: ...' formulas."""
