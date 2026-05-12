@@ -2878,6 +2878,8 @@ def test_apply_no_ops_collects_missing_target_adjudication() -> None:
     assert adjudications[0].kind == "replay_unresolved_target"
     assert adjudications[0].detail["target"] == "section:9"
     assert adjudications[0].detail["action"] == "replace"
+    assert adjudications[0].detail["rule_id"] == "replay_unresolved_target"
+    assert adjudications[0].detail["phase"] == "replay"
     assert updated.body.children[0].label == "1"
 
 
@@ -2909,6 +2911,8 @@ def test_apply_no_ops_collects_noop_for_empty_target_path() -> None:
     assert len(adjudications) == 1
     assert adjudications[0].kind == "replay_noop"
     assert adjudications[0].detail["action"] == "replace"
+    assert adjudications[0].detail["rule_id"] == "replay_noop"
+    assert adjudications[0].detail["phase"] == "replay"
     assert updated.statute_id == "no/lov/2025-01-01-1"
 
 
@@ -2931,6 +2935,29 @@ def test_apply_no_ops_collects_unsupported_action() -> None:
             target=LegalAddress(path=(("section", "1"),)),
             source=source,
         )
+
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="unsupported-text-repeal",
+        sequence=1,
+        action=StructuralAction.TEXT_REPEAL,
+        target=LegalAddress(path=(("section", "1"),)),
+        source=source,
+    )
+
+    updated = apply_no_ops(statute, [op], adjudications_out=adjudications)
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "replay_unsupported_action"
+    assert adjudications[0].detail["action"] == "text_repeal"
+    assert adjudications[0].detail["target"] == "section:1"
+    assert adjudications[0].detail["rule_id"] == "replay_unsupported_action"
+    assert adjudications[0].detail["phase"] == "replay"
+    assert adjudications[0].detail["family"] == "unsupported_or_unresolved_action"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
+    assert updated.body.children[0].text == "base"
 
 
 def test_open_lovdata_amendment_archive_yields_source_ids(tmp_path) -> None:

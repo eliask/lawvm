@@ -18,7 +18,7 @@ import itertools
 import re
 import tarfile
 from dataclasses import dataclass, replace as dc_replace
-from typing import Generator, List, Optional, Sequence, Tuple, cast
+from typing import Any, Generator, List, Optional, Sequence, Tuple, cast
 
 from lxml import etree
 
@@ -2612,18 +2612,26 @@ def _append_no_replay_adjudication(
     kind: str,
     message: str,
     op: LegalOperation,
-    detail: Optional[dict[str, str]] = None,
+    detail: Optional[dict[str, Any]] = None,
 ) -> None:
     """Append a Norway replay adjudication when a sink list is available."""
     if adjudications_out is None:
         return
+    normalized_detail = dict(detail or {})
+    normalized_detail.setdefault("rule_id", kind)
+    normalized_detail.setdefault("phase", "replay")
+    if kind == "replay_unsupported_action":
+        normalized_detail.setdefault("family", "unsupported_or_unresolved_action")
+        normalized_detail.setdefault("blocking", True)
+        normalized_detail.setdefault("strict_disposition", "block")
+        normalized_detail.setdefault("quirks_disposition", "record")
     adjudications_out.append(
         CompileAdjudication(
             kind=kind,
             message=message,
             source_statute=op.source.statute_id if op.source else "",
             op_id=op.op_id,
-            detail=detail or {},
+            detail=normalized_detail,
         )
     )
 
