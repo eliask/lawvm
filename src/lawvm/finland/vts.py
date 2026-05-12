@@ -25,8 +25,14 @@ VtsSkippedTargetReason = Literal[
     "standalone_target_without_section",
     "unsafe_kohta_only_bare_section_parse",
 ]
+VtsSourceDiagnosticReason = Literal[
+    "invalid_parent_id",
+    "xml_syntax_error",
+    "no_candidate_containers",
+]
 
 VTS_SKIPPED_TARGET_RULE_ID = "PARSE.VTS_SKIPPED_TARGET_UNSUPPORTED"
+VTS_SOURCE_DIAGNOSTIC_RULE_ID = "PARSE.VTS_SOURCE_UNREADABLE_OR_EMPTY"
 
 
 @dataclass(frozen=True)
@@ -68,6 +74,35 @@ class VtsSkippedTarget:
             "phase": self.phase,
             "family": self.family,
             "blocking": self.blocking,
+        }
+
+
+@dataclass(frozen=True)
+class VtsSourceDiagnostic:
+    """Typed visibility record for source shapes that prevent VTS inspection."""
+
+    rule_id: str
+    reason_code: VtsSourceDiagnosticReason
+    source_reason: str
+    source_statute: str
+    source_excerpt: str
+    phase: str = "frontend_extraction"
+    family: str = "source_pathology"
+    blocking: bool = False
+    strict_disposition: str = "record"
+    quirks_disposition: str = "record"
+
+    def as_detail(self) -> dict[str, object]:
+        return {
+            "rule_id": self.rule_id,
+            "reason_code": self.reason_code,
+            "source_reason": self.source_reason,
+            "source_excerpt": self.source_excerpt,
+            "phase": self.phase,
+            "family": self.family,
+            "blocking": self.blocking,
+            "strict_disposition": self.strict_disposition,
+            "quirks_disposition": self.quirks_disposition,
         }
 
 
@@ -195,6 +230,54 @@ def _record_vts_skipped_target(
             target_special=addr.special,
         )
     )
+
+
+def _vts_source_excerpt(xml_bytes: bytes) -> str:
+    return re.sub(r"\s+", " ", xml_bytes.decode("utf-8", errors="replace")).strip()[:160]
+
+
+def _classify_vts_source_diagnostic(
+    xml_bytes: bytes,
+    parent_id: str,
+) -> VtsSourceDiagnostic | None:
+    try:
+        parent_year, parent_num_str = parent_id.split("/")
+        int(parent_num_str)
+    except (ValueError, AttributeError):
+        return VtsSourceDiagnostic(
+            rule_id=VTS_SOURCE_DIAGNOSTIC_RULE_ID,
+            reason_code="invalid_parent_id",
+            source_reason="VTS extraction could not build a parent citation from the parent id",
+            source_statute=parent_id,
+            source_excerpt=_vts_source_excerpt(xml_bytes),
+        )
+    if not parent_year:
+        return VtsSourceDiagnostic(
+            rule_id=VTS_SOURCE_DIAGNOSTIC_RULE_ID,
+            reason_code="invalid_parent_id",
+            source_reason="VTS extraction parent id had an empty year component",
+            source_statute=parent_id,
+            source_excerpt=_vts_source_excerpt(xml_bytes),
+        )
+    try:
+        tree = etree.fromstring(xml_bytes)
+    except etree.XMLSyntaxError as exc:
+        return VtsSourceDiagnostic(
+            rule_id=VTS_SOURCE_DIAGNOSTIC_RULE_ID,
+            reason_code="xml_syntax_error",
+            source_reason=f"VTS source XML could not be parsed: {exc.__class__.__name__}",
+            source_statute=parent_id,
+            source_excerpt=_vts_source_excerpt(xml_bytes),
+        )
+    if not _vts_candidate_containers(tree):
+        return VtsSourceDiagnostic(
+            rule_id=VTS_SOURCE_DIAGNOSTIC_RULE_ID,
+            reason_code="no_candidate_containers",
+            source_reason="VTS source XML contained no trailing section, entryIntoForce, or conclusion containers",
+            source_statute=parent_id,
+            source_excerpt=_vts_source_excerpt(xml_bytes),
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -557,6 +640,7 @@ def extract_voimaantulo_repeals(
     parent_id: str,
     parent_title: str = "",
     skipped_targets_out: Optional[List[VtsSkippedTarget]] = None,
+    source_diagnostics_out: Optional[List[VtsSourceDiagnostic]] = None,
 ) -> List[AmendmentOp]:
     """Extract repeal operations from voimaantulosäännös (transitional provisions).
 
@@ -577,14 +661,20 @@ def extract_voimaantulo_repeals(
 
     If ``skipped_targets_out`` is provided, unsupported or unsafe parsed
     targets are appended as ``VtsSkippedTarget`` records instead of disappearing
-    silently. Returns a (possibly empty) list of ``AmendmentOp`` objects.  All
-    returned ops carry ``op_type='REPEAL'`` and typed
+    silently. If ``source_diagnostics_out`` is provided, unreadable or
+    structurally empty VTS source shapes are recorded separately from a normal
+    no-match result. Returns a (possibly empty) list of ``AmendmentOp`` objects.
+    All returned ops carry ``op_type='REPEAL'`` and typed
     ``voimaantulo_repeal=True`` provenance.
     """
     fragment = _voimaantulo_repeal_fragment_for_parent(xml_bytes, parent_id, parent_title=parent_title)
     if not fragment:
         fragment = _voimaantulo_force_except_fragment_for_parent(xml_bytes, parent_id, parent_title=parent_title)
     if not fragment:
+        if source_diagnostics_out is not None:
+            diagnostic = _classify_vts_source_diagnostic(xml_bytes, parent_id)
+            if diagnostic is not None:
+                source_diagnostics_out.append(diagnostic)
         return []
 
     ops: List[AmendmentOp] = []
