@@ -539,6 +539,39 @@ def _extract_section_renumber_pairs_from_clause(clause: str) -> tuple[tuple[str,
     return tuple(out)
 
 
+def _section_renumber_arity_mismatch_diagnostics(clause: str, sfs_id: str) -> tuple[dict[str, Any], ...]:
+    diagnostics: list[dict[str, Any]] = []
+    for match in re.finditer(
+        r"nuvarande\s+(.+?)\s*§{1,2}\s+ska(?:ll)? betecknas\s+(.+?)\s*§{1,2}",
+        clause,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        sources = _extract_labels_from_label_list(match.group(1))
+        destinations = _extract_labels_from_label_list(match.group(2))
+        if len(sources) == len(destinations):
+            continue
+        diagnostics.append(
+            {
+                "rule_id": "se_official_clause_renumber_arity_mismatch",
+                "family": "source_pathology",
+                "phase": "parse",
+                "reason": (
+                    "Sweden official act renumber clause was skipped because source "
+                    "and destination label counts differed."
+                ),
+                "sfs_id": sfs_id,
+                "source_labels": list(sources),
+                "destination_labels": list(destinations),
+                "source_fragment": _normalize_space(match.group(1)),
+                "destination_fragment": _normalize_space(match.group(2)),
+                "blocking": True,
+                "strict_disposition": "block",
+                "quirks_disposition": "record",
+            }
+        )
+    return tuple(diagnostics)
+
+
 def _extract_point_provisions_from_payload_text(payload_text: str) -> tuple[SEOfficialProvisionText, ...]:
     """Recover numbered transition-point payloads embedded after the clause marker."""
     matches = list(
@@ -2243,6 +2276,25 @@ def _append_se_official_payload_row_adjudications(
         )
 
 
+def _append_se_official_clause_diagnostic_adjudications(
+    adjudications_out: list[CompileAdjudication] | None,
+    *,
+    source_id: str,
+    diagnostics: tuple[dict[str, Any], ...],
+) -> None:
+    if adjudications_out is None:
+        return
+    for diagnostic in diagnostics:
+        adjudications_out.append(
+            CompileAdjudication(
+                kind="se_official_clause_surface_skipped",
+                message=str(diagnostic.get("reason") or "Sweden official act clause surface was skipped."),
+                source_statute=source_id or str(diagnostic.get("sfs_id") or ""),
+                detail=dict(diagnostic),
+            )
+        )
+
+
 def _lower_se_official_effect_plan_item(
     plan: SEOfficialEffectsPlan,
     item: SEOfficialEffectPlanItem,
@@ -2792,6 +2844,14 @@ def compile_se_official_act_ops(
         adjudications_out,
         source_id=source_id or act.sfs_id,
         diagnostics=payload_row_diagnostics,
+    )
+    _append_se_official_clause_diagnostic_adjudications(
+        adjudications_out,
+        source_id=source_id or act.sfs_id,
+        diagnostics=_section_renumber_arity_mismatch_diagnostics(
+            act.enacting_clause,
+            source_id or act.sfs_id,
+        ),
     )
     plan = _build_se_official_effects_plan(_build_se_official_elaboration(act))
     return _lower_se_official_effects_plan(plan, source_id=source_id, adjudications_out=adjudications_out)
