@@ -300,6 +300,47 @@ class NamedRowClause:
 ClauseNode = Union[ScopedBlock, RefAmend, TextAmend, LabelAmend, MetaClause, ItemShiftClause, NamedRowClause]
 
 
+CLAUSE_AST_UNSUPPORTED_GENERIC_LOWERING_KIND = "LOWER.CLAUSE_AST_NODE_UNSUPPORTED_GENERIC_LOWERING"
+CLAUSE_AST_UNSUPPORTED_GENERIC_LOWERING_RULE_ID = "core.clause_ast.unsupported_generic_lowering.v1"
+
+
+@dataclass(frozen=True)
+class ClauseAstLoweringDiagnostic:
+    """Diagnostic emitted when generic ClauseAST lowering cannot own a node."""
+
+    kind: str
+    rule_id: str
+    phase: str
+    family: str
+    node_kind: str
+    sequence: int
+    reason: str
+    blocking: bool
+    strict_disposition: str
+    quirks_disposition: str
+    scope: Optional[LegalAddress] = None
+    detail: Optional[str] = None
+
+    def to_dict(self) -> dict[str, object]:
+        result: dict[str, object] = {
+            "kind": self.kind,
+            "rule_id": self.rule_id,
+            "phase": self.phase,
+            "family": self.family,
+            "node_kind": self.node_kind,
+            "sequence": self.sequence,
+            "reason": self.reason,
+            "blocking": self.blocking,
+            "strict_disposition": self.strict_disposition,
+            "quirks_disposition": self.quirks_disposition,
+        }
+        if self.scope is not None:
+            result["scope"] = str(self.scope)
+        if self.detail is not None:
+            result["detail"] = self.detail
+        return result
+
+
 # ============================================================================
 # Grouping and top-level container
 # ============================================================================
@@ -567,22 +608,70 @@ def _op_with_scope(op: LegalOperation, scope: LegalAddress | None) -> LegalOpera
     )
 
 
+def _unsupported_generic_lowering_detail(node: ClauseNode) -> str:
+    if isinstance(node, MetaClause):
+        return f"meta_kind={node.kind.value}"
+    if isinstance(node, ItemShiftClause):
+        return (
+            "item_shift "
+            f"source_items={node.source_items!r} target_items={node.target_items!r} "
+            f"target_section={node.target_section!r} target_paragraph={node.target_paragraph!r}"
+        )
+    if isinstance(node, NamedRowClause):
+        return (
+            "named_row "
+            f"action={node.action.value!r} named_targets={node.named_targets!r} "
+            f"target_section={node.target_section!r} target_paragraph={node.target_paragraph!r}"
+        )
+    raise TypeError(f"Expected unsupported generic lowering node, got {node!r}")
+
+
+def _unsupported_generic_lowering_diagnostic(
+    node: ClauseNode,
+    sequence: int,
+    scope: LegalAddress | None,
+) -> ClauseAstLoweringDiagnostic | None:
+    if not isinstance(node, (MetaClause, ItemShiftClause, NamedRowClause)):
+        return None
+    return ClauseAstLoweringDiagnostic(
+        kind=CLAUSE_AST_UNSUPPORTED_GENERIC_LOWERING_KIND,
+        rule_id=CLAUSE_AST_UNSUPPORTED_GENERIC_LOWERING_RULE_ID,
+        phase="lowering",
+        family="lowering_filter",
+        node_kind=type(node).__name__,
+        sequence=sequence,
+        reason="Clause AST node has no generic LegalOperation lowering at this seam",
+        blocking=True,
+        strict_disposition="block",
+        quirks_disposition="record",
+        scope=scope,
+        detail=_unsupported_generic_lowering_detail(node),
+    )
+
+
 def _flatten_clause_node(
     node: ClauseNode,
     ops: List[LegalOperation],
     counter: List[int],
     scope: LegalAddress | None = None,
+    diagnostics: List[ClauseAstLoweringDiagnostic] | None = None,
 ) -> None:
     """Recursively flatten a ClauseNode into ops list, incrementing counter."""
     if isinstance(node, ScopedBlock):
         for child in node.children:
-            _flatten_clause_node(child, ops, counter, node.scope)
+            _flatten_clause_node(child, ops, counter, node.scope, diagnostics)
         return
 
     lo = clause_node_to_legal_operation(node, sequence=counter[0])
     if lo is not None:
         ops.append(_op_with_scope(lo, scope))
         counter[0] += 1
+        return
+
+    if diagnostics is not None:
+        diagnostic = _unsupported_generic_lowering_diagnostic(node, counter[0], scope)
+        if diagnostic is not None:
+            diagnostics.append(diagnostic)
 
 
 def clause_ast_to_legal_ops(ast: ClauseAST) -> List[LegalOperation]:
@@ -608,3 +697,21 @@ def clause_ast_to_legal_ops(ast: ClauseAST) -> List[LegalOperation]:
         for node in vg.nodes:
             _flatten_clause_node(node, result, counter)
     return result
+
+
+def clause_ast_to_legal_ops_with_diagnostics(
+    ast: ClauseAST,
+) -> tuple[List[LegalOperation], tuple[ClauseAstLoweringDiagnostic, ...]]:
+    """Convert ClauseAST to LegalOperations and report unsupported skipped nodes.
+
+    The operation list is intentionally identical to ``clause_ast_to_legal_ops``.
+    The second return value owns the otherwise-silent unsupported bridge nodes
+    that generic core lowering cannot convert to ``LegalOperation``.
+    """
+    result: List[LegalOperation] = []
+    diagnostics: List[ClauseAstLoweringDiagnostic] = []
+    counter = [0]
+    for vg in ast.verb_groups:
+        for node in vg.nodes:
+            _flatten_clause_node(node, result, counter, diagnostics=diagnostics)
+    return result, tuple(diagnostics)

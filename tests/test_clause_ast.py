@@ -15,6 +15,8 @@ from dataclasses import fields
 import pytest
 
 from lawvm.core.clause_ast import (
+    CLAUSE_AST_UNSUPPORTED_GENERIC_LOWERING_KIND,
+    CLAUSE_AST_UNSUPPORTED_GENERIC_LOWERING_RULE_ID,
     ClauseAST,
     ItemShiftClause,
     LabelAmend,
@@ -24,6 +26,7 @@ from lawvm.core.clause_ast import (
     ScopedBlock,
     TextAmend,
     VerbGroup,
+    clause_ast_to_legal_ops_with_diagnostics,
     clause_node_to_legal_operation,
 )
 from lawvm.core.ir import LegalAddress, LegalOperation, TextPatchSpec, TextSelector
@@ -673,3 +676,66 @@ class TestNamedRowClauseLowering:
         # Only the RefAmend should produce a LegalOperation; NamedRowClause is skipped
         assert len(ops) == 1
         assert ops[0].action == StructuralAction.REPEAL
+
+
+def test_clause_ast_to_legal_ops_with_diagnostics_records_unsupported_generic_nodes() -> None:
+    replace = RefAmend(
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "5"),)),
+    )
+    shift = ItemShiftClause(
+        source_items=("e", "f"),
+        target_items=("d", "e"),
+        target_paragraph=1,
+        target_section="5",
+    )
+    named_row = NamedRowClause(
+        action=StructuralAction.REPEAL,
+        named_targets=("kouvolan",),
+        target_section="1",
+    )
+    meta = MetaClause(kind=MetaClauseKind.OTHER, raw_text="voimaantulo erikseen")
+    ast = ClauseAST(
+        source_text="test",
+        verb_groups=(
+            VerbGroup(
+                verb=StructuralAction.REPLACE,
+                nodes=(
+                    ScopedBlock(
+                        scope=LegalAddress(path=(("chapter", "2"),)),
+                        children=(replace, shift),
+                    ),
+                    named_row,
+                    meta,
+                ),
+            ),
+        ),
+    )
+
+    ops, diagnostics = clause_ast_to_legal_ops_with_diagnostics(ast)
+
+    assert [op.target for op in ops] == [
+        LegalAddress(path=(("chapter", "2"), ("section", "5"))),
+    ]
+    assert [diagnostic.node_kind for diagnostic in diagnostics] == [
+        "ItemShiftClause",
+        "NamedRowClause",
+        "MetaClause",
+    ]
+    assert {diagnostic.kind for diagnostic in diagnostics} == {
+        CLAUSE_AST_UNSUPPORTED_GENERIC_LOWERING_KIND,
+    }
+    assert {diagnostic.rule_id for diagnostic in diagnostics} == {
+        CLAUSE_AST_UNSUPPORTED_GENERIC_LOWERING_RULE_ID,
+    }
+    assert all(diagnostic.phase == "lowering" for diagnostic in diagnostics)
+    assert all(diagnostic.family == "lowering_filter" for diagnostic in diagnostics)
+    assert all(diagnostic.blocking for diagnostic in diagnostics)
+    assert all(diagnostic.strict_disposition == "block" for diagnostic in diagnostics)
+    assert all(diagnostic.quirks_disposition == "record" for diagnostic in diagnostics)
+    assert diagnostics[0].scope == LegalAddress(path=(("chapter", "2"),))
+    assert diagnostics[1].scope is None
+    assert diagnostics[2].scope is None
+    assert "source_items" in (diagnostics[0].detail or "")
+    assert "named_targets" in (diagnostics[1].detail or "")
+    assert diagnostics[2].detail == "meta_kind=other"
