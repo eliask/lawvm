@@ -53,6 +53,7 @@ from lawvm.sweden.fetch import (
     rebuild_se_older_base_from_official_chain,
     search_se_legacy_pdf_url,
     se_official_act_locator,
+    se_official_base_ir_locator,
     se_official_clause_surface_locator,
     se_official_elaboration_locator,
     se_official_effects_plan_locator,
@@ -283,6 +284,93 @@ def test_fetch_official_records_diagnostic_when_pdf_unavailable(monkeypatch) -> 
             "blocking": True,
             "strict_disposition": "block",
             "quirks_disposition": "record",
+        }
+    ]
+
+
+def test_fetch_se_official_artifacts_records_pdf_text_extraction_failure(monkeypatch) -> None:
+    doc_url = "https://svenskforfattningssamling.se/doc/2026286.html"
+    pdf_url = "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-03/SFS2026-286.pdf"
+    archive = _FakeArchive(
+        fetched={
+            doc_url: b'<a href="/sites/default/files/sfs/2026-03/SFS2026-286.pdf">PDF</a>',
+            pdf_url: b"%PDF-1.7 fake",
+        }
+    )
+    diagnostics: list[dict[str, object]] = []
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: None)
+
+    bundle = fetch_se_official_artifacts("2026:286", archive, diagnostics_out=diagnostics)
+
+    assert bundle is not None
+    assert se_official_pdf_locator("2026:286") in archive.stored
+    assert se_pdf_text_locator("2026:286") not in archive.stored
+    assert se_pdf_cleanup_locator("2026:286") not in archive.stored
+    assert diagnostics == [
+        {
+            "rule_id": "se_official_pdf_text_extraction_failed",
+            "family": "source_pathology",
+            "phase": "extraction",
+            "reason": "Sweden official SFS PDF was fetched but text extraction produced no payload",
+            "sfs_id": "2026:286",
+            "locator": se_pdf_text_locator("2026:286"),
+            "doc_url": doc_url,
+            "pdf_url": pdf_url,
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
+def test_fetch_se_official_artifacts_records_base_ir_build_failure(monkeypatch) -> None:
+    doc_url = "https://svenskforfattningssamling.se/doc/2026286.html"
+    pdf_url = "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-03/SFS2026-286.pdf"
+    archive = _FakeArchive(
+        fetched={
+            doc_url: b'<a href="/sites/default/files/sfs/2026-03/SFS2026-286.pdf">PDF</a>',
+            pdf_url: b"%PDF-1.7 fake",
+        }
+    )
+    diagnostics: list[dict[str, object]] = []
+
+    class _ParsedAct:
+        is_amending_act = False
+
+    monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered PDF text")
+    monkeypatch.setattr(
+        "lawvm.sweden.fetch.parse_se_official_act_text",
+        lambda text, *, sfs_id: _ParsedAct(),
+    )
+    monkeypatch.setattr(
+        "lawvm.sweden.fetch.se_official_act_text_to_dict",
+        lambda act: {"sfs_id": "2026:286", "is_amending_act": False},
+    )
+
+    def fail_base_ir_build(act, *, statute_id: str = ""):
+        raise ValueError("missing provisions")
+
+    monkeypatch.setattr("lawvm.sweden.fetch.build_se_official_base_statute", fail_base_ir_build)
+
+    bundle = fetch_se_official_artifacts("2026:286", archive, diagnostics_out=diagnostics)
+
+    assert bundle is not None
+    assert se_official_act_locator("2026:286") in archive.stored
+    assert se_official_base_ir_locator("2026:286") not in archive.stored
+    assert diagnostics == [
+        {
+            "rule_id": "se_official_base_ir_build_failed",
+            "family": "source_pathology",
+            "phase": "extraction",
+            "reason": "Sweden official act text was parsed but base IR construction failed",
+            "sfs_id": "2026:286",
+            "locator": se_official_base_ir_locator("2026:286"),
+            "doc_url": doc_url,
+            "pdf_url": pdf_url,
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "exception_type": "ValueError",
         }
     ]
 

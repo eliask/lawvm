@@ -774,6 +774,17 @@ def fetch_se_official_artifacts(
         if pdf_text:
             archive.store(text_url, pdf_text.encode("utf-8"), storage_class="text")
             archive.store(cleaned_text_url, clean_se_pdf_text(pdf_text).encode("utf-8"), storage_class="text")
+        else:
+            _record_se_official_artifacts_diagnostic(
+                diagnostics_out,
+                rule_id="se_official_pdf_text_extraction_failed",
+                sfs_id=sfs_id,
+                locator=text_url,
+                reason="Sweden official SFS PDF was fetched but text extraction produced no payload",
+                doc_url=doc_url,
+                pdf_url=pdf_url,
+                phase="extraction",
+            )
 
     cleaned_bytes = archive.get(cleaned_text_url)
     if cleaned_bytes is not None:
@@ -789,8 +800,18 @@ def fetch_se_official_artifacts(
         if not act_text.is_amending_act:
             try:
                 base_statute = build_se_official_base_statute(se_official_act_text_to_dict(act_text), statute_id=sfs_id)
-            except ValueError:
-                pass
+            except ValueError as exc:
+                _record_se_official_artifacts_diagnostic(
+                    diagnostics_out,
+                    rule_id="se_official_base_ir_build_failed",
+                    sfs_id=sfs_id,
+                    locator=se_official_base_ir_locator(sfs_id),
+                    reason="Sweden official act text was parsed but base IR construction failed",
+                    doc_url=doc_url,
+                    pdf_url=pdf_url,
+                    phase="extraction",
+                    exception_type=type(exc).__name__,
+                )
             else:
                 archive.store(
                     se_official_base_ir_locator(sfs_id),
@@ -820,24 +841,27 @@ def _record_se_official_artifacts_diagnostic(
     reason: str,
     doc_url: str,
     pdf_url: str | None,
+    phase: str = "acquisition",
+    exception_type: str = "",
 ) -> None:
     if diagnostics_out is None:
         return
-    diagnostics_out.append(
-        {
-            "rule_id": rule_id,
-            "family": "source_pathology",
-            "phase": "acquisition",
-            "reason": reason,
-            "sfs_id": sfs_id,
-            "locator": locator,
-            "doc_url": doc_url,
-            "pdf_url": pdf_url or "",
-            "blocking": True,
-            "strict_disposition": "block",
-            "quirks_disposition": "record",
-        }
-    )
+    diagnostic = {
+        "rule_id": rule_id,
+        "family": "source_pathology",
+        "phase": phase,
+        "reason": reason,
+        "sfs_id": sfs_id,
+        "locator": locator,
+        "doc_url": doc_url,
+        "pdf_url": pdf_url or "",
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+    }
+    if exception_type:
+        diagnostic["exception_type"] = exception_type
+    diagnostics_out.append(diagnostic)
 
 
 def fetch_se_rk_current_json(
