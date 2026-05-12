@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 from lawvm.core.compile_result import TemporalEvent, TemporalScope
 from lawvm.core.ir import (
@@ -17,9 +18,11 @@ from lawvm.core.phase_result import Finding, PhaseResult
 from lawvm.core.timeline_results import TimelineIssue
 from lawvm.tools.verify import Issue
 from lawvm.tools.verify import _build_verify_facade
+from lawvm.tools.verify import _phase_finding_to_visibility_issue
 from lawvm.tools.verify import _report
 from lawvm.tools.verify import _timeline_issue_to_issue
 from lawvm.tools.verify import verify_full
+from lawvm.tools.verify import verify_observations
 
 
 def test_build_verify_facade_carries_temporal_events_into_timeline_execution() -> None:
@@ -126,6 +129,7 @@ def test_verify_report_json_projects_issues_to_shared_contract(capsys) -> None:
                 code="observations.unregistered_kind",
                 message="unregistered observation",
                 context="2006/1299 after 2010/1",
+                detail={"kind": "ELAB.UNREGISTERED"},
             )
         ],
         "2006/1299",
@@ -149,8 +153,126 @@ def test_verify_report_json_projects_issues_to_shared_contract(capsys) -> None:
         "stage": "observations",
         "severity": "warning",
         "context": "2006/1299 after 2010/1",
-        "detail": {},
+        "detail": {"kind": "ELAB.UNREGISTERED"},
     }
+
+
+def test_phase_finding_visibility_issue_preserves_blocking_detail() -> None:
+    finding = Finding(
+        kind="ELAB.STRICT_REJECTED_OPERATION",
+        role="obligation",
+        stage="_elaborate_group",
+        detail={"reason_code": "UNSUPPORTED_TARGET"},
+        source_statute="2010/1",
+        blocking=True,
+    )
+
+    issue = _phase_finding_to_visibility_issue(finding, "2006/1299 after 2010/1")
+
+    assert issue.code == "observations.finding"
+    assert issue.severity == "info"
+    assert issue.detail == {
+        "kind": "ELAB.STRICT_REJECTED_OPERATION",
+        "role": "obligation",
+        "stage": "_elaborate_group",
+        "source_statute": "2010/1",
+        "blocking": True,
+        "detail": {"reason_code": "UNSUPPORTED_TARGET"},
+    }
+
+
+def test_verify_observations_projects_non_observation_findings(monkeypatch) -> None:
+    base_ir = IRNode(kind=IRNodeKind.BODY)
+    state = SimpleNamespace(ir=base_ir)
+
+    monkeypatch.setattr(
+        "lawvm.tools.verify.get_corpus",
+        lambda: SimpleNamespace(read_source=lambda sid: b"<xml/>"),
+    )
+    monkeypatch.setattr(
+        "lawvm.tools.verify.StatuteContext",
+        SimpleNamespace(
+            from_xml=lambda xml_bytes, label_postprocessor=None: SimpleNamespace(
+                title="Base",
+                base_ir=base_ir,
+            )
+        ),
+    )
+    monkeypatch.setattr("lawvm.tools.verify.ReplayState", lambda ir: state)
+    monkeypatch.setattr(
+        "lawvm.tools.verify._resolve_applicable_amendment_records",
+        lambda sid, mode: ([{"statute_id": "2010/1"}], None, None),
+    )
+
+    def fake_process_muutoslaki(*_args, **_kwargs):
+        return PhaseResult(
+            output=state,
+            findings=(
+                Finding(
+                    kind="ELAB.STRICT_REJECTED_OPERATION",
+                    role="obligation",
+                    stage="_elaborate_group",
+                    detail={"reason_code": "UNSUPPORTED_TARGET"},
+                    source_statute="2010/1",
+                    blocking=True,
+                ),
+            ),
+        )
+
+    monkeypatch.setattr("lawvm.tools.verify.process_muutoslaki", fake_process_muutoslaki)
+
+    issues = verify_observations("2006/1299", "legal_pit")
+
+    projected = [issue for issue in issues if issue.code == "observations.finding"]
+    assert len(projected) == 1
+    assert projected[0].detail is not None
+    assert projected[0].detail["kind"] == "ELAB.STRICT_REJECTED_OPERATION"
+    assert projected[0].detail["blocking"] is True
+
+
+def test_verify_observations_does_not_duplicate_observation_findings(monkeypatch) -> None:
+    base_ir = IRNode(kind=IRNodeKind.BODY)
+    state = SimpleNamespace(ir=base_ir)
+
+    monkeypatch.setattr(
+        "lawvm.tools.verify.get_corpus",
+        lambda: SimpleNamespace(read_source=lambda sid: b"<xml/>"),
+    )
+    monkeypatch.setattr(
+        "lawvm.tools.verify.StatuteContext",
+        SimpleNamespace(
+            from_xml=lambda xml_bytes, label_postprocessor=None: SimpleNamespace(
+                title="Base",
+                base_ir=base_ir,
+            )
+        ),
+    )
+    monkeypatch.setattr("lawvm.tools.verify.ReplayState", lambda ir: state)
+    monkeypatch.setattr(
+        "lawvm.tools.verify._resolve_applicable_amendment_records",
+        lambda sid, mode: ([{"statute_id": "2010/1"}], None, None),
+    )
+
+    def fake_process_muutoslaki(*_args, **_kwargs):
+        return PhaseResult(
+            output=state,
+            findings=(
+                Finding(
+                    kind="ELAB.REJECTED_OPERATION",
+                    role="observation",
+                    stage="_elaborate_group",
+                    detail={"reason_code": "NON_BLOCKING"},
+                    source_statute="2010/1",
+                    blocking=False,
+                ),
+            ),
+        )
+
+    monkeypatch.setattr("lawvm.tools.verify.process_muutoslaki", fake_process_muutoslaki)
+
+    issues = verify_observations("2006/1299", "legal_pit")
+
+    assert not [issue for issue in issues if issue.code == "observations.finding"]
 
 
 def test_build_verify_facade_dedupes_duplicate_findings() -> None:
