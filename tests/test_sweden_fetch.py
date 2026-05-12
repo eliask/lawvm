@@ -3921,6 +3921,58 @@ def test_fetch_se_rk_current_json_stores_source_document(monkeypatch) -> None:
     assert se_rk_current_json_locator("2025:399") in archive.stored
 
 
+def test_fetch_se_rk_current_json_records_fetch_failure(monkeypatch) -> None:
+    archive = _FakeArchive()
+    diagnostics: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "lawvm.sweden.fetch._curl_json_post",
+        lambda url, headers, payload: None,
+    )
+
+    current_json = fetch_se_rk_current_json("2025:399", archive, diagnostics_out=diagnostics)
+
+    assert current_json is None
+    assert diagnostics == [
+        {
+            "rule_id": "se_rk_current_fetch_failed",
+            "family": "source_pathology",
+            "phase": "acquisition",
+            "reason": "Sweden RK current JSON request returned no payload",
+            "sfs_id": "2025:399",
+            "locator": se_rk_current_json_locator("2025:399"),
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
+def test_fetch_se_rk_current_json_records_empty_hits(monkeypatch) -> None:
+    archive = _FakeArchive()
+    diagnostics: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "lawvm.sweden.fetch._curl_json_post",
+        lambda url, headers, payload: b'{"hits": {"hits": []}}',
+    )
+
+    current_json = fetch_se_rk_current_json("2025:399", archive, diagnostics_out=diagnostics)
+
+    assert current_json is None
+    assert diagnostics == [
+        {
+            "rule_id": "se_rk_current_no_hits",
+            "family": "source_pathology",
+            "phase": "acquisition",
+            "reason": "Sweden RK current JSON response contained no published SFS hit",
+            "sfs_id": "2025:399",
+            "locator": se_rk_current_json_locator("2025:399"),
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
 def test_hydrate_se_bundle_live_archives_bundle_and_official_artifacts(monkeypatch) -> None:
     archive = _FakeArchive(
         fetched={
