@@ -1391,8 +1391,25 @@ def test_sweden_backfill_official_command_records_error_kind_counts(monkeypatch,
 
     assert checkpoint["error_kind_counts"] == {"RuntimeError": 1}
     assert checkpoint["last_error_kind"] == "RuntimeError"
+    assert checkpoint["non_ok_count"] == 1
+    assert checkpoint["non_ok_rows"] == [
+        {
+            "rule_id": "se_backfill_official_error",
+            "phase": "acquisition",
+            "family": "source_pathology",
+            "reason": "Sweden official backfill recorded a source acquisition or compilation error.",
+            "sfs_id": "1999:1",
+            "status": "error",
+            "error_kind": "RuntimeError",
+            "error": "RuntimeError: temporary failure",
+            "frontier_classification": "",
+            "frontier_detail": "",
+        },
+    ]
     assert history[-1]["error_count"] == 1
     assert history[-1]["error_kind_counts"] == {"RuntimeError": 1}
+    assert history[-1]["non_ok_count"] == 1
+    assert history[-1]["non_ok_rows"] == checkpoint["non_ok_rows"]
     assert history[-1]["outcome_kind"] == "mixed_completed_error"
     assert history[-1]["dominant_error_kind"] == "RuntimeError"
     assert "Run outcome:        mixed_completed_error" in captured.out
