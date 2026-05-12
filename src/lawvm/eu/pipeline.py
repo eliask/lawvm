@@ -85,11 +85,19 @@ def _append_eu_replay_adjudication(
     detail_payload: dict[str, Any] = dict(detail or {})
     detail_payload.setdefault("rule_id", kind)
     detail_payload.setdefault("phase", "replay")
-    if kind == "eu_replay_unsupported_action":
+    if kind in {
+        "eu_replay_unsupported_action",
+        "eu_replay_unknown_action",
+        "eu_replay_text_payload_missing",
+        "eu_replay_target_not_found",
+        "eu_replay_parent_not_found",
+    }:
         detail_payload.setdefault("family", "unsupported_or_unresolved_action")
-        detail_payload.setdefault("blocking", True)
-        detail_payload.setdefault("strict_disposition", "block")
-        detail_payload.setdefault("quirks_disposition", "record")
+    elif kind == "eu_replay_tree_invariant_violation":
+        detail_payload.setdefault("family", "tree_invariant_violation")
+    detail_payload.setdefault("blocking", True)
+    detail_payload.setdefault("strict_disposition", "block")
+    detail_payload.setdefault("quirks_disposition", "record")
     adjudications_out.append(
         CompileAdjudication(
             kind=kind,

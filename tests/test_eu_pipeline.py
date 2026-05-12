@@ -309,7 +309,15 @@ def test_apply_eu_ops_records_payload_and_target_missing_adjudications(capsys) -
     assert adjudications[0].op_id == "replace-no-payload"
     assert adjudications[0].detail["rule_id"] == "eu_replay_text_payload_missing"
     assert adjudications[0].detail["phase"] == "replay"
+    assert adjudications[0].detail["family"] == "unsupported_or_unresolved_action"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
     assert adjudications[1].detail["target"] == "section:9"
+    assert adjudications[1].detail["family"] == "unsupported_or_unresolved_action"
+    assert adjudications[1].detail["blocking"] is True
+    assert adjudications[1].detail["strict_disposition"] == "block"
+    assert adjudications[1].detail["quirks_disposition"] == "record"
     assert adjudications[1].source_statute == "2026/2"
     assert replayed.metadata["eu_replay_applied_op_count"] == 0
     assert replayed.metadata["eu_replay_skipped_op_count"] == 2
@@ -336,6 +344,10 @@ def test_apply_eu_ops_records_insert_parent_not_found() -> None:
     assert adjudications[0].kind == "eu_replay_parent_not_found"
     assert adjudications[0].detail["parent_kind"] == "section"
     assert adjudications[0].detail["parent_label"] == "99"
+    assert adjudications[0].detail["family"] == "unsupported_or_unresolved_action"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
 
 
 def test_apply_eu_ops_records_unsupported_and_unknown_action() -> None:
@@ -394,6 +406,10 @@ def test_apply_eu_ops_records_tree_invariant_violation_after_successful_insert()
     assert invariant_adjudications[0].detail["action"] == "insert"
     assert invariant_adjudications[0].detail["target"] == "section:1"
     assert "duplicate section:1" in invariant_adjudications[0].detail["violation"]
+    assert invariant_adjudications[0].detail["family"] == "tree_invariant_violation"
+    assert invariant_adjudications[0].detail["blocking"] is True
+    assert invariant_adjudications[0].detail["strict_disposition"] == "block"
+    assert invariant_adjudications[0].detail["quirks_disposition"] == "record"
 
 
 def test_apply_eu_ops_records_new_apply_step_duplication_warning() -> None:
