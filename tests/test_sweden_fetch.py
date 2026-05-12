@@ -1005,6 +1005,9 @@ def test_ingest_se_scraped_doc_html_map_archives_real_doc_urls_and_locators() ->
         "se_scraped_doc_entry_invalid_shape",
     ]
     assert all(entry["family"] == "source_pathology" for entry in result["skipped_entries"])
+    assert all(entry["blocking"] is True for entry in result["skipped_entries"])
+    assert all(entry["strict_disposition"] == "block" for entry in result["skipped_entries"])
+    assert all(entry["quirks_disposition"] == "record" for entry in result["skipped_entries"])
     assert result["resolved_pdf_link_count"] == 1
     assert "https://svenskforfattningssamling.se/doc/2026286.html" in archive.stored
     assert se_official_doc_locator("2026:286") in archive.stored

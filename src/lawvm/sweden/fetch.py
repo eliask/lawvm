@@ -570,6 +570,9 @@ def ingest_se_scraped_doc_html_map(
                     "doc_url_type": type(doc_url).__name__,
                     "html_type": type(html).__name__,
                     "reason": "scraped Sweden document map entry did not have string URL and HTML values",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
                 }
             )
             continue
@@ -584,6 +587,9 @@ def ingest_se_scraped_doc_html_map(
                     "entry_index": entry_index,
                     "doc_url": doc_url,
                     "reason": "scraped Sweden document URL did not resolve to an SFS id",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
                 }
             )
             continue
