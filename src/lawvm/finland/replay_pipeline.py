@@ -10,6 +10,7 @@ from lawvm.core.phase_result import Finding, OBLIGATION_ROLE, OBSERVATION_ROLE, 
 from lawvm.core.replay_contracts import ReplayCheckpoint, ReplayCheckpointCallback
 from lawvm.core.tree_ops import resort_children as _resort_children
 from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
+from lawvm.finland.vts import VtsSkippedTarget, VtsSourceDiagnostic
 
 from lawvm.finland.statute import ReplayState, StatuteContext, _serialize_text_node as _serialize_text
 
@@ -193,6 +194,18 @@ def build_chapter_seed_finding(diagnostic: ChapterSeedDiagnostic) -> Finding:
     )
 
 
+def build_vts_prescan_finding(record: VtsSkippedTarget | VtsSourceDiagnostic) -> Finding:
+    """Project VTS pre-scan visibility records onto the governed finding ledger."""
+    return Finding(
+        kind=record.rule_id,
+        role=OBSERVATION_ROLE,
+        stage=record.phase,
+        blocking=record.blocking,
+        source_statute=record.source_statute,
+        detail={**record.as_detail(), "prescan_phase": "future_repeal_scan"},
+    )
+
+
 def execute_replay_plan(
     plan: ReplayPlan,
     *,
@@ -238,12 +251,22 @@ def execute_replay_plan(
             for diagnostic in chapter_seed_diagnostics
         )
 
+    vts_skipped_targets: list[VtsSkippedTarget] = []
+    vts_source_diagnostics: list[VtsSourceDiagnostic] = []
     repeal_schedule = pre_scan_repeal_targets(
         plan.amendment_ids,
         corpus,
         plan.parent_id,
+        parent_title=plan.ctx.title,
         cutoff_date=plan.cutoff_date,
+        vts_skipped_targets_out=vts_skipped_targets,
+        vts_source_diagnostics_out=vts_source_diagnostics,
     )
+    if findings_out is not None:
+        findings_out.extend(
+            build_vts_prescan_finding(record)
+            for record in (*vts_skipped_targets, *vts_source_diagnostics)
+        )
     repeal_suffix = future_repeals_for_index(repeal_schedule)
     processed_amendment_titles: dict[str, str] = {}
     effective_migration_events_out: list[MigrationEvent] = (
