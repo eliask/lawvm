@@ -1016,6 +1016,33 @@ def move_skip_finding(
     )
 
 
+def deferred_plan_op_finding(
+    executed: ExecutedOp,
+    *,
+    source_statute: str,
+) -> Finding | None:
+    """Convert a non-executor-owned plan op into an explicit deferral finding."""
+    if executed.success or executed.reason_code != "non_executable_deferred_to_leaf_replay":
+        return None
+
+    return Finding(
+        kind="APPLY.RESTRUCTURE_PLAN_OP_DEFERRED",
+        role="observation",
+        stage="restructure_plan",
+        blocking=False,
+        source_statute=source_statute,
+        detail={
+            "message": "Restructure-plan op was deferred to the ordinary leaf/subtree replay path.",
+            "reason_code": executed.reason_code,
+            "target": executed.op.target,
+            "destination": executed.op.destination or "",
+            "plan_op_kind": executed.op.kind.value,
+            "payload_claim_ids": list(executed.op.payload_claim_ids),
+            "plan_notes": list(executed.op.notes),
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # execute_restructure_plan
 # ---------------------------------------------------------------------------
@@ -1368,8 +1395,9 @@ def execute_restructure_plan(
 ) -> Tuple[IRNode, List[ExecutedOp]]:
     """Execute MOVE and RELABEL ops from a StructuralTransformPlan.
 
-    Other op kinds are silently skipped (they are handled elsewhere in
-    the replay pipeline).
+    Other op kinds are not mutated here because they are handled by the
+    ordinary replay pipeline, but they are still returned as explicit deferred
+    ExecutedOp records.
 
     Args:
         plan: The plan to execute.
@@ -1446,6 +1474,14 @@ def execute_restructure_plan(
                     continue
 
         if op.kind not in _EXECUTABLE_OP_KINDS:
+            executed.append(
+                ExecutedOp(
+                    op=op,
+                    success=False,
+                    note=f"{op.kind.value} deferred to ordinary leaf/subtree replay",
+                    reason_code="non_executable_deferred_to_leaf_replay",
+                )
+            )
             i += 1
             continue
 

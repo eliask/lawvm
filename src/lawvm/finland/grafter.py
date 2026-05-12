@@ -525,6 +525,7 @@ from lawvm.finland.body_pairing import (  # noqa: E402
 )
 from lawvm.finland.restructure_plan import (  # noqa: E402
     build_restructure_plan,
+    deferred_plan_op_finding,
     execute_restructure_plan,
     move_skip_finding,
     relabel_skip_finding,
@@ -5283,6 +5284,9 @@ def apply_ops_to_tree(
                     finding = move_skip_finding(_exec_op, source_statute=amendment_id)
                     if finding is not None:
                         findings_out.append(finding)
+                    finding = deferred_plan_op_finding(_exec_op, source_statute=amendment_id)
+                    if finding is not None:
+                        findings_out.append(finding)
 
     # Pre-create chapters introduced by the amendment body before the main
     # apply loop. Section INSERT ops can target both real new chapters and
@@ -5625,6 +5629,9 @@ def apply_ops_to_tree(
                                         if finding is not None:
                                             findings_out.append(finding)
                                         finding = move_skip_finding(_exec_op, source_statute=amendment_id)
+                                        if finding is not None:
+                                            findings_out.append(finding)
+                                        finding = deferred_plan_op_finding(_exec_op, source_statute=amendment_id)
                                         if finding is not None:
                                             findings_out.append(finding)
 

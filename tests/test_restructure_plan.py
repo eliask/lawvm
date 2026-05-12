@@ -15,6 +15,7 @@ from typing import Literal, cast
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.finland.restructure_plan import (
+    deferred_plan_op_finding,
     ExecutedOp,
     _execute_relabel,
     move_skip_finding,
@@ -1385,7 +1386,11 @@ class TestExecuteRelabel:
         assert plan is not None
 
         _new_tree, executed = execute_restructure_plan(plan, before_master.replay_fold_state.ir)
-        by_target = {item.op.target: item for item in executed}
+        by_target = {
+            item.op.target: item
+            for item in executed
+            if item.op.kind is TransformOpKind.RELABEL
+        }
 
         assert by_target["part:2/chapter:4/section:11"].success
         assert by_target["part:6/chapter:2/section:7"].reason_code == "target_leaf_absent_under_existing_parent"
@@ -2017,14 +2022,17 @@ class TestExecutionOrdering:
         assert ordered[0].kind == TransformOpKind.RELABEL
         assert ordered[1].kind == TransformOpKind.INSERT_SUBTREE
 
-        # Execute: only RELABEL should be in executed list
+        # Execute: RELABEL mutates; INSERT_SUBTREE is explicitly deferred.
         new_tree, executed = execute_restructure_plan(plan, tree)
-        assert len(executed) == 1
+        assert len(executed) == 2
         assert executed[0].op.kind == TransformOpKind.RELABEL
         assert executed[0].success is True
+        assert executed[1].op.kind == TransformOpKind.INSERT_SUBTREE
+        assert executed[1].success is False
+        assert executed[1].reason_code == "non_executable_deferred_to_leaf_replay"
 
     def test_non_executable_ops_skipped(self) -> None:
-        """INSERT_SUBTREE, REPLACE_LEAF, REPEAL_NODE are not executed."""
+        """INSERT_SUBTREE, REPLACE_LEAF, REPEAL_NODE are deferred without mutation."""
         tree = _make_body_with_chapters(("1", ["1"]))
         plan = _make_plan([
             StructuralTransformOp(
@@ -2041,6 +2049,38 @@ class TestExecutionOrdering:
             ),
         ])
         new_tree, executed = execute_restructure_plan(plan, tree)
-        assert len(executed) == 0
+        assert [item.op.kind for item in executed] == [
+            TransformOpKind.INSERT_SUBTREE,
+            TransformOpKind.REPLACE_LEAF,
+            TransformOpKind.REPEAL_NODE,
+        ]
+        assert all(not item.success for item in executed)
+        assert {item.reason_code for item in executed} == {
+            "non_executable_deferred_to_leaf_replay",
+        }
         # Tree unchanged
         assert new_tree.children == tree.children
+
+    def test_deferred_plan_op_finding_records_leaf_replay_ownership(self) -> None:
+        executed = ExecutedOp(
+            op=StructuralTransformOp(
+                kind=TransformOpKind.REPLACE_LEAF,
+                target="chapter:2/section:10",
+                payload_claim_ids=("section:2/10",),
+                notes=("body_claim",),
+            ),
+            success=False,
+            note="replace_leaf deferred to ordinary leaf/subtree replay",
+            reason_code="non_executable_deferred_to_leaf_replay",
+        )
+
+        finding = deferred_plan_op_finding(executed, source_statute="2019/371")
+
+        assert finding is not None
+        assert finding.kind == "APPLY.RESTRUCTURE_PLAN_OP_DEFERRED"
+        assert finding.stage == "restructure_plan"
+        assert finding.blocking is False
+        assert finding.detail["reason_code"] == "non_executable_deferred_to_leaf_replay"
+        assert finding.detail["plan_op_kind"] == "replace_leaf"
+        assert finding.detail["target"] == "chapter:2/section:10"
+        assert finding.detail["payload_claim_ids"] == ["section:2/10"]
