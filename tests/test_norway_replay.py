@@ -102,6 +102,22 @@ def _replace_renumber_amendment_xml(date_in_force: str) -> bytes:
 """.encode("utf-8")
 
 
+def _other_base_amendment_xml(date_in_force: str) -> bytes:
+    return f"""<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <dd class="dateInForce">{date_in_force}</dd>
+    <article class="document-change" data-document="lov/2025-01-01-2">
+      <article class="change" data-change-part="lov/2025-01-01-2/§1">
+        <article class="defaultP">§ 1 skal lyde:</article>
+        <article class="legalP">Annen lov endres.</article>
+      </article>
+    </article>
+  </body>
+</html>
+""".encode("utf-8")
+
+
 def _write_archive(
     archive_path,
     members: list[tuple[str, bytes]],
@@ -254,6 +270,62 @@ def test_replay_no_to_pit_surfaces_parse_action_family_promotion(tmp_path) -> No
     assert evidence_row["blocking"] is False
     assert evidence_row["strict_disposition"] == "record"
     assert evidence_row["quirks_disposition"] == "record"
+
+
+def test_replay_no_to_pit_records_no_matching_change_group(tmp_path) -> None:
+    archive_path = tmp_path / "lovtidend-avd1-2001-2025.tar.bz2"
+    _write_archive(
+        archive_path,
+        [
+            ("lti/2025/nl-20250101-001.xml", _BASE_XML),
+            ("lti/2025/nl-20250202-005.xml", _other_base_amendment_xml("2025-02-10")),
+        ],
+    )
+    index = NOAmendmentIndex(
+        data_dir=str(tmp_path),
+        archive_names=[archive_path.name],
+        entries=[
+            NOAmendmentIndexEntry(
+                source_id="no/lovtid/2025-02-02-5",
+                archive=archive_path.name,
+                member_name="lti/2025/nl-20250202-005.xml",
+                effective_status="dated",
+                effective_date="2025-02-10",
+                raw_date_in_force="2025-02-10",
+                base_ids=("no/lov/2025-01-01-1",),
+                n_ops=1,
+            )
+        ],
+    )
+    index_path = tmp_path / "no_index.json"
+    save_no_amendment_index(index, index_path)
+
+    result = replay_no_to_pit(
+        "no/lov/2025-01-01-1",
+        as_of="2025-02-15",
+        data_dir=tmp_path,
+        index_path=index_path,
+    )
+
+    assert result.error is None
+    assert result.amendments_applied == []
+    assert result.n_ops == 0
+    assert [(item.kind, item.detail["rule_id"]) for item in result.adjudications] == [
+        ("no_replay_no_matching_change_group", "no_replay_no_matching_change_group")
+    ]
+    adjudication = result.adjudications[0]
+    assert adjudication.detail["phase"] == "replay"
+    assert adjudication.detail["base_id"] == "no/lov/2025-01-01-1"
+    assert adjudication.detail["parsed_group_bases"] == ["no/lov/2025-01-01-2"]
+    assert adjudication.detail["strict_disposition"] == "block"
+    payload = build_no_replay_payload(result)
+    assert payload["adjudication_kind_counts"] == {"no_replay_no_matching_change_group": 1}
+    evidence_row = payload["evidence"]["finding_rows"][0]
+    assert evidence_row["rule_id"] == "no_replay_no_matching_change_group"
+    assert evidence_row["phase"] == "replay"
+    assert evidence_row["blocking"] is True
+    assert evidence_row["strict_disposition"] == "block"
+    assert validate_corpus_finding_evidence_row(evidence_row) == ()
 
 
 def test_replay_no_to_pit_skips_future_amendments(tmp_path) -> None:
