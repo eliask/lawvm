@@ -1409,7 +1409,7 @@ def _apply_canonical_intent(
         if _intent_targets_section(intent)
         else None
     )
-    _check_occupancy_policy(state, rop, intent, sec_path, ctx_label)
+    _check_occupancy_policy(state, rop, intent, sec_path, ctx_label, findings_out=findings_out)
     _assert_intent_compat(rop, intent, ctx_label, findings_out=findings_out)
 
     match intent:

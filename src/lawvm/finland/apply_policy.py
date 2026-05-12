@@ -14,6 +14,7 @@ from lawvm.core.occupancy import (
     OccupancyClass,
     validate_transition,
 )
+from lawvm.core.phase_result import Finding
 
 from lawvm.finland.ops import (
     AmendmentOp,
@@ -384,6 +385,8 @@ def _check_occupancy_policy(
     intent: "CanonicalIntent",
     sec_path: Path | None,
     ctx_label: str,
+    *,
+    findings_out: list[Finding] | None = None,
 ) -> None:
     """Observational occupancy policy check against the typed contract."""
     from lawvm.core.canonical_intent import Replace, Insert, Repeal, NodeTarget
@@ -402,13 +405,34 @@ def _check_occupancy_policy(
     current = _section_occupancy(state, sec_path)
     policy = intent.contract.occupancy
     if current not in policy.allowed_from:
+        allowed_from = sorted(c.value for c in policy.allowed_from)
         logger.warning(
             "  %s → occupancy policy violation: §%s is %s, not in allowed_from %s",
             ctx_label,
             rop.target_norm,
             current.value,
-            {c.value for c in policy.allowed_from},
+            set(allowed_from),
         )
+        if findings_out is not None:
+            findings_out.append(
+                Finding(
+                    kind="APPLY.OCCUPANCY_POLICY_VIOLATION",
+                    role="observation",
+                    stage="apply",
+                    source_statute=rop.resolved_source_statute,
+                    detail={
+                        "ctx_label": ctx_label,
+                        "op_id": rop.op_id,
+                        "legacy_action": rop.resolved_action_type,
+                        "target_label": rop.target_norm,
+                        "current_occupancy": current.value,
+                        "allowed_from": allowed_from,
+                        "primary_expected_from": sorted(c.value for c in policy.primary_expected_from),
+                        "strict_disposition": "record",
+                    },
+                    blocking=False,
+                )
+            )
     elif current not in policy.primary_expected_from:
         logger.debug(
             "  %s → occupancy policy note: §%s is %s (allowed but not primary expected)",
