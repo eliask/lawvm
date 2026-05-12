@@ -187,6 +187,14 @@ def build_no_amendment_index(data_dir: Optional[Path] = None) -> NOAmendmentInde
     for artifact in iter_no_amendment_artifacts(data_dir):
         source_id = artifact.logical_id
         if lovdata_amendment_filename_to_id(artifact.member_name) is None and not artifact.locator.startswith("no://lovtid/"):
+            index.diagnostics.append(
+                _no_index_skipped_artifact_diagnostic(
+                    rule_id="no_amendment_index_unrecognized_amendment_locator",
+                    artifact=artifact,
+                    reason="Norway amendment index skipped artifact whose member name and locator did not identify an amendment source lane",
+                    phase="acquisition",
+                )
+            )
             continue
         parser_adjudications: list[CompileAdjudication] = []
         grouped = iter_no_document_change_ops(
