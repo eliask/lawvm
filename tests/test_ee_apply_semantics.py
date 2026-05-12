@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from dataclasses import replace
 from typing import Any, cast
 
@@ -109,6 +110,31 @@ def test_apply_ee_ops_replaces_statute_title_facet_without_touching_body() -> No
     assert updated.title == "New title"
     assert updated.body is body
     assert statute.title == "Old title"
+
+
+def test_ee_apply_unsupported_heading_target_records_adjudication_not_warning() -> None:
+    body = IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Body"),))
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="ee_heading_item_target",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("item", "1"),), special=FacetKind.HEADING),
+        payload=IRNode(kind=IRNodeKind.CONTENT, text="New heading"),
+        source=OperationSource(statute_id="ee/source"),
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = _ee_apply_op(body, op, adjudications_out=adjudications)
+
+    assert result is body
+    assert caught == []
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "ee_replay_unsupported_heading_target"
+    assert adjudications[0].source_statute == "ee/source"
+    assert adjudications[0].op_id == "ee_heading_item_target"
+    assert adjudications[0].detail == {"path": "{'item': '1'}"}
 
 
 def test_apply_ee_ops_records_case_only_source_text_recovery() -> None:
