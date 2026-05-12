@@ -45,6 +45,7 @@ from lawvm.finland.johtolause.surface_model import (
     VerbKind,
 )
 from lawvm.finland.johtolause.surface_resolve import (
+    FI_TAIL_UNRESOLVED_KIND,
     ResolutionKind,
     ResolutionWitness,
     ResolvedDescendantCoordination,
@@ -55,6 +56,7 @@ from lawvm.finland.johtolause.surface_resolve import (
     ResolvedSurfaceClause,
     ResolvedTargetRef,
     ResolvedTextAmend,
+    SurfaceResolutionResidual,
     resolve_surface_clause,
 )
 
@@ -645,6 +647,7 @@ class TestMoveTailApplication:
         assert node.move_clause_target_unit_kind == "chapter"
         assert node.resolution_witness is not None
         assert node.resolution_witness.resolution_kind == ResolutionKind.MOVE_TAIL_APPLIED
+        assert result.residuals == ()
 
     def test_move_tail_does_not_overwrite_existing_chapter(self):
         """Move tail preserves an existing chapter while keeping the move signal."""
@@ -722,21 +725,65 @@ class TestMoveTailApplication:
         assert node.move_clause_target_unit_kind == "part"
 
     def test_move_tail_skips_sub_ref_targets(self):
-        """Move tail does not apply to targets with sub-references (momentti etc.)."""
+        """Move tail skipped on sub-references is recorded rather than silent."""
         clause = _clause(
             _vg(
                 VerbKind.SIIRTAA,
                 _tref(label="7", sub_refs=(SurfaceSubRef(momentti=2),)),
-                SurfaceMoveTail(destination_chapter="3"),
+                SurfaceMoveTail(
+                    destination_chapter="3",
+                    witness=SurfaceWitness(
+                        rule_id="test.move_tail_subref",
+                        source_span=(10, 12),
+                    ),
+                ),
             )
         )
         result = resolve_surface_clause(clause)
         nodes = result.verb_groups[0].nodes
-        # The target has a sub_ref, so move tail should not apply
         node = nodes[0]
         assert isinstance(node, ResolvedTargetRef)
-        assert node.chapter == ""  # not changed
+        assert node.chapter == ""
         assert node.move_clause_target_unit_kind is None
+        assert len(result.residuals) == 1
+        residual = result.residuals[0]
+        assert isinstance(residual, SurfaceResolutionResidual)
+        assert residual.kind == FI_TAIL_UNRESOLVED_KIND
+        assert residual.reason_code == "NO_APPLICABLE_TARGET"
+        assert residual.strict_disposition == "block"
+        assert residual.quirks_disposition == "record"
+        assert residual.detail["tail_kind"] == "move"
+        assert residual.detail["witness_rule_id"] == "test.move_tail_subref"
+        assert residual.detail["source_span"] == (10, 12)
+
+    def test_move_tail_without_active_batch_is_residual(self):
+        """A standalone move tail cannot be resolved without a target batch."""
+        clause = _clause(
+            _vg(
+                VerbKind.SIIRTAA,
+                SurfaceMoveTail(
+                    destination_chapter="3",
+                    witness=SurfaceWitness(
+                        rule_id="test.move_tail_no_batch",
+                        source_span=(1, 2),
+                    ),
+                ),
+            )
+        )
+
+        result = resolve_surface_clause(clause)
+
+        assert result.verb_groups[0].nodes == ()
+        assert len(result.residuals) == 1
+        residual = result.residuals[0]
+        assert isinstance(residual, SurfaceResolutionResidual)
+        assert residual.kind == FI_TAIL_UNRESOLVED_KIND
+        assert residual.rule_id == "fi.johtolause.tail_unresolved.v1"
+        assert residual.family == "target_resolution_recovery"
+        assert residual.reason_code == "NO_ACTIVE_BATCH"
+        assert residual.detail["tail_kind"] == "move"
+        assert residual.detail["destination_chapter"] == "3"
+        assert residual.detail["witness_rule_id"] == "test.move_tail_no_batch"
 
     def test_move_tail_multiple_targets(self):
         """Move tail applies to all whole-section targets in preceding batch."""
@@ -798,12 +845,18 @@ class TestRenumberTailApplication:
         assert node.renumber_dest == "2"  # existing preserved
 
     def test_renumber_tail_empty_new_label_no_effect(self):
-        """Renumber tail with empty new_label has no effect."""
+        """Renumber tail with empty new_label is visible as unresolved."""
         clause = _clause(
             _vg(
                 VerbKind.MUUTTAA,
                 _tref(label="1"),
-                SurfaceRenumberTail(new_label=""),
+                SurfaceRenumberTail(
+                    new_label="",
+                    witness=SurfaceWitness(
+                        rule_id="test.renumber_empty",
+                        source_span=(20, 21),
+                    ),
+                ),
             )
         )
         result = resolve_surface_clause(clause)
@@ -812,6 +865,43 @@ class TestRenumberTailApplication:
         node = nodes[0]
         assert isinstance(node, ResolvedTargetRef)
         assert node.renumber_dest == ""
+        assert len(result.residuals) == 1
+        residual = result.residuals[0]
+        assert isinstance(residual, SurfaceResolutionResidual)
+        assert residual.kind == FI_TAIL_UNRESOLVED_KIND
+        assert residual.reason_code == "MISSING_NEW_LABEL"
+        assert residual.detail["tail_kind"] == "renumber"
+        assert residual.detail["new_label"] == ""
+        assert residual.detail["witness_rule_id"] == "test.renumber_empty"
+
+    def test_renumber_tail_without_active_batch_is_residual(self):
+        """A standalone renumber tail cannot be resolved without a target batch."""
+        clause = _clause(
+            _vg(
+                VerbKind.MUUTTAA,
+                SurfaceRenumberTail(
+                    new_label="3",
+                    witness=SurfaceWitness(
+                        rule_id="test.renumber_no_batch",
+                        source_span=(30, 31),
+                    ),
+                ),
+            )
+        )
+
+        result = resolve_surface_clause(clause)
+
+        assert result.verb_groups[0].nodes == ()
+        assert len(result.residuals) == 1
+        residual = result.residuals[0]
+        assert isinstance(residual, SurfaceResolutionResidual)
+        assert residual.kind == FI_TAIL_UNRESOLVED_KIND
+        assert residual.reason_code == "NO_ACTIVE_BATCH"
+        assert residual.strict_disposition == "block"
+        assert residual.quirks_disposition == "record"
+        assert residual.detail["tail_kind"] == "renumber"
+        assert residual.detail["new_label"] == "3"
+        assert residual.detail["witness_rule_id"] == "test.renumber_no_batch"
 
 
 # ---------------------------------------------------------------------------
