@@ -12,6 +12,7 @@ from lawvm.core.timeline import ingest_consolidated, verify_consistency
 from lawvm.core.timeline_consistency import ConsistencyDivergence
 from lawvm.norway.sources import ingest_no_public_archives
 from lawvm.norway.verify import (
+    NO_VERIFY_COMPARE_OTHER_LAWS_CONTEXT_SUPPRESSED,
     _infer_no_source_signal,
     _normalize_no_compare_tree,
     _partition_primary_divergences,
@@ -627,6 +628,51 @@ def test_normalize_no_compare_tree_collapses_other_laws_detail_section() -> None
             "I lov 13. mars 1981 nr. 6 om vern mot forurensning og om avfall gjøres følgende endringer:",
         ),
     ]
+
+
+def test_normalize_no_compare_tree_records_other_laws_projection() -> None:
+    section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="22",
+        children=(IRNode(kind=IRNodeKind.HEADING, text="Endringer i andre lover"),
+            IRNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                text="Fra den tid loven trer i kraft, gjøres følgende endringer i andre lover: – – –",
+            ),
+            IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="1. I lov 17. juli 1998 nr. 61 ..."),),
+    )
+    projections = []
+
+    _normalize_no_compare_tree(
+        section,
+        projections_out=projections,
+        surface="current",
+        path=(("section", "22"),),
+    )
+
+    assert [projection.rule_id for projection in projections] == [NO_VERIFY_COMPARE_OTHER_LAWS_CONTEXT_SUPPRESSED]
+    projection = projections[0]
+    assert projection.surface == "current"
+    assert projection.address == (("section", "22"),)
+    assert projection.before_kind == "section"
+    assert projection.before_label == "22"
+    assert projection.before_child_count == 3
+    assert projection.after_child_count == 2
+    assert projection.to_dict()["family"] == "editorial_projection"
+
+
+def test_normalize_no_compare_tree_does_not_record_projection_for_plain_section() -> None:
+    section = IRNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Plain operative text."),),
+    )
+    projections = []
+
+    _normalize_no_compare_tree(section, projections_out=projections, surface="current", path=(("section", "1"),))
+
+    assert projections == []
 
 
 def test_normalize_no_compare_tree_collapses_other_laws_detail_section_without_heading() -> None:

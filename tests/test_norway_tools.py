@@ -32,6 +32,7 @@ from lawvm.norway.commencement import (
     build_no_commencement_external_evidence_plan_artifact,
 )
 from lawvm.norway.index import load_no_amendment_index
+from lawvm.norway.verify import NOCompareProjection
 from lawvm.norway.sources import NOLocatedArtifact, load_no_current_law_ids, load_no_current_law_titles
 
 
@@ -2681,6 +2682,65 @@ def test_no_verify_tool_preserves_filtered_divergence_evidence(monkeypatch, caps
             "consolidated_text": "current parent",
         }
     ]
+
+
+def test_no_verify_tool_preserves_compare_projection_evidence(monkeypatch, capsys) -> None:
+    projection = NOCompareProjection(
+        surface="current",
+        rule_id="no_verify.compare_other_laws_context_suppressed",
+        reason="Other-laws detail children are suppressed for compare-only materialization.",
+        address=(("section", "22"),),
+        before_kind="section",
+        before_label="22",
+        before_text="",
+        after_text="",
+        before_child_count=3,
+        after_child_count=2,
+    )
+    monkeypatch.setattr(
+        "lawvm.norway.verify.verify_no_against_current",
+        lambda *args, **kwargs: SimpleNamespace(
+            base_id="no/lov/2025-01-01-1",
+            as_of="2025-02-15",
+            current_title="Demo",
+            replay_status="replayed",
+            consistent=True,
+            divergence_count=0,
+            divergence_counts={},
+            raw_divergence_count=0,
+            raw_divergence_counts={},
+            filtered_divergence_count=0,
+            filtered_divergence_rule_counts={},
+            compare_projection_count=1,
+            compare_projection_rule_counts={"no_verify.compare_other_laws_context_suppressed": 1},
+            indexed_amendment_count=1,
+            applied_amendment_count=1,
+            replay_op_count=1,
+            source_signal="",
+            replay=SimpleNamespace(adjudications=[]),
+            error="",
+            divergences=[],
+            filtered_divergences=[],
+            compare_projections=[projection],
+        ),
+    )
+    args = Namespace(
+        base_id="no/lov/2025-01-01-1",
+        as_of="2025-02-15",
+        data_dir=None,
+        index=None,
+        commencement=None,
+        verbose=True,
+        max_divergences=10,
+        json=True,
+    )
+
+    no_verify_main(args)
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["compare_projection_count"] == 1
+    assert data["compare_projection_rule_counts"] == {"no_verify.compare_other_laws_context_suppressed": 1}
+    assert data["compare_projections"] == [projection.to_dict()]
 def test_no_verify_scan_tool_emits_json(tmp_path, capsys) -> None:
     _write_archive(
         tmp_path / "lovtidend-avd1-2001-2025.tar.bz2",

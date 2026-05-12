@@ -35,6 +35,17 @@ _NO_VERIFY_SECTION_SHELL_RE = re.compile(
     r"^I §\s*(?P<label>[0-9A-Za-z-]+)(?:\s+nr\.\s*\d+)?\b",
     re.IGNORECASE,
 )
+NO_VERIFY_COMPARE_REPEALED_SHELL_BLANKED = "no_verify.compare_repealed_shell_blanked"
+NO_VERIFY_COMPARE_SENTENCE_CHILDREN_COLLAPSED = "no_verify.compare_sentence_children_collapsed"
+NO_VERIFY_COMPARE_NESTED_ITEM_TAIL_SUPPRESSED = "no_verify.compare_nested_item_tail_suppressed"
+NO_VERIFY_COMPARE_SELF_SECTION_SHELL_BLANKED = "no_verify.compare_self_section_shell_blanked"
+NO_VERIFY_COMPARE_CONTINGENT_OTHER_LAWS_PLACEHOLDER_SUPPRESSED = (
+    "no_verify.compare_contingent_other_laws_placeholder_suppressed"
+)
+NO_VERIFY_COMPARE_DEFINITION_SUBSECTION_PAIRS_COLLAPSED = (
+    "no_verify.compare_definition_subsection_pairs_collapsed"
+)
+NO_VERIFY_COMPARE_OTHER_LAWS_CONTEXT_SUPPRESSED = "no_verify.compare_other_laws_context_suppressed"
 
 
 @dataclass
@@ -48,6 +59,36 @@ class NOFilteredDivergence:
 class NOPrimaryDivergencePartition:
     primary: list[ConsistencyDivergence]
     filtered: list[NOFilteredDivergence]
+
+
+@dataclass(frozen=True)
+class NOCompareProjection:
+    surface: str
+    rule_id: str
+    reason: str
+    address: tuple[tuple[str, str], ...]
+    before_kind: str
+    before_label: str | None
+    before_text: str
+    after_text: str
+    before_child_count: int
+    after_child_count: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "surface": self.surface,
+            "rule_id": self.rule_id,
+            "family": "editorial_projection",
+            "phase": "oracle_compare",
+            "reason": self.reason,
+            "address": [list(step) for step in self.address],
+            "before_kind": self.before_kind,
+            "before_label": self.before_label,
+            "before_text": self.before_text,
+            "after_text": self.after_text,
+            "before_child_count": self.before_child_count,
+            "after_child_count": self.after_child_count,
+        }
 
 
 @dataclass
@@ -64,6 +105,9 @@ class NOVerifyResult:
     filtered_divergence_count: int = 0
     filtered_divergence_rule_counts: dict[str, int] | None = None
     filtered_divergences: list[NOFilteredDivergence] | None = None
+    compare_projection_count: int = 0
+    compare_projection_rule_counts: dict[str, int] | None = None
+    compare_projections: list[NOCompareProjection] | None = None
     divergences: list[ConsistencyDivergence] | None = None
     indexed_amendment_count: int = 0
     applied_amendment_count: int = 0
@@ -155,6 +199,47 @@ def _infer_no_source_signal(
     ):
         return "sparse_indexed_history"
     return None
+
+
+def _no_kind_value(kind: IRNodeKind) -> str:
+    return kind.value
+
+
+def _append_no_compare_projection(
+    projections_out: list[NOCompareProjection] | None,
+    *,
+    surface: str,
+    rule_id: str,
+    reason: str,
+    path: tuple[tuple[str, str], ...],
+    before: IRNode,
+    after: IRNode,
+) -> None:
+    if projections_out is None:
+        return
+    projections_out.append(
+        NOCompareProjection(
+            surface=surface,
+            rule_id=rule_id,
+            reason=reason,
+            address=path,
+            before_kind=_no_kind_value(before.kind),
+            before_label=before.label,
+            before_text=before.text,
+            after_text=after.text,
+            before_child_count=len(before.children),
+            after_child_count=len(after.children),
+        )
+    )
+
+
+def _no_compare_child_path(
+    path: tuple[tuple[str, str], ...],
+    child: IRNode,
+) -> tuple[tuple[str, str], ...]:
+    if child.label:
+        return (*path, (_no_kind_value(child.kind), child.label))
+    return path
 
 
 def normalize_no_relation_path(path: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
@@ -309,12 +394,31 @@ def irnode_to_no_comparison_text(node: IRNode) -> str:
     return " ".join(part for part in parts if part)
 
 
-def _normalize_no_compare_tree(node: IRNode) -> IRNode:
+def _normalize_no_compare_tree(
+    node: IRNode,
+    *,
+    projections_out: list[NOCompareProjection] | None = None,
+    surface: str = "",
+    path: tuple[tuple[str, str], ...] = (),
+) -> IRNode:
     """Collapse sentence-only Norway containers for compare-only verification."""
     text = node.text
+    text_projection_rule: tuple[str, str] | None = None
     if text and normalize_no_comparison_text(text) == "":
         text = ""
-    normalized_children = [_normalize_no_compare_tree(child) for child in node.children]
+        text_projection_rule = (
+            NO_VERIFY_COMPARE_REPEALED_SHELL_BLANKED,
+            "Repealed shell text is blanked for compare-only missing-equals-empty verification.",
+        )
+    normalized_children = [
+        _normalize_no_compare_tree(
+            child,
+            projections_out=projections_out,
+            surface=surface,
+            path=_no_compare_child_path(path, child),
+        )
+        for child in node.children
+    ]
     if node.kind in {IRNodeKind.SUBSECTION, IRNodeKind.ITEM}:
         sentence_children = [child for child in normalized_children if child.kind is IRNodeKind.SENTENCE]
         other_children = [child for child in normalized_children if child.kind is not IRNodeKind.SENTENCE]
@@ -323,20 +427,40 @@ def _normalize_no_compare_tree(node: IRNode) -> IRNode:
             if text:
                 text = " ".join(part for part in [normalize_no_comparison_text(node.text or ""), text] if part).strip()
             if not other_children:
-                return IRNode(
+                after = IRNode(
                     kind=node.kind,
                     label=node.label,
                     text=text,
                     attrs=dict(node.attrs),
                     children=(),
                 )
-            return IRNode(
+                _append_no_compare_projection(
+                    projections_out,
+                    surface=surface,
+                    rule_id=NO_VERIFY_COMPARE_SENTENCE_CHILDREN_COLLAPSED,
+                    reason="Sentence children are collapsed into parent text for compare-only materialization.",
+                    path=path,
+                    before=node,
+                    after=after,
+                )
+                return after
+            after = IRNode(
                 kind=node.kind,
                 label=node.label,
                 text=text,
                 attrs=dict(node.attrs),
                 children=tuple(other_children),
             )
+            _append_no_compare_projection(
+                projections_out,
+                surface=surface,
+                rule_id=NO_VERIFY_COMPARE_SENTENCE_CHILDREN_COLLAPSED,
+                reason="Sentence children are collapsed into parent text for compare-only materialization.",
+                path=path,
+                before=node,
+                after=after,
+            )
+            return after
         nested_item_children = [child for child in other_children if child.kind is IRNodeKind.ITEM]
         if node.kind is IRNodeKind.ITEM and nested_item_children and text:
             normalized_parent = normalize_no_comparison_text(text)
@@ -348,6 +472,10 @@ def _normalize_no_compare_tree(node: IRNode) -> IRNode:
             cut_points = [idx for idx in cut_points if idx > 0]
             if cut_points:
                 text = normalized_parent[: min(cut_points)].rstrip(" ,;")
+                text_projection_rule = (
+                    NO_VERIFY_COMPARE_NESTED_ITEM_TAIL_SUPPRESSED,
+                    "Parent item text duplicated in nested item children is suppressed for compare-only materialization.",
+                )
     if node.kind is IRNodeKind.SECTION:
         heading_children = [child for child in normalized_children if child.kind is IRNodeKind.HEADING]
         non_heading_children = [child for child in normalized_children if child.kind is not IRNodeKind.HEADING]
@@ -355,13 +483,23 @@ def _normalize_no_compare_tree(node: IRNode) -> IRNode:
             not non_heading_children
             and _is_no_self_section_lead_shell(node.label, node.text or "")
         ):
-            return IRNode(
+            after = IRNode(
                 kind=node.kind,
                 label=node.label,
                 text="",
                 attrs=dict(node.attrs),
                 children=tuple(heading_children),
             )
+            _append_no_compare_projection(
+                projections_out,
+                surface=surface,
+                rule_id=NO_VERIFY_COMPARE_SELF_SECTION_SHELL_BLANKED,
+                reason="Self-section amendment lead shell is blanked for compare-only materialization.",
+                path=path,
+                before=node,
+                after=after,
+            )
+            return after
         heading_texts = [
             normalize_no_comparison_text(child.text or "").lower()
             for child in normalized_children
@@ -371,13 +509,23 @@ def _normalize_no_compare_tree(node: IRNode) -> IRNode:
         if subsection_children and any(
             _is_no_contingent_other_laws_placeholder(child.text or "") for child in subsection_children
         ):
-            return IRNode(
+            after = IRNode(
                 kind=node.kind,
                 label=node.label,
                 text="",
                 attrs=dict(node.attrs),
                 children=(),
             )
+            _append_no_compare_projection(
+                projections_out,
+                surface=surface,
+                rule_id=NO_VERIFY_COMPARE_CONTINGENT_OTHER_LAWS_PLACEHOLDER_SUPPRESSED,
+                reason="Contingent other-laws placeholder section is suppressed for compare-only materialization.",
+                path=path,
+                before=node,
+                after=after,
+            )
+            return after
         if subsection_children:
             first = subsection_children[0]
             intro_text = normalize_no_comparison_text(first.text or "")
@@ -439,13 +587,23 @@ def _normalize_no_compare_tree(node: IRNode) -> IRNode:
                                 replaced = True
                             continue
                         kept_children.append(child)
-                    return IRNode(
+                    after = IRNode(
                         kind=node.kind,
                         label=node.label,
                         text=text,
                         attrs=dict(node.attrs),
                         children=tuple(kept_children),
                     )
+                    _append_no_compare_projection(
+                        projections_out,
+                        surface=surface,
+                        rule_id=NO_VERIFY_COMPARE_DEFINITION_SUBSECTION_PAIRS_COLLAPSED,
+                        reason="Definition term/value subsection pairs are collapsed into item children for compare-only materialization.",
+                        path=path,
+                        before=node,
+                        after=after,
+                    )
+                    return after
         subsection_texts = [
             normalize_no_comparison_text(child.text or "").lower()
             for child in subsection_children
@@ -484,20 +642,42 @@ def _normalize_no_compare_tree(node: IRNode) -> IRNode:
                         )
                     )
                 detail_seen += 1
-            return IRNode(
+            after = IRNode(
                 kind=node.kind,
                 label=node.label,
                 text=text,
                 attrs=dict(node.attrs),
                 children=tuple(kept_children),
             )
-    return IRNode(
+            _append_no_compare_projection(
+                projections_out,
+                surface=surface,
+                rule_id=NO_VERIFY_COMPARE_OTHER_LAWS_CONTEXT_SUPPRESSED,
+                reason="Other-laws detail children are suppressed for compare-only materialization.",
+                path=path,
+                before=node,
+                after=after,
+            )
+            return after
+    after = IRNode(
         kind=node.kind,
         label=node.label,
         text=text,
         attrs=dict(node.attrs),
         children=tuple(normalized_children),
     )
+    if text_projection_rule is not None:
+        rule_id, reason = text_projection_rule
+        _append_no_compare_projection(
+            projections_out,
+            surface=surface,
+            rule_id=rule_id,
+            reason=reason,
+            path=path,
+            before=node,
+            after=after,
+        )
+    return after
 
 
 def _is_prefix_address(prefix: tuple[tuple[str, str], ...], full: tuple[tuple[str, str], ...]) -> bool:
@@ -650,17 +830,26 @@ def verify_no_against_current(
         return result
     result.current_title = current.title
 
+    compare_projections: list[NOCompareProjection] = []
     replay_compare = IRStatute(
         statute_id=replay.replayed.statute_id,
         title=replay.replayed.title,
-        body=_normalize_no_compare_tree(replay.replayed.body),
+        body=_normalize_no_compare_tree(
+            replay.replayed.body,
+            projections_out=compare_projections,
+            surface="replay",
+        ),
         supplements=replay.replayed.supplements,
         metadata=dict(replay.replayed.metadata),
     )
     current_compare = IRStatute(
         statute_id=current.statute_id,
         title=current.title,
-        body=_normalize_no_compare_tree(current.body),
+        body=_normalize_no_compare_tree(
+            current.body,
+            projections_out=compare_projections,
+            surface="current",
+        ),
         supplements=current.supplements,
         metadata=dict(current.metadata),
     )
@@ -695,6 +884,9 @@ def verify_no_against_current(
     result.filtered_divergence_count = len(partition.filtered)
     result.filtered_divergence_rule_counts = filtered_rule_counts
     result.filtered_divergences = partition.filtered
+    result.compare_projection_count = len(compare_projections)
+    result.compare_projection_rule_counts = dict(Counter(projection.rule_id for projection in compare_projections))
+    result.compare_projections = compare_projections
     result.divergences = primary
     base_year = 0
     try:
