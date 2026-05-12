@@ -268,6 +268,11 @@ def replay_no_to_pit(
                 op_id=op.op_id,
                 detail={
                     "rule_id": NO_PARSE_REPLACE_PROMOTED_TO_INSERT_FOR_RENUMBER,
+                    "phase": "parse",
+                    "family": "action_family_recovery",
+                    "blocking": False,
+                    "strict_disposition": "record",
+                    "quirks_disposition": "record",
                     "original_action": "replace",
                     "executed_action": "insert",
                     "target": str(op.target),
