@@ -11,6 +11,7 @@ from lawvm.estonia.grafter import (
     _ee_apply_text_replace_value,
     _ee_typo_tolerant_text_replace,
     apply_ee_ops,
+    parse_ee_amendment_ops,
 )
 from lawvm.estonia.replay import (
     _derive_ee_temporal_expiry_events,
@@ -341,6 +342,64 @@ def test_filter_ops_for_ref_slice_records_future_effective_rejection() -> None:
     ]
     assert adjudications[0].op_id == "future-local-op"
     assert adjudications[0].detail["reason"] == "op_effective_after_requested_pit"
+
+
+def test_parse_old_format_ref_slice_drop_uses_ref_slice_filtered_adjudication() -> None:
+    xml = """
+    <tyviseadus xmlns="tyviseadus_1_10.02.2010">
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>1</paragrahvNr>
+          <paragrahvPealkiri>Esimese seaduse muutmine</paragrahvPealkiri>
+          <loige>
+            <sisuTekst>
+              <HTMLKonteiner><![CDATA[
+                <p><b>1)</b> paragrahvi 14 lõike 2 punkt 2 tunnistatakse kehtetuks;</p>
+              ]]></HTMLKonteiner>
+            </sisuTekst>
+          </loige>
+        </paragrahv>
+        <paragrahv>
+          <paragrahvNr>2</paragrahvNr>
+          <paragrahvPealkiri>Teise seaduse muutmine</paragrahvPealkiri>
+          <loige>
+            <sisuTekst>
+              <HTMLKonteiner><![CDATA[
+                <p><b>1)</b> paragrahvi 7 lõikes 1 asendatakse arv „1” arvuga „2”;</p>
+              ]]></HTMLKonteiner>
+            </sisuTekst>
+          </loige>
+        </paragrahv>
+        <paragrahv>
+          <paragrahvNr>3</paragrahvNr>
+          <paragrahvPealkiri>Seaduse jõustumine</paragrahvPealkiri>
+          <loige>
+            <sisuTekst>
+              <tavatekst>Käesoleva seaduse § 2 jõustub 2014. aasta 1. juulil.</tavatekst>
+            </sisuTekst>
+          </loige>
+        </paragrahv>
+      </sisu>
+    </tyviseadus>
+    """.encode("utf-8")
+    adjudications = []
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Esimese seaduse",
+        ref_effective="2014-07-01",
+        has_earlier_same_act_slice=True,
+        adjudications_out=adjudications,
+    )
+
+    assert ops == []
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "ee_ref_slice_operation_filtered"
+    ]
+    assert adjudications[0].detail["reason"] == "old_format_ref_slice_target_not_owned"
+    assert adjudications[0].detail["target_section_labels"] == ("1",)
+    assert adjudications[0].detail["ref_effective"] == "2014-07-01"
 
 
 def test_filter_ops_for_ref_slice_keeps_retroactive_local_ops_on_earliest_slice() -> None:

@@ -8465,18 +8465,42 @@ def test_parse_ee_amendment_ops_skips_old_format_later_slice_when_target_section
         target_title="Esimese seaduse",
         ref_effective="2014-05-31",
     )
+    adjudications = []
     later_ops = parse_ee_amendment_ops(
         xml,
         "ee/test",
         target_title="Esimese seaduse",
         ref_effective="2014-07-01",
         has_earlier_same_act_slice=True,
+        adjudications_out=adjudications,
     )
 
     assert [(op.action, str(op.target)) for op in earlier_ops] == [
         (StructuralAction.REPEAL, "section:14/subsection:2/item:2"),
     ]
     assert later_ops == []
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "ee_ref_slice_operation_filtered"
+    ]
+    assert adjudications[0].detail["reason"] == "old_format_ref_slice_target_not_owned"
+    assert adjudications[0].detail["phase"] == "parse"
+    assert adjudications[0].detail["family"] == "temporal_recovery"
+    assert adjudications[0].detail["strict_disposition"] == "block"
+
+    owned_adjudications = []
+    owned_later_ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Teise seaduse",
+        ref_effective="2014-07-01",
+        has_earlier_same_act_slice=True,
+        adjudications_out=owned_adjudications,
+    )
+
+    assert [(op.action, str(op.target)) for op in owned_later_ops] == [
+        (StructuralAction.TEXT_REPLACE, "section:7/subsection:1"),
+    ]
+    assert owned_adjudications == []
 
 
 def test_parse_ee_amendment_ops_extracts_quote_prime_payload_without_wrappers() -> None:
