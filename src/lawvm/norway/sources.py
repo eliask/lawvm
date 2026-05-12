@@ -413,6 +413,36 @@ def load_no_amendment_bytes(source_id: str, source_path: Path | None = None) -> 
     return None
 
 
+def load_no_amendment_artifact_bytes(
+    source_id: str,
+    archive_name: str,
+    member_name: str,
+    source_path: Path | None = None,
+) -> bytes | None:
+    source_path = resolve_no_source_path(source_path)
+    if not archive_name or not member_name:
+        return load_no_amendment_bytes(source_id, source_path)
+    if is_no_farchive_path(source_path):
+        archive = open_no_archive(source_path, readonly=True)
+        try:
+            locator = member_name if member_name.startswith("no://") else no_amendment_locator(source_id)
+            return archive.get(locator)
+        finally:
+            archive.close()
+    archive_path = source_path / archive_name
+    if not archive_path.exists():
+        return None
+    with tarfile.open(archive_path, "r:bz2") as tf:
+        for member in tf.getmembers():
+            if member.name != member_name:
+                continue
+            file_obj = tf.extractfile(member)
+            if file_obj is None:
+                return None
+            return file_obj.read()
+    return None
+
+
 def load_no_current_law_ids(
     source_path: Path | None = None,
     *,

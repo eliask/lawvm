@@ -171,6 +171,56 @@ def test_replay_no_to_pit_applies_effective_amendments(tmp_path) -> None:
     ]
 
 
+def test_replay_no_to_pit_loads_exact_index_member_witness(tmp_path) -> None:
+    first_archive = tmp_path / "lovtidend-avd1-2001-2025.tar.bz2"
+    selected_archive = tmp_path / "lovtidend-avd1-2025-2026.tar.bz2"
+    member_name = "lti/2025/nl-20250202-005.xml"
+    _write_archive(
+        first_archive,
+        [
+            ("lti/2025/nl-20250101-001.xml", _BASE_XML),
+            (member_name, _amendment_xml("2025-02-10").replace(b"oppdatert krav", b"wrong witness")),
+        ],
+    )
+    _write_archive(
+        selected_archive,
+        [(member_name, _amendment_xml("2025-02-10").replace(b"oppdatert krav", b"selected witness"))],
+    )
+    index = NOAmendmentIndex(
+        data_dir=str(tmp_path),
+        archive_names=[first_archive.name, selected_archive.name],
+        entries=[
+            NOAmendmentIndexEntry(
+                source_id="no/lovtid/2025-02-02-5",
+                archive=selected_archive.name,
+                member_name=member_name,
+                effective_status="dated",
+                effective_date="2025-02-10",
+                raw_date_in_force="2025-02-10",
+                title="A",
+                base_ids=("no/lov/2025-01-01-1",),
+                n_ops=3,
+            )
+        ],
+    )
+
+    result = replay_no_to_pit(
+        "no/lov/2025-01-01-1",
+        as_of="2025-02-15",
+        data_dir=tmp_path,
+        index=index,
+    )
+
+    assert result.error is None
+    _chapter, sections = _chapter_sections(result)
+    subsection = sections[0].children[1]
+    assert [(item.label, item.text) for item in subsection.children] == [
+        ("1", "selected witness"),
+        ("2", "to krav"),
+        ("3", "tredje krav"),
+    ]
+
+
 def test_replay_no_to_pit_surfaces_action_family_adjudications(tmp_path) -> None:
     archive_path = tmp_path / "lovtidend-avd1-2001-2025.tar.bz2"
     _write_archive(

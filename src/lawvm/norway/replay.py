@@ -34,7 +34,7 @@ from lawvm.norway.grafter import (
 from lawvm.norway.index import NOAmendmentIndex, build_no_amendment_index, load_no_amendment_index
 from lawvm.norway.sources import (
     effective_date_from_amendment,
-    load_no_amendment_bytes,
+    load_no_amendment_artifact_bytes,
     load_no_original_lti_bytes,
     resolve_no_source_path,
 )
@@ -214,7 +214,7 @@ def replay_no_to_pit(
             )
             continue
 
-        html_bytes = load_no_amendment_bytes(source_id, data_dir)
+        html_bytes = load_no_amendment_artifact_bytes(source_id, entry.archive, entry.member_name, data_dir)
         if html_bytes is None:
             result.amendments_skipped_missing_source.append(source_id)
             result.adjudications.append(
@@ -226,6 +226,8 @@ def replay_no_to_pit(
                     blocking=True,
                     detail={
                         "effective_date": effective_date,
+                        "archive": entry.archive,
+                        "member_name": entry.member_name,
                     },
                 )
             )

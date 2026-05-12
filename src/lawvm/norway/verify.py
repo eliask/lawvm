@@ -297,7 +297,7 @@ def collect_no_touched_path_counts(
     replayed_body: Optional[IRNode] = None,
 ) -> tuple[Counter[tuple[tuple[str, str], ...]], int, int]:
     from lawvm.norway.grafter import iter_no_document_change_ops
-    from lawvm.norway.sources import load_no_amendment_bytes
+    from lawvm.norway.sources import load_no_amendment_artifact_bytes
 
     source_path = resolve_no_source_path(Path(index.data_dir) if getattr(index, "data_dir", None) else data_dir)
     norm_base_id = base_id if base_id.startswith("no/") else f"no/{base_id.removeprefix('lov/')}"
@@ -306,7 +306,12 @@ def collect_no_touched_path_counts(
     touched_op_count = 0
 
     for entry in index.entries_for_base(norm_base_id):
-        html_bytes = load_no_amendment_bytes(entry.source_id, source_path)
+        html_bytes = load_no_amendment_artifact_bytes(
+            entry.source_id,
+            entry.archive,
+            entry.member_name,
+            source_path,
+        )
         if html_bytes is None:
             continue
         source_touched = False
