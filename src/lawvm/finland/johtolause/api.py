@@ -100,6 +100,7 @@ class ClauseParseResult:
     supplementary_clauses: tuple = ()
     target_version_bindings: tuple = ()
     parse_error: str | None = None
+    lowering_diagnostics: tuple = ()
 
     @property
     def is_failed(self) -> bool:
@@ -127,7 +128,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     """
     from lawvm.finland.johtolause.surface_parse import parse as surface_parse
     from lawvm.finland.johtolause.surface_resolve import resolve_surface_clause
-    from lawvm.finland.johtolause.lower_clause_ast import lower_to_clause_ast
+    from lawvm.finland.johtolause.lower_clause_ast import lower_to_clause_ast_with_diagnostics
     from lawvm.finland.johtolause.meta_parse import extract_meta_surface_clauses
     from lawvm.finland.johtolause.scan import (
         apply_annotations_with_jolloin_pairs,
@@ -246,14 +247,16 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     # Same contract: RuntimeError is caught and reported; other exceptions propagate.
     if resolved is not None:
         try:
-            clause_ast = lower_to_clause_ast(resolved)
+            clause_ast, lowering_diagnostics = lower_to_clause_ast_with_diagnostics(resolved)
         except RuntimeError as exc:
             clause_ast = ClauseAST(verb_groups=(), source_text=text)
+            lowering_diagnostics = ()
             _err = f"lower_error: {type(exc).__name__}: {exc}"
             parse_error = _err
             diagnostics.append(f"internal_error: lower: {type(exc).__name__}: {exc}")
     else:
         clause_ast = ClauseAST(verb_groups=(), source_text=text)
+        lowering_diagnostics = ()
 
     # -- Derive ParsedOps from ClauseAST --
     ops = _derive_parsed_ops_from_ast(clause_ast)
@@ -270,6 +273,11 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
     # -- Collect resolver residuals (SurfaceNodes that couldn't be resolved) --
     if resolved is not None and resolved.residuals:
         residuals.append({"kind": "unresolved_nodes", "nodes": list(resolved.residuals)})
+    if lowering_diagnostics:
+        residuals.append({
+            "kind": "lowering_diagnostics",
+            "diagnostics": list(lowering_diagnostics),
+        })
 
     if statute_id:
         diagnostics.append(f"statute_id={statute_id!r}")
@@ -302,6 +310,7 @@ def parse_clause(text: str, *, statute_id: str = "") -> ClauseParseResult:
         parse_error=parse_error,
         supplementary_clauses=supplementary_nodes,
         target_version_bindings=resolve_input.target_version_bindings,
+        lowering_diagnostics=lowering_diagnostics,
     )
 
 
