@@ -2904,9 +2904,14 @@ def test_compile_skips_sidenote_only_target() -> None:
         in_force_dates=[{"date": "2008-12-12", "prospective": "false"}],
     )
 
-    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+    lowering_rejections: list[dict[str, object]] = []
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_rejections)
 
     assert ops == []
+    assert lowering_rejections
+    assert lowering_rejections[0]["rule_id"] == "uk_effect_heading_only_ref_rejected"
+    assert lowering_rejections[0]["reason_code"] == "heading_only_ref_unsupported"
+    assert lowering_rejections[0]["strict_disposition"] == "block"
 
 
 def test_compile_skips_non_substantive_structural_insert_payload() -> None:
@@ -2930,8 +2935,17 @@ def test_compile_skips_non_substantive_structural_insert_payload() -> None:
         in_force_dates=[{"date": "2010-01-01", "prospective": "false"}],
     )
 
-    ops = compile_effect_to_ir_ops(effect, None, sequence=0)
+    missing_payload_rejections: list[dict[str, object]] = []
+    ops = compile_effect_to_ir_ops(
+        effect,
+        None,
+        sequence=0,
+        lowering_rejections_out=missing_payload_rejections,
+    )
     assert ops == []
+    assert missing_payload_rejections
+    assert missing_payload_rejections[0]["rule_id"] == "uk_effect_missing_structural_payload_rejected"
+    assert missing_payload_rejections[0]["reason_code"] == "missing_extracted_payload"
 
     extracted_el = ET.fromstring(
         f"""
@@ -2940,9 +2954,18 @@ def test_compile_skips_non_substantive_structural_insert_payload() -> None:
         </BlockAmendment>
         """
     )
-    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+    non_substantive_rejections: list[dict[str, object]] = []
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=non_substantive_rejections,
+    )
 
     assert ops == []
+    assert non_substantive_rejections
+    assert non_substantive_rejections[0]["rule_id"] == "uk_effect_non_substantive_payload_rejected"
+    assert non_substantive_rejections[0]["reason_code"] == "non_substantive_structural_payload"
 
 
 def test_parse_unlabelled_schedule_paragraph_target_keeps_schedule_root() -> None:
@@ -3518,9 +3541,50 @@ def test_compile_skips_heading_only_ref_without_creating_section_replace() -> No
         in_force_dates=[{"date": "2012-03-08", "prospective": "false"}],
     )
 
-    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+    lowering_rejections: list[dict[str, object]] = []
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_rejections)
 
     assert ops == []
+    assert lowering_rejections
+    assert lowering_rejections[0]["rule_id"] == "uk_effect_heading_only_ref_rejected"
+    assert lowering_rejections[0]["reason_code"] == "heading_only_ref_unsupported"
+
+
+def test_compile_records_crossheading_replace_rejection() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <InlineAmendment xmlns="{_LEG_NS}">
+          " New cross-heading "
+        </InlineAmendment>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_crossheading_replace_rejected",
+        effect_type="substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2012-03-08",
+        affected_uri="/id/ukpga/2010/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2010",
+        affected_number="9",
+        affected_provisions="cross-heading",
+        affecting_uri="/id/ukpga/2012/5",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2012",
+        affecting_number="5",
+        affecting_provisions="Sch. 13 para. 7(b)",
+        affecting_title="Welfare Reform Act 2012",
+        in_force_dates=[{"date": "2012-03-08", "prospective": "false"}],
+    )
+
+    lowering_rejections: list[dict[str, object]] = []
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_rejections)
+
+    assert ops == []
+    assert lowering_rejections
+    assert lowering_rejections[0]["rule_id"] == "uk_effect_crossheading_replace_rejected"
+    assert lowering_rejections[0]["reason_code"] == "crossheading_replace_unsupported"
 
 
 def test_executor_replace_overwrites_existing_schedule_root() -> None:

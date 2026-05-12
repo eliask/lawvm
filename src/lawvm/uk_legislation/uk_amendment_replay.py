@@ -3014,6 +3014,20 @@ def compile_effect_to_ir_ops(
             )
     for t_str in targets_str:
         if _is_heading_only_ref(t_str):
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id="uk_effect_heading_only_ref_rejected",
+                family="unsupported_target_facet",
+                reason_code="heading_only_ref_unsupported",
+                reason=(
+                    "UK effect target names only a heading or sidenote facet; "
+                    "lowering cannot safely mutate the host provision body"
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={"target_ref": t_str, "target_candidate_count": len(targets_str)},
+            )
             continue
         if action == "replace" and _is_crossheading_ref(t_str):
             # Cross-heading replacements are not yet compiled onto an explicit
@@ -3021,6 +3035,20 @@ def compile_effect_to_ir_ops(
             # ops against the numbered section target is destructive and can
             # erase the real section subtree. Skip until the frontend has a
             # proper crossheading replacement lane.
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id="uk_effect_crossheading_replace_rejected",
+                family="unsupported_target_facet",
+                reason_code="crossheading_replace_unsupported",
+                reason=(
+                    "UK cross-heading replacement target is unsupported by the "
+                    "current lowering surface"
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={"target_ref": t_str},
+            )
             continue
 
         target = canonicalize_uk_address(_parse_affected_target(t_str))
@@ -3210,6 +3238,21 @@ def compile_effect_to_ir_ops(
             and not extracted_text
             and not use_metadata_fallback
         ):
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id="uk_effect_missing_structural_payload_rejected",
+                family="source_pathology_filter",
+                reason_code="missing_extracted_payload",
+                reason=(
+                    "UK structural effect has no extracted source payload; "
+                    "lowering cannot emit an empty replace or insert without "
+                    "risking destructive replay"
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={"target_ref": t_str, "action": action},
+            )
             continue
 
         curr_action = action
@@ -3315,6 +3358,25 @@ def compile_effect_to_ir_ops(
                     payload_node_mut.kind = cast(IRNodeKind, leaf_kind)
 
             if curr_action in ("insert", "replace") and _is_non_substantive_structural_payload(payload_node_mut):
+                _append_uk_effect_lowering_rejection(
+                    lowering_rejections_out,
+                    rule_id="uk_effect_non_substantive_payload_rejected",
+                    family="source_pathology_filter",
+                    reason_code="non_substantive_structural_payload",
+                    reason=(
+                        "UK structural effect payload contains only numbering "
+                        "or dot leaders, so replaying it would create a bogus "
+                        "legal unit"
+                    ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        "target_ref": t_str,
+                        "action": curr_action,
+                        "payload_kind": str(payload_node_mut.kind) if payload_node_mut is not None else "",
+                    },
+                )
                 continue
             payload_node = payload_node_mut.to_irnode() if payload_node_mut is not None else None
             if curr_action == "text_repeal" and op_text_match:
