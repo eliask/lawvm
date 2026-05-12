@@ -56,6 +56,33 @@ class ImportReport:
     bytes_raw: int = 0
     bytes_stored: int = 0
     sources: list[str] = field(default_factory=list)
+    skipped_entries: list[dict[str, Any]] = field(default_factory=list)
+
+
+def _record_import_skip(
+    report: ImportReport,
+    *,
+    rule_id: str,
+    family: str,
+    reason: str,
+    source_label: str,
+    zip_entry_name: str,
+    locator: str | None = None,
+    detail: dict[str, str] | None = None,
+) -> None:
+    record = {
+        "rule_id": rule_id,
+        "phase": "acquisition",
+        "family": family,
+        "reason": reason,
+        "source": source_label,
+        "entry_name": zip_entry_name,
+    }
+    if locator:
+        record["locator"] = locator
+    if detail:
+        record.update(detail)
+    report.skipped_entries.append(record)
 
 
 def _is_http_url(source: Path | str) -> bool:
@@ -147,6 +174,16 @@ def _store_zip_entry(
             file=sys.stderr,
         )
         report.total_skipped += 1
+        _record_import_skip(
+            report,
+            rule_id="finlex_import_duplicate_logical_locator",
+            family="source_pathology",
+            reason="duplicate logical locator in ZIP; later entry skipped",
+            source_label=source_label,
+            zip_entry_name=zip_entry_name,
+            locator=locator,
+            detail={"previous_entry_name": previous_entry},
+        )
         return
 
     seen_locators.setdefault(locator, zip_entry_name)
@@ -155,6 +192,16 @@ def _store_zip_entry(
     current = farchive.resolve(locator)
     if current is not None and current.digest == digest and skip_existing:
         report.total_skipped += 1
+        _record_import_skip(
+            report,
+            rule_id="finlex_import_existing_content_skipped",
+            family="transport_cleanup",
+            reason="archive already contains identical content and skip_existing was enabled",
+            source_label=source_label,
+            zip_entry_name=zip_entry_name,
+            locator=locator,
+            detail={"digest": digest},
+        )
         return
 
     if current is not None and current.digest != digest:
@@ -424,6 +471,15 @@ def import_consolidated_zip(
                     file=sys.stderr,
                 )
                 report.total_skipped += 1
+                _record_import_skip(
+                    report,
+                    rule_id="finlex_import_corrigendum_pit_missing",
+                    family="source_pathology",
+                    reason="version-agnostic consolidated corrigendum had no family PIT version",
+                    source_label=zip_label,
+                    zip_entry_name=name,
+                    detail={"sid": sid, "lang": lang, "filename": filename},
+                )
                 continue
 
             locator = build_canonical_consolidated_locator(
@@ -527,6 +583,7 @@ def main(args: object) -> None:
             overall.total_errors += report.total_errors
             overall.bytes_raw += report.bytes_raw
             overall.bytes_stored += report.bytes_stored
+            overall.skipped_entries.extend(report.skipped_entries)
             print(
                 f"  statute: scanned={report.total_scanned:,}  "
                 f"imported={report.total_imported:,}  "
@@ -557,6 +614,7 @@ def main(args: object) -> None:
             overall.total_errors += report.total_errors
             overall.bytes_raw += report.bytes_raw
             overall.bytes_stored += report.bytes_stored
+            overall.skipped_entries.extend(report.skipped_entries)
             print(
                 f"  consolidated: scanned={report.total_scanned:,}  "
                 f"imported={report.total_imported:,}  "

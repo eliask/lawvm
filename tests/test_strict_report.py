@@ -632,9 +632,14 @@ def test_compile_one_replays_quietly(monkeypatch) -> None:
         replay_meta_out=None,
         lo_ops_out=None,
         failed_ops_out=None,
+        strict_profile=None,
+        strict_johto_temporal: bool = False,
     ):
         assert statute_id == "1990/1295"
         assert quiet is True
+        assert strict_profile is not None
+        assert strict_profile.name == "finland_ingestion_v1"
+        assert strict_johto_temporal is True
         return SimpleNamespace(
             source_adjudication=None,
             finding_ledger=(),
@@ -643,13 +648,19 @@ def test_compile_one_replays_quietly(monkeypatch) -> None:
         )
 
     monkeypatch.setattr("lawvm.finland.grafter.replay_xml", fake_replay_xml)
-    monkeypatch.setattr(
-        "lawvm.finland.compile.compile_fi_facade_from_replay",
-        lambda **kwargs: SimpleNamespace(
+    def fake_compile_fi_facade_from_replay(**kwargs):
+        strict_profile = kwargs.get("strict_profile")
+        assert strict_profile is not None
+        assert strict_profile.name == "finland_ingestion_v1"
+        return SimpleNamespace(
             finding_ledger=(),
             verdict=None,
             bundle=SimpleNamespace(structural_ops=()),
-        ),
+        )
+
+    monkeypatch.setattr(
+        "lawvm.finland.compile.compile_fi_facade_from_replay",
+        fake_compile_fi_facade_from_replay,
     )
 
     row = strict_report._compile_one((1, "1990/1295"))
@@ -666,9 +677,14 @@ def test_compile_one_prefers_typed_source_adjudication_lineage_over_replay_meta(
         replay_meta_out=None,
         lo_ops_out=None,
         failed_ops_out=None,
+        strict_profile=None,
+        strict_johto_temporal: bool = False,
     ):
         assert statute_id == "1990/1295"
         assert quiet is True
+        assert strict_profile is not None
+        assert strict_profile.name == "finland_ingestion_v1"
+        assert strict_johto_temporal is True
         if replay_meta_out is not None:
             replay_meta_out.update(
                 {
@@ -715,9 +731,14 @@ def test_compile_one_hydrates_source_adjudication_from_replay_meta(monkeypatch) 
         replay_meta_out=None,
         lo_ops_out=None,
         failed_ops_out=None,
+        strict_profile=None,
+        strict_johto_temporal: bool = False,
     ):
         assert statute_id == "1990/1295"
         assert quiet is True
+        assert strict_profile is not None
+        assert strict_profile.name == "finland_ingestion_v1"
+        assert strict_johto_temporal is True
         if replay_meta_out is not None:
             replay_meta_out.update(
                 {
