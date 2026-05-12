@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from argparse import Namespace as SimpleNamespace
 
+import pytest
+
 from lawvm.sweden.fetch import (
     se_backfill_official_checkpoint_locator,
     se_backfill_official_completeness_locator,
@@ -242,6 +244,52 @@ def test_sweden_fetch_current_command_prints_locator(monkeypatch, capsys) -> Non
 
     assert "SFS ID:             2025:399" in out
     assert "RK current locator: se://sfs/2025:399/rk.current.json" in out
+
+
+def test_sweden_fetch_current_command_prints_diagnostic_on_failure(monkeypatch, capsys) -> None:
+    archive = _FakeArchiveContext()
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+
+    def fake_fetch_current(
+        sfs_id: str,
+        archive_obj,
+        *,
+        max_age_hours: float = 24.0,
+        diagnostics_out: list[dict[str, object]] | None = None,
+    ) -> None:
+        del archive_obj, max_age_hours
+        if diagnostics_out is not None:
+            diagnostics_out.append(
+                {
+                    "rule_id": "se_rk_current_fetch_failed",
+                    "family": "source_pathology",
+                    "phase": "acquisition",
+                    "reason": "Sweden RK current JSON request returned no payload",
+                    "sfs_id": sfs_id,
+                    "locator": f"se://sfs/{sfs_id}/rk.current.json",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                }
+            )
+        return None
+
+    monkeypatch.setattr("lawvm.tools.sweden.fetch_se_rk_current_json", fake_fetch_current)
+
+    with pytest.raises(SystemExit):
+        sweden_main(
+            SimpleNamespace(
+                sweden_command="fetch-current",
+                sfs_id="2025:399",
+                db=None,
+                max_age_hours=None,
+                show_json=False,
+            )
+        )
+    err = capsys.readouterr().err
+
+    assert "error: failed to fetch RK current JSON for 2025:399" in err
+    assert '"rule_id": "se_rk_current_fetch_failed"' in err
 
 
 def test_sweden_hydrate_live_command_prints_archive_locators(monkeypatch, capsys) -> None:
