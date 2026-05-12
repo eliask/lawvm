@@ -63,8 +63,8 @@ def _run_tree_detector(
     from lawvm.core.tree_ops import (
         check_invariants,
         find_text_duplication_warnings,
-        find_flattened_sublist_warnings,
     )
+    from lawvm.core.replay_lints import build_flattened_sublist_findings
 
     violations: List[str] = []
 
@@ -86,7 +86,8 @@ def _run_tree_detector(
             excerpt = str(w.get("excerpt") or "")[:60]
             violations.append(f"{path}: {kind} {left!r} <-> {right!r} ({tokens} tokens) {excerpt!r}")
     elif detector == "flattened_sublist_family":
-        for w in find_flattened_sublist_warnings(ir):
+        for finding in build_flattened_sublist_findings(ir, phase="diagnose_phase"):
+            w = finding.detail
             wkind = str(w.get("kind") or "?")
             path = str(w.get("path") or "?")
             node_kind = str(w.get("node_kind") or "?")

@@ -40,6 +40,7 @@ from lawvm.core.tree_ops import (
     _default_sort_key,
     build_label_index,
     check_invariants,
+    find_flattened_sublist_warnings,
     find_text_duplication_warnings,
     find,
     insert_sorted,
@@ -117,6 +118,52 @@ def test_find_text_duplication_warnings_detects_duplicate_suffix_text() -> None:
     warnings = find_text_duplication_warnings(body)
 
     assert any(item["kind"] == "duplicate_suffix_text" for item in warnings)
+
+
+def test_find_flattened_sublist_warnings_detects_interleaved_family() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                children=tuple(
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label=label, text=label)
+                    for label in ("a", "b", "1", "2", "a", "b")
+                ),
+            ),
+        ),
+    )
+
+    warnings = find_flattened_sublist_warnings(body)
+
+    assert warnings == [
+        {
+            "kind": "flattened_sublist_interleaved",
+            "path": "body/section:1",
+            "node_kind": "paragraph",
+            "repeated_families": ["alpha"],
+            "label_sample": ["a", "b", "1", "2", "a", "b"],
+        }
+    ]
+
+
+def test_find_flattened_sublist_warnings_ignores_monotonic_family() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                children=tuple(
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label=label, text=label)
+                    for label in ("1", "2", "3", "4", "5")
+                ),
+            ),
+        ),
+    )
+
+    assert find_flattened_sublist_warnings(body) == []
 
 
 @st.composite
