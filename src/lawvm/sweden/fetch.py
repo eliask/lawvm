@@ -551,13 +551,35 @@ def ingest_se_scraped_doc_html_map(
     skipped = 0
     resolved_pdf_links = 0
     sfs_ids: list[str] = []
-    for doc_url, html in data.items():
+    skipped_entries: list[dict[str, Any]] = []
+    for entry_index, (doc_url, html) in enumerate(data.items()):
         if not isinstance(doc_url, str) or not isinstance(html, str):
             skipped += 1
+            skipped_entries.append(
+                {
+                    "rule_id": "se_scraped_doc_entry_invalid_shape",
+                    "phase": "acquisition",
+                    "family": "source_pathology",
+                    "entry_index": entry_index,
+                    "doc_url_type": type(doc_url).__name__,
+                    "html_type": type(html).__name__,
+                    "reason": "scraped Sweden document map entry did not have string URL and HTML values",
+                }
+            )
             continue
         sfs_id = se_sfs_id_from_doc_url(doc_url)
         if not sfs_id:
             skipped += 1
+            skipped_entries.append(
+                {
+                    "rule_id": "se_scraped_doc_entry_unrecognized_url",
+                    "phase": "acquisition",
+                    "family": "source_pathology",
+                    "entry_index": entry_index,
+                    "doc_url": doc_url,
+                    "reason": "scraped Sweden document URL did not resolve to an SFS id",
+                }
+            )
             continue
         html_bytes = html.encode("utf-8")
         archive.store(doc_url, html_bytes, storage_class="html")
@@ -571,6 +593,7 @@ def ingest_se_scraped_doc_html_map(
         "entry_count": len(data),
         "imported_count": imported,
         "skipped_count": skipped,
+        "skipped_entries": skipped_entries,
         "resolved_pdf_link_count": resolved_pdf_links,
         "sfs_ids": sfs_ids,
     }
