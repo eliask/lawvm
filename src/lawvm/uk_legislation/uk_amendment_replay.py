@@ -3295,6 +3295,24 @@ class UKReplayPipeline:
             return bool(compiled_ops) and all(_action_name(op.action) == "repeal" and op.target.path for op in compiled_ops)
         return False
 
+    @staticmethod
+    def _nonstructural_replay_candidate_family(
+        effect: UKEffectRecord,
+        *,
+        applicability_mode: str = "effective_date_plus_feed_applied",
+    ) -> str:
+        """Return the nonstructural effect row family that may still replay."""
+        if not effect.is_applicable_for_replay(applicability_mode=applicability_mode):
+            return ""
+        effect_type = (effect.effect_type or "").strip().lower()
+        if effect_type.startswith("substituted for"):
+            return "substituted_for_series"
+        if effect_type.startswith("revoked"):
+            return "revoked_repeal"
+        if effect_type.startswith("ceases to have effect"):
+            return "ceases_to_have_effect_repeal"
+        return ""
+
     def compile_ops_for_statute(
         self,
         affected_act_id: str,
@@ -3404,6 +3422,29 @@ class UKReplayPipeline:
                             "quirks_disposition": "record",
                         }
                     )
+                if not structural_for_replay and lowering_rejections_out is not None:
+                    nonstructural_candidate_family = self._nonstructural_replay_candidate_family(
+                        e,
+                        applicability_mode=applicability_mode,
+                    )
+                    if nonstructural_candidate_family:
+                        lowering_rejections_out.append(
+                            {
+                                "rule_id": "uk_effect_nonstructural_lowering_no_ops_rejected",
+                                "family": "lowering_filter",
+                                "phase": "lowering",
+                                "effect_id": e.effect_id,
+                                "affecting_act_id": e.affecting_act_id,
+                                "affected_provisions": e.affected_provisions,
+                                "affecting_provisions": e.affecting_provisions,
+                                "effect_type": e.effect_type,
+                                "reason": "UK nonstructural effect row may be replayable but lowered to no replay operations",
+                                "blocking": True,
+                                "strict_disposition": "block",
+                                "quirks_disposition": "record",
+                                "nonstructural_replay_candidate_family": nonstructural_candidate_family,
+                            }
+                        )
                 continue
             if authority_mode == "source_text_only":
                 rejected_ops: list[LegalOperation] = []
