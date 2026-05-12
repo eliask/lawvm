@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import tarfile
+from typing import Any, cast
 
 from lawvm.norway.index import NOAmendmentIndex, NOAmendmentIndexEntry
 from lawvm.norway.index import build_no_amendment_index, save_no_amendment_index
@@ -176,6 +177,41 @@ def test_ingest_no_public_archives_reports_unmapped_xml_members(tmp_path) -> Non
             "quirks_disposition": "record",
         },
     ]
+
+
+def test_ingest_no_public_archives_reports_duplicate_logical_locators(tmp_path) -> None:
+    _write_archive(
+        tmp_path / "lovtidend-avd1-2025.tar.bz2",
+        [("lti/2025/nl-20250202-005.xml", _amendment_xml("2025-02-10"))],
+    )
+    _write_archive(
+        tmp_path / "lovtidend-avd1-2025-2026.tar.bz2",
+        [("lti/2025/nl-20250202-005.xml", _amendment_xml("2025-03-15"))],
+    )
+    db_path = tmp_path / "norway.farchive"
+
+    report = ingest_no_public_archives(tmp_path, db_path)
+
+    assert report["original_locators_stored"] == 1
+    assert report["amendment_locators_stored"] == 1
+    assert report["duplicate_locator_count"] == 2
+    duplicate_entries = cast(list[dict[str, Any]], report["duplicate_locator_entries"])
+    amendment_entries = [
+        entry
+        for entry in duplicate_entries
+        if entry["kind"] == "amendment"
+    ]
+    assert len(amendment_entries) == 1
+    entry = amendment_entries[0]
+    assert entry["rule_id"] == "no_acquisition_duplicate_logical_locator"
+    assert entry["phase"] == "acquisition"
+    assert entry["family"] == "source_pathology"
+    assert entry["logical_id"] == "no/lovtid/2025-02-02-5"
+    assert entry["locator"] == "no://lovtid/2025-02-02-5/amendment.xml"
+    assert entry["identical_payloads"] is False
+    assert entry["blocking"] is True
+    assert entry["strict_disposition"] == "block"
+    assert entry["quirks_disposition"] == "block"
 
 
 def test_build_no_inventory_accepts_commencement_override(tmp_path) -> None:

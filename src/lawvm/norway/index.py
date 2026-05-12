@@ -1,6 +1,7 @@
 """Index Norway amendment sources into replayable metadata."""
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timezone
 from dataclasses import asdict, dataclass, field
@@ -18,6 +19,8 @@ from lawvm.norway.sources import (
     resolve_no_source_path,
 )
 from lawvm.replay_adjudication import CompileAdjudication
+
+NO_ACQUISITION_DUPLICATE_LOGICAL_LOCATOR = "no_acquisition_duplicate_logical_locator"
 
 
 @dataclass(frozen=True)
@@ -184,7 +187,10 @@ def build_no_amendment_index(data_dir: Optional[Path] = None) -> NOAmendmentInde
                 )
             )
 
-    for artifact in iter_no_amendment_artifacts(data_dir):
+    for artifact in _deduplicated_no_amendment_artifacts(
+        tuple(iter_no_amendment_artifacts(data_dir)),
+        diagnostics=index.diagnostics,
+    ):
         source_id = artifact.logical_id
         if lovdata_amendment_filename_to_id(artifact.member_name) is None and not artifact.locator.startswith("no://lovtid/"):
             index.diagnostics.append(
@@ -239,6 +245,95 @@ def build_no_amendment_index(data_dir: Optional[Path] = None) -> NOAmendmentInde
 
     index.entries.sort(key=lambda entry: (entry.source_id, entry.archive, entry.member_name))
     return index
+
+
+def _payload_digest(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _deduplicated_no_amendment_artifacts(
+    artifacts: tuple[NOLocatedArtifact, ...],
+    *,
+    diagnostics: list[dict[str, Any]],
+) -> tuple[NOLocatedArtifact, ...]:
+    grouped: dict[tuple[str, str], list[NOLocatedArtifact]] = {}
+    for artifact in artifacts:
+        if artifact.logical_id and artifact.locator:
+            grouped.setdefault((artifact.logical_id, artifact.locator), []).append(artifact)
+
+    duplicate_keys = {key for key, items in grouped.items() if len(items) > 1}
+    selected: dict[tuple[str, str], NOLocatedArtifact] = {}
+    blocked: set[tuple[str, str]] = set()
+    for key in sorted(duplicate_keys):
+        items = sorted(grouped[key], key=lambda item: (item.source_name, item.member_name))
+        digests = {_payload_digest(item.payload) for item in items}
+        identical_payloads = len(digests) == 1
+        diagnostics.append(
+            _no_index_duplicate_logical_locator_diagnostic(
+                logical_id=key[0],
+                locator=key[1],
+                artifacts=items,
+                identical_payloads=identical_payloads,
+            )
+        )
+        if identical_payloads:
+            selected[key] = items[0]
+        else:
+            blocked.add(key)
+
+    deduplicated: list[NOLocatedArtifact] = []
+    emitted_selected: set[tuple[str, str]] = set()
+    for artifact in artifacts:
+        key = (artifact.logical_id, artifact.locator)
+        if key in blocked:
+            continue
+        if key in selected:
+            if key in emitted_selected:
+                continue
+            deduplicated.append(selected[key])
+            emitted_selected.add(key)
+            continue
+        deduplicated.append(artifact)
+    return tuple(deduplicated)
+
+
+def _no_index_duplicate_logical_locator_diagnostic(
+    *,
+    logical_id: str,
+    locator: str,
+    artifacts: list[NOLocatedArtifact],
+    identical_payloads: bool,
+) -> dict[str, Any]:
+    selected = min(artifacts, key=lambda item: (item.source_name, item.member_name)) if identical_payloads else None
+    return {
+        "rule_id": NO_ACQUISITION_DUPLICATE_LOGICAL_LOCATOR,
+        "family": "source_pathology",
+        "phase": "acquisition",
+        "reason": (
+            "Norway acquisition found duplicate byte-identical artifacts for the same logical source locator; "
+            "quirks mode selected a deterministic witness."
+            if identical_payloads
+            else "Norway acquisition found conflicting artifacts for the same logical source locator; source is ambiguous."
+        ),
+        "source_id": logical_id,
+        "locator": locator,
+        "duplicate_count": len(artifacts),
+        "identical_payloads": identical_payloads,
+        "payload_digests": sorted({_payload_digest(artifact.payload) for artifact in artifacts}),
+        "candidates": [
+            {
+                "archive": artifact.source_name,
+                "member_name": artifact.member_name,
+                "payload_digest": _payload_digest(artifact.payload),
+            }
+            for artifact in artifacts
+        ],
+        "selected_archive": selected.source_name if selected is not None else "",
+        "selected_member_name": selected.member_name if selected is not None else "",
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "select_first_identical" if identical_payloads else "block",
+    }
 
 
 def _no_index_unmapped_member_diagnostic(

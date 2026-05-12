@@ -5,6 +5,7 @@ import tarfile
 from typing import Any, cast
 
 from lawvm.norway.index import (
+    NO_ACQUISITION_DUPLICATE_LOGICAL_LOCATOR,
     build_no_amendment_index,
     load_no_amendment_index,
     save_no_amendment_index,
@@ -100,6 +101,66 @@ def test_build_no_amendment_index_captures_member_and_status(tmp_path) -> None:
     assert first.effective_status == "dated"
     assert first.effective_date == "2025-02-10"
     assert first.base_ids == ("no/lov/2025-01-01-1",)
+
+
+def test_build_no_amendment_index_records_identical_duplicate_logical_locator(tmp_path) -> None:
+    payload = _amendment_xml("2025-02-10")
+    _write_archive(
+        tmp_path / "lovtidend-avd1-2025.tar.bz2",
+        [("lti/2025/nl-20250202-005.xml", payload)],
+    )
+    _write_archive(
+        tmp_path / "lovtidend-avd1-2025-2026.tar.bz2",
+        [("lti/2025/nl-20250202-005.xml", payload)],
+    )
+
+    index = build_no_amendment_index(tmp_path)
+
+    assert len(index.entries) == 1
+    assert index.entries[0].archive == "lovtidend-avd1-2025-2026.tar.bz2"
+    assert [diagnostic["rule_id"] for diagnostic in index.diagnostics] == [
+        NO_ACQUISITION_DUPLICATE_LOGICAL_LOCATOR
+    ]
+    diagnostic = index.diagnostics[0]
+    assert diagnostic["phase"] == "acquisition"
+    assert diagnostic["family"] == "source_pathology"
+    assert diagnostic["source_id"] == "no/lovtid/2025-02-02-5"
+    assert diagnostic["locator"] == "no://lovtid/2025-02-02-5/amendment.xml"
+    assert diagnostic["duplicate_count"] == 2
+    assert diagnostic["identical_payloads"] is True
+    assert diagnostic["blocking"] is True
+    assert diagnostic["strict_disposition"] == "block"
+    assert diagnostic["quirks_disposition"] == "select_first_identical"
+    assert diagnostic["selected_archive"] == "lovtidend-avd1-2025-2026.tar.bz2"
+    assert len(diagnostic["payload_digests"]) == 1
+    assert [item["archive"] for item in diagnostic["candidates"]] == [
+        "lovtidend-avd1-2025-2026.tar.bz2",
+        "lovtidend-avd1-2025.tar.bz2",
+    ]
+
+
+def test_build_no_amendment_index_blocks_conflicting_duplicate_logical_locator(tmp_path) -> None:
+    _write_archive(
+        tmp_path / "lovtidend-avd1-2025.tar.bz2",
+        [("lti/2025/nl-20250202-005.xml", _amendment_xml("2025-02-10"))],
+    )
+    _write_archive(
+        tmp_path / "lovtidend-avd1-2025-2026.tar.bz2",
+        [("lti/2025/nl-20250202-005.xml", _amendment_xml("2025-03-15"))],
+    )
+
+    index = build_no_amendment_index(tmp_path)
+
+    assert index.entries == []
+    assert [diagnostic["rule_id"] for diagnostic in index.diagnostics] == [
+        NO_ACQUISITION_DUPLICATE_LOGICAL_LOCATOR
+    ]
+    diagnostic = index.diagnostics[0]
+    assert diagnostic["source_id"] == "no/lovtid/2025-02-02-5"
+    assert diagnostic["identical_payloads"] is False
+    assert diagnostic["quirks_disposition"] == "block"
+    assert diagnostic["selected_archive"] == ""
+    assert len(diagnostic["payload_digests"]) == 2
 
 
 def test_build_no_amendment_index_records_artifacts_without_change_ops(tmp_path) -> None:
