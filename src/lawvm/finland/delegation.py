@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 NS = '{http://docs.oasis-open.org/legaldocml/ns/akn/3.0}'
 
@@ -63,6 +63,40 @@ class AuthorityEdge:
     parent_section: str     # section cited, e.g. "44" (may be empty)
     parent_moment: str      # subsection cited, e.g. "3" (may be empty)
     quote: str              # preamble text snippet (up to 300 chars)
+
+
+@dataclass(frozen=True)
+class DelegationDiagnostic:
+    """Typed extraction diagnostic for delegation/authority edges not emitted."""
+
+    rule_id: str
+    family: str
+    phase: str
+    source_statute_id: str
+    reason: str
+    section: str = ""
+    eid: str = ""
+    match_text: str = ""
+    quote: str = ""
+    blocking: bool = False
+    strict_disposition: str = "record"
+    quirks_disposition: str = "record"
+
+    def as_detail(self) -> dict[str, object]:
+        return {
+            "rule_id": self.rule_id,
+            "family": self.family,
+            "phase": self.phase,
+            "source_statute_id": self.source_statute_id,
+            "reason": self.reason,
+            "section": self.section,
+            "eid": self.eid,
+            "match_text": self.match_text,
+            "quote": self.quote,
+            "blocking": self.blocking,
+            "strict_disposition": self.strict_disposition,
+            "quirks_disposition": self.quirks_disposition,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -192,21 +226,48 @@ _DELEGATION_PATTERNS = [
 # Negative patterns (false-positive filters)
 # ---------------------------------------------------------------------------
 
+@dataclass(frozen=True)
+class _NegativeDelegationPattern:
+    rule_id: str
+    pattern: re.Pattern[str]
+
+
 _PAT_NEGATIVE = [
     # Commencement/transition: "asetuksen voimaantulosta säädetään"
-    re.compile(r'voimaan(?:tulosta|panosta)\s+säädetään', re.IGNORECASE),
+    _NegativeDelegationPattern(
+        "fi_delegation_commencement_reference_filtered",
+        re.compile(r'voimaan(?:tulosta|panosta)\s+säädetään', re.IGNORECASE),
+    ),
     # Repeal: "kumotaan ... asetuksella"
-    re.compile(r'kumotaan\s+[\w\s]{0,40}asetuksella', re.IGNORECASE),
+    _NegativeDelegationPattern(
+        "fi_delegation_repeal_reference_filtered",
+        re.compile(r'kumotaan\s+[\w\s]{0,40}asetuksella', re.IGNORECASE),
+    ),
     # Reference to existing decree with ID: "(123/2004)"
-    re.compile(r'asetuksessa\s+\(\d{1,4}/\d{4}\)', re.IGNORECASE),
+    _NegativeDelegationPattern(
+        "fi_delegation_existing_decree_reference_filtered",
+        re.compile(r'asetuksessa\s+\(\d{1,4}/\d{4}\)', re.IGNORECASE),
+    ),
     # Parameter adjustment, not delegation
-    re.compile(r'(?:tarkistaa|muuttaa)\s+[\w\s]{0,30}asetuksella', re.IGNORECASE),
+    _NegativeDelegationPattern(
+        "fi_delegation_parameter_adjustment_filtered",
+        re.compile(r'(?:tarkistaa|muuttaa)\s+[\w\s]{0,30}asetuksella', re.IGNORECASE),
+    ),
     # Reference to ANOTHER law's delegation authority ("on the basis of ... decree")
-    re.compile(r'nojalla\s+annettavalla', re.IGNORECASE),
+    _NegativeDelegationPattern(
+        "fi_delegation_nojalla_reference_filtered",
+        re.compile(r'nojalla\s+annettavalla', re.IGNORECASE),
+    ),
     # Existing statute reference in nojalla construction (asetus ID already issued)
-    re.compile(r'\(\d{1,5}/\d{4}\)\s*\d*\s*§:n\s+nojalla', re.IGNORECASE),
+    _NegativeDelegationPattern(
+        "fi_delegation_existing_authority_reference_filtered",
+        re.compile(r'\(\d{1,5}/\d{4}\)\s*\d*\s*§:n\s+nojalla', re.IGNORECASE),
+    ),
     # Commencement delegation — law enters into force at time set by decree (always exercised)
-    re.compile(r'tulee\s+voimaan\s+[\w\s]{0,50}asetuksella', re.IGNORECASE),
+    _NegativeDelegationPattern(
+        "fi_delegation_commencement_decree_filtered",
+        re.compile(r'tulee\s+voimaan\s+[\w\s]{0,50}asetuksella', re.IGNORECASE),
+    ),
 ]
 
 # ---------------------------------------------------------------------------
@@ -251,9 +312,12 @@ def _classify_delegation_type(match_text: str) -> str:
     return 'ASETUS'
 
 
-def _is_false_positive(context_text: str) -> bool:
-    """True if the surrounding context matches a known false-positive pattern."""
-    return any(pat.search(context_text) for pat in _PAT_NEGATIVE)
+def _false_positive_rule_id(context_text: str) -> str:
+    """Return the negative-filter rule ID for a known false-positive context."""
+    for candidate in _PAT_NEGATIVE:
+        if candidate.pattern.search(context_text):
+            return candidate.rule_id
+    return ""
 
 
 def _section_num(section_elem: ET.Element) -> str:
@@ -274,7 +338,62 @@ def _elem_text_norm(elem: ET.Element) -> str:
 # Forward extraction: law → delegation clauses
 # ---------------------------------------------------------------------------
 
-def extract_delegations(xml_bytes: bytes, statute_id: str) -> List[DelegationEdge]:
+def _record_parse_failure(
+    diagnostics_out: Optional[list[DelegationDiagnostic]],
+    *,
+    statute_id: str,
+    phase: str,
+) -> None:
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        DelegationDiagnostic(
+            rule_id=f"fi_{phase}_xml_parse_failed",
+            family="source_pathology",
+            phase=phase,
+            source_statute_id=statute_id,
+            reason=f"Finnish {phase.replace('_', ' ')} skipped source XML because parsing failed.",
+            blocking=True,
+            strict_disposition="block",
+        )
+    )
+
+
+def _record_false_positive_filter(
+    diagnostics_out: Optional[list[DelegationDiagnostic]],
+    *,
+    rule_id: str,
+    statute_id: str,
+    section: str,
+    eid: str,
+    match_text: str,
+    quote: str,
+) -> None:
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        DelegationDiagnostic(
+            rule_id=rule_id,
+            family="graph_edge_filter",
+            phase="delegation_extraction",
+            source_statute_id=statute_id,
+            reason="Finnish delegation extractor rejected a regex candidate using a named negative filter.",
+            section=section,
+            eid=eid,
+            match_text=match_text,
+            quote=quote,
+            blocking=False,
+            strict_disposition="record",
+        )
+    )
+
+
+def extract_delegations(
+    xml_bytes: bytes,
+    statute_id: str,
+    *,
+    diagnostics_out: Optional[list[DelegationDiagnostic]] = None,
+) -> List[DelegationEdge]:
     """Extract delegation clauses from a Finnish statute XML.
 
     Scans at subsection (momentti) level for precise addressing. Falls back to
@@ -291,6 +410,11 @@ def extract_delegations(xml_bytes: bytes, statute_id: str) -> List[DelegationEdg
     try:
         root = ET.fromstring(xml_bytes)
     except ET.ParseError:
+        _record_parse_failure(
+            diagnostics_out,
+            statute_id=statute_id,
+            phase="delegation_extraction",
+        )
         return []
 
     # Build list of (element, section_num, eid) scan units.
@@ -331,7 +455,19 @@ def extract_delegations(xml_bytes: bytes, statute_id: str) -> List[DelegationEdg
                     continue
                 ctx_start = max(0, m.start() - 100)
                 ctx_end = min(len(unit_text), m.end() + 100)
-                if _is_false_positive(unit_text[ctx_start:ctx_end]):
+                context_text = unit_text[ctx_start:ctx_end]
+                rule_id = _false_positive_rule_id(context_text)
+                if rule_id:
+                    matched_spans.append((m.start(), m.end()))
+                    _record_false_positive_filter(
+                        diagnostics_out,
+                        rule_id=rule_id,
+                        statute_id=statute_id,
+                        section=sec_num,
+                        eid=unit_eid,
+                        match_text=m.group(0).strip(),
+                        quote=context_text[:500],
+                    )
                     continue
                 matched_spans.append((m.start(), m.end()))
                 match_text = m.group(0).strip()
@@ -351,7 +487,12 @@ def extract_delegations(xml_bytes: bytes, statute_id: str) -> List[DelegationEdg
 # Reverse extraction: asetus → parent law authority
 # ---------------------------------------------------------------------------
 
-def extract_asetus_authority(xml_bytes: bytes, asetus_id: str) -> List[AuthorityEdge]:
+def extract_asetus_authority(
+    xml_bytes: bytes,
+    asetus_id: str,
+    *,
+    diagnostics_out: Optional[list[DelegationDiagnostic]] = None,
+) -> List[AuthorityEdge]:
     """Parse an asetus preamble for "nojalla" references to parent law.
 
     The Finnish "nojalla" construction identifies the legal authority under
@@ -368,6 +509,11 @@ def extract_asetus_authority(xml_bytes: bytes, asetus_id: str) -> List[Authority
     try:
         root = ET.fromstring(xml_bytes)
     except ET.ParseError:
+        _record_parse_failure(
+            diagnostics_out,
+            statute_id=asetus_id,
+            phase="authority_extraction",
+        )
         return []
 
     # Search preamble first; fall back to first 500 chars of full text
