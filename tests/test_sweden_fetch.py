@@ -2032,6 +2032,54 @@ def test_materialize_se_statute_as_of_selects_temporal_section_variant() -> None
     assert se_section_text_map(post)["2"] == "Nya lydelsen."
 
 
+def test_parse_se_statute_records_orphan_temporal_marker_without_leaking_to_next_section() -> None:
+    payload = {
+        "beteckning": "2026:106",
+        "rubrik": "Förordning (2026:106) om något",
+        "ikraftDateTime": "2026-01-01T00:00:00",
+        "ikraftOvergangsbestammelse": False,
+        "organisation": {"namn": "Justitiedepartementet", "namnOchEnhet": "Justitiedepartementet"},
+        "forfattningstypNamn": "Förordning",
+        "register": {"forarbeten": None},
+        "fulltext": {
+            "utfardadDateTime": "2026-01-01T00:00:00",
+            "andringInford": None,
+            "forfattningstext": (
+                "/Träder i kraft I:2026-04-15/\n\n"
+                "Rubrik utan paragraf\n\n"
+                "2 § Text som inte ska ärva markören."
+            ),
+        },
+        "publiceradDateTime": "2026-01-01T00:00:00",
+        "andringsforfattningar": [],
+    }
+
+    statute = parse_se_statute(payload)
+
+    diagnostics = statute.metadata["source_diagnostics"]
+    assert diagnostics == (
+        {
+            "rule_id": "se_current_text_orphan_temporal_marker_skipped",
+            "family": "source_pathology",
+            "phase": "extraction",
+            "reason": (
+                "Sweden current-text parser skipped a marker-only temporal block because "
+                "the following block was not a section that could own it."
+            ),
+            "sfs_id": "2026:106",
+            "block_index": 1,
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "marker_text": "Träder i kraft 2026-04-15",
+            "next_block_text": "Rubrik utan paragraf",
+        },
+    )
+    section = next(child for child in statute.body.children if child.kind is IRNodeKind.SECTION)
+    assert "RestrictStartDate" not in section.attrs
+    assert "TemporalMarkers" not in section.attrs
+
+
 def test_apply_se_ops_replaces_section_text_on_materialized_base() -> None:
     payload = {
         "beteckning": "2026:106",

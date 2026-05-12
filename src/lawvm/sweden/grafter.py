@@ -1076,6 +1076,8 @@ def _record_se_current_text_diagnostic(
     block_index: int,
     item_label: str = "",
     item_text: str = "",
+    marker_text: str = "",
+    next_block_text: str = "",
 ) -> None:
     diagnostic: dict[str, Any] = {
         "rule_id": rule_id,
@@ -1092,6 +1094,10 @@ def _record_se_current_text_diagnostic(
         diagnostic["item_label"] = item_label
     if item_text:
         diagnostic["item_text"] = _normalize_space(item_text)
+    if marker_text:
+        diagnostic["marker_text"] = _normalize_space(marker_text)
+    if next_block_text:
+        diagnostic["next_block_text"] = _normalize_space(next_block_text)
     diagnostics_out.append(diagnostic)
 
 
@@ -1364,6 +1370,24 @@ def parse_se_statute(payload: bytes | str | dict[str, Any], statute_id: Optional
             return current_chapter.children
         return body_children
 
+    def clear_unclaimed_section_markers(block_index: int, next_block_text: str) -> None:
+        if not pending_section_markers:
+            return
+        _record_se_current_text_diagnostic(
+            source_diagnostics,
+            rule_id="se_current_text_orphan_temporal_marker_skipped",
+            reason=(
+                "Sweden current-text parser skipped a marker-only temporal block because "
+                "the following block was not a section that could own it."
+            ),
+            sfs_id=source_record.sfs_id,
+            block_index=block_index,
+            marker_text=" | ".join(pending_section_markers),
+            next_block_text=next_block_text,
+        )
+        pending_section_attrs.clear()
+        pending_section_markers.clear()
+
     for index, block in enumerate(blocks):
         cleaned_block, block_attrs, block_markers = _extract_markers(block)
         if not cleaned_block and block_markers:
@@ -1376,6 +1400,7 @@ def parse_se_statute(payload: bytes | str | dict[str, Any], statute_id: Optional
 
         appendix_match = _APPENDIX_RE.match(cleaned_block)
         if appendix_match:
+            clear_unclaimed_section_markers(index, cleaned_block)
             current_section = None
             current_transition = None
             current_chapter = None
@@ -1391,6 +1416,7 @@ def parse_se_statute(payload: bytes | str | dict[str, Any], statute_id: Optional
             continue
 
         if cleaned_block.lower() == "övergångsbestämmelser":
+            clear_unclaimed_section_markers(index, cleaned_block)
             current_section = None
             current_schedule = None
             current_transition = _SEMutableNode(
@@ -1404,6 +1430,7 @@ def parse_se_statute(payload: bytes | str | dict[str, Any], statute_id: Optional
 
         chapter_match = _CHAPTER_RE.match(cleaned_block)
         if chapter_match and current_schedule is None and current_transition is None:
+            clear_unclaimed_section_markers(index, cleaned_block)
             current_section = None
             current_chapter = _SEMutableNode(
                 kind="chapter",
@@ -1436,8 +1463,7 @@ def parse_se_statute(payload: bytes | str | dict[str, Any], statute_id: Optional
                 _append_subsection(current_section, section_text)
             continue
 
-        pending_section_attrs.clear()
-        pending_section_markers.clear()
+        clear_unclaimed_section_markers(index, cleaned_block)
 
         item_match = _ITEM_RE.match(cleaned_block)
         if item_match:
