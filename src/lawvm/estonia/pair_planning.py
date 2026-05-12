@@ -30,6 +30,9 @@ _EE_MUUTMISMARGE_AKTVIIDE_PUBLICATION_YEAR_REPAIR_RULE = (
 _EE_MUUTMISMARGE_AKTVIIDE_PUBLICATION_NUMBER_REPAIR_RULE = (
     "ee_muutmismarge_aktviide_publication_number_repair"
 )
+_EE_MUUTMISMARGE_AKTVIIDE_REPAIR_CANDIDATE_UNAVAILABLE_RULE = (
+    "ee_muutmismarge_aktviide_repair_candidate_unavailable"
+)
 _EE_ORACLE_FETCH_FAILED_RULE = "ee_oracle_fetch_failed"
 _EE_ORACLE_REF_EXTRACTION_FAILED_RULE = "ee_oracle_ref_extraction_failed"
 
@@ -78,6 +81,33 @@ def _sort_refs(refs: list[AmendmentRef]) -> tuple[AmendmentRef, ...]:
     )
 
 
+def _unavailable_muutmismarge_repair_candidate_finding(
+    *,
+    repair_rule: str,
+    original_aktviide: str,
+    candidate_aktviide: str,
+    passed: str,
+    joustumine: str,
+    exception: Exception,
+) -> dict[str, Any]:
+    return {
+        "kind": "source_pathology",
+        "rule": _EE_MUUTMISMARGE_AKTVIIDE_REPAIR_CANDIDATE_UNAVAILABLE_RULE,
+        "phase": "acquisition",
+        "family": "source_pathology",
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+        "repair_rule": repair_rule,
+        "original_aktViide": original_aktviide,
+        "candidate_aktViide": candidate_aktviide,
+        "passed": passed,
+        "joustumine": joustumine,
+        "exception_type": type(exception).__name__,
+        "message": str(exception),
+    }
+
+
 def _effective_pending_base_refs(
     *,
     base_refs: tuple[AmendmentRef, ...],
@@ -118,8 +148,18 @@ def _repair_muutmismarge_publication_year_refs(
             candidate = f"{aid[:5]}{passed_year}{aid[9:]}"
             try:
                 fetch_rt_xml(candidate, archive)
-            except Exception:
+            except Exception as exc:
                 repaired_refs.append(ref)
+                findings.append(
+                    _unavailable_muutmismarge_repair_candidate_finding(
+                        repair_rule=_EE_MUUTMISMARGE_AKTVIIDE_PUBLICATION_YEAR_REPAIR_RULE,
+                        original_aktviide=aid,
+                        candidate_aktviide=candidate,
+                        passed=ref.passed,
+                        joustumine=ref.joustumine,
+                        exception=exc,
+                    )
+                )
                 continue
             repaired_refs.append(replace(ref, aktViide=candidate))
             findings.append(
@@ -201,8 +241,18 @@ def _repair_muutmismarge_publication_number_refs(
         except Exception:
             try:
                 fetch_rt_xml(candidate, archive)
-            except Exception:
+            except Exception as exc:
                 repaired_refs.append(ref)
+                findings.append(
+                    _unavailable_muutmismarge_repair_candidate_finding(
+                        repair_rule=_EE_MUUTMISMARGE_AKTVIIDE_PUBLICATION_NUMBER_REPAIR_RULE,
+                        original_aktviide=ref.aktViide,
+                        candidate_aktviide=candidate,
+                        passed=ref.passed,
+                        joustumine=ref.joustumine,
+                        exception=exc,
+                    )
+                )
                 continue
             repaired_refs.append(replace(ref, aktViide=candidate))
             findings.append(
