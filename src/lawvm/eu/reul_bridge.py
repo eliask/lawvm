@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from lawvm.core.ir import IRStatute, IRNode
 from lawvm.core import tree_ops
@@ -96,7 +96,38 @@ class REULBridge:
         path_suffix = "_".join(path_suffix_parts)
         return f"{prefix}_{path_suffix}"
 
-    def resolve_retained_law_uri(self, uri: str, eu_statute: IRStatute) -> Optional[IRNode]:
+    def _record_uri_resolution_diagnostic(
+        self,
+        diagnostics_out: list[dict[str, Any]] | None,
+        *,
+        uri: str,
+        eu_statute: IRStatute,
+        reason_code: str,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        if diagnostics_out is None:
+            return
+        payload = {
+            "rule_id": "eu_reul_uri_resolution_failed",
+            "kind": "eu_reul_uri_resolution_failed",
+            "family": "target_resolution_recovery",
+            "phase": "lowering",
+            "reason": "EU REUL bridge could not resolve retained-law URI against the EU statute tree",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "uri": uri,
+            "statute_id": eu_statute.statute_id,
+            "detail": {"reason_code": reason_code, **(detail or {})},
+        }
+        diagnostics_out.append(payload)
+
+    def resolve_retained_law_uri(
+        self,
+        uri: str,
+        eu_statute: IRStatute,
+        diagnostics_out: list[dict[str, Any]] | None = None,
+    ) -> Optional[IRNode]:
         """
         Resolve a retained-law:// URI against an EU IRStatute.
         e.g. retained-law://celex/32016R0679/article/1
@@ -104,21 +135,56 @@ class REULBridge:
         uri = uri.strip()
         scheme, sep, rest = uri.partition("://")
         if not sep or scheme.lower() != "retained-law":
+            self._record_uri_resolution_diagnostic(
+                diagnostics_out,
+                uri=uri,
+                eu_statute=eu_statute,
+                reason_code="invalid_scheme",
+                detail={"scheme": scheme},
+            )
             return None
 
         parts = [part for part in rest.split("/") if part]
         # parts: ['celex', '32016R0679', 'article', '1']
         if len(parts) < 4:
+            self._record_uri_resolution_diagnostic(
+                diagnostics_out,
+                uri=uri,
+                eu_statute=eu_statute,
+                reason_code="too_few_parts",
+                detail={"parts": parts},
+            )
             return None
 
         if parts[0].lower() != "celex" or len(parts) < 3:
+            self._record_uri_resolution_diagnostic(
+                diagnostics_out,
+                uri=uri,
+                eu_statute=eu_statute,
+                reason_code="invalid_authority",
+                detail={"authority": parts[0] if parts else ""},
+            )
             return None
 
         celex = _strip_uri_suffix(parts[1], "?", "#")
         if celex.lower() != eu_statute.statute_id.lower():
+            self._record_uri_resolution_diagnostic(
+                diagnostics_out,
+                uri=uri,
+                eu_statute=eu_statute,
+                reason_code="celex_mismatch",
+                detail={"celex": celex},
+            )
             return None
 
         if (len(parts) - 2) % 2 != 0:
+            self._record_uri_resolution_diagnostic(
+                diagnostics_out,
+                uri=uri,
+                eu_statute=eu_statute,
+                reason_code="malformed_path_arity",
+                detail={"path_parts": parts[2:]},
+            )
             return None
 
         # Build a LegalAddress path from URI segments and resolve it against parsed IR.
@@ -129,13 +195,36 @@ class REULBridge:
         for i in range(2, len(parts), 2):
             kind = _EU_IR_KIND_ALIAS.get(parts[i].strip().lower(), parts[i].strip().lower())
             if i + 1 >= len(parts):
+                self._record_uri_resolution_diagnostic(
+                    diagnostics_out,
+                    uri=uri,
+                    eu_statute=eu_statute,
+                    reason_code="malformed_path_arity",
+                    detail={"path_parts": parts[2:]},
+                )
                 return None
             label = _strip_uri_suffix(parts[i + 1], "?", "#")
             if not kind or not label:
+                self._record_uri_resolution_diagnostic(
+                    diagnostics_out,
+                    uri=uri,
+                    eu_statute=eu_statute,
+                    reason_code="empty_kind_or_label",
+                    detail={"kind": kind, "label": label, "path_parts": parts[2:]},
+                )
                 return None
             path.append((kind, label))
 
-        return tree_ops.resolve(eu_statute.body, path)
+        resolved = tree_ops.resolve(eu_statute.body, path)
+        if resolved is None:
+            self._record_uri_resolution_diagnostic(
+                diagnostics_out,
+                uri=uri,
+                eu_statute=eu_statute,
+                reason_code="target_unresolved",
+                detail={"path": path},
+            )
+        return resolved
 
 
 def _strip_uri_suffix(value: str, prefix_sep: str, suffix_sep: str) -> str:
