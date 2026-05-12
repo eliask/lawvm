@@ -1656,6 +1656,7 @@ def _reverse_patch_se_available_later_chain(
         reverse=True,
     )
     statute = pre_statute
+    reverse_adjudications: list[CompileAdjudication] = []
     for source in later_sources:
         ops_json = load_se_official_ops_from_archive(archive, source)
         if ops_json is None and load_se_official_act_from_archive(archive, source) is not None:
@@ -1686,11 +1687,55 @@ def _reverse_patch_se_available_later_chain(
                             metadata=dict(statute.metadata),
                         )
             try:
-                statute = apply_se_ops(statute, [inverse_op])
-            except (LookupError, NotImplementedError, ValueError):
+                before_adjudication_count = len(reverse_adjudications)
+                statute = apply_se_ops(statute, [inverse_op], adjudications_out=reverse_adjudications)
+                if len(reverse_adjudications) > before_adjudication_count:
+                    latest = reverse_adjudications[-1]
+                    latest_detail = dict(latest.detail)
+                    latest_detail.setdefault("reverse_source_sfs_id", source)
+                    reverse_adjudications[-1] = CompileAdjudication(
+                        kind=latest.kind,
+                        message=latest.message,
+                        source_statute=latest.source_statute,
+                        op_id=latest.op_id,
+                        detail=latest_detail,
+                    )
+            except (LookupError, NotImplementedError, ValueError) as exc:
+                reverse_adjudications.append(
+                    CompileAdjudication(
+                        kind="se_later_chain_reverse_op_exception",
+                        message="Sweden later-chain reverse patch skipped an inverse operation after replay raised.",
+                        source_statute=f"se/{source}",
+                        op_id=inverse_op.op_id,
+                        detail={
+                            "rule_id": "se_later_chain_reverse_op_exception",
+                            "phase": "replay",
+                            "family": "target_resolution_recovery",
+                            "blocking": True,
+                            "strict_disposition": "block",
+                            "quirks_disposition": "record",
+                            "reverse_source_sfs_id": source,
+                            "action": inverse_op.action.value,
+                            "target": inverse_op.target.leaf_label(),
+                            "exception_type": type(exc).__name__,
+                            "error": str(exc),
+                        },
+                    )
+                )
                 continue
     metadata = dict(statute.metadata)
     metadata["later_chain_reverse_applied"] = True
+    if reverse_adjudications:
+        metadata["later_chain_reverse_adjudications"] = [
+            {
+                "kind": adjudication.kind,
+                "message": adjudication.message,
+                "source_statute": adjudication.source_statute,
+                "op_id": adjudication.op_id,
+                "detail": adjudication.detail,
+            }
+            for adjudication in reverse_adjudications
+        ]
     return IRStatute(
         statute_id=statute.statute_id,
         title=statute.title,
