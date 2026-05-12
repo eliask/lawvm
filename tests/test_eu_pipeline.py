@@ -172,10 +172,35 @@ def test_eu_ops_parser_preserves_mixed_corrigendum_and_ordinary_amendment_lanes(
 
 
 def test_eu_ops_parser_does_not_duplicate_corrigendum_only_text() -> None:
-    ops = EUOpsParser().extract_ops("In Article 1, for: old text read: new text.")
+    parser = EUOpsParser()
+    ops = parser.extract_ops("In Article 1, for: old text read: new text.")
 
     assert [(op.op_id, op.sequence, op.action.value, str(op.target)) for op in ops] == [
         ("corrigenda-1", 1, "replace", "article:1"),
+    ]
+    assert parser.diagnostics == []
+
+
+def test_eu_ops_parser_records_unparsed_operative_segment() -> None:
+    parser = EUOpsParser()
+
+    ops = parser.extract_ops("The first sentence is replaced by the following text.")
+
+    assert ops == []
+    assert [diagnostic.rule_id for diagnostic in parser.diagnostics] == ["eu_ops_parser_segment_unparsed"]
+    assert parser.diagnostics[0].family == "extraction_gap"
+    assert parser.diagnostics[0].phase == "extraction"
+    assert parser.diagnostics[0].as_detail()["strict_disposition"] == "record"
+
+
+def test_eu_ops_parser_records_targetless_corrigendum_formula() -> None:
+    parser = EUOpsParser()
+
+    ops = parser.extract_ops("For: old text read: new text.")
+
+    assert ops == []
+    assert [diagnostic.rule_id for diagnostic in parser.diagnostics] == [
+        "eu_ops_parser_corrigendum_target_missing"
     ]
 
 

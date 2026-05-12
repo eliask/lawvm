@@ -42,15 +42,41 @@ _TARGET_RE = re.compile(
 
 
 @dataclass
+class EUOpsParserDiagnostic:
+    rule_id: str
+    family: str
+    phase: str
+    reason: str
+    source_excerpt: str
+    blocking: bool = False
+    strict_disposition: str = "record"
+    quirks_disposition: str = "record"
+
+    def as_detail(self) -> dict[str, object]:
+        return {
+            "rule_id": self.rule_id,
+            "family": self.family,
+            "phase": self.phase,
+            "reason": self.reason,
+            "source_excerpt": self.source_excerpt,
+            "blocking": self.blocking,
+            "strict_disposition": self.strict_disposition,
+            "quirks_disposition": self.quirks_disposition,
+        }
+
+
+@dataclass
 class EUOpsParser:
     """Minimal compatibility parser for EU Regulation amendments."""
 
     def __init__(self, model_dir: Optional[str] = None, cache_dir: Optional[str] = None):
         self.model_dir = model_dir
         self.cache_dir = cache_dir
+        self.diagnostics: list[EUOpsParserDiagnostic] = []
 
     def extract_ops(self, text: str) -> List[LegalOperation]:
         """Extract LegalOperations from amendment text with shallow regexes."""
+        self.diagnostics = []
         corrigenda_ops = self._extract_corrigenda_ops(text)
         corrigenda_spans = self._corrigenda_formula_spans(text)
         ordinary_text = self._mask_spans(text, corrigenda_spans)
@@ -70,6 +96,7 @@ class EUOpsParser:
             if action is None:
                 continue
             action_kind = StructuralAction(action)
+            segment_op_count = 0
 
             context_match = _CONTEXT_RE.search(segment)
             if context_match:
@@ -99,6 +126,13 @@ class EUOpsParser:
                         provenance_tags=(f"ir_apply_class={self._apply_class(action_kind, path)}",),
                     )
                 )
+                segment_op_count += 1
+            if segment_op_count == 0:
+                self._record_diagnostic(
+                    rule_id="eu_ops_parser_segment_unparsed",
+                    reason="EU parser saw an amendment verb but could not lower any target from the segment",
+                    source_excerpt=segment,
+                )
 
         return ops
 
@@ -122,6 +156,11 @@ class EUOpsParser:
             content_before = text[: match.start()]
             target_match = list(re.finditer(r"(Article|paragraph|point)\s+([0-9a-zA-Z\(\)\.]+)", content_before, re.I))
             if not target_match:
+                self._record_diagnostic(
+                    rule_id="eu_ops_parser_corrigendum_target_missing",
+                    reason="EU corrigendum formula had no preceding Article, paragraph, or point target",
+                    source_excerpt=match.group(0),
+                )
                 continue
 
             last_target = target_match[-1]
@@ -141,6 +180,17 @@ class EUOpsParser:
             )
 
         return ops
+
+    def _record_diagnostic(self, *, rule_id: str, reason: str, source_excerpt: str) -> None:
+        self.diagnostics.append(
+            EUOpsParserDiagnostic(
+                rule_id=rule_id,
+                family="extraction_gap",
+                phase="extraction",
+                reason=reason,
+                source_excerpt=" ".join(source_excerpt.split())[:240],
+            )
+        )
 
     def _apply_class(self, action: StructuralAction, path: Tuple[Tuple[str, str], ...]) -> str:
         has_sub = len(path) > 1
