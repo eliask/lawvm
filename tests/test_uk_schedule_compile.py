@@ -3651,6 +3651,91 @@ def test_pipeline_compile_ops_falls_back_to_metadata_for_missing_affecting_xml(m
     )
 
 
+def test_pipeline_compile_ops_records_authority_filter_rejections(monkeypatch) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_authority_filter",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="s. 57",
+        affecting_uri="/id/uksi/2000/2040",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2000",
+        affecting_number="2040",
+        affecting_provisions="Sch. 2 para. 7",
+        affecting_title="Missing Affecting Act",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+    op = LegalOperation(
+        op_id="uk_test_authority_filter:1",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "57"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="57", text="Inserted text."),
+        source=OperationSource(statute_id="uksi/2000/2040", title="Missing Affecting Act"),
+    )
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: b"<xml/>",
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "extract_provision_element_from_bytes",
+        lambda _xml, _prov, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "compile_effect_to_ir_ops",
+        lambda _effect, _el, sequence=0, **_kwargs: [op],
+    )
+
+    pipeline = UKReplayPipeline(Path("."))
+    authority_rejections: list[dict[str, Any]] = []
+
+    assert (
+        pipeline.compile_ops_for_statute(
+            "ukpga/2000/10",
+            archive=object(),
+            authority_mode="source_text_only",
+            authority_rejections_out=authority_rejections,
+        )
+        == []
+    )
+    assert authority_rejections == [
+        {
+            "rule_id": "uk_effect_authority_filter_rejected",
+            "family": "authority_filter",
+            "phase": "lowering",
+            "effect_id": "uk_test_authority_filter",
+            "affecting_act_id": "uksi/2000/2040",
+            "affected_provisions": "s. 57",
+            "affecting_provisions": "Sch. 2 para. 7",
+            "authority_mode": "source_text_only",
+            "rejected_op_count": 1,
+            "kept_op_count": 0,
+            "rejected_authority_layers": [],
+            "rejected_reasons": ["extraction_authority"],
+            "rejected_reason_counts": {"extraction_authority": 1},
+            "reason": "UK source-text-only authority mode rejected non-source-text replay operations",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
 def test_pipeline_compile_ops_reuses_parsed_affecting_act_xml_per_act(monkeypatch) -> None:
     effect_a = UKEffectRecord(
         effect_id="uk_test_cached_xml_a",

@@ -3418,10 +3418,14 @@ class UKReplayPipeline:
                 if rejected_ops and authority_rejections_out is not None:
                     authority_rejections_out.append(
                         {
+                            "rule_id": "uk_effect_authority_filter_rejected",
+                            "family": "authority_filter",
+                            "phase": "lowering",
                             "effect_id": e.effect_id,
                             "affecting_act_id": e.affecting_act_id,
                             "affected_provisions": e.affected_provisions,
                             "affecting_provisions": e.affecting_provisions,
+                            "authority_mode": authority_mode,
                             "rejected_op_count": len(rejected_ops),
                             "kept_op_count": len(compiled) - len(rejected_ops),
                             "rejected_authority_layers": sorted(
@@ -3447,6 +3451,10 @@ class UKReplayPipeline:
                             ),
                             "rejected_reasons": sorted(rejected_reason_counts),
                             "rejected_reason_counts": rejected_reason_counts,
+                            "reason": "UK source-text-only authority mode rejected non-source-text replay operations",
+                            "blocking": True,
+                            "strict_disposition": "block",
+                            "quirks_disposition": "record",
                         }
                     )
                 compiled = [op for op in compiled if _uk_op_allowed_by_authority_mode(op, authority_mode)[0]]
