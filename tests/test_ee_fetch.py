@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from lawvm.estonia.fetch import (
     AmendmentRef,
+    RTXmlMetadataDiagnostic,
     RedactionsFeedDiagnostic,
+    extract_effective_date,
     extract_amendment_refs,
+    extract_grupi_id,
+    extract_rt_pub_ref,
+    extract_tekstiliik,
     fetch_redactions_feed,
     get_oracle_aktviide_for_pit,
 )
@@ -69,6 +74,78 @@ def test_get_oracle_aktviide_for_pit_threads_redactions_feed_diagnostics(monkeyp
 
     assert oracle_id is None
     assert [diagnostic.rule_id for diagnostic in diagnostics] == ["ee_redactions_feed_fetch_failed"]
+
+
+def test_rt_xml_metadata_extractors_record_parse_failure_diagnostics() -> None:
+    diagnostics: list[RTXmlMetadataDiagnostic] = []
+    bad_xml = b"<tyviseadus><broken></tyviseadus>"
+
+    assert extract_grupi_id(bad_xml, diagnostics_out=diagnostics) is None
+    assert extract_effective_date(bad_xml, diagnostics_out=diagnostics) == ""
+    assert extract_tekstiliik(bad_xml, diagnostics_out=diagnostics) == ""
+    assert extract_rt_pub_ref(bad_xml, diagnostics_out=diagnostics) == ""
+    assert extract_amendment_refs(bad_xml, diagnostics_out=diagnostics) == []
+
+    assert [diagnostic.rule_id for diagnostic in diagnostics] == [
+        "ee_rt_xml_metadata_parse_failed",
+        "ee_rt_xml_metadata_parse_failed",
+        "ee_rt_xml_metadata_parse_failed",
+        "ee_rt_xml_metadata_parse_failed",
+        "ee_rt_xml_metadata_parse_failed",
+    ]
+    assert [diagnostic.extractor for diagnostic in diagnostics] == [
+        "extract_grupi_id",
+        "extract_effective_date",
+        "extract_tekstiliik",
+        "extract_rt_pub_ref",
+        "extract_amendment_refs",
+    ]
+    assert {diagnostic.exception_type for diagnostic in diagnostics} == {"ParseError"}
+    assert all(diagnostic.family == "source_pathology" for diagnostic in diagnostics)
+    assert all(diagnostic.phase == "extraction" for diagnostic in diagnostics)
+    assert all(diagnostic.blocking is True for diagnostic in diagnostics)
+    assert all(diagnostic.strict_disposition == "block" for diagnostic in diagnostics)
+    assert all(diagnostic.quirks_disposition == "record" for diagnostic in diagnostics)
+    assert diagnostics[0].as_detail()["rule_id"] == "ee_rt_xml_metadata_parse_failed"
+
+
+def test_extract_amendment_refs_records_skipped_malformed_muutmismarge_entries() -> None:
+    xml = b"""
+    <tyviseadus xmlns="tyviseadus_1_10.02.2010">
+      <muutmismarge>
+        <aktikuupaev>2024-12-11</aktikuupaev>
+        <joustumine>2025-09-01</joustumine>
+      </muutmismarge>
+      <muutmismarge>
+        <aktikuupaev>2024-12-12</aktikuupaev>
+        <joustumine>2025-09-02</joustumine>
+        <avaldamismarge />
+      </muutmismarge>
+      <muutmismarge>
+        <aktikuupaev>2024-12-13</aktikuupaev>
+        <joustumine>2025-09-03</joustumine>
+        <avaldamismarge>
+          <aktViide>https://www.riigiteataja.ee/akt/109012025001</aktViide>
+        </avaldamismarge>
+      </muutmismarge>
+    </tyviseadus>
+    """
+    diagnostics: list[RTXmlMetadataDiagnostic] = []
+
+    refs = extract_amendment_refs(xml, diagnostics_out=diagnostics)
+
+    assert refs == [
+        AmendmentRef(aktViide="109012025001", passed="2024-12-13", joustumine="2025-09-03")
+    ]
+    assert [diagnostic.rule_id for diagnostic in diagnostics] == [
+        "ee_rt_xml_muutmismarge_missing_avaldamismarge",
+        "ee_rt_xml_muutmismarge_missing_aktviide",
+    ]
+    assert [diagnostic.element_name for diagnostic in diagnostics] == [
+        "avaldamismarge",
+        "aktViide",
+    ]
+    assert all(diagnostic.extractor == "extract_amendment_refs" for diagnostic in diagnostics)
 
 
 def test_extract_amendment_refs_uses_decree_namespace() -> None:

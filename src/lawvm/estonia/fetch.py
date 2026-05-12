@@ -93,6 +93,36 @@ class RedactionsFeedDiagnostic:
         }
 
 
+@dataclass(frozen=True)
+class RTXmlMetadataDiagnostic:
+    """Typed acquisition/extraction diagnostic for RT act XML metadata."""
+
+    rule_id: str
+    family: str
+    phase: str
+    reason: str
+    extractor: str
+    exception_type: str = ""
+    element_name: str = ""
+    blocking: bool = True
+    strict_disposition: str = "block"
+    quirks_disposition: str = "record"
+
+    def as_detail(self) -> dict[str, object]:
+        return {
+            "rule_id": self.rule_id,
+            "family": self.family,
+            "phase": self.phase,
+            "reason": self.reason,
+            "extractor": self.extractor,
+            "exception_type": self.exception_type,
+            "element_name": self.element_name,
+            "blocking": self.blocking,
+            "strict_disposition": self.strict_disposition,
+            "quirks_disposition": self.quirks_disposition,
+        }
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -122,6 +152,30 @@ def _dd_mm_yyyy_to_iso(s: str) -> str:
     if m:
         return f"{m.group(3)}-{m.group(2).zfill(2)}-{m.group(1).zfill(2)}"
     return ""
+
+
+def _record_rt_xml_metadata_diagnostic(
+    diagnostics_out: Optional[List[RTXmlMetadataDiagnostic]],
+    *,
+    rule_id: str,
+    reason: str,
+    extractor: str,
+    exception_type: str = "",
+    element_name: str = "",
+) -> None:
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        RTXmlMetadataDiagnostic(
+            rule_id=rule_id,
+            family="source_pathology",
+            phase="extraction",
+            reason=reason,
+            extractor=extractor,
+            exception_type=exception_type,
+            element_name=element_name,
+        )
+    )
 
 
 _RIIGIKOGU_TERM_START_DATES = {
@@ -291,11 +345,21 @@ def fetch_redactions_feed(
 # Metadata extraction from act XML
 # ---------------------------------------------------------------------------
 
-def extract_grupi_id(xml_bytes: bytes) -> Optional[str]:
+def extract_grupi_id(
+    xml_bytes: bytes,
+    diagnostics_out: Optional[List[RTXmlMetadataDiagnostic]] = None,
+) -> Optional[str]:
     """Extract terviktekstiGrupiID from act XML."""
     try:
         root = ET.fromstring(xml_bytes)
-    except ET.ParseError:
+    except ET.ParseError as exc:
+        _record_rt_xml_metadata_diagnostic(
+            diagnostics_out,
+            rule_id="ee_rt_xml_metadata_parse_failed",
+            reason="RT act XML could not be parsed while extracting terviktekstiGrupiID",
+            extractor="extract_grupi_id",
+            exception_type=type(exc).__name__,
+        )
         return None
     for el in root.iter():
         tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
@@ -304,7 +368,10 @@ def extract_grupi_id(xml_bytes: bytes) -> Optional[str]:
     return None
 
 
-def extract_effective_date(xml_bytes: bytes) -> str:
+def extract_effective_date(
+    xml_bytes: bytes,
+    diagnostics_out: Optional[List[RTXmlMetadataDiagnostic]] = None,
+) -> str:
     """Extract the effective date (kehtivuseAlgus) from act XML.
 
     Returns ISO date string YYYY-MM-DD, or '' if not found.
@@ -313,7 +380,14 @@ def extract_effective_date(xml_bytes: bytes) -> str:
     """
     try:
         root = ET.fromstring(xml_bytes)
-    except ET.ParseError:
+    except ET.ParseError as exc:
+        _record_rt_xml_metadata_diagnostic(
+            diagnostics_out,
+            rule_id="ee_rt_xml_metadata_parse_failed",
+            reason="RT act XML could not be parsed while extracting kehtivuseAlgus",
+            extractor="extract_effective_date",
+            exception_type=type(exc).__name__,
+        )
         return ""
     for el in root.iter():
         tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
@@ -322,11 +396,21 @@ def extract_effective_date(xml_bytes: bytes) -> str:
     return ""
 
 
-def extract_tekstiliik(xml_bytes: bytes) -> str:
+def extract_tekstiliik(
+    xml_bytes: bytes,
+    diagnostics_out: Optional[List[RTXmlMetadataDiagnostic]] = None,
+) -> str:
     """Return tekstiliik value: 'terviktekst', 'algtekst', etc."""
     try:
         root = ET.fromstring(xml_bytes)
-    except ET.ParseError:
+    except ET.ParseError as exc:
+        _record_rt_xml_metadata_diagnostic(
+            diagnostics_out,
+            rule_id="ee_rt_xml_metadata_parse_failed",
+            reason="RT act XML could not be parsed while extracting tekstiliik",
+            extractor="extract_tekstiliik",
+            exception_type=type(exc).__name__,
+        )
         return ""
     for el in root.iter():
         tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
@@ -339,7 +423,10 @@ def extract_tekstiliik(xml_bytes: bytes) -> str:
 # Algtekst (original enactment) discovery
 # ---------------------------------------------------------------------------
 
-def extract_rt_pub_ref(xml_bytes: bytes) -> str:
+def extract_rt_pub_ref(
+    xml_bytes: bytes,
+    diagnostics_out: Optional[List[RTXmlMetadataDiagnostic]] = None,
+) -> str:
     """Extract the RT publication reference string from act XML metadata.
 
     Returns e.g. "RT I 2002, 64, 390" or "" if not found.
@@ -347,7 +434,14 @@ def extract_rt_pub_ref(xml_bytes: bytes) -> str:
     """
     try:
         root = ET.fromstring(xml_bytes)
-    except ET.ParseError:
+    except ET.ParseError as exc:
+        _record_rt_xml_metadata_diagnostic(
+            diagnostics_out,
+            rule_id="ee_rt_xml_metadata_parse_failed",
+            reason="RT act XML could not be parsed while extracting RT publication reference",
+            extractor="extract_rt_pub_ref",
+            exception_type=type(exc).__name__,
+        )
         return ""
     osa = aasta = nr = art = ""
     for el in root.iter():
@@ -424,7 +518,10 @@ def find_algtekst_aktviide(
     return None
 
 
-def extract_amendment_refs(xml_bytes: bytes) -> List[AmendmentRef]:
+def extract_amendment_refs(
+    xml_bytes: bytes,
+    diagnostics_out: Optional[List[RTXmlMetadataDiagnostic]] = None,
+) -> List[AmendmentRef]:
     """Extract all muutmismarge entries from an RT act XML.
 
     Returns list sorted by joustumine ascending (chronological apply order).
@@ -433,7 +530,14 @@ def extract_amendment_refs(xml_bytes: bytes) -> List[AmendmentRef]:
     """
     try:
         root = ET.fromstring(xml_bytes)
-    except ET.ParseError:
+    except ET.ParseError as exc:
+        _record_rt_xml_metadata_diagnostic(
+            diagnostics_out,
+            rule_id="ee_rt_xml_metadata_parse_failed",
+            reason="RT act XML could not be parsed while extracting muutmismarge amendment references",
+            extractor="extract_amendment_refs",
+            exception_type=type(exc).__name__,
+        )
         return []
 
     ns = root.tag.split("}")[0].strip("{") if root.tag.startswith("{") else _NS_BASE
@@ -448,13 +552,34 @@ def extract_amendment_refs(xml_bytes: bytes) -> List[AmendmentRef]:
 
         avmark = muutm.find(f"{{{ns}}}avaldamismarge")
         if avmark is None:
+            _record_rt_xml_metadata_diagnostic(
+                diagnostics_out,
+                rule_id="ee_rt_xml_muutmismarge_missing_avaldamismarge",
+                reason="RT muutmismarge entry was skipped because avaldamismarge was missing",
+                extractor="extract_amendment_refs",
+                element_name="avaldamismarge",
+            )
             continue
         avi_el = avmark.find(f"{{{ns}}}aktViide")
         if avi_el is None or not avi_el.text:
+            _record_rt_xml_metadata_diagnostic(
+                diagnostics_out,
+                rule_id="ee_rt_xml_muutmismarge_missing_aktviide",
+                reason="RT muutmismarge entry was skipped because aktViide was missing or empty",
+                extractor="extract_amendment_refs",
+                element_name="aktViide",
+            )
             continue
 
         aid = normalize_aktviide(avi_el.text.strip())
         if not aid:
+            _record_rt_xml_metadata_diagnostic(
+                diagnostics_out,
+                rule_id="ee_rt_xml_muutmismarge_empty_normalized_aktviide",
+                reason="RT muutmismarge entry was skipped because normalized aktViide was empty",
+                extractor="extract_amendment_refs",
+                element_name="aktViide",
+            )
             continue
 
         effective_dates = [joust or passed]
