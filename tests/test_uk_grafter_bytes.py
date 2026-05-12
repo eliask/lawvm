@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from lawvm.core.ir import IRNode
+from lawvm.core.ir_helpers import ir_statute_from_dict
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.uk_legislation.uk_grafter import (
+    UKStatuteIR,
     extract_eid_map_bytes,
     parse_uk_statute_ir_bytes,
 )
@@ -60,6 +63,25 @@ def test_parse_uk_statute_ir_bytes_uses_supplements() -> None:
     )
 
     assert len(ir.supplements) == 1
+
+
+def test_uk_statute_ir_wire_payload_does_not_export_schedules_alias() -> None:
+    ir = UKStatuteIR(
+        statute_id="ukpga/2000/10",
+        version_label="enacted",
+        title="Test Act",
+        source_path="https://www.legislation.gov.uk/ukpga/2000/10/enacted/data.xml",
+        body=IRNode(kind=IRNodeKind.BODY),
+        supplements=[IRNode(kind=IRNodeKind.SCHEDULE, label="SCHEDULE")],
+        metadata={},
+    )
+
+    payload = ir.to_dict()
+
+    assert "supplements" in payload
+    assert "schedules" not in payload
+    round_tripped = ir_statute_from_dict(payload)
+    assert [supplement.kind for supplement in round_tripped.supplements] == [IRNodeKind.SCHEDULE]
 
 
 def test_extract_eid_map_bytes_collects_schedule_eids() -> None:
