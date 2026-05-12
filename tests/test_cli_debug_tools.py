@@ -258,6 +258,7 @@ def test_cli_parser_accepts_new_debug_commands() -> None:
     assert args.command == "sync-finlex-latest"
     assert args.delay == 1.0
     assert args.corpus is None
+    assert args.diagnostics_jsonl is None
 
     args = parser.parse_args(["bench", "--oracle-aware-headline"])
     assert args.command == "bench"
@@ -501,7 +502,7 @@ def test_cli_parser_rejects_eu_reul_without_subcommand() -> None:
 def test_sync_finlex_latest_main_uses_archive_ids(monkeypatch, capsys) -> None:
     calls: dict[str, tuple[object, list[str], float, bool]] = {}
 
-    def fake_sync_latest_pits(archive, sids, delay=1.0, verbose=False):
+    def fake_sync_latest_pits(archive, sids, delay=1.0, verbose=False, diagnostics_out=None):
         calls["payload"] = (archive, list(sids), delay, verbose)
         return {"statutes": len(sids), "fetched": 1, "cached": 1, "skipped": 0, "errors": 0}
 
@@ -536,7 +537,7 @@ def test_sync_finlex_latest_main_uses_archive_ids(monkeypatch, capsys) -> None:
 def test_sync_finlex_latest_main_uses_explicit_sids(monkeypatch, capsys) -> None:
     calls: dict[str, tuple[object, list[str], float, bool]] = {}
 
-    def fake_sync_latest_pits(archive, sids, delay=1.0, verbose=False):
+    def fake_sync_latest_pits(archive, sids, delay=1.0, verbose=False, diagnostics_out=None):
         calls["payload"] = (archive, list(sids), delay, verbose)
         return {"statutes": len(sids), "fetched": 2, "cached": 0, "skipped": 0, "errors": 0}
 
@@ -570,6 +571,61 @@ def test_sync_finlex_latest_main_uses_explicit_sids(monkeypatch, capsys) -> None
     assert sids == ["2010/182", "2016/1227"]
     assert delay == 0.5
     assert verbose is False
+
+
+def test_sync_finlex_latest_main_writes_diagnostics_jsonl(monkeypatch, tmp_path, capsys) -> None:
+    diagnostic = {
+        "rule_id": "fi_sync_latest_pit_discovery_failed",
+        "phase": "acquisition",
+        "family": "source_pathology",
+        "statute_id": "2010/182",
+        "pit_version": "",
+        "locator": "",
+        "reason": "RuntimeError",
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+    }
+
+    def fake_sync_latest_pits(archive, sids, delay=1.0, verbose=False, diagnostics_out=None):
+        assert archive is not None
+        assert sids == ["2010/182"]
+        assert delay == 1.0
+        assert verbose is False
+        assert diagnostics_out is not None
+        diagnostics_out.append(diagnostic)
+        return {"statutes": 1, "fetched": 0, "cached": 0, "skipped": 0, "errors": 1}
+
+    class DummyArchive:
+        def __init__(self, path) -> None:
+            self.path = path
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+        def locators(self, pattern: str = "%") -> list[str]:
+            raise AssertionError("explicit SIDs should bypass archive discovery")
+
+    diagnostics_jsonl = tmp_path / "finlex-sync-diagnostics.jsonl"
+    monkeypatch.setattr(sync_finlex_latest, "Farchive", lambda path: DummyArchive(path))
+    monkeypatch.setattr(sync_finlex_latest, "sync_latest_pits", fake_sync_latest_pits)
+
+    with pytest.raises(SystemExit) as excinfo:
+        sync_finlex_latest.main(
+            Namespace(
+                db="data/finlex.farchive",
+                corpus=None,
+                sid=["2010/182"],
+                delay=1.0,
+                verbose=False,
+                diagnostics_jsonl=str(diagnostics_jsonl),
+            )
+        )
+
+    assert excinfo.value.code == 1
+    assert [json.loads(line) for line in diagnostics_jsonl.read_text(encoding="utf-8").splitlines()] == [diagnostic]
+    assert "diagnostics=1" in capsys.readouterr().out
 
 
 def test_oracle_context_main_renders_selected_context(monkeypatch, capsys) -> None:

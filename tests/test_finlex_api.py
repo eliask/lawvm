@@ -315,3 +315,44 @@ def test_sync_latest_pits_fetches_all_versions_and_skips_cached(monkeypatch):
             "xml",
         ),
     ]
+
+
+def test_sync_latest_pits_records_discovery_failure_diagnostic(monkeypatch):
+    def fake_list_consolidated_pit_versions(_year: str, _num: str) -> list[str]:
+        raise RuntimeError("listing failed")
+
+    class DummyArchive:
+        def has(self, _locator: str) -> bool:
+            raise AssertionError("discovery failure should not inspect PIT locators")
+
+    diagnostics: list[dict[str, object]] = []
+    monkeypatch.setattr(finlex_api, "list_consolidated_pit_versions", fake_list_consolidated_pit_versions)
+
+    stats = finlex_api.sync_latest_pits(
+        DummyArchive(),
+        ["2016/1227"],
+        delay=0.0,
+        diagnostics_out=diagnostics,
+    )
+
+    assert stats == {
+        "cached": 0,
+        "fetched": 0,
+        "skipped": 0,
+        "errors": 1,
+        "statutes": 1,
+    }
+    assert diagnostics == [
+        {
+            "rule_id": "fi_sync_latest_pit_discovery_failed",
+            "phase": "acquisition",
+            "family": "source_pathology",
+            "statute_id": "2016/1227",
+            "pit_version": "",
+            "locator": "",
+            "reason": "RuntimeError",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]

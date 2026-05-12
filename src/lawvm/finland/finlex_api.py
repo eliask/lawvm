@@ -463,12 +463,41 @@ def fetch_latest_pit_xml(
     return fetch_latest_consolidated(year, num)
 
 
+def _append_sync_latest_pit_diagnostic(
+    diagnostics_out: list[dict[str, Any]] | None,
+    *,
+    rule_id: str,
+    statute_id: str,
+    reason: str,
+    blocking: bool,
+    pit_version: str = "",
+    locator: str = "",
+) -> None:
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        {
+            "rule_id": rule_id,
+            "phase": "acquisition",
+            "family": "source_pathology",
+            "statute_id": statute_id,
+            "pit_version": pit_version,
+            "locator": locator,
+            "reason": reason,
+            "blocking": blocking,
+            "strict_disposition": "block" if blocking else "record",
+            "quirks_disposition": "record",
+        }
+    )
+
+
 def sync_latest_pits(
     archive: Any,
     sids: list[str],
     *,
     delay: float = 1.0,
     verbose: bool = False,
+    diagnostics_out: list[dict[str, Any]] | None = None,
 ) -> dict[str, int]:
     """Ensure all discovered PIT XMLs for each statute SID are cached in *archive*.
 
@@ -497,12 +526,26 @@ def sync_latest_pits(
             pit_versions = list_consolidated_pit_versions(year, num)
         except Exception as exc:
             stats["errors"] += 1
+            _append_sync_latest_pit_diagnostic(
+                diagnostics_out,
+                rule_id="fi_sync_latest_pit_discovery_failed",
+                statute_id=sid,
+                reason=exc.__class__.__name__,
+                blocking=True,
+            )
             if verbose:
                 print(f"[finlex_api] {sid}: PIT discovery failed: {exc}", file=sys.stderr)
             continue
 
         if not pit_versions:
             stats["skipped"] += 1
+            _append_sync_latest_pit_diagnostic(
+                diagnostics_out,
+                rule_id="fi_sync_latest_pit_versions_missing",
+                statute_id=sid,
+                reason="no_pit_versions_found",
+                blocking=False,
+            )
             if verbose:
                 print(f"[finlex_api] {sid}: no PIT versions found", file=sys.stderr)
             continue
@@ -523,6 +566,15 @@ def sync_latest_pits(
                 xml = fetch_statute_xml(year, num, lang_version=f"fin@{pit_version}")
             except Exception as exc:
                 stats["errors"] += 1
+                _append_sync_latest_pit_diagnostic(
+                    diagnostics_out,
+                    rule_id="fi_sync_latest_pit_fetch_failed",
+                    statute_id=sid,
+                    pit_version=pit_version,
+                    locator=target_locator,
+                    reason=exc.__class__.__name__,
+                    blocking=True,
+                )
                 if verbose:
                     print(
                         f"[finlex_api] {sid}: fetch failed for {pit_version}: {exc}",
@@ -532,6 +584,15 @@ def sync_latest_pits(
 
             if xml is None:
                 stats["errors"] += 1
+                _append_sync_latest_pit_diagnostic(
+                    diagnostics_out,
+                    rule_id="fi_sync_latest_pit_xml_missing",
+                    statute_id=sid,
+                    pit_version=pit_version,
+                    locator=target_locator,
+                    reason="fetch_returned_none",
+                    blocking=True,
+                )
                 if verbose:
                     print(
                         f"[finlex_api] {sid}: no PIT XML available for {pit_version}",
