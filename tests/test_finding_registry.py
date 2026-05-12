@@ -215,6 +215,14 @@ def test_empty_same_day_interval_registry_code_is_nonblocking_observation() -> N
     validate_finding_projection(spec.code, "observation", False)
 
 
+def test_timeline_execution_issue_registry_code_is_blocking_obligation() -> None:
+    spec = get_finding_spec("TIME.TIMELINE_EXECUTION_ISSUE")
+    assert spec is not None
+    assert spec.role == "obligation"
+    assert spec.is_barrier is False
+    validate_finding_projection(spec.code, "obligation", True)
+
+
 def test_flattened_sublist_registry_code_is_nonblocking_observation() -> None:
     spec = get_finding_spec("flattened_sublist_family_warning")
     assert spec is not None
