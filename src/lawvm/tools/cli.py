@@ -4948,6 +4948,11 @@ def _build_parser() -> argparse.ArgumentParser:
             "strictness) merged from all amendment PhaseResults"
         ),
     )
+    verify_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable verification JSON",
+    )
 
     # --- peg-audit ---
     peg_audit_p = sub.add_parser(

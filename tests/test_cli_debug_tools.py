@@ -69,6 +69,12 @@ def test_cli_parser_accepts_new_debug_commands() -> None:
     assert args.statute_id == "1995/1552"
     assert args.selector_mode == "latest_cached_editorial"
 
+    args = parser.parse_args(["verify", "2006/1299", "--stage", "parse", "--json"])
+    assert args.command == "verify"
+    assert args.statute_id == "2006/1299"
+    assert args.stage == "parse"
+    assert args.json is True
+
     args = parser.parse_args(
         [
             "oracle-context",

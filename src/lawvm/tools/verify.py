@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import re
 import sys
 from dataclasses import dataclass
@@ -55,6 +56,7 @@ from lawvm.core.compile_result import (
 )
 from lawvm.core.timeline_results import TimelineIssue
 from lawvm.core.temporal import TemporalEvent
+from lawvm.core.verification_contracts import VerifyIssue, VerifySeverity, VerifySummary
 from lawvm.core.compile_views import (
     quirks_used_from_findings,
     source_completeness_issues_from_findings,
@@ -70,13 +72,13 @@ _EFFECT_INTENT_TYPES = (Commencement, Expiry, Suspension, Applicability, Revival
 @dataclass
 class Issue:
     stage: str
-    severity: str   # "error" | "warning"
+    severity: VerifySeverity
     code: str
     message: str
     context: str = ""  # amendment id, path, etc.
 
 
-def _issue(stage, severity, code, message, context="") -> Issue:
+def _issue(stage, severity: VerifySeverity, code, message, context="") -> Issue:
     return Issue(stage=stage, severity=severity, code=code,
                  message=message, context=context)
 
@@ -566,10 +568,51 @@ def _print_facade_from_phase_results(
 # Reporting
 # ---------------------------------------------------------------------------
 
-def _report(issues: List[Issue], sid: str, stage: Optional[str]) -> int:
+def _verify_summary(
+    issues: List[Issue],
+    sid: str,
+    stage: Optional[str],
+    mode: str,
+) -> VerifySummary:
+    errors = [issue for issue in issues if issue.severity == "error"]
+    return VerifySummary(
+        jurisdiction="fi",
+        base_id=sid,
+        status="failed" if errors else "ok",
+        consistent=None,
+        issue_count=len(issues),
+        issues=tuple(
+            VerifyIssue(
+                code=issue.code,
+                message=issue.message,
+                stage=issue.stage,
+                severity=issue.severity,
+                context=issue.context,
+            )
+            for issue in issues
+        ),
+        detail={
+            "stage": stage or "full",
+            "mode": mode,
+        },
+    )
+
+
+def _report(
+    issues: List[Issue],
+    sid: str,
+    stage: Optional[str],
+    *,
+    json_output: bool = False,
+    mode: str = "finlex_oracle",
+) -> int:
     errors = [i for i in issues if i.severity == "error"]
     warnings = [i for i in issues if i.severity == "warning"]
     infos = [i for i in issues if i.severity == "info"]
+
+    if json_output:
+        print(json.dumps(_verify_summary(issues, sid, stage, mode).to_dict(), ensure_ascii=False, indent=2))
+        return 1 if errors else 0
 
     stage_label = f" (stage: {stage})" if stage else ""
     print(f"lawvm verify {sid}{stage_label}")
@@ -602,25 +645,30 @@ def main(args) -> None:
     source = getattr(args, "source", None)
     mode = getattr(args, "mode", "finlex_oracle")
     show_facade = getattr(args, "facade", False)
+    json_output = getattr(args, "json", False)
+
+    if show_facade and json_output:
+        print("ERROR: --facade is human-readable only and cannot be combined with --json", file=sys.stderr)
+        sys.exit(2)
 
     if stage == "parse":
         issues = verify_parse(sid)
-        rc = _report(issues, sid, "parse")
+        rc = _report(issues, sid, "parse", json_output=json_output, mode=mode)
 
     elif stage == "extract":
         if not source:
             print("ERROR: --stage extract requires --source <amendment_id>", file=sys.stderr)
             sys.exit(1)
         issues = verify_extract(sid, source)
-        rc = _report(issues, sid, f"extract/{source}")
+        rc = _report(issues, sid, f"extract/{source}", json_output=json_output, mode=mode)
 
     elif stage == "observations":
         issues = verify_observations(sid, mode, show_facade=show_facade)
-        rc = _report(issues, sid, "observations")
+        rc = _report(issues, sid, "observations", json_output=json_output, mode=mode)
 
     else:
         # Full pipeline (default or --stage apply)
         issues = verify_full(sid, mode)
-        rc = _report(issues, sid, stage)
+        rc = _report(issues, sid, stage, json_output=json_output, mode=mode)
 
     sys.exit(rc)
