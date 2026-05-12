@@ -30,8 +30,10 @@ from lawvm.uk_legislation.uk_amendment_replay import (
     _parse_affected_target,
     compile_effect_to_ir_ops,
     extract_provision_element_from_bytes,
+    load_effects_for_statute,
     load_effects_for_statute_from_archive,
     parse_effects_from_bytes,
+    parse_effects_from_metadata,
 )
 
 
@@ -105,6 +107,62 @@ def test_parse_effects_from_bytes_records_entry_missing_effect() -> None:
 
 def test_parse_effects_from_bytes_keeps_existing_api_without_rejection_sink() -> None:
     assert parse_effects_from_bytes([b"<feed><entry></feed>"]) == []
+
+
+def test_parse_effects_from_metadata_records_malformed_xml(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "metadata.xml"
+    metadata_path.write_text("<Legislation><UnappliedEffects></Legislation>", encoding="utf-8")
+    parse_rejections: list[dict[str, Any]] = []
+
+    records = parse_effects_from_metadata(
+        metadata_path,
+        parse_rejections_out=parse_rejections,
+        statute_id="ukpga/2000/10",
+    )
+
+    assert records == []
+    assert len(parse_rejections) == 1
+    rejection = parse_rejections[0]
+    assert rejection["rule_id"] == "uk_metadata_xml_parse_failed_rejected"
+    assert rejection["family"] == "source_pathology"
+    assert rejection["phase"] == "parse"
+    assert rejection["statute_id"] == "ukpga/2000/10"
+    assert rejection["metadata_path"] == str(metadata_path)
+    assert rejection["exception_type"] == "ParseError"
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+    assert rejection["quirks_disposition"] == "record"
+    assert "parse_error" in rejection
+
+
+def test_parse_effects_from_metadata_valid_empty_xml_has_no_rejection(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "metadata.xml"
+    metadata_path.write_text("<Legislation><UnappliedEffects /></Legislation>", encoding="utf-8")
+    parse_rejections: list[dict[str, Any]] = []
+
+    records = parse_effects_from_metadata(metadata_path, parse_rejections_out=parse_rejections)
+
+    assert records == []
+    assert parse_rejections == []
+
+
+def test_load_effects_for_statute_threads_metadata_parse_rejections(tmp_path: Path) -> None:
+    stat_dir = tmp_path / "ukpga/2000/10"
+    stat_dir.mkdir(parents=True)
+    (stat_dir / "metadata.xml").write_text("<Legislation><UnappliedEffects></Legislation>", encoding="utf-8")
+    parse_rejections: list[dict[str, Any]] = []
+
+    records = load_effects_for_statute(
+        "ukpga/2000/10",
+        tmp_path,
+        parse_rejections_out=parse_rejections,
+    )
+
+    assert records == []
+    assert len(parse_rejections) == 1
+    assert parse_rejections[0]["rule_id"] == "uk_metadata_xml_parse_failed_rejected"
+    assert parse_rejections[0]["statute_id"] == "ukpga/2000/10"
+    assert parse_rejections[0]["metadata_path"] == str(stat_dir / "metadata.xml")
 
 
 class _FakeUKArchiveConn:

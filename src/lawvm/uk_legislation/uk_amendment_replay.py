@@ -1227,12 +1227,33 @@ def get_affecting_act_xml_from_archive(
     return archive.get(url)
 
 
-def parse_effects_from_metadata(xml_path: Path) -> list[UKEffectRecord]:
+def parse_effects_from_metadata(
+    xml_path: Path,
+    *,
+    parse_rejections_out: Optional[list[dict[str, Any]]] = None,
+    statute_id: str = "",
+) -> list[UKEffectRecord]:
     """Parse effects from the <ukm:UnappliedEffects> section of a legislation XML file."""
     records = []
     try:
         root = ET.parse(xml_path).getroot()
-    except ET.ParseError:
+    except ET.ParseError as exc:
+        if parse_rejections_out is not None:
+            rejection: dict[str, Any] = {
+                "rule_id": "uk_metadata_xml_parse_failed_rejected",
+                "family": "source_pathology",
+                "phase": "parse",
+                "metadata_path": str(xml_path),
+                "reason": "UK legislation metadata XML was not well-formed; metadata-only effects were not parsed.",
+                "exception_type": type(exc).__name__,
+                "parse_error": str(exc),
+                "blocking": True,
+                "strict_disposition": "block",
+                "quirks_disposition": "record",
+            }
+            if statute_id:
+                rejection["statute_id"] = statute_id
+            parse_rejections_out.append(rejection)
         return []
 
     # Use lxml xpath if possible or simple findall
@@ -1330,7 +1351,12 @@ def fetch_metadata_for_statute(statute_id: str, dest_file: Path):
     _download_file(url, dest_file)
 
 
-def load_effects_for_statute(statute_id: str, base_dir: Path) -> list[UKEffectRecord]:
+def load_effects_for_statute(
+    statute_id: str,
+    base_dir: Path,
+    *,
+    parse_rejections_out: Optional[list[dict[str, Any]]] = None,
+) -> list[UKEffectRecord]:
     """Load effects from both Atom feed and XML metadata, then merge them."""
     stat_dir = base_dir / statute_id
     pages_dir = stat_dir / "pages"
@@ -1349,7 +1375,11 @@ def load_effects_for_statute(statute_id: str, base_dir: Path) -> list[UKEffectRe
 
     meta_effects = []
     if meta_file.exists():
-        meta_effects = parse_effects_from_metadata(meta_file)
+        meta_effects = parse_effects_from_metadata(
+            meta_file,
+            parse_rejections_out=parse_rejections_out,
+            statute_id=statute_id,
+        )
 
     seen_ids = {e.effect_id for e in atom_effects if e.effect_id}
     merged = list(atom_effects)
