@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import tarfile
@@ -24,6 +25,7 @@ from lawvm.tools.no_verify_partition import main as no_verify_partition_main
 from lawvm.tools.no_verify_scan import main as no_verify_scan_main
 from lawvm.tools.no_verify_workqueue import main as no_verify_workqueue_main
 from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.tools import build as build_tools
 from lawvm.tools.no_workqueue import main as no_workqueue_main
 from lawvm.norway.commencement import (
     build_no_commencement_backfill_artifact,
@@ -232,6 +234,46 @@ def test_no_ingest_tool_reports_skip_existing_entries(tmp_path, capsys) -> None:
         entry["family"] for entry in data["skipped_existing_entries"]
     } == {"transport_cleanup"}
     assert all(entry["locator"].startswith("no://") for entry in data["skipped_existing_entries"])
+
+
+def test_build_no_records_skipped_statutes_in_stats(tmp_path, monkeypatch) -> None:
+    input_path = tmp_path / "lover.tar.bz2"
+    input_path.write_bytes(b"dummy")
+    output_dir = tmp_path / "graph"
+
+    monkeypatch.setattr(
+        "lawvm.norway.grafter.open_lovdata_archive",
+        lambda _path: iter(
+            [
+                ("no/lov/2025-01-01-1", b"<html>good</html>"),
+                ("no/lov/2025-01-02-2", b"<html>bad</html>"),
+            ]
+        ),
+    )
+
+    def fake_parse_no_statute(html_bytes: bytes, sid: str):
+        if sid == "no/lov/2025-01-02-2":
+            raise ValueError("malformed source")
+        return SimpleNamespace(title="Good law", body=(), supplements=())
+
+    monkeypatch.setattr("lawvm.norway.grafter.parse_no_statute", fake_parse_no_statute)
+    monkeypatch.setattr("lawvm.core.timeline.compile_timelines", lambda _statute, _ops: {"1": object()})
+
+    asyncio.run(build_tools._build_no(input_path, output_dir, verbose=False))
+
+    stats = json.loads((output_dir / "stats.json").read_text())
+    assert stats["n_statutes"] == 1
+    assert stats["n_skipped"] == 1
+    assert stats["skipped_statutes"] == [
+        {
+            "rule_id": "no_build_statute_parse_skipped",
+            "phase": "build",
+            "family": "source_pathology",
+            "reason": "Norway build skipped statute after parse or timeline compilation failure",
+            "statute_id": "no/lov/2025-01-02-2",
+            "error": "malformed source",
+        },
+    ]
 
 
 def test_no_frontier_tool_emits_json(tmp_path, monkeypatch, capsys) -> None:
