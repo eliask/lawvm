@@ -176,6 +176,99 @@ def test_test_shard_appends_timing_jsonl(tmp_path: Path) -> None:
     }
 
 
+def test_test_shard_timing_balance_report_uses_latest_shard_records(tmp_path: Path) -> None:
+    module = _load_test_shard_module()
+    timings = tmp_path / "timings.jsonl"
+    for record in [
+        module.shard_timing_record(shard="core", file_count=10, elapsed_seconds=20.0, exit_code=0),
+        module.shard_timing_record(shard="tools", file_count=5, elapsed_seconds=5.0, exit_code=0),
+        module.shard_timing_record(shard="core", file_count=11, elapsed_seconds=33.0, exit_code=0),
+    ]:
+        module.append_shard_timing_record(timings, record)
+
+    report = module.shard_timing_balance_report(timings, imbalance_threshold=1.5)
+
+    assert report["kind"] == "lawvm_pytest_shard_balance_report"
+    assert report["record_count"] == 3
+    assert report["valid_record_count"] == 3
+    assert report["latest_shard_count"] == 2
+    assert report["total_elapsed_seconds"] == 38.0
+    assert report["average_elapsed_seconds"] == 19.0
+    assert report["imbalance_ratio"] == 6.6
+    assert report["overweight_shards"] == ["core"]
+    assert report["shards"] == [
+        {
+            "shard": "core",
+            "elapsed_seconds": 33.0,
+            "file_count": 11,
+            "seconds_per_file": 3.0,
+            "status": "passed",
+        },
+        {
+            "shard": "tools",
+            "elapsed_seconds": 5.0,
+            "file_count": 5,
+            "seconds_per_file": 1.0,
+            "status": "passed",
+        },
+    ]
+    assert report["invalid_records"] == []
+    json.dumps(report)
+
+
+def test_test_shard_timing_balance_report_records_invalid_jsonl(tmp_path: Path) -> None:
+    module = _load_test_shard_module()
+    timings = tmp_path / "timings.jsonl"
+    timings.write_text(
+        "\n".join([
+            json.dumps(module.shard_timing_record(shard="tools", file_count=5, elapsed_seconds=5.0, exit_code=0)),
+            "not-json",
+            json.dumps({"kind": "lawvm_pytest_shard_timing", "shard": "core"}),
+        ]),
+        encoding="utf-8",
+    )
+
+    report = module.shard_timing_balance_report(timings)
+
+    assert report["valid_record_count"] == 1
+    assert report["invalid_record_count"] == 2
+    assert [item["kind"] for item in report["invalid_records"]] == [
+        "lawvm_pytest_shard_timing_invalid",
+        "lawvm_pytest_shard_timing_invalid",
+    ]
+
+
+def test_test_shard_timings_cli_outputs_json(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = root / "scripts" / "test_shard.py"
+    timings = tmp_path / "timings.jsonl"
+    timings.write_text(
+        json.dumps({
+            "kind": "lawvm_pytest_shard_timing",
+            "shard": "tools",
+            "file_count": 5,
+            "elapsed_seconds": 5.0,
+            "exit_code": 0,
+            "status": "passed",
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [str(script), "timings", str(timings), "--json"],
+        check=False,
+        cwd=root,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["kind"] == "lawvm_pytest_shard_balance_report"
+    assert payload["shards"][0]["shard"] == "tools"
+
+
 def test_test_shard_filters_files_when_pytest_selectors_are_supplied() -> None:
     module = _load_test_shard_module()
 

@@ -362,6 +362,129 @@ def append_shard_timing_record(path: Path, record: dict[str, Any]) -> None:
         fh.write(json.dumps(record, sort_keys=True) + "\n")
 
 
+def load_shard_timing_records(path: Path) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    if not path.exists():
+        return records
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            record = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            records.append({
+                "kind": "lawvm_pytest_shard_timing_invalid",
+                "line_number": line_number,
+                "error": str(exc),
+            })
+            continue
+        if not isinstance(record, dict):
+            records.append({
+                "kind": "lawvm_pytest_shard_timing_invalid",
+                "line_number": line_number,
+                "error": "timing record is not a JSON object",
+            })
+            continue
+        records.append(record)
+    return records
+
+
+def shard_timing_balance_report(
+    path: Path,
+    *,
+    imbalance_threshold: float = 2.0,
+) -> dict[str, Any]:
+    """Summarize latest shard timings without changing shard membership."""
+
+    raw_records = load_shard_timing_records(path)
+    invalid_records = [
+        record for record in raw_records if record.get("kind") == "lawvm_pytest_shard_timing_invalid"
+    ]
+    latest_by_shard: dict[str, dict[str, Any]] = {}
+    valid_record_count = 0
+    for record in raw_records:
+        if record.get("kind") != "lawvm_pytest_shard_timing":
+            continue
+        shard = record.get("shard")
+        elapsed = record.get("elapsed_seconds")
+        file_count = record.get("file_count")
+        if not isinstance(shard, str) or not shard:
+            invalid_records.append({
+                "kind": "lawvm_pytest_shard_timing_invalid",
+                "error": "timing record missing shard",
+                "record": record,
+            })
+            continue
+        if not isinstance(elapsed, (int, float)) or elapsed < 0:
+            invalid_records.append({
+                "kind": "lawvm_pytest_shard_timing_invalid",
+                "error": "timing record missing non-negative elapsed_seconds",
+                "record": record,
+            })
+            continue
+        if not isinstance(file_count, int) or file_count < 0:
+            invalid_records.append({
+                "kind": "lawvm_pytest_shard_timing_invalid",
+                "error": "timing record missing non-negative file_count",
+                "record": record,
+            })
+            continue
+        valid_record_count += 1
+        latest_by_shard[shard] = record
+    shard_rows = [
+        {
+            "shard": shard,
+            "elapsed_seconds": round(float(record["elapsed_seconds"]), 3),
+            "file_count": int(record["file_count"]),
+            "seconds_per_file": round(
+                float(record["elapsed_seconds"]) / int(record["file_count"]),
+                3,
+            )
+            if int(record["file_count"]) > 0
+            else None,
+            "status": str(record.get("status") or ""),
+        }
+        for shard, record in sorted(latest_by_shard.items())
+    ]
+    shard_rows.sort(key=lambda row: (-float(row["elapsed_seconds"]), str(row["shard"])))
+    elapsed_values = [
+        value
+        for row in shard_rows
+        if isinstance((value := row["elapsed_seconds"]), float)
+    ]
+    total_elapsed = round(sum(elapsed_values), 3)
+    average_elapsed = round(total_elapsed / len(elapsed_values), 3) if elapsed_values else 0.0
+    max_elapsed = max(elapsed_values) if elapsed_values else 0.0
+    nonzero_values = [value for value in elapsed_values if value > 0]
+    min_nonzero_elapsed = min(nonzero_values) if nonzero_values else 0.0
+    imbalance_ratio = round(max_elapsed / min_nonzero_elapsed, 3) if min_nonzero_elapsed else 0.0
+    overweight_shards = [
+        str(row["shard"])
+        for row in shard_rows
+        if average_elapsed > 0
+        and isinstance(row["elapsed_seconds"], float)
+        and row["elapsed_seconds"] >= average_elapsed * imbalance_threshold
+    ]
+    return {
+        "kind": "lawvm_pytest_shard_balance_report",
+        "source": str(path),
+        "record_count": len(raw_records),
+        "valid_record_count": valid_record_count,
+        "invalid_record_count": len(invalid_records),
+        "latest_shard_count": len(shard_rows),
+        "imbalance_threshold": imbalance_threshold,
+        "total_elapsed_seconds": total_elapsed,
+        "average_elapsed_seconds": average_elapsed,
+        "max_elapsed_seconds": round(max_elapsed, 3),
+        "min_nonzero_elapsed_seconds": round(min_nonzero_elapsed, 3),
+        "imbalance_ratio": imbalance_ratio,
+        "overweight_shards": overweight_shards,
+        "shards": shard_rows,
+        "invalid_records": invalid_records,
+    }
+
+
 def _pytest_selector_filename(arg: str) -> str | None:
     if not arg or arg == "--" or arg.startswith("-"):
         return None
@@ -637,6 +760,28 @@ def print_plan(shard: str, *, json_output: bool = False) -> int:
     return 0
 
 
+def print_timing_balance(path: str, *, json_output: bool = False, imbalance_threshold: float = 2.0) -> int:
+    report = shard_timing_balance_report(Path(path), imbalance_threshold=imbalance_threshold)
+    if json_output:
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0 if report["invalid_record_count"] == 0 else 1
+    print(f"timing records: {report['valid_record_count']} valid, {report['invalid_record_count']} invalid")
+    print(f"latest shards: {report['latest_shard_count']}")
+    print(f"total elapsed: {report['total_elapsed_seconds']:.3f}s")
+    print(f"average shard: {report['average_elapsed_seconds']:.3f}s")
+    print(f"imbalance ratio: {report['imbalance_ratio']:.3f}")
+    if report["overweight_shards"]:
+        print("overweight shards:", ", ".join(report["overweight_shards"]))
+    for row in report["shards"]:
+        seconds_per_file = row["seconds_per_file"]
+        per_file = "n/a" if seconds_per_file is None else f"{seconds_per_file:.3f}s/file"
+        print(
+            f"{row['shard']}: {row['elapsed_seconds']:.3f}s "
+            f"({row['file_count']} files, {per_file}, {row['status']})"
+        )
+    return 0 if report["invalid_record_count"] == 0 else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -650,6 +795,15 @@ def main(argv: list[str] | None = None) -> int:
     affected_parser = subparsers.add_parser("affected")
     affected_parser.add_argument("--json", action="store_true", dest="json_output")
     affected_parser.add_argument("paths", nargs="*")
+    timings_parser = subparsers.add_parser("timings")
+    timings_parser.add_argument("path")
+    timings_parser.add_argument("--json", action="store_true", dest="json_output")
+    timings_parser.add_argument(
+        "--imbalance-threshold",
+        type=float,
+        default=2.0,
+        help="flag shards at or above average elapsed seconds multiplied by this value",
+    )
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument(
         "--timing-jsonl",
@@ -670,6 +824,12 @@ def main(argv: list[str] | None = None) -> int:
         return print_plan(args.shard, json_output=args.json_output)
     if args.command == "affected":
         return print_affected(args.paths, json_output=args.json_output)
+    if args.command == "timings":
+        return print_timing_balance(
+            args.path,
+            json_output=args.json_output,
+            imbalance_threshold=args.imbalance_threshold,
+        )
     if args.command == "run":
         return run_shard(args.shard, pytest_args=args.pytest_args, timing_jsonl=args.timing_jsonl)
     raise AssertionError(args.command)
