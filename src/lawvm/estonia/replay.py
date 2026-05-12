@@ -323,6 +323,7 @@ def _ee_extract_rewritten_source_paragraph_numbers(
 
 
 _EE_CANCELLED_PENDING_REF_FILTER_RULE = "ee_cancelled_pending_amendment_ref_filtered"
+_EE_CANCELLED_PENDING_REF_FETCH_FAILED_RULE = "ee_cancelled_pending_ref_source_fetch_failed"
 _EE_REF_SLICE_OP_FILTER_RULE = "ee_ref_slice_operation_filtered"
 
 
@@ -342,7 +343,27 @@ def _ee_filter_cancelled_pending_refs(
     for ref in refs:
         try:
             xml_bytes = fetch_rt_xml(ref.aktViide, archive)
-        except Exception:
+        except Exception as exc:
+            if adjudications_out is not None:
+                adjudications_out.append(
+                    CompileAdjudication(
+                        kind=_EE_CANCELLED_PENDING_REF_FETCH_FAILED_RULE,
+                        message=(
+                            "Could not fetch an Estonia pending-amendment source while "
+                            "checking cancellation by same-commencement later acts; retaining "
+                            "the reference and recording the incomplete source lane."
+                        ),
+                        source_statute=f"ee/{ref.aktViide}",
+                        detail={
+                            "ref_amendment": ref.aktViide,
+                            "reason": "pending_ref_source_fetch_failed",
+                            "exception_type": type(exc).__name__,
+                            "blocking": True,
+                            "strict_disposition": "block",
+                            "quirks_disposition": "record",
+                        },
+                    )
+                )
             continue
         ref_xml[ref.aktViide] = xml_bytes
         ref_titles[ref.aktViide] = _ee_extract_act_title(xml_bytes)
