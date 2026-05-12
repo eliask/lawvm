@@ -159,6 +159,16 @@ def test_failed_operation_registry_code_is_runtime_obligation() -> None:
     validate_finding_projection(spec.code, "obligation", True)
 
 
+def test_intent_compat_mismatch_registry_code_is_runtime_observation() -> None:
+    spec = get_finding_spec("APPLY.INTENT_COMPAT_MISMATCH")
+    assert spec is not None
+    assert spec.family == "violation"
+    assert spec.default_enforcement == "warn"
+    assert spec.role == "observation"
+    assert spec.is_barrier is False
+    validate_finding_projection(spec.code, "observation", False)
+
+
 def test_explicit_chunk_scope_registry_code_is_runtime_obligation() -> None:
     spec = get_finding_spec("LOWER.EXPLICIT_CHUNK_SCOPE_REQUIRED")
     assert spec is not None

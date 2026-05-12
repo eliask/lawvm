@@ -452,6 +452,34 @@ def test_action_family_mismatch_produces_warning(caplog) -> None:
     assert intent_compat_stats.total > before_total
 
 
+def test_action_family_mismatch_emits_finding() -> None:
+    op = _op(op_type="REPEAL", target_unit_kind="section")
+    rop = _rop(op)
+    intent = Replace(
+        kind=IntentKind.REPLACE,
+        target=_node_target("section", ("section", "1")),
+        payload=_payload(),
+        contract=_contract(),
+    )
+    findings = []
+
+    _assert_intent_compat(rop, intent, "ctx:REPEAL/replace_mismatch", findings_out=findings)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.kind == "APPLY.INTENT_COMPAT_MISMATCH"
+    assert finding.role == "observation"
+    assert finding.stage == "apply"
+    assert finding.source_statute == "2020/1"
+    assert finding.blocking is False
+    assert finding.detail["mismatch_kind"] == "action_family"
+    assert finding.detail["op_id"] == "test"
+    assert finding.detail["legacy_action"] == "REPEAL"
+    assert finding.detail["expected_intent_kind"] == "repeal"
+    assert finding.detail["actual_intent_kind"] == "replace"
+    assert finding.detail["strict_disposition"] == "record"
+
+
 def test_action_family_mismatch_insert_vs_replace(caplog) -> None:
     """op_type=INSERT but intent.kind=replace → action_family warning."""
     op = _op(op_type="INSERT", target_unit_kind="section")
@@ -493,6 +521,27 @@ def test_unit_kind_mismatch_chapter_vs_p_produces_warning(caplog) -> None:
     )
     assert intent_compat_stats.unit_kind > before_uk
     assert intent_compat_stats.total > before_total
+
+
+def test_unit_kind_mismatch_emits_finding() -> None:
+    op = _op(op_type="REPLACE", target_unit_kind="section")
+    rop = _rop(op)
+    intent = Replace(
+        kind=IntentKind.REPLACE,
+        target=_node_target("chapter", ("chapter", "3")),
+        payload=_payload(),
+        contract=_contract(),
+    )
+    findings = []
+
+    _assert_intent_compat(rop, intent, "ctx:chapter_vs_P", findings_out=findings)
+
+    assert len(findings) == 1
+    assert findings[0].kind == "APPLY.INTENT_COMPAT_MISMATCH"
+    assert findings[0].detail["mismatch_kind"] == "unit_kind"
+    assert findings[0].detail["intent_leaf_kind"] == "chapter"
+    assert findings[0].detail["expected_legacy_target_kind"] == "L"
+    assert findings[0].detail["rop_target_unit_kind"] == "section"
 
 
 def test_unit_kind_mismatch_section_vs_l_produces_warning(caplog) -> None:
@@ -539,6 +588,27 @@ def test_facet_mismatch_intro_vs_otsikko_produces_warning(caplog) -> None:
     )
     assert intent_compat_stats.facet > before_f
     assert intent_compat_stats.total > before_total
+
+
+def test_facet_mismatch_emits_finding() -> None:
+    op = _op(op_type="REPLACE", target_unit_kind="section", target_special="otsikko")
+    rop = _rop(op)
+    intent = Replace(
+        kind=IntentKind.REPLACE,
+        target=_facet_target(FacetKind.INTRO, ("section", "1")),
+        payload=_payload(),
+        contract=_contract(),
+    )
+    findings = []
+
+    _assert_intent_compat(rop, intent, "ctx:intro_vs_otsikko", findings_out=findings)
+
+    assert len(findings) == 1
+    assert findings[0].kind == "APPLY.INTENT_COMPAT_MISMATCH"
+    assert findings[0].detail["mismatch_kind"] == "facet"
+    assert findings[0].detail["target_special"] == "otsikko"
+    assert findings[0].detail["expected_facet"] == "heading"
+    assert findings[0].detail["actual_facet"] == "intro"
 
 
 def test_facet_unknown_target_special_produces_warning(caplog) -> None:
