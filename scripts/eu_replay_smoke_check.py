@@ -9,7 +9,6 @@ import io
 import json
 from contextlib import redirect_stdout
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 from lawvm.tools.eu_replay import main as eu_replay_main
@@ -156,7 +155,12 @@ def _fake_request_notice(notice: Any) -> tuple[bytes, dict[str, Any]]:
     return _BASELINE_XHTML.encode("utf-8"), {"offline": True}
 
 
-def _fake_select_manifestation_option(_path: Path, language: str, manifestation_type: str) -> dict[str, Any]:
+def _fake_select_manifestation_option(
+    _path: Path,
+    language: str,
+    manifestation_type: str,
+    **_kwargs: object,
+) -> dict[str, Any]:
     if language != "ENG":
         raise ValueError(f"Expected ENG manifestation language, got {language}")
     if manifestation_type != "xhtml":

@@ -99,7 +99,12 @@ def test_fetch_amendment_text_strips_html_and_entities(monkeypatch, tmp_path) ->
         lambda notice: (b"<tree/>", {"ok": True}),
     )
 
-    def _fake_manifestation_option(_notice_path, language: str, manifestation_type: str) -> dict[str, object]:
+    def _fake_manifestation_option(
+        _notice_path,
+        language: str,
+        manifestation_type: str,
+        **_kwargs,
+    ) -> dict[str, object]:
         assert language == "ENG"
         assert manifestation_type == "xhtml"
         return {
@@ -138,7 +143,7 @@ def test_fetch_amendment_text_records_acquisition_failure(monkeypatch, tmp_path)
         lambda notice: (b"<tree/>", {"ok": True}),
     )
 
-    def fail_manifestation(_notice_path, language: str, manifestation_type: str):
+    def fail_manifestation(_notice_path, language: str, manifestation_type: str, **_kwargs):
         raise ValueError("no manifestation")
 
     monkeypatch.setattr(
@@ -716,6 +721,59 @@ def test_replay_statute_projects_pipeline_diagnostics_to_adjudications(monkeypat
     assert diagnostic_rows[0].detail["phase"] == "acquisition"
     assert diagnostic_rows[0].detail["strict_disposition"] == "block"
     assert diagnostic_rows[0].detail["exception_type"] == "RuntimeError"
+
+
+def test_fetch_amendment_text_records_manifestation_option_diagnostics(monkeypatch, tmp_path) -> None:
+    from lawvm.eu import cellar
+
+    tree_notice = tmp_path / "32000R0001_tree.xml"
+    tree_notice.write_text(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<NOTICE>
+  <EXPRESSION>
+    <URI><VALUE>http://example.test/expression/no-language</VALUE></URI>
+    <EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+      <SAMEAS><URI><VALUE>http://example.test/doc-no-language.xhtml</VALUE></URI></SAMEAS>
+    </EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+  </EXPRESSION>
+  <EXPRESSION>
+    <URI><VALUE>http://example.test/expression/eng</VALUE></URI>
+    <EXPRESSION_USES_LANGUAGE><IDENTIFIER>eng</IDENTIFIER></EXPRESSION_USES_LANGUAGE>
+    <EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+      <SAMEAS><URI><VALUE>http://example.test/doc.xhtml</VALUE></URI></SAMEAS>
+    </EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+  </EXPRESSION>
+  <MANIFESTATION manifestation-type="xhtml">
+    <URI><VALUE>http://example.test/doc.xhtml</VALUE></URI>
+    <MANIFESTATION_HAS_ITEM>
+      <URI><VALUE>http://example.test/item.xhtml</VALUE></URI>
+    </MANIFESTATION_HAS_ITEM>
+  </MANIFESTATION>
+</NOTICE>
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        cellar,
+        "_request_url",
+        lambda url, accept: (
+            b"<html><body>The first sentence is replaced.</body></html>",
+            {"url": url, "content_type": "application/xhtml+xml"},
+        ),
+    )
+
+    pipeline = EUReplayPipeline(cache_dir=tmp_path)
+    text = pipeline.fetch_amendment_text("32000R0001")
+
+    assert "The first sentence is replaced." in text
+    assert len(pipeline.diagnostics) == 1
+    diagnostic = pipeline.diagnostics[0]
+    assert diagnostic.rule_id == "eu_cellar_manifestation_option_skipped"
+    assert diagnostic.phase == "acquisition"
+    assert diagnostic.exception_type == "missing_expression_language"
+    cellar_detail = diagnostic.detail["cellar_detail"]
+    assert isinstance(cellar_detail, dict)
+    assert dict(cellar_detail).get("reason_code") == "missing_expression_language"
 
 
 def test_replay_statute_projects_parser_diagnostics_to_adjudications(monkeypatch, tmp_path) -> None:

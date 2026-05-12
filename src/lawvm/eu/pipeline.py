@@ -436,6 +436,27 @@ class EUReplayResult:
     temporal_events: tuple[TemporalEvent, ...] = ()
 
 
+def _eu_pipeline_diagnostic_from_cellar_row(celex: str, row: dict[str, Any]) -> EUPipelineDiagnostic:
+    detail = row.get("detail", {})
+    if not isinstance(detail, dict):
+        detail = {}
+    return EUPipelineDiagnostic(
+        rule_id=str(row.get("rule_id") or "eu_cellar_manifestation_option_skipped"),
+        family=str(row.get("family") or "source_pathology"),
+        phase=str(row.get("phase") or "acquisition"),
+        reason=str(row.get("reason") or "EU Cellar acquisition diagnostic"),
+        celex=celex,
+        exception_type=str(detail.get("reason_code") or row.get("kind") or "cellar_diagnostic"),
+        blocking=bool(row.get("blocking", True)),
+        strict_disposition=str(row.get("strict_disposition") or "block"),
+        quirks_disposition=str(row.get("quirks_disposition") or "record"),
+        detail={
+            "cellar_source": str(row.get("source") or ""),
+            "cellar_detail": dict(detail),
+        },
+    )
+
+
 class EUReplayPipeline:
     def __init__(self, cache_dir: Path = Path(".cache/eu_replay")):
         self.cache_dir = cache_dir
@@ -543,7 +564,15 @@ class EUReplayPipeline:
 
         try:
             amendment_path = self.cache_dir / f"{celex.replace('/', '_')}_amendment.xhtml"
-            option = select_manifestation_option(notice_path, language="ENG", manifestation_type="xhtml")
+            manifestation_diagnostics: list[dict[str, Any]] = []
+            option = select_manifestation_option(
+                notice_path,
+                language="ENG",
+                manifestation_type="xhtml",
+                diagnostics_out=manifestation_diagnostics,
+            )
+            for diagnostic in manifestation_diagnostics:
+                self.diagnostics.append(_eu_pipeline_diagnostic_from_cellar_row(celex, diagnostic))
             item_uri = option["items"][0]["uri"]["value"] if option["items"] else option["manifestation_uri"]["value"]
             if not item_uri:
                 raise ValueError(f"No URI found for amendment {celex}")
