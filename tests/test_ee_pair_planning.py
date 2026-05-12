@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lawvm.estonia.fetch import AmendmentRef
+from lawvm.estonia.fetch import AmendmentRef, RedactionsFeedDiagnostic
 from lawvm.estonia.pair_planning import plan_ee_oracle_pair
 
 
@@ -20,7 +20,7 @@ def test_plan_ee_oracle_pair_classifies_same_chain_editorial_drift(monkeypatch) 
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-1")
     monkeypatch.setattr(
         "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
-        lambda grupi_id, as_of, archive: "oracle",
+        lambda grupi_id, as_of, archive, diagnostics_out=None: "oracle",
     )
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
     monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", lambda akt_viide, archive: oracle_xml)
@@ -57,7 +57,7 @@ def test_plan_ee_oracle_pair_selects_only_effective_new_amendments(monkeypatch) 
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-2")
     monkeypatch.setattr(
         "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
-        lambda grupi_id, as_of, archive: "oracle",
+        lambda grupi_id, as_of, archive, diagnostics_out=None: "oracle",
     )
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
     monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", lambda akt_viide, archive: oracle_xml)
@@ -93,7 +93,7 @@ def test_plan_ee_oracle_pair_repairs_impossible_muutmismarge_publication_year(mo
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-2")
     monkeypatch.setattr(
         "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
-        lambda grupi_id, as_of, archive: "oracle",
+        lambda grupi_id, as_of, archive, diagnostics_out=None: "oracle",
     )
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
     monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", lambda akt_viide, archive: oracle_xml)
@@ -138,7 +138,7 @@ def test_plan_ee_oracle_pair_records_unavailable_publication_year_repair_candida
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-2")
     monkeypatch.setattr(
         "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
-        lambda grupi_id, as_of, archive: "oracle",
+        lambda grupi_id, as_of, archive, diagnostics_out=None: "oracle",
     )
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
     monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", fake_fetch)
@@ -195,7 +195,7 @@ def test_plan_ee_oracle_pair_repairs_unfetchable_publication_number_ref(monkeypa
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-2")
     monkeypatch.setattr(
         "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
-        lambda grupi_id, as_of, archive: "oracle",
+        lambda grupi_id, as_of, archive, diagnostics_out=None: "oracle",
     )
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
     monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", fake_fetch)
@@ -249,7 +249,7 @@ def test_plan_ee_oracle_pair_records_unavailable_publication_number_repair_candi
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-2")
     monkeypatch.setattr(
         "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
-        lambda grupi_id, as_of, archive: "oracle",
+        lambda grupi_id, as_of, archive, diagnostics_out=None: "oracle",
     )
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
     monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", fake_fetch)
@@ -319,7 +319,7 @@ def test_plan_ee_oracle_pair_blocks_cross_statute_oracle_group(monkeypatch) -> N
     )
     monkeypatch.setattr(
         "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
-        lambda grupi_id, as_of, archive: "oracle",
+        lambda grupi_id, as_of, archive, diagnostics_out=None: "oracle",
     )
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
     monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", lambda akt_viide, archive: oracle_xml)
@@ -357,7 +357,7 @@ def test_plan_ee_oracle_pair_treats_later_slice_of_same_act_as_new_delta(monkeyp
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-slice")
     monkeypatch.setattr(
         "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
-        lambda grupi_id, as_of, archive: "oracle",
+        lambda grupi_id, as_of, archive, diagnostics_out=None: "oracle",
     )
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_effective_date", lambda xml: "2025-01-01")
@@ -396,7 +396,7 @@ def test_plan_ee_oracle_pair_keeps_multiple_slices_of_same_act_when_base_lacks_i
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-multi-slice")
     monkeypatch.setattr(
         "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
-        lambda grupi_id, as_of, archive: "oracle",
+        lambda grupi_id, as_of, archive, diagnostics_out=None: "oracle",
     )
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_effective_date", lambda xml: "2020-05-07")
@@ -427,7 +427,7 @@ def test_plan_ee_oracle_pair_replays_future_effective_refs_already_in_base(monke
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-3")
     monkeypatch.setattr(
         "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
-        lambda grupi_id, as_of, archive: "oracle",
+        lambda grupi_id, as_of, archive, diagnostics_out=None: "oracle",
     )
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_effective_date", lambda xml: "2025-02-01")
@@ -456,7 +456,7 @@ def test_plan_ee_oracle_pair_classifies_base_is_oracle_source_basis(monkeypatch)
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-5")
     monkeypatch.setattr(
         "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
-        lambda grupi_id, as_of, archive: "base",
+        lambda grupi_id, as_of, archive, diagnostics_out=None: "base",
     )
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_amendment_refs", lambda xml: [])
@@ -478,7 +478,7 @@ def test_plan_ee_oracle_pair_classifies_algtekst_source_basis(monkeypatch) -> No
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-6")
     monkeypatch.setattr(
         "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
-        lambda grupi_id, as_of, archive: None,
+        lambda grupi_id, as_of, archive, diagnostics_out=None: None,
     )
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "algtekst")
     monkeypatch.setattr(
@@ -505,7 +505,7 @@ def test_plan_ee_oracle_pair_records_oracle_fetch_failure(monkeypatch) -> None:
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-7")
     monkeypatch.setattr(
         "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
-        lambda grupi_id, as_of, archive: "oracle",
+        lambda grupi_id, as_of, archive, diagnostics_out=None: "oracle",
     )
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
     monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", fake_fetch)
@@ -530,6 +530,48 @@ def test_plan_ee_oracle_pair_records_oracle_fetch_failure(monkeypatch) -> None:
     )
 
 
+def test_plan_ee_oracle_pair_records_redactions_feed_failure(monkeypatch) -> None:
+    base_xml = b"<base/>"
+
+    def fake_get_oracle(grupi_id, as_of, archive, diagnostics_out=None):
+        del as_of, archive
+        assert grupi_id == "gid-8"
+        if diagnostics_out is not None:
+            diagnostics_out.append(
+                RedactionsFeedDiagnostic(
+                    rule_id="ee_redactions_feed_fetch_failed",
+                    family="source_pathology",
+                    phase="acquisition",
+                    reason="feed unavailable",
+                    grupi_id=grupi_id,
+                    url="https://rt.example/feed",
+                    exception_type="RuntimeError",
+                )
+            )
+        return None
+
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-8")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit", fake_get_oracle)
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_amendment_refs", lambda xml: [])
+
+    planned = plan_ee_oracle_pair(
+        base_id="base",
+        as_of="2026-03-24",
+        base_xml=base_xml,
+        archive=None,
+    )
+
+    assert planned.plan.comparison_class == "no_oracle"
+    assert any(
+        item.get("rule") == "ee_redactions_feed_fetch_failed"
+        and item.get("phase") == "acquisition"
+        and item.get("grupi_id") == "gid-8"
+        and item.get("strict_disposition") == "block"
+        for item in planned.plan.source_adjudication.lineage
+    )
+
+
 def test_plan_ee_oracle_pair_orders_same_effective_refs_by_passed_then_id(monkeypatch) -> None:
     base_xml = b"<base/>"
     oracle_xml = b"<oracle/>"
@@ -542,7 +584,7 @@ def test_plan_ee_oracle_pair_orders_same_effective_refs_by_passed_then_id(monkey
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-4")
     monkeypatch.setattr(
         "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
-        lambda grupi_id, as_of, archive: "oracle",
+        lambda grupi_id, as_of, archive, diagnostics_out=None: "oracle",
     )
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
     monkeypatch.setattr("lawvm.estonia.pair_planning.extract_effective_date", lambda xml: "2025-01-01")
