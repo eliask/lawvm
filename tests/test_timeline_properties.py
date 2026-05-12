@@ -938,6 +938,104 @@ def test_same_day_timeline_ties_prefer_substantive_over_later_placeholder() -> N
     assert irnode_to_text(active.content) == "2 § Määritelmät."
 
 
+def test_materialize_pit_records_same_source_equal_rank_selection_conflict() -> None:
+    base = IRStatute(
+        statute_id="test/equal-rank-selection-conflict",
+        title="Equal rank selection conflict",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Base text"),),
+        ),
+    )
+    addr = LegalAddress(path=(("section", "1"),))
+    same_source = OperationSource(
+        statute_id="2020/10",
+        enacted="2020-01-01",
+        effective="2020-01-01",
+    )
+    timelines = {
+        addr: ProvisionTimeline(
+            address=addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2020-01-01",
+                    enacted="2020-01-01",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="1", text="First text"),
+                    source=same_source,
+                ),
+                ProvisionVersion(
+                    effective="2020-01-01",
+                    enacted="2020-01-01",
+                    content=IRNode(kind=IRNodeKind.SECTION, label="1", text="Second text"),
+                    source=same_source,
+                ),
+            ],
+        )
+    }
+
+    result = materialize_pit_ex(timelines, "2021-01-01", base=base)
+
+    assert result.status == "materialized"
+    assert result.statute.body.children[0].text == "Second text"
+    issues = [
+        issue
+        for issue in result.issues
+        if issue.kind == "equal_rank_same_source_selection_conflict"
+    ]
+    assert len(issues) == 1
+    assert issues[0].address == addr
+    assert issues[0].source_statute == "2020/10"
+    assert issues[0].blocking is True
+    assert issues[0].strict_disposition == "block"
+    assert issues[0].quirks_disposition == "record"
+    assert issues[0].rule_id == "timeline.equal_rank_same_source_selection_conflict"
+
+
+def test_materialize_pit_does_not_record_equal_rank_conflict_for_exact_duplicate() -> None:
+    base = IRStatute(
+        statute_id="test/equal-rank-exact-duplicate",
+        title="Equal rank exact duplicate",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Base text"),),
+        ),
+    )
+    addr = LegalAddress(path=(("section", "1"),))
+    same_source = OperationSource(
+        statute_id="2020/10",
+        enacted="2020-01-01",
+        effective="2020-01-01",
+    )
+    duplicated = IRNode(kind=IRNodeKind.SECTION, label="1", text="Same text")
+    timelines = {
+        addr: ProvisionTimeline(
+            address=addr,
+            versions=[
+                ProvisionVersion(
+                    effective="2020-01-01",
+                    enacted="2020-01-01",
+                    content=duplicated,
+                    source=same_source,
+                ),
+                ProvisionVersion(
+                    effective="2020-01-01",
+                    enacted="2020-01-01",
+                    content=duplicated,
+                    source=same_source,
+                ),
+            ],
+        )
+    }
+
+    result = materialize_pit_ex(timelines, "2021-01-01", base=base)
+
+    assert [
+        issue
+        for issue in result.issues
+        if issue.kind == "equal_rank_same_source_selection_conflict"
+    ] == []
+
+
 def test_materialize_pit_applies_nested_section_replace_without_parent_version() -> None:
     """A nested section timeline must still overlay through active parent containers."""
     base = IRStatute(

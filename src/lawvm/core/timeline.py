@@ -77,6 +77,7 @@ from lawvm.core.timeline_selection import (
     VersionSelectionResult,
     content_is_repeal_placeholder as _content_is_repeal_placeholder,
     eligible as _eligible,
+    equal_rank_same_source_conflicts as _equal_rank_same_source_conflicts,
     pick_latest as _pick_latest,
     select_active_version as _select_active_version,
     select_active_version_ex as _select_active_version_ex,
@@ -963,7 +964,30 @@ def materialize_pit_ex(
     # Step 1: active-version selection with explicit scope ambiguity tracking.
     degraded_dimensions: Set[str] = set()
     selection_states: List[_MaterializationSelectionState] = []
+    selection_issues: List[TimelineIssue] = []
     for address, tl in timelines.items():
+        for conflict in _equal_rank_same_source_conflicts(
+            tl,
+            as_of=as_of,
+            query_type=query_type,
+            territory=territory,
+            expires_as_of=expires_as_of,
+        ):
+            _record_timeline_issue(
+                selection_issues,
+                kind="equal_rank_same_source_selection_conflict",
+                message=(
+                    "materialize_pit_ex: active version selection has "
+                    f"{conflict.candidate_count} same-source equal-rank "
+                    f"{conflict.variant_kind} candidates at effective "
+                    f"{conflict.effective} enacted {conflict.enacted}; "
+                    "preserving current deterministic winner but recording "
+                    "the unproven precedence"
+                ),
+                address=address,
+                source_statute=conflict.source_statute,
+                emit_warnings=False,
+            )
         selection = select_active_version_ex(
             tl,
             as_of,
@@ -1044,7 +1068,7 @@ def materialize_pit_ex(
     if title_content is not None:
         title = title_content.text
     ambiguous_addresses = list(ambiguous_address_tuple)
-    issues: List[TimelineIssue] = [
+    issues: List[TimelineIssue] = selection_issues + [
         TimelineIssue(
             kind="ambiguous_missing_scope",
             message=(f"materialize_pit_ex: omitted required scope prevents selection for {address}"),

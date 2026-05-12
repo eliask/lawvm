@@ -8,6 +8,7 @@ from typing import Optional
 import icontract
 
 from lawvm.core.ir import IRNode, LegalAddress, ProvisionTimeline, ProvisionVersion
+from lawvm.core.ir_helpers import irnode_content_hash
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,18 @@ class VersionSelectionResult:
     version: Optional[ProvisionVersion] = None
     required_dimensions: tuple[str, ...] = ()
     certificate: Optional[VersionSelectionCertificate] = None
+
+
+@dataclass(frozen=True)
+class VersionSelectionTie:
+    """Equal-rank active candidates where current selection would need list order."""
+
+    address: LegalAddress
+    effective: str
+    enacted: str
+    source_statute: str
+    variant_kind: str
+    candidate_count: int
 
 
 def content_is_repeal_placeholder(content: IRNode | None) -> bool:
@@ -93,6 +106,64 @@ def pick_latest(versions: list[ProvisionVersion]) -> Optional[ProvisionVersion]:
             iv[0],
         ),
     )[1]
+
+
+def equal_rank_same_source_conflicts(
+    timeline: ProvisionTimeline,
+    *,
+    as_of: str,
+    query_type: str = "governing",
+    territory: Optional[str] = None,
+    expires_as_of: str = "",
+) -> tuple[VersionSelectionTie, ...]:
+    """Return active same-source selection ties with distinct legal content.
+
+    ``pick_latest`` intentionally preserves historical behavior by choosing a
+    deterministic winner. This helper exposes cases where that winner still
+    depends on equal-rank candidates rather than a proved legal precedence rule.
+    """
+
+    eligible_versions = [
+        version
+        for version in timeline.versions
+        if (
+            eligible(version, as_of, query_type, expires_as_of=expires_as_of)
+            and applicability_matches(version, territory=territory)
+        )
+    ]
+    temporary_versions = [
+        version for version in eligible_versions if version.variant_kind == "temporary"
+    ]
+    selection_rail = temporary_versions or [
+        version for version in eligible_versions if version.variant_kind == "permanent"
+    ]
+    grouped: dict[tuple[str, str, str, str], list[ProvisionVersion]] = {}
+    for version in selection_rail:
+        source_statute = version.source.statute_id if version.source is not None else ""
+        key = (version.variant_kind, version.effective, version.enacted, source_statute)
+        grouped.setdefault(key, []).append(version)
+
+    conflicts: list[VersionSelectionTie] = []
+    for (variant_kind, effective, enacted, source_statute), versions in grouped.items():
+        if len(versions) < 2:
+            continue
+        content_hashes = {
+            irnode_content_hash(version.content) if version.content is not None else "<absent>"
+            for version in versions
+        }
+        if len(content_hashes) < 2:
+            continue
+        conflicts.append(
+            VersionSelectionTie(
+                address=timeline.address,
+                effective=effective,
+                enacted=enacted,
+                source_statute=source_statute,
+                variant_kind=variant_kind,
+                candidate_count=len(versions),
+            )
+        )
+    return tuple(conflicts)
 
 
 def applicability_matches(
