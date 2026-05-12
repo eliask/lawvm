@@ -22,6 +22,7 @@ from lawvm.core.ir_helpers import ir_statute_from_dict
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
 from lawvm.core import tree_ops
 from lawvm.core.adjudication_evidence import adjudication_finding_evidence_rows
+from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.sweden.grafter import SESourceRecord, parse_se_source_record, parse_se_statute
 from lawvm.sweden.grafter import (
     apply_se_ops,
@@ -243,6 +244,11 @@ def se_official_base_ir_locator(sfs_id: str) -> str:
 def se_official_ops_locator(sfs_id: str) -> str:
     """Canonical archive locator for compiled first-pass ops from the official act."""
     return f"se://sfs/{sfs_id}/official.ops.json"
+
+
+def se_official_ops_adjudications_locator(sfs_id: str) -> str:
+    """Canonical archive locator for official-op compile adjudications."""
+    return f"se://sfs/{sfs_id}/official.ops.adjudications.json"
 
 
 def se_official_clause_surface_locator(sfs_id: str) -> str:
@@ -1186,9 +1192,24 @@ def compile_se_official_ops_to_archive(archive: _ArchiveLike, sfs_id: str) -> li
         _json_bytes(_normalize_jsonable(se_official_effect_plan_to_dict(effects_plan))),
         storage_class="json",
     )
-    ops = _lower_se_official_effects_plan(effects_plan, source_id=sfs_id)
+    adjudications: list[CompileAdjudication] = []
+    try:
+        ops = _lower_se_official_effects_plan(effects_plan, source_id=sfs_id, adjudications_out=adjudications)
+    except NotImplementedError:
+        archive.store(
+            se_official_ops_adjudications_locator(sfs_id),
+            _json_bytes(_normalize_jsonable([asdict(item) for item in adjudications])),
+            storage_class="json",
+        )
+        archive_se_official_phase_artifacts_manifest(archive, sfs_id)
+        raise
     ops_json = [se_legal_operation_to_dict(op) for op in ops]
     archive.store(se_official_ops_locator(sfs_id), _json_bytes(ops_json), storage_class="json")
+    archive.store(
+        se_official_ops_adjudications_locator(sfs_id),
+        _json_bytes(_normalize_jsonable([asdict(item) for item in adjudications])),
+        storage_class="json",
+    )
     archive_se_official_phase_artifacts_manifest(archive, sfs_id)
     return ops_json
 
@@ -1257,6 +1278,29 @@ def load_se_official_ops_from_archive(archive: _ArchiveLike, sfs_id: str) -> Opt
         indexes = ", ".join(non_object_indexes)
         raise ValueError(
             f"archive locator {se_official_ops_locator(sfs_id)} contained non-object op entries at indexes: {indexes}"
+        )
+    return data
+
+
+def load_se_official_ops_adjudications_from_archive(archive: _ArchiveLike, sfs_id: str) -> Optional[list[dict]]:
+    raw = archive.get(se_official_ops_adjudications_locator(sfs_id))
+    if raw is None:
+        return None
+    data = json.loads(raw.decode("utf-8"))
+    if not isinstance(data, list):
+        raise ValueError(
+            f"archive locator {se_official_ops_adjudications_locator(sfs_id)} did not decode to a JSON array"
+        )
+    non_object_indexes = [
+        str(index)
+        for index, item in enumerate(data)
+        if not isinstance(item, dict)
+    ]
+    if non_object_indexes:
+        indexes = ", ".join(non_object_indexes)
+        raise ValueError(
+            f"archive locator {se_official_ops_adjudications_locator(sfs_id)} "
+            f"contained non-object adjudication entries at indexes: {indexes}"
         )
     return data
 
@@ -2501,6 +2545,7 @@ def archive_se_official_phase_artifacts_manifest(archive: _ArchiveLike, sfs_id: 
         "elaboration": se_official_elaboration_locator(sfs_id),
         "effects_plan": se_official_effects_plan_locator(sfs_id),
         "effects": se_official_ops_locator(sfs_id),
+        "effects_adjudications": se_official_ops_adjudications_locator(sfs_id),
     }
     archive.store(
         se_bundle_manifest_locator(sfs_id),
