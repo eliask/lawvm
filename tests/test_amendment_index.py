@@ -65,10 +65,13 @@ def test_build_amendment_index_supplements_explicit_cross_statute_vts_edges() ->
         source_map={"2024/1049": source_xml},
     )
 
-    edges = build_amendment_index(cs=corpus)
+    diagnostics: list[dict[str, object]] = []
+
+    edges = build_amendment_index(cs=corpus, diagnostics_out=diagnostics)
 
     assert ("2024/1049", "1986/506", "source_vts_explicit") in edges
     assert ("1991/806", "1986/506", "oracle_amendedBy") in edges
+    assert diagnostics == []
 
 
 def test_build_amendment_index_ignores_bare_citation_without_vts_effect() -> None:
@@ -90,6 +93,36 @@ def test_build_amendment_index_ignores_bare_citation_without_vts_effect() -> Non
     edges = build_amendment_index(cs=corpus)
 
     assert ("2024/1049", "1986/506", "source_vts_explicit") not in edges
+
+
+def test_build_amendment_index_records_skipped_source_artifacts() -> None:
+    corpus = _FakeCorpus(
+        oracle_map={"1986/506": b"<act>"},
+        source_map={"2024/1049": b"<act>"},
+    )
+    diagnostics: list[dict[str, object]] = []
+
+    edges = build_amendment_index(cs=corpus, diagnostics_out=diagnostics)
+
+    assert edges == []
+    assert [item["rule_id"] for item in diagnostics] == [
+        "fi_amendment_index_oracle_artifact_skipped",
+        "fi_amendment_index_source_vts_xml_parse_failed",
+    ]
+    assert diagnostics[0]["phase"] == "parse"
+    assert diagnostics[0]["family"] == "source_pathology"
+    assert diagnostics[0]["parent_id"] == "1986/506"
+    assert diagnostics[0]["edge_kind"] == "oracle_amendedBy"
+    assert diagnostics[0]["blocking"] is True
+    assert diagnostics[0]["strict_disposition"] == "block"
+    assert diagnostics[0]["quirks_disposition"] == "record"
+    assert diagnostics[1]["phase"] == "parse"
+    assert diagnostics[1]["family"] == "source_pathology"
+    assert diagnostics[1]["amendment_id"] == "2024/1049"
+    assert diagnostics[1]["edge_kind"] == "source_vts_explicit"
+    assert diagnostics[1]["blocking"] is True
+    assert diagnostics[1]["strict_disposition"] == "block"
+    assert diagnostics[1]["quirks_disposition"] == "record"
 
 
 def test_ensure_amendment_index_rebuilds_old_two_column_schema(tmp_path: Path) -> None:

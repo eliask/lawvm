@@ -33,6 +33,32 @@ REF_PATTERN = re.compile(r'/akn/fi/act/statute(?:-consolidated)?/(\d{4})/(\d+(?:
 _DEFAULT_CACHE_CSV = Path(".cache/finland/amendment_parents.csv")
 _CSV_HEADER = ["amendment_id", "parent_id", "edge_kind"]
 
+
+def _append_amendment_index_diagnostic(
+    diagnostics_out: list[dict[str, object]] | None,
+    *,
+    rule_id: str,
+    phase: str,
+    family: str,
+    reason: str,
+    detail: dict[str, object],
+) -> None:
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        {
+            "rule_id": rule_id,
+            "phase": phase,
+            "family": family,
+            "reason": reason,
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            **detail,
+        }
+    )
+
+
 def _make_statute_id(year: str, num_raw: str) -> str:
     """Normalize statute ID to YYYY/NUMBER format."""
     if '-' in num_raw:
@@ -62,6 +88,8 @@ def _normalize_source_citation_id(raw: str, source_year: int) -> str | None:
 def _extract_explicit_cross_statute_vts_parents(
     xml_data: bytes,
     amendment_id: str,
+    *,
+    diagnostics_out: list[dict[str, object]] | None = None,
 ) -> Set[str]:
     """Extract explicit parent statute IDs mentioned in VTS cross-statute clauses.
 
@@ -75,7 +103,20 @@ def _extract_explicit_cross_statute_vts_parents(
     """
     try:
         tree = etree.fromstring(xml_data)
-    except etree.XMLSyntaxError:
+    except etree.XMLSyntaxError as exc:
+        _append_amendment_index_diagnostic(
+            diagnostics_out,
+            rule_id="fi_amendment_index_source_vts_xml_parse_failed",
+            phase="parse",
+            family="source_pathology",
+            reason="Finland amendment index skipped source VTS extraction because source XML was not well-formed.",
+            detail={
+                "amendment_id": amendment_id,
+                "edge_kind": "source_vts_explicit",
+                "exception_type": type(exc).__name__,
+                "error": str(exc),
+            },
+        )
         return set()
 
     try:
@@ -111,13 +152,28 @@ def _extract_explicit_cross_statute_vts_parents(
         try:
             if extract_voimaantulo_repeals(xml_data, parent_id):
                 candidates.add(parent_id)
-        except Exception:
+        except Exception as exc:
+            _append_amendment_index_diagnostic(
+                diagnostics_out,
+                rule_id="fi_amendment_index_source_vts_parent_extraction_failed",
+                phase="parse",
+                family="source_pathology",
+                reason="Finland amendment index skipped a candidate source VTS parent because extraction failed.",
+                detail={
+                    "amendment_id": amendment_id,
+                    "parent_id": parent_id,
+                    "edge_kind": "source_vts_explicit",
+                    "exception_type": type(exc).__name__,
+                    "error": str(exc),
+                },
+            )
             continue
     return candidates
 
 def build_amendment_index(
     cs: CorpusStore | None = None,
     consolidated_zip_path: Path | None = None,
+    diagnostics_out: list[dict[str, object]] | None = None,
 ) -> List[Tuple[str, str, str]]:
     """Scan consolidated statutes and extract (amendment_id, parent_id) pairs.
 
@@ -146,6 +202,18 @@ def build_amendment_index(
         try:
             xml_data = cs.read_oracle(sid)
             if xml_data is None:
+                _append_amendment_index_diagnostic(
+                    diagnostics_out,
+                    rule_id="fi_amendment_index_oracle_artifact_missing",
+                    phase="acquisition",
+                    family="source_pathology",
+                    reason="Finland amendment index skipped consolidated oracle metadata because oracle XML bytes were missing.",
+                    detail={
+                        "statute_id": sid,
+                        "parent_id": parent_id,
+                        "edge_kind": "oracle_amendedBy",
+                    },
+                )
                 continue
             root = etree.fromstring(xml_data)
             for ref_elem in cast(list, root.xpath('.//*[local-name()="amendedBy"]//*[local-name()="ref"]')):
@@ -155,8 +223,21 @@ def build_amendment_index(
                     amend_id = _make_statute_id(m.group(1), m.group(2))
                     if amend_id != parent_id:
                         edges.add((amend_id, parent_id, "oracle_amendedBy"))
-        except (KeyError, OSError, etree.XMLSyntaxError, etree.XPathError):
-            # Skip statutes whose oracle XML is unreadable or corrupt.
+        except (KeyError, OSError, etree.XMLSyntaxError, etree.XPathError) as exc:
+            _append_amendment_index_diagnostic(
+                diagnostics_out,
+                rule_id="fi_amendment_index_oracle_artifact_skipped",
+                phase="parse" if isinstance(exc, (etree.XMLSyntaxError, etree.XPathError)) else "acquisition",
+                family="source_pathology",
+                reason="Finland amendment index skipped consolidated oracle metadata because the artifact could not be read or parsed.",
+                detail={
+                    "statute_id": sid,
+                    "parent_id": parent_id,
+                    "edge_kind": "oracle_amendedBy",
+                    "exception_type": type(exc).__name__,
+                    "error": str(exc),
+                },
+            )
             continue
 
     # Supplement from source VTS clauses. These are not represented by
@@ -166,10 +247,38 @@ def build_amendment_index(
         try:
             xml_data = cs.read_source(amendment_id)
             if xml_data is None:
+                _append_amendment_index_diagnostic(
+                    diagnostics_out,
+                    rule_id="fi_amendment_index_source_vts_artifact_missing",
+                    phase="acquisition",
+                    family="source_pathology",
+                    reason="Finland amendment index skipped source VTS extraction because source XML bytes were missing.",
+                    detail={
+                        "amendment_id": amendment_id,
+                        "edge_kind": "source_vts_explicit",
+                    },
+                )
                 continue
-            for parent_id in _extract_explicit_cross_statute_vts_parents(xml_data, amendment_id):
+            for parent_id in _extract_explicit_cross_statute_vts_parents(
+                xml_data,
+                amendment_id,
+                diagnostics_out=diagnostics_out,
+            ):
                 edges.add((amendment_id, parent_id, "source_vts_explicit"))
-        except (KeyError, OSError, etree.XMLSyntaxError):
+        except (KeyError, OSError, etree.XMLSyntaxError) as exc:
+            _append_amendment_index_diagnostic(
+                diagnostics_out,
+                rule_id="fi_amendment_index_source_vts_artifact_skipped",
+                phase="parse" if isinstance(exc, etree.XMLSyntaxError) else "acquisition",
+                family="source_pathology",
+                reason="Finland amendment index skipped source VTS extraction because the source artifact could not be read or parsed.",
+                detail={
+                    "amendment_id": amendment_id,
+                    "edge_kind": "source_vts_explicit",
+                    "exception_type": type(exc).__name__,
+                    "error": str(exc),
+                },
+            )
             continue
 
     return sorted(list(edges))
