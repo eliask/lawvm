@@ -110,6 +110,7 @@ def test_cli_parser_accepts_new_debug_commands() -> None:
             "--show-replay-meta",
             "--show-temporal-events",
             "--show-failed-ops",
+            "--show-findings",
             "--contains",
             "14 b",
             "--limit",
@@ -124,6 +125,7 @@ def test_cli_parser_accepts_new_debug_commands() -> None:
     assert args.show_replay_meta is True
     assert args.show_temporal_events is True
     assert args.show_failed_ops is True
+    assert args.show_findings is True
     assert args.contains == "14 b"
     assert args.limit == 7
 
@@ -1149,6 +1151,59 @@ def test_replay_debug_main_prints_filtered_replay_meta_and_temporal_events(capsy
     assert "Replay meta:" in out
     assert "cutoff_date: 2024-12-19" in out
     assert "source_pathologies [1]:" in out
+
+
+def test_replay_debug_bundle_can_include_filtered_findings(monkeypatch) -> None:
+    def fake_replay_xml(*args, **kwargs):
+        compiled_ops_out = kwargs.get("compiled_ops_out")
+        assert compiled_ops_out is not None
+        compiled_ops_out.append(
+            {
+                "source_statute": "2020/162",
+                "source_title": "Source title",
+                "sequence": 1,
+                "action": "replace",
+                "target": {"container": "section", "section": "4"},
+            }
+        )
+        return SimpleNamespace(
+            title="Replay title",
+            findings=(
+                SimpleNamespace(
+                    kind="ELAB.SOURCE_PATHOLOGY",
+                    role="observation",
+                    stage="elaboration",
+                    source_statute="2020/162",
+                    detail={"target": "14 b", "rule_id": "fi.source_pathology"},
+                    blocking=False,
+                ),
+                SimpleNamespace(
+                    kind="ELAB.OTHER",
+                    role="observation",
+                    stage="elaboration",
+                    source_statute="2021/999",
+                    detail={"target": "99"},
+                    blocking=False,
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(replay_debug, "replay_xml", fake_replay_xml)
+
+    bundle = replay_debug.build_replay_debug_bundle(
+        statute_id="1995/1552",
+        mode="legal_pit",
+        source="2020/162",
+        contains="14 b",
+        show_findings=True,
+    )
+
+    assert len(bundle["findings"]) == 1
+    assert bundle["findings"][0]["kind"] == "ELAB.SOURCE_PATHOLOGY"
+    assert bundle["findings"][0]["detail"]["rule_id"] == "fi.source_pathology"
+    rendered = replay_debug._format_text(bundle)
+    assert "Findings:" in rendered
+    assert "fi.source_pathology" in rendered
 
 
 def test_replay_inspect_main_prints_section_tree_and_metadata(capsys, monkeypatch) -> None:

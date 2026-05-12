@@ -133,6 +133,7 @@ def build_replay_debug_bundle(
     show_replay_meta: bool = False,
     show_temporal_events: bool = False,
     show_failed_ops: bool = False,
+    show_findings: bool = False,
     contains: Optional[str] = None,
     limit: int = 10,
 ) -> Dict[str, Any]:
@@ -193,6 +194,10 @@ def build_replay_debug_bundle(
     if failed_ops_out is not None:
         failed_ops = _filter_payload_items(list(failed_ops_out), source, target, contains)[:limit]
 
+    findings: list[Any] = []
+    if show_findings:
+        findings = _filter_payload_items(list(getattr(master, "findings", ()) or ()), source, target, contains)[:limit]
+
     report: Dict[str, Any] = {
         "statute_id": statute_id,
         "title": master.title,
@@ -211,6 +216,8 @@ def build_replay_debug_bundle(
         report["temporal_events"] = temporal_events
     if failed_ops:
         report["failed_ops"] = failed_ops
+    if findings:
+        report["findings"] = findings
 
     if show_clause_text or show_source_blocks:
         if not source:
@@ -329,6 +336,12 @@ def _format_text(bundle: Dict[str, Any]) -> str:
         for op in bundle["failed_ops"]:
             lines.append(f"  - {json.dumps(op, ensure_ascii=False, sort_keys=True, default=str)}")
 
+    if bundle.get("findings"):
+        lines.append("")
+        lines.append("Findings:")
+        for finding in bundle["findings"]:
+            lines.append(f"  - {json.dumps(finding, ensure_ascii=False, sort_keys=True, default=str)}")
+
     return "\n".join(lines)
 
 
@@ -344,6 +357,7 @@ def main(args) -> None:
         show_replay_meta=getattr(args, "show_replay_meta", False),
         show_temporal_events=getattr(args, "show_temporal_events", False),
         show_failed_ops=getattr(args, "show_failed_ops", False),
+        show_findings=getattr(args, "show_findings", False),
         contains=getattr(args, "contains", None),
         limit=getattr(args, "limit", 10),
     )

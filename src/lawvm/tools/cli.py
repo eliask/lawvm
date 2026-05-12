@@ -2781,6 +2781,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="print filtered failed operations emitted during replay",
     )
     replay_debug_p.add_argument(
+        "--show-findings",
+        action="store_true",
+        help="print filtered typed findings emitted during replay",
+    )
+    replay_debug_p.add_argument(
         "--contains",
         metavar="TEXT",
         help="substring filter applied to compiled/replay op payloads and metadata",
