@@ -41,7 +41,7 @@ from lawvm.finland.grafter import (
 from lawvm.finland.corpus import list_cached_consolidated_pit_locators
 from lawvm.finland.statute import StatuteContext, ReplayState
 from lawvm.finland.helpers import _fi_label_postprocessor
-from lawvm.tools.editorial_hygiene import normalize_kumottu_stubs
+from lawvm.tools.editorial_hygiene import normalize_finlex_oracle_comparison_text
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -70,10 +70,7 @@ except ImportError:
 
 def _normalize_text(t: str) -> str:
     """Strip editorial annotations that appear in oracles but not in replay."""
-    t = normalize_kumottu_stubs(t)
-    t = re.sub(r'\(\d{1,2}\.\d{1,2}\.\d{4}/\d+\)', '', t)
-    t = re.sub(r'Aiempi sanamuoto kuuluu:', '', t)
-    return t
+    return normalize_finlex_oracle_comparison_text(t)
 
 
 def _clean(t: str) -> str:

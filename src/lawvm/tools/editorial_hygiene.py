@@ -121,6 +121,23 @@ def normalize_kumottu_stubs(text: str) -> str:
     return _KUMOTTU_STUBS_RE.sub('', text)
 
 
+def normalize_finlex_oracle_comparison_text(text: str, *, strip_editorial: bool = False) -> str:
+    """Apply the shared Finland oracle-only text cleanup used for comparisons.
+
+    This is a comparison/projection helper, not replay normalization.  It removes
+    Finlex consolidated presentation residue that is outside the replayed legal
+    body text: kumottu stub sentences, amendment attribution suffixes, and the
+    ``Aiempi sanamuoto kuuluu:`` marker.  Callers that historically applied the
+    broader editorial cleanup can opt into ``strip_editorial`` explicitly.
+    """
+    text = normalize_kumottu_stubs(text)
+    text = re.sub(r'\(\d{1,2}\.\d{1,2}\.\d{4}/\d+\)', '', text)
+    text = re.sub(r'Aiempi sanamuoto kuuluu:', '', text)
+    if strip_editorial:
+        text = strip_editorial_annotations(text)
+    return text
+
+
 def count_kumottu_bytes(data: bytes) -> int:
     """Count kumottu-attribution occurrences in raw oracle XML bytes.
 

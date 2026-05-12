@@ -40,8 +40,7 @@ from lawvm.finland.grafter import replay_xml
 from lawvm.finland.transparent_store import is_known_missing_source
 from lawvm.tools.editorial_hygiene import (
     count_kumottu_bytes,
-    normalize_kumottu_stubs,
-    strip_editorial_annotations,
+    normalize_finlex_oracle_comparison_text,
 )
 from lawvm.tools.frontier import _run_oracle_checks_parallel
 
@@ -318,11 +317,7 @@ def _runs_dir() -> Path:
 
 
 def _normalize(t: str) -> str:
-    t = normalize_kumottu_stubs(t)
-    # Date annotations and historical wording markers
-    t = re.sub(r"\(\d{1,2}\.\d{1,2}\.\d{4}/\d+\)", "", t)
-    t = re.sub(r"Aiempi sanamuoto kuuluu:", "", t)
-    return strip_editorial_annotations(t)
+    return normalize_finlex_oracle_comparison_text(t, strip_editorial=True)
 
 
 def _clean(t: str) -> str:
