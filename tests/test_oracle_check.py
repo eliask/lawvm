@@ -20,7 +20,10 @@ from lawvm.tools.divergence_heuristics import (
     oracle_text_reduces_to_replay_by_dropping_sentences,
     replay_section_matches_text_at_cutoff,
 )
-from lawvm.tools.editorial_hygiene import strip_editorial_annotations
+from lawvm.tools.editorial_hygiene import (
+    normalize_finlex_oracle_comparison_text,
+    strip_editorial_annotations,
+)
 from lawvm.tools.classify_result import ClassifyResult
 from lawvm.tools.oracle_check import (
     _classify_statute,
@@ -405,6 +408,28 @@ def test_diagnose_treats_inline_aiempi_block_with_tuli_voimaan_as_editorial() ->
     )
 
     assert _diagnose(replay, oracle, None) == "EDITORIAL_CONVENTION"
+
+
+def test_normalize_finlex_oracle_comparison_text_removes_shared_presentation_residue() -> None:
+    text = (
+        "5 § 5 § on kumottu L:lla 13.11.1992/1015. "
+        "Tätä lakia sovelletaan. (9.7.1982/540) Aiempi sanamuoto kuuluu:"
+    )
+
+    normalized = normalize_finlex_oracle_comparison_text(text)
+
+    assert "kumottu" not in normalized
+    assert "9.7.1982/540" not in normalized
+    assert "Aiempi sanamuoto kuuluu" not in normalized
+    assert "Tätä lakia sovelletaan." in normalized
+
+
+def test_normalize_finlex_oracle_comparison_text_can_opt_into_full_editorial_cleanup() -> None:
+    text = "A:lla 123/2020 muutettu 1 momentti tuli voimaan 1.1.2021. Pysyvä teksti."
+
+    normalized = normalize_finlex_oracle_comparison_text(text, strip_editorial=True)
+
+    assert normalized == "Pysyvä teksti."
 
 
 def test_diagnose_treats_expired_temporary_residue_as_oracle_stale() -> None:

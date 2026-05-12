@@ -22,7 +22,7 @@ from lawvm.finland.consolidated_artifacts import (
 from lawvm.finland.consolidated_store import select_cached_consolidated_path_index
 from lawvm.finland.consolidated_store import select_cached_consolidated_artifact
 from lawvm.finland.helpers import _parse_iso_date
-from lawvm.tools.editorial_hygiene import normalize_kumottu_stubs
+from lawvm.tools.editorial_hygiene import normalize_finlex_oracle_comparison_text
 import lawvm.finland.inline_repeal_stub as _fi_stub_register  # noqa: F401 — registers detector
 from lawvm.finland.metadata import (
     _amendment_effective_date,
@@ -683,10 +683,7 @@ def get_ground_truth(
             _dedup_children(sub, 'paragraph', _eid_base)
     text = etree.tostring(root, method="text", encoding="unicode").strip()
     # Strip consolidated-only annotations before scoring.
-    text = normalize_kumottu_stubs(text)
-    text = re.sub(r'\(\d{1,2}\.\d{1,2}\.\d{4}/\d+\)', '', text)
-    text = re.sub(r'Aiempi sanamuoto kuuluu:', '', text)
-    return text
+    return normalize_finlex_oracle_comparison_text(text)
 
 
 def get_ground_truth_tree(

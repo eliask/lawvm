@@ -40,7 +40,7 @@ from lawvm.finland.grafter import (
 )
 from lawvm.finland.statute import StatuteContext, ReplayState, _serialize_text_node
 from lawvm.finland.helpers import _fi_label_postprocessor
-from lawvm.tools.editorial_hygiene import normalize_kumottu_stubs
+from lawvm.tools.editorial_hygiene import normalize_finlex_oracle_comparison_text
 
 
 # ---------------------------------------------------------------------------
@@ -48,10 +48,7 @@ from lawvm.tools.editorial_hygiene import normalize_kumottu_stubs
 # ---------------------------------------------------------------------------
 
 def _normalize(t: str) -> str:
-    t = normalize_kumottu_stubs(t)
-    t = re.sub(r'\(\d{1,2}\.\d{1,2}\.\d{4}/\d+\)', '', t)
-    t = re.sub(r'Aiempi sanamuoto kuuluu:', '', t)
-    return t
+    return normalize_finlex_oracle_comparison_text(t)
 
 
 def _clean(t: str) -> str:
