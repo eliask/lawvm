@@ -887,12 +887,17 @@ def _hydrate_se_bulk(
                     progress_callback(f"[{idx}/{total}] {sfs_id} FETCH_CURRENT")
                 if status_callback is not None:
                     status_callback(idx, total, sfs_id, "FETCH_CURRENT", "running", "", "")
+                current_diagnostics: list[dict[str, Any]] = []
                 current_json = fetch_se_rk_current_json(
                     sfs_id,
                     archive,
                     max_age_hours=current_max_age_hours,
+                    diagnostics_out=current_diagnostics,
                 )
                 row["current_fetched"] = current_json is not None
+                if current_diagnostics:
+                    row["current_diagnostic_count"] = len(current_diagnostics)
+                    row["current_diagnostics"] = current_diagnostics
                 if current_json is not None:
                     bundle = archive_se_source_bundle(current_json, archive)
                     if official is not None:
@@ -989,6 +994,7 @@ def _print_hydrate_bulk_rows(rows: list[dict[str, Any]], *, as_json: bool) -> No
                 f"act={'yes' if row.get('after', {}).get('official_act') else 'no'}  "
                 f"ops={compiled_text}  "
                 f"rk={'yes' if row.get('after', {}).get('rk_current') else 'no'}"
+                f"{'  current_diag=' + str(row['current_diagnostic_count']) if row.get('current_diagnostic_count') else ''}"
             )
         elif status == "skipped_complete":
             print(f"{sfs_id}  SKIP  complete")
@@ -1547,9 +1553,17 @@ def _cmd_compile_official(args: "argparse.Namespace") -> None:
 def _cmd_fetch_current(args: "argparse.Namespace") -> None:
     with open_se_archive(Path(args.db) if getattr(args, "db", None) else None) as archive:
         max_age_hours = 24.0 if getattr(args, "max_age_hours", None) is None else float(args.max_age_hours)
-        current_json = fetch_se_rk_current_json(args.sfs_id, archive, max_age_hours=max_age_hours)
+        diagnostics: list[dict[str, Any]] = []
+        current_json = fetch_se_rk_current_json(
+            args.sfs_id,
+            archive,
+            max_age_hours=max_age_hours,
+            diagnostics_out=diagnostics,
+        )
         if current_json is None:
             print(f"error: failed to fetch RK current JSON for {args.sfs_id}", file=sys.stderr)
+            if diagnostics:
+                print(json.dumps(diagnostics[0], ensure_ascii=False, sort_keys=True), file=sys.stderr)
             sys.exit(1)
 
         print(f"SFS ID:             {args.sfs_id}")
@@ -1565,6 +1579,7 @@ def _cmd_hydrate_live(args: "argparse.Namespace") -> None:
     with open_se_archive(Path(args.db) if getattr(args, "db", None) else None) as archive:
         current_max_age_hours = 24.0 if getattr(args, "current_max_age_hours", None) is None else float(args.current_max_age_hours)
         official_max_age_hours = float("inf") if getattr(args, "official_max_age_hours", None) is None else float(args.official_max_age_hours)
+        diagnostics: list[dict[str, Any]] = []
         bundle = hydrate_se_bundle_live(
             args.sfs_id,
             archive,
@@ -1572,9 +1587,12 @@ def _cmd_hydrate_live(args: "argparse.Namespace") -> None:
             current_max_age_hours=current_max_age_hours,
             official_max_age_hours=official_max_age_hours,
             force_reextract=bool(getattr(args, "force_reextract", False)),
+            diagnostics_out=diagnostics,
         )
         if bundle is None:
             print(f"error: failed to hydrate live Sweden bundle for {args.sfs_id}", file=sys.stderr)
+            if diagnostics:
+                print(json.dumps(diagnostics[0], ensure_ascii=False, sort_keys=True), file=sys.stderr)
             sys.exit(1)
 
         print(f"SFS ID:             {bundle.source_record.sfs_id}")

@@ -2411,8 +2411,14 @@ def hydrate_se_bundle_live(
     current_max_age_hours: float = _CURRENT_SURFACE_CACHE_HOURS,
     official_max_age_hours: float = _IMMUTABLE_CACHE_HOURS,
     force_reextract: bool = False,
+    diagnostics_out: list[dict[str, Any]] | None = None,
 ) -> Optional[SESourceBundle]:
-    current_json = fetch_se_rk_current_json(sfs_id, archive, max_age_hours=current_max_age_hours)
+    current_json = fetch_se_rk_current_json(
+        sfs_id,
+        archive,
+        max_age_hours=current_max_age_hours,
+        diagnostics_out=diagnostics_out,
+    )
     if current_json is None:
         return None
     bundle = archive_se_source_bundle(current_json, archive)
