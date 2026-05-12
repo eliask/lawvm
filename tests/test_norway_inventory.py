@@ -105,6 +105,54 @@ def test_build_no_inventory_accepts_prebuilt_index(tmp_path) -> None:
     assert inventory["current_laws_with_amendments_fully_replayable_executable"] == 1
 
 
+def test_build_no_inventory_preserves_current_law_source_diagnostics(tmp_path, monkeypatch) -> None:
+    def fake_current_law_ids(_data_dir, *, diagnostics_out=None):
+        if diagnostics_out is not None:
+            diagnostics_out.append(
+                {
+                    "rule_id": "no_current_law_id_parse_marker_fallback_used",
+                    "family": "source_pathology",
+                    "phase": "parse",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                }
+            )
+        return {"no/lov/2025-01-01-1"}
+
+    monkeypatch.setattr("lawvm.norway.inventory.load_no_current_law_ids", fake_current_law_ids)
+    monkeypatch.setattr("lawvm.norway.inventory.load_available_lti_law_ids", lambda _data_dir: set())
+
+    inventory = build_no_inventory(tmp_path, index=NOAmendmentIndex(data_dir=str(tmp_path))).to_dict()
+
+    assert inventory["current_law_source_diagnostic_count"] == 1
+    assert inventory["current_law_source_diagnostic_rule_counts"] == {
+        "no_current_law_id_parse_marker_fallback_used": 1
+    }
+    assert inventory["current_law_source_diagnostics"][0]["strict_disposition"] == "block"
+
+
+def test_build_no_inventory_records_current_law_id_artifact_fallback(tmp_path, monkeypatch) -> None:
+    _write_archive(
+        tmp_path / "gjeldende-lover.tar.bz2",
+        [("nl/nl-20250101-001.xml", _BASE_XML)],
+    )
+    monkeypatch.setattr("lawvm.norway.inventory.load_no_current_law_ids", lambda _data_dir, *, diagnostics_out=None: set())
+    monkeypatch.setattr("lawvm.norway.inventory.load_available_lti_law_ids", lambda _data_dir: set())
+
+    inventory = build_no_inventory(tmp_path, index=NOAmendmentIndex(data_dir=str(tmp_path))).to_dict()
+
+    assert inventory["current_laws"] == 1
+    assert inventory["current_law_source_diagnostic_rule_counts"] == {
+        "no_inventory_current_law_id_artifact_fallback_used": 1
+    }
+    diagnostic = inventory["current_law_source_diagnostics"][0]
+    assert diagnostic["phase"] == "acquisition"
+    assert diagnostic["family"] == "source_pathology"
+    assert diagnostic["fallback_current_law_count"] == 1
+    assert diagnostic["strict_disposition"] == "block"
+
+
 def test_build_no_inventory_accepts_farchive_source_path(tmp_path) -> None:
     _write_archive(
         tmp_path / "gjeldende-lover.tar.bz2",

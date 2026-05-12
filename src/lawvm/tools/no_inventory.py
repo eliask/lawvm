@@ -58,6 +58,8 @@ def main(args: "argparse.Namespace") -> None:
     )
     if data.get("index_stale"):
         print("  index stale                  : yes")
+    if data.get("current_law_source_diagnostic_count"):
+        print(f"  current source diagnostics   : {data['current_law_source_diagnostic_count']}")
 
     status_counts = data["amendment_documents_by_status"]
     if isinstance(status_counts, dict):
