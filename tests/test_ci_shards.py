@@ -184,6 +184,16 @@ def test_test_shard_maps_core_and_dependency_changes_to_all() -> None:
     assert module.affected_shards(["pyproject.toml"]) == ["all"]
 
 
+def test_test_shard_maps_shared_non_core_modules_to_bounded_shards() -> None:
+    module = _load_test_shard_module()
+
+    assert module.affected_shards(["src/lawvm/contracts.py"]) == ["core"]
+    assert module.affected_shards(["src/lawvm/graph_build.py"]) == ["core", "tools"]
+    assert module.affected_shards(["src/lawvm/semantic/model.py"]) == ["core", "finland", "tools"]
+    assert module.affected_shards(["src/lawvm/xml_ingest.py"]) == ["core", "finland", "tools"]
+    assert module.affected_shards(["src/lawvm/us_federal/bootstrap.py"]) == ["starter"]
+
+
 def test_test_shard_affected_plan_defaults_to_all_for_unknown_paths() -> None:
     module = _load_test_shard_module()
 
@@ -256,6 +266,57 @@ def test_test_shard_affected_plan_explains_frontend_and_tool_shards() -> None:
                 "path": "scripts/ci.sh",
                 "shards": ["tools"],
                 "reason": "tools prefix scripts/ maps to tools",
+            },
+        ],
+    }
+
+
+def test_test_shard_affected_plan_explains_shared_non_core_shards() -> None:
+    module = _load_test_shard_module()
+
+    assert module.affected_plan(
+        [
+            "src/lawvm/semantic/model.py",
+            "src/lawvm/xml_ingest.py",
+            "src/lawvm/graph_build.py",
+            "src/lawvm/contracts.py",
+            "src/lawvm/us_federal/bootstrap.py",
+        ]
+    ) == {
+        "kind": "lawvm_pytest_affected_shards",
+        "input_paths": [
+            "src/lawvm/semantic/model.py",
+            "src/lawvm/xml_ingest.py",
+            "src/lawvm/graph_build.py",
+            "src/lawvm/contracts.py",
+            "src/lawvm/us_federal/bootstrap.py",
+        ],
+        "shards": ["core", "finland", "starter", "tools"],
+        "paths": [
+            {
+                "path": "src/lawvm/semantic/model.py",
+                "shards": ["core", "finland", "tools"],
+                "reason": "known frontend prefix src/lawvm/semantic/ maps to core, finland, tools",
+            },
+            {
+                "path": "src/lawvm/xml_ingest.py",
+                "shards": ["core", "finland", "tools"],
+                "reason": "known frontend prefix src/lawvm/xml_ingest.py maps to core, finland, tools",
+            },
+            {
+                "path": "src/lawvm/graph_build.py",
+                "shards": ["core", "tools"],
+                "reason": "known frontend prefix src/lawvm/graph_build.py maps to core, tools",
+            },
+            {
+                "path": "src/lawvm/contracts.py",
+                "shards": ["core"],
+                "reason": "known frontend prefix src/lawvm/contracts.py maps to core",
+            },
+            {
+                "path": "src/lawvm/us_federal/bootstrap.py",
+                "shards": ["starter"],
+                "reason": "known frontend prefix src/lawvm/us_federal/ maps to starter",
             },
         ],
     }

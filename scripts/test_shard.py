@@ -220,6 +220,10 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
 }
 
 SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("src/lawvm/contracts.py", ("core",)),
+    ("src/lawvm/graph_build.py", ("core", "tools")),
+    ("src/lawvm/semantic/", ("core", "finland", "tools")),
+    ("src/lawvm/xml_ingest.py", ("core", "finland", "tools")),
     ("src/lawvm/estonia/", ("estonia",)),
     ("src/lawvm/eu/", ("eu",)),
     ("src/lawvm/finland/", ("finland",)),
@@ -227,6 +231,7 @@ SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("src/lawvm/open_law/", ("starter",)),
     ("src/lawvm/sweden/", ("sweden",)),
     ("src/lawvm/uk_legislation/", ("uk",)),
+    ("src/lawvm/us_federal/", ("starter",)),
     ("src/lawvm/tools/", ("tools",)),
     ("src/lawvm/core/", ("all",)),
     ("src/lawvm/jurisdiction_starter/", ("starter",)),
