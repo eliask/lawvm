@@ -8,7 +8,9 @@
 #   ./scripts/ci_sharded.sh --affected src/lawvm/norway/replay.py tests/test_norway_replay.py
 #   ./scripts/ci_sharded.sh --shard norway
 #   ./scripts/ci_sharded.sh --shards "norway sweden eu"
+#   ./scripts/ci_sharded.sh --shards "frontends modules"
 #   LAWVM_CI_SHARDS="norway sweden eu" ./scripts/ci_sharded.sh
+#   LAWVM_CI_SHARDS="frontends modules" ./scripts/ci_sharded.sh
 #   LAWVM_CI_SHARDS="norway,sweden,eu" ./scripts/ci_sharded.sh
 #   LAWVM_CI_AFFECTED_PATHS="src/lawvm/norway/replay.py tests/test_norway_replay.py" ./scripts/ci_sharded.sh
 #   LAWVM_CI_TIMING_JSONL=.tmp/ci-shard-timings.jsonl ./scripts/ci_sharded.sh
