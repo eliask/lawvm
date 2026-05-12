@@ -1185,12 +1185,15 @@ def _record_tail_unresolved(
 def _dispatch_node(
     node: SurfaceNode,
     ctx: _ResolverCtx,
+    *,
+    verb: VerbKind = VerbKind.META,
 ) -> list[ResolvedNode]:
     """Dispatch a SurfaceNode to its resolution handler.
 
     SurfaceMoveTail and SurfaceRenumberTail are handled by the verb group
     loop directly and should not reach this function in normal operation.
-    They are treated as no-ops here as a safety net.
+    If they do, record a typed residual rather than silently dropping the
+    parsed tail.
     """
     if isinstance(node, SurfaceTargetRef):
         return _resolve_target_ref(node, ctx)
@@ -1205,10 +1208,22 @@ def _dispatch_node(
     if isinstance(node, SurfaceHeadingPlacement):
         return _resolve_heading_placement(node, ctx)
     if isinstance(node, SurfaceMoveTail):
-        # Safety net: should be handled by the verb group loop
+        _record_tail_unresolved(
+            ctx,
+            node=node,
+            tail_kind="move",
+            reason_code="TAIL_REACHED_DISPATCH",
+            verb=verb,
+        )
         return []
     if isinstance(node, SurfaceRenumberTail):
-        # Safety net: should be handled by the verb group loop
+        _record_tail_unresolved(
+            ctx,
+            node=node,
+            tail_kind="renumber",
+            reason_code="TAIL_REACHED_DISPATCH",
+            verb=verb,
+        )
         return []
     if isinstance(node, SurfaceTextAmend):
         return _resolve_text_amend(node, ctx)
@@ -1401,7 +1416,7 @@ def _resolve_verb_group(
             if not batch_active:
                 current_batch_start = len(resolved_nodes)
                 batch_active = True
-            new_nodes = _dispatch_node(node, ctx)
+            new_nodes = _dispatch_node(node, ctx, verb=vg.verb)
             resolved_nodes.extend(new_nodes)
             # Make freshly resolved explicit scope available to later nodes in
             # the same verb group. Long johtolause groups can switch parts
@@ -1422,7 +1437,7 @@ def _resolve_verb_group(
 
         # --- Backrefs and valiotsikko refs: resolve against current batch, then extend it ---
         if isinstance(node, (SurfaceBackRef, SurfaceValiotsikkoRef)):
-            new_nodes = _dispatch_node(node, ctx)
+            new_nodes = _dispatch_node(node, ctx, verb=vg.verb)
             resolved_nodes.extend(new_nodes)
             ctx.update_chapter(new_nodes)
             ctx.update_part(new_nodes)
@@ -1438,7 +1453,7 @@ def _resolve_verb_group(
             continue
 
         # --- Non-target nodes (insertion, meta, text amend): reset batch window ---
-        new_nodes = _dispatch_node(node, ctx)
+        new_nodes = _dispatch_node(node, ctx, verb=vg.verb)
         resolved_nodes.extend(new_nodes)
         # Reset batch window: these nodes do not serve as backref antecedents
         # and do not participate in tail application

@@ -57,6 +57,8 @@ from lawvm.finland.johtolause.surface_resolve import (
     ResolvedTargetRef,
     ResolvedTextAmend,
     SurfaceResolutionResidual,
+    _dispatch_node,
+    _ResolverCtx,
     resolve_surface_clause,
 )
 
@@ -902,6 +904,80 @@ class TestRenumberTailApplication:
         assert residual.detail["tail_kind"] == "renumber"
         assert residual.detail["new_label"] == "3"
         assert residual.detail["witness_rule_id"] == "test.renumber_no_batch"
+
+
+# ---------------------------------------------------------------------------
+# 11b. Tail dispatch safety net
+# ---------------------------------------------------------------------------
+
+
+class TestTailDispatchSafetyNet:
+    """Tail nodes that bypass the verb-group loop must be visible residuals."""
+
+    def test_move_tail_reaching_dispatch_is_strict_residual(self):
+        ctx = _ResolverCtx(
+            last_target_batch=[],
+            chapter="",
+            part="",
+            residuals=[],
+        )
+        tail = SurfaceMoveTail(
+            destination_chapter="5",
+            witness=SurfaceWitness(
+                rule_id="test.move_tail_dispatch",
+                source_span=(40, 42),
+            ),
+        )
+
+        resolved = _dispatch_node(tail, ctx, verb=VerbKind.SIIRTAA)
+
+        assert resolved == []
+        assert len(ctx.residuals) == 1
+        residual = ctx.residuals[0]
+        assert isinstance(residual, SurfaceResolutionResidual)
+        assert residual.kind == FI_TAIL_UNRESOLVED_KIND
+        assert residual.rule_id == "fi.johtolause.tail_unresolved.v1"
+        assert residual.family == "target_resolution_recovery"
+        assert residual.reason_code == "TAIL_REACHED_DISPATCH"
+        assert residual.strict_disposition == "block"
+        assert residual.quirks_disposition == "record"
+        assert residual.node is tail
+        assert residual.detail["tail_kind"] == "move"
+        assert residual.detail["verb"] == "S"
+        assert residual.detail["destination_chapter"] == "5"
+        assert residual.detail["witness_rule_id"] == "test.move_tail_dispatch"
+        assert residual.detail["source_span"] == (40, 42)
+
+    def test_renumber_tail_reaching_dispatch_is_strict_residual(self):
+        ctx = _ResolverCtx(
+            last_target_batch=[],
+            chapter="",
+            part="",
+            residuals=[],
+        )
+        tail = SurfaceRenumberTail(
+            new_label="12",
+            witness=SurfaceWitness(
+                rule_id="test.renumber_tail_dispatch",
+                source_span=(50, 51),
+            ),
+        )
+
+        resolved = _dispatch_node(tail, ctx, verb=VerbKind.MUUTTAA)
+
+        assert resolved == []
+        assert len(ctx.residuals) == 1
+        residual = ctx.residuals[0]
+        assert isinstance(residual, SurfaceResolutionResidual)
+        assert residual.kind == FI_TAIL_UNRESOLVED_KIND
+        assert residual.reason_code == "TAIL_REACHED_DISPATCH"
+        assert residual.strict_disposition == "block"
+        assert residual.quirks_disposition == "record"
+        assert residual.node is tail
+        assert residual.detail["tail_kind"] == "renumber"
+        assert residual.detail["verb"] == "M"
+        assert residual.detail["new_label"] == "12"
+        assert residual.detail["witness_rule_id"] == "test.renumber_tail_dispatch"
 
 
 # ---------------------------------------------------------------------------
