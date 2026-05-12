@@ -4146,6 +4146,27 @@ def _compile_group(
         and any(op.op_type == "REPLACE" for op in group_ops)
     ):
         _replace_body_chapter = _find_body_section_chapter(muutos_tree, target_norm)
+        _replace_to_insert_trigger_evidence = tuple(
+            evidence
+            for evidence, present in (
+                (
+                    "pseudo_chapter_marker",
+                    _replace_body_chapter is not None
+                    and _body_has_pseudo_chapter_marker(muutos_tree, _replace_body_chapter),
+                ),
+                (
+                    "real_inserted_chapter",
+                    _replace_body_chapter is not None
+                    and master.find("chapter", _replace_body_chapter) is None
+                    and _body_has_real_chapter_container(muutos_tree, _replace_body_chapter),
+                ),
+                (
+                    "inserted_chapter_op",
+                    _replace_body_chapter is not None and _replace_body_chapter in inserted_chapter_labels,
+                ),
+            )
+            if present
+        )
         if (
             _replace_body_chapter is not None
             and _replace_body_chapter != target_chapter
@@ -4157,15 +4178,101 @@ def _compile_group(
             # 3. an explicit inserted chapter op targeting the new chapter
             # This keeps ordinary amendments operating inside an existing
             # letter-suffix chapter from being rewritten as moves.
-            and (
-                _body_has_pseudo_chapter_marker(muutos_tree, _replace_body_chapter)
-                or (
-                    master.find("chapter", _replace_body_chapter) is None
-                    and _body_has_real_chapter_container(muutos_tree, _replace_body_chapter)
-                )
-                or _replace_body_chapter in inserted_chapter_labels
-            )
+            and _replace_to_insert_trigger_evidence
         ):
+            rule_id = "LOWER.BODY_CHAPTER_REPLACE_TO_INSERT_MOVE"
+            replacement_ops = [
+                op
+                for op in effective_group_ops
+                if (
+                    op.target_unit_kind == "section"
+                    and _norm_num_token(op.target_section or "") == target_norm
+                    and op.target_chapter == target_chapter
+                    and op.op_type == "REPLACE"
+                )
+            ]
+            compile_findings += (
+                Finding(
+                    kind=rule_id,
+                    role="observation",
+                    stage="_compile_group",
+                    detail={
+                        "rule_id": rule_id,
+                        "phase": "lowering",
+                        "family": "action_family_recovery",
+                        "reason": "body_chapter_suffix_restructure_requires_move_bridge",
+                        "original_action": "REPLACE",
+                        "lowered_action": "INSERT",
+                        "target_unit_kind": target_unit_kind,
+                        "target_norm": target_norm,
+                        "target_chapter": target_chapter,
+                        "target_part": target_part or "",
+                        "body_chapter": _replace_body_chapter,
+                        "trigger_evidence": _replace_to_insert_trigger_evidence,
+                        "op_ids": tuple(str(op.op_id or "") for op in replacement_ops),
+                        "blocking": True,
+                        "strict_disposition": "block",
+                        "quirks_disposition": "record",
+                    },
+                    source_statute=next(
+                        (str(op.source_statute or "") for op in replacement_ops if op.source_statute),
+                        "",
+                    ),
+                    blocking=False,
+                ),
+            )
+            if (
+                strict_profile is not None
+                and not strict_profile.allows_context_dependent_anchor_resolution
+            ):
+                strict_failed_ops = [
+                    FailedOp.from_scope(
+                        amendment_id=str(op.source_statute or ""),
+                        description=op.description(),
+                        reason=(
+                            "section REPLACE was lowered to INSERT+MOVE because the amendment body "
+                            "placed the section under a new letter-suffix chapter"
+                        ),
+                        reason_code=rule_id,
+                        target_section=op.target_section or target_norm,
+                        target_unit_kind=op.target_unit_kind,
+                        target_chapter=target_chapter,
+                        target_part=target_part,
+                    )
+                    for op in replacement_ops
+                ]
+                compile_findings += tuple(
+                    Finding(
+                        kind="ELAB.REJECTED_OPERATION",
+                        role="observation",
+                        stage="_compile_group",
+                        detail={
+                            **failed.as_detail(),
+                            "message": "operation rejected before apply",
+                        },
+                        source_statute=failed.amendment_id,
+                        blocking=False,
+                    )
+                    for failed in strict_failed_ops
+                )
+                compile_findings += tuple(
+                    Finding(
+                        kind="ELAB.STRICT_REJECTED_OPERATION",
+                        role="obligation",
+                        stage="_compile_group",
+                        detail={
+                            **failed.as_detail(),
+                            "message": "operation rejected before apply",
+                        },
+                        source_statute=failed.amendment_id,
+                        blocking=True,
+                    )
+                    for failed in strict_failed_ops
+                )
+                return PhaseResult(
+                    output=[],
+                    findings=compile_findings,
+                )
             logger.debug(
                 "  body-chapter correction (REPLACE→INSERT+MOVE): %s chapter %s → %s",
                 target_norm, target_chapter, _replace_body_chapter,

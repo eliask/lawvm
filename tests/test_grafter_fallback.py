@@ -2294,6 +2294,193 @@ def test_compile_group_strict_profile_blocks_carry_forward_live_section_retarget
     )
 
 
+def test_compile_group_reports_body_chapter_replace_to_insert_move_recovery() -> None:
+    def _section(label: str, text: str = "") -> IRNode:
+        return IRNode(kind=IRNodeKind.SECTION, label=label, text=text)
+
+    def _chapter(label: str, *sections: IRNode) -> IRNode:
+        return IRNode(kind=IRNodeKind.CHAPTER, label=label, children=tuple(sections))
+
+    master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=(_chapter("7", _section("55", "live")),)))
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <hcontainer>
+              <section><num>7 c luku</num><heading>Ydinjätteiden tuonti ja vienti</heading></section>
+              <section><num>55 §</num><content><p>payload</p></content></section>
+            </hcontainer>
+          </body>
+        </act>
+        """
+    )
+    op = AmendmentOp(
+        op_id="replace55",
+        op_type="REPLACE",
+        target_section="55",
+        target_unit_kind="section",
+        target_chapter="7",
+        source_statute="1996/473",
+        lo=LegalOperation(
+            op_id="replace55",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("chapter", "7"), ("section", "55"))),
+            payload=None,
+        ),
+    )
+
+    result = _compile_group(
+        master,
+        "section",
+        "55",
+        "7",
+        None,
+        [op],
+        set(),
+        set(),
+        muutos_tree,
+        "",
+        get_replay_profile("legal_pit"),
+        None,
+        None,
+    )
+
+    assert len(result.output) == 1
+    rop = result.output[0]
+    assert rop.op.op_type == "INSERT"
+    assert rop.op.target_chapter == "7c"
+    assert rop.op.body_chapter_move_from == "7"
+    assert rop.op.lo is not None
+    assert rop.op.lo.action is StructuralAction.INSERT
+    finding = next(
+        finding
+        for finding in result.findings()
+        if finding.kind == "LOWER.BODY_CHAPTER_REPLACE_TO_INSERT_MOVE"
+    )
+    assert finding.detail["family"] == "action_family_recovery"
+    assert finding.detail["original_action"] == "REPLACE"
+    assert finding.detail["lowered_action"] == "INSERT"
+    assert finding.detail["body_chapter"] == "7c"
+    assert finding.detail["trigger_evidence"] == ("pseudo_chapter_marker",)
+    assert finding.detail["strict_disposition"] == "block"
+
+
+def test_compile_group_strict_rejects_body_chapter_replace_to_insert_move_recovery() -> None:
+    def _section(label: str, text: str = "") -> IRNode:
+        return IRNode(kind=IRNodeKind.SECTION, label=label, text=text)
+
+    def _chapter(label: str, *sections: IRNode) -> IRNode:
+        return IRNode(kind=IRNodeKind.CHAPTER, label=label, children=tuple(sections))
+
+    master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=(_chapter("7", _section("55", "live")),)))
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <hcontainer>
+              <section><num>7 c luku</num><heading>Ydinjätteiden tuonti ja vienti</heading></section>
+              <section><num>55 §</num><content><p>payload</p></content></section>
+            </hcontainer>
+          </body>
+        </act>
+        """
+    )
+    op = AmendmentOp(
+        op_id="replace55",
+        op_type="REPLACE",
+        target_section="55",
+        target_unit_kind="section",
+        target_chapter="7",
+        source_statute="1996/473",
+    )
+    strict_profile = StrictProfile(
+        name="strict",
+        allows_context_dependent_anchor_resolution=False,
+    )
+
+    result = _compile_group(
+        master,
+        "section",
+        "55",
+        "7",
+        None,
+        [op],
+        set(),
+        set(),
+        muutos_tree,
+        "",
+        get_replay_profile("legal_pit", strict_profile),
+        None,
+        strict_profile,
+    )
+
+    assert result.output == []
+    assert any(finding.kind == "LOWER.BODY_CHAPTER_REPLACE_TO_INSERT_MOVE" for finding in result.findings())
+    rejected = [
+        finding
+        for finding in result.findings()
+        if finding.kind == "ELAB.STRICT_REJECTED_OPERATION"
+    ]
+    assert any(
+        finding.detail["reason_code"] == "LOWER.BODY_CHAPTER_REPLACE_TO_INSERT_MOVE"
+        for finding in rejected
+    )
+
+
+def test_compile_group_does_not_report_body_chapter_move_for_same_chapter_replace() -> None:
+    def _section(label: str, text: str = "") -> IRNode:
+        return IRNode(kind=IRNodeKind.SECTION, label=label, text=text)
+
+    def _chapter(label: str, *sections: IRNode) -> IRNode:
+        return IRNode(kind=IRNodeKind.CHAPTER, label=label, children=tuple(sections))
+
+    master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=(_chapter("7", _section("55", "live")),)))
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <chapter>
+              <num>7 luku</num>
+              <section><num>55 §</num><content><p>payload</p></content></section>
+            </chapter>
+          </body>
+        </act>
+        """
+    )
+    op = AmendmentOp(
+        op_id="replace55",
+        op_type="REPLACE",
+        target_section="55",
+        target_unit_kind="section",
+        target_chapter="7",
+        source_statute="1996/473",
+    )
+
+    result = _compile_group(
+        master,
+        "section",
+        "55",
+        "7",
+        None,
+        [op],
+        set(),
+        set(),
+        muutos_tree,
+        "",
+        get_replay_profile("legal_pit"),
+        None,
+        None,
+    )
+
+    assert len(result.output) == 1
+    assert result.output[0].op.op_type == "REPLACE"
+    assert not any(
+        finding.kind == "LOWER.BODY_CHAPTER_REPLACE_TO_INSERT_MOVE"
+        for finding in result.findings()
+    )
+
+
 def test_compile_group_retargets_explicit_scope_rewrite_live_section_to_unique_current_chapter() -> None:
     def _section(label: str, text: str = "") -> IRNode:
         return IRNode(kind=IRNodeKind.SECTION, label=label, text=text)
