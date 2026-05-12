@@ -395,7 +395,6 @@ class UKStatuteIR:
             "metadata": self.metadata,
             "body": self.body.to_jsonable_dict(),
             "supplements": [s.to_jsonable_dict() for s in self.supplements],
-            "schedules": [s.to_jsonable_dict() for s in self.supplements],
         }
 
 
