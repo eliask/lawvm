@@ -2168,6 +2168,10 @@ def test_apply_no_ops_treats_missing_section_replace_as_insert() -> None:
     assert [(item.kind, item.detail["rule_id"]) for item in adjudications] == [
         ("no_replay_replace_recovered_by_insert", "no_replace_missing_section_insert")
     ]
+    assert adjudications[0].detail["family"] == "action_family_recovery"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
 
 
 def test_apply_no_ops_materializes_sentence_children_before_existing_items() -> None:
@@ -2880,6 +2884,10 @@ def test_apply_no_ops_collects_missing_target_adjudication() -> None:
     assert adjudications[0].detail["action"] == "replace"
     assert adjudications[0].detail["rule_id"] == "replay_unresolved_target"
     assert adjudications[0].detail["phase"] == "replay"
+    assert adjudications[0].detail["family"] == "unsupported_or_unresolved_action"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
     assert updated.body.children[0].label == "1"
 
 
@@ -2913,6 +2921,10 @@ def test_apply_no_ops_collects_noop_for_empty_target_path() -> None:
     assert adjudications[0].detail["action"] == "replace"
     assert adjudications[0].detail["rule_id"] == "replay_noop"
     assert adjudications[0].detail["phase"] == "replay"
+    assert adjudications[0].detail["family"] == "unsupported_or_unresolved_action"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
     assert updated.statute_id == "no/lov/2025-01-01-1"
 
 
