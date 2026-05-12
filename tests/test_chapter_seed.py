@@ -6,6 +6,7 @@ from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.finland.target_kind import TargetKind
 from lawvm.finland.chapter_seed import (
+    ChapterSeedDiagnostic,
     _chapters_in_gap,
     _chapter_missing_span_notice,
     _find_chapter_containers_with_omissions,
@@ -331,16 +332,60 @@ def test_seed_missing_chapters_seeds_textual_gap_notice() -> None:
             "1993/999": b'<akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0"><act><body/></act></akomaNtoso>',
         }
     )
+    diagnostics: list[ChapterSeedDiagnostic] = []
 
     updated, seeded = seed_missing_chapters(
         tree,
         ["1993/700", "1993/701", "1993/999"],
         cast(Any, corpus),
+        diagnostics_out=diagnostics,
     )
 
     chapters = [child for child in updated.children if child.kind == IRNodeKind.CHAPTER]
     assert [child.label for child in chapters] == ["6", "7", "8", "11"]
     assert seeded == {("7", "1993/700"), ("8", "1993/701")}
+    assert [diagnostic.rule_id for diagnostic in diagnostics] == [
+        "fi_chapter_seed_inserted_from_amendment_body",
+        "fi_chapter_seed_inserted_from_amendment_body",
+    ]
+    assert [(diagnostic.chapter_label, diagnostic.source_statute) for diagnostic in diagnostics] == [
+        ("7", "1993/700"),
+        ("8", "1993/701"),
+    ]
+    assert all(diagnostic.family == "ontology_normalization" for diagnostic in diagnostics)
+    assert all(diagnostic.phase == "payload_normalization" for diagnostic in diagnostics)
+    assert all(diagnostic.blocking is False for diagnostic in diagnostics)
+    assert all(diagnostic.strict_disposition == "block" for diagnostic in diagnostics)
+    assert all(diagnostic.quirks_disposition == "apply" for diagnostic in diagnostics)
     section32 = next(child for child in chapters[0].children if child.kind == IRNodeKind.SECTION)
     assert len(section32.children) == 1
     assert "Puuttuu luvut" not in str(section32.children[0].text or "")
+
+
+def test_seed_missing_chapters_records_source_scan_failures() -> None:
+    tree = _body(_chapter("1"), _omission(), _chapter("3"))
+    corpus = _FakeCorpus({"1993/bad": b"<akomaNtoso><broken></akomaNtoso>"})
+    diagnostics: list[ChapterSeedDiagnostic] = []
+
+    updated, seeded = seed_missing_chapters(
+        tree,
+        ["1993/missing", "1993/bad"],
+        cast(Any, corpus),
+        diagnostics_out=diagnostics,
+    )
+
+    assert updated is tree
+    assert seeded == set()
+    assert [diagnostic.rule_id for diagnostic in diagnostics] == [
+        "fi_chapter_seed_source_missing",
+        "fi_chapter_seed_source_xml_parse_failed",
+    ]
+    assert [diagnostic.source_statute for diagnostic in diagnostics] == [
+        "1993/missing",
+        "1993/bad",
+    ]
+    assert all(diagnostic.family == "source_pathology" for diagnostic in diagnostics)
+    assert all(diagnostic.phase == "acquisition" for diagnostic in diagnostics)
+    assert all(diagnostic.blocking is True for diagnostic in diagnostics)
+    assert all(diagnostic.strict_disposition == "block" for diagnostic in diagnostics)
+    assert diagnostics[0].as_detail()["rule_id"] == "fi_chapter_seed_source_missing"
