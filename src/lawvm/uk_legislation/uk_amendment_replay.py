@@ -3304,6 +3304,7 @@ class UKReplayPipeline:
         applicability_mode: str = "effective_date_plus_feed_applied",
         authority_mode: str = "current_mixed",
         authority_rejections_out: Optional[list[dict[str, Any]]] = None,
+        lowering_rejections_out: Optional[list[dict[str, Any]]] = None,
     ) -> list[LegalOperation]:
         """Compile IR ops for *affected_act_id*.
 
@@ -3378,6 +3379,7 @@ class UKReplayPipeline:
                     sequence_map=sequence_map,
                 )
 
+            structural_for_replay = e.is_structural_for_replay(applicability_mode=applicability_mode)
             compiled = compile_effect_to_ir_ops(
                 e,
                 el,
@@ -3385,6 +3387,23 @@ class UKReplayPipeline:
                 fallback_for_missing_extracted_source=(xml_bytes is None and allow_metadata_backfill),
             )
             if not compiled:
+                if structural_for_replay and lowering_rejections_out is not None:
+                    lowering_rejections_out.append(
+                        {
+                            "rule_id": "uk_effect_lowering_no_ops_rejected",
+                            "family": "lowering_filter",
+                            "phase": "lowering",
+                            "effect_id": e.effect_id,
+                            "affecting_act_id": e.affecting_act_id,
+                            "affected_provisions": e.affected_provisions,
+                            "affecting_provisions": e.affecting_provisions,
+                            "effect_type": e.effect_type,
+                            "reason": "UK structural effect lowered to no replay operations",
+                            "blocking": True,
+                            "strict_disposition": "block",
+                            "quirks_disposition": "record",
+                        }
+                    )
                 continue
             if authority_mode == "source_text_only":
                 rejected_ops: list[LegalOperation] = []
@@ -3433,7 +3452,6 @@ class UKReplayPipeline:
                 compiled = [op for op in compiled if _uk_op_allowed_by_authority_mode(op, authority_mode)[0]]
                 if not compiled:
                     continue
-            structural_for_replay = e.is_structural_for_replay(applicability_mode=applicability_mode)
             if structural_for_replay:
                 from lawvm.uk_legislation.source_adjudication import (
                     classify_uk_effect_source_pathology,
@@ -3454,6 +3472,24 @@ class UKReplayPipeline:
                 if source_pathology == "instruction_text_reused_as_payload" and any(
                     _action_name(op.action) in {"insert", "replace"} for op in compiled
                 ):
+                    if lowering_rejections_out is not None:
+                        lowering_rejections_out.append(
+                            {
+                                "rule_id": "uk_effect_instruction_text_payload_rejected",
+                                "family": "source_pathology_filter",
+                                "phase": "lowering",
+                                "effect_id": e.effect_id,
+                                "affecting_act_id": e.affecting_act_id,
+                                "affected_provisions": e.affected_provisions,
+                                "affecting_provisions": e.affecting_provisions,
+                                "effect_type": e.effect_type,
+                                "reason": "UK effect payload reused instruction text rather than source legal payload",
+                                "blocking": True,
+                                "strict_disposition": "block",
+                                "quirks_disposition": "record",
+                                "source_pathology": source_pathology,
+                            }
+                        )
                     continue
             if structural_for_replay or self._should_replay_nonstructural_ops(
                 e,
