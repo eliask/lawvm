@@ -359,6 +359,61 @@ class TestFromPhaseResult:
         assert payload["issues"][0]["phase"] == "timeline"
         assert payload["issues"][0]["strict_disposition"] == "block"
         assert payload["issues"][0]["quirks_disposition"] == "record"
+        projected = facade.compile_timeline_findings(base, base_date="2000-01-01")
+        assert len(projected) == 1
+        assert projected[0].kind == "TIME.TIMELINE_EXECUTION_ISSUE"
+        assert projected[0].role == "obligation"
+        assert projected[0].blocking is True
+        assert projected[0].detail["rule_id"] == "timeline.missing_replace_target"
+        assert projected[0].detail["strict_disposition"] == "block"
+        assert projection_rows_from_findings(projected)[0]["kind"] == "TIME.TIMELINE_EXECUTION_ISSUE"
+
+    def test_compile_timeline_findings_preserves_nonblocking_same_day_issue(self):
+        base = IRStatute(
+            statute_id="test/facade-same-day",
+            title="Facade same-day issue",
+            body=IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Base"),)),
+        )
+        target = LegalAddress(path=(("section", "1"),))
+        op = LegalOperation(
+            op_id="same-day-replace",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=target,
+            payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Updated"),
+            source=OperationSource(statute_id="2020/10", enacted="2020-01-01"),
+            group_id="g:facade-same-day",
+        )
+        temporal_events = (
+            TemporalEvent(
+                event_id="ev:facade-same-day-commence",
+                group_id="g:facade-same-day",
+                kind="commence",
+                effective="2020-01-01",
+                activation_rule=ActivationRule(kind="fixed_date", effective_date="2020-01-01"),
+                scope=TemporalScope(target_statute="test/facade-same-day"),
+            ),
+            TemporalEvent(
+                event_id="ev:facade-same-day-expire",
+                group_id="g:facade-same-day",
+                kind="expire",
+                expires="2020-01-01",
+                scope=TemporalScope(target_statute="test/facade-same-day"),
+            ),
+        )
+        facade = CompileFacade.from_phase_result(
+            _pr(output=CanonicalBundle(structural_ops=(op,), temporal_events=temporal_events)),
+            replay_mode="legal_pit",
+        )
+
+        projected = facade.compile_timeline_findings(base, base_date="2000-01-01")
+
+        assert len(projected) == 1
+        assert projected[0].kind == "TIME.EMPTY_SAME_DAY_INTERVAL"
+        assert projected[0].role == "observation"
+        assert projected[0].blocking is False
+        assert projected[0].detail["rule_id"] == "timeline.empty_same_day_interval"
+        assert projected[0].detail["strict_disposition"] == "record"
 
     def test_facade_compile_timelines_ex_preserves_unsupported_facet_target_issue(self):
         base = IRStatute(
@@ -967,6 +1022,11 @@ class TestFromPhaseResult:
         )
         assert payload["issues"][0]["rule_id"] == "timeline.missing_replace_payload"
         assert payload["issues"][0]["strict_disposition"] == "block"
+        projected = facade.materialize_pit_findings(base, "2021-01-01", base_date="2000-01-01")
+        assert len(projected) == 1
+        assert projected[0].kind == "TIME.TIMELINE_EXECUTION_ISSUE"
+        assert projected[0].blocking is True
+        assert projected[0].detail["rule_id"] == "timeline.missing_replace_payload"
 
     def test_output_string_raises_type_error(self):
         pr = _pr(output="not ops")

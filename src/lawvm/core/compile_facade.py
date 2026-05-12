@@ -201,6 +201,29 @@ class CompileFacade:
             temporal_events=self.bundle.temporal_events,
         )
 
+    def compile_timeline_findings(
+        self,
+        base: "IRStatute",
+        *,
+        base_date: str = "",
+        label_norm: Optional[Callable[[str], str]] = None,
+    ) -> tuple[Finding, ...]:
+        """Project timeline compilation issues into governed findings.
+
+        This is an explicit report/tool-boundary projection. It does not mutate
+        ``finding_ledger`` because timeline execution is a query over the bundle,
+        not part of the stored compile dossier.
+        """
+        from lawvm.core.timeline_results import timeline_issues_to_findings  # noqa: PLC0415
+
+        return timeline_issues_to_findings(
+            self.compile_timelines_ex(
+                base,
+                base_date=base_date,
+                label_norm=label_norm,
+            ).issues
+        )
+
     def materialize_pit_ex(
         self,
         base: "IRStatute",
@@ -244,6 +267,30 @@ class CompileFacade:
                 certificate=result.certificate,
             )
         return result
+
+    def materialize_pit_findings(
+        self,
+        base: "IRStatute",
+        as_of: str,
+        *,
+        base_date: str = "",
+        label_norm: Optional[Callable[[str], str]] = None,
+        query_type: Literal["governing", "in_force"] = "governing",
+        territory: Optional[str] = None,
+    ) -> tuple[Finding, ...]:
+        """Project PIT materialization issues into governed findings."""
+        from lawvm.core.timeline_results import timeline_issues_to_findings  # noqa: PLC0415
+
+        return timeline_issues_to_findings(
+            self.materialize_pit_ex(
+                base,
+                as_of,
+                base_date=base_date,
+                label_norm=label_norm,
+                query_type=query_type,
+                territory=territory,
+            ).issues
+        )
 
     def provision_lineage(
         self,

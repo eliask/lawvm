@@ -7,6 +7,7 @@ from typing import Literal, Optional
 
 from lawvm.contracts import ArtifactEnvelope, ProcessingStatus
 from lawvm.core.ir import IRStatute, LegalAddress, ProvisionTimeline
+from lawvm.core.phase_result import Finding, OBLIGATION_ROLE, OBSERVATION_ROLE
 from lawvm.core.provenance import MigrationEvent
 
 Timelines = dict[LegalAddress, ProvisionTimeline]
@@ -121,6 +122,36 @@ class TimelineIssue:
             "strict_disposition": self.strict_disposition,
             "quirks_disposition": self.quirks_disposition,
         }
+
+
+def timeline_issue_to_finding(issue: TimelineIssue) -> Finding:
+    """Project one timeline issue into the governed finding ledger shape.
+
+    Timeline issues are execution diagnostics, not compile-time findings stored
+    on ``CompileFacade``. Report/tool boundaries can use this projection when
+    they need one unified evidence surface.
+    """
+
+    if issue.kind == "empty_same_day_interval":
+        kind = "TIME.EMPTY_SAME_DAY_INTERVAL"
+        role = OBSERVATION_ROLE
+    else:
+        kind = "TIME.TIMELINE_EXECUTION_ISSUE"
+        role = OBLIGATION_ROLE
+    return Finding(
+        kind=kind,
+        role=role,
+        stage=issue.phase,
+        source_statute=issue.source_statute,
+        blocking=issue.blocking,
+        detail=issue.to_jsonable_dict(),
+    )
+
+
+def timeline_issues_to_findings(issues: tuple[TimelineIssue, ...]) -> tuple[Finding, ...]:
+    """Project timeline issues into findings, preserving issue order."""
+
+    return tuple(timeline_issue_to_finding(issue) for issue in issues)
 
 
 @dataclass(frozen=True)
