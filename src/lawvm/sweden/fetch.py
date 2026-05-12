@@ -761,7 +761,15 @@ def fetch_se_official_artifacts(
             selected_pdf_lane = "legacy_direct_guess"
     if not pdf_bytes:
         legacy_search_pdf_url = search_se_legacy_pdf_url(sfs_id)
-        if legacy_search_pdf_url:
+        if not legacy_search_pdf_url:
+            pdf_source_attempts.append(
+                {
+                    "lane": "legacy_search_result",
+                    "url": se_legacy_sfspdf_search_url(),
+                    "status": "no_result",
+                }
+            )
+        else:
             legacy_search_bytes = _se_archive_fetch(
                 archive, legacy_search_pdf_url, max_age_hours=max_age_hours, storage_class="pdf"
             )
@@ -805,6 +813,7 @@ def fetch_se_official_artifacts(
             reason="Sweden official SFS PDF artifact could not be located or fetched",
             doc_url=doc_url,
             pdf_url=pdf_url,
+            pdf_source_attempts=tuple(pdf_source_attempts),
         )
         return None
     if selected_pdf_lane not in {"", "official_doc_pdf_link", "explicit_pdf_url_override"}:
