@@ -1987,6 +1987,42 @@ def _append_se_official_lowering_adjudication(
     )
 
 
+def _append_se_official_plan_adjudication(
+    adjudications_out: list[CompileAdjudication] | None,
+    *,
+    plan: SEOfficialEffectsPlan,
+    source_id: str,
+    kind: str,
+    message: str,
+    rule_id: str,
+    phase: str,
+    blocking: bool,
+) -> None:
+    if adjudications_out is None:
+        return
+    adjudications_out.append(
+        CompileAdjudication(
+            kind=kind,
+            message=message,
+            source_statute=source_id or plan.sfs_id,
+            detail={
+                "rule_id": rule_id,
+                "phase": phase,
+                "family": "source_pathology",
+                "blocking": blocking,
+                "strict_disposition": "block" if blocking else "record",
+                "quirks_disposition": "record",
+                "sfs_id": plan.sfs_id,
+                "amended_act_sfs_id": plan.amended_act_sfs_id,
+                "is_amending_act": plan.is_amending_act,
+                "frontier_classification": plan.frontier_classification,
+                "frontier_detail": plan.frontier_detail,
+                "planned_operation_count": plan.planned_operation_count,
+            },
+        )
+    )
+
+
 def _lower_se_official_effect_plan_item(
     plan: SEOfficialEffectsPlan,
     item: SEOfficialEffectPlanItem,
@@ -2426,10 +2462,30 @@ def _lower_se_official_effects_plan(
     """Lower a typed Sweden canonical-effects plan into canonical operations."""
     intent = plan.elaboration
     if intent is None:
+        _append_se_official_plan_adjudication(
+            adjudications_out,
+            plan=plan,
+            source_id=source_id,
+            kind="se_official_effect_plan_missing_elaboration",
+            message="Sweden official effect plan skipped: elaboration missing.",
+            rule_id="se_official_effect_plan_missing_elaboration",
+            phase="elaboration",
+            blocking=True,
+        )
         return []
     surface = intent.clause_surface
     sid = source_id or surface.sfs_id
     if not surface.is_amending_act:
+        _append_se_official_plan_adjudication(
+            adjudications_out,
+            plan=plan,
+            source_id=sid,
+            kind="se_official_non_amending_act_ops_skipped",
+            message="Sweden official op lowering skipped non-amending act.",
+            rule_id="se_official_non_amending_act_ops_skipped",
+            phase="lowering",
+            blocking=False,
+        )
         return []
     if not surface.amended_act_sfs_id:
         raise NotImplementedError(
