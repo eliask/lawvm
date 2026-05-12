@@ -1608,6 +1608,105 @@ def test_compile_empty_effect_type_does_not_infer_range_from_word_fragments() ->
     assert compile_effect_to_ir_ops(effect, extracted_el, sequence=0) == []
 
 
+def test_compile_empty_effect_type_records_no_supported_action_rejection() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>c</Pnumber>
+          <P3para>section 63 (deduction of trade union subscriptions from wages in public sector);</P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_no_supported_action_rejection",
+        effect_type="",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2025/36",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2025",
+        affected_number="36",
+        affected_provisions="s. 63",
+        affecting_uri="/id/uksi/2025/1",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="art. 2(c)",
+        affecting_title="Test Commencement Order",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_lowering_no_supported_action_rejected"
+    assert rejection["family"] == "unsupported_or_unresolved_action"
+    assert rejection["phase"] == "lowering"
+    assert rejection["effect_id"] == "uk_test_no_supported_action_rejection"
+    assert rejection["reason_code"] == "no_supported_action"
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+    assert rejection["quirks_disposition"] == "record"
+    assert rejection["extracted_tag"] == "P3"
+    assert rejection["has_extracted_source"] is True
+    assert "trade union subscriptions" in rejection["extracted_text_preview"]
+
+
+def test_compile_structural_effect_records_no_targets_rejection() -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_no_targets_rejection",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2025/36",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2025",
+        affected_number="36",
+        affected_provisions="",
+        affecting_uri="/id/uksi/2025/1",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="art. 2(c)",
+        affecting_title="Test Commencement Order",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            None,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_lowering_no_targets_rejected"
+    assert rejection["family"] == "target_resolution_recovery"
+    assert rejection["phase"] == "lowering"
+    assert rejection["effect_id"] == "uk_test_no_targets_rejection"
+    assert rejection["reason_code"] == "no_affected_targets"
+    assert rejection["affected_provisions"] == ""
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+    assert rejection["quirks_disposition"] == "record"
+    assert rejection["has_extracted_source"] is False
+
+
 def test_compile_plain_text_schedule_sibling_omission_expands_targets() -> None:
     extracted_el = ET.fromstring(
         f"""

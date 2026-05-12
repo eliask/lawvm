@@ -335,6 +335,47 @@ def _append_uk_replay_adjudication(
     )
 
 
+def _append_uk_effect_lowering_rejection(
+    rejections_out: Optional[list[dict[str, Any]]],
+    *,
+    rule_id: str,
+    family: str,
+    reason_code: str,
+    reason: str,
+    effect: "UKEffectRecord",
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    detail: Optional[dict[str, Any]] = None,
+) -> None:
+    """Append a phase-local UK effect lowering rejection when requested."""
+    if rejections_out is None:
+        return
+    extracted_tag = ""
+    if extracted_el is not None:
+        extracted_tag = extracted_el.tag.rsplit("}", 1)[-1]
+    payload: dict[str, Any] = {
+        "rule_id": rule_id,
+        "family": family,
+        "phase": "lowering",
+        "effect_id": effect.effect_id,
+        "affecting_act_id": effect.affecting_act_id,
+        "affected_provisions": effect.affected_provisions,
+        "affecting_provisions": effect.affecting_provisions,
+        "effect_type": effect.effect_type,
+        "reason": reason,
+        "reason_code": reason_code,
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+        "extracted_tag": extracted_tag,
+        "has_extracted_source": extracted_el is not None,
+    }
+    if extracted_text:
+        payload["extracted_text_preview"] = " ".join(extracted_text.split())[:500]
+    payload.update(detail or {})
+    rejections_out.append(payload)
+
+
 def _uk_adjudication_from_finding(finding: Finding) -> CompileAdjudication:
     """Project replay-lint findings into the UK replay compatibility bag."""
     detail = dict(finding.detail)
@@ -2775,6 +2816,7 @@ def compile_effect_to_ir_ops(
     extracted_el: Optional[ET.Element],
     sequence: int = 0,
     fallback_for_missing_extracted_source: bool = False,
+    lowering_rejections_out: Optional[list[dict[str, Any]]] = None,
 ) -> list[LegalOperation]:
     """Compile a UKEffectRecord + XML element into LawVM LegalOperations.
 
@@ -2852,6 +2894,20 @@ def compile_effect_to_ir_ops(
         # No else — leave action=None so we fall through to the early return below.
 
     if not action:
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_lowering_no_supported_action_rejected",
+            family="unsupported_or_unresolved_action",
+            reason_code="no_supported_action",
+            reason=(
+                "UK effect lowered to no replay operations because no supported "
+                "action could be inferred"
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={"effect_type_normalized": effect_type},
+        )
         return []
 
     use_metadata_fallback = fallback_for_missing_extracted_source and extracted_el is None and action == "insert"
@@ -2896,6 +2952,20 @@ def compile_effect_to_ir_ops(
         if expanded_targets:
             targets_str = expanded_targets
     if not targets_str:
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_lowering_no_targets_rejected",
+            family="target_resolution_recovery",
+            reason_code="no_affected_targets",
+            reason=(
+                "UK effect lowered to no replay operations because affected "
+                "provisions produced no target candidates"
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={"original_affected_provisions": effect.affected_provisions},
+        )
         return []
 
     ops = []
@@ -3504,14 +3574,26 @@ class UKReplayPipeline:
                 )
 
             structural_for_replay = e.is_structural_for_replay(applicability_mode=applicability_mode)
+            lowering_rejection_count_before = (
+                len(lowering_rejections_out) if lowering_rejections_out is not None else 0
+            )
             compiled = compile_effect_to_ir_ops(
                 e,
                 el,
                 sequence=i,
                 fallback_for_missing_extracted_source=(xml_bytes is None and allow_metadata_backfill),
+                lowering_rejections_out=lowering_rejections_out,
+            )
+            compile_recorded_lowering_rejection = (
+                lowering_rejections_out is not None
+                and len(lowering_rejections_out) > lowering_rejection_count_before
             )
             if not compiled:
-                if structural_for_replay and lowering_rejections_out is not None:
+                if (
+                    structural_for_replay
+                    and lowering_rejections_out is not None
+                    and not compile_recorded_lowering_rejection
+                ):
                     lowering_rejections_out.append(
                         {
                             "rule_id": "uk_effect_lowering_no_ops_rejected",
@@ -3528,7 +3610,11 @@ class UKReplayPipeline:
                             "quirks_disposition": "record",
                         }
                     )
-                if not structural_for_replay and lowering_rejections_out is not None:
+                if (
+                    not structural_for_replay
+                    and lowering_rejections_out is not None
+                    and not compile_recorded_lowering_rejection
+                ):
                     nonstructural_candidate_family = self._nonstructural_replay_candidate_family(
                         e,
                         applicability_mode=applicability_mode,
