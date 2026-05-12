@@ -48,11 +48,13 @@ def test_release_scripts_have_valid_shell_syntax() -> None:
 
 
 def test_canonical_ci_validates_pytest_shard_ownership() -> None:
-    script = Path("scripts/ci.sh").read_text(encoding="utf-8")
+    canonical = Path("scripts/ci.sh").read_text(encoding="utf-8")
+    sharded = Path("scripts/ci_sharded.sh").read_text(encoding="utf-8")
 
-    assert "./scripts/test_shard.sh validate" in script
-    assert "scripts/test_shard.py" in script
-    assert "FAIL: pytest shard ownership is invalid." in script
+    assert 'exec ./scripts/ci_sharded.sh "$@"' in canonical
+    assert "./scripts/test_shard.sh validate" in sharded
+    assert "scripts/test_shard.py" in sharded
+    assert "FAIL: pytest shard ownership is invalid." in sharded
 
 
 def test_sharded_ci_supports_affected_path_selection() -> None:
