@@ -5,7 +5,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Tuple
 
-from lawvm.open_law.models import OpenLawAction, OpenLawOperation
+from lawvm.open_law.models import OpenLawAction, OpenLawFinding, OpenLawOperation
 from lawvm.open_law.xml import OPEN_LAW_CODIFY_NS, convert_open_law_element
 
 _LIBRARY_STRUCTURAL_PAYLOAD_TAGS = frozenset({"container", "section", "para", "text", "heading", "annotations"})
@@ -25,11 +25,24 @@ def parse_open_law_codify_ops(xml_text: str, *, source_id: str = "") -> Tuple[Op
         action = _action_from_local(local)
         path = _parse_path(element.attrib.get("path", ""))
         op_source_id = source_id or root.attrib.get("id", "")
-        payload_element = _payload_element(element)
+        op_id = f"{op_source_id or 'open-law'}:{sequence}"
+        payload_elements = _payload_elements(element)
+        diagnostics: tuple[OpenLawFinding, ...] = ()
+        if len(payload_elements) > 1:
+            diagnostics = (
+                OpenLawFinding(
+                    kind="open_law_codify_multiple_payload_children",
+                    message="Open Law codify operation has multiple structural payload children; replay refuses to drop unclaimed siblings.",
+                    op_id=op_id,
+                    path=path,
+                    blocking=True,
+                ),
+            )
+        payload_element = payload_elements[0] if len(payload_elements) == 1 else None
         payload = convert_open_law_element(payload_element) if payload_element is not None else None
         out.append(
             OpenLawOperation(
-                op_id=f"{op_source_id or 'open-law'}:{sequence}",
+                op_id=op_id,
                 sequence=sequence,
                 action=action,
                 doc=element.attrib.get("doc", ""),
@@ -41,6 +54,7 @@ def parse_open_law_codify_ops(xml_text: str, *, source_id: str = "") -> Tuple[Op
                 applicability=element.attrib.get("applicability", ""),
                 payload=payload,
                 raw_action=local,
+                diagnostics=diagnostics,
             )
         )
         sequence += 1
@@ -66,13 +80,19 @@ def _parse_bool(value: str) -> bool:
 
 
 def _payload_element(element: ET.Element) -> ET.Element | None:
+    payload_elements = _payload_elements(element)
+    return payload_elements[0] if payload_elements else None
+
+
+def _payload_elements(element: ET.Element) -> tuple[ET.Element, ...]:
+    out: list[ET.Element] = []
     for child in list(element):
         namespace, local = _split_tag(child.tag)
         if namespace == OPEN_LAW_CODIFY_NS:
             continue
         if local in _LIBRARY_STRUCTURAL_PAYLOAD_TAGS:
-            return child
-    return None
+            out.append(child)
+    return tuple(out)
 
 
 def _first_descendant_text(element: ET.Element, local_name: str) -> str:

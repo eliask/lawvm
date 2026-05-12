@@ -103,6 +103,25 @@ def test_parse_codify_replace_operation() -> None:
     assert op.payload.label == ".04"
 
 
+def test_parse_codify_multiple_payload_children_records_blocking_diagnostic() -> None:
+    ops = parse_open_law_codify_ops(
+        """
+        <document xmlns="https://open.law/schemas/library" xmlns:codify="https://open.law/schemas/codify">
+          <codify:replace doc="Code of Maryland Regulations" path="10|41|02|.04">
+            <heading>First payload</heading>
+            <section><num>.04</num><text>Second payload.</text></section>
+          </codify:replace>
+        </document>
+        """,
+        source_id="editorial-actions/multiple-payload.xml",
+    )
+
+    op = ops[0]
+    assert op.payload is None
+    assert [finding.kind for finding in op.diagnostics] == ["open_law_codify_multiple_payload_children"]
+    assert op.diagnostics[0].blocking is True
+
+
 def test_parse_codify_expire_preserves_expire_date() -> None:
     ops = parse_open_law_codify_ops(
         """
@@ -142,6 +161,25 @@ def test_replay_missing_target_emits_blocking_finding_without_mutation() -> None
     assert result.tree == tree
     assert not result.mutations
     assert [finding.kind for finding in result.findings] == ["open_law_target_missing"]
+    assert result.findings[0].blocking is True
+
+
+def test_replay_multiple_payload_children_diagnostic_blocks_mutation() -> None:
+    tree = parse_open_law_xml(_BASE_XML)
+    ops = parse_open_law_codify_ops(
+        _REPLACE_XML.replace(
+            "</section>",
+            "</section><section><num>.05</num><text>Unclaimed sibling.</text></section>",
+            1,
+        ),
+        source_id="editorial-actions/multiple-payload.xml",
+    )
+
+    result = replay_open_law_ops(tree, ops)
+
+    assert result.tree == tree
+    assert not result.mutations
+    assert [finding.kind for finding in result.findings] == ["open_law_codify_multiple_payload_children"]
     assert result.findings[0].blocking is True
 
 

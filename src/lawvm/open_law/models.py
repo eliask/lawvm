@@ -37,6 +37,7 @@ class OpenLawOperation:
     applicability: str = ""
     payload: IRNode | None = None
     raw_action: str = ""
+    diagnostics: Tuple["OpenLawFinding", ...] = ()
 
 
 @dataclass(frozen=True)
