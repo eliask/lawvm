@@ -9,6 +9,7 @@ from typing import Any, Optional, cast
 
 from lawvm.norway.grafter import iter_no_document_change_ops, lovdata_amendment_filename_to_id
 from lawvm.norway.sources import (
+    NOLocatedArtifact,
     effective_date_from_amendment,
     iter_no_amendment_artifacts,
     no_source_metadata,
@@ -38,6 +39,7 @@ class NOAmendmentIndex:
     archive_names: list[str] = field(default_factory=list)
     archive_metadata: dict[str, dict[str, int | str]] = field(default_factory=dict)
     entries: list[NOAmendmentIndexEntry] = field(default_factory=list)
+    diagnostics: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -47,6 +49,7 @@ class NOAmendmentIndex:
             "archive_names": list(self.archive_names),
             "archive_metadata": self.archive_metadata,
             "entries": [asdict(entry) for entry in self.entries],
+            "diagnostics": list(self.diagnostics),
         }
 
     @classmethod
@@ -69,6 +72,7 @@ class NOAmendmentIndex:
         ]
         archive_names = [str(item) for item in data.get("archive_names", [])]
         archive_metadata = data.get("archive_metadata", {})
+        raw_diagnostics = data.get("diagnostics", [])
         return cls(
             data_dir=str(data.get("data_dir", "")),
             source_kind=str(data.get("source_kind", "dir")),
@@ -79,6 +83,7 @@ class NOAmendmentIndex:
                 if isinstance(key, str) and isinstance(value, dict)
             },
             entries=entries,
+            diagnostics=[dict(item) for item in raw_diagnostics if isinstance(item, dict)],
         )
 
     def entries_for_base(self, base_id: str) -> list[NOAmendmentIndexEntry]:
@@ -175,6 +180,14 @@ def build_no_amendment_index(data_dir: Optional[Path] = None) -> NOAmendmentInde
             continue
         grouped = iter_no_document_change_ops(artifact.payload, source_id)
         if not grouped:
+            index.diagnostics.append(
+                _no_index_skipped_artifact_diagnostic(
+                    rule_id="no_amendment_index_no_change_ops",
+                    artifact=artifact,
+                    reason="Norway amendment artifact did not yield document-change operations",
+                    phase="extraction",
+                )
+            )
             continue
         effective = effective_date_from_amendment(
             artifact.payload,
@@ -196,6 +209,28 @@ def build_no_amendment_index(data_dir: Optional[Path] = None) -> NOAmendmentInde
 
     index.entries.sort(key=lambda entry: (entry.source_id, entry.archive, entry.member_name))
     return index
+
+
+def _no_index_skipped_artifact_diagnostic(
+    *,
+    rule_id: str,
+    artifact: NOLocatedArtifact,
+    reason: str,
+    phase: str,
+) -> dict[str, Any]:
+    return {
+        "rule_id": rule_id,
+        "family": "source_pathology",
+        "phase": phase,
+        "reason": reason,
+        "source_id": artifact.logical_id,
+        "locator": artifact.locator,
+        "archive": artifact.source_name,
+        "member_name": artifact.member_name,
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+    }
 
 
 def load_no_amendment_index(path: Path) -> NOAmendmentIndex:
