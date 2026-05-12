@@ -36,7 +36,10 @@ def _normalize_wording_for_diff(text: str) -> str:
     Normalizes:
     - Unicode dash variants → ASCII hyphen (em-dash, en-dash, etc. are equivalent)
     - Space around § signs (5§:ssä vs 5 §:ssä)
+    - Presentation spaces in § inflection suffixes and numeric citations
+      (40 §: n vs 40 §:n, 216/ 69 vs 216/69)
     - Quote mark variants (curly quotes → ASCII quotes)
+    - Degree-sign presentation variants after digits (20 o C vs 20°C)
     - Trailing whitespace before punctuation (artifact of some serializers)
     - Space before/after hyphens in compounds (EU -asianajaja → EU-asianajaja)
     - Line-break hyphenation artifacts (jalostuskel-poisiksi → jalostuskelpoisiksi).
@@ -48,9 +51,15 @@ def _normalize_wording_for_diff(text: str) -> str:
     """
     text = _DASH_VARIANTS_RE.sub("-", text)
     text = re.sub(r"\s*§\s*", " § ", text)
+    text = re.sub(r"§\s*:\s+([A-Za-zÅÄÖåäö]+)", r"§:\1", text)
+    text = re.sub(r"(?<=\d)\s*/\s*(?=\d)", "/", text)
+    text = re.sub(r"(?<=\d)\s*[oº˚°]\s*C\b", "°C", text)
     text = re.sub(r'[\u201c\u201d\u201e\u201f\u2033\u2036]', '"', text)  # curly/fancy → ASCII "
     text = re.sub(r"[\u2018\u2019\u201a\u201b\u2032\u2035]", "'", text)  # curly single → ASCII '
+    text = text.replace("''", '"')
     text = re.sub(r"\s+([.,;:)])", r"\1", text)
+    text = re.sub(r"§:\s+([A-Za-zÅÄÖåäö]+)", r"§:\1", text)
+    text = re.sub(r"(\w)\s+-\s+(\w)", r"\1-\2", text)  # "EU - asianajaja" → "EU-asianajaja"
     text = re.sub(r"(\w)\s+-(\w)", r"\1-\2", text)  # "EU -asianajaja" → "EU-asianajaja"
     text = re.sub(r"(\w)-\s+(\w)", r"\1-\2", text)  # "2- kohdassa" → "2-kohdassa"
     text = re.sub(r"(\w)-(\w)", r"\1\2", text)
