@@ -5,6 +5,7 @@ import json
 import tarfile
 from argparse import Namespace
 from pathlib import Path
+from types import SimpleNamespace
 
 from lawvm.tools.no_commencement_report import main as no_commencement_report_main
 from lawvm.tools.no_commencement_candidates import main as no_commencement_candidates_main
@@ -22,6 +23,7 @@ from lawvm.tools.no_verify import main as no_verify_main
 from lawvm.tools.no_verify_partition import main as no_verify_partition_main
 from lawvm.tools.no_verify_scan import main as no_verify_scan_main
 from lawvm.tools.no_verify_workqueue import main as no_verify_workqueue_main
+from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.tools.no_workqueue import main as no_workqueue_main
 from lawvm.norway.commencement import (
     build_no_commencement_backfill_artifact,
@@ -2209,6 +2211,65 @@ def test_no_verify_tool_emits_json(tmp_path, capsys) -> None:
 
     assert data["base_id"] == "no/lov/2025-01-01-1"
     assert data["consistent"] is True
+
+
+def test_no_verify_tool_preserves_replay_adjudication_evidence(monkeypatch, capsys) -> None:
+    adjudication = CompileAdjudication(
+        kind="no_replay_missing_amendment_source",
+        message="Norway replay skipped amendment: source not found.",
+        source_statute="no/lovtid/2025-02-02-5",
+        op_id="no-op-1",
+        detail={
+            "rule_id": "no.replay.missing_amendment_source",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        },
+    )
+    monkeypatch.setattr(
+        "lawvm.norway.verify.verify_no_against_current",
+        lambda *args, **kwargs: SimpleNamespace(
+            base_id="no/lov/2025-01-01-1",
+            as_of="2025-02-15",
+            current_title="Demo",
+            replay_status="blocked_missing_source",
+            consistent=False,
+            divergence_count=0,
+            divergence_counts={},
+            raw_divergence_count=0,
+            raw_divergence_counts={},
+            indexed_amendment_count=1,
+            applied_amendment_count=0,
+            replay_op_count=0,
+            source_signal="sparse_indexed_history",
+            replay=SimpleNamespace(adjudications=[adjudication]),
+            error="",
+            divergences=None,
+        ),
+    )
+    args = Namespace(
+        base_id="no/lov/2025-01-01-1",
+        as_of="2025-02-15",
+        data_dir=None,
+        index=None,
+        commencement=None,
+        verbose=False,
+        json=True,
+    )
+
+    no_verify_main(args)
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["replay_adjudication_count"] == 1
+    assert data["replay_adjudication_kind_counts"] == {"no_replay_missing_amendment_source": 1}
+    assert data["replay_adjudications"][0]["source_statute"] == "no/lovtid/2025-02-02-5"
+    row = data["evidence"]["finding_rows"][0]
+    assert row["family"] == "no_replay_missing_amendment_source"
+    assert row["rule_id"] == "no.replay.missing_amendment_source"
+    assert row["source_artifact_id"] == "no/lovtid/2025-02-02-5"
+    assert row["source_unit_id"] == "no-op-1"
+    assert row["blocking"] is True
+    assert row["strict_disposition"] == "block"
 
 
 def test_no_verify_scan_tool_emits_json(tmp_path, capsys) -> None:

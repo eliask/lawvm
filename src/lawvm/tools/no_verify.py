@@ -10,6 +10,10 @@ if TYPE_CHECKING:
 
 
 def main(args: "argparse.Namespace") -> None:
+    from lawvm.core.adjudication_evidence import (
+        adjudication_finding_evidence_rows,
+        adjudication_kind_counts,
+    )
     from lawvm.norway.verify import verify_no_against_current
 
     data_dir_arg = getattr(args, "data_dir", None)
@@ -26,6 +30,14 @@ def main(args: "argparse.Namespace") -> None:
         index_path=index_path,
         commencement_path=commencement_path,
     )
+    replay = result.replay
+    adjudications = list(getattr(replay, "adjudications", []) or [])
+    finding_rows = adjudication_finding_evidence_rows(
+        adjudications,
+        frontend_id="norway",
+        base_id=result.base_id,
+        as_of=result.as_of,
+    )
 
     payload: dict[str, object] = {
         "base_id": result.base_id,
@@ -41,6 +53,21 @@ def main(args: "argparse.Namespace") -> None:
         "applied_amendment_count": result.applied_amendment_count,
         "replay_op_count": result.replay_op_count,
         "source_signal": result.source_signal or "",
+        "replay_adjudication_count": len(adjudications),
+        "replay_adjudication_kind_counts": adjudication_kind_counts(adjudications),
+        "replay_adjudications": [
+            {
+                "kind": adjudication.kind,
+                "message": adjudication.message,
+                "source_statute": adjudication.source_statute,
+                "op_id": adjudication.op_id,
+                "detail": dict(adjudication.detail),
+            }
+            for adjudication in adjudications
+        ],
+        "evidence": {
+            "finding_rows": [row.to_dict() for row in finding_rows],
+        },
         "error": result.error or "",
     }
     if getattr(args, "verbose", False) and result.divergences is not None:
@@ -82,6 +109,8 @@ def main(args: "argparse.Namespace") -> None:
     )
     if payload["source_signal"]:
         print(f"  source signal   : {payload['source_signal']}")
+    if payload["replay_adjudication_count"]:
+        print(f"  adjudications   : {payload['replay_adjudication_count']}")
     if payload["divergence_counts"]:
         print(
             "  by type         : "
