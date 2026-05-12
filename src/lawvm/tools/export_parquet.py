@@ -33,6 +33,9 @@ warnings.filterwarnings("ignore", message=".*out-of-order.*")
 warnings.filterwarnings("ignore", message=".*duplicate.*label.*")
 
 
+SECTION_DIFF_FAILED_RULE_ID = "tool_export_projection_section_diff_failed"
+
+
 # ---------------------------------------------------------------------------
 # Corpus loading (same logic as bench.py)
 # ---------------------------------------------------------------------------
@@ -64,6 +67,29 @@ def _load_corpus(corpus_path: str) -> List[Tuple[int, str]]:
             continue
         result.append((count, sid))
     return result
+
+
+def _section_diff_failed_finding(statute_id: str, exc: Exception) -> Dict[str, Any]:
+    """Diagnostic row for section projection failures.
+
+    Export projection is a reporting phase: a section diff failure should not
+    block statute-level rows, but it must remain visible in the findings table.
+    """
+    return {
+        "statute_id": statute_id,
+        "claim_kind": SECTION_DIFF_FAILED_RULE_ID,
+        "claim_rule": "EXPORT.SECTION_DIFF_FAILED",
+        "section_key": "",
+        "severity": "warning",
+        "detail": str(exc),
+        "rule_id": SECTION_DIFF_FAILED_RULE_ID,
+        "phase": "projection",
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+        "status": "section_diff_failed",
+        "error_type": type(exc).__name__,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -215,8 +241,10 @@ def _project_one_statute(
             })
     except (NameError, TypeError, AttributeError):
         raise
-    except Exception:
-        pass  # Section diffs may fail for some statutes — still emit statute row
+    except Exception as exc:
+        # Section diffs may fail for some statutes; keep the statute row, but
+        # do not let the projection failure disappear from the diagnostic lane.
+        result["findings"].append(_section_diff_failed_finding(statute_id, exc))
 
     # --- Diff kind summary ---
     diff_kind_summary = ", ".join(
