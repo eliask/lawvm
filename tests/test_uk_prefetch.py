@@ -77,10 +77,17 @@ def test_fetch_missing_for_statute_marks_404_as_missing_marker(monkeypatch) -> N
 
     monkeypatch.setattr(uk_prefetch.urllib.request, "urlopen", _raise_404)
 
-    fetched, cached, errors = uk_prefetch.fetch_missing_for_statute(sid, archive, delay=0.0)
+    first_report = uk_prefetch.fetch_missing_for_statute(sid, archive, delay=0.0)
+    fetched, cached, errors = first_report
 
     assert (fetched, cached, errors) == (0, 1, 0)
     assert archive.has(miss)
+    assert first_report.events[0]["rule_id"] == "uk_prefetch_affecting_act_permanent_missing"
+    assert first_report.events[0]["reason"] == "http_404"
+    report = uk_prefetch.fetch_missing_for_statute(sid, archive, delay=0.0)
+    assert report.events[0]["rule_id"] == "uk_prefetch_permanent_missing_marker_skipped"
+    assert report.events[0]["affecting_act_id"] == act_id
+    assert report.events[0]["blocking"] is False
 
 
 def test_fetch_missing_for_statute_marks_410_as_missing_marker(monkeypatch) -> None:
@@ -108,3 +115,46 @@ def test_fetch_missing_for_statute_marks_410_as_missing_marker(monkeypatch) -> N
 
     assert (fetched, cached, errors) == (0, 1, 0)
     assert archive.has(miss)
+
+
+def test_fetch_missing_for_statute_records_http_error_event(monkeypatch) -> None:
+    sid = "ukpga/2010/1"
+    act_id = "ukpga/1995/13"
+    archive = _FakeArchive()
+
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        lambda _sid, _archive: _make_structural_effects(act_id),
+    )
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.uk_amendment_replay.get_affecting_act_xml_from_archive",
+        lambda _act_id, _archive: None,
+    )
+    monkeypatch.setattr(uk_prefetch.time, "sleep", lambda _secs: None)
+
+    def _raise_500(_req, timeout=30):
+        raise HTTPError(_req.full_url, 500, "server error", Message(), io.BytesIO(b""))
+
+    monkeypatch.setattr(uk_prefetch.urllib.request, "urlopen", _raise_500)
+
+    report = uk_prefetch.fetch_missing_for_statute(sid, archive, delay=0.0)
+    fetched, cached, errors = report
+
+    assert (fetched, cached, errors) == (0, 0, 1)
+    assert report.to_dict()["error_count"] == 1
+    assert report.events == (
+        {
+            "rule_id": "uk_prefetch_http_error",
+            "phase": "acquisition",
+            "family": "source_pathology",
+            "statute_id": sid,
+            "affecting_act_id": act_id,
+            "locator": uk_prefetch._missing_affecting_locator(act_id),
+            "url": "https://www.legislation.gov.uk/ukpga/1995/13/data.xml",
+            "status": "error",
+            "reason": "http_500",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        },
+    )

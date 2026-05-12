@@ -3486,6 +3486,7 @@ class UKReplayPipeline:
         for op in _prepare_replay_uk_ops(
             ops,
             verbose=verbose,
+            adjudications_out=adjudications_out,
         ):
             executor.apply_op(op)
         return executor.statute.to_irstatute()
