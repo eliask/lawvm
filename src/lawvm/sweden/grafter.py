@@ -2488,11 +2488,31 @@ def _lower_se_official_effects_plan(
         )
         return []
     if not surface.amended_act_sfs_id:
+        _append_se_official_plan_adjudication(
+            adjudications_out,
+            plan=plan,
+            source_id=sid,
+            kind="se_official_effect_plan_unsupported",
+            message="Sweden official effect plan skipped: base act missing.",
+            rule_id="se_official_effect_plan_missing_base_act",
+            phase="lowering",
+            blocking=True,
+        )
         raise NotImplementedError(
             f"Sweden official act {sid} does not identify a base act "
             f"[{plan.frontier_classification or 'missing_base_act'}]"
         )
     if not plan.planned_items:
+        _append_se_official_plan_adjudication(
+            adjudications_out,
+            plan=plan,
+            source_id=sid,
+            kind="se_official_effect_plan_unsupported",
+            message="Sweden official effect plan skipped: no planned canonical effects.",
+            rule_id="se_official_effect_plan_unsupported",
+            phase="lowering",
+            blocking=True,
+        )
         raise NotImplementedError(
             f"Sweden official act {sid} has no planned canonical effects "
             f"[{plan.frontier_classification or 'empty_effect_plan_without_targets'}]"

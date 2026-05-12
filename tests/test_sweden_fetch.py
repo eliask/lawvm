@@ -40,6 +40,7 @@ from lawvm.sweden.fetch import (
     load_se_current_ir_from_archive,
     load_se_backfill_official_history_from_archive,
     load_se_official_act_from_archive,
+    load_se_official_ops_adjudications_from_archive,
     load_se_official_clause_surface_from_archive,
     load_se_official_elaboration_from_archive,
     load_se_official_effects_plan_from_archive,
@@ -58,6 +59,7 @@ from lawvm.sweden.fetch import (
     se_official_elaboration_locator,
     se_official_effects_plan_locator,
     se_official_ops_locator,
+    se_official_ops_adjudications_locator,
     se_official_payload_surface_locator,
     se_rk_current_url,
     se_bundle_manifest_locator,
@@ -1469,13 +1471,57 @@ def test_compile_se_official_ops_to_archive_stores_json_array() -> None:
     assert se_official_elaboration_locator("2026:286") in archive.stored
     assert se_official_effects_plan_locator("2026:286") in archive.stored
     assert se_official_ops_locator("2026:286") in archive.stored
+    assert se_official_ops_adjudications_locator("2026:286") in archive.stored
     assert load_se_official_clause_surface_from_archive(archive, "2026:286") is not None
     assert load_se_official_payload_surface_from_archive(archive, "2026:286") is not None
     assert load_se_official_elaboration_from_archive(archive, "2026:286") is not None
     assert load_se_official_effects_plan_from_archive(archive, "2026:286") is not None
+    assert load_se_official_ops_adjudications_from_archive(archive, "2026:286") == []
     loaded = load_se_official_ops_from_archive(archive, "2026:286")
     assert loaded is not None
     assert loaded[0]["action"] == "replace"
+
+
+def test_compile_se_official_ops_to_archive_stores_unsupported_plan_adjudication() -> None:
+    text = (
+        "Svensk författningssamling\n"
+        "Lag\n"
+        "om ändring i lagen (1988:950) om kulturminnen m.m.\n\n"
+        "Publicerad\n"
+        "den 20 december 2002\n\n"
+        "Utfärdad den 19 december 2002\n"
+        "Enligt riksdagens beslut föreskrivs att bilagan till lagen (1988:950) om kulturminnen m.m. "
+        "skall ha följande lydelse.\n"
+        "Denna lag träder i kraft den 1 januari 2003.\n"
+    )
+    act = parse_se_official_act_text(text, sfs_id="2002:1090")
+    archive = _FakeArchive(
+        stored={
+            se_official_act_locator("2002:1090"): json.dumps(
+                se_official_act_text_to_dict(act),
+                ensure_ascii=False,
+            ).encode("utf-8"),
+        }
+    )
+
+    with pytest.raises(NotImplementedError, match="has no planned canonical effects"):
+        compile_se_official_ops_to_archive(archive, "2002:1090")
+
+    effects_plan = load_se_official_effects_plan_from_archive(archive, "2002:1090")
+    adjudications = load_se_official_ops_adjudications_from_archive(archive, "2002:1090")
+
+    assert effects_plan is not None
+    assert effects_plan["frontier_classification"] == "empty_effect_plan_with_clause_targets"
+    assert se_official_ops_locator("2002:1090") not in archive.stored
+    assert se_official_ops_adjudications_locator("2002:1090") in archive.stored
+    assert adjudications is not None
+    assert len(adjudications) == 1
+    assert adjudications[0]["kind"] == "se_official_effect_plan_unsupported"
+    assert adjudications[0]["source_statute"] == "2002:1090"
+    assert adjudications[0]["detail"]["rule_id"] == "se_official_effect_plan_unsupported"
+    assert adjudications[0]["detail"]["phase"] == "lowering"
+    assert adjudications[0]["detail"]["strict_disposition"] == "block"
+    assert adjudications[0]["detail"]["frontier_detail"] == "appendix_clause_only_unlabeled"
 
 
 def test_load_se_official_ops_rejects_non_object_entries() -> None:
