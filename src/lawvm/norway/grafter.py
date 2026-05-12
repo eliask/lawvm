@@ -1173,6 +1173,7 @@ def parse_no_amendment_ops(
 def _iter_unstructured_no_change_groups(
     root: etree._Element,
     source_id: str,
+    adjudications_out: Optional[List[CompileAdjudication]] = None,
 ) -> list[tuple[str, list[LegalOperation]]]:
     """Parse older Lovtidend amendment acts without ``document-change`` wrappers."""
     changed_docs: list[str] = []
@@ -1307,6 +1308,16 @@ def _iter_unstructured_no_change_groups(
                 continue
 
         if lead_base_id is None:
+            if _no_unstructured_lead_looks_operative(lead):
+                _append_no_unstructured_parse_adjudication(
+                    adjudications_out,
+                    kind="no_parse_unstructured_lead_base_unresolved",
+                    message="Norway unstructured amendment lead looked operative, but no base act could be resolved.",
+                    source_id=source_id,
+                    lead=lead,
+                    base_id="",
+                    detail={},
+                )
             idx += 1
             continue
         doc_ops = doc_ops_by_base.setdefault(lead_base_id, [])
@@ -1335,6 +1346,15 @@ def _iter_unstructured_no_change_groups(
                 sequence += 1
                 idx = cursor
                 continue
+            _append_no_unstructured_parse_adjudication(
+                adjudications_out,
+                kind="no_parse_unstructured_payload_unresolved",
+                message="Norway unstructured heading replacement lead resolved a target but no heading payload could be extracted.",
+                source_id=source_id,
+                lead=lead,
+                base_id=lead_base_id,
+                detail={"target": f"section:{target_label}", "payload_family": "heading_only"},
+            )
 
         repeal_renumber_match = re.match(
             r"^§\s*([0-9A-Za-z-]+)\s+(.+?)\s+ledd\s+oppheves\.\s*Nåværende\s+(.+?)\s+ledd\s+blir\s+(.+?)\s+ledd\.?$",
@@ -1407,6 +1427,15 @@ def _iter_unstructured_no_change_groups(
                 sequence += 1
                 idx = cursor
                 continue
+            _append_no_unstructured_parse_adjudication(
+                adjudications_out,
+                kind="no_parse_unstructured_payload_unresolved",
+                message="Norway unstructured section lead resolved a target but no section payload could be extracted.",
+                source_id=source_id,
+                lead=lead,
+                base_id=lead_base_id,
+                detail={"target": _no_address_detail(target), "payload_family": "future_section"},
+            )
 
         sentence_specs = _infer_same_base_sentence_target_specs_from_lead(lead)
         if sentence_specs:
@@ -1444,12 +1473,26 @@ def _iter_unstructured_no_change_groups(
                     sequence += 1
                 idx = cursor
                 continue
+            _append_no_unstructured_parse_adjudication(
+                adjudications_out,
+                kind="no_parse_unstructured_payload_unresolved",
+                message="Norway unstructured sentence lead resolved targets but payload extraction did not cover them.",
+                source_id=source_id,
+                lead=lead,
+                base_id=lead_base_id,
+                detail={
+                    "targets": tuple(_no_address_detail(target) for target in sentence_targets),
+                    "payload_family": "sentence",
+                },
+            )
 
         subsection_specs = _infer_same_base_subsection_target_specs_from_lead(lead)
         if subsection_specs and len(text_articles) >= len(subsection_specs):
+            unresolved_targets: list[LegalAddress] = []
             for (action, target), article in zip(subsection_specs, text_articles):
                 payload = _payload_from_direct_text_article(article, target)
                 if payload is None:
+                    unresolved_targets.append(target)
                     continue
                 doc_ops.append(
                     LegalOperation(
@@ -1464,12 +1507,23 @@ def _iter_unstructured_no_change_groups(
                     )
                 )
                 sequence += 1
+            for target in unresolved_targets:
+                _append_no_unstructured_parse_adjudication(
+                    adjudications_out,
+                    kind="no_parse_unstructured_payload_unresolved",
+                    message="Norway unstructured subsection lead resolved a target but no subsection payload could be extracted.",
+                    source_id=source_id,
+                    lead=lead,
+                    base_id=lead_base_id,
+                    detail={"target": _no_address_detail(target), "payload_family": "subsection"},
+                )
             idx = cursor
             continue
 
         item_targets = _infer_same_base_item_targets_from_lead(lead)
         if item_targets:
             payload_candidates = _extract_payload_candidates_from_nodes([child, *payload_nodes], item_targets)
+            unresolved_targets: list[LegalAddress] = []
             for target in item_targets:
                 payload = payload_candidates.get((target.leaf_kind(), target.leaf_label()))
                 if payload is None and target.leaf_kind() == "item" and target.leaf_label() == "last":
@@ -1479,6 +1533,7 @@ def _iter_unstructured_no_change_groups(
                     if len(item_payloads) == 1:
                         payload = _with_no_node_label(item_payloads[0], "last")
                 if payload is None:
+                    unresolved_targets.append(target)
                     continue
                 doc_ops.append(
                     LegalOperation(
@@ -1493,6 +1548,16 @@ def _iter_unstructured_no_change_groups(
                     )
                 )
                 sequence += 1
+            for target in unresolved_targets:
+                _append_no_unstructured_parse_adjudication(
+                    adjudications_out,
+                    kind="no_parse_unstructured_payload_unresolved",
+                    message="Norway unstructured item lead resolved a target but no item payload could be extracted.",
+                    source_id=source_id,
+                    lead=lead,
+                    base_id=lead_base_id,
+                    detail={"target": _no_address_detail(target), "payload_family": "item"},
+                )
             idx = cursor
             continue
 
@@ -1635,6 +1700,16 @@ def _iter_unstructured_no_change_groups(
             idx = cursor
             continue
 
+        if _no_unstructured_lead_looks_operative(lead):
+            _append_no_unstructured_parse_adjudication(
+                adjudications_out,
+                kind="no_parse_unstructured_lead_unmatched",
+                message="Norway unstructured amendment lead looked operative but matched no supported lowering family.",
+                source_id=source_id,
+                lead=lead,
+                base_id=lead_base_id,
+                detail={},
+            )
         idx += 1
 
     return [
@@ -1795,6 +1870,50 @@ def _extract_no_global_text_replace_pairs(lead: str) -> list[tuple[str, str]]:
     ]
 
 
+def _no_unstructured_lead_looks_operative(lead: str) -> bool:
+    return bool(
+        re.search(
+            r"(\bskal\s+lyde\b|\boppheves\b|\bblir\b|\bendres\b|\btilf[øo]yes\b|\bf[øo]yes\b|\bflyttes\b)",
+            lead,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _no_address_detail(address: LegalAddress) -> str:
+    return "/".join(f"{kind}:{label}" for kind, label in address.path)
+
+
+def _append_no_unstructured_parse_adjudication(
+    adjudications_out: Optional[List[CompileAdjudication]],
+    *,
+    kind: str,
+    message: str,
+    source_id: str,
+    lead: str,
+    base_id: str,
+    detail: dict[str, object],
+) -> None:
+    payload: dict[str, object] = {
+        "rule_id": kind,
+        "family": "unsupported_or_unresolved_action",
+        "phase": "parse",
+        "source_excerpt": _normalize_space(lead)[:240],
+        "base_id": base_id,
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+    }
+    payload.update(detail)
+    _append_no_parse_adjudication(
+        adjudications_out,
+        kind=kind,
+        message=message,
+        source_id=source_id,
+        detail=payload,
+    )
+
+
 def _append_no_parse_adjudication(
     adjudications_out: Optional[List[CompileAdjudication]],
     *,
@@ -1838,7 +1957,7 @@ def iter_no_document_change_ops(
         root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' document-change ')]"),
     )
     if not change_nodes:
-        return _iter_unstructured_no_change_groups(root, source_id)
+        return _iter_unstructured_no_change_groups(root, source_id, adjudications_out=adjudications_out)
     for doc_change in change_nodes:
         source_doc = doc_change.get("data-document", "").strip()
         base_id = normalize_lovdata_refid(source_doc)

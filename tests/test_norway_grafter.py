@@ -1644,6 +1644,87 @@ def test_parse_no_amendment_ops_unstructured_marks_new_subsection_as_insert() ->
     ]
 
 
+def test_iter_no_document_change_ops_unstructured_records_base_unresolved_lead() -> None:
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <main>
+      <section data-name="kapI">
+        <article class="defaultP">§ 5 skal lyde:</article>
+        <article class="futureLegalArticle"><h3>§ 5. Tittel</h3></article>
+      </section>
+    </main>
+  </body>
+</html>
+""".encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    grouped = iter_no_document_change_ops(xml, "no/lovtid/2020-12-18-159", adjudications_out=adjudications)
+
+    assert grouped == []
+    assert [item.kind for item in adjudications] == ["no_parse_unstructured_lead_base_unresolved"]
+    assert adjudications[0].detail["rule_id"] == "no_parse_unstructured_lead_base_unresolved"
+    assert adjudications[0].detail["phase"] == "parse"
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
+    assert adjudications[0].detail["base_id"] == ""
+    assert "§ 5 skal lyde" in adjudications[0].detail["source_excerpt"]
+
+
+def test_iter_no_document_change_ops_unstructured_records_payload_unresolved() -> None:
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <dd class="changesToDocuments">
+      <ul><li>lov/2019-06-21-70</li></ul>
+    </dd>
+    <main>
+      <section data-name="kapI">
+        <article class="defaultP">§ 39 tredje ledd skal lyde:</article>
+        <article class="legalP"></article>
+      </section>
+    </main>
+  </body>
+</html>
+""".encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    grouped = iter_no_document_change_ops(xml, "no/lovtid/2020-12-18-159", adjudications_out=adjudications)
+
+    assert grouped == []
+    assert [item.kind for item in adjudications] == ["no_parse_unstructured_payload_unresolved"]
+    assert adjudications[0].detail["base_id"] == "no/lov/2019-06-21-70"
+    assert adjudications[0].detail["target"] == "section:39/subsection:3"
+    assert adjudications[0].detail["payload_family"] == "subsection"
+    assert adjudications[0].detail["strict_disposition"] == "block"
+
+
+def test_iter_no_document_change_ops_unstructured_records_unmatched_operative_lead() -> None:
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <dd class="changesToDocuments">
+      <ul><li>lov/2019-06-21-70</li></ul>
+    </dd>
+    <main>
+      <section data-name="kapI">
+        <article class="defaultP">§ 5 flyttes til § 6.</article>
+      </section>
+    </main>
+  </body>
+</html>
+""".encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    grouped = iter_no_document_change_ops(xml, "no/lovtid/2020-12-18-159", adjudications_out=adjudications)
+
+    assert grouped == []
+    assert [item.kind for item in adjudications] == ["no_parse_unstructured_lead_unmatched"]
+    assert adjudications[0].detail["base_id"] == "no/lov/2019-06-21-70"
+    assert adjudications[0].detail["family"] == "unsupported_or_unresolved_action"
+    assert adjudications[0].detail["blocking"] is True
+
+
 def test_parse_no_amendment_ops_promotes_replace_plus_same_target_renumber_to_insert() -> None:
     xml = """<?xml version="1.0" encoding="utf-8"?>
 <html lang="nb">
