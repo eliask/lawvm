@@ -327,6 +327,33 @@ _EE_CANCELLED_PENDING_REF_FETCH_FAILED_RULE = "ee_cancelled_pending_ref_source_f
 _EE_REF_SLICE_OP_FILTER_RULE = "ee_ref_slice_operation_filtered"
 
 
+def _ee_orchestration_adjudication(
+    *,
+    kind: str,
+    message: str,
+    source_statute: str,
+    detail: dict[str, Any],
+    phase: str,
+    family: str,
+    blocking: bool = False,
+    op_id: str = "",
+) -> CompileAdjudication:
+    normalized_detail = dict(detail)
+    normalized_detail.setdefault("rule_id", kind)
+    normalized_detail.setdefault("phase", phase)
+    normalized_detail.setdefault("family", family)
+    normalized_detail.setdefault("blocking", blocking)
+    normalized_detail.setdefault("strict_disposition", "block" if blocking else "record")
+    normalized_detail.setdefault("quirks_disposition", "record")
+    return CompileAdjudication(
+        kind=kind,
+        message=message,
+        source_statute=source_statute,
+        op_id=op_id,
+        detail=normalized_detail,
+    )
+
+
 def _ee_filter_cancelled_pending_refs(
     refs: list[AmendmentRef],
     *,
@@ -346,7 +373,7 @@ def _ee_filter_cancelled_pending_refs(
         except Exception as exc:
             if adjudications_out is not None:
                 adjudications_out.append(
-                    CompileAdjudication(
+                    _ee_orchestration_adjudication(
                         kind=_EE_CANCELLED_PENDING_REF_FETCH_FAILED_RULE,
                         message=(
                             "Could not fetch an Estonia pending-amendment source while "
@@ -354,13 +381,13 @@ def _ee_filter_cancelled_pending_refs(
                             "the reference and recording the incomplete source lane."
                         ),
                         source_statute=f"ee/{ref.aktViide}",
+                        phase="acquisition",
+                        family="pending_amendment_cancellation_filter",
+                        blocking=True,
                         detail={
                             "ref_amendment": ref.aktViide,
                             "reason": "pending_ref_source_fetch_failed",
                             "exception_type": type(exc).__name__,
-                            "blocking": True,
-                            "strict_disposition": "block",
-                            "quirks_disposition": "record",
                         },
                     )
                 )
@@ -395,13 +422,15 @@ def _ee_filter_cancelled_pending_refs(
                 cancelled.add(ref.aktViide)
                 if adjudications_out is not None:
                     adjudications_out.append(
-                        CompileAdjudication(
+                        _ee_orchestration_adjudication(
                             kind=_EE_CANCELLED_PENDING_REF_FILTER_RULE,
                             message=(
                                 "Filtered a pending Estonia amendment reference because a later "
                                 "same-commencement source act repeals all target paragraphs before replay."
                             ),
                             source_statute=f"ee/{later.aktViide}",
+                            phase="temporal",
+                            family="pending_amendment_cancellation_filter",
                             detail={
                                 "filtered_amendment": ref.aktViide,
                                 "filtering_amendment": later.aktViide,
@@ -422,13 +451,15 @@ def _ee_filter_cancelled_pending_refs(
                 cancelled.add(ref.aktViide)
                 if adjudications_out is not None:
                     adjudications_out.append(
-                        CompileAdjudication(
+                        _ee_orchestration_adjudication(
                             kind=_EE_CANCELLED_PENDING_REF_FILTER_RULE,
                             message=(
                                 "Filtered a pending Estonia amendment reference because a later "
                                 "same-commencement source act rewrites all target paragraphs before replay."
                             ),
                             source_statute=f"ee/{later.aktViide}",
+                            phase="temporal",
+                            family="pending_amendment_cancellation_filter",
                             detail={
                                 "filtered_amendment": ref.aktViide,
                                 "filtering_amendment": later.aktViide,
@@ -477,11 +508,13 @@ def _ee_filter_ops_for_ref_slice(
         if adjudications_out is None:
             return
         adjudications_out.append(
-            CompileAdjudication(
+            _ee_orchestration_adjudication(
                 kind=_EE_REF_SLICE_OP_FILTER_RULE,
                 message="Filtered an Estonia operation outside the executable slice for this amendment reference.",
                 source_statute=op.source.statute_id if op.source is not None else f"ee/{ref.aktViide}",
                 op_id=op.op_id,
+                phase="temporal",
+                family="ref_slice_filter",
                 detail={
                     "reason": reason,
                     "ref_amendment": ref.aktViide,
@@ -622,13 +655,15 @@ def _ee_precompose_pending_source_act_commencements(
                 continue
             overrides[earlier_ref.aktViide] = (replacement_date, later_ref)
             adjudications.append(
-                CompileAdjudication(
+                _ee_orchestration_adjudication(
                     kind=_EE_PENDING_SOURCE_ACT_COMMENCEMENT_PRECOMPOSE_RULE,
                     message=(
                         "Applied an explicit source-act commencement replacement before "
                         "deciding whether the pending source act is executable at this PIT date."
                     ),
                     source_statute=f"ee/{later_ref.aktViide}",
+                    phase="temporal",
+                    family="pending_source_act_precomposition",
                     detail={
                         "earlier_amendment": earlier_ref.aktViide,
                         "later_amendment": later_ref.aktViide,
@@ -742,7 +777,7 @@ def _ee_precompose_pending_amendment_text_patches(
                         )
                         updated_ops[index] = patched_op
                         adjudications.append(
-                            CompileAdjudication(
+                            _ee_orchestration_adjudication(
                                 kind=_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE,
                                 message=(
                                     "Applied source-backed text replacement to a pending "
@@ -750,6 +785,8 @@ def _ee_precompose_pending_amendment_text_patches(
                                 ),
                                 source_statute=f"ee/{later_ref.aktViide}",
                                 op_id=candidate.op_id,
+                                phase="payload",
+                                family="pending_amendment_precomposition",
                                 detail={
                                     "earlier_amendment": earlier_ref.aktViide,
                                     "later_amendment": later_ref.aktViide,
@@ -790,7 +827,7 @@ def _ee_precompose_pending_amendment_text_patches(
                     )
                     updated_ops[index] = patched_op
                     adjudications.append(
-                        CompileAdjudication(
+                        _ee_orchestration_adjudication(
                             kind=_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE,
                             message=(
                                 "Applied source-backed text replacement to a pending "
@@ -798,6 +835,8 @@ def _ee_precompose_pending_amendment_text_patches(
                             ),
                             source_statute=f"ee/{later_ref.aktViide}",
                             op_id=candidate.op_id,
+                            phase="payload",
+                            family="pending_amendment_precomposition",
                             detail={
                                 "earlier_amendment": earlier_ref.aktViide,
                                 "later_amendment": later_ref.aktViide,
@@ -841,7 +880,7 @@ def _ee_precompose_pending_amendment_text_patches(
                     )
                     updated_ops.append(appended_op)
                     adjudications.append(
-                        CompileAdjudication(
+                        _ee_orchestration_adjudication(
                             kind=_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE,
                             message=(
                                 "Added a source-backed pending amendment text replacement "
@@ -849,6 +888,8 @@ def _ee_precompose_pending_amendment_text_patches(
                             ),
                             source_statute=f"ee/{later_ref.aktViide}",
                             op_id=appended_op.op_id,
+                            phase="payload",
+                            family="pending_amendment_precomposition",
                             detail={
                                 "earlier_amendment": earlier_ref.aktViide,
                                 "later_amendment": later_ref.aktViide,
@@ -883,7 +924,7 @@ def _ee_precompose_pending_amendment_text_patches(
                     )
                     updated_ops[index] = patched_op
                     adjudications.append(
-                        CompileAdjudication(
+                        _ee_orchestration_adjudication(
                             kind=_EE_PENDING_AMENDMENT_PRECOMPOSE_RULE,
                             message=(
                                 "Applied source-backed replacement to a pending "
@@ -891,6 +932,8 @@ def _ee_precompose_pending_amendment_text_patches(
                             ),
                             source_statute=f"ee/{later_ref.aktViide}",
                             op_id=candidate.op_id,
+                            phase="payload",
+                            family="pending_amendment_precomposition",
                             detail={
                                 "earlier_amendment": earlier_ref.aktViide,
                                 "later_amendment": later_ref.aktViide,
