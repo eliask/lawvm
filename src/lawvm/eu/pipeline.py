@@ -95,6 +95,7 @@ def _append_eu_replay_adjudication(
         "eu_replay_text_payload_missing",
         "eu_replay_target_not_found",
         "eu_replay_parent_not_found",
+        "eu_replay_insert_parent_scope_unresolved",
     }:
         detail_payload.setdefault("family", "unsupported_or_unresolved_action")
     elif kind == "eu_replay_tree_invariant_violation":
@@ -324,10 +325,34 @@ def apply_eu_ops(
             # For insert, the target address specifies where to insert.
             # The parent is target minus the last path element.
             if len(path_steps) > 1:
-                parent_kind = path_steps[-2][0]
-                parent_label = path_steps[-2][1]
-                parent_path = tree_ops.find(body, parent_kind, parent_label)
-                if parent_path is None:
+                parent_path = path_steps[:-1]
+                parent_kind = parent_path[-1][0]
+                parent_label = parent_path[-1][1]
+                if tree_ops.resolve(body, parent_path) is None:
+                    unscoped_parent_candidates = tree_ops.find_all(body, parent_kind, parent_label)
+                    if unscoped_parent_candidates and len(parent_path) > 1:
+                        _append_eu_replay_adjudication(
+                            adjudications_out,
+                            kind="eu_replay_insert_parent_scope_unresolved",
+                            message=(
+                                "EU replay skipped insert: scoped parent path not found; "
+                                "unscoped lookalike parent candidates were ignored."
+                            ),
+                            op=op,
+                            detail={
+                                "action": "insert",
+                                "target": str(target),
+                                "parent_kind": parent_kind,
+                                "parent_label": parent_label,
+                                "parent_path": [f"{kind}:{label}" for kind, label in parent_path],
+                                "unscoped_parent_candidates": [
+                                    [f"{kind}:{label}" for kind, label in candidate_path]
+                                    for candidate_path in unscoped_parent_candidates
+                                ],
+                            },
+                        )
+                        skipped += 1
+                        continue
                     _append_eu_replay_adjudication(
                         adjudications_out,
                         kind="eu_replay_parent_not_found",
@@ -338,6 +363,7 @@ def apply_eu_ops(
                             "target": str(target),
                             "parent_kind": parent_kind,
                             "parent_label": parent_label,
+                            "parent_path": [f"{kind}:{label}" for kind, label in parent_path],
                         },
                     )
                     skipped += 1

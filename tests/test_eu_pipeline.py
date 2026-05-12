@@ -390,6 +390,90 @@ def test_apply_eu_ops_records_insert_parent_not_found() -> None:
     assert adjudications[0].detail["quirks_disposition"] == "record"
 
 
+def test_apply_eu_ops_inserts_under_exact_scoped_parent() -> None:
+    baseline = IRStatute(
+        statute_id="32000R0000",
+        title="baseline",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="chapter 1 article 1"),),
+                ),
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="2",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="chapter 2 article 1"),),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    ops = [
+        LegalOperation(
+            op_id="insert-scoped-point",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "2"), ("article", "1"), ("point", "9"))),
+            payload=IRNode(kind=IRNodeKind.ITEM, label="9", text="inserted"),
+            source=OperationSource(statute_id="2026/3"),
+        ),
+    ]
+
+    replayed = apply_eu_ops(baseline, ops, adjudications_out=adjudications)
+
+    assert adjudications == []
+    chapter_1_section = replayed.body.children[0].children[0]
+    chapter_2_section = replayed.body.children[1].children[0]
+    assert chapter_1_section.children == ()
+    assert chapter_2_section.children == (IRNode(kind=IRNodeKind.ITEM, label="9", text="inserted"),)
+
+
+def test_apply_eu_ops_blocks_unscoped_parent_hijack() -> None:
+    baseline = IRStatute(
+        statute_id="32000R0000",
+        title="baseline",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CHAPTER,
+                    label="1",
+                    children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="chapter 1 article 1"),),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    ops = [
+        LegalOperation(
+            op_id="insert-missing-scope",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "2"), ("article", "1"), ("point", "9"))),
+            payload=IRNode(kind=IRNodeKind.ITEM, label="9", text="inserted"),
+            source=OperationSource(statute_id="2026/3"),
+        ),
+    ]
+
+    replayed = apply_eu_ops(baseline, ops, adjudications_out=adjudications)
+
+    assert replayed.body == baseline.body
+    assert replayed.metadata["eu_replay_applied_op_count"] == 0
+    assert replayed.metadata["eu_replay_skipped_op_count"] == 1
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "eu_replay_insert_parent_scope_unresolved"
+    assert adjudications[0].detail["rule_id"] == "eu_replay_insert_parent_scope_unresolved"
+    assert adjudications[0].detail["parent_path"] == ["chapter:2", "section:1"]
+    assert adjudications[0].detail["unscoped_parent_candidates"] == [["chapter:1", "section:1"]]
+    assert adjudications[0].detail["family"] == "unsupported_or_unresolved_action"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
+
+
 def test_apply_eu_ops_records_unsupported_and_unknown_action() -> None:
     baseline = _baseline_statute()
     adjudications: list[CompileAdjudication] = []
