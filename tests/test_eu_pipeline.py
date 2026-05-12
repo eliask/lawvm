@@ -450,6 +450,97 @@ def test_replay_statute_collects_eu_adjudications(monkeypatch, tmp_path) -> None
     assert result.adjudications[0].op_id == "replace-missing"
 
 
+def test_replay_statute_projects_pipeline_diagnostics_to_adjudications(monkeypatch, tmp_path) -> None:
+    baseline = _baseline_statute()
+    baseline_path = tmp_path / "32000R0000_baseline.xhtml"
+    baseline_path.write_text("<dummy/>")
+
+    def fake_compile_ops_for_statute(self: EUReplayPipeline, celex: str):
+        assert celex == "32000R0000"
+        self._record_diagnostic(
+            rule_id="eu_amendment_text_fetch_failed",
+            celex="32000R0001",
+            phase="acquisition",
+            reason="simulated fetch failure",
+            exc=RuntimeError("network down"),
+        )
+        return []
+
+    def fake_parse_eu_regulation_ir(_path: object, celex: str) -> IRStatute:
+        assert celex == "32000R0000"
+        return baseline
+
+    def fake_compile_timelines(_base: IRStatute, ops, temporal_events=()):
+        return "timelines"
+
+    def fake_materialize_pit(_timelines, as_of: str, base: IRStatute):
+        return base
+
+    monkeypatch.setattr(EUReplayPipeline, "compile_ops_for_statute", fake_compile_ops_for_statute)
+    monkeypatch.setattr("lawvm.eu.pipeline.parse_eu_regulation_ir", fake_parse_eu_regulation_ir)
+    monkeypatch.setattr("lawvm.eu.pipeline.compile_timelines", fake_compile_timelines)
+    monkeypatch.setattr("lawvm.eu.pipeline.materialize_pit", fake_materialize_pit)
+
+    result = EUReplayPipeline(cache_dir=tmp_path).replay_statute("32000R0000")
+
+    diagnostic_rows = [
+        adjudication
+        for adjudication in result.adjudications
+        if adjudication.kind == "eu_amendment_text_fetch_failed"
+    ]
+    assert len(diagnostic_rows) == 1
+    assert diagnostic_rows[0].message == "simulated fetch failure"
+    assert diagnostic_rows[0].source_statute == "32000R0001"
+    assert diagnostic_rows[0].detail["phase"] == "acquisition"
+    assert diagnostic_rows[0].detail["strict_disposition"] == "block"
+    assert diagnostic_rows[0].detail["exception_type"] == "RuntimeError"
+
+
+def test_replay_statute_projects_parser_diagnostics_to_adjudications(monkeypatch, tmp_path) -> None:
+    baseline = _baseline_statute()
+    baseline_path = tmp_path / "32000R0000_baseline.xhtml"
+    baseline_path.write_text("<dummy/>")
+
+    def fake_discover_affecting_acts(self: EUReplayPipeline, celex: str):
+        assert celex == "32000R0000"
+        return ["32000R0001"]
+
+    def fake_fetch_amendment_text(self: EUReplayPipeline, celex: str):
+        assert celex == "32000R0001"
+        return "The first sentence is replaced by the following text."
+
+    def fake_parse_eu_regulation_ir(_path: object, celex: str) -> IRStatute:
+        assert celex == "32000R0000"
+        return baseline
+
+    def fake_compile_timelines(_base: IRStatute, ops, temporal_events=()):
+        assert ops == []
+        return "timelines"
+
+    def fake_materialize_pit(_timelines, as_of: str, base: IRStatute):
+        return base
+
+    monkeypatch.setattr(EUReplayPipeline, "discover_affecting_acts", fake_discover_affecting_acts)
+    monkeypatch.setattr(EUReplayPipeline, "fetch_amendment_text", fake_fetch_amendment_text)
+    monkeypatch.setattr("lawvm.eu.pipeline.parse_eu_regulation_ir", fake_parse_eu_regulation_ir)
+    monkeypatch.setattr("lawvm.eu.pipeline.compile_timelines", fake_compile_timelines)
+    monkeypatch.setattr("lawvm.eu.pipeline.materialize_pit", fake_materialize_pit)
+
+    result = EUReplayPipeline(cache_dir=tmp_path).replay_statute("32000R0000")
+
+    diagnostic_rows = [
+        adjudication
+        for adjudication in result.adjudications
+        if adjudication.kind == "eu_ops_parser_segment_unparsed"
+    ]
+    assert len(diagnostic_rows) == 1
+    assert diagnostic_rows[0].source_statute == "32000R0001"
+    assert diagnostic_rows[0].detail["celex"] == "32000R0001"
+    assert diagnostic_rows[0].detail["family"] == "extraction_gap"
+    assert diagnostic_rows[0].detail["phase"] == "extraction"
+    assert diagnostic_rows[0].detail["strict_disposition"] == "record"
+
+
 def test_apply_eu_ops_maps_article_targets_to_section_kind() -> None:
     baseline = _baseline_statute()
     adjudications: list[CompileAdjudication] = []

@@ -15,7 +15,7 @@ from lawvm.core import tree_ops
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import build_text_duplication_findings
 from lawvm.eu.grafter import parse_eu_regulation_ir
-from lawvm.eu.ops_parser import EUOpsParser
+from lawvm.eu.ops_parser import EUOpsParser, EUOpsParserDiagnostic
 from lawvm.eu.cellar import NoticeRequest, _request_notice
 from lawvm.replay_adjudication import CompileAdjudication
 
@@ -105,6 +105,32 @@ def _eu_adjudication_from_finding(finding: Finding) -> CompileAdjudication:
         kind=str(finding.kind or ""),
         message=message,
         source_statute=str(finding.source_statute or ""),
+        detail=detail,
+    )
+
+
+def _eu_adjudication_from_pipeline_diagnostic(
+    diagnostic: EUPipelineDiagnostic,
+) -> CompileAdjudication:
+    detail = diagnostic.as_detail()
+    return CompileAdjudication(
+        kind=diagnostic.rule_id,
+        message=diagnostic.reason,
+        source_statute=diagnostic.celex,
+        detail=detail,
+    )
+
+
+def _eu_adjudication_from_parser_diagnostic(
+    act_celex: str,
+    diagnostic: EUOpsParserDiagnostic,
+) -> CompileAdjudication:
+    detail = diagnostic.as_detail()
+    detail["celex"] = act_celex
+    return CompileAdjudication(
+        kind=diagnostic.rule_id,
+        message=diagnostic.reason,
+        source_statute=act_celex,
         detail=detail,
     )
 
@@ -371,6 +397,7 @@ class EUReplayPipeline:
         stanza_cache = self.cache_dir / "stanza_cache"
         self.parser = EUOpsParser(cache_dir=str(stanza_cache))
         self.diagnostics: list[EUPipelineDiagnostic] = []
+        self.parser_diagnostics: list[tuple[str, EUOpsParserDiagnostic]] = []
 
     def discover_affecting_acts(self, celex: str) -> List[str]:
         """Query Cellar for acts that modify or amend the given CELEX."""
@@ -484,12 +511,17 @@ class EUReplayPipeline:
         """Fetch affecting acts and compile their amendment text into LegalOperations."""
         affecting_acts = self.discover_affecting_acts(celex)
         all_ops: List[LegalOperation] = []
+        self.parser_diagnostics = []
 
         for act_celex in affecting_acts:
             text = self.fetch_amendment_text(act_celex)
             if text:
                 print(f"DEBUG: Processing act {act_celex}, text length={len(text)}")
                 ops = self.parser.extract_ops(text)
+                self.parser_diagnostics.extend(
+                    (act_celex, diagnostic)
+                    for diagnostic in getattr(self.parser, "diagnostics", ())
+                )
                 print(f"DEBUG: Extracted {len(ops)} ops for {act_celex}")
                 for op in ops:
                     all_ops.append(replace(op, source=OperationSource(statute_id=act_celex)))
@@ -512,6 +544,8 @@ class EUReplayPipeline:
           - replayed: the statute after applying ops via tree_ops
           - timelines: compiled ProvisionTimelines for PIT queries
         """
+        self.diagnostics = []
+        self.parser_diagnostics = []
         baseline_path = self.cache_dir / f"{celex.replace('/', '_')}_baseline.xhtml"
         if not baseline_path.exists():
             baseline_text = self.fetch_amendment_text(celex)
@@ -521,6 +555,14 @@ class EUReplayPipeline:
 
         ops = self.compile_ops_for_statute(celex)
         adjudications: List[CompileAdjudication] = []
+        adjudications.extend(
+            _eu_adjudication_from_pipeline_diagnostic(diagnostic)
+            for diagnostic in self.diagnostics
+        )
+        adjudications.extend(
+            _eu_adjudication_from_parser_diagnostic(act_celex, diagnostic)
+            for act_celex, diagnostic in self.parser_diagnostics
+        )
 
         # Apply ops to produce replayed statute
         replayed = apply_eu_ops(
