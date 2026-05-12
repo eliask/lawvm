@@ -104,6 +104,32 @@ def _field(record: Any, name: str, default: Any = None) -> Any:
     return getattr(record, name, default)
 
 
+def _failed_op_to_jsonable(failed_op: Any) -> dict[str, Any]:
+    """Serialize a failed operation without losing its stable rule/scope fields."""
+    as_detail = _field(failed_op, "as_detail", None)
+    if callable(as_detail):
+        detail = dict(as_detail())
+    else:
+        detail = {
+            "amendment_id": _field(failed_op, "amendment_id", ""),
+            "description": _field(failed_op, "description", ""),
+            "reason": _field(failed_op, "reason", ""),
+            "reason_code": _field(failed_op, "reason_code", ""),
+            "target_unit_kind": _field(failed_op, "target_unit_kind", ""),
+            "target_section": _field(failed_op, "target_section", ""),
+            "target_chapter": _field(failed_op, "target_chapter", None),
+            "target_part": _field(failed_op, "target_part", None),
+        }
+    source = _field(failed_op, "source_statute", "") or detail.get("amendment_id", "")
+    detail["source"] = source
+    detail["target_kind"] = _field(failed_op, "target_kind", "") or _field(
+        failed_op,
+        "compat_target_kind_code",
+        "",
+    )
+    return detail
+
+
 def _strict_from_record(record: Any) -> bool:
     """Derive strictness locally from a summary row or presenter object."""
     if _field(record, "error", ""):
@@ -281,12 +307,16 @@ def _format_report(cr: Any, *, verbose: bool = False) -> str:
     if failed_ops:
         lines.append("Failed ops")
         for f in failed_ops:
-            source_statute = str(_field(f, "source_statute", "") or _field(f, "amendment_id", ""))
+            detail = _failed_op_to_jsonable(f)
+            source_statute = str(detail.get("source") or detail.get("amendment_id") or "")
+            reason_code = str(detail.get("reason_code") or "").strip()
+            reason_suffix = f" [{reason_code}]" if reason_code else ""
+            target_unit_kind = str(detail.get("target_unit_kind") or detail.get("target_kind") or "")
             lines.append(
                 f"  {source_statute:12s} "
-                f"{str(_field(f, 'reason', '')):30s} "
-                f"{str(_field(f, 'target_kind', ''))} "
-                f"{str(_field(f, 'target_section', ''))}"
+                f"{str(detail.get('reason') or ''):30s}{reason_suffix} "
+                f"{target_unit_kind} "
+                f"{str(detail.get('target_section') or '')}"
             )
         lines.append("")
 
@@ -385,15 +415,7 @@ def _to_json(cr: Any) -> dict[str, Any]:
             }
             for a in projection_rows
         ],
-        "failed_ops": [
-            {
-                "source": _field(f, "source_statute", "") or _field(f, "amendment_id", ""),
-                "reason": _field(f, "reason", ""),
-                "target_kind": _field(f, "target_kind", ""),
-                "target_section": _field(f, "target_section", ""),
-            }
-            for f in failed_ops
-        ],
+        "failed_ops": [_failed_op_to_jsonable(f) for f in failed_ops],
     }
 
 
