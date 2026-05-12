@@ -58,6 +58,20 @@ class NoticeRequest:
         return f"{BASE_URL}/celex/{self.celex}?{urlencode(params)}"
 
 
+@dataclass(frozen=True)
+class ManifestFetchReport:
+    fetched_count: int
+    failed_count: int
+    failed_requests: tuple[dict[str, Any], ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "fetched_count": self.fetched_count,
+            "failed_count": self.failed_count,
+            "failed_requests": [dict(row) for row in self.failed_requests],
+        }
+
+
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
@@ -623,7 +637,32 @@ def fetch_manifestation(args: argparse.Namespace) -> int:
     return 0
 
 
-def fetch_manifest(manifest_path: Path, dry_run: bool = False) -> int:
+def _manifest_request_failure_row(
+    *,
+    source_label: str,
+    celex: str,
+    request_path: str,
+    notice: NoticeRequest,
+    exc: HTTPError | URLError,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "eu_cellar_manifest_request_failed",
+        "phase": "acquisition",
+        "family": "source_pathology",
+        "source_label": source_label,
+        "celex": celex,
+        "request_path": request_path,
+        "notice_url": notice.url(),
+        "accept_header": notice.accept_header(),
+        "error_type": exc.__class__.__name__,
+        "error": str(exc),
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+    }
+
+
+def fetch_manifest(manifest_path: Path, dry_run: bool = False) -> ManifestFetchReport:
     repo = _repo_root()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     sources = manifest.get("sources", [])
@@ -631,6 +670,8 @@ def fetch_manifest(manifest_path: Path, dry_run: bool = False) -> int:
         raise ValueError("Manifest 'sources' must be a list")
 
     failures = 0
+    fetched = 0
+    failed_requests: list[dict[str, Any]] = []
     for source in sources:
         label = source.get("label", source.get("id", "unknown"))
         celex = source["celex"]
@@ -655,6 +696,15 @@ def fetch_manifest(manifest_path: Path, dry_run: bool = False) -> int:
                 data, meta = _request_notice(notice, timeout_s=req.get("timeout_s", DEFAULT_TIMEOUT_S))
             except (HTTPError, URLError) as exc:
                 failures += 1
+                failed_requests.append(
+                    _manifest_request_failure_row(
+                        source_label=str(label),
+                        celex=str(celex),
+                        request_path=str(rel_path),
+                        notice=notice,
+                        exc=exc,
+                    )
+                )
                 print(f"    ERROR: {exc}", file=sys.stderr)
                 continue
             dest.write_bytes(data)
@@ -662,7 +712,8 @@ def fetch_manifest(manifest_path: Path, dry_run: bool = False) -> int:
                 json.dumps(meta, indent=2) + "\n",
                 encoding="utf-8",
             )
-    return failures
+            fetched += 1
+    return ManifestFetchReport(fetched_count=fetched, failed_count=failures, failed_requests=tuple(failed_requests))
 
 
 def inspect_xml(paths: list[Path]) -> int:
@@ -720,6 +771,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fetch_manifest_parser.add_argument("--manifest", type=Path, required=True)
     fetch_manifest_parser.add_argument("--dry-run", action="store_true")
+    fetch_manifest_parser.add_argument(
+        "--failures-jsonl",
+        type=Path,
+        help="write structured acquisition failure rows for failed manifest requests",
+    )
 
     fetch_manifestation_parser = subparsers.add_parser(
         "fetch-manifestation",
@@ -768,9 +824,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "fetch-notice":
         return fetch_notice(args)
     if args.command == "fetch-manifest":
-        failures = fetch_manifest(args.manifest, dry_run=args.dry_run)
-        if failures:
-            print(f"Completed with {failures} failed fetch(es)", file=sys.stderr)
+        report = fetch_manifest(args.manifest, dry_run=args.dry_run)
+        if args.failures_jsonl:
+            args.failures_jsonl.parent.mkdir(parents=True, exist_ok=True)
+            args.failures_jsonl.write_text(
+                "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in report.failed_requests),
+                encoding="utf-8",
+            )
+        if report.failed_count:
+            print(f"Completed with {report.failed_count} failed fetch(es)", file=sys.stderr)
             return 1
         return 0
     if args.command == "fetch-manifestation":
