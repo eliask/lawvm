@@ -540,23 +540,109 @@ def build_no_statsrad_extract_report(
     )
 
 
-def iter_no_statsrad_event_artifacts(source_path: Path | None = None) -> list[dict[str, Any]]:
+def _statsrad_event_artifact_diagnostic(
+    *,
+    rule_id: str,
+    locator: str,
+    bulletin_id: str,
+    reason: str,
+    phase: str = "parse",
+    **extra: Any,
+) -> dict[str, Any]:
+    diagnostic = {
+        "rule_id": rule_id,
+        "family": "source_pathology",
+        "phase": phase,
+        "locator": locator,
+        "bulletin_id": bulletin_id,
+        "reason": reason,
+    }
+    diagnostic.update(extra)
+    return diagnostic
+
+
+def _statsrad_bulletin_id_from_event_locator(locator: str) -> str:
+    return locator.split("/")[4] if locator.count("/") >= 5 else ""
+
+
+def iter_no_statsrad_event_artifacts(
+    source_path: Path | None = None,
+    *,
+    diagnostics_out: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     archive = open_no_archive(resolve_no_source_path(source_path))
     try:
         events: list[dict[str, Any]] = []
         for locator in archive.locators("no://statsrad/article/%/events.json"):
+            bulletin_id = _statsrad_bulletin_id_from_event_locator(locator)
             payload = archive.get(locator)
             if payload is None:
+                if diagnostics_out is not None:
+                    diagnostics_out.append(
+                        _statsrad_event_artifact_diagnostic(
+                            rule_id="no_statsrad_event_artifact_missing_payload",
+                            locator=locator,
+                            bulletin_id=bulletin_id,
+                            reason="statsrad event locator had no stored payload",
+                            phase="acquisition",
+                        )
+                    )
                 continue
-            bulletin_id = locator.split("/")[4] if locator.count("/") >= 5 else ""
             try:
-                article_events = json.loads(payload.decode("utf-8"))
-            except Exception:
+                payload_text = payload.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                if diagnostics_out is not None:
+                    diagnostics_out.append(
+                        _statsrad_event_artifact_diagnostic(
+                            rule_id="no_statsrad_event_artifact_invalid_utf8",
+                            locator=locator,
+                            bulletin_id=bulletin_id,
+                            reason="statsrad event artifact was not valid utf-8",
+                            exception_type=type(exc).__name__,
+                            message=str(exc),
+                        )
+                    )
+                continue
+            try:
+                article_events = json.loads(payload_text)
+            except json.JSONDecodeError as exc:
+                if diagnostics_out is not None:
+                    diagnostics_out.append(
+                        _statsrad_event_artifact_diagnostic(
+                            rule_id="no_statsrad_event_artifact_invalid_json",
+                            locator=locator,
+                            bulletin_id=bulletin_id,
+                            reason="statsrad event artifact was not valid JSON",
+                            exception_type=type(exc).__name__,
+                            message=str(exc),
+                        )
+                    )
                 continue
             if not isinstance(article_events, list):
+                if diagnostics_out is not None:
+                    diagnostics_out.append(
+                        _statsrad_event_artifact_diagnostic(
+                            rule_id="no_statsrad_event_artifact_non_list",
+                            locator=locator,
+                            bulletin_id=bulletin_id,
+                            reason="statsrad event artifact root was not a list",
+                            value_type=type(article_events).__name__,
+                        )
+                    )
                 continue
-            for item in article_events:
+            for item_index, item in enumerate(article_events):
                 if not isinstance(item, dict):
+                    if diagnostics_out is not None:
+                        diagnostics_out.append(
+                            _statsrad_event_artifact_diagnostic(
+                                rule_id="no_statsrad_event_item_non_object",
+                                locator=locator,
+                                bulletin_id=bulletin_id,
+                                reason="statsrad event artifact item was not an object",
+                                item_index=item_index,
+                                value_type=type(item).__name__,
+                            )
+                        )
                     continue
                 event = dict(item)
                 if bulletin_id and not event.get("bulletin_id"):
@@ -609,8 +695,9 @@ def build_no_statsrad_commencement_candidate_scan(
         seen_needles.add(key)
         deduped_needles.append((kind, needle, score))
 
+    event_artifact_diagnostics: list[dict[str, Any]] = []
     candidates: list[dict[str, Any]] = []
-    for event in iter_no_statsrad_event_artifacts(data_dir):
+    for event in iter_no_statsrad_event_artifacts(data_dir, diagnostics_out=event_artifact_diagnostics):
         event_text = _normalize_space(str(event.get("excerpt") or event.get("raw_text") or ""))
         title = str(event.get("title") or "")
         title_text = _normalize_space(title).lower()
@@ -680,6 +767,8 @@ def build_no_statsrad_commencement_candidate_scan(
         "direct_only": direct_only,
         "candidate_count": len(candidates),
         "candidates": candidates[:limit],
+        "event_artifact_diagnostic_count": len(event_artifact_diagnostics),
+        "event_artifact_diagnostics": event_artifact_diagnostics,
     }
 
 
