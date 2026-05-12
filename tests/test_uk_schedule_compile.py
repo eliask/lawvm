@@ -3926,7 +3926,7 @@ def test_pipeline_compile_ops_records_nonstructural_replay_candidates_lowered_to
     ]
 
 
-def test_pipeline_compile_ops_does_not_record_unsupported_nonstructural_no_ops(monkeypatch) -> None:
+def test_pipeline_compile_ops_records_unsupported_nonstructural_no_ops(monkeypatch) -> None:
     effect = UKEffectRecord(
         effect_id="uk_test_nonstructural_modified_no_ops",
         effect_type="modified",
@@ -3976,7 +3976,22 @@ def test_pipeline_compile_ops_does_not_record_unsupported_nonstructural_no_ops(m
         archive=object(),
         lowering_rejections_out=lowering_rejections,
     ) == []
-    assert lowering_rejections == []
+    assert lowering_rejections == [
+        {
+            "rule_id": "uk_effect_nonstructural_unsupported_no_ops_rejected",
+            "family": "lowering_filter",
+            "phase": "lowering",
+            "effect_id": "uk_test_nonstructural_modified_no_ops",
+            "affecting_act_id": "uksi/2000/2040",
+            "affected_provisions": "s. 57",
+            "affecting_provisions": "Sch. 2 para. 7",
+            "effect_type": "modified",
+            "reason": "UK applicable nonstructural effect row is not replay-supported and lowered to no replay operations",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
 
 
 def test_pipeline_compile_ops_falls_back_to_metadata_for_missing_affecting_xml(monkeypatch) -> None:
