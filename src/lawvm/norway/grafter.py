@@ -2620,11 +2620,15 @@ def _append_no_replay_adjudication(
     normalized_detail = dict(detail or {})
     normalized_detail.setdefault("rule_id", kind)
     normalized_detail.setdefault("phase", "replay")
-    if kind == "replay_unsupported_action":
+    if kind in {"replay_unsupported_action", "replay_unresolved_target", "replay_noop"}:
         normalized_detail.setdefault("family", "unsupported_or_unresolved_action")
-        normalized_detail.setdefault("blocking", True)
-        normalized_detail.setdefault("strict_disposition", "block")
-        normalized_detail.setdefault("quirks_disposition", "record")
+    elif kind == "replay_tree_invariant_violation":
+        normalized_detail.setdefault("family", "tree_invariant_violation")
+    elif kind.startswith("no_replay_"):
+        normalized_detail.setdefault("family", "action_family_recovery")
+    normalized_detail.setdefault("blocking", True)
+    normalized_detail.setdefault("strict_disposition", "block")
+    normalized_detail.setdefault("quirks_disposition", "record")
     adjudications_out.append(
         CompileAdjudication(
             kind=kind,
