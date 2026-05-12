@@ -33,6 +33,20 @@ UNSUPPORTED_ACTION_VERBS = frozenset(
     }
 )
 
+UNKNOWN_OPERATIVE_ACTION_VERBS = frozenset(
+    {
+        "modified",
+        "modifies",
+        "modify",
+        "substituted",
+        "substitutes",
+        "substitute",
+        "varied",
+        "varies",
+        "vary",
+    }
+)
+
 KIND_MAPPING = {
     "article": "article",
     "paragraph": "paragraph",
@@ -124,6 +138,27 @@ class EUOpsParser:
                         blocking=True,
                         strict_disposition="block",
                     )
+                else:
+                    unknown_operative_verb = next(
+                        (
+                            verb
+                            for verb in UNKNOWN_OPERATIVE_ACTION_VERBS
+                            if re.search(rf"\b{verb}\w*\b", lowered)
+                        ),
+                        None,
+                    )
+                    if unknown_operative_verb is not None and _TARGET_RE.search(segment):
+                        self._record_diagnostic(
+                            rule_id="eu_ops_parser_unknown_operative_segment",
+                            reason=(
+                                "EU parser saw an operative-looking amendment segment with a target "
+                                f"but no supported action mapping for verb: {unknown_operative_verb}"
+                            ),
+                            source_excerpt=segment,
+                            family="unsupported_action",
+                            blocking=True,
+                            strict_disposition="block",
+                        )
                 continue
             action_kind = StructuralAction(action)
             segment_op_count = 0
