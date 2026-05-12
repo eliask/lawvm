@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import sys
 from pathlib import Path
 
@@ -90,10 +91,15 @@ def main() -> None:
         "--verbose", "-v", action="store_true",
         help="Show per-act status (cached / fetched)",
     )
+    parser.add_argument(
+        "--events-jsonl", metavar="PATH",
+        help="Write structured acquisition event rows for failed or known-missing affecting acts",
+    )
     args = parser.parse_args()
 
     delay = max(args.delay, _MIN_DELAY)
     db_path = Path(args.db) if args.db else _DEFAULT_DB
+    events_path = Path(args.events_jsonl) if args.events_jsonl else None
 
     if not db_path.exists():
         print(f"Archive DB not found: {db_path}", file=sys.stderr)
@@ -123,17 +129,28 @@ def main() -> None:
 
     if args.dry_run:
         print("DRY-RUN mode — nothing will be downloaded.")
+    if events_path:
+        events_path.parent.mkdir(parents=True, exist_ok=True)
+        events_path.write_text("", encoding="utf-8")
 
     total_fetched = total_cached = total_errors = 0
+    total_events = 0
     n_statute = len(sids)
 
     for i, sid in enumerate(sids):
-        fetched, cached, errors = fetch_missing_for_statute(
+        report = fetch_missing_for_statute(
             sid, archive, delay=delay, dry_run=args.dry_run, verbose=args.verbose,
         )
+        fetched, cached, errors = report
         total_fetched += fetched
         total_cached += cached
         total_errors += errors
+        events = list(getattr(report, "events", ()) or ())
+        total_events += len(events)
+        if events_path and events:
+            with events_path.open("a", encoding="utf-8") as f:
+                for event in events:
+                    f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
         # Progress every 10 statutes
         if args.verbose or (i + 1) % 10 == 0 or (i + 1) == n_statute:
@@ -149,6 +166,9 @@ def main() -> None:
     print(f"Acts fetched:        {total_fetched}")
     print(f"Acts already cached: {total_cached}")
     print(f"Fetch errors:        {total_errors}")
+    if events_path:
+        print(f"Acquisition events:  {total_events}")
+        print(f"Events JSONL:        {events_path}")
 
     archive.close()
 
