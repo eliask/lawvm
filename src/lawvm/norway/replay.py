@@ -45,6 +45,7 @@ NO_REPLAY_MISSING_AMENDMENT_SOURCE = "no_replay_missing_amendment_source"
 NO_REPLAY_CONTINGENT_COMMENCEMENT_SKIPPED = "no_replay_contingent_commencement_skipped"
 NO_REPLAY_UNKNOWN_EFFECTIVE_SKIPPED = "no_replay_unknown_effective_skipped"
 NO_REPLAY_FUTURE_EFFECTIVE_SKIPPED = "no_replay_future_effective_skipped"
+NO_REPLAY_NO_MATCHING_CHANGE_GROUP = "no_replay_no_matching_change_group"
 
 
 # Back-compat for tests and call sites that imported the helper from replay.py.
@@ -230,11 +231,35 @@ def replay_no_to_pit(
             )
             continue
         heading_groups.extend(parse_no_heading_groups(html_bytes, norm_base_id))
+        parser_adjudications: list[CompileAdjudication] = []
+        parsed_groups = iter_no_document_change_ops(
+            html_bytes,
+            source_id,
+            adjudications_out=parser_adjudications,
+        )
+        result.adjudications.extend(parser_adjudications)
         groups = [
             (group_base, group_ops)
-            for group_base, group_ops in iter_no_document_change_ops(html_bytes, source_id)
+            for group_base, group_ops in parsed_groups
             if group_base == norm_base_id
         ]
+        if not groups:
+            result.adjudications.append(
+                _no_replay_skip_adjudication(
+                    kind=NO_REPLAY_NO_MATCHING_CHANGE_GROUP,
+                    message="Norway replay skipped amendment: parsed change groups did not target the indexed base act.",
+                    source_id=source_id,
+                    phase="replay",
+                    blocking=True,
+                    detail={
+                        "base_id": norm_base_id,
+                        "effective_date": effective_date,
+                        "parsed_group_bases": [group_base for group_base, _group_ops in parsed_groups],
+                        "parser_adjudication_count": len(parser_adjudications),
+                    },
+                )
+            )
+            continue
         for _group_base, group_ops in groups:
             for op in group_ops:
                 if op.source is None:
