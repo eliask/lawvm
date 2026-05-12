@@ -60,11 +60,29 @@ _LATEST_CONSOLIDATED_SELECTOR = ConsolidatedArtifactSelector.latest_cached_edito
 _BENCH_CONSOLIDATED_SELECTOR = ConsolidatedArtifactSelector.bench_comparable()
 
 
-def _format_bench_warning_summary(warnings: Counter[str]) -> str:
-    if not warnings:
+def _format_bench_warning_summary(diagnostics: Counter[str]) -> str:
+    if not diagnostics:
         return ""
-    parts = [f"{kind}×{count}" for kind, count in sorted(warnings.items(), key=lambda item: (-item[1], item[0]))]
-    return "  warnings: " + ", ".join(parts)
+    parts = [f"{kind}×{count}" for kind, count in sorted(diagnostics.items(), key=lambda item: (-item[1], item[0]))]
+    label = (
+        "diagnostics"
+        if any(kind.startswith(("finding:", "source_adjudication:")) for kind in diagnostics)
+        else "warnings"
+    )
+    return f"  {label}: " + ", ".join(parts)
+
+
+def _summarize_bench_replay_result_diagnostics(master: Any, captured_counts: Counter[str]) -> Counter[str]:
+    """Merge captured warnings with typed replay evidence that bench otherwise drops."""
+    counts = Counter(captured_counts)
+    for finding in getattr(master, "findings", ()) or ():
+        kind = str(getattr(finding, "kind", "") or "").strip()
+        if kind:
+            counts[f"finding:{kind}"] += 1
+    source_adjudication = getattr(master, "source_adjudication", None)
+    if source_adjudication is not None and getattr(source_adjudication, "oracle_suspect", ""):
+        counts["source_adjudication:oracle_suspect"] += 1
+    return counts
 
 
 def _summarize_bench_warning_diagnostics(
@@ -129,7 +147,7 @@ def _run_replay_with_bench_warning_capture(
         stderr_buf.getvalue(),
         list(caught),
     )
-    return master, warning_counts
+    return master, _summarize_bench_replay_result_diagnostics(master, warning_counts)
 
 
 def _filter_by_amend_count(
@@ -939,6 +957,7 @@ def _run_benchmark_section(
     workers: int = 1,
     diagnostic_replay: bool = False,
     mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle",
+    diagnostic_summaries_out: Optional[Dict[str, str]] = None,
 ) -> List[Tuple[int, str, float, float, str, float]]:
     """Run benchmark with section-level scoring.
 
@@ -962,6 +981,8 @@ def _run_benchmark_section(
                 result = future.result()
                 results[idx] = result[:6]
                 done += 1
+                if diagnostic_summaries_out is not None:
+                    diagnostic_summaries_out[result[1]] = result[6]
                 if verbose:
                     count, sid, text_sim, section_sim, status, elapsed, warning_summary = result
                     t_err = f"{(1 - text_sim) * 100:.2f}%" if text_sim >= 0 else "ERR"
@@ -984,6 +1005,8 @@ def _run_benchmark_section(
         elapsed = time.time() - t0
         results.append((count, sid, text_sim, section_sim, status, elapsed))
         warning_summary = _format_bench_warning_summary(warning_counts)
+        if diagnostic_summaries_out is not None:
+            diagnostic_summaries_out[sid] = warning_summary
         if verbose:
             t_err = f"{(1 - text_sim) * 100:.2f}%" if text_sim >= 0 else "ERR"
             s_err = f"{(1 - section_sim) * 100:.2f}%" if section_sim >= 0 else "---"
@@ -1002,6 +1025,7 @@ def _run_benchmark(
     diagnostic_replay: bool = False,
     mode: Literal["finlex_oracle", "legal_pit"] = "finlex_oracle",
     fast: bool = False,
+    diagnostic_summaries_out: Optional[Dict[str, str]] = None,
 ) -> Tuple[List[Tuple[int, str, float, str, float]], Dict[str, float]]:
     """Run benchmark, optionally parallel with ProcessPoolExecutor.
 
@@ -1049,6 +1073,8 @@ def _run_benchmark(
                 count, sid, sim, status, elapsed, warning_summary, lev_sim = result
                 results[idx] = (count, sid, sim, status, elapsed)
                 lev_sims[sid] = lev_sim
+                if diagnostic_summaries_out is not None:
+                    diagnostic_summaries_out[sid] = warning_summary
                 done += 1
                 if verbose:
                     err = f"{(1 - sim) * 100:.2f}%" if sim >= 0 else "ERR"
@@ -1071,6 +1097,8 @@ def _run_benchmark(
         results.append((count, sid, sim, status, elapsed))
         lev_sims[sid] = lev_sim
         warning_summary = _format_bench_warning_summary(warning_counts)
+        if diagnostic_summaries_out is not None:
+            diagnostic_summaries_out[sid] = warning_summary
         if verbose:
             err = f"{(1 - sim) * 100:.2f}%" if sim >= 0 else "ERR"
             lev_str = f" lev {(1 - lev_sim) * 100:.2f}%" if lev_sim >= 0 else ""
@@ -1090,12 +1118,15 @@ def _save_run(
     timestamp: str,
     section_results: Optional[List[Tuple[int, str, float, float, str, float]]] = None,
     lev_sims: Optional[Dict[str, float]] = None,
+    diagnostic_summaries: Optional[Dict[str, str]] = None,
 ) -> Path:
     """Save per-statute results to bench_runs/.
 
     If section_results is provided (from --section-score), a section_similarity
     column is merged into the output CSV.
-    If lev_sims is provided, a lev_similarity column is added.
+    If lev_sims is provided, a lev_similarity column is added.  If
+    diagnostic_summaries is provided, a diagnostics_summary column preserves replay
+    diagnostics that were already printed live during the run.
     """
     fname = f"{timestamp.replace(':', '').replace('-', '')[:15]}_{label}.csv"
     path = _runs_dir() / fname
@@ -1108,16 +1139,20 @@ def _save_run(
             sec_sim_map[_sid] = _section_sim
 
     has_lev = lev_sims is not None
+    has_diagnostics = diagnostic_summaries is not None
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
+        header = ["amendments", "statute_id", "similarity"]
         if sec_sim_map and has_lev:
-            w.writerow(["amendments", "statute_id", "similarity", "section_similarity", "lev_similarity", "status", "elapsed_s"])
+            header += ["section_similarity", "lev_similarity"]
         elif sec_sim_map:
-            w.writerow(["amendments", "statute_id", "similarity", "section_similarity", "status", "elapsed_s"])
+            header.append("section_similarity")
         elif has_lev:
-            w.writerow(["amendments", "statute_id", "similarity", "lev_similarity", "status", "elapsed_s"])
-        else:
-            w.writerow(["amendments", "statute_id", "similarity", "status", "elapsed_s"])
+            header.append("lev_similarity")
+        header += ["status", "elapsed_s"]
+        if has_diagnostics:
+            header.append("diagnostics_summary")
+        w.writerow(header)
         for count, sid, sim, status, elapsed in results:
             sim_str = f"{sim:.6f}" if sim >= 0 else "ERR"
             row_vals: List[Any] = [count, sid, sim_str]
@@ -1128,6 +1163,8 @@ def _save_run(
                 lsim = lev_sims.get(sid, -1.0) if lev_sims else -1.0  # type: ignore[union-attr]
                 row_vals.append(f"{lsim:.6f}" if lsim >= 0 else "ERR")
             row_vals += [status, f"{elapsed:.1f}"]
+            if has_diagnostics:
+                row_vals.append((diagnostic_summaries or {}).get(sid, ""))
             w.writerow(row_vals)
     return path
 
@@ -2197,6 +2234,7 @@ def main(args) -> None:
 
     section_results: Optional[List[Tuple[int, str, float, float, str, float]]] = None
     lev_sims: Optional[Dict[str, float]] = None
+    diagnostic_summaries: Dict[str, str] = {}
     if section_score_mode:
         section_results = _run_benchmark_section(
             corpus,
@@ -2204,6 +2242,7 @@ def main(args) -> None:
             workers=workers,
             diagnostic_replay=diagnostic_replay,
             mode=bench_mode,
+            diagnostic_summaries_out=diagnostic_summaries,
         )
         # Extract standard (text) results from section_results for summary/history
         results = [
@@ -2218,6 +2257,7 @@ def main(args) -> None:
             diagnostic_replay=diagnostic_replay,
             mode=bench_mode,
             fast=fast_mode,
+            diagnostic_summaries_out=diagnostic_summaries,
         )
 
     flat = [(sid, sim, st) for _, sid, sim, st, _ in results]
@@ -2263,7 +2303,14 @@ def main(args) -> None:
             print(f"Levenshtein:         {mean_lev * 100:.2f}%  (full-text, secondary — tree-structure sanity)")
 
     # Persist
-    run_path = _save_run(results, label, timestamp, section_results=section_results, lev_sims=lev_sims)
+    run_path = _save_run(
+        results,
+        label,
+        timestamp,
+        section_results=section_results,
+        lev_sims=lev_sims,
+        diagnostic_summaries=diagnostic_summaries,
+    )
     _append_history(timestamp, label, stats)
 
     print(f"\nRun saved: {run_path}")

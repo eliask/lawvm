@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import warnings
+from collections import Counter
 
 import pytest
 
@@ -221,6 +223,68 @@ def test_run_benchmark_prints_warning_summary_per_row(monkeypatch, capsys) -> No
     assert results[0][:4] == (1, "2000/1", 0.9, "OK")
     out = capsys.readouterr().out
     assert "warnings: coverage_degraded×2, same_day_empty_interval×1" in out
+
+
+def test_summarize_bench_replay_result_diagnostics_counts_findings() -> None:
+    master = type(
+        "ReplayResult",
+        (),
+        {
+            "findings": (
+                type("Finding", (), {"kind": "ELAB.SOURCE_PATHOLOGY"})(),
+                type("Finding", (), {"kind": "ELAB.SOURCE_PATHOLOGY"})(),
+            ),
+            "source_adjudication": type("SourceAdjudication", (), {"oracle_suspect": "stale_oracle"})(),
+        },
+    )()
+
+    counts = bench._summarize_bench_replay_result_diagnostics(master, Counter({"coverage_degraded": 1}))
+
+    assert counts["coverage_degraded"] == 1
+    assert counts["finding:ELAB.SOURCE_PATHOLOGY"] == 2
+    assert counts["source_adjudication:oracle_suspect"] == 1
+    assert bench._format_bench_warning_summary(counts).startswith("  diagnostics: ")
+
+
+def test_run_benchmark_can_emit_diagnostic_summaries_for_persistence(monkeypatch) -> None:
+    monkeypatch.setattr(
+        bench,
+        "_score_one_with_warning_summary",
+        lambda sid, mode="finlex_oracle", *, diagnostic_replay=False, fast=False: (
+            sid,
+            0.9,
+            "OK",
+            0.95,
+            {"coverage_degraded": 2},
+        ),
+    )
+    diagnostics_out: dict[str, str] = {}
+
+    results, _lev_sims = bench._run_benchmark(
+        [(1, "2000/1")],
+        verbose=False,
+        workers=1,
+        diagnostic_summaries_out=diagnostics_out,
+    )
+
+    assert results[0][:4] == (1, "2000/1", 0.9, "OK")
+    assert diagnostics_out == {"2000/1": "  warnings: coverage_degraded×2"}
+
+
+def test_save_run_persists_diagnostics_summary_column(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(bench, "_runs_dir", lambda: tmp_path)
+
+    path = bench._save_run(
+        [(1, "2000/1", 0.9, "OK", 1.23)],
+        "demo",
+        "2026-05-12T12:00:00Z",
+        lev_sims={"2000/1": 0.95},
+        diagnostic_summaries={"2000/1": "  diagnostics: finding:ELAB.SOURCE_PATHOLOGY×1"},
+    )
+
+    rows = list(csv.DictReader(path.open(newline="")))
+    assert rows[0]["diagnostics_summary"] == "  diagnostics: finding:ELAB.SOURCE_PATHOLOGY×1"
+    assert rows[0]["lev_similarity"] == "0.950000"
 
 
 def test_bench_tail_proof_summary_uses_display_tier_and_mixed_risk(monkeypatch) -> None:
