@@ -219,6 +219,11 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+SHARD_GROUPS: dict[str, tuple[str, ...]] = {
+    "frontends": ("estonia", "eu", "finland", "norway", "starter", "sweden", "uk"),
+    "modules": ("core", "evidence", "properties", "tools"),
+}
+
 SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("src/lawvm/contracts.py", ("core",)),
     ("src/lawvm/graph_build.py", ("core", "tools")),
@@ -277,6 +282,19 @@ def shard_assignments() -> dict[str, list[str]]:
             # for list/debug output.
             assignments[matches[0]].append(filename)
     return {key: sorted(value) for key, value in assignments.items()}
+
+
+def expand_shard_names(shards: list[str]) -> list[str]:
+    """Expand named shard groups while preserving order and de-duplicating."""
+    expanded: list[str] = []
+    for shard in shards:
+        members = SHARD_GROUPS.get(shard, (shard,))
+        for member in members:
+            if member == "all":
+                return ["all"]
+            if member not in expanded:
+                expanded.append(member)
+    return expanded
 
 
 def validate() -> int:
@@ -379,9 +397,15 @@ def run_shard(shard: str, *, pytest_args: list[str], timing_jsonl: str | None = 
             for filename in names
         ]
         filenames = sorted(filenames)
+    elif shard in SHARD_GROUPS:
+        filenames = sorted(
+            filename
+            for member in SHARD_GROUPS[shard]
+            for filename in assignments[member]
+        )
     else:
         if shard not in assignments:
-            choices = ", ".join(["all", *sorted(assignments)])
+            choices = ", ".join(["all", *sorted(assignments), *sorted(SHARD_GROUPS)])
             print(f"Unknown shard {shard!r}. Choices: {choices}", file=sys.stderr)
             return 2
         filenames = assignments[shard]
@@ -435,6 +459,8 @@ def run_shard(shard: str, *, pytest_args: list[str], timing_jsonl: str | None = 
 def list_shards() -> int:
     assignments = shard_assignments()
     print("all")
+    for shard in sorted(SHARD_GROUPS):
+        print(shard)
     for shard in sorted(assignments):
         print(shard)
     return 0
@@ -444,6 +470,8 @@ def list_files(shard: str) -> int:
     assignments = shard_assignments()
     if shard == "all":
         filenames = sorted(filename for names in assignments.values() for filename in names)
+    elif shard in SHARD_GROUPS:
+        filenames = sorted(filename for member in SHARD_GROUPS[shard] for filename in assignments[member])
     else:
         filenames = assignments.get(shard)
         if filenames is None:
@@ -456,10 +484,10 @@ def list_files(shard: str) -> int:
 
 def shard_plan(shard: str = "all") -> dict[str, Any]:
     assignments = shard_assignments()
-    if shard != "all" and shard not in assignments:
-        choices = ", ".join(["all", *sorted(assignments)])
+    if shard != "all" and shard not in assignments and shard not in SHARD_GROUPS:
+        choices = ", ".join(["all", *sorted(assignments), *sorted(SHARD_GROUPS)])
         raise ValueError(f"Unknown shard {shard!r}. Choices: {choices}")
-    selected = sorted(assignments) if shard == "all" else [shard]
+    selected = sorted(assignments) if shard == "all" else expand_shard_names([shard])
     shards: list[dict[str, Any]] = [
         {
             "name": name,

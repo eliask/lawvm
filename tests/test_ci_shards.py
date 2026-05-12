@@ -89,6 +89,50 @@ def test_test_shard_plan_is_jsonable_and_filterable() -> None:
     ]
 
 
+def test_test_shard_named_groups_expand_to_stable_shards() -> None:
+    module = _load_test_shard_module()
+
+    assert module.expand_shard_names(["frontends"]) == [
+        "estonia",
+        "eu",
+        "finland",
+        "norway",
+        "starter",
+        "sweden",
+        "uk",
+    ]
+    assert module.expand_shard_names(["frontends", "modules", "finland"]) == [
+        "estonia",
+        "eu",
+        "finland",
+        "norway",
+        "starter",
+        "sweden",
+        "uk",
+        "core",
+        "evidence",
+        "properties",
+        "tools",
+    ]
+
+
+def test_test_shard_group_plan_is_jsonable() -> None:
+    module = _load_test_shard_module()
+
+    plan = module.shard_plan("modules")
+
+    assert plan["kind"] == "lawvm_pytest_shard_plan"
+    assert plan["selected"] == "modules"
+    assert [item["name"] for item in plan["shards"]] == [
+        "core",
+        "evidence",
+        "properties",
+        "tools",
+    ]
+    assert plan["assigned_file_count"] == sum(item["file_count"] for item in plan["shards"])
+    json.dumps(plan)
+
+
 def test_test_shard_timing_record_is_jsonable() -> None:
     module = _load_test_shard_module()
 
@@ -380,6 +424,7 @@ def test_ci_sharded_accepts_explicit_shard_flags_and_rejects_affected_mix() -> N
     assert help_result.returncode == 0
     assert "--shard norway" in help_result.stdout
     assert "--shards \"norway sweden eu\"" in help_result.stdout
+    assert "--shards \"frontends modules\"" in help_result.stdout
 
     conflict_result = subprocess.run(
         [str(script), "--affected", "tests/test_ci_shards.py", "--shard", "tools"],
