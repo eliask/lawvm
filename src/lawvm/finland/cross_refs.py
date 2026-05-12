@@ -66,6 +66,42 @@ class CrossRefEdge:
                                 # enables stale-ref detection: rebuild and compare
 
 
+@dataclass(frozen=True)
+class CrossRefDiagnostic:
+    """Typed extraction diagnostic for cross-reference edges not emitted."""
+
+    rule_id: str
+    family: str
+    phase: str
+    source_statute_id: str
+    reason: str
+    edge_type: str = ""
+    href: str = ""
+    target_statute_id: str = ""
+    source_section: str = ""
+    target_section: str = ""
+    blocking: bool = False
+    strict_disposition: str = "record"
+    quirks_disposition: str = "record"
+
+    def as_detail(self) -> dict[str, object]:
+        return {
+            "rule_id": self.rule_id,
+            "family": self.family,
+            "phase": self.phase,
+            "source_statute_id": self.source_statute_id,
+            "reason": self.reason,
+            "edge_type": self.edge_type,
+            "href": self.href,
+            "target_statute_id": self.target_statute_id,
+            "source_section": self.source_section,
+            "target_section": self.target_section,
+            "blocking": self.blocking,
+            "strict_disposition": self.strict_disposition,
+            "quirks_disposition": self.quirks_disposition,
+        }
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -106,14 +142,60 @@ def _find_section_ancestor(elem: ET.Element, parent_map: dict) -> str:
     return ''
 
 
-def _refs_from(root: ET.Element, xpath: str) -> List[str]:
+def _record_self_reference_skip(
+    diagnostics_out: Optional[list[CrossRefDiagnostic]],
+    *,
+    statute_id: str,
+    edge_type: str,
+    href: str = "",
+    source_section: str = "",
+    target_section: str = "",
+) -> None:
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        CrossRefDiagnostic(
+            rule_id="fi_cross_ref_self_reference_skipped",
+            family="graph_edge_filter",
+            phase="cross_ref_extraction",
+            source_statute_id=statute_id,
+            reason="Finnish cross-reference extractor skipped a self-reference edge.",
+            edge_type=edge_type,
+            href=href,
+            target_statute_id=statute_id,
+            source_section=source_section,
+            target_section=target_section,
+            blocking=False,
+            strict_disposition="record",
+        )
+    )
+
+
+def _refs_from(
+    root: ET.Element,
+    xpath: str,
+    *,
+    source_statute_id: str = "",
+    edge_type: str = "",
+    diagnostics_out: Optional[list[CrossRefDiagnostic]] = None,
+) -> List[str]:
     """Collect all statute IDs referenced under the given XPath (within finlex namespace)."""
     results = []
     for ref_elem in root.findall(xpath, _NS):
         href = ref_elem.get('href', '')
         parsed = _parse_ref_href(href)
         if parsed:
-            results.append(parsed[0])
+            target_id, prov_path = parsed
+            if source_statute_id and target_id == source_statute_id:
+                _record_self_reference_skip(
+                    diagnostics_out,
+                    statute_id=source_statute_id,
+                    edge_type=edge_type,
+                    href=href,
+                    target_section=prov_path,
+                )
+                continue
+            results.append(target_id)
     return results
 
 
@@ -121,13 +203,20 @@ def _refs_from(root: ET.Element, xpath: str) -> List[str]:
 # Main extraction
 # ---------------------------------------------------------------------------
 
-def extract_cross_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
+def extract_cross_refs(
+    xml_bytes: bytes,
+    statute_id: str,
+    *,
+    diagnostics_out: Optional[list[CrossRefDiagnostic]] = None,
+) -> List[CrossRefEdge]:
     """Extract all cross-reference edges from a Finnish statute XML.
 
     Produces edges for: inline body citations, repeals, issued_under, and
     decrees issued under this statute's authority.
 
-    Self-references are silently dropped (a statute citing itself).
+    Self-references are skipped because the graph edge would be reflexive. If
+    ``diagnostics_out`` is provided, each skipped self-reference is recorded as
+    ``fi_cross_ref_self_reference_skipped``.
 
     Args:
         xml_bytes:  Raw XML bytes of the statute (Akoma Ntoso / Finlex format).
@@ -140,6 +229,18 @@ def extract_cross_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
     try:
         root = ET.fromstring(xml_bytes)
     except ET.ParseError:
+        if diagnostics_out is not None:
+            diagnostics_out.append(
+                CrossRefDiagnostic(
+                    rule_id="fi_cross_ref_xml_parse_failed",
+                    family="source_pathology",
+                    phase="cross_ref_extraction",
+                    source_statute_id=statute_id,
+                    reason="Finnish cross-reference extraction skipped source XML because parsing failed.",
+                    blocking=True,
+                    strict_disposition="block",
+                )
+            )
         return []
 
     edges: List[CrossRefEdge] = []
@@ -164,6 +265,15 @@ def extract_cross_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
                     src_sec = _find_section_ancestor(ref_elem, parent_map)
                     key = (src_sec, target_id, prov_path)
                     cite_counts[key] = cite_counts.get(key, 0) + 1
+                else:
+                    _record_self_reference_skip(
+                        diagnostics_out,
+                        statute_id=statute_id,
+                        edge_type="CITES",
+                        href=href,
+                        source_section=_find_section_ancestor(ref_elem, parent_map),
+                        target_section=prov_path,
+                    )
 
     for (src_sec, target_id, prov_path), count in cite_counts.items():
         edges.append(CrossRefEdge(
@@ -176,31 +286,46 @@ def extract_cross_refs(xml_bytes: bytes, statute_id: str) -> List[CrossRefEdge]:
         ))
 
     # ── REPEALS: this statute repeals target ─────────────────────────────────
-    for target_id in _refs_from(root, './/finlex:repeals//finlex:ref'):
-        if target_id != statute_id:
-            edges.append(CrossRefEdge(
-                source_statute_id=statute_id,
-                target_statute_id=target_id,
-                edge_type='REPEALS',
-            ))
+    for target_id in _refs_from(
+        root,
+        './/finlex:repeals//finlex:ref',
+        source_statute_id=statute_id,
+        edge_type="REPEALS",
+        diagnostics_out=diagnostics_out,
+    ):
+        edges.append(CrossRefEdge(
+            source_statute_id=statute_id,
+            target_statute_id=target_id,
+            edge_type='REPEALS',
+        ))
 
     # ── ISSUED_UNDER: this statute was issued under authority of target ───────
-    for target_id in _refs_from(root, './/finlex:issuedUnderActs//finlex:ref'):
-        if target_id != statute_id:
-            edges.append(CrossRefEdge(
-                source_statute_id=statute_id,
-                target_statute_id=target_id,
-                edge_type='ISSUED_UNDER',
-            ))
+    for target_id in _refs_from(
+        root,
+        './/finlex:issuedUnderActs//finlex:ref',
+        source_statute_id=statute_id,
+        edge_type="ISSUED_UNDER",
+        diagnostics_out=diagnostics_out,
+    ):
+        edges.append(CrossRefEdge(
+            source_statute_id=statute_id,
+            target_statute_id=target_id,
+            edge_type='ISSUED_UNDER',
+        ))
 
     # ── ISSUES: this statute has issued decrees (target) ─────────────────────
-    for target_id in _refs_from(root, './/finlex:issuedUnderThisAct//finlex:ref'):
-        if target_id != statute_id:
-            edges.append(CrossRefEdge(
-                source_statute_id=statute_id,
-                target_statute_id=target_id,
-                edge_type='ISSUES',
-            ))
+    for target_id in _refs_from(
+        root,
+        './/finlex:issuedUnderThisAct//finlex:ref',
+        source_statute_id=statute_id,
+        edge_type="ISSUES",
+        diagnostics_out=diagnostics_out,
+    ):
+        edges.append(CrossRefEdge(
+            source_statute_id=statute_id,
+            target_statute_id=target_id,
+            edge_type='ISSUES',
+        ))
 
     return edges
 
