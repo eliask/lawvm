@@ -7,7 +7,9 @@ from lawvm.tools.uk_effect import (
     _collect_target_shape,
     _resolve_parent_presence,
     _resolve_target_presence,
+    lowering_rejection_rule_counts,
 )
+from lawvm.tools.uk_effects import _EffectSummaryContext, summarize_uk_effect
 
 
 class _FakeResolver:
@@ -108,3 +110,88 @@ def test_collect_target_shape_falls_back_to_text_map_and_descendant_hits() -> No
     assert has_text is True
     assert has_children is True
     assert texts == ["1 Commissioners may inquire into the claim."]
+
+
+def test_lowering_rejection_rule_counts_are_stable() -> None:
+    assert lowering_rejection_rule_counts(
+        [
+            {"rule_id": "uk_effect_lowering_no_ops_rejected"},
+            {"rule_id": "uk_effect_lowering_no_ops_rejected"},
+            {"rule_id": "uk_effect_payload_missing"},
+            {},
+        ]
+    ) == {
+        "uk_effect_lowering_no_ops_rejected": 2,
+        "uk_effect_payload_missing": 1,
+        "unknown": 1,
+    }
+
+
+def test_summarize_uk_effect_preserves_lowering_rejections(monkeypatch) -> None:
+    from lawvm.uk_legislation.uk_amendment_replay import UKEffectRecord
+
+    effect = UKEffectRecord(
+        effect_id="eff-1",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2000/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 1",
+        affecting_uri="/id/ukpga/2025/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="s. 2",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+
+    def fake_compile_effect_to_ir_ops(effect_arg, extracted, **kwargs):  # noqa: ANN001
+        del effect_arg, extracted
+        kwargs["lowering_rejections_out"].append(
+            {
+                "rule_id": "uk_effect_lowering_no_ops_rejected",
+                "phase": "lowering",
+                "effect_id": "eff-1",
+            }
+        )
+        return []
+
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.uk_amendment_replay.get_affecting_act_xml_from_archive",
+        lambda affecting_act_id, archive: None,
+    )
+    monkeypatch.setattr(
+        "lawvm.uk_legislation.uk_amendment_replay.compile_effect_to_ir_ops",
+        fake_compile_effect_to_ir_ops,
+    )
+
+    summary = summarize_uk_effect(
+        effect,
+        archive=object(),
+        context=_EffectSummaryContext(
+            statute_id="ukpga/2000/1",
+            enacted_ir=None,
+            oracle_ir=None,
+            base_eids=set(),
+            oracle_eids=set(),
+            base_text_map={},
+            oracle_eid_map={},
+            oracle_text_map={},
+            resolver=None,
+            affecting_xml_cache={},
+        ),
+    )
+
+    assert summary.n_ops == 0
+    assert summary.lowering_rejections == (
+        {
+            "rule_id": "uk_effect_lowering_no_ops_rejected",
+            "phase": "lowering",
+            "effect_id": "eff-1",
+        },
+    )

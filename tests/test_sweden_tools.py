@@ -406,9 +406,25 @@ def test_sweden_show_official_command_prints_summary(monkeypatch, capsys) -> Non
 def test_sweden_compile_official_command_prints_compiled_ops(monkeypatch, capsys) -> None:
     archive = _FakeArchiveContext()
     monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
-    monkeypatch.setattr(
-        "lawvm.tools.sweden.compile_se_official_ops_to_archive",
-        lambda archive_obj, sfs_id: [
+    def fake_compile_ops(archive_obj, sfs_id):
+        archive_obj.store(
+            f"se://sfs/{sfs_id}/official.ops.adjudications.json",
+            json.dumps(
+                [
+                    {
+                        "kind": "se_official_effect_plan_unsupported",
+                        "message": "unsupported",
+                        "source_statute": sfs_id,
+                        "op_id": "",
+                        "detail": {
+                            "rule_id": "se_official_effect_plan_unsupported",
+                            "phase": "lowering",
+                        },
+                    }
+                ]
+            ).encode("utf-8"),
+        )
+        return [
             {
                 "sequence": 1,
                 "action": "replace",
@@ -419,8 +435,9 @@ def test_sweden_compile_official_command_prints_compiled_ops(monkeypatch, capsys
                 "action": "replace",
                 "target": {"path": [["section", "8"]], "special": None},
             },
-        ],
-    )
+        ]
+
+    monkeypatch.setattr("lawvm.tools.sweden.compile_se_official_ops_to_archive", fake_compile_ops)
 
     sweden_main(
         SimpleNamespace(
@@ -434,6 +451,9 @@ def test_sweden_compile_official_command_prints_compiled_ops(monkeypatch, capsys
 
     assert "SFS ID:             2026:286" in out
     assert "Official ops loc:   se://sfs/2026:286/official.ops.json" in out
+    assert "Adjudications loc:  se://sfs/2026:286/official.ops.adjudications.json" in out
+    assert "Adjudication count: 1" in out
+    assert "adjudication se_official_effect_plan_unsupported: 1" in out
     assert "1. replace section:2" in out
 
 
@@ -449,6 +469,21 @@ def test_sweden_show_official_ops_command_prints_summary(monkeypatch, capsys) ->
                     }
                 ]
             ).encode("utf-8")
+            ,
+            "se://sfs/2026:286/official.ops.adjudications.json": json.dumps(
+                [
+                    {
+                        "kind": "se_official_effect_lowering_skipped",
+                        "message": "payload missing",
+                        "source_statute": "2026:286",
+                        "op_id": "",
+                        "detail": {
+                            "rule_id": "se_official_effect_payload_not_found",
+                            "phase": "lowering",
+                        },
+                    }
+                ]
+            ).encode("utf-8"),
         }
     )
     monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
@@ -464,7 +499,59 @@ def test_sweden_show_official_ops_command_prints_summary(monkeypatch, capsys) ->
     out = capsys.readouterr().out
 
     assert "Official ops loc:   se://sfs/2026:286/official.ops.json" in out
+    assert "Adjudications loc:  se://sfs/2026:286/official.ops.adjudications.json" in out
+    assert "Adjudication count: 1" in out
+    assert "adjudication se_official_effect_payload_not_found: 1" in out
     assert "1. replace section:2" in out
+
+
+def test_sweden_show_official_ops_command_emits_json_with_adjudications(monkeypatch, capsys) -> None:
+    archive = _FakeArchiveContext(
+        stored={
+            "se://sfs/2026:286/official.ops.json": json.dumps(
+                [
+                    {
+                        "sequence": 1,
+                        "action": "replace",
+                        "target": {"path": [["section", "2"]], "special": None},
+                    }
+                ]
+            ).encode("utf-8"),
+            "se://sfs/2026:286/official.ops.adjudications.json": json.dumps(
+                [
+                    {
+                        "kind": "se_official_effect_lowering_skipped",
+                        "message": "payload missing",
+                        "source_statute": "2026:286",
+                        "op_id": "",
+                        "detail": {
+                            "rule_id": "se_official_effect_payload_not_found",
+                            "phase": "lowering",
+                        },
+                    }
+                ]
+            ).encode("utf-8"),
+        }
+    )
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+
+    sweden_main(
+        SimpleNamespace(
+            sweden_command="show-official-ops",
+            sfs_id="2026:286",
+            db=None,
+            format="json",
+        )
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["op_count"] == 1
+    assert payload["adjudication_count"] == 1
+    assert payload["adjudication_rule_counts"] == {
+        "se_official_effect_payload_not_found": 1
+    }
+    assert payload["ops"][0]["action"] == "replace"
+    assert payload["adjudications"][0]["detail"]["phase"] == "lowering"
 
 
 def test_sweden_materialize_current_command_prints_summary(monkeypatch, capsys) -> None:

@@ -34,6 +34,7 @@ class _EffectSummary:
     n_ops: int
     candidate: bool
     resolver_eids: tuple[str, ...]
+    lowering_rejections: tuple[dict[str, Any], ...]
 
 
 def build_uk_effect_summary_context(
@@ -138,7 +139,12 @@ def summarize_uk_effect(
         if affecting_xml
         else None
     )
-    ops = compile_effect_to_ir_ops(effect, extracted)
+    lowering_rejections: list[dict[str, Any]] = []
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted,
+        lowering_rejections_out=lowering_rejections,
+    )
     extracted_tag = extracted.tag.rsplit("}", 1)[-1] if extracted is not None else None
     extracted_text = " ".join(
         t.strip() for t in extracted.itertext() if t and t.strip()
@@ -257,6 +263,7 @@ def summarize_uk_effect(
         n_ops=len(ops),
         candidate=candidate,
         resolver_eids=tuple(resolver_eids),
+        lowering_rejections=tuple(dict(item) for item in lowering_rejections),
     )
 
 
@@ -317,6 +324,12 @@ def main(args: "argparse.Namespace") -> None:
             print(f"  effective:  {effect.effective_date or '(none)'}")
             print(f"  applied:    {effect.applied}  structural: {effect.is_structural}")
             print(f"  source:     {summary.source_pathology or '(none)'}  ops={summary.n_ops}")
+            if summary.lowering_rejections:
+                from lawvm.tools.uk_effect import lowering_rejection_rule_counts
+
+                counts = lowering_rejection_rule_counts(list(summary.lowering_rejections))
+                count_text = ",".join(f"{rule_id}={count}" for rule_id, count in counts.items())
+                print(f"  rejections: {len(summary.lowering_rejections)}  {count_text}")
             print(f"  compare:    {summary.compare_shape or '(none)'}")
             print(
                 f"  candidate:  "

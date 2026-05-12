@@ -412,10 +412,11 @@ def select_manifestation_option(
     tree_notice_path: Path,
     language: str,
     manifestation_type: str,
+    diagnostics_out: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     want_language = language.upper()
     want_type = manifestation_type.lower()
-    options = list_manifestation_options(tree_notice_path)
+    options = list_manifestation_options(tree_notice_path, diagnostics_out=diagnostics_out)
     for option in options:
         if option["language"] == want_language and option["manifestation_type"].lower() == want_type:
             return option
@@ -679,14 +680,24 @@ def fetch_notice(args: argparse.Namespace) -> int:
 
 
 def fetch_manifestation(args: argparse.Namespace) -> int:
+    diagnostics: list[dict[str, Any]] = []
     try:
-        option = select_manifestation_option(args.tree_notice, args.language, args.format)
+        option = select_manifestation_option(
+            args.tree_notice,
+            args.language,
+            args.format,
+            diagnostics_out=diagnostics,
+        )
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        for diagnostic in diagnostics:
+            print(json.dumps(diagnostic, ensure_ascii=False, sort_keys=True), file=sys.stderr)
         return 1
     item = option["items"][0] if option["items"] else None
     if item is None:
         print("ERROR: Manifestation has no items", file=sys.stderr)
+        for diagnostic in diagnostics:
+            print(json.dumps(diagnostic, ensure_ascii=False, sort_keys=True), file=sys.stderr)
         return 1
     out = args.out
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -707,6 +718,8 @@ def fetch_manifestation(args: argparse.Namespace) -> int:
         },
         "request": meta,
         "payload": payload_summary,
+        "acquisition_diagnostic_count": len(diagnostics),
+        "acquisition_diagnostics": diagnostics,
     }
     out.with_suffix(out.suffix + ".meta.json").write_text(json.dumps(combined, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(combined, ensure_ascii=False), flush=True)
