@@ -3551,7 +3551,10 @@ class UKReplayPipeline:
                                 "nonstructural_replay_candidate_family": nonstructural_candidate_family,
                             }
                         )
-                    elif e.is_applicable_for_replay(applicability_mode=applicability_mode):
+                    elif (
+                        (e.effect_type or "").strip().lower() not in _COMMENCEMENT_EFFECT_TYPES
+                        and e.is_applicable_for_replay(applicability_mode=applicability_mode)
+                    ):
                         lowering_rejections_out.append(
                             {
                                 "rule_id": "uk_effect_nonstructural_unsupported_no_ops_rejected",

@@ -3994,6 +3994,59 @@ def test_pipeline_compile_ops_records_unsupported_nonstructural_no_ops(monkeypat
     ]
 
 
+def test_pipeline_compile_ops_does_not_record_commencement_no_ops_as_unsupported(monkeypatch) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_commencement_no_ops",
+        effect_type="coming into force",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2025/36",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2025",
+        affected_number="36",
+        affected_provisions="s. 63",
+        affecting_uri="/id/uksi/2025/1",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="art. 2(c)",
+        affecting_title="Test Commencement Order",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: b"<xml/>",
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "extract_provision_element_from_bytes",
+        lambda _xml, _prov, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "compile_effect_to_ir_ops",
+        lambda _effect, _el, sequence=0, **_kwargs: [],
+    )
+
+    pipeline = UKReplayPipeline(Path("."))
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert pipeline.compile_ops_for_statute(
+        "ukpga/2025/36",
+        archive=object(),
+        lowering_rejections_out=lowering_rejections,
+    ) == []
+    assert lowering_rejections == []
+
+
 def test_pipeline_compile_ops_falls_back_to_metadata_for_missing_affecting_xml(monkeypatch) -> None:
     effect = UKEffectRecord(
         effect_id="uk_test_pipeline_metadata_only_insert_fallback",
