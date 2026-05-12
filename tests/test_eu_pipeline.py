@@ -278,6 +278,30 @@ def test_eu_ops_parser_records_unsupported_action_segment() -> None:
     assert parser.diagnostics[0].as_detail()["quirks_disposition"] == "record"
 
 
+def test_eu_ops_parser_records_unknown_operative_segment_with_target() -> None:
+    parser = EUOpsParser()
+
+    ops = parser.extract_ops("Article 4 is modified as follows.")
+
+    assert ops == []
+    assert [diagnostic.rule_id for diagnostic in parser.diagnostics] == [
+        "eu_ops_parser_unknown_operative_segment"
+    ]
+    assert parser.diagnostics[0].family == "unsupported_action"
+    assert parser.diagnostics[0].phase == "extraction"
+    assert parser.diagnostics[0].blocking is True
+    assert parser.diagnostics[0].as_detail()["strict_disposition"] == "block"
+
+
+def test_eu_ops_parser_does_not_record_unknown_operative_without_target() -> None:
+    parser = EUOpsParser()
+
+    ops = parser.extract_ops("The regulation is modified as follows.")
+
+    assert ops == []
+    assert parser.diagnostics == []
+
+
 def test_apply_eu_ops_records_payload_and_target_missing_adjudications(capsys) -> None:
     baseline = _baseline_statute()
     adjudications: list[CompileAdjudication] = []
@@ -675,6 +699,52 @@ def test_replay_statute_projects_unsupported_parser_action_to_adjudications(monk
         adjudication
         for adjudication in result.adjudications
         if adjudication.kind == "eu_ops_parser_unsupported_action_segment"
+    ]
+    assert len(diagnostic_rows) == 1
+    assert diagnostic_rows[0].source_statute == "32000R0001"
+    assert diagnostic_rows[0].detail["celex"] == "32000R0001"
+    assert diagnostic_rows[0].detail["family"] == "unsupported_action"
+    assert diagnostic_rows[0].detail["phase"] == "extraction"
+    assert diagnostic_rows[0].detail["blocking"] is True
+    assert diagnostic_rows[0].detail["strict_disposition"] == "block"
+
+
+def test_replay_statute_projects_unknown_operative_parser_segment_to_adjudications(monkeypatch, tmp_path) -> None:
+    baseline = _baseline_statute()
+    baseline_path = tmp_path / "32000R0000_baseline.xhtml"
+    baseline_path.write_text("<dummy/>")
+
+    def fake_discover_affecting_acts(self: EUReplayPipeline, celex: str):
+        assert celex == "32000R0000"
+        return ["32000R0001"]
+
+    def fake_fetch_amendment_text(self: EUReplayPipeline, celex: str):
+        assert celex == "32000R0001"
+        return "Article 4 is modified as follows."
+
+    def fake_parse_eu_regulation_ir(_path: object, celex: str) -> IRStatute:
+        assert celex == "32000R0000"
+        return baseline
+
+    def fake_compile_timelines(_base: IRStatute, ops, temporal_events=()):
+        assert ops == []
+        return "timelines"
+
+    def fake_materialize_pit(_timelines, as_of: str, base: IRStatute):
+        return base
+
+    monkeypatch.setattr(EUReplayPipeline, "discover_affecting_acts", fake_discover_affecting_acts)
+    monkeypatch.setattr(EUReplayPipeline, "fetch_amendment_text", fake_fetch_amendment_text)
+    monkeypatch.setattr("lawvm.eu.pipeline.parse_eu_regulation_ir", fake_parse_eu_regulation_ir)
+    monkeypatch.setattr("lawvm.eu.pipeline.compile_timelines", fake_compile_timelines)
+    monkeypatch.setattr("lawvm.eu.pipeline.materialize_pit", fake_materialize_pit)
+
+    result = EUReplayPipeline(cache_dir=tmp_path).replay_statute("32000R0000")
+
+    diagnostic_rows = [
+        adjudication
+        for adjudication in result.adjudications
+        if adjudication.kind == "eu_ops_parser_unknown_operative_segment"
     ]
     assert len(diagnostic_rows) == 1
     assert diagnostic_rows[0].source_statute == "32000R0001"
