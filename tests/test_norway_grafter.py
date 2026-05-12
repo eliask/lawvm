@@ -679,6 +679,58 @@ def test_parse_no_amendment_ops_unstructured_supports_heading_repeal_range_and_r
     assert ops[0].payload.children[0].text == "Beløpsgrenser og tidfesting"
 
 
+def test_iter_no_document_change_ops_unstructured_records_renumber_arity_mismatch() -> None:
+    amendment_xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <dd class="changesToDocuments">
+      <ul><li>lov/2003-12-12-108</li></ul>
+    </dd>
+    <main>
+      <section data-name="kap16">
+        <article class="defaultP">I lov 12. desember 2003 nr. 108 om kompensasjon av merverdiavgift for kommuner, fylkeskommuner mv. gjøres følgende endringer:</article>
+        <article class="defaultP">§ 6 første ledd oppheves. Nåværende annet og tredje ledd blir første ledd.</article>
+      </section>
+    </main>
+  </body>
+</html>
+""".encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    grouped = dict(
+        iter_no_document_change_ops(
+            amendment_xml,
+            "no/lovtid/2016-05-27-14",
+            adjudications_out=adjudications,
+        )
+    )
+
+    ops = grouped["no/lov/2003-12-12-108"]
+    assert [(op.action, op.target.path, op.destination.path if op.destination else None) for op in ops] == [
+        (StructuralAction.REPEAL, (("section", "6"), ("subsection", "1")), None),
+        (
+            StructuralAction.RENUMBER,
+            (("section", "6"), ("subsection", "2")),
+            (("section", "6"), ("subsection", "1")),
+        ),
+    ]
+    assert [item.kind for item in adjudications] == [
+        "no_parse_unstructured_renumber_arity_mismatch_skipped"
+    ]
+    adjudication = adjudications[0]
+    assert adjudication.detail["rule_id"] == "no_parse_unstructured_renumber_arity_mismatch_skipped"
+    assert adjudication.detail["phase"] == "parse"
+    assert adjudication.detail["family"] == "unsupported_or_unresolved_action"
+    assert adjudication.detail["blocking"] is True
+    assert adjudication.detail["strict_disposition"] == "block"
+    assert adjudication.detail["quirks_disposition"] == "record"
+    assert adjudication.detail["source_count"] == 2
+    assert adjudication.detail["destination_count"] == 1
+    assert adjudication.detail["paired_count"] == 1
+    assert adjudication.detail["unmatched_source_targets"] == ["section:6/subsection:3"]
+    assert adjudication.detail["unmatched_destination_targets"] == []
+
+
 def test_apply_no_ops_supports_global_text_replace() -> None:
     statute = parse_no_statute(_STATUTE_XML, "no/lov/2025-01-01-1")
     chapter = statute.body.children[0]
