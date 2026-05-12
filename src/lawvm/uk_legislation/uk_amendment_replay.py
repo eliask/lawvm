@@ -2969,6 +2969,8 @@ def compile_effect_to_ir_ops(
         return []
 
     ops = []
+    unlowered_overlap_substitution_targets: list[str] = []
+    unlowered_overlap_substitution_reason = ""
     if action == "insert":
         crossheading_payload = _extract_crossheading_payload_from_extracted(
             effect.affected_provisions,
@@ -3268,6 +3270,12 @@ def compile_effect_to_ir_ops(
                     elif is_word_level:
                         # We couldn't extract the fragment for a word-level effect.
                         # Do NOT replace the whole node text with the amendment instruction!
+                        unlowered_overlap_substitution_targets.append(t_str)
+                        unlowered_overlap_substitution_reason = (
+                            "overlap_substitution_arity_unsupported"
+                            if len(targets_str) > 1
+                            else "overlap_substitution_parse_failed"
+                        )
                         curr_action = None
 
         if curr_action:
@@ -3374,6 +3382,28 @@ def compile_effect_to_ir_ops(
                     text_patch=text_patch,
                 )
             )
+    if not ops and unlowered_overlap_substitution_targets:
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_overlap_substitution_unlowered",
+            family="lowering_filter",
+            reason_code=unlowered_overlap_substitution_reason,
+            reason=(
+                "UK word-level overlap substitution lowered to no replay operations "
+                "because the source instruction could not be parsed into a safe text patch"
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "effect_type_normalized": effect_type,
+                "original_affected_provisions": effect.affected_provisions,
+                "original_target_candidates": original_targets_str,
+                "unlowered_target_candidates": unlowered_overlap_substitution_targets,
+                "target_candidate_count": len(targets_str),
+                "parser": "parse_fragment_substitution",
+            },
+        )
     if action == "replace" and trailing_repeal_refs:
         src = OperationSource(
             statute_id=effect.affecting_act_id,
