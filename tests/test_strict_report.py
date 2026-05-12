@@ -5,6 +5,7 @@ from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
 
+from lawvm.finland.ops import FailedOp
 from lawvm.finland.strict_profile import FINLAND_INGESTION_V1
 from lawvm.tools import strict_report
 
@@ -360,6 +361,45 @@ def test_to_json_preserves_projection_row_detail() -> None:
     assert payload["source_pathologies"] == []
 
 
+def test_to_json_preserves_failed_op_rule_and_scope_detail() -> None:
+    failed_op = FailedOp.from_scope(
+        amendment_id="2020/1",
+        description="replace chapter-scoped section",
+        reason="no deterministic path",
+        reason_code="no_deterministic_path",
+        target_unit_kind="section",
+        target_section="5",
+        target_chapter="4",
+    )
+    cr = SimpleNamespace(
+        statute_id="2001/1234",
+        replay_mode="legal_pit",
+        compile_mode="strict",
+        profile=FINLAND_INGESTION_V1,
+        canonical_ops=[],
+        failed_ops=[failed_op],
+        projection_rows=lambda: (),
+        source_pathology_rows=lambda: (),
+    )
+
+    payload = strict_report._to_json(cr)
+
+    assert payload["failed_ops"] == [
+        {
+            "amendment_id": "2020/1",
+            "description": "replace chapter-scoped section",
+            "reason": "no deterministic path",
+            "reason_code": "no_deterministic_path",
+            "target_unit_kind": "section",
+            "target_section": "5",
+            "target_chapter": "4",
+            "target_part": None,
+            "source": "2020/1",
+            "target_kind": "P",
+        }
+    ]
+
+
 def test_to_json_uses_projection_rows_when_available() -> None:
     cr = SimpleNamespace(
         statute_id="2001/1234",
@@ -460,6 +500,35 @@ def test_format_report_surfaces_target_scoped_projection_row_detail() -> None:
     assert "LOWER.CONTEXT_DEPENDENT_ANCHOR_RESOLUTION" in out
     assert "source: 2020/1" in out
     assert "detail: target(kind=section, norm=35, chapter=5); tag=chapter_scope_from_johtolause" in out
+
+
+def test_format_report_surfaces_failed_op_reason_code() -> None:
+    failed_op = FailedOp.from_scope(
+        amendment_id="2020/1",
+        description="replace chapter-scoped section",
+        reason="no deterministic path",
+        reason_code="no_deterministic_path",
+        target_unit_kind="section",
+        target_section="5",
+        target_chapter="4",
+    )
+    cr = SimpleNamespace(
+        statute_id="2001/1234",
+        replay_mode="legal_pit",
+        compile_mode="strict",
+        profile=FINLAND_INGESTION_V1,
+        canonical_ops=[],
+        failed_ops=[failed_op],
+        strict_fail_reasons=["failed_ops"],
+        projection_rows=lambda: (),
+        source_pathology_rows=lambda: (),
+    )
+
+    out = strict_report._format_report(cr, verbose=False)
+
+    assert "no deterministic path" in out
+    assert "no_deterministic_path" in out
+    assert "section 5" in out
 
 
 def test_format_report_uses_projection_rows_when_available() -> None:
