@@ -492,6 +492,8 @@ def _recover_uncovered_body_ops(
             return None
         return f"{base}{chr(ord(suffix) + 1)}"
 
+    _recorded_skip_keys: set[tuple[str, str, str, str]] = set()
+
     def _record_skip(
         reason: str,
         label: str,
@@ -499,6 +501,10 @@ def _recover_uncovered_body_ops(
         amend_part_label: Optional[str] = None,
     ) -> None:
         if findings_out is not None:
+            skip_key = (reason, amend_part_label or "", amend_chapter_label or "", label)
+            if skip_key in _recorded_skip_keys:
+                return
+            _recorded_skip_keys.add(skip_key)
             findings_out.append(
                 _uncovered_body_recovery_skipped_finding(
                     source_statute=amendment_id,
@@ -1546,6 +1552,7 @@ def _recover_uncovered_body_ops(
             # chapter markers; the legacy ad-hoc uncovered-section sweep must
             # not resurrect them as bogus section inserts.
             if _norm_num_token(_raw).endswith("luku"):
+                _record_skip("malformed_chapter_marker", _norm_num_token(_raw), None)
                 continue
             _ad_label = _norm_num_token(re.sub(r"\s*§.*$", "", _raw).strip())
             if not _ad_label:
@@ -1559,8 +1566,10 @@ def _recover_uncovered_body_ops(
             if _ad_label in _result_labels:
                 continue  # Already resolved by coverage-driven path
             if (_ad_ch, _ad_label) in _peg_ch_labels:
+                _record_skip("peg_owned_same_chapter", _ad_label, _ad_ch)
                 continue  # PEG-compiled ops target this section in the same chapter
             if _ad_label in _peg_labels:
+                _record_skip("peg_owned_label_collision", _ad_label, _ad_ch)
                 continue  # PEG already owns this section label in another chapter
             _ad_part: Optional[str] = None
             _part_parent = _ad_ch_parent.getparent() if _ad_ch_parent is not None else None

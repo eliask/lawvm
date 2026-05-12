@@ -7403,6 +7403,40 @@ def test_uncovered_body_records_peg_owned_label_collision_skip_finding() -> None
     assert skipped[0].detail.get("target_chapter") == "7a"
 
 
+def test_uncovered_body_records_malformed_chapter_marker_skip_finding() -> None:
+    state = ReplayState(ir=IRNode(kind=IRNodeKind.BODY))
+    ctx = _statute_context(state.ir)
+    muutos_tree = etree.fromstring(
+        """
+        <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+          <body>
+            <section>
+              <num>16 b luku</num>
+              <heading>Erinäiset säännökset</heading>
+            </section>
+          </body>
+        </akn>
+        """
+    )
+
+    findings_out: list[Finding] = []
+    rops = _recover_uncovered_body_ops(
+        state,
+        ctx,
+        [],
+        muutos_tree,
+        "2020/1207",
+        failed_ops_out=[],
+        findings_out=findings_out,
+    )
+
+    assert rops == []
+    skipped = [f for f in findings_out if f.kind == "APPLY.UNCOVERED_BODY_RECOVERY_SKIPPED"]
+    assert len(skipped) == 1
+    assert skipped[0].detail.get("reason") == "malformed_chapter_marker"
+    assert skipped[0].detail.get("target_section") == "16bluku"
+
+
 def test_uncovered_body_skip_helper_maps_peg_owned_same_chapter_reason() -> None:
     finding = _uncovered_body_recovery_skipped_finding(
         source_statute="2020/1207",
