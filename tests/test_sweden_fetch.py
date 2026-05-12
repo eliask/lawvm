@@ -1045,6 +1045,42 @@ def test_compile_se_official_act_ops_emits_replace_ops_for_simple_section_family
     assert ops[2].payload.label == "11"
 
 
+def test_compile_se_official_act_ops_records_non_amending_act_skip() -> None:
+    act = {
+        "sfs_id": "2026:106",
+        "title": "Förordning (2026:106) om test",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "",
+        "is_amending_act": False,
+        "published_date": "2026-01-01",
+        "issued_date": "2025-12-20",
+        "enacting_clause": "",
+        "effective_clause": "Denna förordning träder i kraft den 1 januari 2026.",
+        "affected_section_labels": [],
+        "provisions": [
+            {"label": "1", "text": "Denna förordning gäller test."},
+        ],
+        "signatories": [],
+        "footnotes": [],
+    }
+    adjudications: list[CompileAdjudication] = []
+
+    ops = compile_se_official_act_ops(act, source_id="2026:106", adjudications_out=adjudications)
+
+    assert ops == []
+    assert len(adjudications) == 1
+    adjudication = adjudications[0]
+    assert adjudication.kind == "se_official_non_amending_act_ops_skipped"
+    assert adjudication.source_statute == "2026:106"
+    assert adjudication.detail["rule_id"] == "se_official_non_amending_act_ops_skipped"
+    assert adjudication.detail["phase"] == "lowering"
+    assert adjudication.detail["blocking"] is False
+    assert adjudication.detail["strict_disposition"] == "record"
+    assert adjudication.detail["quirks_disposition"] == "record"
+    assert adjudication.detail["frontier_classification"] == "non_amending"
+    assert adjudication.detail["planned_operation_count"] == 1
+
+
 def test_build_se_official_clause_surface_extracts_targets_without_changing_shape() -> None:
     act = {
         "sfs_id": "2026:286",
