@@ -30,6 +30,7 @@ from lawvm.uk_legislation.uk_amendment_replay import (
     _parse_affected_target,
     compile_effect_to_ir_ops,
     extract_provision_element_from_bytes,
+    load_effects_for_statute_from_archive,
     parse_effects_from_bytes,
 )
 
@@ -104,6 +105,61 @@ def test_parse_effects_from_bytes_records_entry_missing_effect() -> None:
 
 def test_parse_effects_from_bytes_keeps_existing_api_without_rejection_sink() -> None:
     assert parse_effects_from_bytes([b"<feed><entry></feed>"]) == []
+
+
+class _FakeUKArchiveConn:
+    def __init__(self, locators: list[str]) -> None:
+        self._locators = locators
+
+    def execute(self, _query: str, _params: tuple[str]) -> "_FakeUKArchiveConn":
+        return self
+
+    def fetchall(self) -> list[tuple[str]]:
+        return [(locator,) for locator in self._locators]
+
+
+class _FakeUKArchive:
+    def __init__(self, payloads: dict[str, bytes]) -> None:
+        self._payloads = payloads
+        self._conn = _FakeUKArchiveConn(list(payloads))
+
+    def get(self, locator: str) -> bytes | None:
+        return self._payloads.get(locator)
+
+
+def test_load_effects_from_archive_threads_feed_parse_rejections() -> None:
+    locator = "https://www.legislation.gov.uk/changes/affected/ukpga/2000/10/data.feed"
+    archive = _FakeUKArchive({locator: b"<feed><entry></feed>"})
+    parse_rejections: list[dict[str, Any]] = []
+
+    records = load_effects_for_statute_from_archive(
+        "ukpga/2000/10",
+        archive,
+        parse_rejections_out=parse_rejections,
+    )
+
+    assert records == []
+    assert len(parse_rejections) == 1
+    assert parse_rejections[0]["rule_id"] == "uk_effect_feed_xml_parse_rejected"
+    assert parse_rejections[0]["feed_locator"] == locator
+
+
+def test_pipeline_compile_ops_threads_feed_parse_rejections() -> None:
+    locator = "https://www.legislation.gov.uk/changes/affected/ukpga/2000/10/data.feed"
+    archive = _FakeUKArchive({locator: b"<feed><entry></feed>"})
+    pipeline = UKReplayPipeline(Path("."))
+    parse_rejections: list[dict[str, Any]] = []
+
+    compiled = pipeline.compile_ops_for_statute(
+        "ukpga/2000/10",
+        archive=archive,
+        effect_feed_parse_rejections_out=parse_rejections,
+    )
+
+    assert compiled == []
+    assert len(parse_rejections) == 1
+    assert parse_rejections[0]["rule_id"] == "uk_effect_feed_xml_parse_rejected"
+    assert parse_rejections[0]["feed_locator"] == locator
 
 
 _LEG_NS = "http://www.legislation.gov.uk/namespaces/legislation"
