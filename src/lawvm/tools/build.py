@@ -438,6 +438,7 @@ async def _build_no(
     n_skip = 0
     n_provisions = 0
     n_amendment_links = 0
+    skipped_statutes: list[dict[str, str]] = []
 
     with (
         open(output_dir / "citations.jsonl", "w", encoding="utf-8") as _cite_f,
@@ -459,6 +460,16 @@ async def _build_no(
                     print(f"  {n_ok} statutes parsed...", file=sys.stderr, end="\r")
             except Exception as exc:
                 n_skip += 1
+                skipped_statutes.append(
+                    {
+                        "rule_id": "no_build_statute_parse_skipped",
+                        "phase": "build",
+                        "family": "source_pathology",
+                        "reason": "Norway build skipped statute after parse or timeline compilation failure",
+                        "statute_id": sid,
+                        "error": str(exc),
+                    }
+                )
                 if verbose:
                     print(f"\n  [skip] {sid}: {exc}", file=sys.stderr)
 
@@ -504,6 +515,7 @@ async def _build_no(
         "n_eu_ref_edges": 0,
         "n_delegation_edges": 0,
         "n_amendment_links": n_amendment_links,
+        "skipped_statutes": skipped_statutes,
     }
     with open(output_dir / "stats.json", "w", encoding="utf-8") as f:
         json.dump(stats, f, ensure_ascii=False, indent=2)
