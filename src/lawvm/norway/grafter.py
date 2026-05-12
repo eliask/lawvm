@@ -693,15 +693,62 @@ def _split_change_attr(value: str, default_action: str) -> list[tuple[str, str]]
     return out
 
 
-def _split_move_attr(value: str) -> list[tuple[str, str]]:
+NO_PARSE_MALFORMED_STRUCTURED_RENUMBER_ATTR_SKIPPED = "no_parse_malformed_structured_renumber_attr_skipped"
+
+
+def _structured_move_attr_skip_reason(token: str) -> Optional[str]:
+    separator_count = token.count(";;")
+    if separator_count == 0:
+        return "missing_separator"
+    if separator_count > 1:
+        return "multiple_separators"
+    src, dst = token.split(";;", 1)
+    if not src and not dst:
+        return "missing_source_and_destination"
+    if not src:
+        return "missing_source"
+    if not dst:
+        return "missing_destination"
+    return None
+
+
+def _split_move_attr(
+    value: str,
+    *,
+    adjudications_out: Optional[List[CompileAdjudication]] = None,
+    source_id: str = "",
+    base_id: str = "",
+    source_doc: str = "",
+    raw_text: str = "",
+) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     tokens = [token.strip() for token in value.split() if token.strip()]
     for token in reversed(tokens):
-        if ";;" not in token:
+        reason = _structured_move_attr_skip_reason(token)
+        if reason is not None:
+            _append_no_parse_adjudication(
+                adjudications_out,
+                kind=NO_PARSE_MALFORMED_STRUCTURED_RENUMBER_ATTR_SKIPPED,
+                message="Norway parser skipped malformed structured renumber token.",
+                source_id=source_id,
+                detail={
+                    "rule_id": NO_PARSE_MALFORMED_STRUCTURED_RENUMBER_ATTR_SKIPPED,
+                    "phase": "parse",
+                    "family": "source_pathology",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                    "base_id": base_id,
+                    "source_doc": source_doc,
+                    "attr_name": "data-move-part",
+                    "raw_token": token,
+                    "reason": reason,
+                    "raw_text": raw_text,
+                },
+            )
             continue
         src, dst = token.split(";;", 1)
-        if src and dst:
-            out.append((src, dst))
+        out.append((src, dst))
     return out
 
 
@@ -1989,7 +2036,14 @@ def iter_no_document_change_ops(
                 _normalize_space(" ".join(str(_t) for _t in lead_articles[0].itertext())) if lead_articles else raw_text
             )
             specs: list[tuple[str, str]] = []
-            renumber_specs = _split_move_attr(change_el.get("data-move-part", ""))
+            renumber_specs = _split_move_attr(
+                change_el.get("data-move-part", ""),
+                adjudications_out=adjudications_out,
+                source_id=source_id,
+                base_id=base_id,
+                source_doc=source_doc,
+                raw_text=raw_text,
+            )
             specs.extend(_split_change_attr(change_el.get("data-change-part", ""), "replace"))
             specs.extend(_split_change_attr(change_el.get("data-add-new-part", ""), "insert"))
             specs.extend(_split_change_attr(change_el.get("data-remove-part", ""), "repeal"))
