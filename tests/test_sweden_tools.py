@@ -662,6 +662,17 @@ def test_sweden_diagnose_replay_command_reports_contamination(monkeypatch, capsy
                 "doc_available": False,
                 "public_source_probe": {"doc_status": "cloudflare_blocked", "pdf_status": "not_found"},
             },
+            "chain": [
+                {"effective_date": "2016-03-01", "sfs_id": "2016:13", "ops_status": "compiled", "op_count": 1, "error": ""},
+                {
+                    "effective_date": "2018-03-01",
+                    "sfs_id": "2018:11",
+                    "ops_status": "missing_official_act",
+                    "op_count": 0,
+                    "error": "",
+                    "public_source_probe": {"doc_status": "cloudflare_blocked", "pdf_status": "not_found"},
+                },
+            ],
         },
     )
 
@@ -693,8 +704,67 @@ def test_sweden_diagnose_replay_command_reports_contamination(monkeypatch, capsy
     assert "Replay preconditions: 1" in out
     assert "section 17 [missing_renumber_source] via renumber" in out
     assert "Older-base chain:  chain=no  rebuild=no  prior=2  compiled=1  missing=1  unsupported=0" in out
+    assert "Older-base blockers:" in out
+    assert "2018-03-01  2018:11  missing_official_act  ops=0  source_doc=cloudflare_blocked source_pdf=not_found" in out
+    assert "2016-03-01  2016:13  compiled  ops=1" not in out
     assert "Base seed source:  official_act=no  seed_ir=no  pdf=no  doc=no" in out
     assert "Base public probe: doc=cloudflare_blocked pdf=not_found" in out
+
+
+def test_sweden_diagnose_replay_json_attaches_older_base_plan(monkeypatch, capsys) -> None:
+    archive = _FakeArchiveContext()
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr(
+        "lawvm.tools.sweden.analyze_se_official_replay_feasibility",
+        lambda archive_obj, sfs_id, base_sfs_id=None, as_of=None: {
+            "amending_sfs_id": sfs_id,
+            "base_sfs_id": "2015:284",
+            "effective_date": "2018-08-01",
+            "pre_date": "2018-07-31",
+            "replay_feasible": False,
+            "recovery_strategy": "older_base_required",
+            "op_count": 11,
+            "contamination": [],
+        },
+    )
+    monkeypatch.setattr(
+        "lawvm.tools.sweden.plan_se_older_base_rebuild",
+        lambda archive_obj, sfs_id, base_sfs_id=None, as_of=None, fetch_missing=False, probe_sources=False: {
+            "official_chain_ready": False,
+            "rebuild_ready": False,
+            "prior_amendment_count": 1,
+            "compiled_count": 0,
+            "missing_official_count": 1,
+            "unsupported_count": 0,
+            "chain": [
+                {
+                    "effective_date": "2018-03-01",
+                    "sfs_id": "2018:11",
+                    "ops_status": "missing_official_act",
+                    "op_count": 0,
+                    "error": "",
+                },
+            ],
+        },
+    )
+
+    sweden_main(
+        SimpleNamespace(
+            sweden_command="diagnose-replay",
+            sfs_id="2018:1381",
+            db=None,
+            base_sfs_id=None,
+            as_of=None,
+            fetch_missing=False,
+            probe_sources=False,
+            format="json",
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["older_base"]["missing_official_count"] == 1
+    assert payload["older_base"]["chain"][0]["sfs_id"] == "2018:11"
+    assert payload["older_base"]["chain"][0]["ops_status"] == "missing_official_act"
 
 
 def test_sweden_plan_older_base_command_prints_summary(monkeypatch, capsys) -> None:
