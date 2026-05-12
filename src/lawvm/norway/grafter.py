@@ -1786,9 +1786,31 @@ def _extract_no_global_text_replace_pairs(lead: str) -> list[tuple[str, str]]:
     ]
 
 
+def _append_no_parse_adjudication(
+    adjudications_out: Optional[List[CompileAdjudication]],
+    *,
+    kind: str,
+    message: str,
+    source_id: str,
+    detail: dict[str, object],
+) -> None:
+    if adjudications_out is None:
+        return
+    adjudications_out.append(
+        CompileAdjudication(
+            kind=kind,
+            message=message,
+            source_statute=source_id,
+            detail=detail,
+        )
+    )
+
+
 def iter_no_document_change_ops(
     html_bytes: bytes,
     source_id: str,
+    *,
+    adjudications_out: Optional[List[CompileAdjudication]] = None,
 ) -> list[tuple[str, list[LegalOperation]]]:
     """Group compiled amendment ops by base act for one Lovtidend document.
 
@@ -1860,6 +1882,29 @@ def iter_no_document_change_ops(
                     if existing_paths.issubset(inferred_map):
                         action = next(iter(non_skipped_actions | skipped_actions))
                         parsed_specs = [(StructuralAction(action), target) for target in inferred_targets]
+                        skipped_cross_base_specs = []
+
+            for action, raw_target in skipped_cross_base_specs:
+                _append_no_parse_adjudication(
+                    adjudications_out,
+                    kind="no_parse_cross_base_structured_target_skipped",
+                    message="Norway parser skipped structured target for a different base act.",
+                    source_id=source_id,
+                    detail={
+                        "rule_id": "no_parse_cross_base_structured_target_skipped",
+                        "phase": "parse",
+                        "family": "source_pathology",
+                        "blocking": True,
+                        "strict_disposition": "block",
+                        "quirks_disposition": "record",
+                        "base_id": base_id,
+                        "source_doc": source_doc,
+                        "action": action,
+                        "raw_target": raw_target,
+                        "target_base": normalize_lovdata_refid(raw_target) or "",
+                        "raw_text": raw_text,
+                    },
+                )
 
             inferred_sentence_specs = _infer_same_base_sentence_target_specs_from_lead(lead_text)
             if inferred_sentence_specs:
