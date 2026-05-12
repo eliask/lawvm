@@ -2295,6 +2295,74 @@ def _append_se_official_clause_diagnostic_adjudications(
         )
 
 
+def _append_se_official_unclaimed_payload_adjudications(
+    adjudications_out: list[CompileAdjudication] | None,
+    *,
+    plan: SEOfficialEffectsPlan,
+) -> None:
+    if adjudications_out is None or plan.elaboration is None:
+        return
+    intent = plan.elaboration
+    payload_surface = intent.payload_surface
+    planned_heading_labels = {
+        item.payload_label or item.target_label
+        for item in plan.planned_items
+        if item.kind == "insert_heading"
+    }
+    planned_appendix_labels = {
+        item.payload_label or item.target_label
+        for item in plan.planned_items
+        if item.kind == "insert_appendix"
+    }
+    diagnostics: list[dict[str, object]] = []
+    for heading in payload_surface.inserted_headings:
+        label = _label_norm(heading.before_label)
+        if label and label in planned_heading_labels:
+            continue
+        diagnostics.append(
+            {
+                "payload_kind": "inserted_heading",
+                "payload_label": label,
+                "payload_text": _normalize_space(heading.text),
+            }
+        )
+    unlabeled_appendix_count = sum(1 for appendix in payload_surface.appendices if not _label_norm(appendix.label))
+    inferred_appendix_label = ""
+    if unlabeled_appendix_count == 1 and len(intent.clause_surface.inserted_appendix_labels) == 1:
+        inferred_appendix_label = intent.clause_surface.inserted_appendix_labels[0]
+    for appendix in payload_surface.appendices:
+        label = _label_norm(appendix.label) or inferred_appendix_label
+        if label and label in planned_appendix_labels:
+            continue
+        diagnostics.append(
+            {
+                "payload_kind": "appendix",
+                "payload_label": label,
+                "payload_text": _normalize_space(appendix.title or appendix.text),
+            }
+        )
+    for diagnostic in diagnostics:
+        adjudications_out.append(
+            CompileAdjudication(
+                kind="se_official_unclaimed_payload_skipped",
+                message="Sweden official-act payload surface was not claimed by any planned effect.",
+                source_statute=plan.sfs_id,
+                detail={
+                    "rule_id": "se_official_effect_plan_unclaimed_payload",
+                    "phase": "lowering",
+                    "family": "source_pathology",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                    "sfs_id": plan.sfs_id,
+                    "frontier_classification": plan.frontier_classification,
+                    "frontier_detail": plan.frontier_detail,
+                    **diagnostic,
+                },
+            )
+        )
+
+
 def _lower_se_official_effect_plan_item(
     plan: SEOfficialEffectsPlan,
     item: SEOfficialEffectPlanItem,
@@ -2789,6 +2857,8 @@ def _lower_se_official_effects_plan(
             f"Sweden official act {sid} has no planned canonical effects "
             f"[{plan.frontier_classification or 'empty_effect_plan_without_targets'}]"
         )
+
+    _append_se_official_unclaimed_payload_adjudications(adjudications_out, plan=plan)
 
     source = OperationSource(
         statute_id=surface.sfs_id,

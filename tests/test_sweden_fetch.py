@@ -1501,6 +1501,49 @@ def test_compile_se_official_act_ops_records_renumber_arity_mismatch() -> None:
     assert mismatch[0].detail["strict_disposition"] == "block"
 
 
+def test_compile_se_official_act_ops_records_unclaimed_payload() -> None:
+    act = {
+        "sfs_id": "2026:778",
+        "title": "Förordning om ändring i förordningen (2026:106) om något",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2026:106",
+        "is_amending_act": True,
+        "published_date": "2026-03-24",
+        "issued_date": "2026-03-19",
+        "enacting_clause": (
+            "Regeringen föreskriver i fråga om förordningen (2026:106) om något "
+            "dels att det ska införas en ny paragraf, 7 a §, av följande lydelse."
+        ),
+        "effective_clause": "Denna förordning träder i kraft den 15 april 2026.",
+        "affected_section_labels": [],
+        "provisions": [{"label": "7a", "text": "Ny lydelse."}],
+        "inserted_headings": [{"before_label": "9", "text": "Rubrik utan stöd i klausul"}],
+        "appendices": [{"label": "", "title": "Bilaga utan stöd", "text": "Bilagetext"}],
+        "signatories": [],
+        "footnotes": [],
+    }
+    adjudications: list[CompileAdjudication] = []
+
+    ops = compile_se_official_act_ops(act, source_id="2026:778", adjudications_out=adjudications)
+
+    assert [op.action for op in ops] == [StructuralAction.INSERT]
+    unclaimed = [
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind == "se_official_unclaimed_payload_skipped"
+    ]
+    assert [adjudication.detail["payload_kind"] for adjudication in unclaimed] == [
+        "inserted_heading",
+        "appendix",
+    ]
+    assert [adjudication.detail["payload_label"] for adjudication in unclaimed] == ["9", ""]
+    assert all(
+        adjudication.detail["rule_id"] == "se_official_effect_plan_unclaimed_payload"
+        for adjudication in unclaimed
+    )
+    assert all(adjudication.detail["strict_disposition"] == "block" for adjudication in unclaimed)
+
+
 def test_compile_se_official_act_ops_emits_repeal_renumber_replace_insert_family() -> None:
     act = {
         "sfs_id": "2026:63",
