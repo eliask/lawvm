@@ -115,6 +115,12 @@ def test_filter_cancelled_pending_refs_drops_future_effect_source_repealed_befor
     assert adjudications[0].detail["filtered_amendment"] == "108072025001"
     assert adjudications[0].detail["filtering_amendment"] == "118122025003"
     assert adjudications[0].detail["reason"] == "source_paragraphs_repealed_before_commencement"
+    assert adjudications[0].detail["rule_id"] == "ee_cancelled_pending_amendment_ref_filtered"
+    assert adjudications[0].detail["phase"] == "temporal"
+    assert adjudications[0].detail["family"] == "pending_amendment_cancellation_filter"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
 
 
 def test_filter_cancelled_pending_refs_drops_future_effect_source_rewritten_before_commencement(
@@ -223,9 +229,13 @@ def test_filter_cancelled_pending_refs_records_source_fetch_failure_and_retains_
     assert adjudications[0].source_statute == "ee/108072025001"
     assert adjudications[0].detail["ref_amendment"] == "108072025001"
     assert adjudications[0].detail["reason"] == "pending_ref_source_fetch_failed"
-    assert adjudications[0].detail["exception_type"] == "RuntimeError"
+    assert adjudications[0].detail["rule_id"] == "ee_cancelled_pending_ref_source_fetch_failed"
+    assert adjudications[0].detail["phase"] == "acquisition"
+    assert adjudications[0].detail["family"] == "pending_amendment_cancellation_filter"
+    assert adjudications[0].detail["blocking"] is True
     assert adjudications[0].detail["strict_disposition"] == "block"
     assert adjudications[0].detail["quirks_disposition"] == "record"
+    assert adjudications[0].detail["exception_type"] == "RuntimeError"
 
 
 def test_filter_ops_for_ref_slice_prefers_clause_local_effective_ops_for_later_same_act_slice() -> None:
@@ -342,6 +352,12 @@ def test_filter_ops_for_ref_slice_records_future_effective_rejection() -> None:
     ]
     assert adjudications[0].op_id == "future-local-op"
     assert adjudications[0].detail["reason"] == "op_effective_after_requested_pit"
+    assert adjudications[0].detail["rule_id"] == "ee_ref_slice_operation_filtered"
+    assert adjudications[0].detail["phase"] == "temporal"
+    assert adjudications[0].detail["family"] == "ref_slice_filter"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
 
 
 def test_parse_old_format_ref_slice_drop_uses_ref_slice_filtered_adjudication() -> None:
@@ -3130,6 +3146,9 @@ def test_replay_ee_to_pit_records_jalitustegevus_pending_source_act_commencement
         and adjudication.detail["later_amendment"] == "122122011003"
         and adjudication.detail["old_effective"] == "2012-01-01"
         and adjudication.detail["new_effective"] == "2013-01-01"
+        and adjudication.detail["rule_id"] == "ee_pending_source_act_commencement_precompose"
+        and adjudication.detail["phase"] == "temporal"
+        and adjudication.detail["family"] == "pending_source_act_precomposition"
         for adjudication in result.adjudications
     )
 
@@ -3376,6 +3395,9 @@ def test_precompose_pending_amendment_applies_final_target_meta_euro_conversions
         adjudication.kind == "ee_pending_amendment_text_precompose"
         and adjudication.detail["target"] == "section:19/subsection:1"
         and adjudication.detail["mode"] == "added_final_target_op"
+        and adjudication.detail["rule_id"] == "ee_pending_amendment_text_precompose"
+        and adjudication.detail["phase"] == "payload"
+        and adjudication.detail["family"] == "pending_amendment_precomposition"
         for adjudication in adjudications
     )
 
