@@ -1,6 +1,8 @@
 """REUL bridge smoke tests."""
 from __future__ import annotations
 
+from typing import Any
+
 from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.eu.reul_bridge import _parse_celex, REULBridge
@@ -159,6 +161,89 @@ def test_resolve_retained_law_uri_mismatch_celex_returns_none() -> None:
         )
         is None
     )
+
+
+def test_resolve_retained_law_uri_records_failure_reason() -> None:
+    statute = IRStatute(
+        statute_id="32016R0679",
+        title="Sample",
+        body=IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1"),)),
+    )
+    bridge = REULBridge()
+    diagnostics: list[dict[str, Any]] = []
+
+    assert (
+        bridge.resolve_retained_law_uri(
+            "retained-law://celex/32016R0679/article/99",
+            statute,
+            diagnostics_out=diagnostics,
+        )
+        is None
+    )
+
+    assert diagnostics == [
+        {
+            "rule_id": "eu_reul_uri_resolution_failed",
+            "kind": "eu_reul_uri_resolution_failed",
+            "family": "target_resolution_recovery",
+            "phase": "lowering",
+            "reason": "EU REUL bridge could not resolve retained-law URI against the EU statute tree",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "uri": "retained-law://celex/32016R0679/article/99",
+            "statute_id": "32016R0679",
+            "detail": {
+                "reason_code": "target_unresolved",
+                "path": [("section", "99")],
+            },
+        }
+    ]
+
+
+def test_resolve_retained_law_uri_records_malformed_path_reason() -> None:
+    statute = IRStatute(
+        statute_id="32016R0679",
+        title="Sample",
+        body=IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1"),)),
+    )
+    bridge = REULBridge()
+    diagnostics: list[dict[str, Any]] = []
+
+    assert (
+        bridge.resolve_retained_law_uri(
+            "retained-law://celex/32016R0679/article",
+            statute,
+            diagnostics_out=diagnostics,
+        )
+        is None
+    )
+
+    assert diagnostics[0]["rule_id"] == "eu_reul_uri_resolution_failed"
+    assert diagnostics[0]["family"] == "target_resolution_recovery"
+    assert diagnostics[0]["phase"] == "lowering"
+    assert diagnostics[0]["strict_disposition"] == "block"
+    assert diagnostics[0]["detail"]["reason_code"] == "too_few_parts"
+
+
+def test_resolve_retained_law_uri_does_not_record_diagnostic_on_success() -> None:
+    statute = IRStatute(
+        statute_id="32016R0679",
+        title="Sample",
+        body=IRNode(kind=IRNodeKind.BODY, children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="ok"),)),
+    )
+    bridge = REULBridge()
+    diagnostics: list[dict[str, Any]] = []
+
+    node = bridge.resolve_retained_law_uri(
+        "retained-law://celex/32016R0679/article/1",
+        statute,
+        diagnostics_out=diagnostics,
+    )
+
+    assert node is not None
+    assert node.text == "ok"
+    assert diagnostics == []
 
 
 def test_resolve_retained_law_uri_with_non_celex_host_returns_none() -> None:
