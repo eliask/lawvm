@@ -238,6 +238,57 @@ def test_filter_cancelled_pending_refs_records_source_fetch_failure_and_retains_
     assert adjudications[0].detail["exception_type"] == "RuntimeError"
 
 
+def test_filter_cancelled_pending_refs_records_metadata_parse_failure_and_retains_ref(
+    monkeypatch,
+) -> None:
+    source_xml = """
+    <oigusakt xmlns="akt_1_10.06.2010">
+      <aktinimi><nimi><pealkiri>Source act</pealkiri></nimi></aktinimi>
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>1</paragrahvNr>
+          <paragrahvPealkiri>Ettevõtlustulu lihtsustatud maksustamise seaduse muutmine</paragrahvPealkiri>
+          <sisuTekst><tavatekst>Ettevõtlustulu lihtsustatud maksustamise seaduses tehakse muudatused.</tavatekst></sisuTekst>
+        </paragrahv>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    def fake_fetch_rt_xml(akt_viide: str, archive) -> bytes:
+        if akt_viide == "108072025001":
+            return b"<oigusakt>"
+        return source_xml
+
+    monkeypatch.setattr("lawvm.estonia.replay.fetch_rt_xml", fake_fetch_rt_xml)
+    refs = [
+        _ref("108072025001", "2025-06-18", "2026-01-01"),
+        _ref("118122025003", "2025-12-03", "2026-01-01"),
+    ]
+    adjudications = []
+
+    filtered = _ee_filter_cancelled_pending_refs(
+        refs,
+        target_title="Ettevõtlustulu lihtsustatud maksustamise seadus",
+        archive=None,
+        adjudications_out=adjudications,
+    )
+
+    assert filtered == refs
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "ee_cancelled_pending_ref_metadata_parse_failed"
+    ]
+    assert adjudications[0].source_statute == "ee/108072025001"
+    assert adjudications[0].detail["ref_amendment"] == "108072025001"
+    assert adjudications[0].detail["reason"] == "pending_ref_metadata_parse_failed"
+    assert adjudications[0].detail["rule_id"] == "ee_cancelled_pending_ref_metadata_parse_failed"
+    assert adjudications[0].detail["phase"] == "metadata_extraction"
+    assert adjudications[0].detail["family"] == "pending_amendment_cancellation_filter"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
+    assert adjudications[0].detail["exception_type"] == "ParseError"
+
+
 def test_filter_ops_for_ref_slice_prefers_clause_local_effective_ops_for_later_same_act_slice() -> None:
     ref = _ref("13361493", "2010-09-16", "2012-01-01")
     base_refs = (
