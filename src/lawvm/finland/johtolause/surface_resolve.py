@@ -86,6 +86,10 @@ from lawvm.finland.johtolause.surface_model import (
 )
 
 
+FI_TAIL_UNRESOLVED_RULE_ID = "fi.johtolause.tail_unresolved.v1"
+FI_TAIL_UNRESOLVED_KIND = "JOHTOLAUSE.TAIL_UNRESOLVED"
+
+
 # ---------------------------------------------------------------------------
 # ResolutionKind — typed enum for resolution_kind strings (Pro #16)
 #
@@ -324,6 +328,24 @@ ResolvedNode = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class SurfaceResolutionResidual:
+    """Typed record for a parsed surface node that resolution could not consume."""
+
+    kind: str
+    rule_id: str
+    phase: str
+    family: str
+    reason_code: str
+    strict_disposition: str
+    quirks_disposition: str
+    node: SurfaceNode
+    detail: dict[str, object]
+
+
+ResolutionResidual = SurfaceNode | SurfaceResolutionResidual
+
+
 # ---------------------------------------------------------------------------
 # Resolved verb group and top-level clause
 # ---------------------------------------------------------------------------
@@ -362,7 +384,8 @@ class ResolvedSurfaceClause:
                             Finland-local cited-version selector sidecars passed
                             through unchanged from SurfaceClause.
         source_text:        The original source text.
-        residuals:          Surface nodes that could not be resolved.
+        residuals:          Surface nodes or typed residual records that could
+                            not be resolved.
                             Empty tuple means fully resolved.
     """
 
@@ -371,7 +394,7 @@ class ResolvedSurfaceClause:
     text_amend_clauses: Tuple[SurfaceTextAmend, ...] = ()
     target_version_bindings: Tuple[SurfaceTargetVersionBinding, ...] = ()
     source_text: str = ""
-    residuals: Tuple[SurfaceNode, ...] = ()
+    residuals: Tuple[ResolutionResidual, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -390,7 +413,7 @@ class _ResolverCtx:
                             Used by backref/valiotsikko resolution.
         chapter:            Current chapter context carried across verb groups.
         part:               Current part context carried across verb groups.
-        residuals:          Accumulated unresolvable nodes.
+        residuals:          Accumulated unresolvable nodes/records.
         last_section:       Most recent section label seen across verb groups.
         last_section_chapter: Chapter of the most recent section.
         last_section_part:  Part of the most recent section.
@@ -402,7 +425,7 @@ class _ResolverCtx:
     last_target_batch: list[ResolvedTargetRef]
     chapter: str
     part: str
-    residuals: list[SurfaceNode]
+    residuals: list[ResolutionResidual]
     last_section: str = ""
     last_section_chapter: str = ""
     last_section_part: str = ""
@@ -1110,6 +1133,50 @@ def _resolve_relabel_from_context(
     ]
 
 
+def _record_tail_unresolved(
+    ctx: _ResolverCtx,
+    *,
+    node: SurfaceMoveTail | SurfaceRenumberTail,
+    tail_kind: str,
+    reason_code: str,
+    verb: VerbKind,
+) -> None:
+    if isinstance(node, SurfaceMoveTail):
+        detail: dict[str, object] = {
+            "tail_kind": tail_kind,
+            "reason_code": reason_code,
+            "verb": verb.value,
+            "destination_chapter": node.destination_chapter,
+            "destination_part": node.destination_part,
+            "move_clause_target_unit_kind": node.move_clause_target_unit_kind,
+        }
+        witness = node.witness
+    else:
+        detail: dict[str, object] = {
+            "tail_kind": tail_kind,
+            "reason_code": reason_code,
+            "verb": verb.value,
+            "new_label": node.new_label,
+        }
+        witness = node.witness
+
+    detail["witness_rule_id"] = witness.rule_id if witness is not None else ""
+    detail["source_span"] = witness.source_span if witness is not None else None
+    ctx.residuals.append(
+        SurfaceResolutionResidual(
+            kind=FI_TAIL_UNRESOLVED_KIND,
+            rule_id=FI_TAIL_UNRESOLVED_RULE_ID,
+            phase="surface_resolve",
+            family="target_resolution_recovery",
+            reason_code=reason_code,
+            strict_disposition="block",
+            quirks_disposition="record",
+            node=node,
+            detail=detail,
+        )
+    )
+
+
 # ---------------------------------------------------------------------------
 # Node dispatch
 # ---------------------------------------------------------------------------
@@ -1228,6 +1295,7 @@ def _resolve_verb_group(
             if batch_active and (node.destination_chapter or node.destination_part):
                 batch = resolved_nodes[current_batch_start:]
                 updated_batch: list[ResolvedNode] = []
+                applied = False
                 for r in batch:
                     if isinstance(r, ResolvedTargetRef) and _move_tail_applies_to(r):
                         updated_batch.append(
@@ -1237,20 +1305,40 @@ def _resolve_verb_group(
                                 node.destination_part,
                             )
                         )
+                        applied = True
                     else:
                         updated_batch.append(r)
                 resolved_nodes = resolved_nodes[:current_batch_start] + updated_batch
                 # Update ctx with the patched batch
                 ctx.last_target_batch = _extract_section_targets(updated_batch)
+                if not applied:
+                    _record_tail_unresolved(
+                        ctx,
+                        node=node,
+                        tail_kind="move",
+                        reason_code="NO_APPLICABLE_TARGET",
+                        verb=vg.verb,
+                    )
+            else:
+                reason_code = (
+                    "NO_ACTIVE_BATCH" if not batch_active else "MISSING_DESTINATION"
+                )
+                _record_tail_unresolved(
+                    ctx,
+                    node=node,
+                    tail_kind="move",
+                    reason_code=reason_code,
+                    verb=vg.verb,
+                )
             continue
 
         # --- Renumber tail: apply new label to the last resolved target in batch ---
         if isinstance(node, SurfaceRenumberTail):
+            applied = False
             if node.new_label and batch_active:
                 # Find the last target in the current batch, including
                 # targets inside ScopeBlocks and DescendantCoordinations.
                 last_idx = len(resolved_nodes) - 1
-                applied = False
                 while last_idx >= current_batch_start and not applied:
                     candidate = resolved_nodes[last_idx]
                     if isinstance(candidate, ResolvedTargetRef):
@@ -1265,6 +1353,7 @@ def _resolve_verb_group(
                             patched_targets = list(candidate.targets)
                             last_target = patched_targets[-1]
                             if not isinstance(last_target, ResolvedTargetRef):
+                                last_idx -= 1
                                 continue
                             patched_targets[-1] = _apply_renumber_dest(
                                 last_target,
@@ -1291,6 +1380,20 @@ def _resolve_verb_group(
                         )
                         applied = True
                     last_idx -= 1
+            if not applied:
+                if not node.new_label:
+                    reason_code = "MISSING_NEW_LABEL"
+                elif not batch_active:
+                    reason_code = "NO_ACTIVE_BATCH"
+                else:
+                    reason_code = "NO_APPLICABLE_TARGET"
+                _record_tail_unresolved(
+                    ctx,
+                    node=node,
+                    tail_kind="renumber",
+                    reason_code=reason_code,
+                    verb=vg.verb,
+                )
             continue
 
         # --- Target-like nodes: contribute to the current batch ---
