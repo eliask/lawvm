@@ -274,6 +274,57 @@ def test_build_no_records_skipped_statutes_in_stats(tmp_path, monkeypatch) -> No
             "error": "malformed source",
         },
     ]
+    assert stats["skipped_amendments"] == []
+
+
+def test_build_no_records_skipped_amendments_in_stats(tmp_path, monkeypatch) -> None:
+    input_path = tmp_path / "lover.tar.bz2"
+    input_path.write_bytes(b"dummy")
+    amendment_path = tmp_path / "lovtidend.tar.bz2"
+    amendment_path.write_bytes(b"dummy")
+    output_dir = tmp_path / "graph"
+
+    monkeypatch.setattr(
+        "lawvm.norway.grafter.open_lovdata_archive",
+        lambda _path: iter([("no/lov/2025-01-01-1", b"<html>good</html>")]),
+    )
+    monkeypatch.setattr(
+        "lawvm.norway.grafter.open_lovdata_amendment_archive",
+        lambda _path: iter([("no/lovtid/2025-02-02-5", b"<html>bad-amendment</html>")]),
+    )
+    monkeypatch.setattr(
+        "lawvm.norway.grafter.parse_no_statute",
+        lambda _html_bytes, _sid: SimpleNamespace(title="Good law", body=(), supplements=()),
+    )
+    monkeypatch.setattr("lawvm.core.timeline.compile_timelines", lambda _statute, _ops: {"1": object()})
+
+    def fail_document_change_ops(_html_bytes: bytes, _source_id: str):
+        raise ValueError("malformed amendment")
+
+    monkeypatch.setattr("lawvm.norway.grafter.iter_no_document_change_ops", fail_document_change_ops)
+
+    asyncio.run(build_tools._build_no(input_path, output_dir, verbose=False, amendment_archives=[amendment_path]))
+
+    stats = json.loads((output_dir / "stats.json").read_text())
+    assert stats["n_statutes"] == 1
+    assert stats["n_skipped"] == 0
+    assert stats["n_amendment_links"] == 0
+    assert stats["n_skipped_amendments"] == 1
+    assert stats["skipped_statutes"] == []
+    assert stats["skipped_amendments"] == [
+        {
+            "rule_id": "no_build_amendment_parse_skipped",
+            "phase": "build",
+            "family": "source_pathology",
+            "reason": "Norway build skipped amendment artifact after parser or index extraction failure",
+            "source_id": "no/lovtid/2025-02-02-5",
+            "archive_path": str(amendment_path),
+            "error": "malformed amendment",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
 
 
 def test_build_fi_lightweight_records_missing_source_skip(

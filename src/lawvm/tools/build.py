@@ -452,6 +452,7 @@ async def _build_no(
     n_provisions = 0
     n_amendment_links = 0
     skipped_statutes: list[dict[str, str]] = []
+    skipped_amendments: list[dict[str, object]] = []
 
     with (
         open(output_dir / "citations.jsonl", "w", encoding="utf-8") as _cite_f,
@@ -499,6 +500,20 @@ async def _build_no(
                             bucket.append(source_id)
                             n_amendment_links += 1
                 except Exception as exc:
+                    skipped_amendments.append(
+                        {
+                            "rule_id": "no_build_amendment_parse_skipped",
+                            "phase": "build",
+                            "family": "source_pathology",
+                            "reason": "Norway build skipped amendment artifact after parser or index extraction failure",
+                            "source_id": source_id,
+                            "archive_path": str(archive_path),
+                            "error": str(exc),
+                            "blocking": True,
+                            "strict_disposition": "block",
+                            "quirks_disposition": "record",
+                        }
+                    )
                     if verbose:
                         print(f"\n  [skip amendment] {source_id}: {exc}", file=sys.stderr)
 
@@ -528,7 +543,9 @@ async def _build_no(
         "n_eu_ref_edges": 0,
         "n_delegation_edges": 0,
         "n_amendment_links": n_amendment_links,
+        "n_skipped_amendments": len(skipped_amendments),
         "skipped_statutes": skipped_statutes,
+        "skipped_amendments": skipped_amendments,
     }
     with open(output_dir / "stats.json", "w", encoding="utf-8") as f:
         json.dump(stats, f, ensure_ascii=False, indent=2)
