@@ -268,35 +268,106 @@ def _manifestation_items(el: ET.Element) -> list[dict[str, Any]]:
     return items
 
 
-def list_manifestation_options(tree_notice_path: Path) -> list[dict[str, Any]]:
+def _append_manifestation_option_diagnostic(
+    diagnostics_out: list[dict[str, Any]] | None,
+    *,
+    tree_notice_path: Path,
+    rule_id: str,
+    reason: str,
+    detail: dict[str, Any],
+) -> None:
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        {
+            "rule_id": rule_id,
+            "kind": rule_id,
+            "family": "source_pathology",
+            "phase": "acquisition",
+            "source": str(tree_notice_path),
+            "reason": reason,
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "detail": detail,
+        }
+    )
+
+
+def list_manifestation_options(
+    tree_notice_path: Path,
+    diagnostics_out: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     root = ET.parse(tree_notice_path).getroot()
 
     # 1. Broadly collect all manifests by URI (if available)
     manifests_by_uri: dict[str, ET.Element] = {}
     all_mans: list[ET.Element] = list(root.iter("MANIFESTATION"))
     for manifestation in all_mans:
-        uri_el = manifestation.find(".//URI") # Flexible search
+        uri_el = manifestation.find(".//URI")  # Flexible search
         if uri_el is not None:
             v = _child_text(uri_el, "VALUE")
-            if v: manifests_by_uri[v] = manifestation
+            if v:
+                manifests_by_uri[v] = manifestation
 
     options: list[dict[str, Any]] = []
 
     # 2. Extract options by traversing EXPRESSIONs globally
-    for expr in root.iter("EXPRESSION"):
+    for expression_index, expr in enumerate(root.iter("EXPRESSION")):
         lang = _expression_language_code(expr)
-        if not lang: continue
+        if not lang:
+            _append_manifestation_option_diagnostic(
+                diagnostics_out,
+                tree_notice_path=tree_notice_path,
+                rule_id="eu_cellar_manifestation_option_skipped",
+                reason="EU Cellar manifestation option was skipped because the expression did not expose a language",
+                detail={
+                    "reason_code": "missing_expression_language",
+                    "expression_index": expression_index,
+                    "expression_uri": _parse_uriish(expr.find(".//URI")),
+                },
+            )
+            continue
 
-        expr_uri = _parse_uriish(expr.find(".//URI")) # Flexible search
+        expr_uri = _parse_uriish(expr.find(".//URI"))  # Flexible search
 
-        for link in expr.findall("EXPRESSION_MANIFESTED_BY_MANIFESTATION"):
+        for link_index, link in enumerate(expr.findall("EXPRESSION_MANIFESTED_BY_MANIFESTATION")):
             # The URI is often under SAMEAS/URI
             man_link_uri_node = link.find(".//URI")
-            if man_link_uri_node is None: continue
+            if man_link_uri_node is None:
+                _append_manifestation_option_diagnostic(
+                    diagnostics_out,
+                    tree_notice_path=tree_notice_path,
+                    rule_id="eu_cellar_manifestation_option_skipped",
+                    reason="EU Cellar manifestation option was skipped because the manifestation link had no URI",
+                    detail={
+                        "reason_code": "missing_manifestation_uri_node",
+                        "expression_index": expression_index,
+                        "link_index": link_index,
+                        "language": lang,
+                        "expression_uri": expr_uri,
+                    },
+                )
+                continue
 
             man_link_uri = _parse_uriish(man_link_uri_node)
             man_uri_val = man_link_uri.get("value", "")
-            if not man_uri_val: continue
+            if not man_uri_val:
+                _append_manifestation_option_diagnostic(
+                    diagnostics_out,
+                    tree_notice_path=tree_notice_path,
+                    rule_id="eu_cellar_manifestation_option_skipped",
+                    reason="EU Cellar manifestation option was skipped because the manifestation URI value was empty",
+                    detail={
+                        "reason_code": "empty_manifestation_uri",
+                        "expression_index": expression_index,
+                        "link_index": link_index,
+                        "language": lang,
+                        "expression_uri": expr_uri,
+                        "manifestation_uri": man_link_uri,
+                    },
+                )
+                continue
 
             # Try linking by absolute URI first
             manifestation = manifests_by_uri.get(man_uri_val)
@@ -305,13 +376,16 @@ def list_manifestation_options(tree_notice_path: Path) -> list[dict[str, Any]]:
             if manifestation is None:
                 man_uri_lower = man_uri_val.lower()
                 want_type = ""
-                if ".xhtml" in man_uri_lower: want_type = "xhtml"
-                elif ".fmx4" in man_uri_lower: want_type = "fmx4"
-                elif ".pdf" in man_uri_lower: want_type = "pdf"
+                if ".xhtml" in man_uri_lower:
+                    want_type = "xhtml"
+                elif ".fmx4" in man_uri_lower:
+                    want_type = "fmx4"
+                elif ".pdf" in man_uri_lower:
+                    want_type = "pdf"
                 else:
                     want_type = man_uri_val.split(".")[-1].lower()
                     if want_type in ("eng", "fin", "fra"):  # common lang suffix
-                        want_type = "xhtml" # heuristic
+                        want_type = "xhtml"  # heuristic
 
                 if want_type:
                     matching_mans = [m for m in all_mans if m.attrib.get("manifestation-type", "").lower() == want_type]
@@ -320,14 +394,16 @@ def list_manifestation_options(tree_notice_path: Path) -> list[dict[str, Any]]:
 
             if manifestation is not None:
                 items = _manifestation_items(manifestation)
-                options.append({
-                    "language": lang,
-                    "expression_uri": expr_uri,
-                    "manifestation_uri": man_link_uri,
-                    "manifestation_type": manifestation.attrib.get("manifestation-type", ""),
-                    "sameas": _parse_sameas(manifestation),
-                    "items": items,
-                })
+                options.append(
+                    {
+                        "language": lang,
+                        "expression_uri": expr_uri,
+                        "manifestation_uri": man_link_uri,
+                        "manifestation_type": manifestation.attrib.get("manifestation-type", ""),
+                        "sameas": _parse_sameas(manifestation),
+                        "items": items,
+                    }
+                )
 
     return options
 

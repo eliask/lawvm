@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 from urllib.error import URLError
 
 from lawvm.eu import cellar
@@ -167,3 +168,57 @@ def test_fetch_manifest_success_has_empty_failed_request_rows(monkeypatch, tmp_p
     assert report.fetched_count == 1
     assert report.failed_count == 0
     assert report.failed_requests == ()
+
+
+def test_list_manifestation_options_records_skipped_source_lanes(tmp_path) -> None:
+    tree_notice = tmp_path / "tree.xml"
+    tree_notice.write_text(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<NOTICE>
+  <EXPRESSION>
+    <URI><VALUE>http://example.test/expression/no-language</VALUE></URI>
+    <EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+      <SAMEAS><URI><VALUE>http://example.test/doc-no-language.xhtml</VALUE></URI></SAMEAS>
+    </EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+  </EXPRESSION>
+  <EXPRESSION>
+    <URI><VALUE>http://example.test/expression/eng</VALUE></URI>
+    <EXPRESSION_USES_LANGUAGE><IDENTIFIER>eng</IDENTIFIER></EXPRESSION_USES_LANGUAGE>
+    <EXPRESSION_MANIFESTED_BY_MANIFESTATION/>
+    <EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+      <SAMEAS><URI><VALUE/></URI></SAMEAS>
+    </EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+    <EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+      <SAMEAS><URI><VALUE>http://example.test/doc.xhtml</VALUE></URI></SAMEAS>
+    </EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+  </EXPRESSION>
+  <MANIFESTATION manifestation-type="xhtml">
+    <URI><VALUE>http://example.test/doc.xhtml</VALUE></URI>
+    <MANIFESTATION_HAS_ITEM>
+      <URI><VALUE>http://example.test/item.xhtml</VALUE></URI>
+    </MANIFESTATION_HAS_ITEM>
+  </MANIFESTATION>
+</NOTICE>
+""",
+        encoding="utf-8",
+    )
+    diagnostics: list[dict[str, Any]] = []
+
+    options = cellar.list_manifestation_options(tree_notice, diagnostics_out=diagnostics)
+
+    assert len(options) == 1
+    assert options[0]["language"] == "ENG"
+    assert options[0]["manifestation_uri"]["value"] == "http://example.test/doc.xhtml"
+    assert [row["rule_id"] for row in diagnostics] == [
+        "eu_cellar_manifestation_option_skipped",
+        "eu_cellar_manifestation_option_skipped",
+        "eu_cellar_manifestation_option_skipped",
+    ]
+    assert [row["detail"]["reason_code"] for row in diagnostics] == [
+        "missing_expression_language",
+        "missing_manifestation_uri_node",
+        "empty_manifestation_uri",
+    ]
+    assert all(row["family"] == "source_pathology" for row in diagnostics)
+    assert all(row["phase"] == "acquisition" for row in diagnostics)
+    assert all(row["strict_disposition"] == "block" for row in diagnostics)
