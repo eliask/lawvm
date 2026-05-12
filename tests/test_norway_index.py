@@ -59,6 +59,21 @@ def _unresolved_base_amendment_xml() -> bytes:
 """.encode("utf-8")
 
 
+def _unresolved_structured_target_amendment_xml() -> bytes:
+    return """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <dd class="dateInForce">2025-02-10</dd>
+    <article class="document-change" data-document="lov/2022-05-12-28">
+      <article class="change" data-change-part="lov/2022-05-12-28/ukjent">
+        <article class="legalP">§ 12 skal lyde:</article>
+      </article>
+    </article>
+  </body>
+</html>
+""".encode("utf-8")
+
+
 def _write_archive(archive_path, members: list[tuple[str, bytes]]) -> None:
     with tarfile.open(archive_path, "w:bz2") as tf:
         for member_name, payload in members:
@@ -140,6 +155,31 @@ def test_build_no_amendment_index_forwards_parser_adjudications(tmp_path) -> Non
     assert parser_diagnostic["quirks_disposition"] == "record"
     assert parser_diagnostic["detail"]["source_doc"] == "not-a-lovdata-ref"
     assert parser_diagnostic["detail"]["reason"] == "unmappable_data_document"
+
+
+def test_build_no_amendment_index_forwards_unresolved_structured_target_adjudication(tmp_path) -> None:
+    _write_archive(
+        tmp_path / "lovtidend-avd1-2025.tar.bz2",
+        [("lti/2025/nl-20250202-005.xml", _unresolved_structured_target_amendment_xml())],
+    )
+
+    index = build_no_amendment_index(tmp_path)
+
+    assert index.entries == []
+    assert [diagnostic["rule_id"] for diagnostic in index.diagnostics] == [
+        "no_parse_unresolved_structured_target_skipped",
+        "no_amendment_index_no_change_ops",
+    ]
+    parser_diagnostic = index.diagnostics[0]
+    assert parser_diagnostic["kind"] == "no_parse_unresolved_structured_target_skipped"
+    assert parser_diagnostic["family"] == "target_resolution_recovery"
+    assert parser_diagnostic["phase"] == "parse"
+    assert parser_diagnostic["source_id"] == "no/lovtid/2025-02-02-5"
+    assert parser_diagnostic["blocking"] is True
+    assert parser_diagnostic["strict_disposition"] == "block"
+    assert parser_diagnostic["quirks_disposition"] == "record"
+    assert parser_diagnostic["detail"]["base_id"] == "no/lov/2022-05-12-28"
+    assert parser_diagnostic["detail"]["raw_target"] == "lov/2022-05-12-28/ukjent"
 
 
 def test_build_no_amendment_index_records_unmapped_xml_members(tmp_path) -> None:

@@ -2011,6 +2011,27 @@ def iter_no_document_change_ops(
                 target = lovdata_path_to_address(raw_target)
                 if target is not None:
                     parsed_specs.append((StructuralAction(action), target))
+                    continue
+                _append_no_parse_adjudication(
+                    adjudications_out,
+                    kind="no_parse_unresolved_structured_target_skipped",
+                    message="Norway parser skipped structured target whose path could not be lowered.",
+                    source_id=source_id,
+                    detail={
+                        "rule_id": "no_parse_unresolved_structured_target_skipped",
+                        "phase": "parse",
+                        "family": "target_resolution_recovery",
+                        "blocking": True,
+                        "strict_disposition": "block",
+                        "quirks_disposition": "record",
+                        "base_id": base_id,
+                        "source_doc": source_doc,
+                        "action": action,
+                        "raw_target": raw_target,
+                        "target_base": target_base or "",
+                        "raw_text": raw_text,
+                    },
+                )
 
             if skipped_cross_base_specs and parsed_specs:
                 non_skipped_actions = {_no_action_value(action) for action, _target in parsed_specs}
