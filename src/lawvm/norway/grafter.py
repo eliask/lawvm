@@ -2087,13 +2087,63 @@ def iter_no_document_change_ops(
             for raw_target, raw_destination in renumber_specs:
                 target_base = normalize_lovdata_refid(raw_target)
                 dest_base = normalize_lovdata_refid(raw_destination)
-                if (target_base is not None and target_base != base_id) or (
-                    dest_base is not None and dest_base != base_id
-                ):
+                target_cross_base = target_base is not None and target_base != base_id
+                destination_cross_base = dest_base is not None and dest_base != base_id
+                if target_cross_base or destination_cross_base:
+                    _append_no_parse_adjudication(
+                        adjudications_out,
+                        kind="no_parse_cross_base_structured_renumber_skipped",
+                        message=(
+                            "Norway parser skipped structured renumber whose source "
+                            "or destination belongs to a different base act."
+                        ),
+                        source_id=source_id,
+                        detail={
+                            "rule_id": "no_parse_cross_base_structured_renumber_skipped",
+                            "phase": "parse",
+                            "family": "source_pathology",
+                            "blocking": True,
+                            "strict_disposition": "block",
+                            "quirks_disposition": "record",
+                            "base_id": base_id,
+                            "source_doc": source_doc,
+                            "raw_target": raw_target,
+                            "raw_destination": raw_destination,
+                            "target_base": target_base or "",
+                            "destination_base": dest_base or "",
+                            "target_cross_base": target_cross_base,
+                            "destination_cross_base": destination_cross_base,
+                            "raw_text": raw_text,
+                        },
+                    )
                     continue
                 target = lovdata_path_to_address(raw_target)
                 destination = lovdata_path_to_address(raw_destination)
                 if target is None or destination is None:
+                    _append_no_parse_adjudication(
+                        adjudications_out,
+                        kind="no_parse_unresolved_structured_renumber_skipped",
+                        message=(
+                            "Norway parser skipped structured renumber whose source "
+                            "or destination path could not be lowered."
+                        ),
+                        source_id=source_id,
+                        detail={
+                            "rule_id": "no_parse_unresolved_structured_renumber_skipped",
+                            "phase": "parse",
+                            "family": "target_resolution_recovery",
+                            "blocking": True,
+                            "strict_disposition": "block",
+                            "quirks_disposition": "record",
+                            "base_id": base_id,
+                            "source_doc": source_doc,
+                            "raw_target": raw_target,
+                            "raw_destination": raw_destination,
+                            "target_resolved": target is not None,
+                            "destination_resolved": destination is not None,
+                            "raw_text": raw_text,
+                        },
+                    )
                     continue
                 doc_ops.append(
                     LegalOperation(
