@@ -3797,6 +3797,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print a line for every affecting act checked",
     )
+    uk_fetch_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit JSON including acquisition event rows",
+    )
 
     # --- uk-effect ---
     uk_effect_p = sub.add_parser(
@@ -6106,15 +6111,30 @@ def main() -> None:
             sys.exit(1)
         archive = Farchive(db_path)
         try:
-            fetched, cached, errors = fetch_missing_for_statute(
+            report = fetch_missing_for_statute(
                 args.statute_id,
                 archive,
                 dry_run=getattr(args, "dry_run", False),
                 verbose=getattr(args, "verbose", False),
             )
+            fetched, cached, errors = report
         finally:
             archive.close()
-        print(f"fetched={fetched}  already_cached={cached}  errors={errors}")
+        if getattr(args, "json", False):
+            import json as _json
+
+            if hasattr(report, "to_dict"):
+                payload = report.to_dict()
+            else:
+                payload = {
+                    "fetched_count": fetched,
+                    "already_cached_count": cached,
+                    "error_count": errors,
+                    "events": [],
+                }
+            print(_json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"fetched={fetched}  already_cached={cached}  errors={errors}")
         if errors:
             sys.exit(1)
 

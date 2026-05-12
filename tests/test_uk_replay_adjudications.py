@@ -1,12 +1,14 @@
 """UK replay adjudication emission tests."""
 from __future__ import annotations
+from pathlib import Path
+
 from lawvm.core.adjudication_evidence import adjudication_finding_evidence_rows
 from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSource, TextPatchKindEnum, TextPatchSpec, TextSelector, StructuralAction
 
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.uk_legislation.uk_amendment_replay import UKReplayExecutor, replay_uk_ops
+from lawvm.uk_legislation.uk_amendment_replay import UKReplayExecutor, UKReplayPipeline, replay_uk_ops
 
 
 def _base_statute() -> IRStatute:
@@ -277,6 +279,35 @@ def test_replay_uk_ops_records_prepare_filtered_unsupported_whole_act_target() -
     assert len(adjudications) == 1
     assert adjudications[0].kind == "uk_replay_unsupported_action"
     assert adjudications[0].op_id == "uk_test_whole_act_prepare_filter"
+    assert adjudications[0].detail == {
+        "action": "replace",
+        "target": "/whole_act",
+        "reason": "whole_act_prepare_filter",
+    }
+    assert tuple(child.label for child in replayed.body.children) == ("1",)
+
+
+def test_pipeline_apply_ops_records_prepare_filtered_unsupported_whole_act_target() -> None:
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="uk_test_pipeline_whole_act_prepare_filter",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(), special=FacetKind.WHOLE_ACT),
+        payload=IRNode(kind=IRNodeKind.BODY),
+        source=_source(),
+    )
+
+    replayed = UKReplayPipeline(Path(".")).apply_ops(
+        _base_statute(),
+        [op],
+        adjudications_out=adjudications,
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_unsupported_action"
+    assert adjudications[0].op_id == "uk_test_pipeline_whole_act_prepare_filter"
+    assert adjudications[0].source_statute == "ukpga/2026/1"
     assert adjudications[0].detail == {
         "action": "replace",
         "target": "/whole_act",
