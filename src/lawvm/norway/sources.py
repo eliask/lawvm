@@ -12,6 +12,7 @@ LawVM. The helpers here make that migration boring:
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import tarfile
@@ -552,6 +553,7 @@ def ingest_no_public_archives(
     archive = open_no_archive(db_path)
     skipped_existing_entries: list[dict[str, str]] = []
     skipped_unmapped_entries: list[dict[str, Any]] = []
+    duplicate_locator_entries: list[dict[str, Any]] = []
     report: dict[str, object] = {
         "source_dir": str(source_dir),
         "db_path": str(db_path),
@@ -562,6 +564,8 @@ def ingest_no_public_archives(
         "skipped_existing_entries": skipped_existing_entries,
         "skipped_unmapped": 0,
         "skipped_unmapped_entries": skipped_unmapped_entries,
+        "duplicate_locator_count": 0,
+        "duplicate_locator_entries": duplicate_locator_entries,
     }
 
     def _record_skipped_existing(artifact: NOLocatedArtifact, *, kind: str) -> None:
@@ -599,6 +603,40 @@ def ingest_no_public_archives(
             }
         )
 
+    def _record_duplicate_locator(
+        artifact: NOLocatedArtifact,
+        *,
+        kind: str,
+        existing_payload: bytes,
+    ) -> None:
+        identical_payloads = existing_payload == artifact.payload
+        report["duplicate_locator_count"] = cast(int, report["duplicate_locator_count"]) + 1
+        duplicate_locator_entries.append(
+            {
+                "rule_id": "no_acquisition_duplicate_logical_locator",
+                "phase": "acquisition",
+                "family": "source_pathology",
+                "reason": (
+                    "Norway Farchive ingest found a byte-identical duplicate logical source locator; "
+                    "the existing witness was retained."
+                    if identical_payloads
+                    else "Norway Farchive ingest found a conflicting duplicate logical source locator; "
+                    "the existing witness was retained and the new payload was not stored."
+                ),
+                "kind": kind,
+                "locator": artifact.locator,
+                "logical_id": artifact.logical_id,
+                "source_name": artifact.source_name,
+                "member_name": artifact.member_name,
+                "existing_payload_digest": hashlib.sha256(existing_payload).hexdigest(),
+                "new_payload_digest": hashlib.sha256(artifact.payload).hexdigest(),
+                "identical_payloads": identical_payloads,
+                "blocking": True,
+                "strict_disposition": "block",
+                "quirks_disposition": "select_existing_identical" if identical_payloads else "block",
+            }
+        )
+
     try:
         for artifact in iter_no_unmapped_current_xml_members(source_dir):
             _record_skipped_unmapped(artifact, kind="current")
@@ -607,6 +645,13 @@ def ingest_no_public_archives(
         for artifact in _iter_current_artifacts_from_dir(source_dir):
             if skip_existing and archive.has(artifact.locator):
                 _record_skipped_existing(artifact, kind="current")
+                continue
+            if archive.has(artifact.locator):
+                _record_duplicate_locator(
+                    artifact,
+                    kind="current",
+                    existing_payload=archive.get(artifact.locator) or b"",
+                )
                 continue
             archive.store(
                 artifact.locator,
@@ -619,6 +664,13 @@ def ingest_no_public_archives(
             if skip_existing and archive.has(artifact.locator):
                 _record_skipped_existing(artifact, kind="original")
                 continue
+            if archive.has(artifact.locator):
+                _record_duplicate_locator(
+                    artifact,
+                    kind="original",
+                    existing_payload=archive.get(artifact.locator) or b"",
+                )
+                continue
             archive.store(
                 artifact.locator,
                 artifact.payload,
@@ -629,6 +681,13 @@ def ingest_no_public_archives(
         for artifact in _iter_amendment_artifacts_from_dir(source_dir):
             if skip_existing and archive.has(artifact.locator):
                 _record_skipped_existing(artifact, kind="amendment")
+                continue
+            if archive.has(artifact.locator):
+                _record_duplicate_locator(
+                    artifact,
+                    kind="amendment",
+                    existing_payload=archive.get(artifact.locator) or b"",
+                )
                 continue
             archive.store(
                 artifact.locator,
