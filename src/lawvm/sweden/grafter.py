@@ -1067,6 +1067,34 @@ def _record_se_amendment_register_diagnostic(
     diagnostics_out.append(diagnostic)
 
 
+def _record_se_current_text_diagnostic(
+    diagnostics_out: list[dict[str, Any]],
+    *,
+    rule_id: str,
+    reason: str,
+    sfs_id: str,
+    block_index: int,
+    item_label: str = "",
+    item_text: str = "",
+) -> None:
+    diagnostic: dict[str, Any] = {
+        "rule_id": rule_id,
+        "family": "source_pathology",
+        "phase": "extraction",
+        "reason": reason,
+        "sfs_id": sfs_id,
+        "block_index": block_index,
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+    }
+    if item_label:
+        diagnostic["item_label"] = item_label
+    if item_text:
+        diagnostic["item_text"] = _normalize_space(item_text)
+    diagnostics_out.append(diagnostic)
+
+
 def parse_se_amendment_register(
     payload: bytes | str | dict[str, Any],
     *,
@@ -1303,6 +1331,7 @@ def parse_se_statute(payload: bytes | str | dict[str, Any], statute_id: Optional
     """
     document = _coerce_document(payload)
     source_record = parse_se_source_record(document)
+    source_diagnostics = list(source_record.source_diagnostics)
     fulltext = document.get("fulltext") or {}
     if isinstance(fulltext, dict):
         fulltext_text = str(fulltext.get("forfattningstext") or "")
@@ -1429,6 +1458,15 @@ def parse_se_statute(payload: bytes | str | dict[str, Any], statute_id: Optional
                     item_match.group("text"),
                 )
                 continue
+            _record_se_current_text_diagnostic(
+                source_diagnostics,
+                rule_id="se_current_text_orphan_item_skipped",
+                reason="Sweden current-text parser skipped a numbered item because no section, transition, or appendix parent was active.",
+                sfs_id=source_record.sfs_id,
+                block_index=index,
+                item_label=_label_norm(item_match.group("label")),
+                item_text=item_match.group("text"),
+            )
             continue
 
         if current_section is not None and not _looks_like_heading(cleaned_block, cleaned_next_block):
@@ -1446,13 +1484,15 @@ def parse_se_statute(payload: bytes | str | dict[str, Any], statute_id: Optional
         current_section = None
         active_container().append(_SEMutableNode(kind="heading", text=cleaned_block, attrs=dict(block_attrs)))
 
-    metadata = {
+    metadata: dict[str, Any] = {
         "jurisdiction": "se",
         "source_confidence": source_record.source_confidence.value,
         "source_text_kind": source_record.source_text_kind,
         "amended_through_sfs": source_record.amended_through_sfs,
         "effective_markers": list(source_record.effective_markers),
     }
+    if source_diagnostics:
+        metadata["source_diagnostics"] = source_diagnostics
     return IRStatute(
         statute_id=statute_id or source_record.sfs_id,
         title=source_record.title,

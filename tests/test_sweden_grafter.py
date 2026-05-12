@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.sweden.grafter import (
@@ -230,7 +230,7 @@ def test_parse_se_source_record_exposes_amendment_register_diagnostics() -> None
             "rubrik": "Skollag (2010:800)",
             "forfattningstypNamn": "Lag",
             "andringsforfattningar": ["not a row"],
-        }
+        },
     )
 
     assert record.amendment_register == ()
@@ -266,6 +266,7 @@ def test_parse_se_statute_preserves_simple_section_and_temporal_marker() -> None
 def test_parse_se_statute_captures_lists_and_transition_block() -> None:
     statute = parse_se_statute(_doc_bytes(_LIST_STATUTE_DOC))
 
+    assert "source_diagnostics" not in statute.metadata
     section_four = next(child for child in statute.body.children if child.kind == IRNodeKind.SECTION and child.label == "4")
     subsection = section_four.children[0]
     assert subsection.kind == IRNodeKind.SUBSECTION
@@ -282,6 +283,35 @@ def test_parse_se_statute_captures_lists_and_transition_block() -> None:
         if item.kind == IRNodeKind.ITEM
     ]
     assert transition_labels == ["1", "2"]
+
+
+def test_parse_se_statute_records_orphan_numbered_item() -> None:
+    doc = dict(_SIMPLE_STATUTE_DOC)
+    fulltext = dict(cast(Mapping[str, object], _SIMPLE_STATUTE_DOC["fulltext"]))
+    fulltext["forfattningstext"] = "1. Orphan legal item"
+    doc["fulltext"] = fulltext
+
+    statute = parse_se_statute(_doc_bytes(doc))
+
+    assert tuple(statute.body.children) == ()
+    assert statute.metadata["source_diagnostics"] == (
+        {
+            "rule_id": "se_current_text_orphan_item_skipped",
+            "family": "source_pathology",
+            "phase": "extraction",
+            "reason": (
+                "Sweden current-text parser skipped a numbered item because no section, "
+                "transition, or appendix parent was active."
+            ),
+            "sfs_id": "2025:399",
+            "block_index": 0,
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "item_label": "1",
+            "item_text": "Orphan legal item",
+        },
+    )
 
 
 def test_se_pdf_bytes_to_text_uses_pdftotext_subprocess(monkeypatch) -> None:
