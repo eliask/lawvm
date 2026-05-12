@@ -37,6 +37,8 @@ from lawvm.core.ir import (
 from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
 
 NO_PARSE_REPLACE_PROMOTED_TO_INSERT_FOR_RENUMBER = "no_parse_replace_promoted_to_insert_for_same_target_renumber"
+NO_PARSE_STRUCTURED_TARGET_REBOUND_FROM_LEAD = "no_parse_structured_target_rebound_from_lead"
+NO_PARSE_ACTION_RECOVERED_FROM_STRUCTURED_LEAD = "no_parse_action_recovered_from_structured_lead"
 
 
 def _no_action_value(action: StructuralAction | str) -> str:
@@ -2008,6 +2010,85 @@ def _append_no_parse_adjudication(
     )
 
 
+def _no_structured_spec_detail(
+    specs: Sequence[tuple[StructuralAction, LegalAddress]],
+) -> tuple[dict[str, str], ...]:
+    return tuple(
+        {
+            "action": _no_action_value(action),
+            "target": _no_address_detail(target),
+        }
+        for action, target in specs
+    )
+
+
+def _append_no_structured_parse_recovery_adjudications(
+    adjudications_out: Optional[List[CompileAdjudication]],
+    *,
+    source_id: str,
+    base_id: str,
+    source_doc: str,
+    raw_text: str,
+    reason: str,
+    scope_confidence: str,
+    original_specs: Sequence[tuple[StructuralAction, LegalAddress]],
+    recovered_specs: Sequence[tuple[StructuralAction, LegalAddress]],
+) -> None:
+    if not original_specs or list(original_specs) == list(recovered_specs):
+        return
+    _append_no_parse_adjudication(
+        adjudications_out,
+        kind=NO_PARSE_STRUCTURED_TARGET_REBOUND_FROM_LEAD,
+        message=(
+            "Norway parser replaced structured target attributes with narrower "
+            "targets inferred from the operative lead or payload."
+        ),
+        source_id=source_id,
+        detail={
+            "rule_id": NO_PARSE_STRUCTURED_TARGET_REBOUND_FROM_LEAD,
+            "phase": "parse",
+            "family": "target_resolution_recovery",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "base_id": base_id,
+            "source_doc": source_doc,
+            "reason": reason,
+            "scope_confidence": scope_confidence,
+            "original_specs": _no_structured_spec_detail(original_specs),
+            "recovered_specs": _no_structured_spec_detail(recovered_specs),
+            "raw_text": raw_text,
+        },
+    )
+    original_actions = tuple(_no_action_value(action) for action, _target in original_specs)
+    recovered_actions = tuple(_no_action_value(action) for action, _target in recovered_specs)
+    if original_actions == recovered_actions:
+        return
+    _append_no_parse_adjudication(
+        adjudications_out,
+        kind=NO_PARSE_ACTION_RECOVERED_FROM_STRUCTURED_LEAD,
+        message="Norway parser recovered structured operation action family from the operative lead.",
+        source_id=source_id,
+        detail={
+            "rule_id": NO_PARSE_ACTION_RECOVERED_FROM_STRUCTURED_LEAD,
+            "phase": "parse",
+            "family": "action_family_recovery",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "base_id": base_id,
+            "source_doc": source_doc,
+            "reason": reason,
+            "scope_confidence": scope_confidence,
+            "original_actions": original_actions,
+            "recovered_actions": recovered_actions,
+            "original_specs": _no_structured_spec_detail(original_specs),
+            "recovered_specs": _no_structured_spec_detail(recovered_specs),
+            "raw_text": raw_text,
+        },
+    )
+
+
 def iter_no_document_change_ops(
     html_bytes: bytes,
     source_id: str,
@@ -2127,7 +2208,19 @@ def iter_no_document_change_ops(
                     existing_paths = {target.path for _action, target in parsed_specs}
                     if existing_paths.issubset(inferred_map):
                         action = next(iter(non_skipped_actions | skipped_actions))
-                        parsed_specs = [(StructuralAction(action), target) for target in inferred_targets]
+                        recovered_specs = [(StructuralAction(action), target) for target in inferred_targets]
+                        _append_no_structured_parse_recovery_adjudications(
+                            adjudications_out,
+                            source_id=source_id,
+                            base_id=base_id,
+                            source_doc=source_doc,
+                            raw_text=raw_text,
+                            reason="cross_base_structured_target_recovered_from_lead",
+                            scope_confidence="inferred_from_payload",
+                            original_specs=parsed_specs,
+                            recovered_specs=recovered_specs,
+                        )
+                        parsed_specs = recovered_specs
                         skipped_cross_base_specs = []
 
             for action, raw_target in skipped_cross_base_specs:
@@ -2154,7 +2247,19 @@ def iter_no_document_change_ops(
 
             inferred_sentence_specs = _infer_same_base_sentence_target_specs_from_lead(lead_text)
             if inferred_sentence_specs:
-                parsed_specs = list(inferred_sentence_specs)
+                recovered_specs = list(inferred_sentence_specs)
+                _append_no_structured_parse_recovery_adjudications(
+                    adjudications_out,
+                    source_id=source_id,
+                    base_id=base_id,
+                    source_doc=source_doc,
+                    raw_text=raw_text,
+                    reason="sentence_targets_inferred_from_lead",
+                    scope_confidence="explicit_source_with_context",
+                    original_specs=parsed_specs,
+                    recovered_specs=recovered_specs,
+                )
+                parsed_specs = recovered_specs
 
             inferred_targets = _infer_same_base_subsection_targets(change_el)
             if (
@@ -2163,14 +2268,38 @@ def iter_no_document_change_ops(
                 and parsed_specs[0][1].leaf_kind() == "section"
                 and parsed_specs[0][0] in {StructuralAction.INSERT, StructuralAction.REPLACE}
             ):
-                parsed_specs = [(parsed_specs[0][0], target) for target in inferred_targets]
+                recovered_specs = [(parsed_specs[0][0], target) for target in inferred_targets]
+                _append_no_structured_parse_recovery_adjudications(
+                    adjudications_out,
+                    source_id=source_id,
+                    base_id=base_id,
+                    source_doc=source_doc,
+                    raw_text=raw_text,
+                    reason="section_target_expanded_to_subsections_from_payload",
+                    scope_confidence="inferred_from_payload",
+                    original_specs=parsed_specs,
+                    recovered_specs=recovered_specs,
+                )
+                parsed_specs = recovered_specs
 
             if (
                 not inferred_sentence_specs
                 and " nytt " in f" {lead_text.lower()} "
                 and all(target.leaf_kind() == "subsection" for _action, target in parsed_specs)
             ):
-                parsed_specs = [(StructuralAction.INSERT, target) for _action, target in parsed_specs]
+                recovered_specs = [(StructuralAction.INSERT, target) for _action, target in parsed_specs]
+                _append_no_structured_parse_recovery_adjudications(
+                    adjudications_out,
+                    source_id=source_id,
+                    base_id=base_id,
+                    source_doc=source_doc,
+                    raw_text=raw_text,
+                    reason="new_subsection_lead_recovered_insert_action",
+                    scope_confidence="explicit_source_with_context",
+                    original_specs=parsed_specs,
+                    recovered_specs=recovered_specs,
+                )
+                parsed_specs = recovered_specs
 
             inferred_sentence_targets = _infer_same_base_sentence_targets(change_el)
             if (
@@ -2179,7 +2308,19 @@ def iter_no_document_change_ops(
                 and all(target.leaf_kind() in {"section", "subsection"} for _action, target in parsed_specs)
                 and len({target.path[0] for _action, target in parsed_specs}) == 1
             ):
-                parsed_specs = [(StructuralAction.REPLACE, target) for target in inferred_sentence_targets]
+                recovered_specs = [(StructuralAction.REPLACE, target) for target in inferred_sentence_targets]
+                _append_no_structured_parse_recovery_adjudications(
+                    adjudications_out,
+                    source_id=source_id,
+                    base_id=base_id,
+                    source_doc=source_doc,
+                    raw_text=raw_text,
+                    reason="sentence_targets_inferred_from_payload",
+                    scope_confidence="inferred_from_payload",
+                    original_specs=parsed_specs,
+                    recovered_specs=recovered_specs,
+                )
+                parsed_specs = recovered_specs
 
             payload_candidates = _extract_payload_candidates(
                 change_el,
