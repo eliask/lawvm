@@ -215,7 +215,14 @@ def test_sweden_fetch_current_command_prints_locator(monkeypatch, capsys) -> Non
     archive = _FakeArchiveContext()
     monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
 
-    def fake_fetch_current(sfs_id: str, archive_obj, *, max_age_hours: float = 24.0) -> bytes:
+    def fake_fetch_current(
+        sfs_id: str,
+        archive_obj,
+        *,
+        max_age_hours: float = 24.0,
+        diagnostics_out: list[dict[str, object]] | None = None,
+    ) -> bytes:
+        del diagnostics_out
         payload = b'{"beteckning": "2025:399"}'
         archive_obj.stored["se://sfs/2025:399/rk.current.json"] = payload
         return payload
@@ -251,7 +258,9 @@ def test_sweden_hydrate_live_command_prints_archive_locators(monkeypatch, capsys
         current_max_age_hours: float = 24.0,
         official_max_age_hours: float = float("inf"),
         force_reextract: bool = False,
+        diagnostics_out: list[dict[str, object]] | None = None,
     ):
+        del diagnostics_out
         from lawvm.sweden.fetch import SEOfficialArtifacts, SESourceBundle
         from lawvm.sweden.grafter import parse_se_source_record, parse_se_statute
 
@@ -1076,7 +1085,14 @@ def test_sweden_hydrate_bulk_command_ingests_scrape_and_hydrates(monkeypatch, tm
             pdf_cleaned_text_url=f"se://sfs/{sfs_id}/official.cleaned.txt",
         )
 
-    def fake_fetch_current(sfs_id: str, archive_obj, *, max_age_hours: float = 24.0) -> bytes:
+    def fake_fetch_current(
+        sfs_id: str,
+        archive_obj,
+        *,
+        max_age_hours: float = 24.0,
+        diagnostics_out: list[dict[str, object]] | None = None,
+    ) -> bytes:
+        del diagnostics_out
         payload = json.dumps({"beteckning": sfs_id, "rubrik": "Lag", "fulltext": {"forfattningstext": "1 § Test."}}, ensure_ascii=False).encode("utf-8")
         archive_obj.store(f"se://sfs/{sfs_id}/rk.current.json", payload)
         return payload
@@ -1124,6 +1140,67 @@ def test_sweden_hydrate_bulk_command_ingests_scrape_and_hydrates(monkeypatch, tm
     assert "Scrape imported:    1" in out
     assert "Completed:          1" in out
     assert "2026:286  OK  pdf=yes  act=yes  ops=1  rk=yes" in out
+
+
+def test_sweden_hydrate_bulk_command_reports_current_diagnostics(monkeypatch, capsys) -> None:
+    archive = _FakeArchiveContext(
+        stored={
+            "se://sfs/2025:399/official.doc.html": b"<main></main>",
+        }
+    )
+    monkeypatch.setattr("lawvm.tools.sweden.open_se_archive", lambda db_path=None: archive)
+    monkeypatch.setattr("lawvm.tools.sweden.fetch_se_official_artifacts", lambda *args, **kwargs: None)
+
+    def fake_fetch_current(
+        sfs_id: str,
+        archive_obj,
+        *,
+        max_age_hours: float = 24.0,
+        diagnostics_out: list[dict[str, object]] | None = None,
+    ) -> None:
+        del archive_obj, max_age_hours
+        if diagnostics_out is not None:
+            diagnostics_out.append(
+                {
+                    "rule_id": "se_rk_current_no_hits",
+                    "family": "source_pathology",
+                    "phase": "acquisition",
+                    "reason": "Sweden RK current JSON response contained no published SFS hit",
+                    "sfs_id": sfs_id,
+                    "locator": f"se://sfs/{sfs_id}/rk.current.json",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                }
+            )
+        return None
+
+    monkeypatch.setattr("lawvm.tools.sweden.fetch_se_rk_current_json", fake_fetch_current)
+
+    sweden_main(
+        SimpleNamespace(
+            sweden_command="hydrate-bulk",
+            sfs_ids=["2025:399"],
+            db=None,
+            scrape_json=None,
+            hydrate_current=True,
+            compile_ops=False,
+            official_max_age_hours=None,
+            current_max_age_hours=None,
+            force_reextract=False,
+            no_skip_complete=True,
+            offset=0,
+            limit=0,
+            format="json",
+        )
+    )
+    payload = json.loads(capsys.readouterr().out)
+    row = payload["rows"][0]
+
+    assert row["status"] == "ok"
+    assert row["current_fetched"] is False
+    assert row["current_diagnostic_count"] == 1
+    assert row["current_diagnostics"][0]["rule_id"] == "se_rk_current_no_hits"
 
 
 def test_sweden_backfill_official_command_generates_candidate_ids(monkeypatch, capsys) -> None:
