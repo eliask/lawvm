@@ -14,6 +14,7 @@
 #   LAWVM_CI_SHARDS="norway,sweden,eu" ./scripts/ci_sharded.sh
 #   LAWVM_CI_AFFECTED_PATHS="src/lawvm/norway/replay.py tests/test_norway_replay.py" ./scripts/ci_sharded.sh
 #   LAWVM_CI_TIMING_JSONL=.tmp/ci-shard-timings.jsonl ./scripts/ci_sharded.sh
+#   LAWVM_CI_TIMING_JSONL=0 ./scripts/ci_sharded.sh   # disable timing capture
 
 set -euo pipefail
 
@@ -54,7 +55,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --help|-h)
-            sed -n '1,14p' "$0"
+            sed -n '1,17p' "$0"
             exit 0
             ;;
         *)
@@ -105,7 +106,10 @@ if [[ ${#AFFECTED_PATHS[@]} -gt 0 ]]; then
         PYTEST_SELECTORS=("${AFFECTED_PATHS[@]}")
     fi
 fi
-TIMING_JSONL="${LAWVM_CI_TIMING_JSONL:-}"
+TIMING_JSONL="${LAWVM_CI_TIMING_JSONL:-.tmp/ci-shard-timings/latest.jsonl}"
+if [[ "$TIMING_JSONL" == "0" || "$TIMING_JSONL" == "none" ]]; then
+    TIMING_JSONL=""
+fi
 if [[ -n "$TIMING_JSONL" ]]; then
     mkdir -p "$(dirname "$TIMING_JSONL")"
     : > "$TIMING_JSONL"
@@ -176,4 +180,8 @@ echo ""
 echo "=== SHARDED CI GREEN ==="
 if [[ -n "$TIMING_JSONL" ]]; then
     echo "Timing JSONL: $TIMING_JSONL"
+    ./scripts/test_shard.sh timings "$TIMING_JSONL" || {
+        echo "FAIL: shard timing report is invalid."
+        exit 1
+    }
 fi
