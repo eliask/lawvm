@@ -1706,6 +1706,84 @@ def test_iter_no_document_change_ops_records_unresolved_structured_renumber_skip
     assert adjudication.detail["destination_resolved"] is True
 
 
+def test_iter_no_document_change_ops_records_malformed_structured_renumber_tokens() -> None:
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <article class="document-change" data-document="lov/2022-05-12-28">
+      <article class="change"
+               data-move-part="lov/2022-05-12-28/§12/ledd/2 lov/2022-05-12-28/§12/ledd/3;;">
+        <article class="defaultP">Nåværende § 12 andre ledd blir nytt tredje ledd.</article>
+      </article>
+    </article>
+  </body>
+</html>
+""".encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    grouped = iter_no_document_change_ops(
+        xml,
+        "no/lovtid/2024-06-21-46",
+        adjudications_out=adjudications,
+    )
+
+    assert grouped == []
+    assert [item.kind for item in adjudications] == [
+        "no_parse_malformed_structured_renumber_attr_skipped",
+        "no_parse_malformed_structured_renumber_attr_skipped",
+    ]
+    missing_destination = adjudications[0]
+    missing_separator = adjudications[1]
+    assert missing_destination.source_statute == "no/lovtid/2024-06-21-46"
+    assert missing_destination.detail["rule_id"] == "no_parse_malformed_structured_renumber_attr_skipped"
+    assert missing_destination.detail["phase"] == "parse"
+    assert missing_destination.detail["family"] == "source_pathology"
+    assert missing_destination.detail["blocking"] is True
+    assert missing_destination.detail["strict_disposition"] == "block"
+    assert missing_destination.detail["quirks_disposition"] == "record"
+    assert missing_destination.detail["base_id"] == "no/lov/2022-05-12-28"
+    assert missing_destination.detail["source_doc"] == "lov/2022-05-12-28"
+    assert missing_destination.detail["attr_name"] == "data-move-part"
+    assert missing_destination.detail["raw_token"] == "lov/2022-05-12-28/§12/ledd/3;;"
+    assert missing_destination.detail["reason"] == "missing_destination"
+    assert missing_separator.detail["raw_token"] == "lov/2022-05-12-28/§12/ledd/2"
+    assert missing_separator.detail["reason"] == "missing_separator"
+
+
+def test_iter_no_document_change_ops_keeps_valid_structured_renumber_when_malformed_token_present() -> None:
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <article class="document-change" data-document="lov/2025-01-01-1">
+      <article class="change"
+               data-move-part="lov/2025-01-01-1/§4;;lov/2025-01-01-1/§5 lov/2025-01-01-1/§6">
+        <article class="defaultP">Nåværende § 4 blir § 5.</article>
+      </article>
+    </article>
+  </body>
+</html>
+""".encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    grouped = dict(
+        iter_no_document_change_ops(
+            xml,
+            "no/lovtid/2025-06-20-90",
+            adjudications_out=adjudications,
+        )
+    )
+
+    ops = grouped["no/lov/2025-01-01-1"]
+    assert [(op.action, op.target.path, op.destination.path if op.destination else ()) for op in ops] == [
+        (StructuralAction.RENUMBER, (("section", "4"),), (("section", "5"),))
+    ]
+    assert [item.kind for item in adjudications] == [
+        "no_parse_malformed_structured_renumber_attr_skipped"
+    ]
+    assert adjudications[0].detail["raw_token"] == "lov/2025-01-01-1/§6"
+    assert adjudications[0].detail["reason"] == "missing_separator"
+
+
 def test_iter_no_document_change_ops_records_missing_structured_base() -> None:
     xml = """<?xml version="1.0" encoding="utf-8"?>
 <html lang="nb">
