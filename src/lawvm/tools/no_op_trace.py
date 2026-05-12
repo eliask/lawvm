@@ -116,7 +116,7 @@ def build_no_op_trace_report(
 ) -> dict[str, Any]:
     from lawvm.norway.commencement import build_no_law_report
     from lawvm.norway.grafter import iter_no_document_change_ops
-    from lawvm.norway.sources import load_no_amendment_bytes, resolve_no_source_path
+    from lawvm.norway.sources import load_no_amendment_artifact_bytes, resolve_no_source_path
 
     index = _load_index(data_dir=data_dir, index_path=index_path)
     source_path = resolve_no_source_path(Path(index.data_dir) if index.data_dir else data_dir)
@@ -131,7 +131,12 @@ def build_no_op_trace_report(
         matched_ops: list[dict[str, Any]] = []
         compiled_op_count = 0
         try:
-            html_bytes = load_no_amendment_bytes(source_id, source_path)
+            html_bytes = load_no_amendment_artifact_bytes(
+                source_id,
+                str(source.get("archive", "")),
+                str(source.get("member_name", "")),
+                source_path,
+            )
         except Exception as exc:  # pragma: no cover - surfaced in report
             summary = dict(source)
             summary["compiled_op_count"] = 0

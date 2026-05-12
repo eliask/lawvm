@@ -313,6 +313,14 @@ def test_test_shard_maps_source_modules_to_frontend_shards() -> None:
             "scripts/ci.sh",
         ]
     ) == ["finland", "tools"]
+    assert module.affected_shards(["src/lawvm/tools/ee_replay.py"]) == ["estonia", "tools"]
+    assert module.affected_shards(["src/lawvm/tools/eu_replay.py"]) == ["eu", "tools"]
+    assert module.affected_shards(["src/lawvm/tools/finland_rulebook.py"]) == ["finland", "tools"]
+    assert module.affected_shards(["src/lawvm/tools/sync_finlex_latest.py"]) == ["finland", "tools"]
+    assert module.affected_shards(["src/lawvm/tools/no_op_trace.py"]) == ["norway", "tools"]
+    assert module.affected_shards(["src/lawvm/tools/sweden.py"]) == ["sweden", "tools"]
+    assert module.affected_shards(["src/lawvm/tools/uk_replay.py"]) == ["tools", "uk"]
+    assert module.affected_shards(["src/lawvm/tools/evidence.py"]) == ["tools"]
 
 
 def test_test_shard_maps_core_and_dependency_changes_to_all() -> None:
@@ -385,20 +393,34 @@ def test_test_shard_affected_plan_explains_frontend_and_tool_shards() -> None:
     assert module.affected_plan(
         [
             "src/lawvm/finland/frontend_compile.py",
+            "src/lawvm/tools/no_op_trace.py",
+            "src/lawvm/tools/uk_replay.py",
             "scripts/ci.sh",
         ]
     ) == {
         "kind": "lawvm_pytest_affected_shards",
         "input_paths": [
             "src/lawvm/finland/frontend_compile.py",
+            "src/lawvm/tools/no_op_trace.py",
+            "src/lawvm/tools/uk_replay.py",
             "scripts/ci.sh",
         ],
-        "shards": ["finland", "tools"],
+        "shards": ["finland", "norway", "tools", "uk"],
         "paths": [
             {
                 "path": "src/lawvm/finland/frontend_compile.py",
                 "shards": ["finland"],
                 "reason": "known frontend prefix src/lawvm/finland/ maps to finland",
+            },
+            {
+                "path": "src/lawvm/tools/no_op_trace.py",
+                "shards": ["norway", "tools"],
+                "reason": "known frontend prefix src/lawvm/tools/no_ maps to norway, tools",
+            },
+            {
+                "path": "src/lawvm/tools/uk_replay.py",
+                "shards": ["uk", "tools"],
+                "reason": "known frontend prefix src/lawvm/tools/uk_ maps to uk, tools",
             },
             {
                 "path": "scripts/ci.sh",

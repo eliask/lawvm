@@ -97,6 +97,9 @@ def main(args: "argparse.Namespace") -> None:
     n_ops = 0
     similarity: Optional[float] = None
     replay_adjudications: list = []
+    effect_feed_parse_rejections: list[dict[str, object]] = []
+    lowering_rejections: list[dict[str, object]] = []
+    authority_rejections: list[dict[str, object]] = []
 
     with Farchive(db_path) as archive:
         if fetch_missing:
@@ -180,9 +183,24 @@ def main(args: "argparse.Namespace") -> None:
                 statute_id,
                 pit_date=pit_date,
                 archive=archive,
+                effect_feed_parse_rejections_out=effect_feed_parse_rejections,
+                lowering_rejections_out=lowering_rejections,
+                authority_rejections_out=authority_rejections,
             )
             n_ops = len(ops)
             _out(f"Compiled {n_ops} operations")
+            compile_rejection_count = (
+                len(effect_feed_parse_rejections)
+                + len(lowering_rejections)
+                + len(authority_rejections)
+            )
+            if compile_rejection_count:
+                _out(
+                    "Compile rejections: "
+                    f"feed_parse={len(effect_feed_parse_rejections)} "
+                    f"lowering={len(lowering_rejections)} "
+                    f"authority={len(authority_rejections)}"
+                )
             if verbose:
                 for op in ops:
                     kind = op.payload.kind if op.payload is not None else "none"
@@ -316,6 +334,9 @@ def main(args: "argparse.Namespace") -> None:
             pit_materialized_eids=len(pit_eids) if pit_eids is not None else None,
             timeline_mode="ops_first" if use_timeline and not enacted_only else "states_first",
             adjudications=replay_adjudications,
+            effect_feed_parse_rejections=effect_feed_parse_rejections,
+            lowering_rejections=lowering_rejections,
+            authority_rejections=authority_rejections,
         )
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return

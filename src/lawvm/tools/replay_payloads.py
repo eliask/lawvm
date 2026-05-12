@@ -21,6 +21,30 @@ def _text_or_none(value: Any) -> str | None:
     return text_or_none(value)
 
 
+def _text_field(value: Any, *, default: str = "") -> str:
+    if value is None:
+        return default
+    return str(value)
+
+
+def _adjudication_to_dict(adjudication: Any) -> dict[str, Any]:
+    return {
+        "kind": _text_field(getattr(adjudication, "kind", None), default="compile_adjudication"),
+        "message": _text_field(getattr(adjudication, "message", None)),
+        "source_statute": _text_field(getattr(adjudication, "source_statute", None)),
+        "op_id": _text_field(getattr(adjudication, "op_id", None)),
+        "detail": dict(getattr(adjudication, "detail", {}) or {}),
+    }
+
+
+def _rejection_rule_counts(rejections: Iterable[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for rejection in rejections:
+        rule_id = _text_field(rejection.get("rule_id"), default="unknown")
+        counts[rule_id] = counts.get(rule_id, 0) + 1
+    return dict(sorted(counts.items()))
+
+
 def build_no_replay_payload(
     result: Any,
     *,
@@ -47,6 +71,7 @@ def build_no_replay_payload(
         "ops_count": int(getattr(result, "n_ops", 0) or 0),
         "adjudications_count": len(adjudications),
         "adjudication_kind_counts": adjudication_kind_counts(adjudications),
+        "adjudications": [_adjudication_to_dict(adjudication) for adjudication in adjudications],
         "evidence": {
             "finding_rows": [row.to_dict() for row in finding_rows],
         },
@@ -139,6 +164,7 @@ def build_ee_replay_payload(
         "ops_count": int(getattr(result, "n_ops", 0) or 0),
         "adjudications_count": len(adjudications),
         "adjudication_kind_counts": adjudication_kind_counts(adjudications),
+        "adjudications": [_adjudication_to_dict(adjudication) for adjudication in adjudications],
         "evidence": {
             "finding_rows": [row.to_dict() for row in finding_rows],
         },
@@ -203,8 +229,19 @@ def build_uk_replay_payload(
     timeline_mode: str,
     replayed_text: str | None = None,
     adjudications: Iterable[Any] = (),
+    effect_feed_parse_rejections: Iterable[dict[str, Any]] = (),
+    lowering_rejections: Iterable[dict[str, Any]] = (),
+    authority_rejections: Iterable[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     replay_adjudications = list(adjudications)
+    effect_feed_parse_rejection_rows = [dict(item) for item in effect_feed_parse_rejections]
+    lowering_rejection_rows = [dict(item) for item in lowering_rejections]
+    authority_rejection_rows = [dict(item) for item in authority_rejections]
+    compile_rejections = [
+        *effect_feed_parse_rejection_rows,
+        *lowering_rejection_rows,
+        *authority_rejection_rows,
+    ]
     finding_rows = adjudication_finding_evidence_rows(
         replay_adjudications,
         frontend_id="uk",
@@ -221,6 +258,16 @@ def build_uk_replay_payload(
         "ops_count": int(n_ops),
         "adjudications_count": len(replay_adjudications),
         "adjudication_kind_counts": adjudication_kind_counts(replay_adjudications),
+        "adjudications": [
+            _adjudication_to_dict(adjudication) for adjudication in replay_adjudications
+        ],
+        "compile_rejection_count": len(compile_rejections),
+        "compile_rejection_rule_counts": _rejection_rule_counts(compile_rejections),
+        "compile_rejections": {
+            "effect_feed_parse": effect_feed_parse_rejection_rows,
+            "lowering": lowering_rejection_rows,
+            "authority": authority_rejection_rows,
+        },
         "evidence": {
             "finding_rows": [row.to_dict() for row in finding_rows],
         },
