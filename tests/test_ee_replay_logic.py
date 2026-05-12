@@ -3560,6 +3560,154 @@ def test_replay_ee_to_pit_threads_temporal_events_into_compile_timelines(
     assert result.temporal_events == (event,)
 
 
+def _patch_minimal_ee_replay_pipeline(monkeypatch, ee_replay, *, pair_plan, fetch_rt_xml, parse_amendment_ops):
+    base = IRStatute(
+        statute_id="ee/base",
+        title="Test",
+        body=IRNode(kind=IRNodeKind.BODY),
+    )
+
+    monkeypatch.setattr(ee_replay, "open_rt_archive", lambda: object())
+    monkeypatch.setattr(ee_replay, "fetch_rt_xml", fetch_rt_xml)
+    monkeypatch.setattr(ee_replay, "parse_ee_statute", lambda xml, statute_id: base)
+    monkeypatch.setattr(
+        ee_replay,
+        "plan_ee_oracle_pair",
+        lambda **kwargs: SimpleNamespace(plan=pair_plan, oracle_xml=None),
+    )
+    monkeypatch.setattr(ee_replay, "_ee_filter_cancelled_pending_refs", lambda refs, **kwargs: refs)
+    monkeypatch.setattr(
+        ee_replay,
+        "_ee_precompose_pending_source_act_commencements",
+        lambda refs, **kwargs: (tuple(refs), ()),
+    )
+    monkeypatch.setattr(ee_replay, "parse_ee_amendment_ops", parse_amendment_ops)
+    monkeypatch.setattr(ee_replay, "apply_ee_ops", lambda statute, ops, **kwargs: statute)
+    monkeypatch.setattr(ee_replay, "compile_timelines", lambda base_ir, lo_ops_out, temporal_events=(): {})
+    monkeypatch.setattr(ee_replay, "materialize_pit", lambda timelines, as_of, base: base)
+    monkeypatch.setattr(ee_replay, "ingest_consolidated", lambda oracle, as_of: oracle)
+    monkeypatch.setattr(ee_replay, "verify_consistency", lambda *args, **kwargs: [])
+    return base
+
+
+def _ee_pair_plan(
+    *,
+    base_refs,
+    amendments_to_apply,
+    base_is_consolidated=False,
+    oracle_refs=(),
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        grupi_id="g1",
+        oracle_id=None,
+        source_basis=SimpleNamespace(value="oracle"),
+        comparison_class="oracle",
+        source_adjudication=None,
+        oracle_is_base=True,
+        oracle_refs=list(oracle_refs),
+        amendments_to_apply=list(amendments_to_apply),
+        base_is_consolidated=base_is_consolidated,
+        base_refs=list(base_refs),
+    )
+
+
+def test_replay_ee_to_pit_adjudicates_amendment_fetch_failure(monkeypatch) -> None:
+    from lawvm.estonia import replay as ee_replay
+
+    ref = _ref("amend-fetch-fails", "2024-01-01", "2025-01-01")
+    pair_plan = _ee_pair_plan(base_refs=[ref], amendments_to_apply=[ref])
+
+    def fake_fetch(akt_viide, archive):
+        if akt_viide == "base":
+            return b"<xml/>"
+        raise RuntimeError("network unavailable")
+
+    _patch_minimal_ee_replay_pipeline(
+        monkeypatch,
+        ee_replay,
+        pair_plan=pair_plan,
+        fetch_rt_xml=fake_fetch,
+        parse_amendment_ops=lambda *args, **kwargs: [],
+    )
+
+    result = ee_replay.replay_ee_to_pit("base", "2025-01-01")
+
+    assert result.amendments_failed == ["amend-fetch-fails"]
+    adjudications = [adj for adj in result.adjudications if adj.kind == "ee_amendment_source_fetch_failed"]
+    assert len(adjudications) == 1
+    assert adjudications[0].source_statute == "ee/amend-fetch-fails"
+    assert adjudications[0].detail["reason"] == "amendment_source_fetch_failed"
+    assert adjudications[0].detail["phase"] == "acquisition"
+    assert adjudications[0].detail["family"] == "source_lane_failure"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["exception_type"] == "RuntimeError"
+
+
+def test_replay_ee_to_pit_adjudicates_amendment_parse_failure(monkeypatch) -> None:
+    from lawvm.estonia import replay as ee_replay
+
+    ref = _ref("amend-parse-fails", "2024-01-01", "2025-01-01")
+    pair_plan = _ee_pair_plan(base_refs=[ref], amendments_to_apply=[ref])
+
+    def fake_parse(*args, **kwargs):
+        raise ValueError("unsupported XML shape")
+
+    _patch_minimal_ee_replay_pipeline(
+        monkeypatch,
+        ee_replay,
+        pair_plan=pair_plan,
+        fetch_rt_xml=lambda akt_viide, archive: b"<xml/>",
+        parse_amendment_ops=fake_parse,
+    )
+
+    result = ee_replay.replay_ee_to_pit("base", "2025-01-01")
+
+    assert result.amendments_failed == ["amend-parse-fails"]
+    adjudications = [adj for adj in result.adjudications if adj.kind == "ee_amendment_parse_failed"]
+    assert len(adjudications) == 1
+    assert adjudications[0].source_statute == "ee/amend-parse-fails"
+    assert adjudications[0].detail["reason"] == "amendment_parse_failed"
+    assert adjudications[0].detail["phase"] == "parse"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["exception_type"] == "ValueError"
+
+
+def test_replay_ee_to_pit_adjudicates_temporal_source_scan_failure(monkeypatch) -> None:
+    from lawvm.estonia import replay as ee_replay
+
+    ref = _ref("temporal-scan-fails", "2024-01-01", "2025-01-01")
+    pair_plan = _ee_pair_plan(
+        base_refs=[ref],
+        oracle_refs=[ref],
+        amendments_to_apply=[],
+        base_is_consolidated=True,
+    )
+
+    def fake_parse(*args, **kwargs):
+        raise ValueError("temporal parse failed")
+
+    _patch_minimal_ee_replay_pipeline(
+        monkeypatch,
+        ee_replay,
+        pair_plan=pair_plan,
+        fetch_rt_xml=lambda akt_viide, archive: b"<xml/>",
+        parse_amendment_ops=fake_parse,
+    )
+
+    result = ee_replay.replay_ee_to_pit("base", "2025-01-01")
+
+    assert result.amendments_failed == []
+    adjudications = [adj for adj in result.adjudications if adj.kind == "ee_temporal_source_scan_failed"]
+    assert len(adjudications) == 1
+    assert adjudications[0].source_statute == "ee/temporal-scan-fails"
+    assert adjudications[0].detail["reason"] == "temporal_source_scan_failed"
+    assert adjudications[0].detail["phase"] == "temporal"
+    assert adjudications[0].detail["family"] == "source_lane_failure"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["exception_type"] == "ValueError"
+
+
 def test_derive_ee_temporal_expiry_events_from_kehtib_kuni_clause() -> None:
     op = LegalOperation(
         op_id="ee-test-expiry",
