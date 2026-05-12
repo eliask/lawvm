@@ -85,6 +85,15 @@ def _summarize_bench_replay_result_diagnostics(master: Any, captured_counts: Cou
     return counts
 
 
+def _merge_bench_structural_diagnostics(diagnostics: Counter[str], event_counts: Dict[str, int]) -> Counter[str]:
+    """Attach structural-diff event families to the persisted bench diagnostics."""
+    merged = Counter(diagnostics)
+    for kind, count in event_counts.items():
+        if count:
+            merged[f"structural:{kind}"] += count
+    return merged
+
+
 def _summarize_bench_warning_diagnostics(
     stdout_text: str,
     stderr_text: str,
@@ -594,7 +603,8 @@ def _score_one_with_warning_summary(
             if lev_sim < 0:
                 return sid, -1.0, "NO_TRUTH", lev_sim, warning_counts
             return sid, lev_sim, "OK", lev_sim, warning_counts
-        sim, _events = _structural_sim(sid, master)
+        sim, events = _structural_sim(sid, master)
+        warning_counts = _merge_bench_structural_diagnostics(warning_counts, events)
         if sim < 0:
             return sid, -1.0, "NO_TRUTH", lev_sim, warning_counts
         return sid, sim, "OK", lev_sim, warning_counts

@@ -246,6 +246,34 @@ def test_summarize_bench_replay_result_diagnostics_counts_findings() -> None:
     assert bench._format_bench_warning_summary(counts).startswith("  diagnostics: ")
 
 
+def test_merge_bench_structural_diagnostics_counts_event_families() -> None:
+    counts = bench._merge_bench_structural_diagnostics(
+        Counter({"coverage_degraded": 1}),
+        {"missing_section": 2, "extra_section": 0},
+    )
+
+    assert counts["coverage_degraded"] == 1
+    assert counts["structural:missing_section"] == 2
+    assert counts["structural:extra_section"] == 0
+
+
+def test_score_one_with_warning_summary_preserves_structural_event_counts(monkeypatch) -> None:
+    monkeypatch.setattr(bench, "is_known_missing_source", lambda sid: False)
+    monkeypatch.setattr(
+        bench,
+        "_run_replay_with_bench_warning_capture",
+        lambda sid, *, mode, diagnostic_replay, replay_kwargs: (_DummyReplay(), Counter({"coverage_degraded": 1})),
+    )
+    monkeypatch.setattr(bench, "_lev_sim_fast", lambda sid, master: 0.95)
+    monkeypatch.setattr(bench, "_structural_sim", lambda sid, master: (0.9, {"missing_section": 2}))
+
+    sid, sim, status, lev_sim, counts = bench._score_one_with_warning_summary("2000/1")
+
+    assert (sid, sim, status, lev_sim) == ("2000/1", 0.9, "OK", 0.95)
+    assert counts["coverage_degraded"] == 1
+    assert counts["structural:missing_section"] == 2
+
+
 def test_run_benchmark_can_emit_diagnostic_summaries_for_persistence(monkeypatch) -> None:
     monkeypatch.setattr(
         bench,
