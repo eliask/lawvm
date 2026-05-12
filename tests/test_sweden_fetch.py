@@ -2054,7 +2054,14 @@ def test_apply_se_ops_records_replay_failures_as_adjudications() -> None:
         "se_replay_target_not_found",
     ]
     assert adjudications[0].op_id == "replace-section-no-payload"
+    assert adjudications[0].detail["rule_id"] == "se_replay_payload_missing"
+    assert adjudications[0].detail["phase"] == "replay"
     assert adjudications[1].detail["target"] == "9"
+    assert adjudications[2].detail["rule_id"] == "se_replay_unsupported_action"
+    assert adjudications[2].detail["family"] == "unsupported_or_unresolved_action"
+    assert adjudications[2].detail["blocking"] is True
+    assert adjudications[2].detail["strict_disposition"] == "block"
+    assert adjudications[2].detail["quirks_disposition"] == "record"
     assert adjudications[3].source_statute == "2026:999"
     assert adjudications[3].detail["target_kind"] == "article"
     assert replayed.metadata["applied_op_count"] == 0
