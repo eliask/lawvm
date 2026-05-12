@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Literal, Optional, cast
+from types import SimpleNamespace
+from typing import Any, Literal, Optional, cast
 
 import pytest
 
@@ -44,6 +45,7 @@ from lawvm.finland.ops import (
     _assert_intent_compat,
     intent_compat_stats,
 )
+from lawvm.finland.apply_policy import _check_occupancy_policy
 
 
 # ---------------------------------------------------------------------------
@@ -631,6 +633,51 @@ def test_facet_unknown_target_special_produces_warning(caplog) -> None:
         f"Expected facet advisory warning, got: {[r.message for r in mismatch_lines]}"
     )
     assert intent_compat_stats.facet > before_f
+
+
+def test_occupancy_policy_violation_emits_finding() -> None:
+    from lawvm.core.occupancy import OccupancyClass
+
+    op = _op(op_type="REPLACE", target_unit_kind="section")
+    rop = _rop(op)
+    intent = Replace(
+        kind=IntentKind.REPLACE,
+        target=_node_target("section", ("section", "1")),
+        payload=_payload(),
+        contract=ExecutionContract(
+            occupancy=OccupancyPolicy(
+                primary_expected_from=frozenset({OccupancyClass.SUBSTANTIVE}),
+                allowed_from=frozenset({OccupancyClass.SUBSTANTIVE}),
+                result=OccupancyClass.SUBSTANTIVE,
+            ),
+            coverage=CoverageMode.EXACT,
+        ),
+    )
+    findings = []
+
+    _check_occupancy_policy(
+        cast(Any, SimpleNamespace(ir=None)),
+        rop,
+        intent,
+        None,
+        "ctx:absent_replace",
+        findings_out=findings,
+    )
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.kind == "APPLY.OCCUPANCY_POLICY_VIOLATION"
+    assert finding.role == "observation"
+    assert finding.stage == "apply"
+    assert finding.source_statute == "2020/1"
+    assert finding.blocking is False
+    assert finding.detail["op_id"] == "test"
+    assert finding.detail["legacy_action"] == "REPLACE"
+    assert finding.detail["target_label"] == "1"
+    assert finding.detail["current_occupancy"] == "absent"
+    assert finding.detail["allowed_from"] == ["substantive"]
+    assert finding.detail["primary_expected_from"] == ["substantive"]
+    assert finding.detail["strict_disposition"] == "record"
 
 
 # ---------------------------------------------------------------------------
