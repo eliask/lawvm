@@ -1067,7 +1067,11 @@ def parse_effects_from_feeds(feed_files: list[Path]) -> list[UKEffectRecord]:
     return records
 
 
-def parse_effects_from_bytes(feed_bytes_list: list[bytes]) -> list[UKEffectRecord]:
+def parse_effects_from_bytes(
+    feed_bytes_list: list[bytes],
+    *,
+    parse_rejections_out: Optional[list[dict[str, Any]]] = None,
+) -> list[UKEffectRecord]:
     """Parse effect feed pages from raw bytes into a list of UKEffectRecord.
 
     Archive-backed alternative to parse_effects_from_feeds() — accepts bytes
@@ -1078,14 +1082,44 @@ def parse_effects_from_bytes(feed_bytes_list: list[bytes]) -> list[UKEffectRecor
         "ukm": "http://www.legislation.gov.uk/namespaces/metadata",
     }
     records = []
-    for raw in feed_bytes_list:
+    for feed_index, raw in enumerate(feed_bytes_list):
         try:
             root = ET.fromstring(raw)
-        except ET.ParseError:
+        except ET.ParseError as exc:
+            if parse_rejections_out is not None:
+                parse_rejections_out.append(
+                    {
+                        "rule_id": "uk_effect_feed_xml_parse_rejected",
+                        "family": "source_pathology",
+                        "phase": "parse",
+                        "feed_index": feed_index,
+                        "reason": "UK effect feed page is not well-formed XML.",
+                        "parse_error": str(exc),
+                        "blocking": True,
+                        "strict_disposition": "block",
+                        "quirks_disposition": "record",
+                    }
+                )
             continue
-        for entry in root.findall("atom:entry", ns):
+        for entry_index, entry in enumerate(root.findall("atom:entry", ns)):
             effect = entry.find(".//ukm:Effect", ns)
             if effect is None:
+                if parse_rejections_out is not None:
+                    parse_rejections_out.append(
+                        {
+                            "rule_id": "uk_effect_feed_entry_missing_effect_rejected",
+                            "family": "source_pathology",
+                            "phase": "parse",
+                            "feed_index": feed_index,
+                            "entry_index": entry_index,
+                            "entry_id": entry.findtext("atom:id", default="", namespaces=ns),
+                            "entry_title": entry.findtext("atom:title", default="", namespaces=ns),
+                            "reason": "UK effect feed entry did not contain a ukm:Effect payload.",
+                            "blocking": True,
+                            "strict_disposition": "block",
+                            "quirks_disposition": "record",
+                        }
+                    )
                 continue
             in_force_dates = []
             for inf in effect.findall(".//ukm:InForceDates/ukm:InForce", ns):

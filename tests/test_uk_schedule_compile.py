@@ -30,6 +30,7 @@ from lawvm.uk_legislation.uk_amendment_replay import (
     _parse_affected_target,
     compile_effect_to_ir_ops,
     extract_provision_element_from_bytes,
+    parse_effects_from_bytes,
 )
 
 
@@ -43,6 +44,66 @@ def _replace_patch(match: str, replacement: str, occurrence: int = 0) -> TextPat
         selector=TextSelector(match_text=match, occurrence=occurrence),
         replacement=replacement,
     )
+
+
+def test_parse_effects_from_bytes_records_malformed_feed_page() -> None:
+    parse_rejections: list[dict[str, Any]] = []
+
+    records = parse_effects_from_bytes(
+        [b"<feed><entry></feed>"],
+        parse_rejections_out=parse_rejections,
+    )
+
+    assert records == []
+    assert len(parse_rejections) == 1
+    rejection = parse_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_feed_xml_parse_rejected"
+    assert rejection["family"] == "source_pathology"
+    assert rejection["phase"] == "parse"
+    assert rejection["feed_index"] == 0
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+    assert rejection["quirks_disposition"] == "record"
+    assert "parse_error" in rejection
+
+
+def test_parse_effects_from_bytes_records_entry_missing_effect() -> None:
+    parse_rejections: list[dict[str, Any]] = []
+    feed = b"""
+    <feed xmlns="http://www.w3.org/2005/Atom"
+          xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata">
+      <entry>
+        <id>tag:example,2026:no-effect</id>
+        <title>No effect payload</title>
+      </entry>
+    </feed>
+    """
+
+    records = parse_effects_from_bytes(
+        [feed],
+        parse_rejections_out=parse_rejections,
+    )
+
+    assert records == []
+    assert parse_rejections == [
+        {
+            "rule_id": "uk_effect_feed_entry_missing_effect_rejected",
+            "family": "source_pathology",
+            "phase": "parse",
+            "feed_index": 0,
+            "entry_index": 0,
+            "entry_id": "tag:example,2026:no-effect",
+            "entry_title": "No effect payload",
+            "reason": "UK effect feed entry did not contain a ukm:Effect payload.",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
+def test_parse_effects_from_bytes_keeps_existing_api_without_rejection_sink() -> None:
+    assert parse_effects_from_bytes([b"<feed><entry></feed>"]) == []
 
 
 _LEG_NS = "http://www.legislation.gov.uk/namespaces/legislation"
