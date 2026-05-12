@@ -134,7 +134,9 @@ def test_ee_apply_unsupported_heading_target_records_adjudication_not_warning() 
     assert adjudications[0].kind == "ee_replay_unsupported_heading_target"
     assert adjudications[0].source_statute == "ee/source"
     assert adjudications[0].op_id == "ee_heading_item_target"
-    assert adjudications[0].detail == {"path": "{'item': '1'}"}
+    assert adjudications[0].detail["path"] == "{'item': '1'}"
+    assert adjudications[0].detail["rule_id"] == "ee_replay_unsupported_heading_target"
+    assert adjudications[0].detail["phase"] == "replay"
 
 
 def test_apply_ee_ops_records_case_only_source_text_recovery() -> None:
@@ -8897,6 +8899,12 @@ def test_apply_ee_ops_records_unsupported_action() -> None:
     assert adjudications[0].kind == "ee_replay_unsupported_action"
     assert adjudications[0].op_id == "ee-unsupported"
     assert adjudications[0].detail["action"] == "text_repeal"
+    assert adjudications[0].detail["rule_id"] == "ee_replay_unsupported_action"
+    assert adjudications[0].detail["phase"] == "replay"
+    assert adjudications[0].detail["family"] == "unsupported_or_unresolved_action"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
 
 
 def test_apply_ee_ops_records_meta_as_non_body_skip_not_unsupported() -> None:
@@ -9404,8 +9412,12 @@ def test_apply_ee_ops_records_unresolved_target_and_noop() -> None:
     assert len(adjudications) == 2
     assert adjudications[0].kind == "ee_replay_target_not_found"
     assert adjudications[0].op_id == "ee-missing-target"
+    assert adjudications[0].detail["rule_id"] == "ee_replay_target_not_found"
+    assert adjudications[0].detail["phase"] == "replay"
     assert adjudications[1].kind == "ee_replay_noop"
     assert adjudications[1].op_id == "ee-noop"
+    assert adjudications[1].detail["rule_id"] == "ee_replay_noop"
+    assert adjudications[1].detail["phase"] == "replay"
 
 
 def test_insert_subsection_shifts_later_numeric_subsections_before_inserting() -> None:

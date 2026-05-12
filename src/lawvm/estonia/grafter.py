@@ -9749,18 +9749,26 @@ def _append_ee_replay_adjudication(
     kind: str,
     message: str,
     op: LegalOperation,
-    detail: Optional[dict[str, str]] = None,
+    detail: Optional[dict[str, Any]] = None,
 ) -> None:
     """Append an Estonia replay adjudication when sink list is available."""
     if adjudications_out is None:
         return
+    normalized_detail = dict(detail or {})
+    normalized_detail.setdefault("rule_id", kind)
+    normalized_detail.setdefault("phase", "replay")
+    if kind == "ee_replay_unsupported_action":
+        normalized_detail.setdefault("family", "unsupported_or_unresolved_action")
+        normalized_detail.setdefault("blocking", True)
+        normalized_detail.setdefault("strict_disposition", "block")
+        normalized_detail.setdefault("quirks_disposition", "record")
     adjudications_out.append(
         CompileAdjudication(
             kind=kind,
             message=message,
             source_statute=op.source.statute_id if op.source else "",
             op_id=op.op_id,
-            detail=detail or {},
+            detail=normalized_detail,
         )
     )
 
