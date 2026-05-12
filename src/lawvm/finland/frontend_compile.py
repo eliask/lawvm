@@ -1373,6 +1373,75 @@ def _extract_enacting_formula_body_insert_ops_fallback(
     return ops
 
 
+def _enacting_formula_body_insert_unowned_section_findings(
+    johto: str,
+    muutos_tree: "etree._Element",
+    master: "ReplayState",
+    *,
+    accepted_ops: "list[AmendmentOp]",
+    amendment_id: str,
+) -> "list[Finding]":
+    """Own sibling body sections skipped by the enacting-formula insert fallback."""
+    cleaned = re.sub(r"\s+", " ", johto).strip().lower()
+    if cleaned != _ENACTING_FORMULA_EXACT:
+        return []
+
+    accepted_targets = {
+        op.target_section
+        for op in accepted_ops
+        if op.op_type == "INSERT" and op.target_unit_kind == "section" and op.target_section
+    }
+    if not accepted_targets:
+        return []
+
+    body = muutos_tree.find(".//{*}body")
+    if body is None:
+        return []
+    sections_no_eid = [s for s in body.findall(".//{*}section") if not s.get("eId")]
+    findings: list[Finding] = []
+    for index, sec in enumerate(sections_no_eid):
+        num_el = sec.find("{*}num")
+        if num_el is None:
+            num_text = ""
+            label = ""
+            reason_code = "missing_num"
+        else:
+            num_text = (num_el.text or "").strip()
+            label = _norm_num_token(num_text)
+            if label in accepted_targets:
+                continue
+            if not _LETTER_SUFFIX_NUM_RE.match(num_text):
+                if _PLAIN_SECTION_NUM_RE.match(num_text):
+                    reason_code = "plain_number_not_owned_by_insert_fallback"
+                else:
+                    reason_code = "unsupported_num_shape"
+            elif not label:
+                reason_code = "unparseable_section_label"
+            elif master.find_section(label) is not None:
+                reason_code = "existing_letter_section_not_inserted"
+            else:
+                reason_code = "letter_section_not_selected"
+        findings.append(
+            Finding(
+                kind="PARSE.UNOWNED_BODY_SECTION",
+                role="observation",
+                stage="frontend_compile",
+                detail={
+                    "message": "Enacting-formula body insert fallback left a sibling body section unowned.",
+                    "fallback_rule": "_extract_enacting_formula_body_insert_ops_fallback",
+                    "reason_code": reason_code,
+                    "section_index": index,
+                    "num_text": num_text,
+                    "target_section": label,
+                    "accepted_insert_targets": sorted(accepted_targets),
+                },
+                source_statute=amendment_id,
+                blocking=False,
+            )
+        )
+    return findings
+
+
 def _extract_enacting_formula_body_replace_ops_fallback(
     johto: str,
     muutos_tree: "etree._Element",
@@ -1894,6 +1963,15 @@ def normalize_and_compile_ops(
     if not ops:
         ef_insert_ops = _extract_enacting_formula_body_insert_ops_fallback(johto, muutos_tree, master)
         if ef_insert_ops:
+            frontend_findings_out.extend(
+                _enacting_formula_body_insert_unowned_section_findings(
+                    johto,
+                    muutos_tree,
+                    master,
+                    accepted_ops=ef_insert_ops,
+                    amendment_id=amendment_id,
+                )
+            )
             if _allows_fallback:
                 logger.debug(
                     "  %s enacting_formula_body_insert_ops: %s",

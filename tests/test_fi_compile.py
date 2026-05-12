@@ -2690,6 +2690,105 @@ def test_normalize_and_compile_ops_records_empty_extraction_observation(
     assert matching[0].detail.get("peg_skip_for_sec1_repeal_list") is False
 
 
+def test_normalize_and_compile_ops_records_unowned_enacting_formula_body_sections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lawvm.finland.frontend_compile as frontend_compile
+
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="urn:test">
+          <body>
+            <section><num>5 §</num><subsection><content><p>existing section body</p></content></subsection></section>
+            <section><num>5 a §</num><subsection><content><p>new section body</p></content></subsection></section>
+          </body>
+        </act>
+        """
+    )
+    master = ReplayState(
+        ir=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(IRNode(kind=IRNodeKind.SECTION, label="5"),),
+        )
+    )
+
+    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
+    monkeypatch.setattr(frontend_compile, "parse_ops_fallback_heuristic", lambda _johto: [])
+    monkeypatch.setattr(frontend_compile, "_extract_root_replace_ops_from_body_fallback", lambda _johto, _tree: [])
+    monkeypatch.setattr(frontend_compile, "parse_ops_title_fallback", lambda _title: [])
+
+    phase2 = frontend_compile.normalize_and_compile_ops(
+        johto="Eduskunnan päätöksen mukaisesti",
+        muutos_tree=muutos_tree,
+        master=master,
+        amendment_id="2020/3",
+        source_title="Test title",
+        used_sec1_fallback=False,
+        parent_id="2019/1",
+        strict_profile=None,
+    )
+
+    assert [op.target_section for op in phase2.output] == ["5a"]
+    unowned = [
+        finding
+        for finding in phase2.findings()
+        if finding.kind == "PARSE.UNOWNED_BODY_SECTION"
+    ]
+    assert len(unowned) == 1
+    assert unowned[0].detail["reason_code"] == "plain_number_not_owned_by_insert_fallback"
+    assert unowned[0].detail["num_text"] == "5 §"
+    assert unowned[0].detail["accepted_insert_targets"] == ["5a"]
+
+    reasons = strict_fail_reasons_from_finding_ledger(
+        default_finland_strict_profile(),
+        compiled_ops=[],
+        canonical_ops=[],
+        failures=[],
+        findings=phase2.findings(),
+    )
+    assert "PARSE.UNOWNED_BODY_SECTION" in reasons
+
+
+def test_normalize_and_compile_ops_does_not_record_unowned_body_section_for_fully_owned_enacting_formula_insert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lawvm.finland.frontend_compile as frontend_compile
+
+    muutos_tree = etree.fromstring(
+        """
+        <act xmlns="urn:test">
+          <body>
+            <section><num>5 a §</num><subsection><content><p>new section body</p></content></subsection></section>
+          </body>
+        </act>
+        """
+    )
+    master = ReplayState(ir=IRNode(kind=IRNodeKind.BODY, children=()))
+
+    monkeypatch.setattr(frontend_compile, "extract_johtolause_legal_ops_from_parse_result", lambda _result: [])
+    monkeypatch.setattr(frontend_compile, "parse_ops_fallback_heuristic", lambda _johto: [])
+    monkeypatch.setattr(frontend_compile, "_extract_root_replace_ops_from_body_fallback", lambda _johto, _tree: [])
+    monkeypatch.setattr(frontend_compile, "parse_ops_title_fallback", lambda _title: [])
+
+    phase2 = frontend_compile.normalize_and_compile_ops(
+        johto="Eduskunnan päätöksen mukaisesti",
+        muutos_tree=muutos_tree,
+        master=master,
+        amendment_id="2020/4",
+        source_title="Test title",
+        used_sec1_fallback=False,
+        parent_id="2019/1",
+        strict_profile=None,
+    )
+
+    assert [op.target_section for op in phase2.output] == ["5a"]
+    assert [
+        finding
+        for finding in phase2.findings()
+        if finding.kind == "PARSE.UNOWNED_BODY_SECTION"
+    ] == []
+
+
 def test_normalize_and_compile_ops_records_sec1_peg_skip_observation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
