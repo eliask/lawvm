@@ -26,10 +26,9 @@ def parse_open_law_codify_ops(xml_text: str, *, source_id: str = "") -> Tuple[Op
         path = _parse_path(element.attrib.get("path", ""))
         op_source_id = source_id or root.attrib.get("id", "")
         op_id = f"{op_source_id or 'open-law'}:{sequence}"
-        payload_elements = _payload_elements(element)
-        diagnostics: tuple[OpenLawFinding, ...] = ()
+        payload_elements, diagnostics = _payload_elements_and_diagnostics(element, op_id=op_id, path=path)
         if len(payload_elements) > 1:
-            diagnostics = (
+            diagnostics = diagnostics + (
                 OpenLawFinding(
                     kind="open_law_codify_multiple_payload_children",
                     message="Open Law codify operation has multiple structural payload children; replay refuses to drop unclaimed siblings.",
@@ -38,7 +37,7 @@ def parse_open_law_codify_ops(xml_text: str, *, source_id: str = "") -> Tuple[Op
                     blocking=True,
                 ),
             )
-        payload_element = payload_elements[0] if len(payload_elements) == 1 else None
+        payload_element = payload_elements[0] if len(payload_elements) == 1 and not diagnostics else None
         payload = convert_open_law_element(payload_element) if payload_element is not None else None
         out.append(
             OpenLawOperation(
@@ -85,14 +84,45 @@ def _payload_element(element: ET.Element) -> ET.Element | None:
 
 
 def _payload_elements(element: ET.Element) -> tuple[ET.Element, ...]:
+    payload_elements, _diagnostics = _payload_elements_and_diagnostics(element, op_id="", path=())
+    return payload_elements
+
+
+def _payload_elements_and_diagnostics(
+    element: ET.Element,
+    *,
+    op_id: str,
+    path: Tuple[str, ...],
+) -> tuple[tuple[ET.Element, ...], tuple[OpenLawFinding, ...]]:
     out: list[ET.Element] = []
+    unsupported: list[str] = []
     for child in list(element):
         namespace, local = _split_tag(child.tag)
         if namespace == OPEN_LAW_CODIFY_NS:
             continue
         if local in _LIBRARY_STRUCTURAL_PAYLOAD_TAGS:
             out.append(child)
-    return tuple(out)
+            continue
+        unsupported.append(local)
+    diagnostics: tuple[OpenLawFinding, ...] = ()
+    if unsupported:
+        diagnostics = (
+            OpenLawFinding(
+                kind="open_law_codify_unsupported_payload_child",
+                message=(
+                    "Open Law codify operation contains unsupported payload child elements "
+                    f"({_format_payload_child_tags(unsupported)}); replay refuses to drop unclaimed siblings."
+                ),
+                op_id=op_id,
+                path=path,
+                blocking=True,
+            ),
+        )
+    return tuple(out), diagnostics
+
+
+def _format_payload_child_tags(tags: list[str]) -> str:
+    return ", ".join(sorted(set(tags)))
 
 
 def _first_descendant_text(element: ET.Element, local_name: str) -> str:
