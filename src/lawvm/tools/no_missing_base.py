@@ -48,6 +48,8 @@ def main(args: "argparse.Namespace") -> None:
     print(f"  missing base law count : {report['missing_base_source_law_count']}")
     if report.get("index_stale"):
         print("  index stale            : yes")
+    if report.get("current_law_title_diagnostic_count"):
+        print(f"  title diagnostics      : {report['current_law_title_diagnostic_count']}")
     if report["base_id_filter"]:
         print(f"  base id filter         : {report['base_id_filter']}")
     print(f"  min amendments         : {report['min_amendments']}")

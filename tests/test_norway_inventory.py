@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from lawvm.norway.index import NOAmendmentIndex, NOAmendmentIndexEntry
 from lawvm.norway.index import build_no_amendment_index, save_no_amendment_index
-from lawvm.norway.inventory import build_no_inventory, build_no_missing_base_report
+from lawvm.norway.inventory import NOInventory, build_no_inventory, build_no_missing_base_report
 from lawvm.norway.sources import ingest_no_public_archives
 
 
@@ -361,3 +361,36 @@ def test_build_no_missing_base_report_groups_laws(tmp_path) -> None:
             "source_ids": ["no/lovtid/2025-02-02-5"],
         }
     ]
+    assert report["current_law_title_diagnostic_count"] == 0
+
+
+def test_build_no_missing_base_report_preserves_title_diagnostics(tmp_path, monkeypatch) -> None:
+    def fake_titles(_data_dir, *, diagnostics_out=None):
+        if diagnostics_out is not None:
+            diagnostics_out.append(
+                {
+                    "rule_id": "no_current_law_title_parse_skipped",
+                    "family": "source_pathology",
+                    "phase": "parse",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                }
+            )
+        return {}
+
+    monkeypatch.setattr("lawvm.norway.inventory.load_no_current_law_titles", fake_titles)
+    inventory = NOInventory(data_dir=tmp_path)
+    inventory.current_law_ids = {"no/lov/1946-12-13-21"}
+    inventory.current_law_ids_with_local_base_source = set()
+    inventory.base_to_statuses["no/lov/1946-12-13-21"].append("dated")
+    inventory.base_to_sources["no/lov/1946-12-13-21"].append("no/lovtid/2025-02-02-5")
+
+    report = build_no_missing_base_report(inventory)
+
+    assert report["missing_base_source_law_count"] == 1
+    assert report["current_law_title_diagnostic_count"] == 1
+    assert report["current_law_title_diagnostic_rule_counts"] == {
+        "no_current_law_title_parse_skipped": 1
+    }
+    assert report["current_law_title_diagnostics"][0]["strict_disposition"] == "block"
