@@ -5,11 +5,13 @@ from lawvm.core.semantic_types import IRNodeKind
 from lawvm.estonia.peg import extract_ee_ops
 from lawvm.estonia.ee_instruction_waist import (
     EEInstructionFamily,
+    EEItemSelectionMeta,
     EESentenceTargetMeta,
     EESubsectionSelectionMeta,
     EETextReplaceMode,
     EETextRewrite,
     EETextRewriteWitness,
+    make_item_selection_meta,
     make_sentence_target_meta,
     make_text_rewrite_witness,
     parse_wrapper_quoted_clause,
@@ -272,6 +274,78 @@ def test_extract_ee_ops_plural_subsection_repeal_exposes_subsection_selection_me
         )
         for inst in instructions
     )
+
+
+def test_extract_ee_ops_plural_item_range_exposes_item_selection_meta() -> None:
+    source = OperationSource(statute_id="ee/test", title="Testseadus")
+    ops = extract_ee_ops(
+        (
+            "paragrahvi 6 lõike 10 punktid 7–15 sõnastatakse järgmiselt: "
+            "„7) seitse; 8) kaheksa; 9) üheksa; 10) kümme; 11) üksteist; "
+            "12) kaksteist; 13) kolmteist; 14) neliteist; 15) viisteist.“"
+        ),
+        source,
+    )
+
+    instructions = to_ee_parsed_instructions(ops)
+
+    assert len(instructions) == 9
+    assert all(
+        inst.item_selection_meta
+        == EEItemSelectionMeta(
+            explicit_labels=tuple(str(label) for label in range(7, 16)),
+            plain_numeric_ranges=(("7", "15"),),
+            label_ranges=(("7", "15"),),
+        )
+        for inst in instructions
+    )
+
+
+def test_to_ee_parsed_instructions_leaves_item_selection_meta_absent_without_payload_evidence() -> None:
+    source = OperationSource(statute_id="ee/test", title="Testseadus")
+    ops = [
+        LegalOperation(
+            op_id="ee_test_no_item_selection_meta",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "6"), ("subsection", "10"), ("item", "7"))),
+            payload=IRNode(kind=IRNodeKind.CONTENT, text="7) uus tekst."),
+            source=source,
+        )
+    ]
+
+    instructions = to_ee_parsed_instructions(ops)
+
+    assert len(instructions) == 1
+    assert instructions[0].item_selection_meta is None
+
+
+def test_to_ee_parsed_instructions_preserves_explicit_item_selection_meta() -> None:
+    source = OperationSource(statute_id="ee/test", title="Testseadus")
+    selection_meta = make_item_selection_meta(
+        explicit_labels=("7", "8"),
+        plain_numeric_ranges=(("7", "8"),),
+        label_ranges=(("7", "8"),),
+    )
+    ops = [
+        LegalOperation(
+            op_id="ee_test_item_selection_meta",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "6"), ("subsection", "10"), ("item", "7"))),
+            payload=IRNode(
+                kind=IRNodeKind.CONTENT,
+                text="7) uus tekst.",
+                attrs={"item_selection_meta": selection_meta},
+            ),
+            source=source,
+        )
+    ]
+
+    instructions = to_ee_parsed_instructions(ops)
+
+    assert len(instructions) == 1
+    assert instructions[0].item_selection_meta == selection_meta
 
 
 def test_to_ee_parsed_instructions_preserves_source_family() -> None:
