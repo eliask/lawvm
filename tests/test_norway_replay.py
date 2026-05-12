@@ -233,8 +233,27 @@ def test_replay_no_to_pit_surfaces_parse_action_family_promotion(tmp_path) -> No
     assert result.error is None
     kinds = [item.kind for item in result.adjudications]
     assert "no_parse_replace_promoted_to_insert_for_same_target_renumber" in kinds
+    promotion = next(
+        item
+        for item in result.adjudications
+        if item.kind == "no_parse_replace_promoted_to_insert_for_same_target_renumber"
+    )
+    assert promotion.detail["phase"] == "parse"
+    assert promotion.detail["family"] == "action_family_recovery"
+    assert promotion.detail["blocking"] is False
+    assert promotion.detail["strict_disposition"] == "record"
+    assert promotion.detail["quirks_disposition"] == "record"
     payload = build_no_replay_payload(result)
     assert payload["adjudication_kind_counts"]["no_parse_replace_promoted_to_insert_for_same_target_renumber"] == 1
+    evidence_row = next(
+        row
+        for row in payload["evidence"]["finding_rows"]
+        if row["rule_id"] == "no_parse_replace_promoted_to_insert_for_same_target_renumber"
+    )
+    assert evidence_row["phase"] == "parse"
+    assert evidence_row["blocking"] is False
+    assert evidence_row["strict_disposition"] == "record"
+    assert evidence_row["quirks_disposition"] == "record"
 
 
 def test_replay_no_to_pit_skips_future_amendments(tmp_path) -> None:
