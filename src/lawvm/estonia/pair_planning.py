@@ -30,6 +30,8 @@ _EE_MUUTMISMARGE_AKTVIIDE_PUBLICATION_YEAR_REPAIR_RULE = (
 _EE_MUUTMISMARGE_AKTVIIDE_PUBLICATION_NUMBER_REPAIR_RULE = (
     "ee_muutmismarge_aktviide_publication_number_repair"
 )
+_EE_ORACLE_FETCH_FAILED_RULE = "ee_oracle_fetch_failed"
+_EE_ORACLE_REF_EXTRACTION_FAILED_RULE = "ee_oracle_ref_extraction_failed"
 
 
 def _ref_slice_key(ref: AmendmentRef) -> tuple[str, str]:
@@ -259,6 +261,7 @@ def plan_ee_oracle_pair(
     grupi_id = extract_grupi_id(base_xml)
     selected_oracle_id = oracle_id
     oracle_xml: bytes | None = None
+    oracle_fetch_findings: list[dict[str, str]] = []
 
     if selected_oracle_id is None and grupi_id:
         selected_oracle_id = get_oracle_aktviide_for_pit(grupi_id, as_of, archive)
@@ -268,7 +271,19 @@ def plan_ee_oracle_pair(
     elif selected_oracle_id:
         try:
             oracle_xml = fetch_rt_xml(selected_oracle_id, archive)
-        except Exception:
+        except Exception as exc:
+            oracle_fetch_findings.append(
+                {
+                    "kind": "source_pathology",
+                    "rule": _EE_ORACLE_FETCH_FAILED_RULE,
+                    "phase": "acquisition",
+                    "base_id": base_id,
+                    "oracle_id": selected_oracle_id,
+                    "as_of": as_of,
+                    "exception_type": type(exc).__name__,
+                    "message": str(exc),
+                }
+            )
             oracle_xml = None
 
     oracle_grupi_id = extract_grupi_id(oracle_xml) if oracle_xml is not None else None
@@ -294,6 +309,7 @@ def plan_ee_oracle_pair(
     oracle_refs: tuple[AmendmentRef, ...] = ()
     oracle_ref_repair_findings: tuple[dict[str, str], ...] = ()
     oracle_ref_number_repair_findings: tuple[dict[str, str], ...] = ()
+    oracle_ref_extraction_findings: list[dict[str, str]] = []
 
     if (
         base_is_consolidated
@@ -311,7 +327,19 @@ def plan_ee_oracle_pair(
                 oracle_refs,
                 archive=archive,
             )
-        except Exception:
+        except Exception as exc:
+            oracle_ref_extraction_findings.append(
+                {
+                    "kind": "source_pathology",
+                    "rule": _EE_ORACLE_REF_EXTRACTION_FAILED_RULE,
+                    "phase": "parse",
+                    "base_id": base_id,
+                    "oracle_id": selected_oracle_id or "",
+                    "as_of": as_of,
+                    "exception_type": type(exc).__name__,
+                    "message": str(exc),
+                }
+            )
             oracle_refs = ()
 
     if base_is_consolidated and oracle_refs:
@@ -380,8 +408,10 @@ def plan_ee_oracle_pair(
     lineage = [
         *base_ref_repair_findings,
         *base_ref_number_repair_findings,
+        *oracle_fetch_findings,
         *oracle_ref_repair_findings,
         *oracle_ref_number_repair_findings,
+        *oracle_ref_extraction_findings,
         {
             "kind": "ee_pair_classification",
             "source_basis": source_basis.value,

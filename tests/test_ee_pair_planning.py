@@ -364,6 +364,40 @@ def test_plan_ee_oracle_pair_classifies_algtekst_source_basis(monkeypatch) -> No
     assert planned.plan.source_basis.value == "algtekst_source"
 
 
+def test_plan_ee_oracle_pair_records_oracle_fetch_failure(monkeypatch) -> None:
+    base_xml = b"<base/>"
+
+    def fake_fetch(akt_viide: str, archive: object = None) -> bytes:
+        raise RuntimeError(f"archive miss: {akt_viide}")
+
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-7")
+    monkeypatch.setattr(
+        "lawvm.estonia.pair_planning.get_oracle_aktviide_for_pit",
+        lambda grupi_id, as_of, archive: "oracle",
+    )
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.fetch_rt_xml", fake_fetch)
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_amendment_refs", lambda xml: [])
+
+    planned = plan_ee_oracle_pair(
+        base_id="base",
+        as_of="2026-03-24",
+        base_xml=base_xml,
+        archive=None,
+    )
+
+    assert planned.oracle_xml is None
+    assert planned.plan.comparison_class == "no_oracle"
+    assert any(
+        item.get("rule") == "ee_oracle_fetch_failed"
+        and item.get("phase") == "acquisition"
+        and item.get("oracle_id") == "oracle"
+        and item.get("exception_type") == "RuntimeError"
+        and item.get("message") == "archive miss: oracle"
+        for item in planned.plan.source_adjudication.lineage
+    )
+
+
 def test_plan_ee_oracle_pair_orders_same_effective_refs_by_passed_then_id(monkeypatch) -> None:
     base_xml = b"<base/>"
     oracle_xml = b"<oracle/>"
