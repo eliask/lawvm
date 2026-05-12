@@ -9,6 +9,7 @@ from lawvm.norway.index import (
     load_no_amendment_index,
     save_no_amendment_index,
 )
+from lawvm.norway.sources import NOLocatedArtifact
 
 
 def _amendment_xml(date_in_force: str) -> bytes:
@@ -160,6 +161,40 @@ def test_build_no_amendment_index_records_unmapped_xml_members(tmp_path) -> None
             "locator": "",
             "archive": "lovtidend-avd1-2025.tar.bz2",
             "member_name": "lti/2025/unexpected-name.xml",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
+def test_build_no_amendment_index_records_unrecognized_amendment_lane(tmp_path, monkeypatch) -> None:
+    artifact = NOLocatedArtifact(
+        locator="no://unexpected/2025-02-02-5/amendment.xml",
+        logical_id="no/lovtid/2025-02-02-5",
+        source_name="synthetic.farchive",
+        member_name="unexpected-member.xml",
+        payload=_amendment_xml("2025-02-10"),
+    )
+
+    monkeypatch.setattr(
+        "lawvm.norway.index.iter_no_amendment_artifacts",
+        lambda _data_dir: iter((artifact,)),
+    )
+
+    index = build_no_amendment_index(tmp_path)
+
+    assert index.entries == []
+    assert index.diagnostics == [
+        {
+            "rule_id": "no_amendment_index_unrecognized_amendment_locator",
+            "family": "source_pathology",
+            "phase": "acquisition",
+            "reason": "Norway amendment index skipped artifact whose member name and locator did not identify an amendment source lane",
+            "source_id": "no/lovtid/2025-02-02-5",
+            "locator": "no://unexpected/2025-02-02-5/amendment.xml",
+            "archive": "synthetic.farchive",
+            "member_name": "unexpected-member.xml",
             "blocking": True,
             "strict_disposition": "block",
             "quirks_disposition": "record",
