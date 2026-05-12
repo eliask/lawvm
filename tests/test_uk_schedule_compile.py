@@ -3603,6 +3603,162 @@ def test_pipeline_compile_ops_records_structural_effect_lowered_to_no_ops(monkey
     ]
 
 
+def test_pipeline_compile_ops_records_nonstructural_replay_candidates_lowered_to_no_ops(monkeypatch) -> None:
+    revoked_effect = UKEffectRecord(
+        effect_id="uk_test_nonstructural_revoked_no_ops",
+        effect_type="revoked",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="s. 57(2)",
+        affecting_uri="/id/uksi/2000/2040",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2000",
+        affecting_number="2040",
+        affecting_provisions="Sch. 2 para. 7",
+        affecting_title="Missing Affecting Act",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+    ceases_effect = UKEffectRecord(
+        effect_id="uk_test_nonstructural_ceases_no_ops",
+        effect_type="ceases to have effect",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-02",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="Sch. 4",
+        affecting_uri="/id/ukpga/2000/10",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2000",
+        affecting_number="10",
+        affecting_provisions="s. 40(8)",
+        affecting_title="Missing Affecting Act",
+        in_force_dates=[{"date": "2024-01-02", "prospective": "false"}],
+    )
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [revoked_effect, ceases_effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: b"<xml/>",
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "extract_provision_element_from_bytes",
+        lambda _xml, _prov, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "compile_effect_to_ir_ops",
+        lambda _effect, _el, sequence=0, **_kwargs: [],
+    )
+
+    pipeline = UKReplayPipeline(Path("."))
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert pipeline.compile_ops_for_statute(
+        "ukpga/2000/10",
+        archive=object(),
+        lowering_rejections_out=lowering_rejections,
+    ) == []
+    assert lowering_rejections == [
+        {
+            "rule_id": "uk_effect_nonstructural_lowering_no_ops_rejected",
+            "family": "lowering_filter",
+            "phase": "lowering",
+            "effect_id": "uk_test_nonstructural_revoked_no_ops",
+            "affecting_act_id": "uksi/2000/2040",
+            "affected_provisions": "s. 57(2)",
+            "affecting_provisions": "Sch. 2 para. 7",
+            "effect_type": "revoked",
+            "reason": "UK nonstructural effect row may be replayable but lowered to no replay operations",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "nonstructural_replay_candidate_family": "revoked_repeal",
+        },
+        {
+            "rule_id": "uk_effect_nonstructural_lowering_no_ops_rejected",
+            "family": "lowering_filter",
+            "phase": "lowering",
+            "effect_id": "uk_test_nonstructural_ceases_no_ops",
+            "affecting_act_id": "ukpga/2000/10",
+            "affected_provisions": "Sch. 4",
+            "affecting_provisions": "s. 40(8)",
+            "effect_type": "ceases to have effect",
+            "reason": "UK nonstructural effect row may be replayable but lowered to no replay operations",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "nonstructural_replay_candidate_family": "ceases_to_have_effect_repeal",
+        },
+    ]
+
+
+def test_pipeline_compile_ops_does_not_record_unsupported_nonstructural_no_ops(monkeypatch) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_nonstructural_modified_no_ops",
+        effect_type="modified",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="s. 57",
+        affecting_uri="/id/uksi/2000/2040",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2000",
+        affecting_number="2040",
+        affecting_provisions="Sch. 2 para. 7",
+        affecting_title="Missing Affecting Act",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: b"<xml/>",
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "extract_provision_element_from_bytes",
+        lambda _xml, _prov, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "compile_effect_to_ir_ops",
+        lambda _effect, _el, sequence=0, **_kwargs: [],
+    )
+
+    pipeline = UKReplayPipeline(Path("."))
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert pipeline.compile_ops_for_statute(
+        "ukpga/2000/10",
+        archive=object(),
+        lowering_rejections_out=lowering_rejections,
+    ) == []
+    assert lowering_rejections == []
+
+
 def test_pipeline_compile_ops_falls_back_to_metadata_for_missing_affecting_xml(monkeypatch) -> None:
     effect = UKEffectRecord(
         effect_id="uk_test_pipeline_metadata_only_insert_fallback",
