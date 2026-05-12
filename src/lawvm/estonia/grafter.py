@@ -7798,13 +7798,12 @@ def _ee_apply_op(
             )
             return tree_ops.replace_at(body, sec_path, new_sec)
         else:
-            # heading special requires chapter or section in path — warn and skip
-            import warnings
-
-            warnings.warn(
-                f"_ee_apply_op: special='heading' but path has neither 'chapter' nor 'section': "
-                f"path_dict={path_dict!r} op={op.op_id!r}",
-                stacklevel=2,
+            _append_ee_replay_adjudication(
+                adjudications_out,
+                kind="ee_replay_unsupported_heading_target",
+                message="EE replay skipped heading operation: target path has neither chapter nor section.",
+                op=op,
+                detail={"path": repr(path_dict)},
             )
 
     # ── Section-level and below — path must be non-empty ─────────────────────
