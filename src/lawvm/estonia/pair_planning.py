@@ -33,6 +33,9 @@ _EE_MUUTMISMARGE_AKTVIIDE_PUBLICATION_NUMBER_REPAIR_RULE = (
 _EE_MUUTMISMARGE_AKTVIIDE_REPAIR_CANDIDATE_UNAVAILABLE_RULE = (
     "ee_muutmismarge_aktviide_repair_candidate_unavailable"
 )
+_EE_MUUTMISMARGE_PUBLICATION_NUMBER_REPAIR_XML_PARSE_FAILED_RULE = (
+    "ee_muutmismarge_publication_number_repair_xml_parse_failed"
+)
 _EE_ORACLE_FETCH_FAILED_RULE = "ee_oracle_fetch_failed"
 _EE_ORACLE_REF_EXTRACTION_FAILED_RULE = "ee_oracle_ref_extraction_failed"
 
@@ -130,10 +133,10 @@ def _repair_muutmismarge_publication_year_refs(
     refs: tuple[AmendmentRef, ...],
     *,
     archive: Any = None,
-) -> tuple[tuple[AmendmentRef, ...], tuple[dict[str, str], ...]]:
+) -> tuple[tuple[AmendmentRef, ...], tuple[dict[str, Any], ...]]:
     """Repair impossible RT muutmismarge act-id years using the passed-date witness."""
     repaired_refs: list[AmendmentRef] = []
-    findings: list[dict[str, str]] = []
+    findings: list[dict[str, Any]] = []
     for ref in refs:
         aid = ref.aktViide
         passed_year = ref.passed[:4] if ref.passed else ""
@@ -212,12 +215,24 @@ def _repair_muutmismarge_publication_number_refs(
     refs: tuple[AmendmentRef, ...],
     *,
     archive: Any = None,
-) -> tuple[tuple[AmendmentRef, ...], tuple[dict[str, str], ...]]:
+) -> tuple[tuple[AmendmentRef, ...], tuple[dict[str, Any], ...]]:
     """Repair unfetchable RT refs when the publication citation gives the act id."""
     try:
         root = ET.fromstring(xml_bytes)
-    except ET.ParseError:
-        return refs, ()
+    except ET.ParseError as exc:
+        return refs, (
+            {
+                "kind": "source_pathology",
+                "rule": _EE_MUUTMISMARGE_PUBLICATION_NUMBER_REPAIR_XML_PARSE_FAILED_RULE,
+                "phase": "parse",
+                "family": "source_pathology",
+                "blocking": True,
+                "strict_disposition": "block",
+                "quirks_disposition": "record",
+                "exception_type": type(exc).__name__,
+                "message": str(exc),
+            },
+        )
     publication_candidates: dict[tuple[str, str], str] = {}
     for muutmismarge in root.iter():
         if _local_name(muutmismarge.tag) != "muutmismarge":
@@ -230,7 +245,7 @@ def _repair_muutmismarge_publication_number_refs(
             publication_candidates[(aid, joustumine or passed)] = candidate
 
     repaired_refs: list[AmendmentRef] = []
-    findings: list[dict[str, str]] = []
+    findings: list[dict[str, Any]] = []
     for ref in refs:
         candidate = publication_candidates.get(_ref_slice_key(ref), "")
         if not candidate:
@@ -311,7 +326,7 @@ def plan_ee_oracle_pair(
     grupi_id = extract_grupi_id(base_xml)
     selected_oracle_id = oracle_id
     oracle_xml: bytes | None = None
-    oracle_fetch_findings: list[dict[str, str]] = []
+    oracle_fetch_findings: list[dict[str, Any]] = []
 
     if selected_oracle_id is None and grupi_id:
         selected_oracle_id = get_oracle_aktviide_for_pit(grupi_id, as_of, archive)
@@ -357,9 +372,9 @@ def plan_ee_oracle_pair(
     )
     base_slice_keys = {_ref_slice_key(ref) for ref in base_refs}
     oracle_refs: tuple[AmendmentRef, ...] = ()
-    oracle_ref_repair_findings: tuple[dict[str, str], ...] = ()
-    oracle_ref_number_repair_findings: tuple[dict[str, str], ...] = ()
-    oracle_ref_extraction_findings: list[dict[str, str]] = []
+    oracle_ref_repair_findings: tuple[dict[str, Any], ...] = ()
+    oracle_ref_number_repair_findings: tuple[dict[str, Any], ...] = ()
+    oracle_ref_extraction_findings: list[dict[str, Any]] = []
 
     if (
         base_is_consolidated
