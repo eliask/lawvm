@@ -204,6 +204,7 @@ def build_no_commencement_candidate_report(
         direct_only=direct_only,
     )
     statsrad_candidates = list(statsrad_report.get("candidates", []))
+    statsrad_event_artifact_diagnostics = list(statsrad_report.get("event_artifact_diagnostics", []))
     # Keep the evidence split explicit: local corpus and statsråd are separate
     # operator buckets even when they feed the same target source.
     candidate_groups = [
@@ -216,6 +217,7 @@ def build_no_commencement_candidate_report(
             "candidate_source": "statsrad",
             "candidate_count": len(statsrad_candidates),
             "candidates": statsrad_candidates[:limit],
+            "event_artifact_diagnostic_count": len(statsrad_event_artifact_diagnostics),
         },
     ]
 
@@ -249,6 +251,8 @@ def build_no_commencement_candidate_report(
         "local_candidates": local_candidates[:limit],
         "statsrad_candidate_count": len(statsrad_candidates),
         "statsrad_candidates": statsrad_candidates[:limit],
+        "statsrad_event_artifact_diagnostic_count": len(statsrad_event_artifact_diagnostics),
+        "statsrad_event_artifact_diagnostics": statsrad_event_artifact_diagnostics,
         "candidate_source_counts": {
             "local_corpus": len(local_candidates),
             "statsrad": len(statsrad_candidates),
@@ -291,6 +295,8 @@ def main(args: "argparse.Namespace") -> None:
     print(f"  candidates          : {report['candidate_count']}")
     print(f"  local candidates    : {report.get('local_candidate_count', 0)}")
     print(f"  statsrad evidence   : {report.get('statsrad_candidate_count', 0)}")
+    if report.get("statsrad_event_artifact_diagnostic_count"):
+        print(f"  statsrad diagnostics: {report['statsrad_event_artifact_diagnostic_count']}")
     if report.get("local_candidates"):
         print("  local candidates:")
         for item in report["local_candidates"]:

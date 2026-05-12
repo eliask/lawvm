@@ -48,7 +48,7 @@ def test_no_commencement_candidates_prefers_exact_source_id_with_commencement_ma
         "no/lov/2024-12-13-77": "Arkivlova"
     })
     monkeypatch.setattr("lawvm.norway.sources.iter_no_amendment_artifacts", lambda data_dir=None: iter(artifacts))
-    monkeypatch.setattr("lawvm.norway.statsrad.iter_no_statsrad_event_artifacts", lambda data_dir=None: [])
+    monkeypatch.setattr("lawvm.norway.statsrad.iter_no_statsrad_event_artifacts", lambda data_dir=None, diagnostics_out=None: [])
 
     report = build_no_commencement_candidate_report(
         source_id="no/lovtid/2025-06-20-96",
@@ -106,7 +106,7 @@ def test_no_commencement_candidates_skips_earlier_sources(monkeypatch) -> None:
     monkeypatch.setattr("lawvm.norway.sources.resolve_no_source_path", lambda path=None: path)
     monkeypatch.setattr("lawvm.norway.sources.load_no_current_law_titles", lambda data_dir=None: {})
     monkeypatch.setattr("lawvm.norway.sources.iter_no_amendment_artifacts", lambda data_dir=None: iter(artifacts))
-    monkeypatch.setattr("lawvm.norway.statsrad.iter_no_statsrad_event_artifacts", lambda data_dir=None: [])
+    monkeypatch.setattr("lawvm.norway.statsrad.iter_no_statsrad_event_artifacts", lambda data_dir=None, diagnostics_out=None: [])
 
     report = build_no_commencement_candidate_report(
         source_id="no/lovtid/2025-04-25-12",
@@ -153,7 +153,7 @@ def test_no_commencement_candidates_direct_only_filters_indirect_base_overlap(mo
         "no/lov/2024-12-13-77": "Arkivlova"
     })
     monkeypatch.setattr("lawvm.norway.sources.iter_no_amendment_artifacts", lambda data_dir=None: iter(artifacts))
-    monkeypatch.setattr("lawvm.norway.statsrad.iter_no_statsrad_event_artifacts", lambda data_dir=None: [])
+    monkeypatch.setattr("lawvm.norway.statsrad.iter_no_statsrad_event_artifacts", lambda data_dir=None, diagnostics_out=None: [])
 
     report = build_no_commencement_candidate_report(
         source_id="no/lovtid/2025-06-20-96",
@@ -189,7 +189,7 @@ def test_no_commencement_candidates_includes_statsrad_evidence(monkeypatch) -> N
     monkeypatch.setattr("lawvm.norway.sources.iter_no_amendment_artifacts", lambda data_dir=None: iter(()))
     monkeypatch.setattr(
         "lawvm.norway.statsrad.iter_no_statsrad_event_artifacts",
-        lambda data_dir=None: [
+        lambda data_dir=None, diagnostics_out=None: [
             {
                 "bulletin_id": "id3103197",
                 "event_kind": "commencement",

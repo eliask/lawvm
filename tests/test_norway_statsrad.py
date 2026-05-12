@@ -9,6 +9,7 @@ from lawvm.norway.statsrad import (
     extract_no_statsrad_articles,
     fetch_statsrad_url,
     fetch_no_statsrad_articles,
+    iter_no_statsrad_event_artifacts,
     no_statsrad_article_events_locator,
     no_statsrad_article_id_from_url,
     no_statsrad_article_raw_locator,
@@ -73,7 +74,12 @@ class _FakeArchive:
     def locators(self, pattern: str = "%") -> list[str]:
         if pattern == "no://statsrad/article/%/record.json":
             return sorted(key for key in self.stored if key.endswith("/record.json"))
+        if pattern == "no://statsrad/article/%/events.json":
+            return sorted(key for key in self.stored if key.endswith("/events.json"))
         return sorted(self.stored)
+
+    def close(self) -> None:
+        return None
 
 
 def test_statsrad_locator_helpers_are_stable() -> None:
@@ -227,6 +233,27 @@ def test_extract_no_statsrad_articles_stores_event_json() -> None:
     assert any(event["event_kind"] == "partial_commencement" and event["effective_date"] == "2026-01-01" for event in events)
 
 
+def test_iter_no_statsrad_event_artifacts_records_malformed_artifacts(monkeypatch) -> None:
+    archive = _FakeArchive({})
+    archive.store(no_statsrad_article_events_locator("id-good"), json.dumps([{"event_kind": "commencement"}]).encode("utf-8"))
+    archive.store(no_statsrad_article_events_locator("id-bad-json"), b"{", storage_class="json")
+    archive.store(no_statsrad_article_events_locator("id-bad-root"), json.dumps({"event_kind": "commencement"}).encode("utf-8"))
+    archive.store(no_statsrad_article_events_locator("id-bad-item"), json.dumps(["not an event"]).encode("utf-8"))
+    monkeypatch.setattr("lawvm.norway.statsrad.open_no_archive", lambda path: archive)
+    monkeypatch.setattr("lawvm.norway.statsrad.resolve_no_source_path", lambda path=None: path)
+    diagnostics: list[dict[str, object]] = []
+
+    events = iter_no_statsrad_event_artifacts(None, diagnostics_out=diagnostics)
+
+    assert [event["bulletin_id"] for event in events] == ["id-good"]
+    assert {item["rule_id"] for item in diagnostics} == {
+        "no_statsrad_event_artifact_invalid_json",
+        "no_statsrad_event_artifact_non_list",
+        "no_statsrad_event_item_non_object",
+    }
+    assert all(item["family"] == "source_pathology" for item in diagnostics)
+
+
 def test_fetch_statsrad_url_prefers_curl(monkeypatch) -> None:
     calls: list[list[str]] = []
 
@@ -262,9 +289,19 @@ def test_fetch_statsrad_url_retries_curl(monkeypatch) -> None:
 
 
 def test_build_no_statsrad_commencement_candidate_scan_separates_evidence(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "lawvm.norway.statsrad.iter_no_statsrad_event_artifacts",
-        lambda data_dir=None: [
+    def fake_events(data_dir=None, diagnostics_out=None):  # noqa: ANN001
+        if diagnostics_out is not None:
+            diagnostics_out.append(
+                {
+                    "rule_id": "no_statsrad_event_artifact_invalid_json",
+                    "family": "source_pathology",
+                    "phase": "parse",
+                    "locator": "no://statsrad/article/id-bad/events.json",
+                    "bulletin_id": "id-bad",
+                    "reason": "statsrad event artifact was not valid JSON",
+                }
+            )
+        return [
             {
                 "bulletin_id": "id3103197",
                 "event_kind": "commencement",
@@ -276,7 +313,11 @@ def test_build_no_statsrad_commencement_candidate_scan_separates_evidence(monkey
                 "source_url": "https://www.regjeringen.no/no/aktuelt/offisielt-fra-statsrad-27.-mai-2025/id3103197/",
                 "_locator": "no://statsrad/article/id3103197/events.json",
             }
-        ],
+        ]
+
+    monkeypatch.setattr(
+        "lawvm.norway.statsrad.iter_no_statsrad_event_artifacts",
+        fake_events,
     )
 
     report = build_no_statsrad_commencement_candidate_scan(
@@ -293,3 +334,5 @@ def test_build_no_statsrad_commencement_candidate_scan_separates_evidence(monkey
     assert report["candidate_count"] == 1
     assert report["candidates"][0]["candidate_source"] == "statsrad"
     assert report["candidates"][0]["commencement_marker"] is True
+    assert report["event_artifact_diagnostic_count"] == 1
+    assert report["event_artifact_diagnostics"][0]["rule_id"] == "no_statsrad_event_artifact_invalid_json"
