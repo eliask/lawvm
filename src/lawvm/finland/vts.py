@@ -29,10 +29,12 @@ VtsSourceDiagnosticReason = Literal[
     "invalid_parent_id",
     "xml_syntax_error",
     "no_candidate_containers",
+    "paragraphized_repeal_fragment_unparsed",
 ]
 
 VTS_SKIPPED_TARGET_RULE_ID = "PARSE.VTS_SKIPPED_TARGET_UNSUPPORTED"
 VTS_SOURCE_DIAGNOSTIC_RULE_ID = "PARSE.VTS_SOURCE_UNREADABLE_OR_EMPTY"
+VTS_PARAGRAPHIZED_FRAGMENT_UNPARSED_RULE_ID = "PARSE.VTS_PARAGRAPHIZED_REPEAL_FRAGMENT_UNPARSED"
 
 
 @dataclass(frozen=True)
@@ -161,6 +163,29 @@ def _parent_title_variants(parent_title: str) -> List[str]:
     return list(dict.fromkeys(v for v in variants if v))
 
 
+def _vts_parent_citation_re(parent_id: str) -> "re.Pattern[str] | None":
+    if not parent_id:
+        return None
+    try:
+        parent_year, parent_num_str = parent_id.split("/")
+        parent_num = int(parent_num_str)
+    except (ValueError, AttributeError):
+        return None
+    if not parent_year:
+        return None
+    parent_year_short = parent_year[-2:]
+    return re.compile(
+        r"\(\s*"
+        + re.escape(str(parent_num))
+        + r"\s*/\s*(?:"
+        + re.escape(parent_year)
+        + r"|"
+        + re.escape(parent_year_short)
+        + r")\s*\)",
+        re.IGNORECASE,
+    )
+
+
 def _find_parent_title_span(text: str, title_variants: List[str]) -> tuple[int, int]:
     """Return the earliest matching bare-title span in *text*.
 
@@ -245,6 +270,7 @@ def _vts_source_excerpt(xml_bytes: bytes) -> str:
 def _classify_vts_source_diagnostic(
     xml_bytes: bytes,
     parent_id: str,
+    parent_title: str = "",
 ) -> VtsSourceDiagnostic | None:
     try:
         parent_year, parent_num_str = parent_id.split("/")
@@ -283,6 +309,29 @@ def _classify_vts_source_diagnostic(
             source_statute=parent_id,
             source_excerpt=_vts_source_excerpt(xml_bytes),
         )
+    citation_re = _vts_parent_citation_re(parent_id)
+    title_variants = _parent_title_variants(parent_title)
+    for container in reversed(_vts_candidate_containers(tree)):
+        paragraphs = container.findall(".//{*}paragraph")
+        if not paragraphs:
+            continue
+        full_text = etree.tostring(container, method="text", encoding="unicode")
+        if "kumotaan" not in full_text.lower():
+            continue
+        has_citation = bool(citation_re.search(full_text)) if citation_re is not None else False
+        title_start, _title_end = _find_parent_title_span(full_text, title_variants)
+        if not has_citation and title_start < 0:
+            continue
+        return VtsSourceDiagnostic(
+            rule_id=VTS_PARAGRAPHIZED_FRAGMENT_UNPARSED_RULE_ID,
+            reason_code="paragraphized_repeal_fragment_unparsed",
+            source_reason=(
+                "VTS paragraphized repeal-like source mentioned the parent statute but no "
+                "single paragraph yielded a lowerable repeal fragment; whole-container fallback was suppressed."
+            ),
+            source_statute=parent_id,
+            source_excerpt=re.sub(r"\s+", " ", full_text).strip()[:240],
+        )
     return None
 
 
@@ -315,24 +364,10 @@ def _voimaantulo_repeal_fragment_for_parent(
     """
     if not parent_id:
         return ""
-    try:
-        parent_year, parent_num_str = parent_id.split("/")
-        parent_num = int(parent_num_str)
-    except (ValueError, AttributeError):
-        return ""
-    parent_year_short = parent_year[-2:]
-
     # Build a regex that matches this statute's citation: (925/79) or (925/1979)
-    citation_re = re.compile(
-        r"\(\s*"
-        + re.escape(str(parent_num))
-        + r"\s*/\s*(?:"
-        + re.escape(parent_year)
-        + r"|"
-        + re.escape(parent_year_short)
-        + r")\s*\)",
-        re.IGNORECASE,
-    )
+    citation_re = _vts_parent_citation_re(parent_id)
+    if citation_re is None:
+        return ""
 
     title_variants = _parent_title_variants(parent_title)
 
@@ -678,7 +713,7 @@ def extract_voimaantulo_repeals(
         fragment = _voimaantulo_force_except_fragment_for_parent(xml_bytes, parent_id, parent_title=parent_title)
     if not fragment:
         if source_diagnostics_out is not None:
-            diagnostic = _classify_vts_source_diagnostic(xml_bytes, parent_id)
+            diagnostic = _classify_vts_source_diagnostic(xml_bytes, parent_id, parent_title)
             if diagnostic is not None:
                 source_diagnostics_out.append(diagnostic)
         return []
