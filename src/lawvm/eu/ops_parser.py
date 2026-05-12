@@ -23,6 +23,16 @@ VERB_MAPPING = {
     "amend": "replace",
 }
 
+UNSUPPORTED_ACTION_VERBS = frozenset(
+    {
+        "expire",
+        "move",
+        "renumber",
+        "suspend",
+        "transfer",
+    }
+)
+
 KIND_MAPPING = {
     "article": "article",
     "paragraph": "paragraph",
@@ -94,6 +104,26 @@ class EUOpsParser:
                 None,
             )
             if action is None:
+                unsupported_verb = next(
+                    (
+                        verb
+                        for verb in UNSUPPORTED_ACTION_VERBS
+                        if re.search(rf"\b{verb}\w*\b", lowered)
+                    ),
+                    None,
+                )
+                if unsupported_verb is not None:
+                    self._record_diagnostic(
+                        rule_id="eu_ops_parser_unsupported_action_segment",
+                        reason=(
+                            "EU parser saw an operative-looking amendment segment with an unsupported "
+                            f"action verb: {unsupported_verb}"
+                        ),
+                        source_excerpt=segment,
+                        family="unsupported_action",
+                        blocking=True,
+                        strict_disposition="block",
+                    )
                 continue
             action_kind = StructuralAction(action)
             segment_op_count = 0
@@ -181,14 +211,25 @@ class EUOpsParser:
 
         return ops
 
-    def _record_diagnostic(self, *, rule_id: str, reason: str, source_excerpt: str) -> None:
+    def _record_diagnostic(
+        self,
+        *,
+        rule_id: str,
+        reason: str,
+        source_excerpt: str,
+        family: str = "extraction_gap",
+        blocking: bool = False,
+        strict_disposition: str = "record",
+    ) -> None:
         self.diagnostics.append(
             EUOpsParserDiagnostic(
                 rule_id=rule_id,
-                family="extraction_gap",
+                family=family,
                 phase="extraction",
                 reason=reason,
                 source_excerpt=" ".join(source_excerpt.split())[:240],
+                blocking=blocking,
+                strict_disposition=strict_disposition,
             )
         )
 
