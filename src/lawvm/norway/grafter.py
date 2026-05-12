@@ -1962,6 +1962,22 @@ def iter_no_document_change_ops(
         source_doc = doc_change.get("data-document", "").strip()
         base_id = normalize_lovdata_refid(source_doc)
         if not source_doc or base_id is None:
+            _append_no_parse_adjudication(
+                adjudications_out,
+                kind="no_parse_document_change_base_unresolved",
+                message="Norway parser skipped structured document-change with missing or unmappable base act.",
+                source_id=source_id,
+                detail={
+                    "rule_id": "no_parse_document_change_base_unresolved",
+                    "phase": "parse",
+                    "family": "source_pathology",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                    "source_doc": source_doc,
+                    "reason": "missing_data_document" if not source_doc else "unmappable_data_document",
+                },
+            )
             continue
         doc_ops: list[LegalOperation] = []
         for change_el in _iter_change_descendants(doc_change):

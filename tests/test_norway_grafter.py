@@ -1591,6 +1591,70 @@ def test_parse_no_amendment_ops_forwards_structured_cross_base_skip_adjudication
     assert adjudications[0].detail["target_base"] == "no/lov/1967-02-10"
 
 
+def test_iter_no_document_change_ops_records_missing_structured_base() -> None:
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <article class="document-change">
+      <article class="change" data-change-part="lov/2022-05-12-28/§12">
+        <article class="legalP">§ 12 skal lyde:</article>
+      </article>
+    </article>
+  </body>
+</html>
+""".encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    grouped = iter_no_document_change_ops(
+        xml,
+        "no/lovtid/2024-06-21-46",
+        adjudications_out=adjudications,
+    )
+
+    assert grouped == []
+    assert [item.kind for item in adjudications] == [
+        "no_parse_document_change_base_unresolved"
+    ]
+    adjudication = adjudications[0]
+    assert adjudication.source_statute == "no/lovtid/2024-06-21-46"
+    assert adjudication.detail["rule_id"] == "no_parse_document_change_base_unresolved"
+    assert adjudication.detail["phase"] == "parse"
+    assert adjudication.detail["family"] == "source_pathology"
+    assert adjudication.detail["blocking"] is True
+    assert adjudication.detail["strict_disposition"] == "block"
+    assert adjudication.detail["quirks_disposition"] == "record"
+    assert adjudication.detail["source_doc"] == ""
+    assert adjudication.detail["reason"] == "missing_data_document"
+
+
+def test_parse_no_amendment_ops_forwards_missing_structured_base_adjudication() -> None:
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <article class="document-change" data-document="not-a-lovdata-ref">
+      <article class="change" data-change-part="lov/2022-05-12-28/§12">
+        <article class="legalP">§ 12 skal lyde:</article>
+      </article>
+    </article>
+  </body>
+</html>
+""".encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    ops = parse_no_amendment_ops(
+        xml,
+        "no/lovtid/2024-06-21-46",
+        adjudications_out=adjudications,
+    )
+
+    assert ops == []
+    assert [item.kind for item in adjudications] == [
+        "no_parse_document_change_base_unresolved"
+    ]
+    assert adjudications[0].detail["source_doc"] == "not-a-lovdata-ref"
+    assert adjudications[0].detail["reason"] == "unmappable_data_document"
+
+
 def test_parse_no_amendment_ops_unstructured_supports_mixed_existing_and_new_subsections() -> None:
     xml = """<?xml version="1.0" encoding="utf-8"?>
 <html lang="nb">
