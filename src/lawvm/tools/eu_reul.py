@@ -85,13 +85,16 @@ def _run_resolve(args: "argparse.Namespace") -> dict[str, object]:
         raise ValueError("uri must start with retained-law://celex/<CELEX>/...")
 
     eu_statute = parse_eu_regulation_ir(statute_xml, celex=celex)
-    resolved = bridge.resolve_retained_law_uri(uri, eu_statute)
+    diagnostics: list[dict[str, Any]] = []
+    resolved = bridge.resolve_retained_law_uri(uri, eu_statute, diagnostics_out=diagnostics)
     payload: dict[str, object] = {
         "mode": "resolve",
         "uri": uri,
         "found": resolved is not None,
         "eu_statute_id": eu_statute.statute_id,
     }
+    if diagnostics:
+        payload["diagnostics"] = diagnostics
     if resolved is not None:
         payload["node"] = _node_payload(resolved)
     return payload
