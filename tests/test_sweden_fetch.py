@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+from typing import cast
 
 import pytest
 
@@ -866,19 +867,28 @@ def test_fetch_official_archives_parsed_official_act_json(monkeypatch) -> None:
 
 def test_ingest_se_scraped_doc_html_map_archives_real_doc_urls_and_locators() -> None:
     archive = _FakeArchive()
-    payload = {
+    payload = cast(
+        "dict[str, str]",
+        {
         "https://svenskforfattningssamling.se/doc/2026286.html": (
             '<main><div class="field--item">2026:286</div>'
             '<a href="../sites/default/files/sfs/2026-03/SFS2026-286.pdf">PDF</a></main>'
         ),
         "https://example.com/not-sweden": "<main>ignore</main>",
-    }
+        "https://svenskforfattningssamling.se/doc/2026399.html": b"<main>bytes are invalid here</main>",
+        },
+    )
 
     result = ingest_se_scraped_doc_html_map(payload, archive)
 
-    assert result["entry_count"] == 2
+    assert result["entry_count"] == 3
     assert result["imported_count"] == 1
-    assert result["skipped_count"] == 1
+    assert result["skipped_count"] == 2
+    assert [entry["rule_id"] for entry in result["skipped_entries"]] == [
+        "se_scraped_doc_entry_unrecognized_url",
+        "se_scraped_doc_entry_invalid_shape",
+    ]
+    assert all(entry["family"] == "source_pathology" for entry in result["skipped_entries"])
     assert result["resolved_pdf_link_count"] == 1
     assert "https://svenskforfattningssamling.se/doc/2026286.html" in archive.stored
     assert se_official_doc_locator("2026:286") in archive.stored
