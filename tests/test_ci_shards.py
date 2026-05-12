@@ -320,7 +320,9 @@ def test_test_shard_maps_source_modules_to_frontend_shards() -> None:
     assert module.affected_shards(["src/lawvm/tools/no_op_trace.py"]) == ["norway", "tools"]
     assert module.affected_shards(["src/lawvm/tools/sweden.py"]) == ["sweden", "tools"]
     assert module.affected_shards(["src/lawvm/tools/uk_replay.py"]) == ["tools", "uk"]
-    assert module.affected_shards(["src/lawvm/tools/evidence.py"]) == ["tools"]
+    assert module.affected_shards(["src/lawvm/tools/evidence.py"]) == ["evidence", "tools"]
+    assert module.affected_shards(["src/lawvm/tools/evidence_claims.py"]) == ["evidence", "tools"]
+    assert module.affected_shards(["src/lawvm/tools/strict_report.py"]) == ["evidence", "tools"]
 
 
 def test_test_shard_maps_core_and_dependency_changes_to_all() -> None:
