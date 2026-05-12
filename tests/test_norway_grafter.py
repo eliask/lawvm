@@ -1580,12 +1580,45 @@ def test_parse_no_amendment_ops_structured_prefers_sentence_targets_over_subsect
 </html>
 """.encode("utf-8")
 
-    ops = parse_no_amendment_ops(xml, "no/lovtid/2024-06-21-46")
+    adjudications: list[CompileAdjudication] = []
+
+    ops = parse_no_amendment_ops(
+        xml,
+        "no/lovtid/2024-06-21-46",
+        adjudications_out=adjudications,
+    )
 
     assert [(op.action, op.target.path, op.payload.text if op.payload else None) for op in ops] == [
         (StructuralAction.INSERT, (("section", "45"), ("subsection", "2"), ("sentence", "3")), "Første nye punktum."),
         (StructuralAction.INSERT, (("section", "45"), ("subsection", "2"), ("sentence", "4")), "Andre nye punktum."),
     ]
+    assert [item.kind for item in adjudications] == [
+        "no_parse_structured_target_rebound_from_lead",
+        "no_parse_action_recovered_from_structured_lead",
+    ]
+    rebind = adjudications[0]
+    action_recovery = adjudications[1]
+    assert rebind.detail["rule_id"] == "no_parse_structured_target_rebound_from_lead"
+    assert rebind.detail["phase"] == "parse"
+    assert rebind.detail["family"] == "target_resolution_recovery"
+    assert rebind.detail["blocking"] is True
+    assert rebind.detail["strict_disposition"] == "block"
+    assert rebind.detail["quirks_disposition"] == "record"
+    assert rebind.detail["reason"] == "sentence_targets_inferred_from_lead"
+    assert rebind.detail["scope_confidence"] == "explicit_source_with_context"
+    assert rebind.detail["original_specs"] == (
+        {"action": "replace", "target": "section:45/subsection:2"},
+        {"action": "insert", "target": "section:45/subsection:3"},
+        {"action": "insert", "target": "section:45/subsection:4"},
+    )
+    assert rebind.detail["recovered_specs"] == (
+        {"action": "insert", "target": "section:45/subsection:2/sentence:3"},
+        {"action": "insert", "target": "section:45/subsection:2/sentence:4"},
+    )
+    assert action_recovery.detail["rule_id"] == "no_parse_action_recovered_from_structured_lead"
+    assert action_recovery.detail["family"] == "action_family_recovery"
+    assert action_recovery.detail["original_actions"] == ("replace", "insert", "insert")
+    assert action_recovery.detail["recovered_actions"] == ("insert", "insert")
 
 
 def test_iter_no_document_change_ops_skips_structured_cross_base_target_without_number() -> None:
