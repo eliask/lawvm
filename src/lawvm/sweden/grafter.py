@@ -773,6 +773,33 @@ def se_official_effect_plan_to_dict(plan: SEOfficialEffectsPlan) -> dict[str, An
     return asdict(plan)
 
 
+def _record_se_official_act_payload_row_diagnostic(
+    diagnostics_out: list[dict[str, Any]] | None,
+    *,
+    rule_id: str,
+    reason: str,
+    sfs_id: str,
+    row_family: str,
+    row_index: int,
+) -> None:
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        {
+            "rule_id": rule_id,
+            "family": "source_pathology",
+            "phase": "payload",
+            "reason": reason,
+            "sfs_id": sfs_id,
+            "row_family": row_family,
+            "row_index": row_index,
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    )
+
+
 def se_legal_operation_to_dict(op: LegalOperation) -> dict[str, Any]:
     patch = op.text_patch
     data = {
@@ -1758,24 +1785,70 @@ def parse_se_official_act_text(text: str, sfs_id: str) -> SEOfficialActText:
     )
 
 
-def _coerce_official_act(payload: bytes | str | dict[str, Any]) -> SEOfficialActText:
+def _coerce_official_act(
+    payload: bytes | str | dict[str, Any],
+    diagnostics_out: list[dict[str, Any]] | None = None,
+) -> SEOfficialActText:
     document = _coerce_document(payload)
-    provisions = tuple(
-        SEOfficialProvisionText(
-            label=_label_norm(str(provision.get("label") or "")),
-            text=str(provision.get("text") or ""),
+    sfs_id = str(document.get("sfs_id") or "")
+    provisions: list[SEOfficialProvisionText] = []
+    for index, provision in enumerate(document.get("provisions", [])):
+        if not isinstance(provision, dict):
+            _record_se_official_act_payload_row_diagnostic(
+                diagnostics_out,
+                rule_id="se_official_act_payload_row_invalid_shape",
+                reason="Sweden official act provision payload row was skipped because it was not an object.",
+                sfs_id=sfs_id,
+                row_family="provisions",
+                row_index=index,
+            )
+            continue
+        label = _label_norm(str(provision.get("label") or ""))
+        if not label:
+            _record_se_official_act_payload_row_diagnostic(
+                diagnostics_out,
+                rule_id="se_official_act_payload_row_unlabeled",
+                reason="Sweden official act provision payload row was skipped because it had no label.",
+                sfs_id=sfs_id,
+                row_family="provisions",
+                row_index=index,
+            )
+            continue
+        provisions.append(
+            SEOfficialProvisionText(
+                label=label,
+                text=str(provision.get("text") or ""),
+            )
         )
-        for provision in document.get("provisions", [])
-        if isinstance(provision, dict) and str(provision.get("label") or "").strip()
-    )
-    inserted_headings = tuple(
-        SEOfficialHeadingText(
-            before_label=_label_norm(str(heading.get("before_label") or "")),
-            text=str(heading.get("text") or ""),
+    inserted_headings: list[SEOfficialHeadingText] = []
+    for index, heading in enumerate(document.get("inserted_headings", [])):
+        if not isinstance(heading, dict):
+            _record_se_official_act_payload_row_diagnostic(
+                diagnostics_out,
+                rule_id="se_official_act_payload_row_invalid_shape",
+                reason="Sweden official act inserted-heading payload row was skipped because it was not an object.",
+                sfs_id=sfs_id,
+                row_family="inserted_headings",
+                row_index=index,
+            )
+            continue
+        before_label = _label_norm(str(heading.get("before_label") or ""))
+        if not before_label:
+            _record_se_official_act_payload_row_diagnostic(
+                diagnostics_out,
+                rule_id="se_official_act_payload_row_unlabeled",
+                reason="Sweden official act inserted-heading payload row was skipped because it had no before_label.",
+                sfs_id=sfs_id,
+                row_family="inserted_headings",
+                row_index=index,
+            )
+            continue
+        inserted_headings.append(
+            SEOfficialHeadingText(
+                before_label=before_label,
+                text=str(heading.get("text") or ""),
+            )
         )
-        for heading in document.get("inserted_headings", [])
-        if isinstance(heading, dict) and str(heading.get("before_label") or "").strip()
-    )
     appendices = tuple(
         SEOfficialAppendixText(
             label=_label_norm(str(appendix.get("label") or "")),
@@ -1786,7 +1859,7 @@ def _coerce_official_act(payload: bytes | str | dict[str, Any]) -> SEOfficialAct
         if isinstance(appendix, dict)
     )
     return SEOfficialActText(
-        sfs_id=str(document.get("sfs_id") or ""),
+        sfs_id=sfs_id,
         title=_normalize_space(str(document.get("title") or "")),
         act_type=_normalize_space(str(document.get("act_type") or "")).lower(),
         amended_act_sfs_id=str(document.get("amended_act_sfs_id") or ""),
@@ -1798,8 +1871,8 @@ def _coerce_official_act(payload: bytes | str | dict[str, Any]) -> SEOfficialAct
         affected_section_labels=tuple(
             _label_norm(str(label)) for label in document.get("affected_section_labels", []) if str(label).strip()
         ),
-        provisions=provisions,
-        inserted_headings=inserted_headings,
+        provisions=tuple(provisions),
+        inserted_headings=tuple(inserted_headings),
         appendices=appendices,
         signatories=tuple(str(value) for value in document.get("signatories", []) if str(value).strip()),
         footnotes=tuple(str(value) for value in document.get("footnotes", []) if str(value).strip()),
@@ -2149,6 +2222,25 @@ def _append_se_official_plan_adjudication(
             },
         )
     )
+
+
+def _append_se_official_payload_row_adjudications(
+    adjudications_out: list[CompileAdjudication] | None,
+    *,
+    source_id: str,
+    diagnostics: list[dict[str, Any]],
+) -> None:
+    if adjudications_out is None:
+        return
+    for diagnostic in diagnostics:
+        adjudications_out.append(
+            CompileAdjudication(
+                kind="se_official_act_payload_row_skipped",
+                message=str(diagnostic.get("reason") or "Sweden official act payload row was skipped."),
+                source_statute=source_id or str(diagnostic.get("sfs_id") or ""),
+                detail=dict(diagnostic),
+            )
+        )
 
 
 def _lower_se_official_effect_plan_item(
@@ -2694,7 +2786,13 @@ def compile_se_official_act_ops(
     canonical-effects plan waists before lowering to canonical execution
     artifacts.
     """
-    act = _coerce_official_act(payload)
+    payload_row_diagnostics: list[dict[str, Any]] = []
+    act = _coerce_official_act(payload, diagnostics_out=payload_row_diagnostics)
+    _append_se_official_payload_row_adjudications(
+        adjudications_out,
+        source_id=source_id or act.sfs_id,
+        diagnostics=payload_row_diagnostics,
+    )
     plan = _build_se_official_effects_plan(_build_se_official_elaboration(act))
     return _lower_se_official_effects_plan(plan, source_id=source_id, adjudications_out=adjudications_out)
 
