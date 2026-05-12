@@ -445,14 +445,36 @@ def load_available_lti_law_ids(source_path: Path | None = None) -> set[str]:
     return {artifact.logical_id for artifact in iter_no_original_lti_artifacts(source_path)}
 
 
-def load_no_current_law_titles(source_path: Path | None = None) -> dict[str, str]:
+def load_no_current_law_titles(
+    source_path: Path | None = None,
+    *,
+    diagnostics_out: list[dict[str, Any]] | None = None,
+) -> dict[str, str]:
     from lawvm.norway.grafter import parse_no_statute
 
     titles: dict[str, str] = {}
     for artifact in iter_no_current_artifacts(source_path):
         try:
             titles[artifact.logical_id] = parse_no_statute(artifact.payload, artifact.logical_id).title
-        except Exception:
+        except Exception as exc:
+            if diagnostics_out is not None:
+                diagnostics_out.append(
+                    {
+                        "rule_id": "no_current_law_title_parse_skipped",
+                        "phase": "parse",
+                        "family": "source_pathology",
+                        "reason": "Norway current-law title extraction skipped an artifact because statute parsing failed.",
+                        "statute_id": artifact.logical_id,
+                        "locator": artifact.locator,
+                        "source_name": artifact.source_name,
+                        "member_name": artifact.member_name,
+                        "exception_type": type(exc).__name__,
+                        "error": str(exc),
+                        "blocking": True,
+                        "strict_disposition": "block",
+                        "quirks_disposition": "record",
+                    }
+                )
             continue
     return titles
 

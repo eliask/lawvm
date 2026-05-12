@@ -32,6 +32,7 @@ from lawvm.norway.commencement import (
     build_no_commencement_external_evidence_plan_artifact,
 )
 from lawvm.norway.index import load_no_amendment_index
+from lawvm.norway.sources import NOLocatedArtifact, load_no_current_law_titles
 
 
 def _write_archive(archive_path: Path, members: list[tuple[str, bytes]]) -> None:
@@ -40,6 +41,55 @@ def _write_archive(archive_path: Path, members: list[tuple[str, bytes]]) -> None
             info = tarfile.TarInfo(member_name)
             info.size = len(payload)
             tf.addfile(info, io.BytesIO(payload))
+
+
+def test_load_no_current_law_titles_records_parse_skip(monkeypatch) -> None:
+    artifacts = [
+        NOLocatedArtifact(
+            locator="no://lov/2025-01-01-1/current.xml",
+            logical_id="no/lov/2025-01-01-1",
+            source_name="gjeldende-lover.tar.bz2",
+            member_name="good.xml",
+            payload=b"<good/>",
+        ),
+        NOLocatedArtifact(
+            locator="no://lov/2025-01-02-2/current.xml",
+            logical_id="no/lov/2025-01-02-2",
+            source_name="gjeldende-lover.tar.bz2",
+            member_name="bad.xml",
+            payload=b"<bad/>",
+        ),
+    ]
+    monkeypatch.setattr("lawvm.norway.sources.iter_no_current_artifacts", lambda _source_path=None: iter(artifacts))
+
+    def fake_parse_no_statute(_payload: bytes, logical_id: str):
+        if logical_id == "no/lov/2025-01-02-2":
+            raise ValueError("malformed current law")
+        return SimpleNamespace(title="Good law")
+
+    monkeypatch.setattr("lawvm.norway.grafter.parse_no_statute", fake_parse_no_statute)
+    diagnostics: list[dict[str, object]] = []
+
+    titles = load_no_current_law_titles(diagnostics_out=diagnostics)
+
+    assert titles == {"no/lov/2025-01-01-1": "Good law"}
+    assert diagnostics == [
+        {
+            "rule_id": "no_current_law_title_parse_skipped",
+            "phase": "parse",
+            "family": "source_pathology",
+            "reason": "Norway current-law title extraction skipped an artifact because statute parsing failed.",
+            "statute_id": "no/lov/2025-01-02-2",
+            "locator": "no://lov/2025-01-02-2/current.xml",
+            "source_name": "gjeldende-lover.tar.bz2",
+            "member_name": "bad.xml",
+            "exception_type": "ValueError",
+            "error": "malformed current law",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
 
 
 def test_no_commencement_report_merges_existing_template(tmp_path, monkeypatch, capsys) -> None:
