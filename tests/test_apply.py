@@ -11213,6 +11213,7 @@ def test_typed_replace_unsupported_target_stops_without_legacy_dispatch() -> Non
     )
     rop = _make_rop(op, intent, muutos_ir=payload)
     ctx = _ctx(_body())
+    failed_ops: List[FailedOp] = []
     mutation_events: List[ApplyMutationEvent] = []
 
     result = apply_op(
@@ -11221,11 +11222,16 @@ def test_typed_replace_unsupported_target_stops_without_legacy_dispatch() -> Non
         ctx,
         muutos_ir=payload,
         replay_mode="finlex_oracle",
+        failed_ops_out=failed_ops,
         mutation_events_out=mutation_events,
         rop=rop,
     )
 
     assert result is state
+    assert len(failed_ops) == 1
+    assert failed_ops[0].reason_code == "unhandled_replace_target"
+    assert failed_ops[0].reason == "unhandled Replace target: NodeTarget"
+    assert failed_ops[0].target_section == "1"
     assert len(mutation_events) == 1
     event = mutation_events[0]
     assert event.helper == "_apply_intent_replace"
@@ -11262,6 +11268,7 @@ def test_typed_insert_unsupported_target_stops_without_legacy_dispatch() -> None
     )
     rop = _make_rop(op, intent, muutos_ir=payload)
     ctx = _ctx(_body())
+    failed_ops: List[FailedOp] = []
     mutation_events: List[ApplyMutationEvent] = []
 
     result = apply_op(
@@ -11270,11 +11277,16 @@ def test_typed_insert_unsupported_target_stops_without_legacy_dispatch() -> None
         ctx,
         muutos_ir=payload,
         replay_mode="finlex_oracle",
+        failed_ops_out=failed_ops,
         mutation_events_out=mutation_events,
         rop=rop,
     )
 
     assert result is state
+    assert len(failed_ops) == 1
+    assert failed_ops[0].reason_code == "unhandled_insert_target"
+    assert failed_ops[0].reason == "unhandled Insert target: NodeTarget"
+    assert failed_ops[0].target_section == "2"
     assert len(mutation_events) == 1
     event = mutation_events[0]
     assert event.helper == "_apply_intent_insert"
@@ -11305,6 +11317,7 @@ def test_typed_repeal_unsupported_target_stops_without_legacy_dispatch() -> None
     )
     rop = _make_rop(op, intent)
     ctx = _ctx(_body())
+    failed_ops: List[FailedOp] = []
     mutation_events: List[ApplyMutationEvent] = []
 
     result = apply_op(
@@ -11313,11 +11326,16 @@ def test_typed_repeal_unsupported_target_stops_without_legacy_dispatch() -> None
         ctx,
         muutos_ir=None,
         replay_mode="finlex_oracle",
+        failed_ops_out=failed_ops,
         mutation_events_out=mutation_events,
         rop=rop,
     )
 
     assert result is state
+    assert len(failed_ops) == 1
+    assert failed_ops[0].reason_code == "unhandled_repeal_target"
+    assert failed_ops[0].reason == "unhandled Repeal target: NodeTarget"
+    assert failed_ops[0].target_section == "1"
     assert len(mutation_events) == 1
     event = mutation_events[0]
     assert event.helper == "_apply_intent_repeal"

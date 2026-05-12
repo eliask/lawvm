@@ -529,6 +529,30 @@ def _apply_intent_section_level(
     return state
 
 
+def _record_unhandled_typed_target_failed_op(
+    failed_ops_out: Optional[List[FailedOp]],
+    *,
+    rop: ResolvedOp,
+    rop_description: str,
+    reason: str,
+    reason_code: str,
+) -> None:
+    if failed_ops_out is None:
+        return
+    failed_ops_out.append(
+        FailedOp.from_scope(
+            amendment_id=rop.resolved_source_statute,
+            description=rop_description,
+            reason=reason,
+            reason_code=reason_code,
+            target_section=rop.resolved_target_label,
+            target_chapter=rop.resolved_target_scope_chapter_label,
+            target_part=rop.resolved_target_scope_part_label,
+            target_unit_kind=rop.target_unit_kind,
+        )
+    )
+
+
 def _apply_intent_container(
     state: "ReplayState",
     rop: ResolvedOp,
@@ -702,11 +726,20 @@ def _apply_intent_replace(
                 migration_ledger=migration_ledger,
             )
         case _:
+            reason = f"unhandled Replace target: {type(intent.target).__name__}"
+            reason_code = "unhandled_replace_target"
             logger.warning(
                 "UNHANDLED_TYPED_TARGET: %s %s — Replace target %r unsupported in Finland apply",
                 ctx_label,
                 rop.target_norm,
                 intent.target,
+            )
+            _record_unhandled_typed_target_failed_op(
+                failed_ops_out,
+                rop=rop,
+                rop_description=rop_description,
+                reason=reason,
+                reason_code=reason_code,
             )
             _emit_apply_mutation_event_for_rop(
                 mutation_events_out,
@@ -714,8 +747,8 @@ def _apply_intent_replace(
                 helper="_apply_intent_replace",
                 outcome="skipped",
                 resolved_target_path=_target_address_path_for_rop_event(rop, path_hint),
-                failure_reason=f"unhandled Replace target: {type(intent.target).__name__}",
-                reason_code="unhandled_replace_target",
+                failure_reason=reason,
+                reason_code=reason_code,
             )
             return state
 
@@ -793,11 +826,20 @@ def _apply_intent_insert(
                 standalone_section_targets=standalone_section_targets,
             )
         case _:
+            reason = f"unhandled Insert target: {type(intent.target).__name__}"
+            reason_code = "unhandled_insert_target"
             logger.warning(
                 "UNHANDLED_TYPED_TARGET: %s %s — Insert target %r unsupported in Finland apply",
                 ctx_label,
                 rop.target_norm,
                 intent.target,
+            )
+            _record_unhandled_typed_target_failed_op(
+                failed_ops_out,
+                rop=rop,
+                rop_description=rop_description,
+                reason=reason,
+                reason_code=reason_code,
             )
             _emit_apply_mutation_event_for_rop(
                 mutation_events_out,
@@ -805,8 +847,8 @@ def _apply_intent_insert(
                 helper="_apply_intent_insert",
                 outcome="skipped",
                 resolved_target_path=_target_address_path_for_rop_event(rop, path_hint),
-                failure_reason=f"unhandled Insert target: {type(intent.target).__name__}",
-                reason_code="unhandled_insert_target",
+                failure_reason=reason,
+                reason_code=reason_code,
             )
             return state
 
@@ -880,11 +922,20 @@ def _apply_intent_repeal(
                 migration_ledger=migration_ledger,
             )
         case _:
+            reason = f"unhandled Repeal target: {type(intent.target).__name__}"
+            reason_code = "unhandled_repeal_target"
             logger.warning(
                 "UNHANDLED_TYPED_TARGET: %s %s — Repeal target %r unsupported in Finland apply",
                 ctx_label,
                 rop.target_norm,
                 intent.target,
+            )
+            _record_unhandled_typed_target_failed_op(
+                failed_ops_out,
+                rop=rop,
+                rop_description=rop_description,
+                reason=reason,
+                reason_code=reason_code,
             )
             _emit_apply_mutation_event_for_rop(
                 mutation_events_out,
@@ -892,8 +943,8 @@ def _apply_intent_repeal(
                 helper="_apply_intent_repeal",
                 outcome="skipped",
                 resolved_target_path=_target_address_path_for_rop_event(rop, path_hint),
-                failure_reason=f"unhandled Repeal target: {type(intent.target).__name__}",
-                reason_code="unhandled_repeal_target",
+                failure_reason=reason,
+                reason_code=reason_code,
             )
             return state
 
