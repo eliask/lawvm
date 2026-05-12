@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, FrozenSet, List, Optional, cast
 from lawvm.core.compile_result import SourcePathology, StrictProfile
 from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir import LegalOperation as _LegalOperation
+from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.core import tree_ops as _tops
 from lawvm.core.tree_ops import Path
@@ -1366,6 +1367,7 @@ def _apply_canonical_intent(
     failed_ops_out: Optional[List[FailedOp]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
+    findings_out: Optional[List[Finding]] = None,
     path_hint: Optional[Path] = None,
     standalone_section_targets: Optional[FrozenSet] = None,
     migration_ledger: Optional[MigrationLedger] = None,
@@ -1408,7 +1410,7 @@ def _apply_canonical_intent(
         else None
     )
     _check_occupancy_policy(state, rop, intent, sec_path, ctx_label)
-    _assert_intent_compat(rop, intent, ctx_label)
+    _assert_intent_compat(rop, intent, ctx_label, findings_out=findings_out)
 
     match intent:
         case Replace() as it:

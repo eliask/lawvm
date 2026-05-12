@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, FrozenSet, List, Literal, Optional
 from lawvm.core.compile_result import SourcePathology
 from lawvm.core.ir import IRNode
 from lawvm.core.ir import LegalOperation as _LegalOperation
+from lawvm.core.phase_result import Finding
 from lawvm.core.tree_ops import Path
 from lawvm.finland.ops import (
     AmendmentOp,
@@ -129,6 +130,7 @@ def apply_op(
     failed_ops_out: Optional[List[FailedOp]] = None,
     source_pathologies_out: Optional[List[SourcePathology]] = None,
     mutation_events_out: Optional[List[ApplyMutationEvent]] = None,
+    findings_out: Optional[List[Finding]] = None,
     path_hint: Optional[Path] = None,
     rop: Optional[ResolvedOp] = None,
     standalone_section_targets: Optional[FrozenSet] = None,
@@ -177,6 +179,7 @@ def apply_op(
             failed_ops_out=failed_ops_out,
             source_pathologies_out=source_pathologies_out,
             mutation_events_out=mutation_events_out,
+            findings_out=findings_out,
             path_hint=path_hint,
             replay_history_ops=replay_history_ops,
             standalone_section_targets=standalone_section_targets,

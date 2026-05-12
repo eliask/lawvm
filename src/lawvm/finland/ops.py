@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Optional, Tuple
 from lawvm.core.ir import IRNode, LegalAddress, OperationSource, TextPatchSpec
 from lawvm.core.ir import LegalOperation as _LegalOperation
 from lawvm.core.compile_result import StrictProfile
+from lawvm.core.phase_result import Finding
 from lawvm.core.semantic_types import (
     FacetKind,
     IRNodeKind,
@@ -2159,6 +2160,8 @@ def _assert_intent_compat(
     rop: ResolvedOp,
     intent: "CanonicalIntent",
     ctx_label: str,
+    *,
+    findings_out: Optional[List[Finding]] = None,
 ) -> None:
     """Cross-validate typed CanonicalIntent fields against late-waist fields.
 
@@ -2188,6 +2191,26 @@ def _assert_intent_compat(
     """
     from lawvm.core.canonical_intent import FacetTarget, Insert, Move, NodeTarget, Relabel, Replace, Repeal, TextPatch
 
+    def _record_mismatch(mismatch_kind: str, detail: dict[str, object]) -> None:
+        if findings_out is None:
+            return
+        findings_out.append(
+            Finding(
+                kind="APPLY.INTENT_COMPAT_MISMATCH",
+                role="observation",
+                stage="apply",
+                source_statute=rop.resolved_source_statute,
+                detail={
+                    "mismatch_kind": mismatch_kind,
+                    "ctx_label": ctx_label,
+                    "op_id": rop.op_id,
+                    "strict_disposition": "record",
+                    **detail,
+                },
+                blocking=False,
+            )
+        )
+
     legacy_action = rop.resolved_action_type
 
     # --- Check 1: action family ---
@@ -2209,6 +2232,14 @@ def _assert_intent_compat(
             legacy_action,
             expected_kind,
             actual_kind,
+        )
+        _record_mismatch(
+            "action_family",
+            {
+                "legacy_action": legacy_action,
+                "expected_intent_kind": expected_kind,
+                "actual_intent_kind": actual_kind,
+            },
         )
 
     # --- Check 2/3: target ---
@@ -2235,6 +2266,14 @@ def _assert_intent_compat(
                 expected_target_kind,
                 rop.target_unit_kind,
             )
+            _record_mismatch(
+                "unit_kind",
+                {
+                    "intent_leaf_kind": unit_kind,
+                    "expected_legacy_target_kind": expected_target_kind.value,
+                    "rop_target_unit_kind": rop.target_unit_kind,
+                },
+            )
 
     elif isinstance(target, FacetTarget):
         facet = target.facet
@@ -2250,6 +2289,14 @@ def _assert_intent_compat(
                 expected_facet,
                 facet,
             )
+            _record_mismatch(
+                "facet",
+                {
+                    "target_special": target_special or "",
+                    "expected_facet": expected_facet.value,
+                    "actual_facet": facet.value,
+                },
+            )
         elif target_special is not None and expected_facet is None:
             # target_special is set but not in the known mapping — advisory only.
             intent_compat_stats.facet += 1
@@ -2259,4 +2306,13 @@ def _assert_intent_compat(
                 ctx_label,
                 target_special,
                 facet,
+            )
+            _record_mismatch(
+                "facet",
+                {
+                    "target_special": target_special,
+                    "expected_facet": "",
+                    "actual_facet": facet.value,
+                    "unknown_target_special": True,
+                },
             )
