@@ -47,6 +47,7 @@ from __future__ import annotations
 import argparse
 import csv
 import io
+import json
 import re
 import sys
 import time
@@ -112,6 +113,30 @@ def _missing_enacted_locator(act_id: str) -> str:
     as a durable marker.
     """
     return f"leg://missing/uk/{act_id}/enacted/data.xml"
+
+
+def _affecting_acquisition_event(
+    *,
+    affecting_act_id: str,
+    url: str,
+    status: str,
+    rule_id: str,
+    reason: str,
+    blocking: bool,
+) -> dict[str, object]:
+    return {
+        "rule_id": rule_id,
+        "phase": "acquisition",
+        "family": "source_pathology",
+        "affecting_act_id": affecting_act_id,
+        "locator": _missing_enacted_locator(affecting_act_id),
+        "url": url,
+        "status": status,
+        "reason": reason,
+        "blocking": blocking,
+        "strict_disposition": "block" if blocking else "record",
+        "quirks_disposition": "record",
+    }
 
 
 # ── HTTP client ──────────────────────────────────────────────────────────
@@ -381,6 +406,7 @@ def do_affecting(
     http: _HTTP,
     *,
     types: Optional[set[str]] = None,
+    diagnostics_out: Optional[list[dict[str, object]]] = None,
 ) -> dict:
     """Phase 3: fetch enacted XML for affecting acts discovered in effects feeds."""
     affecting = _scan_affecting_acts(archive)
@@ -406,8 +432,30 @@ def do_affecting(
         elif status in {404, 410}:
             archive.store(_missing_enacted_locator(aid), b"404", storage_class="text")
             n_404 += 1
+            if diagnostics_out is not None:
+                diagnostics_out.append(
+                    _affecting_acquisition_event(
+                        affecting_act_id=aid,
+                        url=url,
+                        status="permanent_missing_cached",
+                        rule_id="uk_acquire_affecting_enacted_permanent_missing",
+                        reason=f"http_{status}",
+                        blocking=False,
+                    )
+                )
         else:
             n_fail += 1
+            if diagnostics_out is not None:
+                diagnostics_out.append(
+                    _affecting_acquisition_event(
+                        affecting_act_id=aid,
+                        url=url,
+                        status="error",
+                        rule_id="uk_acquire_affecting_enacted_fetch_failed",
+                        reason=f"http_{status}" if status is not None else "transport_error",
+                        blocking=True,
+                    )
+                )
 
         if i % 1000 == 0 or i == len(to_fetch):
             print(f"  [{i:,}/{len(to_fetch):,}]  ok={n_ok:,}  fail={n_fail:,}  404={n_404:,}  last={aid}")
@@ -498,6 +546,11 @@ def main() -> None:
     ap.add_argument("--archive", type=Path, default=_DEFAULT_ARCHIVE)
     ap.add_argument("--enacted-only", action="store_true")
     ap.add_argument("--affecting-types", nargs="+", default=None)
+    ap.add_argument(
+        "--events-jsonl",
+        metavar="PATH",
+        help="write structured acquisition event rows for affecting-act permanent misses/failures",
+    )
     args = ap.parse_args()
 
     args.archive.parent.mkdir(parents=True, exist_ok=True)
@@ -510,6 +563,7 @@ def main() -> None:
         ),
     )
     http = _HTTP(delay=args.delay)
+    events_path = Path(args.events_jsonl) if args.events_jsonl else None
 
     cmd = args.command
 
@@ -532,6 +586,7 @@ def main() -> None:
 
     # ── Main pipeline ──
     print(f"UK corpus → {args.archive}")
+    affecting_diagnostics: list[dict[str, object]] = []
 
     # Always enumerate first (cheap, never stored)
     if cmd in ("all", "enumerate", "download"):
@@ -563,8 +618,20 @@ def main() -> None:
 
     if cmd in ("all", "affecting"):
         print("\n[affecting] missing enacted XML")
-        r = do_affecting(archive, http, types=set(args.affecting_types) if args.affecting_types else None)
+        r = do_affecting(
+            archive,
+            http,
+            types=set(args.affecting_types) if args.affecting_types else None,
+            diagnostics_out=affecting_diagnostics,
+        )
         print(f"  fetched={r['fetched']:,}  failed={r['failed']:,}  404={r['gone']:,}")
+        if events_path:
+            events_path.parent.mkdir(parents=True, exist_ok=True)
+            events_path.write_text(
+                "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in affecting_diagnostics),
+                encoding="utf-8",
+            )
+            print(f"  acquisition_events={len(affecting_diagnostics):,}  events_jsonl={events_path}")
 
     if cmd == "refresh":
         print("\n[refresh] mutable resources")

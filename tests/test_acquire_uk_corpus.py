@@ -67,6 +67,44 @@ def test_do_affecting_marks_missing_laws_and_skips_retry(monkeypatch) -> None:
     assert len(http.calls) == 1
 
 
+def test_do_affecting_records_permanent_missing_diagnostic(monkeypatch) -> None:
+    aid = "ukpga/2010/3"
+    archive = _FakeArchive()
+    http = _FakeHTTP(
+        {
+            f"{acquire_uk_corpus._LEG_BASE}/{aid}/enacted/data.xml": 404,
+        },
+    )
+    diagnostics: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        acquire_uk_corpus, "_scan_affecting_acts", lambda archive: {aid}
+    )
+
+    result = acquire_uk_corpus.do_affecting(
+        cast(Any, archive),
+        cast(Any, http),
+        types=None,
+        diagnostics_out=diagnostics,
+    )
+
+    assert result == {"fetched": 0, "failed": 0, "gone": 1}
+    assert diagnostics == [
+        {
+            "rule_id": "uk_acquire_affecting_enacted_permanent_missing",
+            "phase": "acquisition",
+            "family": "source_pathology",
+            "affecting_act_id": aid,
+            "locator": acquire_uk_corpus._missing_enacted_locator(aid),
+            "url": f"{acquire_uk_corpus._LEG_BASE}/{aid}/enacted/data.xml",
+            "status": "permanent_missing_cached",
+            "reason": "http_404",
+            "blocking": False,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
 def test_do_affecting_fetches_known_urls(monkeypatch) -> None:
     aid = "ukpga/2011/2"
     archive = _FakeArchive()
@@ -103,3 +141,41 @@ def test_do_affecting_marks_gone_on_410(monkeypatch) -> None:
     assert result == {"fetched": 0, "failed": 0, "gone": 1}
     assert archive.has(acquire_uk_corpus._missing_enacted_locator(aid))
     assert len(http.calls) == 1
+
+
+def test_do_affecting_records_fetch_failure_diagnostic(monkeypatch) -> None:
+    aid = "ukpga/2010/4"
+    archive = _FakeArchive()
+    http = _FakeHTTP(
+        {
+            f"{acquire_uk_corpus._LEG_BASE}/{aid}/enacted/data.xml": 500,
+        },
+    )
+    diagnostics: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        acquire_uk_corpus, "_scan_affecting_acts", lambda archive: {aid}
+    )
+
+    result = acquire_uk_corpus.do_affecting(
+        cast(Any, archive),
+        cast(Any, http),
+        types=None,
+        diagnostics_out=diagnostics,
+    )
+
+    assert result == {"fetched": 0, "failed": 1, "gone": 0}
+    assert diagnostics == [
+        {
+            "rule_id": "uk_acquire_affecting_enacted_fetch_failed",
+            "phase": "acquisition",
+            "family": "source_pathology",
+            "affecting_act_id": aid,
+            "locator": acquire_uk_corpus._missing_enacted_locator(aid),
+            "url": f"{acquire_uk_corpus._LEG_BASE}/{aid}/enacted/data.xml",
+            "status": "error",
+            "reason": "http_500",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
