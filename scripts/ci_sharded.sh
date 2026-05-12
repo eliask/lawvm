@@ -6,6 +6,8 @@
 # Usage:
 #   ./scripts/ci_sharded.sh
 #   ./scripts/ci_sharded.sh --affected src/lawvm/norway/replay.py tests/test_norway_replay.py
+#   ./scripts/ci_sharded.sh --shard norway
+#   ./scripts/ci_sharded.sh --shards "norway sweden eu"
 #   LAWVM_CI_SHARDS="norway sweden eu" ./scripts/ci_sharded.sh
 #   LAWVM_CI_SHARDS="norway,sweden,eu" ./scripts/ci_sharded.sh
 #   LAWVM_CI_AFFECTED_PATHS="src/lawvm/norway/replay.py tests/test_norway_replay.py" ./scripts/ci_sharded.sh
@@ -18,17 +20,39 @@ cd "$(git rev-parse --show-toplevel)"
 ALL_BOUNDED_SHARDS="core estonia eu evidence finland norway properties starter sweden tools uk"
 
 AFFECTED_PATHS=()
+REQUESTED_SHARDS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --affected)
             shift
-            while [[ $# -gt 0 ]]; do
+            while [[ $# -gt 0 && "$1" != --* ]]; do
                 AFFECTED_PATHS+=("$1")
                 shift
             done
             ;;
+        --shard)
+            shift
+            if [[ $# -eq 0 ]]; then
+                echo "--shard requires a shard name" >&2
+                exit 2
+            fi
+            REQUESTED_SHARDS+=("$1")
+            shift
+            ;;
+        --shards)
+            shift
+            if [[ $# -eq 0 ]]; then
+                echo "--shards requires a comma- or space-separated shard list" >&2
+                exit 2
+            fi
+            shard_list="${1//,/ }"
+            # shellcheck disable=SC2206
+            shard_items=($shard_list)
+            REQUESTED_SHARDS+=("${shard_items[@]}")
+            shift
+            ;;
         --help|-h)
-            sed -n '1,12p' "$0"
+            sed -n '1,14p' "$0"
             exit 0
             ;;
         *)
@@ -38,6 +62,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [[ ${#AFFECTED_PATHS[@]} -gt 0 && ${#REQUESTED_SHARDS[@]} -gt 0 ]]; then
+    echo "--affected cannot be combined with --shard/--shards" >&2
+    exit 2
+fi
 
 if [[ ${#AFFECTED_PATHS[@]} -eq 0 && -n "${LAWVM_CI_AFFECTED_PATHS:-}" ]]; then
     # shellcheck disable=SC2206
@@ -51,6 +80,8 @@ if [[ ${#AFFECTED_PATHS[@]} -gt 0 ]]; then
     else
         SHARDS="${AFFECTED_SHARDS[*]}"
     fi
+elif [[ ${#REQUESTED_SHARDS[@]} -gt 0 ]]; then
+    SHARDS="${REQUESTED_SHARDS[*]}"
 elif [[ -n "${LAWVM_CI_SHARDS:-}" ]]; then
     SHARDS="$LAWVM_CI_SHARDS"
 else
