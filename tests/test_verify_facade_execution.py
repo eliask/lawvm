@@ -12,7 +12,9 @@ from lawvm.core.ir import (
 )
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.phase_result import Finding, PhaseResult
+from lawvm.core.timeline_results import TimelineIssue
 from lawvm.tools.verify import _build_verify_facade
+from lawvm.tools.verify import _timeline_issue_to_issue
 from lawvm.tools.verify import verify_full
 
 
@@ -88,6 +90,27 @@ def test_build_verify_facade_carries_temporal_events_into_timeline_execution() -
     )
     assert selected.status == "materialized"
     assert selected.statute.body.children[0].text == "Updated"
+
+
+def test_verify_timeline_issue_projection_preserves_blocking_severity() -> None:
+    blocking = TimelineIssue(
+        kind="missing_replace_target",
+        message="replace target does not exist",
+    )
+    nonblocking = TimelineIssue(
+        kind="empty_same_day_interval",
+        message="same-day interval recorded",
+    )
+
+    blocking_issue = _timeline_issue_to_issue(blocking, "test/statute")
+    nonblocking_issue = _timeline_issue_to_issue(nonblocking, "test/statute")
+
+    assert blocking_issue.stage == "timeline"
+    assert blocking_issue.severity == "error"
+    assert blocking_issue.code == "timeline.missing_replace_target"
+    assert nonblocking_issue.stage == "timeline"
+    assert nonblocking_issue.severity == "warning"
+    assert nonblocking_issue.code == "timeline.empty_same_day_interval"
 
 
 def test_build_verify_facade_dedupes_duplicate_findings() -> None:
