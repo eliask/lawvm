@@ -17,6 +17,7 @@ from lawvm.norway.sources import (
     parse_header_value,
     resolve_no_source_path,
 )
+from lawvm.replay_adjudication import CompileAdjudication
 
 
 @dataclass(frozen=True)
@@ -187,7 +188,19 @@ def build_no_amendment_index(data_dir: Optional[Path] = None) -> NOAmendmentInde
         source_id = artifact.logical_id
         if lovdata_amendment_filename_to_id(artifact.member_name) is None and not artifact.locator.startswith("no://lovtid/"):
             continue
-        grouped = iter_no_document_change_ops(artifact.payload, source_id)
+        parser_adjudications: list[CompileAdjudication] = []
+        grouped = iter_no_document_change_ops(
+            artifact.payload,
+            source_id,
+            adjudications_out=parser_adjudications,
+        )
+        for adjudication in parser_adjudications:
+            index.diagnostics.append(
+                _no_index_parser_adjudication_diagnostic(
+                    adjudication=adjudication,
+                    artifact=artifact,
+                )
+            )
         if not grouped:
             index.diagnostics.append(
                 _no_index_skipped_artifact_diagnostic(
@@ -258,6 +271,33 @@ def _no_index_skipped_artifact_diagnostic(
         "blocking": True,
         "strict_disposition": "block",
         "quirks_disposition": "record",
+    }
+
+
+def _no_index_parser_adjudication_diagnostic(
+    *,
+    adjudication: CompileAdjudication,
+    artifact: NOLocatedArtifact,
+) -> dict[str, Any]:
+    detail = dict(adjudication.detail)
+    rule_id = str(detail.get("rule_id") or adjudication.kind)
+    phase = str(detail.get("phase") or "parse")
+    family = str(detail.get("family") or "source_pathology")
+    return {
+        "rule_id": rule_id,
+        "kind": adjudication.kind,
+        "family": family,
+        "phase": phase,
+        "reason": adjudication.message,
+        "source_id": adjudication.source_statute,
+        "op_id": adjudication.op_id,
+        "locator": artifact.locator,
+        "archive": artifact.source_name,
+        "member_name": artifact.member_name,
+        "blocking": bool(detail.get("blocking", True)),
+        "strict_disposition": str(detail.get("strict_disposition") or "block"),
+        "quirks_disposition": str(detail.get("quirks_disposition") or "record"),
+        "detail": detail,
     }
 
 
