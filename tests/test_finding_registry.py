@@ -151,6 +151,14 @@ def test_source_pathology_detected_registry_code_is_runtime_obligation() -> None
     validate_finding_projection(spec.code, "obligation", True)
 
 
+def test_restructure_plan_deferred_op_registry_code_is_runtime_observation() -> None:
+    spec = get_finding_spec("APPLY.RESTRUCTURE_PLAN_OP_DEFERRED")
+    assert spec is not None
+    assert spec.role == "observation"
+    assert spec.is_barrier is False
+    validate_finding_projection(spec.code, "observation", False)
+
+
 def test_failed_operation_registry_code_is_runtime_obligation() -> None:
     spec = get_finding_spec("APPLY.FAILED_OPERATION")
     assert spec is not None
