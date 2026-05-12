@@ -276,6 +276,37 @@ def test_plan_ee_oracle_pair_records_unavailable_publication_number_repair_candi
     )
 
 
+def test_plan_ee_oracle_pair_records_publication_number_repair_xml_parse_failure(monkeypatch) -> None:
+    base_xml = b"<akt><broken/>"
+    bad_ref = AmendmentRef(
+        aktViide="109062011005",
+        passed="2011-06-06",
+        joustumine="2011-06-12",
+    )
+
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_grupi_id", lambda xml: "gid-2")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_tekstiliik", lambda xml: "terviktekst")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_effective_date", lambda xml: "2011-06-01")
+    monkeypatch.setattr("lawvm.estonia.pair_planning.extract_amendment_refs", lambda xml: [bad_ref])
+
+    planned = plan_ee_oracle_pair(
+        base_id="base",
+        as_of="2011-06-12",
+        base_xml=base_xml,
+        archive=None,
+        oracle_id="base",
+    )
+
+    assert [ref.aktViide for ref in planned.plan.base_refs] == ["109062011005"]
+    assert any(
+        item.get("rule") == "ee_muutmismarge_publication_number_repair_xml_parse_failed"
+        and item.get("phase") == "parse"
+        and item.get("strict_disposition") == "block"
+        and item.get("exception_type") == "ParseError"
+        for item in planned.plan.source_adjudication.lineage
+    )
+
+
 def test_plan_ee_oracle_pair_blocks_cross_statute_oracle_group(monkeypatch) -> None:
     base_xml = b"<base/>"
     oracle_xml = b"<oracle/>"
