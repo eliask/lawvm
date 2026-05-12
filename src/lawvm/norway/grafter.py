@@ -2952,6 +2952,7 @@ def apply_no_ops(
     adjudications_out: Optional[List[CompileAdjudication]] = None,
     strict_invariants: bool = True,
     strict_action_family: bool = False,
+    strict_recovery: bool = False,
 ) -> IRStatute:
     """Apply a minimal structural Norway operation set to a statute tree.
 
@@ -3073,6 +3074,28 @@ def apply_no_ops(
         source_id = op.source.statute_id if op.source else ""
         raise ValueError(
             f"Norway replay action-family recovery {kind} after {op.action} "
+            f"{op.target.path!r} from {source_id or '<unknown>'}"
+        )
+
+    def _record_lineage_recovery(
+        *,
+        kind: str,
+        message: str,
+        op: LegalOperation,
+        detail: dict[str, str | bool],
+    ) -> None:
+        _append_no_replay_adjudication(
+            adjudications_out,
+            kind=kind,
+            message=message,
+            op=op,
+            detail=detail,
+        )
+        if not strict_recovery:
+            return
+        source_id = op.source.statute_id if op.source else ""
+        raise ValueError(
+            f"Norway replay recovery {kind} after {op.action} "
             f"{op.target.path!r} from {source_id or '<unknown>'}"
         )
 
@@ -3533,6 +3556,29 @@ def apply_no_ops(
                 and destination_path != resolved_path
                 and op.destination.path not in renumber_sources
             ):
+                occupied_destination = tree_ops.resolve(body, destination_path)
+                _record_lineage_recovery(
+                    kind="no_replay_renumber_occupied_destination_removed",
+                    message=(
+                        "Norway replay cleared an occupied renumber destination "
+                        "that was not itself moved by the same renumber group."
+                    ),
+                    op=op,
+                    detail={
+                        "rule_id": "no_renumber_occupied_destination_removed",
+                        "family": "migration_or_lineage_recovery",
+                        "source_path": _no_path_label(resolved_path),
+                        "destination_path": _no_path_label(destination_path),
+                        "destination_target": _no_address_detail(op.destination),
+                        "removed_kind": _no_kind_value(occupied_destination.kind)
+                        if occupied_destination is not None
+                        else "",
+                        "removed_label": occupied_destination.label
+                        if occupied_destination is not None and occupied_destination.label is not None
+                        else "",
+                        "destination_was_renumber_source": False,
+                    },
+                )
                 body = tree_ops.remove_at(body, destination_path)
             body = tree_ops.remove_at(body, resolved_path)
             destination_parent = op.destination.parent()
