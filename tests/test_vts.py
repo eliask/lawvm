@@ -4,6 +4,7 @@ import re
 from lawvm.corpus_store import get_corpus_store
 from lawvm.core.observation_registry import get_finding_spec
 from lawvm.finland.vts import (
+    VTS_PARAGRAPHIZED_FRAGMENT_UNPARSED_RULE_ID,
     VTS_SOURCE_DIAGNOSTIC_RULE_ID,
     VTS_SKIPPED_TARGET_RULE_ID,
     VtsSkippedTarget,
@@ -269,6 +270,45 @@ def test_extract_voimaantulo_repeals_does_not_mix_parent_citation_from_one_parag
     ).encode()
     ops = extract_voimaantulo_repeals(xml, "1994/201", parent_title="Kotikuntalaki")
     assert ops == []
+
+
+def test_extract_voimaantulo_repeals_records_paragraphized_unparsed_source() -> None:
+    diagnostics: list[VtsSourceDiagnostic] = []
+    xml = (
+        f'<act xmlns="{_AKN_NS}">'
+        f'  <body>'
+        f'    <section eId="sec_52"><num>52 §</num>'
+        f'      <subsection eId="sec_52__subsec_1">'
+        f'        <paragraph eId="sec_52__subsec_1__para_1"><num>1)</num><content>'
+        f'          <p>sovellettaessa kotikuntalain (201/1994) 2 ja 6 a §:ää lapsen synnyttäneeseen äitiin sovelletaan.</p>'
+        f'        </content></paragraph>'
+        f'        <paragraph eId="sec_52__subsec_1__para_2"><num>2)</num><content>'
+        f'          <p>etu- ja sukunimilain (946/2017) 28 §:n 2 momentin 4 kohtaa sovelletaan myös, jos äitiys kumotaan.</p>'
+        f'        </content></paragraph>'
+        f'      </subsection>'
+        f'    </section>'
+        f'  </body>'
+        f'</act>'
+    ).encode()
+
+    ops = extract_voimaantulo_repeals(
+        xml,
+        "1994/201",
+        parent_title="Kotikuntalaki",
+        source_diagnostics_out=diagnostics,
+    )
+
+    assert ops == []
+    assert len(diagnostics) == 1
+    record = diagnostics[0]
+    assert record.rule_id == VTS_PARAGRAPHIZED_FRAGMENT_UNPARSED_RULE_ID
+    assert record.reason_code == "paragraphized_repeal_fragment_unparsed"
+    assert record.source_statute == "1994/201"
+    assert record.phase == "frontend_extraction"
+    assert record.family == "source_pathology"
+    assert record.strict_disposition == "record"
+    assert "whole-container fallback was suppressed" in record.source_reason
+    assert record.as_detail()["rule_id"] == VTS_PARAGRAPHIZED_FRAGMENT_UNPARSED_RULE_ID
 
 
 def test_extract_voimaantulo_repeals_keeps_same_paragraph_citation_repeal_after_cross_paragraph_fix() -> None:
