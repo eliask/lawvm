@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from argparse import Namespace
 from typing import Any
 from urllib.error import URLError
 
@@ -222,3 +223,135 @@ def test_list_manifestation_options_records_skipped_source_lanes(tmp_path) -> No
     assert all(row["family"] == "source_pathology" for row in diagnostics)
     assert all(row["phase"] == "acquisition" for row in diagnostics)
     assert all(row["strict_disposition"] == "block" for row in diagnostics)
+
+
+def test_select_manifestation_option_threads_skipped_source_lanes(tmp_path) -> None:
+    tree_notice = tmp_path / "tree.xml"
+    tree_notice.write_text(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<NOTICE>
+  <EXPRESSION>
+    <URI><VALUE>http://example.test/expression/no-language</VALUE></URI>
+    <EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+      <SAMEAS><URI><VALUE>http://example.test/doc-no-language.xhtml</VALUE></URI></SAMEAS>
+    </EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+  </EXPRESSION>
+  <EXPRESSION>
+    <URI><VALUE>http://example.test/expression/eng</VALUE></URI>
+    <EXPRESSION_USES_LANGUAGE><IDENTIFIER>eng</IDENTIFIER></EXPRESSION_USES_LANGUAGE>
+    <EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+      <SAMEAS><URI><VALUE>http://example.test/doc.xhtml</VALUE></URI></SAMEAS>
+    </EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+  </EXPRESSION>
+  <MANIFESTATION manifestation-type="xhtml">
+    <URI><VALUE>http://example.test/doc.xhtml</VALUE></URI>
+    <MANIFESTATION_HAS_ITEM>
+      <URI><VALUE>http://example.test/item.xhtml</VALUE></URI>
+    </MANIFESTATION_HAS_ITEM>
+  </MANIFESTATION>
+</NOTICE>
+""",
+        encoding="utf-8",
+    )
+    diagnostics: list[dict[str, Any]] = []
+
+    option = cellar.select_manifestation_option(
+        tree_notice,
+        "eng",
+        "xhtml",
+        diagnostics_out=diagnostics,
+    )
+
+    assert option["items"][0]["uri"]["value"] == "http://example.test/item.xhtml"
+    assert [row["detail"]["reason_code"] for row in diagnostics] == [
+        "missing_expression_language",
+    ]
+
+
+def test_fetch_manifestation_outputs_acquisition_diagnostics(monkeypatch, tmp_path, capsys) -> None:
+    tree_notice = tmp_path / "tree.xml"
+    tree_notice.write_text(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<NOTICE>
+  <EXPRESSION>
+    <URI><VALUE>http://example.test/expression/no-language</VALUE></URI>
+    <EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+      <SAMEAS><URI><VALUE>http://example.test/doc-no-language.xhtml</VALUE></URI></SAMEAS>
+    </EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+  </EXPRESSION>
+  <EXPRESSION>
+    <URI><VALUE>http://example.test/expression/eng</VALUE></URI>
+    <EXPRESSION_USES_LANGUAGE><IDENTIFIER>eng</IDENTIFIER></EXPRESSION_USES_LANGUAGE>
+    <EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+      <SAMEAS><URI><VALUE>http://example.test/doc.xhtml</VALUE></URI></SAMEAS>
+    </EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+  </EXPRESSION>
+  <MANIFESTATION manifestation-type="xhtml">
+    <URI><VALUE>http://example.test/doc.xhtml</VALUE></URI>
+    <MANIFESTATION_HAS_ITEM>
+      <URI><VALUE>http://example.test/item.xhtml</VALUE></URI>
+    </MANIFESTATION_HAS_ITEM>
+  </MANIFESTATION>
+</NOTICE>
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        cellar,
+        "_request_url",
+        lambda url, timeout_s, accept: (
+            b"<html><body>ok</body></html>",
+            {"url": url, "content_type": "application/xhtml+xml"},
+        ),
+    )
+
+    exit_code = cellar.fetch_manifestation(
+        Namespace(
+            tree_notice=tree_notice,
+            language="eng",
+            format="xhtml",
+            out=tmp_path / "out.xhtml",
+            timeout=10,
+            accept="application/xhtml+xml",
+        )
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["acquisition_diagnostic_count"] == 1
+    assert payload["acquisition_diagnostics"][0]["detail"]["reason_code"] == "missing_expression_language"
+    assert json.loads((tmp_path / "out.xhtml.meta.json").read_text(encoding="utf-8"))["acquisition_diagnostic_count"] == 1
+
+
+def test_fetch_manifestation_failure_prints_acquisition_diagnostics(tmp_path, capsys) -> None:
+    tree_notice = tmp_path / "tree.xml"
+    tree_notice.write_text(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<NOTICE>
+  <EXPRESSION>
+    <URI><VALUE>http://example.test/expression/no-language</VALUE></URI>
+    <EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+      <SAMEAS><URI><VALUE>http://example.test/doc-no-language.xhtml</VALUE></URI></SAMEAS>
+    </EXPRESSION_MANIFESTED_BY_MANIFESTATION>
+  </EXPRESSION>
+</NOTICE>
+""",
+        encoding="utf-8",
+    )
+
+    exit_code = cellar.fetch_manifestation(
+        Namespace(
+            tree_notice=tree_notice,
+            language="eng",
+            format="xhtml",
+            out=tmp_path / "out.xhtml",
+            timeout=10,
+            accept="application/xhtml+xml",
+        )
+    )
+    err = capsys.readouterr().err
+
+    assert exit_code == 1
+    assert "No manifestation found" in err
+    assert '"rule_id": "eu_cellar_manifestation_option_skipped"' in err
+    assert '"reason_code": "missing_expression_language"' in err

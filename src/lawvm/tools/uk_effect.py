@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     import argparse
@@ -49,6 +49,20 @@ def _print_payload(node, *, indent: str = "    ") -> None:  # noqa: ANN001
         print(f"{indent}- {node.kind}{label}")
     for child in node.children:
         _print_payload(child, indent=indent + "  ")
+
+
+def lowering_rejection_rule_counts(rejections: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for rejection in rejections:
+        rule_id = str(rejection.get("rule_id") or "unknown")
+        counts[rule_id] = counts.get(rule_id, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def print_lowering_rejections(rejections: list[dict[str, Any]], *, prefix: str = "") -> None:
+    print(f"{prefix}Lowering rejections: {len(rejections)}")
+    for rule_id, count in lowering_rejection_rule_counts(rejections).items():
+        print(f"{prefix}  {rule_id}: {count}")
 
 
 def _collect_statute_eids(statute: "IRStatute") -> set[str]:
@@ -210,7 +224,13 @@ def main(args: "argparse.Namespace") -> None:
         if xml_bytes:
             extracted = extract_provision_element_from_bytes(xml_bytes, effect.affecting_provisions)
 
-        ops = compile_effect_to_ir_ops(effect, extracted, sequence=0)
+        lowering_rejections: list[dict[str, Any]] = []
+        ops = compile_effect_to_ir_ops(
+            effect,
+            extracted,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
         extracted_tag = _tag(extracted) if extracted is not None else None
         extracted_text = _text_snippet(extracted, limit=100000) if extracted is not None else ""
         enacted_bytes = archive.get(_archive_url_for_statute(statute_id, pit_date=None, enacted=True))
@@ -289,6 +309,7 @@ def main(args: "argparse.Namespace") -> None:
     print()
 
     print(f"Compiled ops: {len(ops)}")
+    print_lowering_rejections(lowering_rejections)
     if not ops:
         print(f"Replay candidate:   {'yes' if is_core_uk_effect_source_candidate(source_pathology) else 'no'}")
         return

@@ -55,6 +55,7 @@ from lawvm.sweden.fetch import (
     load_se_backfill_official_history_from_archive,
     load_se_backfill_official_gap_report_from_archive,
     load_se_official_act_from_archive,
+    load_se_official_ops_adjudications_from_archive,
     load_se_official_effects_plan_from_archive,
     load_se_official_base_ir_from_archive,
     load_se_official_ops_from_archive,
@@ -71,6 +72,7 @@ from lawvm.sweden.fetch import (
     se_current_ir_locator,
     se_official_act_locator,
     se_official_doc_locator,
+    se_official_ops_adjudications_locator,
     se_official_ops_locator,
     se_pdf_cleanup_locator,
     se_pdf_text_locator,
@@ -106,6 +108,36 @@ def _irnode_summary(node: Any, indent: int = 0) -> list[str]:
 
 def _print_json(data: dict[str, Any]) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2))
+
+
+def _se_adjudication_rule_counts(adjudications: list[dict[str, Any]]) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for adjudication in adjudications:
+        detail = adjudication.get("detail", {})
+        rule_id = ""
+        if isinstance(detail, dict):
+            rule_id = str(detail.get("rule_id") or "")
+        if not rule_id:
+            rule_id = str(adjudication.get("kind") or "unknown")
+        counts[rule_id] += 1
+    return dict(sorted(counts.items()))
+
+
+def _se_official_ops_payload(
+    sfs_id: str,
+    ops: list[dict[str, Any]],
+    adjudications: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "sfs_id": sfs_id,
+        "official_ops_locator": se_official_ops_locator(sfs_id),
+        "official_ops_adjudications_locator": se_official_ops_adjudications_locator(sfs_id),
+        "op_count": len(ops),
+        "adjudication_count": len(adjudications),
+        "adjudication_rule_counts": _se_adjudication_rule_counts(adjudications),
+        "ops": ops,
+        "adjudications": adjudications,
+    }
 
 
 _SE_DOC_LOCATOR_RE = re.compile(r"^se://sfs/(?P<sfs_id>\d{4}:\d+[a-zA-Z]?)/official\.doc\.html$")
@@ -1533,6 +1565,7 @@ def _cmd_compile_official(args: "argparse.Namespace") -> None:
     with open_se_archive(Path(args.db) if getattr(args, "db", None) else None) as archive:
         try:
             ops = compile_se_official_ops_to_archive(archive, args.sfs_id)
+            adjudications = load_se_official_ops_adjudications_from_archive(archive, args.sfs_id) or []
         except FileNotFoundError as exc:
             print(f"error: {exc}", file=sys.stderr)
             sys.exit(1)
@@ -1542,13 +1575,17 @@ def _cmd_compile_official(args: "argparse.Namespace") -> None:
 
     print(f"SFS ID:             {args.sfs_id}")
     print(f"Official ops loc:   {se_official_ops_locator(args.sfs_id)}")
+    print(f"Adjudications loc:  {se_official_ops_adjudications_locator(args.sfs_id)}")
     print(f"Compiled op count:  {len(ops)}")
+    print(f"Adjudication count: {len(adjudications)}")
 
     if getattr(args, "format", "summary") == "json":
         print()
-        print(json.dumps(ops, ensure_ascii=False, indent=2))
+        print(json.dumps(_se_official_ops_payload(args.sfs_id, ops, adjudications), ensure_ascii=False, indent=2))
         return
 
+    for rule_id, count in _se_adjudication_rule_counts(adjudications).items():
+        print(f"  adjudication {rule_id}: {count}")
     for op in ops:
         target = op.get("target", {})
         path = target.get("path", [])
@@ -1682,15 +1719,20 @@ def _cmd_show_official(args: "argparse.Namespace") -> None:
 def _cmd_show_official_ops(args: "argparse.Namespace") -> None:
     with open_se_archive(Path(args.db) if getattr(args, "db", None) else None) as archive:
         ops = load_se_official_ops_from_archive(archive, args.sfs_id)
+        adjudications = load_se_official_ops_adjudications_from_archive(archive, args.sfs_id) or []
     if ops is None:
         print(f"error: no archived official ops for {args.sfs_id}", file=sys.stderr)
         sys.exit(1)
     if getattr(args, "format", "summary") == "json":
-        print(json.dumps(ops, ensure_ascii=False, indent=2))
+        print(json.dumps(_se_official_ops_payload(args.sfs_id, ops, adjudications), ensure_ascii=False, indent=2))
         return
     print(f"SFS ID:             {args.sfs_id}")
     print(f"Official ops loc:   {se_official_ops_locator(args.sfs_id)}")
+    print(f"Adjudications loc:  {se_official_ops_adjudications_locator(args.sfs_id)}")
     print(f"Compiled op count:  {len(ops)}")
+    print(f"Adjudication count: {len(adjudications)}")
+    for rule_id, count in _se_adjudication_rule_counts(adjudications).items():
+        print(f"  adjudication {rule_id}: {count}")
     for op in ops:
         target = op.get("target", {})
         path = target.get("path", [])
