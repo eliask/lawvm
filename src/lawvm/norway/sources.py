@@ -412,7 +412,11 @@ def load_no_amendment_bytes(source_id: str, source_path: Path | None = None) -> 
     return None
 
 
-def load_no_current_law_ids(source_path: Path | None = None) -> set[str]:
+def load_no_current_law_ids(
+    source_path: Path | None = None,
+    *,
+    diagnostics_out: list[dict[str, Any]] | None = None,
+) -> set[str]:
     from lawvm.norway.grafter import parse_no_statute
 
     def _has_operative_content(node: Any) -> bool:
@@ -431,8 +435,38 @@ def load_no_current_law_ids(source_path: Path | None = None) -> set[str]:
     for artifact in iter_no_current_artifacts(source_path):
         try:
             statute = parse_no_statute(artifact.payload, artifact.logical_id)
-        except Exception:
-            if _payload_has_operative_content(artifact.payload):
+        except Exception as exc:
+            has_marker_fallback = _payload_has_operative_content(artifact.payload)
+            if diagnostics_out is not None:
+                rule_id = (
+                    "no_current_law_id_parse_marker_fallback_used"
+                    if has_marker_fallback
+                    else "no_current_law_id_parse_skipped"
+                )
+                diagnostics_out.append(
+                    {
+                        "rule_id": rule_id,
+                        "phase": "parse",
+                        "family": "source_pathology",
+                        "reason": (
+                            "Norway current-law ID loader retained an artifact via operative marker fallback "
+                            "after statute parsing failed."
+                            if has_marker_fallback
+                            else "Norway current-law ID loader skipped an artifact because statute parsing failed."
+                        ),
+                        "statute_id": artifact.logical_id,
+                        "locator": artifact.locator,
+                        "source_name": artifact.source_name,
+                        "member_name": artifact.member_name,
+                        "exception_type": type(exc).__name__,
+                        "error": str(exc),
+                        "retained_by_marker_fallback": has_marker_fallback,
+                        "blocking": True,
+                        "strict_disposition": "block",
+                        "quirks_disposition": "record",
+                    }
+                )
+            if has_marker_fallback:
                 current_ids.add(artifact.logical_id)
             continue
         if _has_operative_content(statute.body) or _payload_has_operative_content(artifact.payload):
