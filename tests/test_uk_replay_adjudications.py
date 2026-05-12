@@ -145,6 +145,12 @@ def test_executor_records_unsupported_action() -> None:
     assert len(adjudications) == 1
     assert adjudications[0].kind == "uk_replay_unsupported_action"
     assert adjudications[0].detail["action"] == "renumber"
+    assert adjudications[0].detail["rule_id"] == "uk_replay_unsupported_action"
+    assert adjudications[0].detail["phase"] == "replay"
+    assert adjudications[0].detail["family"] == "unsupported_or_unresolved_action"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
     assert adjudications[0].op_id == "uk_test_renumber_unsupported"
 
 
@@ -281,8 +287,14 @@ def test_replay_uk_ops_records_prepare_filtered_unsupported_whole_act_target() -
     assert adjudications[0].op_id == "uk_test_whole_act_prepare_filter"
     assert adjudications[0].detail == {
         "action": "replace",
-        "target": "/whole_act",
+        "blocking": True,
+        "family": "unsupported_or_unresolved_action",
+        "phase": "replay",
+        "quirks_disposition": "record",
         "reason": "whole_act_prepare_filter",
+        "rule_id": "uk_replay_unsupported_action",
+        "strict_disposition": "block",
+        "target": "/whole_act",
     }
     assert tuple(child.label for child in replayed.body.children) == ("1",)
 
@@ -310,8 +322,14 @@ def test_pipeline_apply_ops_records_prepare_filtered_unsupported_whole_act_targe
     assert adjudications[0].source_statute == "ukpga/2026/1"
     assert adjudications[0].detail == {
         "action": "replace",
-        "target": "/whole_act",
+        "blocking": True,
+        "family": "unsupported_or_unresolved_action",
+        "phase": "replay",
+        "quirks_disposition": "record",
         "reason": "whole_act_prepare_filter",
+        "rule_id": "uk_replay_unsupported_action",
+        "strict_disposition": "block",
+        "target": "/whole_act",
     }
     assert tuple(child.label for child in replayed.body.children) == ("1",)
 
