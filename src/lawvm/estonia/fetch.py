@@ -63,6 +63,36 @@ class RedactionInfo:
     effective: str   # YYYY-MM-DD extracted from title parenthetical
 
 
+@dataclass(frozen=True)
+class RedactionsFeedDiagnostic:
+    """Typed acquisition diagnostic for the RT consolidated-redactions feed."""
+
+    rule_id: str
+    family: str
+    phase: str
+    reason: str
+    grupi_id: str
+    url: str
+    exception_type: str
+    blocking: bool = True
+    strict_disposition: str = "block"
+    quirks_disposition: str = "record"
+
+    def as_detail(self) -> dict[str, object]:
+        return {
+            "rule_id": self.rule_id,
+            "family": self.family,
+            "phase": self.phase,
+            "reason": self.reason,
+            "grupi_id": self.grupi_id,
+            "url": self.url,
+            "exception_type": self.exception_type,
+            "blocking": self.blocking,
+            "strict_disposition": self.strict_disposition,
+            "quirks_disposition": self.quirks_disposition,
+        }
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -213,6 +243,7 @@ def _curl(url: str, archive: Any) -> Optional[bytes]:
 def fetch_redactions_feed(
     grupi_id: str,
     archive: Any = None,
+    diagnostics_out: Optional[List[RedactionsFeedDiagnostic]] = None,
 ) -> List[RedactionInfo]:
     """Fetch /akti_redaktsioonid.xml?grupiId=N and parse all redactions.
 
@@ -224,7 +255,19 @@ def fetch_redactions_feed(
     url = f"{_BASE_URL}/akti_redaktsioonid.xml?grupiId={grupi_id}"
     try:
         rss_bytes = fetch_rt_url(url, archive, max_age_hours=_FEED_CACHE_HOURS)
-    except RuntimeError:
+    except RuntimeError as exc:
+        if diagnostics_out is not None:
+            diagnostics_out.append(
+                RedactionsFeedDiagnostic(
+                    rule_id="ee_redactions_feed_fetch_failed",
+                    family="source_pathology",
+                    phase="acquisition",
+                    reason="RT redactions feed fetch failed; oracle selection cannot distinguish this from no redactions without the diagnostic",
+                    grupi_id=grupi_id,
+                    url=url,
+                    exception_type=type(exc).__name__,
+                )
+            )
         return []
 
     text = rss_bytes.decode("utf-8", errors="replace")
@@ -438,13 +481,14 @@ def get_oracle_aktviide_for_pit(
     grupi_id: str,
     as_of: str,
     archive: Any = None,
+    diagnostics_out: Optional[List[RedactionsFeedDiagnostic]] = None,
 ) -> Optional[str]:
     """Return aktViide of the consolidated redaction active at as_of.
 
     Picks the latest redaction whose effective date <= as_of.
     Returns None if no such redaction exists (as_of predates all redactions).
     """
-    redactions = fetch_redactions_feed(grupi_id, archive)
+    redactions = fetch_redactions_feed(grupi_id, archive, diagnostics_out=diagnostics_out)
     ascending  = sorted(redactions, key=lambda r: r.effective)
     result: Optional[str] = None
     for r in ascending:
