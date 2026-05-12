@@ -260,6 +260,11 @@ def test_eu_reul_resolve_command_supports_json_not_found(tmp_path, capsys) -> No
     payload = json.loads(capsys.readouterr().out)
     assert payload["found"] is False
     assert payload["eu_statute_id"] == "32016R0679"
+    assert payload["diagnostics"][0]["rule_id"] == "eu_reul_uri_resolution_failed"
+    assert payload["diagnostics"][0]["family"] == "target_resolution_recovery"
+    assert payload["diagnostics"][0]["phase"] == "lowering"
+    assert payload["diagnostics"][0]["strict_disposition"] == "block"
+    assert payload["diagnostics"][0]["detail"]["reason_code"] == "target_unresolved"
 
 
 def test_eu_reul_resolve_rejects_invalid_path_depth(tmp_path) -> None:
