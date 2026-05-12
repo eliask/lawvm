@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from lawvm.estonia.fetch import AmendmentRef, extract_amendment_refs
+from lawvm.estonia.fetch import (
+    AmendmentRef,
+    RedactionsFeedDiagnostic,
+    extract_amendment_refs,
+    fetch_redactions_feed,
+    get_oracle_aktviide_for_pit,
+)
 
 
 def test_extract_amendment_refs_preserves_partial_commencement_slices_from_note_text() -> None:
@@ -22,6 +28,47 @@ def test_extract_amendment_refs_preserves_partial_commencement_slices_from_note_
         AmendmentRef(aktViide="109012025001", passed="2024-12-11", joustumine="2026-01-01"),
         AmendmentRef(aktViide="109012025001", passed="2024-12-11", joustumine="2027-01-01"),
     ]
+
+
+def test_fetch_redactions_feed_records_fetch_failure_diagnostic(monkeypatch) -> None:
+    diagnostics: list[RedactionsFeedDiagnostic] = []
+
+    def fail_fetch_rt_url(url, archive, max_age_hours):
+        raise RuntimeError("RT unavailable")
+
+    monkeypatch.setattr("lawvm.estonia.fetch.fetch_rt_url", fail_fetch_rt_url)
+
+    redactions = fetch_redactions_feed("123", archive=None, diagnostics_out=diagnostics)
+
+    assert redactions == []
+    assert len(diagnostics) == 1
+    diagnostic = diagnostics[0]
+    assert diagnostic.rule_id == "ee_redactions_feed_fetch_failed"
+    assert diagnostic.family == "source_pathology"
+    assert diagnostic.phase == "acquisition"
+    assert diagnostic.grupi_id == "123"
+    assert diagnostic.exception_type == "RuntimeError"
+    assert diagnostic.strict_disposition == "block"
+    assert diagnostic.as_detail()["rule_id"] == "ee_redactions_feed_fetch_failed"
+
+
+def test_get_oracle_aktviide_for_pit_threads_redactions_feed_diagnostics(monkeypatch) -> None:
+    diagnostics: list[RedactionsFeedDiagnostic] = []
+
+    def fail_fetch_rt_url(url, archive, max_age_hours):
+        raise RuntimeError("RT unavailable")
+
+    monkeypatch.setattr("lawvm.estonia.fetch.fetch_rt_url", fail_fetch_rt_url)
+
+    oracle_id = get_oracle_aktviide_for_pit(
+        "123",
+        "2026-01-01",
+        archive=None,
+        diagnostics_out=diagnostics,
+    )
+
+    assert oracle_id is None
+    assert [diagnostic.rule_id for diagnostic in diagnostics] == ["ee_redactions_feed_fetch_failed"]
 
 
 def test_extract_amendment_refs_uses_decree_namespace() -> None:
