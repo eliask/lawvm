@@ -282,6 +282,32 @@ def iter_no_unmapped_lovtidend_xml_members(source_path: Path | None = None) -> I
         )
 
 
+def iter_no_unmapped_current_xml_members(source_path: Path | None = None) -> Iterator[NOLocatedArtifact]:
+    """Yield current-law XML members whose filename cannot be mapped to a law id."""
+    source_path = resolve_no_source_path(source_path)
+    if is_no_farchive_path(source_path):
+        return
+    current_archive = source_path / "gjeldende-lover.tar.bz2"
+    if not current_archive.exists():
+        return
+    with tarfile.open(current_archive, "r:bz2") as tf:
+        for member in tf.getmembers():
+            if not member.name.endswith(".xml"):
+                continue
+            if lovdata_filename_to_id(member.name) is not None:
+                continue
+            file_obj = tf.extractfile(member)
+            if file_obj is None:
+                continue
+            yield NOLocatedArtifact(
+                locator="",
+                logical_id="",
+                source_name=current_archive.name,
+                member_name=member.name,
+                payload=file_obj.read(),
+            )
+
+
 def _iter_artifacts_from_farchive(
     db_path: Path,
     *,
@@ -469,6 +495,7 @@ def ingest_no_public_archives(
     db_path = db_path or DEFAULT_NORWAY_DB
     archive = open_no_archive(db_path)
     skipped_existing_entries: list[dict[str, str]] = []
+    skipped_unmapped_entries: list[dict[str, Any]] = []
     report: dict[str, object] = {
         "source_dir": str(source_dir),
         "db_path": str(db_path),
@@ -477,6 +504,8 @@ def ingest_no_public_archives(
         "amendment_locators_stored": 0,
         "skipped_existing": 0,
         "skipped_existing_entries": skipped_existing_entries,
+        "skipped_unmapped": 0,
+        "skipped_unmapped_entries": skipped_unmapped_entries,
     }
 
     def _record_skipped_existing(artifact: NOLocatedArtifact, *, kind: str) -> None:
@@ -495,7 +524,30 @@ def ingest_no_public_archives(
             }
         )
 
+    def _record_skipped_unmapped(artifact: NOLocatedArtifact, *, kind: str) -> None:
+        report["skipped_unmapped"] = cast(int, report["skipped_unmapped"]) + 1
+        skipped_unmapped_entries.append(
+            {
+                "rule_id": "no_ingest_unmapped_xml_member",
+                "phase": "acquisition",
+                "family": "source_pathology",
+                "reason": "Norway Lovdata XML member filename could not be mapped to a legal source id",
+                "kind": kind,
+                "locator": artifact.locator,
+                "logical_id": artifact.logical_id,
+                "source_name": artifact.source_name,
+                "member_name": artifact.member_name,
+                "blocking": True,
+                "strict_disposition": "block",
+                "quirks_disposition": "record",
+            }
+        )
+
     try:
+        for artifact in iter_no_unmapped_current_xml_members(source_dir):
+            _record_skipped_unmapped(artifact, kind="current")
+        for artifact in iter_no_unmapped_lovtidend_xml_members(source_dir):
+            _record_skipped_unmapped(artifact, kind="lovtidend")
         for artifact in _iter_current_artifacts_from_dir(source_dir):
             if skip_existing and archive.has(artifact.locator):
                 _record_skipped_existing(artifact, kind="current")

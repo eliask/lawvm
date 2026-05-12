@@ -129,6 +129,55 @@ def test_build_no_inventory_accepts_farchive_source_path(tmp_path) -> None:
     assert inventory["current_laws_with_amendments_fully_replayable_executable"] == 1
 
 
+def test_ingest_no_public_archives_reports_unmapped_xml_members(tmp_path) -> None:
+    _write_archive(
+        tmp_path / "gjeldende-lover.tar.bz2",
+        [("nl/unexpected-current.xml", b"<html/>")],
+    )
+    _write_archive(
+        tmp_path / "lovtidend-avd1-2025.tar.bz2",
+        [("lti/2025/unexpected-lovtidend.xml", b"<html/>")],
+    )
+    db_path = tmp_path / "norway.farchive"
+
+    report = ingest_no_public_archives(tmp_path, db_path)
+
+    assert report["current_locators_stored"] == 0
+    assert report["original_locators_stored"] == 0
+    assert report["amendment_locators_stored"] == 0
+    assert report["skipped_unmapped"] == 2
+    assert report["skipped_unmapped_entries"] == [
+        {
+            "rule_id": "no_ingest_unmapped_xml_member",
+            "phase": "acquisition",
+            "family": "source_pathology",
+            "reason": "Norway Lovdata XML member filename could not be mapped to a legal source id",
+            "kind": "current",
+            "locator": "",
+            "logical_id": "",
+            "source_name": "gjeldende-lover.tar.bz2",
+            "member_name": "nl/unexpected-current.xml",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        },
+        {
+            "rule_id": "no_ingest_unmapped_xml_member",
+            "phase": "acquisition",
+            "family": "source_pathology",
+            "reason": "Norway Lovdata XML member filename could not be mapped to a legal source id",
+            "kind": "lovtidend",
+            "locator": "",
+            "logical_id": "",
+            "source_name": "lovtidend-avd1-2025.tar.bz2",
+            "member_name": "lti/2025/unexpected-lovtidend.xml",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        },
+    ]
+
+
 def test_build_no_inventory_accepts_commencement_override(tmp_path) -> None:
     _write_archive(
         tmp_path / "gjeldende-lover.tar.bz2",
