@@ -699,6 +699,7 @@ def _ee_precompose_pending_amendment_text_patches(
                         f"ee/{later_ref.aktViide}",
                         target_title=earlier_title,
                         ref_effective=later_ref.joustumine,
+                        adjudications_out=adjudications,
                     )
                 except Exception:
                     parsed = []
@@ -1098,13 +1099,17 @@ def replay_ee_to_pit(
                 for candidate in (*pair_plan.base_refs, *pair_plan.amendments_to_apply)
                 if candidate.aktViide == ref.aktViide and candidate.joustumine
             )
-            ops = parse_ee_amendment_ops(amend_xml, f"ee/{ref.aktViide}",
-                                         target_title=base.title,
-                                         ref_effective=ref.joustumine,
-                                         has_earlier_same_act_slice=any(
-                                             candidate.joustumine < ref.joustumine
-                                             for candidate in same_act_refs
-                                         ))
+            ops = parse_ee_amendment_ops(
+                amend_xml,
+                f"ee/{ref.aktViide}",
+                target_title=base.title,
+                ref_effective=ref.joustumine,
+                has_earlier_same_act_slice=any(
+                    candidate.joustumine < ref.joustumine
+                    for candidate in same_act_refs
+                ),
+                adjudications_out=slice_filter_adjudications,
+            )
         except Exception as e:
             _log(f"    parse failed: {e}")
             result.amendments_failed.append(ref.aktViide)
@@ -1176,6 +1181,7 @@ def replay_ee_to_pit(
                         and candidate.joustumine < ref.joustumine
                         for candidate in temporal_refs
                     ),
+                    adjudications_out=slice_filter_adjudications,
                 )
             except Exception as e:
                 _log(f"    temporal scan failed for {ref.aktViide}: {e}")

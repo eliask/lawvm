@@ -1770,6 +1770,7 @@ def parse_ee_amendment_ops(
     target_title: str = "",
     ref_effective: str = "",
     has_earlier_same_act_slice: bool = False,
+    adjudications_out: Optional[list[CompileAdjudication]] = None,
 ) -> List[LegalOperation]:
     """Parse an amendment XML document → List[LegalOperation].
 
@@ -2402,6 +2403,7 @@ def parse_ee_amendment_ops(
             target_title,
             ref_effective=ref_effective,
             has_earlier_same_act_slice=has_earlier_same_act_slice,
+            adjudications_out=adjudications_out,
         )
         if constitutional_review_ops:
             parsed_ops = constitutional_review_ops
@@ -2477,6 +2479,12 @@ def parse_ee_amendment_ops(
             ref_effective=ref_effective,
         )
     ):
+        _record_old_format_ref_slice_filtered_ops(
+            parsed_ops,
+            adjudications_out=adjudications_out,
+            target_section_labels=target_section_labels,
+            ref_effective=ref_effective,
+        )
         parsed_ops = []
     parsed_ops = _apply_old_format_commencement_effects(
         root,
@@ -3399,6 +3407,7 @@ def _parse_old_format_amendment_ops(
     target_title: str = "",
     ref_effective: str = "",
     has_earlier_same_act_slice: bool = False,
+    adjudications_out: Optional[list[CompileAdjudication]] = None,
 ) -> List[LegalOperation]:
     """Parse tyviseadus-schema amendment acts (pre-~2009 format).
 
@@ -3717,6 +3726,12 @@ def _parse_old_format_amendment_ops(
             section_effects=section_effects,
             ref_effective=ref_effective,
         ):
+            _record_old_format_ref_slice_filtered_ops(
+                all_ops,
+                adjudications_out=adjudications_out,
+                target_section_labels=target_section_labels,
+                ref_effective=ref_effective,
+            )
             return []
         return _apply_old_format_commencement_effects(
             root,
@@ -3821,6 +3836,12 @@ def _parse_old_format_amendment_ops(
             section_effects=section_effects,
             ref_effective=ref_effective,
         ):
+            _record_old_format_ref_slice_filtered_ops(
+                all_ops,
+                adjudications_out=adjudications_out,
+                target_section_labels=target_section_labels,
+                ref_effective=ref_effective,
+            )
             return []
         return _apply_old_format_commencement_effects(
             root,
@@ -3886,6 +3907,12 @@ def _parse_old_format_amendment_ops(
         section_effects=section_effects,
         ref_effective=ref_effective,
     ):
+        _record_old_format_ref_slice_filtered_ops(
+            ops,
+            adjudications_out=adjudications_out,
+            target_section_labels=target_section_labels,
+            ref_effective=ref_effective,
+        )
         return []
     return _apply_old_format_commencement_effects(
         root,
@@ -3901,6 +3928,46 @@ def _old_format_provenance_value(op: LegalOperation, prefix: str) -> str:
         if tag.startswith(prefix):
             return tag.removeprefix(prefix)
     return ""
+
+
+_EE_REF_SLICE_OP_FILTER_RULE = "ee_ref_slice_operation_filtered"
+
+
+def _record_old_format_ref_slice_filtered_ops(
+    ops: Sequence[LegalOperation],
+    *,
+    adjudications_out: Optional[list[CompileAdjudication]],
+    target_section_labels: tuple[str, ...],
+    ref_effective: str,
+) -> None:
+    """Record old-format parse-slice drops before preserving accepted empty ops."""
+    if adjudications_out is None:
+        return
+    for op in ops:
+        op_effective = op.source.effective if op.source is not None else ""
+        adjudications_out.append(
+            CompileAdjudication(
+                kind=_EE_REF_SLICE_OP_FILTER_RULE,
+                message=(
+                    "Filtered an Estonia old-format operation at parse time because "
+                    "the requested amendment reference slice does not own the target."
+                ),
+                source_statute=op.source.statute_id if op.source is not None else "",
+                op_id=op.op_id,
+                detail={
+                    "reason": "old_format_ref_slice_target_not_owned",
+                    "phase": "parse",
+                    "family": "temporal_recovery",
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                    "ref_effective": ref_effective,
+                    "op_effective": op_effective,
+                    "target": str(op.target),
+                    "action": op.action.value,
+                    "target_section_labels": target_section_labels,
+                },
+            )
+        )
 
 
 def _op_instruction_note_text(op: LegalOperation) -> str:
