@@ -6,7 +6,10 @@ requiring a populated farchive corpus or duckdb.
 from __future__ import annotations
 
 import json
+import sys
+import types
 from pathlib import Path
+from types import SimpleNamespace
 
 
 class TestExportParquet:
@@ -83,6 +86,68 @@ class TestExportParquet:
 
         result = _try_write_parquet(tmp_path / "empty.parquet", [])
         assert result is False
+
+    def test_project_one_statute_emits_finding_when_section_diff_fails(
+        self,
+        monkeypatch,
+    ) -> None:
+        from lawvm.tools.export_parquet import (
+            SECTION_DIFF_FAILED_RULE_ID,
+            _project_one_statute,
+        )
+
+        levenshtein = types.ModuleType("Levenshtein")
+        setattr(levenshtein, "ratio", lambda _left, _right: 1.0)
+
+        grafter = types.ModuleType("lawvm.finland.grafter")
+
+        class FakeMaster:
+            title = "Synthetic statute"
+            materialized_state = SimpleNamespace(ir=object())
+
+            def serialize_text(self) -> str:
+                return "synthetic replay text"
+
+        setattr(grafter, "replay_xml", lambda *args, **kwargs: FakeMaster())
+        setattr(grafter, "get_ground_truth", lambda _statute_id: "synthetic replay text")
+        setattr(grafter, "_oracle_version_label", lambda _statute_id: "synthetic-oracle")
+
+        section_keys = types.ModuleType("lawvm.tools.section_keys")
+        setattr(section_keys, "extract_ir_sections", lambda _ir: {"1": object()})
+        setattr(section_keys, "extract_oracle_sections", lambda _root: {})
+        setattr(
+            section_keys,
+            "reconcile_unique_unscoped_aliases",
+            lambda replay_sections, oracle_sections: (replay_sections, oracle_sections),
+        )
+
+        corpus = types.ModuleType("lawvm.finland.corpus")
+
+        def fail_ground_truth_tree(_statute_id: str) -> object:
+            raise RuntimeError("synthetic section diff failure")
+
+        setattr(corpus, "get_ground_truth_tree", fail_ground_truth_tree)
+
+        monkeypatch.setitem(sys.modules, "Levenshtein", levenshtein)
+        monkeypatch.setitem(sys.modules, "lawvm.finland.grafter", grafter)
+        monkeypatch.setitem(sys.modules, "lawvm.tools.section_keys", section_keys)
+        monkeypatch.setitem(sys.modules, "lawvm.finland.corpus", corpus)
+
+        result = _project_one_statute("2099/1", 3)
+
+        assert result["statute"][0]["status"] == "OK"
+        assert result["sections"] == []
+        assert len(result["findings"]) == 1
+        finding = result["findings"][0]
+        assert finding["rule_id"] == SECTION_DIFF_FAILED_RULE_ID
+        assert finding["claim_kind"] == SECTION_DIFF_FAILED_RULE_ID
+        assert finding["phase"] == "projection"
+        assert finding["blocking"] is False
+        assert finding["strict_disposition"] == "record"
+        assert finding["quirks_disposition"] == "record"
+        assert finding["status"] == "section_diff_failed"
+        assert finding["error_type"] == "RuntimeError"
+        assert "synthetic section diff failure" in finding["detail"]
 
 
 class TestSqlQuery:
