@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ci_sharded.sh — aggregate CI gate using named pytest shards.
 #
-# This is intended for CI matrix design and local diagnosis.  The canonical
-# single-command local gate remains ./scripts/ci.sh.
+# This is the shared implementation for the canonical local gate
+# (./scripts/ci.sh), CI matrix design, and local diagnosis.
 # Usage:
 #   ./scripts/ci_sharded.sh
 #   ./scripts/ci_sharded.sh --affected src/lawvm/norway/replay.py tests/test_norway_replay.py
