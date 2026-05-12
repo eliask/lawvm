@@ -9229,7 +9229,7 @@ def test_pre_scan_repeal_targets_skips_future_effective_repeals_past_cutoff() ->
 def test_pre_scan_repeal_targets_accepts_parent_title_for_vts_scan(monkeypatch) -> None:
     seen: list[str] = []
 
-    def _fake_extract(xml_bytes, parent_id, parent_title=""):
+    def _fake_extract(xml_bytes, parent_id, parent_title="", **_kwargs):
         seen.append(parent_title)
         return []
 
@@ -9268,6 +9268,74 @@ def test_pre_scan_repeal_targets_accepts_parent_title_for_vts_scan(monkeypatch) 
 
     assert got == [set()]
     assert seen == ["Sahkoverolaki"]
+
+
+def test_pre_scan_repeal_targets_preserves_vts_skipped_targets(monkeypatch) -> None:
+    from lawvm.finland.vts import VTS_SKIPPED_TARGET_RULE_ID, VtsSkippedTarget
+
+    def _fake_extract(
+        xml_bytes,
+        parent_id,
+        parent_title="",
+        skipped_targets_out=None,
+        source_diagnostics_out=None,
+    ):
+        assert skipped_targets_out is not None
+        assert source_diagnostics_out is not None
+        skipped_targets_out.append(
+            VtsSkippedTarget(
+                rule_id=VTS_SKIPPED_TARGET_RULE_ID,
+                reason_code="unsupported_subitem_target",
+                source_reason="subitem VTS target is not lowerable",
+                source_statute="2025/1352",
+                source_excerpt="4 a §:n 1 momentin 1 kohdan a alakohta.",
+                target_section="4a",
+                target_paragraph=1,
+                target_item="1",
+                target_subitem="a",
+            )
+        )
+        return []
+
+    monkeypatch.setattr(
+        "lawvm.finland.grafter_uncovered.extract_voimaantulo_repeals",
+        _fake_extract,
+    )
+    corpus = _corpus_store(
+        {
+            "2025/1352": """
+            <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+              <meta>
+                <lifecycle>
+                  <eventRef date="2025-01-01" />
+                </lifecycle>
+              </meta>
+              <dateEntryIntoForce date="2025-01-01" />
+              <formula name="enactingClause">
+                Talla lailla muutetaan sahkon valmisteverosta annetun lain (1260/1996) 4 a §.
+              </formula>
+            </akn>
+            """.encode("utf-8"),
+        }
+    )
+    skipped: list[VtsSkippedTarget] = []
+    source_diagnostics = []
+
+    got = _pre_scan_repeal_targets(
+        ["2025/1352"],
+        corpus,
+        parent_id="1996/1260",
+        parent_title="Sahkoverolaki",
+        cutoff_date=dt.date(2025, 12, 22),
+        vts_skipped_targets_out=skipped,
+        vts_source_diagnostics_out=source_diagnostics,
+    )
+
+    assert got == [set()]
+    assert [record.rule_id for record in skipped] == [VTS_SKIPPED_TARGET_RULE_ID]
+    assert skipped[0].reason_code == "unsupported_subitem_target"
+    assert skipped[0].target_subitem == "a"
+    assert source_diagnostics == []
 
 
 def test_fallback_does_not_repeal_parent_for_amendment_act_titles() -> None:

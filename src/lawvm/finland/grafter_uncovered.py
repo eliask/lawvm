@@ -85,7 +85,7 @@ from lawvm.finland.metadata import (
 )
 from lawvm.finland.payload_normalize import PayloadCompletenessWitness
 from lawvm.finland.acquisition import build_amendment_acquisition_result
-from lawvm.finland.vts import extract_voimaantulo_repeals
+from lawvm.finland.vts import VtsSkippedTarget, VtsSourceDiagnostic, extract_voimaantulo_repeals
 from lawvm.finland.johtolause import extract_legal_ops as extract_johtolause_legal_ops
 from lawvm.finland.xml_ir import fi_xml_to_ir_node
 from lawvm.finland.constraints import DEBUG
@@ -1862,6 +1862,8 @@ def _pre_scan_repeal_targets(
     parent_id: str = "",
     parent_title: str = "",
     cutoff_date: Optional[dt.date] = None,
+    vts_skipped_targets_out: Optional[List[VtsSkippedTarget]] = None,
+    vts_source_diagnostics_out: Optional[List[VtsSourceDiagnostic]] = None,
 ) -> "List[Set[RepealTargetRef]]":
     """Scan amendment schedule and return per-amendment REPEAL target sets.
 
@@ -1933,6 +1935,8 @@ def _pre_scan_repeal_targets(
                         xml_bytes,
                         parent_id,
                         parent_title=parent_title,
+                        skipped_targets_out=vts_skipped_targets_out,
+                        source_diagnostics_out=vts_source_diagnostics_out,
                     )
                     for op in vts_ops:
                         sec_n = _norm_num_token(op.target_section) if op.target_section else ""

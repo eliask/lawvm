@@ -12,6 +12,12 @@ from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
 from lawvm.finland.replay_pipeline import ReplayPlan, execute_replay_plan, prepare_replay_plan
 from lawvm.corpus_store import CorpusStore
 from lawvm.finland.statute import ReplayState, StatuteContext
+from lawvm.finland.vts import (
+    VTS_SKIPPED_TARGET_RULE_ID,
+    VTS_SOURCE_DIAGNOSTIC_RULE_ID,
+    VtsSkippedTarget,
+    VtsSourceDiagnostic,
+)
 
 
 def _corpus_stub() -> CorpusStore:
@@ -54,7 +60,7 @@ def test_execute_replay_plan_records_post_amendment_tree_invariant_findings() ->
         corpus=_corpus_stub(),
         process_muutoslaki=fake_process_muutoslaki,
         seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
-        pre_scan_repeal_targets=lambda mids, corpus, parent_id, cutoff_date=None: [],
+        pre_scan_repeal_targets=lambda mids, corpus, parent_id, **kwargs: [],
         future_repeals_for_index=lambda schedule: [set() for _ in schedule],
         post_process_tree=lambda ir, normalize: ir,
         check_tree_invariants=check_invariants,
@@ -117,7 +123,7 @@ def test_execute_replay_plan_collects_phase_result_findings() -> None:
         corpus=_corpus_stub(),
         process_muutoslaki=fake_process_muutoslaki,
         seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
-        pre_scan_repeal_targets=lambda mids, corpus, parent_id, cutoff_date=None: [],
+        pre_scan_repeal_targets=lambda mids, corpus, parent_id, **kwargs: [],
         future_repeals_for_index=lambda schedule: [set() for _ in schedule],
         post_process_tree=lambda ir, normalize: ir,
         check_tree_invariants=check_invariants,
@@ -180,7 +186,7 @@ def test_execute_replay_plan_records_chapter_seed_repair_findings() -> None:
         corpus=_corpus_stub(),
         process_muutoslaki=fake_process_muutoslaki,
         seed_missing_chapters=fake_seed_missing_chapters,
-        pre_scan_repeal_targets=lambda mids, corpus, parent_id, cutoff_date=None: [],
+        pre_scan_repeal_targets=lambda mids, corpus, parent_id, **kwargs: [],
         future_repeals_for_index=lambda schedule: [set() for _ in schedule],
         post_process_tree=lambda ir, normalize: ir,
         check_tree_invariants=check_invariants,
@@ -238,7 +244,7 @@ def test_execute_replay_plan_records_chapter_seed_source_pathology_findings() ->
         corpus=_corpus_stub(),
         process_muutoslaki=lambda mid, state, ctx, **kwargs: PhaseResult(output=state),
         seed_missing_chapters=fake_seed_missing_chapters,
-        pre_scan_repeal_targets=lambda mids, corpus, parent_id, cutoff_date=None: [],
+        pre_scan_repeal_targets=lambda mids, corpus, parent_id, **kwargs: [],
         future_repeals_for_index=lambda schedule: [set() for _ in schedule],
         post_process_tree=lambda ir, normalize: ir,
         check_tree_invariants=check_invariants,
@@ -253,6 +259,144 @@ def test_execute_replay_plan_records_chapter_seed_source_pathology_findings() ->
     assert findings[0].detail["family"] == "source_pathology"
     assert findings[0].detail["phase"] == "acquisition"
     assert findings[0].detail["strict_disposition"] == "block"
+
+
+def test_execute_replay_plan_projects_vts_prescan_skipped_targets_as_findings() -> None:
+    plan = ReplayPlan(
+        parent_id="test/1",
+        replay_mode="legal_pit",
+        replay_profile=SimpleNamespace(normalize_replay_text=False),
+        ctx=StatuteContext(
+            id="test/1",
+            title="Parent Law",
+            base_ir=IRNode(kind=IRNodeKind.BODY),
+            base_xml_bytes=b"<body/>",
+        ),
+        initial_state=ReplayState(ir=IRNode(kind=IRNodeKind.BODY)),
+        amendment_records=[{"statute_id": "1991/1"}],
+        amendment_ids=["1991/1"],
+        cutoff_date=None,
+        oracle_version_amendment_id="",
+        oracle_suspect="",
+    )
+    findings: list[Finding] = []
+    seen_parent_titles: list[str] = []
+
+    def fake_pre_scan(
+        mids,
+        corpus,
+        parent_id,
+        *,
+        parent_title="",
+        cutoff_date=None,
+        vts_skipped_targets_out=None,
+        vts_source_diagnostics_out=None,
+    ):
+        assert mids == ["1991/1"]
+        assert parent_id == "test/1"
+        assert cutoff_date is None
+        assert vts_source_diagnostics_out is not None
+        assert vts_skipped_targets_out is not None
+        seen_parent_titles.append(parent_title)
+        vts_skipped_targets_out.append(
+            VtsSkippedTarget(
+                rule_id=VTS_SKIPPED_TARGET_RULE_ID,
+                reason_code="unsupported_subitem_target",
+                source_reason="subitem VTS target is not lowerable",
+                source_statute="1991/1",
+                source_excerpt="1 §:n 2 momentin 3 kohdan a alakohta.",
+                target_section="1",
+                target_paragraph=2,
+                target_item="3",
+                target_subitem="a",
+            )
+        )
+        return [set()]
+
+    execute_replay_plan(
+        plan,
+        corpus=_corpus_stub(),
+        process_muutoslaki=lambda mid, state, ctx, **kwargs: PhaseResult(output=state),
+        seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
+        pre_scan_repeal_targets=fake_pre_scan,
+        future_repeals_for_index=lambda schedule: [set() for _ in schedule],
+        post_process_tree=lambda ir, normalize: ir,
+        check_tree_invariants=check_invariants,
+        findings_out=findings,
+    )
+
+    assert seen_parent_titles == ["Parent Law"]
+    assert [(finding.kind, finding.role, finding.blocking) for finding in findings] == [
+        (VTS_SKIPPED_TARGET_RULE_ID, "observation", False)
+    ]
+    assert findings[0].stage == "frontend_extraction"
+    assert findings[0].source_statute == "1991/1"
+    assert findings[0].detail["reason_code"] == "unsupported_subitem_target"
+    assert findings[0].detail["prescan_phase"] == "future_repeal_scan"
+
+
+def test_execute_replay_plan_projects_vts_prescan_source_diagnostics_as_findings() -> None:
+    plan = ReplayPlan(
+        parent_id="test/1",
+        replay_mode="legal_pit",
+        replay_profile=SimpleNamespace(normalize_replay_text=False),
+        ctx=StatuteContext(
+            id="test/1",
+            title="Parent Law",
+            base_ir=IRNode(kind=IRNodeKind.BODY),
+            base_xml_bytes=b"<body/>",
+        ),
+        initial_state=ReplayState(ir=IRNode(kind=IRNodeKind.BODY)),
+        amendment_records=[{"statute_id": "1991/1"}],
+        amendment_ids=["1991/1"],
+        cutoff_date=None,
+        oracle_version_amendment_id="",
+        oracle_suspect="",
+    )
+    findings: list[Finding] = []
+
+    def fake_pre_scan(
+        mids,
+        corpus,
+        parent_id,
+        *,
+        parent_title="",
+        cutoff_date=None,
+        vts_skipped_targets_out=None,
+        vts_source_diagnostics_out=None,
+    ):
+        assert vts_skipped_targets_out is not None
+        assert vts_source_diagnostics_out is not None
+        assert parent_title == "Parent Law"
+        vts_source_diagnostics_out.append(
+            VtsSourceDiagnostic(
+                rule_id=VTS_SOURCE_DIAGNOSTIC_RULE_ID,
+                reason_code="no_candidate_containers",
+                source_reason="no body sections available for VTS scan",
+                source_statute="1991/1",
+                source_excerpt="",
+            )
+        )
+        return [set()]
+
+    execute_replay_plan(
+        plan,
+        corpus=_corpus_stub(),
+        process_muutoslaki=lambda mid, state, ctx, **kwargs: PhaseResult(output=state),
+        seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
+        pre_scan_repeal_targets=fake_pre_scan,
+        future_repeals_for_index=lambda schedule: [set() for _ in schedule],
+        post_process_tree=lambda ir, normalize: ir,
+        check_tree_invariants=check_invariants,
+        findings_out=findings,
+    )
+
+    assert [(finding.kind, finding.role, finding.blocking) for finding in findings] == [
+        (VTS_SOURCE_DIAGNOSTIC_RULE_ID, "observation", False)
+    ]
+    assert findings[0].stage == "frontend_extraction"
+    assert findings[0].detail["reason_code"] == "no_candidate_containers"
+    assert findings[0].detail["prescan_phase"] == "future_repeal_scan"
 
 
 def test_prepare_replay_plan_dedupes_consecutive_identical_amendment_records() -> None:
@@ -332,7 +476,7 @@ def test_execute_replay_plan_does_not_pass_internal_adjudication_sink() -> None:
         corpus=_corpus_stub(),
         process_muutoslaki=fake_process_muutoslaki,
         seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
-        pre_scan_repeal_targets=lambda mids, corpus, parent_id, cutoff_date=None: [],
+        pre_scan_repeal_targets=lambda mids, corpus, parent_id, **kwargs: [],
         future_repeals_for_index=lambda schedule: [set() for _ in schedule],
         post_process_tree=lambda ir, normalize: ir,
         check_tree_invariants=check_invariants,
@@ -370,7 +514,7 @@ def test_execute_replay_plan_passes_mutation_events_sink_to_process_muutoslaki()
         corpus=_corpus_stub(),
         process_muutoslaki=fake_process_muutoslaki,
         seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
-        pre_scan_repeal_targets=lambda mids, corpus, parent_id, cutoff_date=None: [],
+        pre_scan_repeal_targets=lambda mids, corpus, parent_id, **kwargs: [],
         future_repeals_for_index=lambda schedule: [set() for _ in schedule],
         post_process_tree=lambda ir, normalize: ir,
         check_tree_invariants=check_invariants,
@@ -412,7 +556,7 @@ def test_execute_replay_plan_passes_sparse_leftovers_sink_to_process_muutoslaki(
         corpus=_corpus_stub(),
         process_muutoslaki=fake_process_muutoslaki,
         seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
-        pre_scan_repeal_targets=lambda mids, corpus, parent_id, cutoff_date=None: [],
+        pre_scan_repeal_targets=lambda mids, corpus, parent_id, **kwargs: [],
         future_repeals_for_index=lambda schedule: [set() for _ in schedule],
         post_process_tree=lambda ir, normalize: ir,
         check_tree_invariants=check_invariants,
@@ -454,7 +598,7 @@ def test_execute_replay_plan_passes_sparse_slot_bindings_sink_to_process_muutosl
         corpus=_corpus_stub(),
         process_muutoslaki=fake_process_muutoslaki,
         seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
-        pre_scan_repeal_targets=lambda mids, corpus, parent_id, cutoff_date=None: [],
+        pre_scan_repeal_targets=lambda mids, corpus, parent_id, **kwargs: [],
         future_repeals_for_index=lambda schedule: [set() for _ in schedule],
         post_process_tree=lambda ir, normalize: ir,
         check_tree_invariants=check_invariants,
@@ -504,7 +648,7 @@ def test_execute_replay_plan_collects_temporal_events_from_phase_result() -> Non
         corpus=_corpus_stub(),
         process_muutoslaki=fake_process_muutoslaki,
         seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
-        pre_scan_repeal_targets=lambda mids, corpus, parent_id, cutoff_date=None: [],
+        pre_scan_repeal_targets=lambda mids, corpus, parent_id, **kwargs: [],
         future_repeals_for_index=lambda schedule: [set() for _ in schedule],
         post_process_tree=lambda ir, normalize: ir,
         check_tree_invariants=check_invariants,
@@ -542,7 +686,7 @@ def test_execute_replay_plan_handles_empty_temporal_events_without_side_channels
         corpus=_corpus_stub(),
         process_muutoslaki=fake_process_muutoslaki,
         seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
-        pre_scan_repeal_targets=lambda mids, corpus, parent_id, cutoff_date=None: [],
+        pre_scan_repeal_targets=lambda mids, corpus, parent_id, **kwargs: [],
         future_repeals_for_index=lambda schedule: [set() for _ in schedule],
         post_process_tree=lambda ir, normalize: ir,
         check_tree_invariants=check_invariants,
@@ -590,7 +734,7 @@ def test_execute_replay_plan_uses_phase_result_contract_without_optional_side_ba
         corpus=_corpus_stub(),
         process_muutoslaki=fake_process_muutoslaki,
         seed_missing_chapters=lambda ir, mids, corpus, diagnostics_out=None: (ir, set()),
-        pre_scan_repeal_targets=lambda mids, corpus, parent_id, cutoff_date=None: [],
+        pre_scan_repeal_targets=lambda mids, corpus, parent_id, **kwargs: [],
         future_repeals_for_index=lambda schedule: [set() for _ in schedule],
         post_process_tree=lambda ir, normalize: ir,
         check_tree_invariants=check_invariants,
