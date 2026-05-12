@@ -141,7 +141,7 @@ def test_ir_statute_from_dict_rejects_schedules_payload() -> None:
         )
 
 
-def test_xml_body_to_ir_ignores_top_level_supplements() -> None:
+def test_xml_body_to_ir_preserves_top_level_supplements() -> None:
     tree = etree.fromstring(
         """
         <akomaNtoso>
@@ -161,7 +161,8 @@ def test_xml_body_to_ir_ignores_top_level_supplements() -> None:
 
     assert statute.title == "Body Only"
     assert statute.body.kind == IRNodeKind.BODY
-    assert [child.kind for child in statute.supplements] == []
+    assert [child.kind for child in statute.supplements] == [IRNodeKind.SCHEDULE]
+    assert statute.supplements[0].label == "1"
     assert [child.kind for child in statute.body.children] == [IRNodeKind.SECTION]
 
 
