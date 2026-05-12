@@ -286,15 +286,23 @@ async def _build_fi_timelines(
 
     n_ok = n_skip = n_cites = n_eu_cites = n_delegs = 0
     statutes_meta: dict = {}
+    skipped_statutes: list[dict[str, str]] = []
     sem = asyncio.Semaphore(concurrency)
 
     async def _one(sid: str):
         async with sem:
             try:
-                return await _build_statute_graph_fi(sid)
+                return await _build_statute_graph_fi(sid), None
             except Exception as exc:
                 print(f"\n  [skip] {sid}: {exc}", file=sys.stderr)
-                return None
+                return None, {
+                    "rule_id": "fi_build_timeline_statute_skipped",
+                    "phase": "build",
+                    "family": "source_pathology",
+                    "reason": "Finnish timeline build skipped statute after graph construction failure",
+                    "statute_id": sid,
+                    "error": str(exc),
+                }
 
     with (
         open(output_dir / "citations.jsonl", "w", encoding="utf-8") as cite_f,
@@ -307,9 +315,11 @@ async def _build_fi_timelines(
                 print(f"  [{batch_start+1}–{batch_end}/{n_total}]", file=sys.stderr, end="\r")
             results = await asyncio.gather(*[_one(sid) for sid in batch])
 
-            for sg in results:
+            for sg, skip_record in results:
                 if sg is None:
                     n_skip += 1
+                    if skip_record is not None:
+                        skipped_statutes.append(skip_record)
                     continue
                 n_ok += 1
                 statutes_meta[sg.statute_id] = {
@@ -351,6 +361,7 @@ async def _build_fi_timelines(
     _write_fi_artifact(
         output_dir, statutes_meta, n_ok, n_skip, n_cites, n_eu_cites, n_delegs,
         with_timelines=True,
+        skipped_statutes=skipped_statutes,
     )
 
 
@@ -367,6 +378,7 @@ def _write_fi_artifact(
     n_eu_cites: int,
     n_delegs: int,
     with_timelines: bool,
+    skipped_statutes: Optional[List[dict[str, str]]] = None,
 ) -> None:
     from lawvm.finland.amendment_index import get_amendment_children
 
@@ -396,6 +408,7 @@ def _write_fi_artifact(
         "n_eu_ref_edges": n_eu_cites,
         "n_delegation_edges": n_delegs,
         "n_amendment_links": n_amendment_links,
+        "skipped_statutes": skipped_statutes or [],
     }
     with open(output_dir / "stats.json", "w", encoding="utf-8") as f:
         json.dump(stats, f, ensure_ascii=False, indent=2)
@@ -591,16 +604,27 @@ def main(args: "argparse.Namespace") -> None:
 
     n_ok = n_skip = n_cites = n_eu_cites = n_delegs = 0
     statutes_meta: dict = {}
+    skipped_statutes: list[dict[str, str]] = []
 
     with (
         open(output_dir / "citations.jsonl", "w", encoding="utf-8") as cite_f,
         open(output_dir / "delegations.jsonl", "w", encoding="utf-8") as delg_f,
     ):
-        for result in _build_fi_lightweight_parallel(
-            statute_ids, n_workers, verbose
+        for sid, result in zip(
+            statute_ids,
+            _build_fi_lightweight_parallel(statute_ids, n_workers, verbose),
         ):
             if result is None:
                 n_skip += 1
+                skipped_statutes.append(
+                    {
+                        "rule_id": "fi_build_source_missing_skipped",
+                        "phase": "build",
+                        "family": "source_pathology",
+                        "reason": "Finnish lightweight build skipped statute because source XML was unavailable",
+                        "statute_id": sid,
+                    }
+                )
                 continue
             n_ok += 1
             sid = result["statute_id"]
@@ -624,4 +648,5 @@ def main(args: "argparse.Namespace") -> None:
     _write_fi_artifact(
         output_dir, statutes_meta, n_ok, n_skip, n_cites, n_eu_cites, n_delegs,
         with_timelines=False,
+        skipped_statutes=skipped_statutes,
     )

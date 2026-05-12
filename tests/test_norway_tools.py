@@ -276,6 +276,82 @@ def test_build_no_records_skipped_statutes_in_stats(tmp_path, monkeypatch) -> No
     ]
 
 
+def test_build_fi_lightweight_records_missing_source_skip(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    corpus_path = tmp_path / "corpus.csv"
+    corpus_path.write_text("row,1999/1\n", encoding="utf-8")
+    output_dir = tmp_path / "graph"
+
+    def fake_parallel(statute_ids, _n_workers, _verbose):
+        assert statute_ids == ["1999/1"]
+        yield None
+
+    monkeypatch.setattr(build_tools, "_build_fi_lightweight_parallel", fake_parallel)
+    monkeypatch.setattr("lawvm.finland.amendment_index.get_amendment_children", lambda: {})
+
+    build_tools.main(
+        Namespace(
+            jurisdiction="fi",
+            output=str(output_dir),
+            verbose=False,
+            full=False,
+            corpus=str(corpus_path),
+            with_timelines=False,
+            concurrency=1,
+        )
+    )
+
+    stats = json.loads((output_dir / "stats.json").read_text())
+    assert stats["n_skipped"] == 1
+    assert stats["skipped_statutes"] == [
+        {
+            "rule_id": "fi_build_source_missing_skipped",
+            "phase": "build",
+            "family": "source_pathology",
+            "reason": "Finnish lightweight build skipped statute because source XML was unavailable",
+            "statute_id": "1999/1",
+        },
+    ]
+
+
+def test_build_fi_timelines_records_graph_failure_skip(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    output_dir = tmp_path / "graph"
+
+    async def fake_build_statute_graph_fi(sid: str):
+        assert sid == "1999/1"
+        raise ValueError("bad graph")
+
+    monkeypatch.setattr("lawvm.finland.graph.build_statute_graph_fi", fake_build_statute_graph_fi)
+    monkeypatch.setattr("lawvm.finland.amendment_index.get_amendment_children", lambda: {})
+
+    asyncio.run(
+        build_tools._build_fi_timelines(
+            statute_ids=["1999/1"],
+            output_dir=output_dir,
+            concurrency=1,
+            verbose=False,
+        )
+    )
+
+    stats = json.loads((output_dir / "stats.json").read_text())
+    assert stats["n_skipped"] == 1
+    assert stats["skipped_statutes"] == [
+        {
+            "rule_id": "fi_build_timeline_statute_skipped",
+            "phase": "build",
+            "family": "source_pathology",
+            "reason": "Finnish timeline build skipped statute after graph construction failure",
+            "statute_id": "1999/1",
+            "error": "bad graph",
+        },
+    ]
+
+
 def test_no_frontier_tool_emits_json(tmp_path, monkeypatch, capsys) -> None:
     # Pre-import verify BEFORE patching inventory, so verify.py's module-level
     # `from lawvm.norway.inventory import build_no_inventory` binds the real
