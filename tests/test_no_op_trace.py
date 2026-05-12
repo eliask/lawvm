@@ -6,6 +6,7 @@ import tarfile
 from argparse import Namespace
 from pathlib import Path
 
+from lawvm.norway.index import NOAmendmentIndex, NOAmendmentIndexEntry
 from lawvm.tools.no_op_trace import main as no_op_trace_main
 
 
@@ -112,3 +113,54 @@ def test_no_op_trace_text_prints_bounded_summary(tmp_path, capsys) -> None:
     assert "sources/ops" in output
     assert "compiled=" in output
     assert "payload :" in output
+
+
+def test_no_op_trace_uses_exact_index_member_witness(tmp_path, capsys) -> None:
+    member_name = "lti/2025/nl-20250202-005.xml"
+    first_archive = tmp_path / "lovtidend-avd1-2001-2025.tar.bz2"
+    selected_archive = tmp_path / "lovtidend-avd1-2025-2026.tar.bz2"
+    _write_archive(
+        tmp_path / "gjeldende-lover.tar.bz2",
+        [("nl/nl-20250101-001.xml", _BASE_XML)],
+    )
+    _write_archive(
+        first_archive,
+        [(member_name, _AMENDMENT_XML.replace(b"Oppdatert tekst", b"Wrong witness"))],
+    )
+    _write_archive(
+        selected_archive,
+        [(member_name, _AMENDMENT_XML.replace(b"Oppdatert tekst", b"Selected witness"))],
+    )
+    index = NOAmendmentIndex(
+        data_dir=str(tmp_path),
+        archive_names=[first_archive.name, selected_archive.name],
+        entries=[
+            NOAmendmentIndexEntry(
+                source_id="no/lovtid/2025-02-02-5",
+                archive=selected_archive.name,
+                member_name=member_name,
+                effective_status="dated",
+                effective_date="2025-02-10",
+                raw_date_in_force="2025-02-10",
+                title="Selected amendment",
+                base_ids=("no/lov/2025-01-01-1",),
+                n_ops=2,
+            )
+        ],
+    )
+    index_path = tmp_path / "no_index.json"
+    index_path.write_text(json.dumps(index.to_dict()), encoding="utf-8")
+
+    no_op_trace_main(
+        Namespace(
+            base_id="no/lov/2025-01-01-1",
+            data_dir=str(tmp_path),
+            index=str(index_path),
+            path=["section:2"],
+            limit=20,
+            json=True,
+        )
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["ops"][0]["payload"]["text"] == "Selected witness."

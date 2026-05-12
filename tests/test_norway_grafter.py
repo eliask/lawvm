@@ -1256,6 +1256,34 @@ def test_parse_no_amendment_ops_splits_single_legalp_multi_sentence_payload_acro
     ]
 
 
+def test_parse_no_amendment_ops_splits_single_legalp_sentence_payload_without_lead_tail() -> None:
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <article class="document-change" data-document="lov/2024-01-12-1">
+      <article class="change"
+               data-change-part="lov/2024-01-12-1/§3-2/ledd/8/setning/2 lov/2024-01-12-1/§3-2/ledd/8/setning/3">
+        <article class="legalP">Første nye punktum. Andre nye punktum.</article>
+      </article>
+    </article>
+  </body>
+</html>
+""".encode("utf-8")
+
+    ops = parse_no_amendment_ops(xml, "no/lovtid/2025-12-22-123")
+
+    assert [(op.target.path, op.payload.text if op.payload else None) for op in ops] == [
+        (
+            (("section", "3-2"), ("subsection", "8"), ("sentence", "2")),
+            "Første nye punktum.",
+        ),
+        (
+            (("section", "3-2"), ("subsection", "8"), ("sentence", "3")),
+            "Andre nye punktum.",
+        ),
+    ]
+
+
 def test_parse_no_amendment_ops_inferrs_sentence_targets_from_structured_subsection_lead() -> None:
     xml = """<?xml version="1.0" encoding="utf-8"?>
 <html lang="nb">

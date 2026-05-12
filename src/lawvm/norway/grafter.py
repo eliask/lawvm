@@ -851,11 +851,11 @@ def _extract_payload_candidates(
                 for sentence_text, target in zip(sentences, direct_targets):
                     if not target.leaf_label():
                         continue
-                        candidates[("sentence", target.leaf_label())] = IRNode(
-                            kind=IRNodeKind.SENTENCE,
-                            label=target.leaf_label(),
-                            text=sentence_text,
-                        )
+                    candidates[("sentence", target.leaf_label())] = IRNode(
+                        kind=IRNodeKind.SENTENCE,
+                        label=target.leaf_label(),
+                        text=sentence_text,
+                    )
     if direct_targets and {target.leaf_kind() for target in direct_targets} == {"sentence"} and len(direct_targets) > 1:
         raw_text = _normalize_space(" ".join(str(_t) for _t in change_el.itertext()))
         if ":" in raw_text:
