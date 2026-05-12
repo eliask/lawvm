@@ -325,6 +325,9 @@ def _ee_extract_rewritten_source_paragraph_numbers(
 _EE_CANCELLED_PENDING_REF_FILTER_RULE = "ee_cancelled_pending_amendment_ref_filtered"
 _EE_CANCELLED_PENDING_REF_FETCH_FAILED_RULE = "ee_cancelled_pending_ref_source_fetch_failed"
 _EE_REF_SLICE_OP_FILTER_RULE = "ee_ref_slice_operation_filtered"
+_EE_AMENDMENT_SOURCE_FETCH_FAILED_RULE = "ee_amendment_source_fetch_failed"
+_EE_AMENDMENT_PARSE_FAILED_RULE = "ee_amendment_parse_failed"
+_EE_TEMPORAL_SOURCE_SCAN_FAILED_RULE = "ee_temporal_source_scan_failed"
 
 
 def _ee_orchestration_adjudication(
@@ -1125,6 +1128,7 @@ def replay_ee_to_pit(
     global_seq = 1
     amendment_xml_by_ref: dict[str, bytes] = {}
     slice_filter_adjudications: list[CompileAdjudication] = []
+    source_lane_failure_adjudications: list[CompileAdjudication] = []
 
     for ref in sorted(to_apply, key=_ee_ref_sort_key):
         _log(f"  {ref.aktViide}  effective={ref.joustumine}...")
@@ -1133,6 +1137,22 @@ def replay_ee_to_pit(
         except Exception as e:
             _log(f"    fetch failed: {e}")
             result.amendments_failed.append(ref.aktViide)
+            source_lane_failure_adjudications.append(
+                _ee_orchestration_adjudication(
+                    kind=_EE_AMENDMENT_SOURCE_FETCH_FAILED_RULE,
+                    message="Estonia replay skipped amendment because source XML fetch failed.",
+                    source_statute=f"ee/{ref.aktViide}",
+                    detail={
+                        "ref_amendment": ref.aktViide,
+                        "reason": "amendment_source_fetch_failed",
+                        "exception_type": type(e).__name__,
+                        "exception": str(e),
+                    },
+                    phase="acquisition",
+                    family="source_lane_failure",
+                    blocking=True,
+                )
+            )
             continue
         amendment_xml_by_ref[ref.aktViide] = amend_xml
 
@@ -1156,6 +1176,22 @@ def replay_ee_to_pit(
         except Exception as e:
             _log(f"    parse failed: {e}")
             result.amendments_failed.append(ref.aktViide)
+            source_lane_failure_adjudications.append(
+                _ee_orchestration_adjudication(
+                    kind=_EE_AMENDMENT_PARSE_FAILED_RULE,
+                    message="Estonia replay skipped amendment because operation parsing failed.",
+                    source_statute=f"ee/{ref.aktViide}",
+                    detail={
+                        "ref_amendment": ref.aktViide,
+                        "reason": "amendment_parse_failed",
+                        "exception_type": type(e).__name__,
+                        "exception": str(e),
+                    },
+                    phase="parse",
+                    family="source_lane_failure",
+                    blocking=True,
+                )
+            )
             continue
         ops = _ee_filter_ops_for_ref_slice(
             ops,
@@ -1228,6 +1264,22 @@ def replay_ee_to_pit(
                 )
             except Exception as e:
                 _log(f"    temporal scan failed for {ref.aktViide}: {e}")
+                source_lane_failure_adjudications.append(
+                    _ee_orchestration_adjudication(
+                        kind=_EE_TEMPORAL_SOURCE_SCAN_FAILED_RULE,
+                        message="Estonia replay skipped temporal source scan because source fetch or parsing failed.",
+                        source_statute=f"ee/{ref.aktViide}",
+                        detail={
+                            "ref_amendment": ref.aktViide,
+                            "reason": "temporal_source_scan_failed",
+                            "exception_type": type(e).__name__,
+                            "exception": str(e),
+                        },
+                        phase="temporal",
+                        family="source_lane_failure",
+                        blocking=True,
+                    )
+                )
                 continue
             temporal_source_ops.extend(
                 replace(
@@ -1268,6 +1320,7 @@ def replay_ee_to_pit(
         *cancellation_filter_adjudications,
         *commencement_precomposition_adjudications,
         *slice_filter_adjudications,
+        *source_lane_failure_adjudications,
         *precomposition_adjudications,
         *adjudications,
     ]
