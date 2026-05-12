@@ -1826,6 +1826,7 @@ def parse_ee_amendment_ops(
         xml_bytes,
         source_id=source_id,
         target_title=target_title,
+        adjudications_out=adjudications_out,
     )
     cross_act_transitional_ops = _parse_cross_act_transitional_section_repeals(
         root,
@@ -2408,7 +2409,13 @@ def parse_ee_amendment_ops(
         if constitutional_review_ops:
             parsed_ops = constitutional_review_ops
         else:
-            preambul_ops = _parse_preambul_single_target_ops(root, source_id, root_ns, target_title)
+            preambul_ops = _parse_preambul_single_target_ops(
+                root,
+                source_id,
+                root_ns,
+                target_title,
+                adjudications_out=adjudications_out,
+            )
             parsed_ops = (
                 _prefer_old_format_html_parser(preambul_ops, old_format_ops)
                 if preambul_ops and old_format_ops
@@ -2582,6 +2589,7 @@ def _parse_constitutional_review_ops(
     *,
     source_id: str,
     target_title: str,
+    adjudications_out: Optional[list[CompileAdjudication]] = None,
 ) -> List[LegalOperation]:
     """Handle Riigikohus constitutional-review judgments that invalidate provisions."""
     return _tr_parse_constitutional_review_ops(
@@ -2592,6 +2600,7 @@ def _parse_constitutional_review_ops(
         title_matcher=_title_matches_para,
         normalize_num=_normalize_num,
         extract_ops=extract_ee_ops,
+        adjudications_out=adjudications_out,
     )
 
 
@@ -2600,6 +2609,7 @@ def _parse_preambul_single_target_ops(
     source_id: str,
     ns_str: str,
     target_title: str,
+    adjudications_out: Optional[list[CompileAdjudication]] = None,
 ) -> List[LegalOperation]:
     """Handle single-target amendment acts expressed as preambul + one content block."""
     def _parse_synthetic_preambul_target(
@@ -2633,6 +2643,7 @@ def _parse_preambul_single_target_ops(
         title_matcher=_title_matches_para,
         tavatekst_text=lambda element, _ns_str: _element_text_with_bold_section_boundaries(element),
         parse_muutmisseadus_ops=_parse_synthetic_preambul_target,
+        adjudications_out=adjudications_out,
     )
     normalized_ops: list[LegalOperation] = []
     for op in ops:

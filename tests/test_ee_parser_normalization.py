@@ -38,6 +38,7 @@ from lawvm.core.ir import (
     StructuralAction,
 )
 from lawvm.core.semantic_types import FacetKind, TextPatchKindEnum, IRNodeKind
+from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.estonia.peg import extract_ee_ops, parse_html_op_items, parse_target
 from lawvm.estonia.target_resolution import split_embedded_act_sections, split_plaintext_numbered_op_texts
 
@@ -7120,6 +7121,38 @@ def test_parse_ee_amendment_ops_handles_preambul_single_target_insert() -> None:
     assert ops[0].target.path == (("section", "60_2"),)
 
 
+def test_parse_ee_amendment_ops_records_preambul_single_target_title_mismatch() -> None:
+    xml = """
+    <oigusakt xmlns="akt_1_10.06.2010">
+      <sisu>
+        <preambul>
+          <tavatekst><b>Riigikogu liikme staatuse seadust</b> täiendatakse §-ga 60 järgmises sõnastuses:</tavatekst>
+        </preambul>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Vale seadus",
+        adjudications_out=adjudications,
+    )
+
+    assert ops == []
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "ee_parse_preambul_single_target_rejected"
+    ]
+    assert adjudications[0].detail["rule_id"] == "ee_parse_preambul_single_target_title_mismatch"
+    assert adjudications[0].detail["phase"] == "parse"
+    assert adjudications[0].detail["family"] == "target_resolution_recovery"
+    assert adjudications[0].detail["reason"] == "target_title_mismatch"
+    assert adjudications[0].detail["target_title"] == "Vale seadus"
+    assert adjudications[0].detail["statute_fragment"] == "Riigikogu liikme staatuse seadust"
+    assert adjudications[0].detail["strict_disposition"] == "block"
+
+
 def test_parse_ee_amendment_ops_does_not_duplicate_direct_body_intro_payload() -> None:
     xml = """
     <oigusakt xmlns="muutmismaarus_1_10.02.2010">
@@ -7611,6 +7644,47 @@ def test_parse_ee_amendment_ops_handles_constitutional_review_repeal_in_genitive
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.REPEAL
     assert ops[0].target.path == (("section", "19"), ("subsection", "2"), ("item", "2"))
+
+
+def test_parse_ee_amendment_ops_records_constitutional_review_title_mismatch() -> None:
+    xml = """
+    <oigusakt xmlns="akt_1_10.06.2010">
+      <aktinimi>
+        <nimi>
+          <pealkiri>Korruptsioonivastase seaduse § 19 põhiseaduspärasuse kontroll</pealkiri>
+        </nimi>
+      </aktinimi>
+      <sisu>
+        <sisuTekst>
+          <HTMLKonteiner><![CDATA[
+            <p><b>RESOLUTSIOON</b></p>
+            <p><b>Tunnistada korruptsioonivastase seaduse § 19 põhiseadusega vastuolus olevaks ja kehtetuks.</b></p>
+          ]]></HTMLKonteiner>
+        </sisuTekst>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Vale seadus",
+        adjudications_out=adjudications,
+    )
+
+    assert ops == []
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "ee_parse_constitutional_review_rejected"
+    ]
+    assert adjudications[0].detail["rule_id"] == "ee_parse_constitutional_review_target_title_mismatch"
+    assert adjudications[0].detail["phase"] == "parse"
+    assert adjudications[0].detail["family"] == "target_resolution_recovery"
+    assert adjudications[0].detail["reason"] == "target_title_mismatch"
+    assert adjudications[0].detail["target_title"] == "Vale seadus"
+    assert adjudications[0].detail["statute_fragment"] == "korruptsioonivastase seaduse"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
 
 
 def test_parse_ee_amendment_ops_keeps_direct_target_clause_inside_other_act_paragraph() -> None:

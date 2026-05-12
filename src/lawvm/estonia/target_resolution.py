@@ -13,6 +13,7 @@ import xml.etree.ElementTree as ET
 import html as html_lib
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource, StructuralAction
+from lawvm.replay_adjudication import CompileAdjudication
 
 from lawvm.estonia.act_identity_registry import (
     EEActIdentityRecord,
@@ -53,6 +54,40 @@ _EE_NESTED_DIRECT_TARGET_LAW_CLAUSE_RULE = "ee_nested_direct_target_law_clause"
 _EE_NESTED_DIRECT_TARGET_HEADER_CARRY_RULE = "ee_nested_direct_target_law_clause_header_carry"
 _OP_TEXT_RULE_PREFIX = "\x1eLAWVM_RULE:"
 _OP_TEXT_RULE_SUFFIX = "\x1f"
+
+
+def _record_ee_parse_rejection(
+    adjudications_out: list[CompileAdjudication] | None,
+    *,
+    kind: str,
+    message: str,
+    source_id: str,
+    rule_id: str,
+    reason: str,
+    family: str,
+    target_title: str = "",
+    statute_fragment: str = "",
+) -> None:
+    if adjudications_out is None:
+        return
+    adjudications_out.append(
+        CompileAdjudication(
+            kind=kind,
+            message=message,
+            source_statute=source_id,
+            detail={
+                "rule_id": rule_id,
+                "reason": reason,
+                "phase": "parse",
+                "family": family,
+                "target_title": target_title,
+                "statute_fragment": statute_fragment,
+                "blocking": True,
+                "strict_disposition": "block",
+                "quirks_disposition": "record",
+            },
+        )
+    )
 
 
 def _with_op_text_rule(text: str, rule_id: str) -> str:
@@ -3192,15 +3227,35 @@ def parse_constitutional_review_ops(
     title_matcher: Callable[[str, str], bool] = title_matches_para,
     normalize_num: Callable[[str], str] = _normalize_num,
     extract_ops: Callable[[str, OperationSource], list[LegalOperation]] = extract_ee_ops,
+    adjudications_out: list[CompileAdjudication] | None = None,
 ) -> list[LegalOperation]:
     """Handle Riigikohus constitutional-review judgments that invalidate provisions."""
-    if not target_title:
-        return []
     xml_text = xml_bytes.decode("utf-8", errors="ignore")
     xml_lower = xml_text.lower()
     if "põhiseaduspärasuse kontroll" not in xml_lower:
         return []
+    if not target_title:
+        _record_ee_parse_rejection(
+            adjudications_out,
+            kind="ee_parse_constitutional_review_rejected",
+            message="Estonia constitutional-review source was not parsed because no target title was available.",
+            source_id=source_id,
+            rule_id="ee_parse_constitutional_review_missing_target_title",
+            reason="missing_target_title",
+            family="target_resolution_recovery",
+        )
+        return []
     if "põhiseadusega vastuolus olevaks ja kehtetuks" not in xml_lower:
+        _record_ee_parse_rejection(
+            adjudications_out,
+            kind="ee_parse_constitutional_review_rejected",
+            message="Estonia constitutional-review source was not parsed because the invalidation trigger was absent.",
+            source_id=source_id,
+            rule_id="ee_parse_constitutional_review_missing_invalidation_trigger",
+            reason="missing_invalidation_trigger",
+            family="source_pathology",
+            target_title=target_title,
+        )
         return []
 
     plain = re.sub(r"<[^>]+>", " ", xml_text)
@@ -3215,15 +3270,47 @@ def parse_constitutional_review_ops(
         flags=re.IGNORECASE,
     )
     if match is None:
+        _record_ee_parse_rejection(
+            adjudications_out,
+            kind="ee_parse_constitutional_review_rejected",
+            message="Estonia constitutional-review source was not parsed because the invalidation target sentence did not match.",
+            source_id=source_id,
+            rule_id="ee_parse_constitutional_review_target_sentence_unmatched",
+            reason="target_sentence_unmatched",
+            family="source_pathology",
+            target_title=target_title,
+        )
         return []
     statute_fragment = re.sub(r"\s+", " ", match.group(1).strip())
     registry_record = lookup_act_identity(akt_viide=source_id, title=statute_fragment, alias=target_title)
     if registry_record is None:
         if not title_matcher(target_title, statute_fragment):
+            _record_ee_parse_rejection(
+                adjudications_out,
+                kind="ee_parse_constitutional_review_rejected",
+                message="Estonia constitutional-review source was not parsed because the statute fragment did not match the target title.",
+                source_id=source_id,
+                rule_id="ee_parse_constitutional_review_target_title_mismatch",
+                reason="target_title_mismatch",
+                family="target_resolution_recovery",
+                target_title=target_title,
+                statute_fragment=statute_fragment,
+            )
             return []
     else:
         if not _registry_record_matches_all(registry_record, target_title, statute_fragment):
             if not title_matcher(target_title, statute_fragment):
+                _record_ee_parse_rejection(
+                    adjudications_out,
+                    kind="ee_parse_constitutional_review_rejected",
+                    message="Estonia constitutional-review source was not parsed because registry and title matching rejected the target.",
+                    source_id=source_id,
+                    rule_id="ee_parse_constitutional_review_registry_mismatch",
+                    reason="registry_mismatch",
+                    family="target_resolution_recovery",
+                    target_title=target_title,
+                    statute_fragment=statute_fragment,
+                )
                 return []
 
     section = normalize_num(match.group(2).strip()).replace("_", " ")
@@ -3249,6 +3336,7 @@ def parse_preambul_single_target_ops(
     title_matcher: Callable[[str, str], bool] = title_matches_para,
     tavatekst_text: Callable[[ET.Element, str], str],
     parse_muutmisseadus_ops: Callable[[ET.Element, str, str, str], list[LegalOperation]],
+    adjudications_out: list[CompileAdjudication] | None = None,
 ) -> list[LegalOperation]:
     """Handle single-target amendment acts expressed as preambul plus one content block."""
     if not target_title:
@@ -3262,6 +3350,16 @@ def parse_preambul_single_target_ops(
     pre_tava_el = preambul.find(_ns(ns_str, "tavatekst"))
     pre_tava = tavatekst_text(pre_tava_el, ns_str) if pre_tava_el is not None else ""
     if not pre_tava:
+        _record_ee_parse_rejection(
+            adjudications_out,
+            kind="ee_parse_preambul_single_target_rejected",
+            message="Estonia preambul single-target source was not parsed because preambul tavatekst was empty.",
+            source_id=source_id,
+            rule_id="ee_parse_preambul_single_target_empty_intro",
+            reason="empty_intro",
+            family="source_pathology",
+            target_title=target_title,
+        )
         return []
     stat_fragment = extract_intro_statute_fragment(pre_tava)
     direct_sisu_blocks = [child for child in list(sisu) if child.tag == _ns(ns_str, "sisuTekst")]
@@ -3303,10 +3401,32 @@ def parse_preambul_single_target_ops(
     registry_record = lookup_act_identity(akt_viide=source_id, title=stat_fragment, alias=target_title)
     if registry_record is None:
         if not (stat_fragment and title_matcher(target_title, stat_fragment)):
+            _record_ee_parse_rejection(
+                adjudications_out,
+                kind="ee_parse_preambul_single_target_rejected",
+                message="Estonia preambul single-target source was not parsed because the statute fragment did not match the target title.",
+                source_id=source_id,
+                rule_id="ee_parse_preambul_single_target_title_mismatch",
+                reason="target_title_mismatch",
+                family="target_resolution_recovery",
+                target_title=target_title,
+                statute_fragment=stat_fragment,
+            )
             return []
     else:
         if not _registry_record_matches_all(registry_record, target_title, stat_fragment):
             if not (stat_fragment and title_matcher(target_title, stat_fragment)):
+                _record_ee_parse_rejection(
+                    adjudications_out,
+                    kind="ee_parse_preambul_single_target_rejected",
+                    message="Estonia preambul single-target source was not parsed because registry and title matching rejected the target.",
+                    source_id=source_id,
+                    rule_id="ee_parse_preambul_single_target_registry_mismatch",
+                    reason="registry_mismatch",
+                    family="target_resolution_recovery",
+                    target_title=target_title,
+                    statute_fragment=stat_fragment,
+                )
                 return []
 
     if not direct_sisu_blocks:
