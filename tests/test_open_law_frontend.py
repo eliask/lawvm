@@ -122,6 +122,26 @@ def test_parse_codify_multiple_payload_children_records_blocking_diagnostic() ->
     assert op.diagnostics[0].blocking is True
 
 
+def test_parse_codify_unsupported_payload_child_records_blocking_diagnostic() -> None:
+    ops = parse_open_law_codify_ops(
+        """
+        <document xmlns="https://open.law/schemas/library" xmlns:codify="https://open.law/schemas/codify">
+          <codify:replace doc="Code of Maryland Regulations" path="10|41|02|.04">
+            <section><num>.04</num><text>Supported payload.</text></section>
+            <table><row><cell>Unsupported sibling.</cell></row></table>
+          </codify:replace>
+        </document>
+        """,
+        source_id="editorial-actions/unsupported-payload-child.xml",
+    )
+
+    op = ops[0]
+    assert op.payload is None
+    assert [finding.kind for finding in op.diagnostics] == ["open_law_codify_unsupported_payload_child"]
+    assert op.diagnostics[0].blocking is True
+    assert "table" in op.diagnostics[0].message
+
+
 def test_parse_codify_expire_preserves_expire_date() -> None:
     ops = parse_open_law_codify_ops(
         """
@@ -180,6 +200,25 @@ def test_replay_multiple_payload_children_diagnostic_blocks_mutation() -> None:
     assert result.tree == tree
     assert not result.mutations
     assert [finding.kind for finding in result.findings] == ["open_law_codify_multiple_payload_children"]
+    assert result.findings[0].blocking is True
+
+
+def test_replay_unsupported_payload_child_diagnostic_blocks_mutation() -> None:
+    tree = parse_open_law_xml(_BASE_XML)
+    ops = parse_open_law_codify_ops(
+        _REPLACE_XML.replace(
+            "</section>",
+            "</section><table><row><cell>Unsupported sibling.</cell></row></table>",
+            1,
+        ),
+        source_id="editorial-actions/unsupported-payload-child.xml",
+    )
+
+    result = replay_open_law_ops(tree, ops)
+
+    assert result.tree == tree
+    assert not result.mutations
+    assert [finding.kind for finding in result.findings] == ["open_law_codify_unsupported_payload_child"]
     assert result.findings[0].blocking is True
 
 
