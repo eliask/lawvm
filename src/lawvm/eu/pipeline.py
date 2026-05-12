@@ -39,6 +39,32 @@ _EU_OPS_KIND_TO_IR: Dict[str, str] = {
 }
 
 
+@dataclass(frozen=True)
+class EUPipelineDiagnostic:
+    rule_id: str
+    family: str
+    phase: str
+    reason: str
+    celex: str
+    exception_type: str
+    blocking: bool = True
+    strict_disposition: str = "block"
+    quirks_disposition: str = "record"
+
+    def as_detail(self) -> dict[str, object]:
+        return {
+            "rule_id": self.rule_id,
+            "family": self.family,
+            "phase": self.phase,
+            "reason": self.reason,
+            "celex": self.celex,
+            "exception_type": self.exception_type,
+            "blocking": self.blocking,
+            "strict_disposition": self.strict_disposition,
+            "quirks_disposition": self.quirks_disposition,
+        }
+
+
 def _map_address(addr: LegalAddress) -> LegalAddress:
     """Translate ops-parser kinds in a LegalAddress to grafter IR kinds."""
     mapped = tuple((_EU_OPS_KIND_TO_IR.get(kind.lower(), kind.lower()), label) for kind, label in addr.path)
@@ -344,6 +370,7 @@ class EUReplayPipeline:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         stanza_cache = self.cache_dir / "stanza_cache"
         self.parser = EUOpsParser(cache_dir=str(stanza_cache))
+        self.diagnostics: list[EUPipelineDiagnostic] = []
 
     def discover_affecting_acts(self, celex: str) -> List[str]:
         """Query Cellar for acts that modify or amend the given CELEX."""
@@ -385,6 +412,13 @@ class EUReplayPipeline:
 
             return sorted(list(set(affecting_celexes)))
         except Exception as e:
+            self._record_diagnostic(
+                rule_id="eu_affecting_discovery_failed",
+                celex=celex,
+                phase="acquisition",
+                reason="EU Cellar affecting-act discovery failed; replay cannot distinguish this from no affecting acts without the diagnostic",
+                exc=e,
+            )
             print(f"Error discovering affecting acts for {celex}: {e}")
             return []
 
@@ -416,8 +450,35 @@ class EUReplayPipeline:
             text = text.replace("&lsquo;", "'").replace("&rsquo;", "'").replace("&nbsp;", " ")
             return text
         except Exception as e:
+            self._record_diagnostic(
+                rule_id="eu_amendment_text_fetch_failed",
+                celex=celex,
+                phase="acquisition",
+                reason="EU amendment text fetch failed; replay cannot distinguish this from an empty amendment text without the diagnostic",
+                exc=e,
+            )
             print(f"Error fetching amendment {celex}: {e}")
             return ""
+
+    def _record_diagnostic(
+        self,
+        *,
+        rule_id: str,
+        celex: str,
+        phase: str,
+        reason: str,
+        exc: Exception,
+    ) -> None:
+        self.diagnostics.append(
+            EUPipelineDiagnostic(
+                rule_id=rule_id,
+                family="source_pathology",
+                phase=phase,
+                reason=reason,
+                celex=celex,
+                exception_type=type(exc).__name__,
+            )
+        )
 
     def compile_ops_for_statute(self, celex: str) -> List[LegalOperation]:
         """Fetch affecting acts and compile their amendment text into LegalOperations."""

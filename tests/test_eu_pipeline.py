@@ -53,6 +53,28 @@ def test_discover_affecting_acts_deduplicates_filters_and_sorts(monkeypatch) -> 
     assert affecting == ["32000R0001", "32000R0002", "32000R0003"]
 
 
+def test_discover_affecting_acts_records_acquisition_failure(monkeypatch, tmp_path) -> None:
+    pipeline = EUReplayPipeline(cache_dir=tmp_path)
+
+    def fake_request_notice(notice):
+        raise RuntimeError("cellar unavailable")
+
+    monkeypatch.setattr("lawvm.eu.pipeline._request_notice", fake_request_notice)
+
+    affecting = pipeline.discover_affecting_acts("32000R0000")
+
+    assert affecting == []
+    assert len(pipeline.diagnostics) == 1
+    diagnostic = pipeline.diagnostics[0]
+    assert diagnostic.rule_id == "eu_affecting_discovery_failed"
+    assert diagnostic.family == "source_pathology"
+    assert diagnostic.phase == "acquisition"
+    assert diagnostic.celex == "32000R0000"
+    assert diagnostic.exception_type == "RuntimeError"
+    assert diagnostic.strict_disposition == "block"
+    assert diagnostic.as_detail()["rule_id"] == "eu_affecting_discovery_failed"
+
+
 def test_fetch_amendment_text_strips_html_and_entities(monkeypatch, tmp_path) -> None:
     pipeline = EUReplayPipeline(cache_dir=tmp_path)
 
@@ -90,6 +112,29 @@ def test_fetch_amendment_text_strips_html_and_entities(monkeypatch, tmp_path) ->
     assert "'Gamma'" in text
     assert "'Delta'" in text
     assert "<" not in text and ">" not in text
+
+
+def test_fetch_amendment_text_records_acquisition_failure(monkeypatch, tmp_path) -> None:
+    pipeline = EUReplayPipeline(cache_dir=tmp_path)
+
+    monkeypatch.setattr(
+        "lawvm.eu.pipeline._request_notice",
+        lambda notice: (b"<tree/>", {"ok": True}),
+    )
+
+    def fail_manifestation(_notice_path, language: str, manifestation_type: str):
+        raise ValueError("no manifestation")
+
+    monkeypatch.setattr(
+        "lawvm.eu.cellar.select_manifestation_option",
+        fail_manifestation,
+    )
+
+    text = pipeline.fetch_amendment_text("32016R0679")
+
+    assert text == ""
+    assert [diagnostic.rule_id for diagnostic in pipeline.diagnostics] == ["eu_amendment_text_fetch_failed"]
+    assert pipeline.diagnostics[0].exception_type == "ValueError"
 
 
 def _baseline_statute() -> IRStatute:
