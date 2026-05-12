@@ -2,7 +2,7 @@ from lxml import etree
 
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.core.ir_helpers import irnode_to_text
-from lawvm.xml_ingest import _collapse_text, xml_to_ir_node
+from lawvm.xml_ingest import _collapse_text, xml_body_to_ir, xml_to_ir_node
 
 
 def test_xml_to_ir_node_merges_split_numbered_paragraph_tail() -> None:
@@ -28,6 +28,66 @@ def test_xml_to_ir_node_merges_split_numbered_paragraph_tail() -> None:
     assert [c.kind for c in para.children] == [IRNodeKind.NUM, IRNodeKind.CONTENT, IRNodeKind.CONTENT]
     assert para.children[1].text == "pyynnosta tai hakemuksesta annettava"
     assert para.children[2].text == "paatos tai lupa."
+
+
+def test_xml_body_to_ir_preserves_top_level_schedules_as_supplements() -> None:
+    xml = etree.fromstring(
+        """
+        <act xmlns="urn:test">
+          <docNumber>1/2026</docNumber>
+          <docTitle>Supplement Act</docTitle>
+          <body>
+            <section>
+              <num>1 §</num>
+              <content>Body text.</content>
+            </section>
+          </body>
+          <schedule>
+            <num>1</num>
+            <heading>Schedule</heading>
+            <content>Schedule text.</content>
+          </schedule>
+        </act>
+        """
+    )
+
+    statute = xml_body_to_ir(xml)
+
+    assert statute.statute_id == "1/2026"
+    assert len(statute.supplements) == 1
+    assert statute.supplements[0].kind == IRNodeKind.SCHEDULE
+    assert statute.supplements[0].label == "1"
+    assert statute.supplements[0].children[0].kind == IRNodeKind.NUM
+    assert statute.metadata == {}
+
+
+def test_xml_body_to_ir_records_unsupported_top_level_supplement_tags() -> None:
+    xml = etree.fromstring(
+        """
+        <act xmlns="urn:test">
+          <docNumber>2/2026</docNumber>
+          <docTitle>Unsupported Supplement Act</docTitle>
+          <body />
+          <annex>
+            <content>Annex text.</content>
+          </annex>
+        </act>
+        """
+    )
+
+    statute = xml_body_to_ir(xml)
+
+    assert statute.supplements == ()
+    observations = statute.metadata["xml_ingest_observations"]
+    assert observations == (
+        {
+            "kind": "XML_INGEST.UNSUPPORTED_TOP_LEVEL_SUPPLEMENT",
+            "family": "source_pathology",
+            "phase": "ingest",
+            "tag": "annex",
+            "message": "Top-level supplement tag is not mapped to a supported IR supplement kind.",
+        },
+    )
 
 
 def test_xml_to_ir_node_preserves_separate_complete_numbered_paragraphs() -> None:

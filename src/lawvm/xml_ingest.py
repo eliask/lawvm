@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import warnings
 from typing import Any, Callable, Dict, List, Optional, cast
 
 import icontract
@@ -33,12 +32,19 @@ _STRUCTURAL_TAGS = {
     IRNodeKind.SUBPARAGRAPH,
     IRNodeKind.BLOCK,
     IRNodeKind.HCONTAINER,
+    IRNodeKind.APPENDIX,
+    IRNodeKind.SCHEDULE,
 }
 
 _TOP_LEVEL_SUPPLEMENT_TAGS = {
     "schedule",
     "appendix",
     "annex",
+}
+
+_SUPPORTED_TOP_LEVEL_SUPPLEMENT_KINDS = {
+    IRNodeKind.APPENDIX,
+    IRNodeKind.SCHEDULE,
 }
 
 _TABLE_TAG_TO_KIND: Dict[str, IRNodeKind] = {
@@ -50,6 +56,10 @@ _TABLE_TAG_TO_KIND: Dict[str, IRNodeKind] = {
 
 def _tag(el: etree._Element) -> str:
     return str(el.tag).split("}")[-1]
+
+
+def _known_ir_kind(tag: str) -> IRNodeKind | None:
+    return _kind_for_tag(tag)
 
 
 def _norm_num(text: str) -> str:
@@ -453,16 +463,31 @@ def xml_body_to_ir(
     body_el = tree.find(".//{*}body")
     statute_id = num_el.text.strip() if num_el is not None and num_el.text else "0/0"
     title = _collapse_text(title_el) if title_el is not None else "Unknown"
+    supplements: list[IRNode] = []
+    ingest_observations: list[dict[str, Any]] = []
     if body_el is not None and body_el is not tree:
-        ignored_top_level = [_tag(child) for child in tree if _tag(child) in _TOP_LEVEL_SUPPLEMENT_TAGS]
-        if ignored_top_level:
-            warnings.warn(
-                "xml_body_to_ir ignores top-level supplements/appendices/schedules; "
-                "use a supplement-aware frontend ingress path for authoritative supplement ingestion.",
-                stacklevel=2,
+        for child in tree:
+            child_tag = _tag(child)
+            if child_tag not in _TOP_LEVEL_SUPPLEMENT_TAGS:
+                continue
+            child_kind = _known_ir_kind(child_tag)
+            if child_kind in _SUPPORTED_TOP_LEVEL_SUPPLEMENT_KINDS:
+                supplements.append(xml_to_ir_node(child, label_postprocessor))
+                continue
+            ingest_observations.append(
+                {
+                    "kind": "XML_INGEST.UNSUPPORTED_TOP_LEVEL_SUPPLEMENT",
+                    "family": "source_pathology",
+                    "phase": "ingest",
+                    "tag": child_tag,
+                    "message": "Top-level supplement tag is not mapped to a supported IR supplement kind.",
+                }
             )
     if body_el is None:
         body_node = xml_to_ir_node(tree, label_postprocessor)
     else:
         body_node = xml_to_ir_node(body_el, label_postprocessor)
-    return IRStatute(statute_id=statute_id, title=title, body=body_node)
+    metadata: dict[str, Any] = {}
+    if ingest_observations:
+        metadata["xml_ingest_observations"] = ingest_observations
+    return IRStatute(statute_id=statute_id, title=title, body=body_node, supplements=tuple(supplements), metadata=metadata)
