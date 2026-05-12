@@ -4,8 +4,10 @@ import re
 from lawvm.corpus_store import get_corpus_store
 from lawvm.core.observation_registry import get_finding_spec
 from lawvm.finland.vts import (
+    VTS_SOURCE_DIAGNOSTIC_RULE_ID,
     VTS_SKIPPED_TARGET_RULE_ID,
     VtsSkippedTarget,
+    VtsSourceDiagnostic,
     _expand_section_range_vts,
     _parent_title_variants,
     _vts_extract_after_citation,
@@ -408,6 +410,38 @@ def test_extract_voimaantulo_repeals_does_not_bleed_into_dated_other_statute_aft
 def test_extract_voimaantulo_repeals_returns_empty_for_bad_xml() -> None:
     ops = extract_voimaantulo_repeals(b"<not valid xml", "1979/925")
     assert ops == []
+
+
+def test_extract_voimaantulo_repeals_records_bad_xml_source_diagnostic() -> None:
+    diagnostics: list[VtsSourceDiagnostic] = []
+    ops = extract_voimaantulo_repeals(
+        b"<not valid xml",
+        "1979/925",
+        source_diagnostics_out=diagnostics,
+    )
+
+    assert ops == []
+    assert len(diagnostics) == 1
+    record = diagnostics[0]
+    assert record.rule_id == VTS_SOURCE_DIAGNOSTIC_RULE_ID
+    assert record.reason_code == "xml_syntax_error"
+    assert record.source_statute == "1979/925"
+    assert record.phase == "frontend_extraction"
+    assert record.family == "source_pathology"
+    assert record.strict_disposition == "record"
+    assert record.as_detail()["reason_code"] == "xml_syntax_error"
+
+
+def test_extract_voimaantulo_repeals_records_empty_vts_source_diagnostic() -> None:
+    diagnostics: list[VtsSourceDiagnostic] = []
+    ops = extract_voimaantulo_repeals(
+        b"<akn><body><p>no legal containers here</p></body></akn>",
+        "1979/925",
+        source_diagnostics_out=diagnostics,
+    )
+
+    assert ops == []
+    assert [record.reason_code for record in diagnostics] == ["no_candidate_containers"]
 
 
 def test_extract_voimaantulo_repeals_all_ops_are_repeal_type() -> None:
