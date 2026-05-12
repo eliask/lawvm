@@ -1745,6 +1745,9 @@ def _cmd_diagnose_replay(args: "argparse.Namespace") -> None:
             print(f"error: {exc}", file=sys.stderr)
             sys.exit(1)
     if getattr(args, "format", "summary") == "json":
+        if older_base is not None:
+            result = dict(result)
+            result["older_base"] = older_base
         _print_json(result)
         return
     print(f"Amending SFS ID:    {result['amending_sfs_id']}")
@@ -1825,6 +1828,11 @@ def _cmd_diagnose_replay(args: "argparse.Namespace") -> None:
             f"missing={older_base.get('missing_official_count', 0)}  "
             f"unsupported={older_base.get('unsupported_count', 0)}"
         )
+        blocker_rows = _se_older_base_blocker_rows(older_base)
+        if blocker_rows:
+            print("Older-base blockers:")
+            for item in blocker_rows:
+                print(_format_se_older_base_chain_row(item))
         base_seed = older_base.get("base_seed") or {}
         print(
             "Base seed source:  "
@@ -1840,6 +1848,34 @@ def _cmd_diagnose_replay(args: "argparse.Namespace") -> None:
                 f"doc={base_probe.get('doc_status', '')} "
                 f"pdf={base_probe.get('pdf_status', '')}"
             )
+
+
+def _se_older_base_blocker_rows(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = plan.get("chain") or []
+    if not isinstance(rows, list):
+        return []
+    return [
+        row
+        for row in rows
+        if isinstance(row, dict) and str(row.get("ops_status") or "") != "compiled"
+    ]
+
+
+def _format_se_older_base_chain_row(item: dict[str, Any]) -> str:
+    suffix = ""
+    if item.get("error"):
+        suffix = f"  error={item.get('error')}"
+    probe = item.get("public_source_probe")
+    if isinstance(probe, dict):
+        suffix += (
+            f"  source_doc={probe.get('doc_status', '')}"
+            f" source_pdf={probe.get('pdf_status', '')}"
+        )
+    return (
+        f"{item.get('effective_date', '')}  {item.get('sfs_id', '')}  "
+        f"{item.get('ops_status', '')}  ops={item.get('op_count', 0)}"
+        f"{suffix}"
+    )
 
 
 def _cmd_plan_older_base(args: "argparse.Namespace") -> None:
@@ -1889,20 +1925,7 @@ def _cmd_plan_older_base(args: "argparse.Namespace") -> None:
             f"pdf={base_probe.get('pdf_status', '')}"
         )
     for item in result.get("chain", []):
-        suffix = ""
-        if item.get("error"):
-            suffix = f"  error={item.get('error')}"
-        probe = item.get("public_source_probe")
-        if isinstance(probe, dict):
-            suffix += (
-                f"  source_doc={probe.get('doc_status', '')}"
-                f" source_pdf={probe.get('pdf_status', '')}"
-            )
-        print(
-            f"{item.get('effective_date', '')}  {item.get('sfs_id', '')}  "
-            f"{item.get('ops_status', '')}  ops={item.get('op_count', 0)}"
-            f"{suffix}"
-        )
+        print(_format_se_older_base_chain_row(item))
 
 
 def _cmd_probe(args: "argparse.Namespace") -> None:
