@@ -215,6 +215,14 @@ def test_empty_same_day_interval_registry_code_is_nonblocking_observation() -> N
     validate_finding_projection(spec.code, "observation", False)
 
 
+def test_flattened_sublist_registry_code_is_nonblocking_observation() -> None:
+    spec = get_finding_spec("flattened_sublist_family_warning")
+    assert spec is not None
+    assert spec.role == "observation"
+    assert spec.is_barrier is False
+    validate_finding_projection(spec.code, "observation", False)
+
+
 def test_source_corrected_by_patch_registry_code_is_runtime_obligation() -> None:
     spec = get_finding_spec("APPLY.SOURCE_CORRECTED_BY_PATCH")
     assert spec is not None

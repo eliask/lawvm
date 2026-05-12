@@ -344,6 +344,10 @@ FINDING_REGISTRY: Dict[str, FindingSpec] = {f.code: f for f in (
                 "audit", "warn", "replay_lints",
                 "replay output contains a suspicious duplicated text tract",
                 ("comparative",), role="observation"),
+    FindingSpec("flattened_sublist_family_warning", "replay_lints",
+                "audit", "warn", "replay_lints",
+                "replay output contains a possible flattened sublist family",
+                ("comparative", "preservation"), role="observation"),
     # --- Obligations (role="obligation") ---
     FindingSpec("ELAB.SPARSE_PAYLOAD_LEFTOVER", "_elaborate_group",
                 "recovery", "warn", "grafter",

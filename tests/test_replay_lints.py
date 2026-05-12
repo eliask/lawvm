@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from lawvm.core.ir import IRNode
-from lawvm.core.replay_lints import build_text_duplication_findings
+from lawvm.core.replay_lints import build_flattened_sublist_findings, build_text_duplication_findings
 from lawvm.core.semantic_types import IRNodeKind
 
 
@@ -45,3 +45,35 @@ def test_build_text_duplication_findings_materialized_phase() -> None:
     assert findings
     assert findings[0].detail["message"] == "Materialized output contains a suspicious duplicated text tract."
     assert findings[0].detail["phase"] == "materialized"
+
+
+def test_build_flattened_sublist_findings_replay_fold_phase() -> None:
+    body = IRNode(
+        kind=IRNodeKind.BODY,
+        children=(
+            IRNode(
+                kind=IRNodeKind.SECTION,
+                label="1",
+                children=tuple(
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label=label, text=label)
+                    for label in ("a", "b", "1", "2", "a", "b")
+                ),
+            ),
+        ),
+    )
+
+    findings = build_flattened_sublist_findings(
+        body,
+        phase="replay_fold",
+        source_statute="1991/3",
+    )
+
+    assert len(findings) == 1
+    assert findings[0].kind == "flattened_sublist_family_warning"
+    assert findings[0].role == "observation"
+    assert findings[0].stage == "replay_lints"
+    assert findings[0].blocking is False
+    assert findings[0].source_statute == "1991/3"
+    assert findings[0].detail["message"] == "Replay output contains a possible flattened sublist family."
+    assert findings[0].detail["phase"] == "replay_fold"
+    assert findings[0].detail["kind"] == "flattened_sublist_interleaved"
