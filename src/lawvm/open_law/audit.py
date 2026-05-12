@@ -50,6 +50,10 @@ def replay_open_law_ops(tree: IRNode, ops: Sequence[OpenLawOperation], *, strict
     mutations: list[OpenLawAppliedMutation] = []
     findings: list[OpenLawFinding] = []
     for op in ops:
+        if op.diagnostics:
+            findings.extend(op.diagnostics)
+            if any(finding.blocking for finding in op.diagnostics):
+                continue
         if op.action is OpenLawAction.REPLACE:
             current = _apply_replace(current, op, mutations, findings)
             continue
