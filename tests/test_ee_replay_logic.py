@@ -98,14 +98,22 @@ def test_filter_cancelled_pending_refs_drops_future_effect_source_repealed_befor
         _ref("108072025001", "2025-06-18", "2026-01-01"),
         _ref("118122025003", "2025-12-03", "2026-01-01"),
     ]
+    adjudications = []
 
     filtered = _ee_filter_cancelled_pending_refs(
         refs,
         target_title="Ettevõtlustulu lihtsustatud maksustamise seadus",
         archive=None,
+        adjudications_out=adjudications,
     )
 
     assert [ref.aktViide for ref in filtered] == ["118122025003"]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "ee_cancelled_pending_amendment_ref_filtered"
+    ]
+    assert adjudications[0].detail["filtered_amendment"] == "108072025001"
+    assert adjudications[0].detail["filtering_amendment"] == "118122025003"
+    assert adjudications[0].detail["reason"] == "source_paragraphs_repealed_before_commencement"
 
 
 def test_filter_cancelled_pending_refs_drops_future_effect_source_rewritten_before_commencement(
@@ -154,14 +162,22 @@ def test_filter_cancelled_pending_refs_drops_future_effect_source_rewritten_befo
         _ref("109012025001", "2024-12-11", "2025-09-01"),
         _ref("101072025001", "2025-06-18", "2025-09-01"),
     ]
+    adjudications = []
 
     filtered = _ee_filter_cancelled_pending_refs(
         refs,
         target_title="Toiduseadus",
         archive=None,
+        adjudications_out=adjudications,
     )
 
     assert [ref.aktViide for ref in filtered] == ["101072025001"]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "ee_cancelled_pending_amendment_ref_filtered"
+    ]
+    assert adjudications[0].detail["filtered_amendment"] == "109012025001"
+    assert adjudications[0].detail["filtering_amendment"] == "101072025001"
+    assert adjudications[0].detail["reason"] == "source_paragraphs_rewritten_before_commencement"
 
 
 def test_filter_ops_for_ref_slice_prefers_clause_local_effective_ops_for_later_same_act_slice() -> None:
@@ -188,13 +204,20 @@ def test_filter_ops_for_ref_slice_prefers_clause_local_effective_ops_for_later_s
         ),
     ]
 
+    adjudications = []
     filtered = _ee_filter_ops_for_ref_slice(
         ops,
         ref=ref,
         base_refs=base_refs,
+        adjudications_out=adjudications,
     )
 
     assert [op.op_id for op in filtered] == ["later-slice-op"]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "ee_ref_slice_operation_filtered"
+    ]
+    assert adjudications[0].op_id == "earlier-slice-op"
+    assert adjudications[0].detail["reason"] == "unsliced_op_after_earlier_same_act_slice"
 
 
 def test_filter_ops_for_ref_slice_keeps_unsliced_and_current_local_ops_on_earliest_slice() -> None:
@@ -225,6 +248,7 @@ def test_filter_ops_for_ref_slice_keeps_unsliced_and_current_local_ops_on_earlie
         ),
     ]
 
+    adjudications = []
     filtered = _ee_filter_ops_for_ref_slice(
         ops,
         ref=ref,
@@ -233,9 +257,43 @@ def test_filter_ops_for_ref_slice_keeps_unsliced_and_current_local_ops_on_earlie
             _ref("130062020007", "2020-06-15", "2020-07-01"),
             _ref("130062020007", "2020-06-15", "2021-01-01"),
         ),
+        adjudications_out=adjudications,
     )
 
     assert [op.op_id for op in filtered] == ["unsliced-op", "earliest-local-op"]
+    assert [adjudication.op_id for adjudication in adjudications] == ["later-local-op"]
+    assert adjudications[0].detail["reason"] == "op_effective_belongs_to_later_same_act_slice"
+
+
+def test_filter_ops_for_ref_slice_records_future_effective_rejection() -> None:
+    ref = _ref("130062020007", "2020-06-15", "2020-07-01")
+    ops = [
+        LegalOperation(
+            op_id="future-local-op",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("section", "111"),)),
+            payload=IRNode(kind=IRNodeKind.CONTENT, text="future"),
+            source=OperationSource(statute_id="ee/130062020007", effective="2020-12-01", raw_text="§ 1 p 55"),
+        ),
+    ]
+    adjudications = []
+
+    filtered = _ee_filter_ops_for_ref_slice(
+        ops,
+        ref=ref,
+        base_refs=(),
+        all_refs=(ref,),
+        as_of="2020-08-01",
+        adjudications_out=adjudications,
+    )
+
+    assert filtered == []
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "ee_ref_slice_operation_filtered"
+    ]
+    assert adjudications[0].op_id == "future-local-op"
+    assert adjudications[0].detail["reason"] == "op_effective_after_requested_pit"
 
 
 def test_filter_ops_for_ref_slice_keeps_retroactive_local_ops_on_earliest_slice() -> None:

@@ -322,11 +322,16 @@ def _ee_extract_rewritten_source_paragraph_numbers(
     return rewritten
 
 
+_EE_CANCELLED_PENDING_REF_FILTER_RULE = "ee_cancelled_pending_amendment_ref_filtered"
+_EE_REF_SLICE_OP_FILTER_RULE = "ee_ref_slice_operation_filtered"
+
+
 def _ee_filter_cancelled_pending_refs(
     refs: list[AmendmentRef],
     *,
     target_title: str,
     archive: Any,
+    adjudications_out: list[CompileAdjudication] | None = None,
 ) -> list[AmendmentRef]:
     if len(refs) < 2 or not target_title:
         return refs
@@ -367,6 +372,26 @@ def _ee_filter_cancelled_pending_refs(
             )
             if target_paras and target_paras.issubset(repealed_paras):
                 cancelled.add(ref.aktViide)
+                if adjudications_out is not None:
+                    adjudications_out.append(
+                        CompileAdjudication(
+                            kind=_EE_CANCELLED_PENDING_REF_FILTER_RULE,
+                            message=(
+                                "Filtered a pending Estonia amendment reference because a later "
+                                "same-commencement source act repeals all target paragraphs before replay."
+                            ),
+                            source_statute=f"ee/{later.aktViide}",
+                            detail={
+                                "filtered_amendment": ref.aktViide,
+                                "filtering_amendment": later.aktViide,
+                                "reason": "source_paragraphs_repealed_before_commencement",
+                                "target_paragraphs": tuple(sorted(target_paras)),
+                                "matched_paragraphs": tuple(sorted(repealed_paras)),
+                                "target_title": target_title,
+                                "source_act_title": ref_title,
+                            },
+                        )
+                    )
                 break
             rewritten_paras = _ee_extract_rewritten_source_paragraph_numbers(
                 repealer_xml,
@@ -374,6 +399,26 @@ def _ee_filter_cancelled_pending_refs(
             )
             if target_paras and target_paras.issubset(rewritten_paras):
                 cancelled.add(ref.aktViide)
+                if adjudications_out is not None:
+                    adjudications_out.append(
+                        CompileAdjudication(
+                            kind=_EE_CANCELLED_PENDING_REF_FILTER_RULE,
+                            message=(
+                                "Filtered a pending Estonia amendment reference because a later "
+                                "same-commencement source act rewrites all target paragraphs before replay."
+                            ),
+                            source_statute=f"ee/{later.aktViide}",
+                            detail={
+                                "filtered_amendment": ref.aktViide,
+                                "filtering_amendment": later.aktViide,
+                                "reason": "source_paragraphs_rewritten_before_commencement",
+                                "target_paragraphs": tuple(sorted(target_paras)),
+                                "matched_paragraphs": tuple(sorted(rewritten_paras)),
+                                "target_title": target_title,
+                                "source_act_title": ref_title,
+                            },
+                        )
+                    )
                 break
 
     return [ref for ref in refs if ref.aktViide not in cancelled]
@@ -386,6 +431,7 @@ def _ee_filter_ops_for_ref_slice(
     base_refs: tuple[AmendmentRef, ...],
     all_refs: tuple[AmendmentRef, ...] = (),
     as_of: str = "",
+    adjudications_out: list[CompileAdjudication] | None = None,
 ) -> list[LegalOperation]:
     """Filter one act's ops to the executable slice owned by ``ref``.
 
@@ -406,6 +452,28 @@ def _ee_filter_ops_for_ref_slice(
         for op in ops
     )
 
+    def _record_filtered_op(op: LegalOperation, reason: str, *, effective: str = "") -> None:
+        if adjudications_out is None:
+            return
+        adjudications_out.append(
+            CompileAdjudication(
+                kind=_EE_REF_SLICE_OP_FILTER_RULE,
+                message="Filtered an Estonia operation outside the executable slice for this amendment reference.",
+                source_statute=op.source.statute_id if op.source is not None else f"ee/{ref.aktViide}",
+                op_id=op.op_id,
+                detail={
+                    "reason": reason,
+                    "ref_amendment": ref.aktViide,
+                    "ref_effective": ref.joustumine,
+                    "op_effective": effective,
+                    "next_later_ref_effective": next_later_ref_date,
+                    "as_of": as_of,
+                    "target": str(op.target),
+                    "action": op.action.value,
+                },
+            )
+        )
+
     if any_local_slice_ops:
         filtered_ops: list[LegalOperation] = []
         for op in ops:
@@ -413,15 +481,20 @@ def _ee_filter_ops_for_ref_slice(
             if not effective:
                 if not has_earlier_slice:
                     filtered_ops.append(op)
+                else:
+                    _record_filtered_op(op, "unsliced_op_after_earlier_same_act_slice", effective=effective)
                 continue
             effective_window_date = effective
             if effective < ref.joustumine:
                 if has_earlier_slice:
+                    _record_filtered_op(op, "op_effective_before_ref_after_earlier_same_act_slice", effective=effective)
                     continue
                 effective_window_date = ref.joustumine
             if next_later_ref_date and effective_window_date >= next_later_ref_date:
+                _record_filtered_op(op, "op_effective_belongs_to_later_same_act_slice", effective=effective)
                 continue
             if as_of and effective > as_of:
+                _record_filtered_op(op, "op_effective_after_requested_pit", effective=effective)
                 continue
             filtered_ops.append(op)
         return filtered_ops
@@ -964,10 +1037,12 @@ def replay_ee_to_pit(
             pair_plan.base_refs if pair_plan.base_is_consolidated else pair_plan.amendments_to_apply
         )
     ]
+    cancellation_filter_adjudications: list[CompileAdjudication] = []
     to_apply = _ee_filter_cancelled_pending_refs(
         sorted(pair_plan.amendments_to_apply, key=_ee_ref_sort_key),
         target_title=base.title,
         archive=_archive,
+        adjudications_out=cancellation_filter_adjudications,
     )
     to_apply, commencement_precomposition_adjudications = _ee_precompose_pending_source_act_commencements(
         tuple(to_apply),
@@ -984,6 +1059,7 @@ def replay_ee_to_pit(
     all_ops: List[LegalOperation] = []
     global_seq = 1
     amendment_xml_by_ref: dict[str, bytes] = {}
+    slice_filter_adjudications: list[CompileAdjudication] = []
 
     for ref in sorted(to_apply, key=_ee_ref_sort_key):
         _log(f"  {ref.aktViide}  effective={ref.joustumine}...")
@@ -1018,6 +1094,7 @@ def replay_ee_to_pit(
             base_refs=pair_plan.base_refs,
             all_refs=pair_plan.amendments_to_apply,
             as_of=as_of,
+            adjudications_out=slice_filter_adjudications,
         )
 
         # Stamp each op with provenance dates; renumber to global sequence
@@ -1118,7 +1195,9 @@ def replay_ee_to_pit(
         return result
 
     result.adjudications = [
+        *cancellation_filter_adjudications,
         *commencement_precomposition_adjudications,
+        *slice_filter_adjudications,
         *precomposition_adjudications,
         *adjudications,
     ]
