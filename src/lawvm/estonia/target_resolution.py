@@ -47,6 +47,7 @@ _EE_NEW_FORMAT_OP_TEXT_TARGET_TITLE_MISMATCH_RULE = "ee_new_format_op_text_targe
 _EE_OLD_FORMAT_OUT_OF_BODY_APPENDIX_CLAUSE_RULE = "ee_old_format_out_of_body_appendix_clause_not_section_scoped"
 _EE_OUT_OF_BODY_APPENDIX_CLAUSE_RULE = "ee_out_of_body_appendix_clause_not_section_scoped"
 _EE_UNPARSED_OPERATION_CLAUSE_RULE = "ee_unparsed_operation_clause"
+_EE_OLD_FORMAT_UNPARSED_META_REJECTED_RULE = "ee_old_format_unparsed_meta_rejected"
 _EE_NEW_FORMAT_TARGET_ACT_HEADER_NOT_WRAPPER_RULE = "ee_new_format_target_act_header_not_wrapper_instruction"
 _EE_HTML_AMENDMENT_SECTION_HEADING_WRAPPER_STRIPPED_RULE = "ee_html_amendment_section_heading_wrapper_stripped"
 _EE_EMBEDDED_OPEN_QUOTE_SECTION_HEADER_RULE = "ee_embedded_open_quote_payload_section_header"
@@ -83,6 +84,40 @@ def _record_ee_parse_rejection(
                 "family": family,
                 "target_title": target_title,
                 "statute_fragment": statute_fragment,
+                "blocking": True,
+                "strict_disposition": "block",
+                "quirks_disposition": "record",
+            },
+        )
+    )
+
+
+def _record_ee_old_format_unparsed_meta_rejection(
+    adjudications_out: list[CompileAdjudication] | None,
+    *,
+    op: LegalOperation,
+    source_id: str,
+    effective_text: str,
+    target_title: str,
+) -> None:
+    if adjudications_out is None:
+        return
+    adjudications_out.append(
+        CompileAdjudication(
+            kind="ee_parse_old_format_unparsed_meta_rejected",
+            message=(
+                "Estonia old-format lowering rejected an unparsed META operation "
+                "instead of silently treating it as executable body law."
+            ),
+            source_statute=source_id,
+            op_id=op.op_id,
+            detail={
+                "rule_id": _EE_OLD_FORMAT_UNPARSED_META_REJECTED_RULE,
+                "reason": "unparsed_meta_not_executable",
+                "phase": "parse",
+                "family": "unsupported_source_lane",
+                "target_title": target_title,
+                "source_text": effective_text[:500],
                 "blocking": True,
                 "strict_disposition": "block",
                 "quirks_disposition": "record",
@@ -2541,6 +2576,7 @@ def old_format_lower_op_texts(
     target_title: str = "",
     initial_last_section: str | None = None,
     amendment_section_label: str | None = None,
+    adjudications_out: list[CompileAdjudication] | None = None,
 ) -> tuple[list[LegalOperation], int, str | None]:
     """Lower old-format op texts with carried section context."""
     lowered: list[LegalOperation] = []
@@ -2635,15 +2671,23 @@ def old_format_lower_op_texts(
         ops = extract_ee_ops(effective, source, seq_start=global_seq)
         if strip_outer_payload_quote:
             ops = [_strip_old_format_outer_payload_quote(op) for op in ops]
-        ops = [
-            op
-            for op in ops
-            if not (
+        executable_ops: list[LegalOperation] = []
+        for op in ops:
+            if (
                 op.action == StructuralAction.META
                 and (op.payload is None or _is_unparsed_operation_meta(op))
                 and op.op_id.startswith("ee-unknown-")
-            )
-        ]
+            ):
+                _record_ee_old_format_unparsed_meta_rejection(
+                    adjudications_out,
+                    op=op,
+                    source_id=source.statute_id,
+                    effective_text=effective,
+                    target_title=target_title or source.title,
+                )
+                continue
+            executable_ops.append(op)
+        ops = executable_ops
         if out_of_body_appendix_or_note_clause:
             ops = [_mark_old_format_out_of_body_clause(op, effective) for op in ops]
         sect = old_format_section_from_ops(ops)
@@ -2698,6 +2742,7 @@ def old_format_collect_section_ops(
     seq_start: int,
     lookup_act_identity: Callable[..., object | None] = lookup_ee_act_identity,
     split_wrapper_blocks: Callable[[str], list[str]],
+    adjudications_out: list[CompileAdjudication] | None = None,
 ) -> tuple[list[LegalOperation], int]:
     """Collect lowered operations for one old-format act-target section."""
     header_text = old_format_extract_section_header_text(section)
@@ -2750,6 +2795,7 @@ def old_format_collect_section_ops(
                 target_title=target_title,
                 initial_last_section=initial_section,
                 amendment_section_label=amendment_section_label,
+                adjudications_out=adjudications_out,
             )
             all_ops.extend(ops)
 
@@ -2762,6 +2808,7 @@ def old_format_collect_fallback_ops(
     source_id: str,
     target_title: str,
     seq_start: int,
+    adjudications_out: list[CompileAdjudication] | None = None,
 ) -> tuple[list[LegalOperation], int]:
     """Lower the old-format single-act fallback path with carried section context."""
     source = OperationSource(statute_id=source_id, title=target_title or "")
@@ -2773,6 +2820,7 @@ def old_format_collect_fallback_ops(
         seq_start=seq_start,
         target_title=target_title,
         initial_last_section=initial_section,
+        adjudications_out=adjudications_out,
     )
     return ops, global_seq
 
@@ -2790,6 +2838,7 @@ def old_format_collect_nested_direct_target_ops(
     source_id: str,
     target_title: str,
     seq_start: int,
+    adjudications_out: list[CompileAdjudication] | None = None,
 ) -> tuple[list[LegalOperation], int]:
     """Recover embedded direct target-law clauses inside old-format wrapper inserts.
 
@@ -2845,6 +2894,7 @@ def old_format_collect_nested_direct_target_ops(
         *,
         amendment_item_label: str | None,
         header_carried: bool,
+        effective_text: str,
     ) -> list[LegalOperation]:
         tagged: list[LegalOperation] = []
         for op in ops:
@@ -2853,6 +2903,13 @@ def old_format_collect_nested_direct_target_ops(
                 and (op.payload is None or _is_unparsed_operation_meta(op))
                 and op.op_id.startswith("ee-unknown-")
             ):
+                _record_ee_old_format_unparsed_meta_rejection(
+                    adjudications_out,
+                    op=op,
+                    source_id=source_id,
+                    effective_text=effective_text,
+                    target_title=target_title,
+                )
                 continue
             tags = [
                 *op.provenance_tags,
@@ -2901,6 +2958,7 @@ def old_format_collect_nested_direct_target_ops(
                     ops,
                     amendment_item_label=item_label,
                     header_carried=False,
+                    effective_text=nested_instruction,
                 )
                 lowered.extend(tagged)
                 global_seq += len(tagged)
@@ -2915,11 +2973,13 @@ def old_format_collect_nested_direct_target_ops(
             seq_start=global_seq,
             base_act_name=target_title,
             target_title=target_title,
+            adjudications_out=adjudications_out,
         )
         tagged = _tag_nested_ops(
             ops,
             amendment_item_label=item_label,
             header_carried=True,
+            effective_text=op_text,
         )
         lowered.extend(tagged)
         if _ends_nested_wrapper_payload(op_text):
@@ -2935,6 +2995,7 @@ def old_format_collect_all_ops(
     target_title: str,
     lookup_act_identity: Callable[..., object | None] = lookup_ee_act_identity,
     split_wrapper_blocks: Callable[[str], list[str]],
+    adjudications_out: list[CompileAdjudication] | None = None,
 ) -> list[LegalOperation]:
     """Collect all operations from an old-format amendment HTML body."""
     sections = old_format_split_sections(full_html)
@@ -2949,6 +3010,7 @@ def old_format_collect_all_ops(
             seq_start=global_seq,
             lookup_act_identity=lookup_act_identity,
             split_wrapper_blocks=split_wrapper_blocks,
+            adjudications_out=adjudications_out,
         )
         all_ops.extend(ops)
 
@@ -2958,6 +3020,7 @@ def old_format_collect_all_ops(
             source_id=source_id,
             target_title=target_title,
             seq_start=global_seq,
+            adjudications_out=adjudications_out,
         )
         all_ops.extend(ops)
 
@@ -2967,6 +3030,7 @@ def old_format_collect_all_ops(
             source_id=source_id,
             target_title=target_title,
             seq_start=global_seq,
+            adjudications_out=adjudications_out,
         )
         all_ops.extend(ops)
 

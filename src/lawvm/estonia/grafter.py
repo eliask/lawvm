@@ -2499,6 +2499,7 @@ def parse_ee_amendment_ops(
                 source_id=source_id,
                 target_title=target_title,
                 seq_start=1,
+                adjudications_out=adjudications_out,
             )
     target_section_labels = _extract_old_format_target_section_labels(root, target_title)
     item_effects, section_effects, _whole_act_effective = _extract_old_format_commencement_effects(
@@ -3615,6 +3616,7 @@ def _parse_old_format_amendment_ops(
                             seq_start=1,
                             base_act_name=_tr_paragrahv_to_act_id(act_title),
                             initial_last_section=_old_format_plain_intro_target_section(direct_text),
+                            adjudications_out=adjudications_out,
                         )
                         return [
                             replace(
@@ -3680,6 +3682,7 @@ def _parse_old_format_amendment_ops(
                     seq_start=seq,
                     base_act_name=_tr_paragrahv_to_act_id(header_text),
                     initial_last_section=_old_format_plain_intro_target_section(content_text),
+                    adjudications_out=adjudications_out,
                 )
             else:
                 section_ops = extract_ee_ops(content_text, source, seq_start=seq)
@@ -3746,6 +3749,7 @@ def _parse_old_format_amendment_ops(
                             seq_start=1,
                             base_act_name=_tr_paragrahv_to_act_id(act_title),
                             initial_last_section=_old_format_plain_intro_target_section(direct_body_text),
+                            adjudications_out=adjudications_out,
                         )
                         all_ops = [
                             replace(
@@ -3855,6 +3859,7 @@ def _parse_old_format_amendment_ops(
                 target_title=target_title,
                 lookup_act_identity=lookup_ee_act_identity,
                 split_wrapper_blocks=_tr_split_old_format_wrapper_blocks,
+                adjudications_out=adjudications_out,
             )
             if not para_ops:
                 continue
@@ -3946,6 +3951,7 @@ def _parse_old_format_amendment_ops(
         target_title=target_title,
         lookup_act_identity=lookup_ee_act_identity,
         split_wrapper_blocks=_tr_split_old_format_wrapper_blocks,
+        adjudications_out=adjudications_out,
     )
     if not ops:
         plaintext_ops = _parse_plaintext_old_format_sections()
