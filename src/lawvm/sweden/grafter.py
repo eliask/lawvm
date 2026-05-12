@@ -2034,6 +2034,10 @@ def _append_se_official_lowering_adjudication(
             detail={
                 "rule_id": reason_code,
                 "phase": "lowering",
+                "family": "unsupported_or_unresolved_action",
+                "blocking": True,
+                "strict_disposition": "block",
+                "quirks_disposition": "record",
                 "item_kind": item.kind,
                 "target_label": item.target_label,
                 "destination_label": item.destination_label,

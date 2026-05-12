@@ -1435,6 +1435,10 @@ def test_compile_se_official_act_ops_surfaces_planned_effect_missing_payload() -
     assert adjudications[0].source_statute == "2026:999"
     assert adjudications[0].detail["rule_id"] == "se_official_effect_payload_not_found"
     assert adjudications[0].detail["phase"] == "lowering"
+    assert adjudications[0].detail["family"] == "unsupported_or_unresolved_action"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
     assert adjudications[0].detail["item_kind"] == "replace_section"
     assert adjudications[0].detail["target_label"] == "2"
 
