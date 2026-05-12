@@ -675,6 +675,7 @@ def fetch_se_official_artifacts(
     max_age_hours: float = _IMMUTABLE_CACHE_HOURS,
     force_reextract: bool = False,
     pdf_url_override: str | None = None,
+    diagnostics_out: list[dict[str, Any]] | None = None,
 ) -> Optional[SEOfficialArtifacts]:
     """Fetch Sweden official doc page + PDF and archive extracted text.
 
@@ -745,6 +746,15 @@ def fetch_se_official_artifacts(
                 pdf_bytes = candidate_bytes
                 break
     if not pdf_url or not pdf_bytes:
+        _record_se_official_artifacts_diagnostic(
+            diagnostics_out,
+            rule_id="se_official_artifacts_unavailable",
+            sfs_id=sfs_id,
+            locator=se_official_pdf_locator(sfs_id),
+            reason="Sweden official SFS PDF artifact could not be located or fetched",
+            doc_url=doc_url,
+            pdf_url=pdf_url,
+        )
         return None
     archive.store(se_official_pdf_locator(sfs_id), pdf_bytes, storage_class="pdf")
 
@@ -799,6 +809,35 @@ def fetch_se_official_artifacts(
     )
     archive_se_official_artifacts_manifest(archive, artifacts)
     return artifacts
+
+
+def _record_se_official_artifacts_diagnostic(
+    diagnostics_out: list[dict[str, Any]] | None,
+    *,
+    rule_id: str,
+    sfs_id: str,
+    locator: str,
+    reason: str,
+    doc_url: str,
+    pdf_url: str | None,
+) -> None:
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        {
+            "rule_id": rule_id,
+            "family": "source_pathology",
+            "phase": "acquisition",
+            "reason": reason,
+            "sfs_id": sfs_id,
+            "locator": locator,
+            "doc_url": doc_url,
+            "pdf_url": pdf_url or "",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    )
 
 
 def fetch_se_rk_current_json(

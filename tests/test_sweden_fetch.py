@@ -261,6 +261,32 @@ def test_fetch_official_falls_back_to_month_probe_when_doc_blocked_and_rk_issue_
     assert se_official_doc_locator("2026:63") not in archive.stored
 
 
+def test_fetch_official_records_diagnostic_when_pdf_unavailable(monkeypatch) -> None:
+    archive = _FakeArchive()
+    diagnostics: list[dict[str, object]] = []
+    monkeypatch.setattr("lawvm.sweden.fetch.time.sleep", lambda seconds: None)
+    monkeypatch.setattr("lawvm.sweden.fetch.search_se_legacy_pdf_url", lambda sfs_id: None)
+
+    bundle = fetch_se_official_artifacts("2026:286", archive, diagnostics_out=diagnostics)
+
+    assert bundle is None
+    assert diagnostics == [
+        {
+            "rule_id": "se_official_artifacts_unavailable",
+            "family": "source_pathology",
+            "phase": "acquisition",
+            "reason": "Sweden official SFS PDF artifact could not be located or fetched",
+            "sfs_id": "2026:286",
+            "locator": se_official_pdf_locator("2026:286"),
+            "doc_url": "https://svenskforfattningssamling.se/doc/2026286.html",
+            "pdf_url": "",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
 def test_guess_and_parse_legacy_sfspdf_urls() -> None:
     assert guess_se_legacy_pdf_url("2015:284") == "https://rkrattsdb.gov.se/SFSdoc/15/150284.PDF"
     assert guess_se_legacy_pdf_url("2018:11") == "https://rkrattsdb.gov.se/SFSdoc/18/180011.PDF"

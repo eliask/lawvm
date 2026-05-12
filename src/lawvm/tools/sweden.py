@@ -872,13 +872,18 @@ def _hydrate_se_bulk(
                 progress_callback(f"[{idx}/{total}] {sfs_id} FETCH_OFFICIAL")
             if status_callback is not None:
                 status_callback(idx, total, sfs_id, "FETCH_OFFICIAL", "running", "", "")
+            official_diagnostics: list[dict[str, Any]] = []
             official = fetch_se_official_artifacts(
                 sfs_id,
                 archive,
                 max_age_hours=official_max_age_hours,
                 force_reextract=force_reextract,
+                diagnostics_out=official_diagnostics,
             )
             row["official_fetched"] = official is not None
+            if official_diagnostics:
+                row["official_diagnostic_count"] = len(official_diagnostics)
+                row["official_diagnostics"] = official_diagnostics
             if official is not None:
                 row["doc_url"] = official.doc_url
                 row["pdf_url"] = official.pdf_url
@@ -994,6 +999,7 @@ def _print_hydrate_bulk_rows(rows: list[dict[str, Any]], *, as_json: bool) -> No
                 f"act={'yes' if row.get('after', {}).get('official_act') else 'no'}  "
                 f"ops={compiled_text}  "
                 f"rk={'yes' if row.get('after', {}).get('rk_current') else 'no'}"
+                f"{'  official_diag=' + str(row['official_diagnostic_count']) if row.get('official_diagnostic_count') else ''}"
                 f"{'  current_diag=' + str(row['current_diagnostic_count']) if row.get('current_diagnostic_count') else ''}"
             )
         elif status == "skipped_complete":
