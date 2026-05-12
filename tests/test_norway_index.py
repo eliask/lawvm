@@ -32,6 +32,17 @@ def _amendment_xml(date_in_force: str) -> bytes:
 """.encode("utf-8")
 
 
+def _non_operational_amendment_xml() -> bytes:
+    return b"""<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <dd class="dateInForce">2025-02-10</dd>
+    <p>No document-change payload is present.</p>
+  </body>
+</html>
+"""
+
+
 def _write_archive(archive_path, members: list[tuple[str, bytes]]) -> None:
     with tarfile.open(archive_path, "w:bz2") as tf:
         for member_name, payload in members:
@@ -58,6 +69,33 @@ def test_build_no_amendment_index_captures_member_and_status(tmp_path) -> None:
     assert first.effective_status == "dated"
     assert first.effective_date == "2025-02-10"
     assert first.base_ids == ("no/lov/2025-01-01-1",)
+
+
+def test_build_no_amendment_index_records_artifacts_without_change_ops(tmp_path) -> None:
+    _write_archive(
+        tmp_path / "lovtidend-avd1-2025.tar.bz2",
+        [("lti/2025/nl-20250202-005.xml", _non_operational_amendment_xml())],
+    )
+
+    index = build_no_amendment_index(tmp_path)
+
+    assert index.entries == []
+    assert index.diagnostics == [
+        {
+            "rule_id": "no_amendment_index_no_change_ops",
+            "family": "source_pathology",
+            "phase": "extraction",
+            "reason": "Norway amendment artifact did not yield document-change operations",
+            "source_id": "no/lovtid/2025-02-02-5",
+            "locator": "no://lovtid/2025-02-02-5/amendment.xml",
+            "archive": "lovtidend-avd1-2025.tar.bz2",
+            "member_name": "lti/2025/nl-20250202-005.xml",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
+    assert index.to_dict()["diagnostics"] == index.diagnostics
 
 
 def test_save_and_load_no_amendment_index_round_trips(tmp_path) -> None:
