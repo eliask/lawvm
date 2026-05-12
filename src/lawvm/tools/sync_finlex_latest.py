@@ -11,6 +11,7 @@ Existing exact PIT XML locators are skipped, so reruns are cheap.
 from __future__ import annotations
 
 import csv
+import json
 import re
 from pathlib import Path
 
@@ -74,8 +75,11 @@ def main(args) -> None:
     corpus_arg = getattr(args, "corpus", None)
     delay = float(getattr(args, "delay", 1.0) or 1.0)
     verbose = bool(getattr(args, "verbose", False))
+    diagnostics_arg = getattr(args, "diagnostics_jsonl", None)
+    diagnostics_path = Path(diagnostics_arg) if diagnostics_arg else None
 
     archive = Farchive(db_path)
+    diagnostics: list[dict[str, object]] = []
     try:
         if sid_args:
             sids = list(dict.fromkeys(sid_args))
@@ -96,13 +100,28 @@ def main(args) -> None:
                 )
 
         print(f"Syncing latest Finnish PIT XMLs from {source}: {len(sids)} statutes")
-        stats = sync_latest_pits(archive, sids, delay=delay, verbose=verbose)
+        stats = sync_latest_pits(
+            archive,
+            sids,
+            delay=delay,
+            verbose=verbose,
+            diagnostics_out=diagnostics,
+        )
     finally:
         archive.close()
+
+    if diagnostics_path:
+        diagnostics_path.parent.mkdir(parents=True, exist_ok=True)
+        diagnostics_path.write_text(
+            "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in diagnostics),
+            encoding="utf-8",
+        )
 
     print(
         f"statutes={stats['statutes']}  fetched={stats['fetched']}  cached={stats['cached']}  "
         f"skipped={stats['skipped']}  errors={stats['errors']}"
     )
+    if diagnostics_path:
+        print(f"diagnostics={len(diagnostics)}  diagnostics_jsonl={diagnostics_path}")
     if stats["errors"]:
         raise SystemExit(1)

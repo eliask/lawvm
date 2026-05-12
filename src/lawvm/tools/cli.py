@@ -5177,6 +5177,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print one line per statute to stderr",
     )
+    sync_latest_p.add_argument(
+        "--diagnostics-jsonl",
+        metavar="PATH",
+        help="write acquisition diagnostics for skipped/error PIT sync rows",
+    )
 
     # --- solver-diag ---
     solver_diag_p = sub.add_parser(
