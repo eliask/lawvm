@@ -320,7 +320,33 @@ def _parse_in_force_dates(effect_el: ET.Element, ns: dict[str, str]) -> list[dic
     return dates
 
 
-def _parse_effect_entries(path: Path) -> dict[str, Any]:
+def _append_uk_effect_feed_diagnostic(
+    diagnostics_out: list[dict[str, Any]] | None,
+    *,
+    path: Path,
+    rule_id: str,
+    reason: str,
+    detail: dict[str, Any],
+) -> None:
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        {
+            "rule_id": rule_id,
+            "kind": rule_id,
+            "family": "source_pathology",
+            "phase": "acquisition",
+            "source": str(path),
+            "reason": reason,
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "detail": detail,
+        }
+    )
+
+
+def _parse_effect_entries(path: Path, diagnostics_out: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     ns = {
         "atom": "http://www.w3.org/2005/Atom",
         "leg": "http://www.legislation.gov.uk/namespaces/legislation",
@@ -333,9 +359,20 @@ def _parse_effect_entries(path: Path) -> dict[str, Any]:
     total_results = root.findtext("openSearch:totalResults", default="", namespaces=ns)
 
     effects: list[dict[str, Any]] = []
-    for entry in root.findall("atom:entry", ns):
+    for entry_index, entry in enumerate(root.findall("atom:entry", ns)):
         effect = entry.find(".//ukm:Effect", ns)
         if effect is None:
+            _append_uk_effect_feed_diagnostic(
+                diagnostics_out,
+                path=path,
+                rule_id="uk_effect_feed_entry_without_effect_skipped",
+                reason="UK affected-statute feed entry was skipped because it did not contain a metadata Effect element",
+                detail={
+                    "entry_index": entry_index,
+                    "entry_id": entry.findtext("atom:id", default="", namespaces=ns),
+                    "entry_title": entry.findtext("atom:title", default="", namespaces=ns),
+                },
+            )
             continue
         effects.append(
             {
@@ -486,7 +523,8 @@ def _classify_transition(match_type_counts: dict[str, int]) -> dict[str, Any]:
 
 def build_effects_graph(current_xml: Path, effect_feeds: list[Path], out: Path | None = None) -> int:
     version_data = _parse_version_links(current_xml)
-    feed_summaries = [_parse_effect_entries(path) for path in effect_feeds]
+    source_diagnostics: list[dict[str, Any]] = []
+    feed_summaries = [_parse_effect_entries(path, diagnostics_out=source_diagnostics) for path in effect_feeds]
     all_effects: list[dict[str, Any]] = []
     fetched_pages: list[int] = []
     total_pages = None
@@ -570,6 +608,8 @@ def build_effects_graph(current_xml: Path, effect_feeds: list[Path], out: Path |
         "top_affecting_acts": top_affecting_acts[:25],
         "sample_effects": all_effects[:20],
     }
+    if source_diagnostics:
+        graph["source_diagnostics"] = source_diagnostics
     text = json.dumps(graph, indent=2, ensure_ascii=False) + "\n"
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -580,7 +620,8 @@ def build_effects_graph(current_xml: Path, effect_feeds: list[Path], out: Path |
 
 def build_version_transitions(current_xml: Path, effect_feeds: list[Path], out: Path | None = None) -> int:
     version_data = _parse_version_links(current_xml)
-    feed_summaries = [_parse_effect_entries(path) for path in effect_feeds]
+    source_diagnostics: list[dict[str, Any]] = []
+    feed_summaries = [_parse_effect_entries(path, diagnostics_out=source_diagnostics) for path in effect_feeds]
     all_effects: list[dict[str, Any]] = []
     for feed in feed_summaries:
         all_effects.extend(feed["effects"])
@@ -659,6 +700,8 @@ def build_version_transitions(current_xml: Path, effect_feeds: list[Path], out: 
         "version_count": len(version_dates),
         "transitions": [item for item in transitions if item["matching_effect_count"] > 0],
     }
+    if source_diagnostics:
+        payload["source_diagnostics"] = source_diagnostics
     text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
