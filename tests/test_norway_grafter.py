@@ -1591,6 +1591,83 @@ def test_parse_no_amendment_ops_forwards_structured_cross_base_skip_adjudication
     assert adjudications[0].detail["target_base"] == "no/lov/1967-02-10"
 
 
+def test_iter_no_document_change_ops_records_cross_base_structured_renumber_skip() -> None:
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <article class="document-change" data-document="lov/2022-05-12-28">
+      <article class="change"
+               data-move-part="lov/1967-02-10/§12/ledd/2;;lov/2022-05-12-28/§12/ledd/3">
+        <article class="defaultP">Nåværende § 12 andre ledd blir nytt tredje ledd.</article>
+      </article>
+    </article>
+  </body>
+</html>
+""".encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    grouped = iter_no_document_change_ops(
+        xml,
+        "no/lovtid/2024-06-21-46",
+        adjudications_out=adjudications,
+    )
+
+    assert grouped == []
+    assert [item.kind for item in adjudications] == [
+        "no_parse_cross_base_structured_renumber_skipped"
+    ]
+    adjudication = adjudications[0]
+    assert adjudication.source_statute == "no/lovtid/2024-06-21-46"
+    assert adjudication.detail["rule_id"] == "no_parse_cross_base_structured_renumber_skipped"
+    assert adjudication.detail["phase"] == "parse"
+    assert adjudication.detail["family"] == "source_pathology"
+    assert adjudication.detail["strict_disposition"] == "block"
+    assert adjudication.detail["quirks_disposition"] == "record"
+    assert adjudication.detail["base_id"] == "no/lov/2022-05-12-28"
+    assert adjudication.detail["target_base"] == "no/lov/1967-02-10"
+    assert adjudication.detail["destination_base"] == "no/lov/2022-05-12-28"
+    assert adjudication.detail["target_cross_base"] is True
+    assert adjudication.detail["destination_cross_base"] is False
+
+
+def test_iter_no_document_change_ops_records_unresolved_structured_renumber_skip() -> None:
+    xml = """<?xml version="1.0" encoding="utf-8"?>
+<html lang="nb">
+  <body>
+    <article class="document-change" data-document="lov/2022-05-12-28">
+      <article class="change"
+               data-move-part="lov/2022-05-12-28/foo;;lov/2022-05-12-28/§12/ledd/3">
+        <article class="defaultP">Nåværende § 12 andre ledd blir nytt tredje ledd.</article>
+      </article>
+    </article>
+  </body>
+</html>
+""".encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    grouped = iter_no_document_change_ops(
+        xml,
+        "no/lovtid/2024-06-21-46",
+        adjudications_out=adjudications,
+    )
+
+    assert grouped == []
+    assert [item.kind for item in adjudications] == [
+        "no_parse_unresolved_structured_renumber_skipped"
+    ]
+    adjudication = adjudications[0]
+    assert adjudication.source_statute == "no/lovtid/2024-06-21-46"
+    assert adjudication.detail["rule_id"] == "no_parse_unresolved_structured_renumber_skipped"
+    assert adjudication.detail["phase"] == "parse"
+    assert adjudication.detail["family"] == "target_resolution_recovery"
+    assert adjudication.detail["strict_disposition"] == "block"
+    assert adjudication.detail["quirks_disposition"] == "record"
+    assert adjudication.detail["base_id"] == "no/lov/2022-05-12-28"
+    assert adjudication.detail["raw_target"] == "lov/2022-05-12-28/foo"
+    assert adjudication.detail["target_resolved"] is False
+    assert adjudication.detail["destination_resolved"] is True
+
+
 def test_iter_no_document_change_ops_records_missing_structured_base() -> None:
     xml = """<?xml version="1.0" encoding="utf-8"?>
 <html lang="nb">
