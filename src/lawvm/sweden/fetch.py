@@ -806,6 +806,7 @@ def fetch_se_rk_current_json(
     archive: _ArchiveLike,
     *,
     max_age_hours: float = _CURRENT_SURFACE_CACHE_HOURS,
+    diagnostics_out: list[dict[str, Any]] | None = None,
 ) -> Optional[bytes]:
     locator = se_rk_current_json_locator(sfs_id)
     if archive.has(locator, max_age_hours=max_age_hours):
@@ -840,21 +841,111 @@ def fetch_se_rk_current_json(
         payload=payload,
     )
     if raw is None:
+        _record_se_rk_current_diagnostic(
+            diagnostics_out,
+            rule_id="se_rk_current_fetch_failed",
+            sfs_id=sfs_id,
+            locator=locator,
+            phase="acquisition",
+            reason="Sweden RK current JSON request returned no payload",
+        )
         return None
     try:
         decoded = json.loads(raw.decode("utf-8"))
-        hits = decoded.get("hits", {}).get("hits", [])
-        if not hits:
-            return None
-        source = hits[0].get("_source")
-        if not isinstance(source, dict):
-            return None
-    except Exception:
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        _record_se_rk_current_diagnostic(
+            diagnostics_out,
+            rule_id="se_rk_current_invalid_json",
+            sfs_id=sfs_id,
+            locator=locator,
+            phase="parse",
+            reason="Sweden RK current JSON response could not be decoded",
+        )
+        return None
+    if not isinstance(decoded, dict):
+        _record_se_rk_current_diagnostic(
+            diagnostics_out,
+            rule_id="se_rk_current_invalid_root",
+            sfs_id=sfs_id,
+            locator=locator,
+            phase="parse",
+            reason="Sweden RK current JSON response root was not an object",
+        )
+        return None
+    hits_parent = decoded.get("hits")
+    if not isinstance(hits_parent, dict):
+        _record_se_rk_current_diagnostic(
+            diagnostics_out,
+            rule_id="se_rk_current_missing_hits_container",
+            sfs_id=sfs_id,
+            locator=locator,
+            phase="parse",
+            reason="Sweden RK current JSON response did not contain a hits object",
+        )
+        return None
+    hits = hits_parent.get("hits")
+    if not isinstance(hits, list) or not hits:
+        _record_se_rk_current_diagnostic(
+            diagnostics_out,
+            rule_id="se_rk_current_no_hits",
+            sfs_id=sfs_id,
+            locator=locator,
+            phase="acquisition",
+            reason="Sweden RK current JSON response contained no published SFS hit",
+        )
+        return None
+    first_hit = hits[0]
+    if not isinstance(first_hit, dict):
+        _record_se_rk_current_diagnostic(
+            diagnostics_out,
+            rule_id="se_rk_current_invalid_hit",
+            sfs_id=sfs_id,
+            locator=locator,
+            phase="parse",
+            reason="Sweden RK current JSON response first hit was not an object",
+        )
+        return None
+    source = first_hit.get("_source")
+    if not isinstance(source, dict):
+        _record_se_rk_current_diagnostic(
+            diagnostics_out,
+            rule_id="se_rk_current_invalid_source",
+            sfs_id=sfs_id,
+            locator=locator,
+            phase="parse",
+            reason="Sweden RK current JSON response first hit did not contain an object _source",
+        )
         return None
 
     current_json = _json_bytes(source)
     archive.store(locator, current_json, storage_class="json")
     return current_json
+
+
+def _record_se_rk_current_diagnostic(
+    diagnostics_out: list[dict[str, Any]] | None,
+    *,
+    rule_id: str,
+    sfs_id: str,
+    locator: str,
+    phase: str,
+    reason: str,
+) -> None:
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        {
+            "rule_id": rule_id,
+            "family": "source_pathology",
+            "phase": phase,
+            "reason": reason,
+            "sfs_id": sfs_id,
+            "locator": locator,
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    )
 
 
 def build_se_source_bundle(
