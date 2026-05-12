@@ -8,11 +8,13 @@ from lawvm.estonia.ee_instruction_waist import (
     EEItemSelectionMeta,
     EESentenceTargetMeta,
     EESubsectionSelectionMeta,
+    EESubsectionTextScopeMeta,
     EETextReplaceMode,
     EETextRewrite,
     EETextRewriteWitness,
     make_item_selection_meta,
     make_sentence_target_meta,
+    make_subsection_text_scope_meta,
     make_text_rewrite_witness,
     parse_wrapper_quoted_clause,
     to_ee_parsed_instructions,
@@ -346,6 +348,59 @@ def test_to_ee_parsed_instructions_preserves_explicit_item_selection_meta() -> N
 
     assert len(instructions) == 1
     assert instructions[0].item_selection_meta == selection_meta
+
+
+def test_to_ee_parsed_instructions_preserves_subsection_text_scope_and_postpass_meta() -> None:
+    source = OperationSource(statute_id="ee/test", title="Testseadus")
+    scope_meta = make_subsection_text_scope_meta(intro_only=True)
+    ops = [
+        LegalOperation(
+            op_id="ee_test_subsection_scope_meta",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "6"), ("subsection", "10"))),
+            payload=IRNode(
+                kind=IRNodeKind.CONTENT,
+                text="uus sissejuhatav tekst",
+                attrs={
+                    "old_text": "vana sissejuhatav tekst",
+                    "subsection_text_scope_meta": scope_meta,
+                    "persistent_postpass": True,
+                },
+            ),
+            source=source,
+        )
+    ]
+
+    instructions = to_ee_parsed_instructions(ops)
+
+    assert len(instructions) == 1
+    assert instructions[0].subsection_text_scope_meta == EESubsectionTextScopeMeta(intro_only=True)
+    assert instructions[0].persistent_postpass is True
+
+
+def test_to_ee_parsed_instructions_leaves_scope_and_postpass_defaults_without_payload_evidence() -> None:
+    source = OperationSource(statute_id="ee/test", title="Testseadus")
+    ops = [
+        LegalOperation(
+            op_id="ee_test_no_subsection_scope_meta",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "6"), ("subsection", "10"))),
+            payload=IRNode(
+                kind=IRNodeKind.CONTENT,
+                text="uus sissejuhatav tekst",
+                attrs={"old_text": "vana sissejuhatav tekst"},
+            ),
+            source=source,
+        )
+    ]
+
+    instructions = to_ee_parsed_instructions(ops)
+
+    assert len(instructions) == 1
+    assert instructions[0].subsection_text_scope_meta is None
+    assert instructions[0].persistent_postpass is False
 
 
 def test_to_ee_parsed_instructions_preserves_source_family() -> None:
