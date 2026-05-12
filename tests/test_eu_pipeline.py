@@ -307,6 +307,8 @@ def test_apply_eu_ops_records_payload_and_target_missing_adjudications(capsys) -
         "eu_replay_target_not_found",
     ]
     assert adjudications[0].op_id == "replace-no-payload"
+    assert adjudications[0].detail["rule_id"] == "eu_replay_text_payload_missing"
+    assert adjudications[0].detail["phase"] == "replay"
     assert adjudications[1].detail["target"] == "section:9"
     assert adjudications[1].source_statute == "2026/2"
     assert replayed.metadata["eu_replay_applied_op_count"] == 0
@@ -357,6 +359,12 @@ def test_apply_eu_ops_records_unsupported_and_unknown_action() -> None:
     ]
     assert adjudications[0].op_id == "unsupported-renumber"
     assert adjudications[0].detail["action"] == "renumber"
+    assert adjudications[0].detail["rule_id"] == "eu_replay_unsupported_action"
+    assert adjudications[0].detail["phase"] == "replay"
+    assert adjudications[0].detail["family"] == "unsupported_or_unresolved_action"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
 
 
 def test_apply_eu_ops_records_tree_invariant_violation_after_successful_insert() -> None:
