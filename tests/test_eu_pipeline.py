@@ -137,6 +137,64 @@ def test_fetch_amendment_text_records_acquisition_failure(monkeypatch, tmp_path)
     assert pipeline.diagnostics[0].exception_type == "ValueError"
 
 
+def test_compile_ops_records_empty_affecting_act_text(monkeypatch, tmp_path) -> None:
+    pipeline = EUReplayPipeline(cache_dir=tmp_path)
+
+    monkeypatch.setattr(
+        EUReplayPipeline,
+        "discover_affecting_acts",
+        lambda _self, celex: ["32000R0001"],
+    )
+    monkeypatch.setattr(
+        EUReplayPipeline,
+        "fetch_amendment_text",
+        lambda _self, celex: "",
+    )
+
+    ops = pipeline.compile_ops_for_statute("32000R0000")
+
+    assert ops == []
+    assert [diagnostic.rule_id for diagnostic in pipeline.diagnostics] == [
+        "eu_amendment_text_empty"
+    ]
+    diagnostic = pipeline.diagnostics[0]
+    assert diagnostic.family == "source_pathology"
+    assert diagnostic.phase == "acquisition"
+    assert diagnostic.celex == "32000R0001"
+    assert diagnostic.exception_type == "not_applicable"
+    assert diagnostic.strict_disposition == "block"
+    assert diagnostic.quirks_disposition == "record"
+
+
+def test_compile_ops_does_not_duplicate_empty_text_after_fetch_failure(monkeypatch, tmp_path) -> None:
+    pipeline = EUReplayPipeline(cache_dir=tmp_path)
+
+    monkeypatch.setattr(
+        EUReplayPipeline,
+        "discover_affecting_acts",
+        lambda _self, celex: ["32000R0001"],
+    )
+
+    def fake_fetch_amendment_text(self: EUReplayPipeline, celex: str) -> str:
+        self._record_diagnostic(
+            rule_id="eu_amendment_text_fetch_failed",
+            celex=celex,
+            phase="acquisition",
+            reason="simulated fetch failure",
+            exc=RuntimeError("network down"),
+        )
+        return ""
+
+    monkeypatch.setattr(EUReplayPipeline, "fetch_amendment_text", fake_fetch_amendment_text)
+
+    ops = pipeline.compile_ops_for_statute("32000R0000")
+
+    assert ops == []
+    assert [diagnostic.rule_id for diagnostic in pipeline.diagnostics] == [
+        "eu_amendment_text_fetch_failed"
+    ]
+
+
 def _baseline_statute() -> IRStatute:
     return IRStatute(
         statute_id="32000R0000",

@@ -514,6 +514,7 @@ class EUReplayPipeline:
         self.parser_diagnostics = []
 
         for act_celex in affecting_acts:
+            diagnostics_before_fetch = len(self.diagnostics)
             text = self.fetch_amendment_text(act_celex)
             if text:
                 print(f"DEBUG: Processing act {act_celex}, text length={len(text)}")
@@ -526,6 +527,20 @@ class EUReplayPipeline:
                 for op in ops:
                     all_ops.append(replace(op, source=OperationSource(statute_id=act_celex)))
             else:
+                if len(self.diagnostics) == diagnostics_before_fetch:
+                    self.diagnostics.append(
+                        EUPipelineDiagnostic(
+                            rule_id="eu_amendment_text_empty",
+                            family="source_pathology",
+                            phase="acquisition",
+                            reason=(
+                                "EU affecting act produced empty amendment text; replay cannot treat the "
+                                "discovered source lane as if it had no operative content."
+                            ),
+                            celex=act_celex,
+                            exception_type="not_applicable",
+                        )
+                    )
                 print(f"DEBUG: No text fetched for act {act_celex}")
 
         return all_ops
