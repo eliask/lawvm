@@ -23,7 +23,7 @@ import re
 import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -104,6 +104,7 @@ class RTXmlMetadataDiagnostic:
     extractor: str
     exception_type: str = ""
     element_name: str = ""
+    detail: dict[str, object] = field(default_factory=dict)
     blocking: bool = True
     strict_disposition: str = "block"
     quirks_disposition: str = "record"
@@ -117,6 +118,7 @@ class RTXmlMetadataDiagnostic:
             "extractor": self.extractor,
             "exception_type": self.exception_type,
             "element_name": self.element_name,
+            "detail": self.detail,
             "blocking": self.blocking,
             "strict_disposition": self.strict_disposition,
             "quirks_disposition": self.quirks_disposition,
@@ -162,6 +164,8 @@ def _record_rt_xml_metadata_diagnostic(
     extractor: str,
     exception_type: str = "",
     element_name: str = "",
+    phase: str = "extraction",
+    detail: Optional[dict[str, object]] = None,
 ) -> None:
     if diagnostics_out is None:
         return
@@ -169,11 +173,12 @@ def _record_rt_xml_metadata_diagnostic(
         RTXmlMetadataDiagnostic(
             rule_id=rule_id,
             family="source_pathology",
-            phase="extraction",
+            phase=phase,
             reason=reason,
             extractor=extractor,
             exception_type=exception_type,
             element_name=element_name,
+            detail=detail or {},
         )
     )
 
@@ -464,6 +469,7 @@ def find_algtekst_aktviide(
     grupi_id: str,
     archive: Any = None,
     probe_below: Optional[str] = None,
+    diagnostics_out: Optional[List[RTXmlMetadataDiagnostic]] = None,
 ) -> Optional[str]:
     """Try to find the original algtekst aktViide for a statute group.
 
@@ -496,25 +502,69 @@ def find_algtekst_aktviide(
         # Probe sequential IDs just below the given boundary (typically the
         # first known amendment's aktViide).  Stop after finding one match or
         # exhausting the search range.
-        start = int(probe_below) - 1
+        try:
+            start = int(probe_below) - 1
+        except ValueError as exc:
+            _record_rt_xml_metadata_diagnostic(
+                diagnostics_out,
+                rule_id="ee_algtekst_probe_boundary_invalid",
+                reason="RT algtekst discovery probe was skipped because probe_below was not a numeric aktViide",
+                extractor="find_algtekst_aktviide",
+                element_name="probe_below",
+                exception_type=type(exc).__name__,
+                phase="acquisition",
+            )
+            return None
+        attempted = 0
+        fetch_failures = 0
+        same_group_non_algtekst = 0
+        different_group = 0
         for step in range(0, 2001, 10):
             candidate = str(start - step)
             if int(candidate) <= 0:
                 break
+            attempted += 1
             try:
                 xml = fetch_rt_xml(candidate, _archive)
             except RuntimeError:
+                fetch_failures += 1
                 continue  # ID doesn't exist / not XML
-            found_grupi = extract_grupi_id(xml)
+            found_grupi = extract_grupi_id(xml, diagnostics_out=diagnostics_out)
             if found_grupi == grupi_id:
-                tl = extract_tekstiliik(xml)
+                tl = extract_tekstiliik(xml, diagnostics_out=diagnostics_out)
                 if tl in ("algtekst", ""):
                     return candidate
+                same_group_non_algtekst += 1
                 # Found a terviktekst with the right grupiId — keep looking for algtekst
             elif found_grupi:
-                pass  # different statute; keep probing
+                different_group += 1  # different statute; keep probing
+        _record_rt_xml_metadata_diagnostic(
+            diagnostics_out,
+            rule_id="ee_algtekst_probe_no_match",
+            reason="RT algtekst discovery probe exhausted the bounded candidate window without finding an algtekst in the requested group",
+            extractor="find_algtekst_aktviide",
+            element_name="algtekst",
+            phase="acquisition",
+            detail={
+                "grupi_id": grupi_id,
+                "probe_below": probe_below,
+                "attempted_candidates": attempted,
+                "fetch_failures": fetch_failures,
+                "same_group_non_algtekst": same_group_non_algtekst,
+                "different_group": different_group,
+            },
+        )
         return None
 
+    _record_rt_xml_metadata_diagnostic(
+        diagnostics_out,
+        rule_id="ee_algtekst_probe_not_requested",
+        reason="RT algtekst discovery was not attempted because no probe boundary was supplied",
+        extractor="find_algtekst_aktviide",
+        element_name="probe_below",
+        phase="acquisition",
+        detail={"grupi_id": grupi_id},
+    )
     return None
 
 

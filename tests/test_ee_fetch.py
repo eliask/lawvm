@@ -10,6 +10,7 @@ from lawvm.estonia.fetch import (
     extract_rt_pub_ref,
     extract_tekstiliik,
     fetch_redactions_feed,
+    find_algtekst_aktviide,
     get_oracle_aktviide_for_pit,
 )
 
@@ -74,6 +75,109 @@ def test_get_oracle_aktviide_for_pit_threads_redactions_feed_diagnostics(monkeyp
 
     assert oracle_id is None
     assert [diagnostic.rule_id for diagnostic in diagnostics] == ["ee_redactions_feed_fetch_failed"]
+
+
+def test_find_algtekst_aktviide_records_unrequested_probe() -> None:
+    diagnostics: list[RTXmlMetadataDiagnostic] = []
+
+    assert find_algtekst_aktviide("group-1", archive=object(), diagnostics_out=diagnostics) is None
+
+    assert [diagnostic.rule_id for diagnostic in diagnostics] == ["ee_algtekst_probe_not_requested"]
+    assert diagnostics[0].phase == "acquisition"
+    assert diagnostics[0].detail == {"grupi_id": "group-1"}
+    assert diagnostics[0].strict_disposition == "block"
+
+
+def test_find_algtekst_aktviide_records_invalid_probe_boundary() -> None:
+    diagnostics: list[RTXmlMetadataDiagnostic] = []
+
+    assert (
+        find_algtekst_aktviide(
+            "group-1",
+            archive=object(),
+            probe_below="not-an-id",
+            diagnostics_out=diagnostics,
+        )
+        is None
+    )
+
+    assert [diagnostic.rule_id for diagnostic in diagnostics] == [
+        "ee_algtekst_probe_boundary_invalid"
+    ]
+    assert diagnostics[0].phase == "acquisition"
+    assert diagnostics[0].element_name == "probe_below"
+    assert diagnostics[0].exception_type == "ValueError"
+
+
+def test_find_algtekst_aktviide_records_bounded_no_match(monkeypatch) -> None:
+    diagnostics: list[RTXmlMetadataDiagnostic] = []
+    xml_by_candidate = {
+        "11": b"""
+        <tyviseadus xmlns="tyviseadus_1_10.02.2010">
+          <terviktekstiGrupiID>group-1</terviktekstiGrupiID>
+          <tekstiliik>terviktekst</tekstiliik>
+        </tyviseadus>
+        """,
+        "1": b"""
+        <tyviseadus xmlns="tyviseadus_1_10.02.2010">
+          <terviktekstiGrupiID>other-group</terviktekstiGrupiID>
+          <tekstiliik>algtekst</tekstiliik>
+        </tyviseadus>
+        """,
+    }
+
+    def fake_fetch_rt_xml(candidate, archive):
+        del archive
+        return xml_by_candidate[candidate]
+
+    monkeypatch.setattr("lawvm.estonia.fetch.fetch_rt_xml", fake_fetch_rt_xml)
+
+    assert (
+        find_algtekst_aktviide(
+            "group-1",
+            archive=object(),
+            probe_below="12",
+            diagnostics_out=diagnostics,
+        )
+        is None
+    )
+
+    assert [diagnostic.rule_id for diagnostic in diagnostics] == ["ee_algtekst_probe_no_match"]
+    assert diagnostics[0].phase == "acquisition"
+    assert diagnostics[0].detail == {
+        "grupi_id": "group-1",
+        "probe_below": "12",
+        "attempted_candidates": 2,
+        "fetch_failures": 0,
+        "same_group_non_algtekst": 1,
+        "different_group": 1,
+    }
+
+
+def test_find_algtekst_aktviide_finds_algtekst_without_no_match_diagnostic(monkeypatch) -> None:
+    diagnostics: list[RTXmlMetadataDiagnostic] = []
+
+    def fake_fetch_rt_xml(candidate, archive):
+        del candidate, archive
+        return b"""
+        <tyviseadus xmlns="tyviseadus_1_10.02.2010">
+          <terviktekstiGrupiID>group-1</terviktekstiGrupiID>
+          <tekstiliik>algtekst</tekstiliik>
+        </tyviseadus>
+        """
+
+    monkeypatch.setattr("lawvm.estonia.fetch.fetch_rt_xml", fake_fetch_rt_xml)
+
+    assert (
+        find_algtekst_aktviide(
+            "group-1",
+            archive=object(),
+            probe_below="12",
+            diagnostics_out=diagnostics,
+        )
+        == "11"
+    )
+    assert diagnostics == []
 
 
 def test_rt_xml_metadata_extractors_record_parse_failure_diagnostics() -> None:
