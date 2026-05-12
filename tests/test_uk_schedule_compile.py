@@ -1707,6 +1707,112 @@ def test_compile_structural_effect_records_no_targets_rejection() -> None:
     assert rejection["has_extracted_source"] is False
 
 
+def test_compile_malformed_overlap_substitution_records_unlowered_rejection() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <Text>In subsection (1), the relevant words are changed.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_overlap_substitution_parse_failed",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2025/36",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2025",
+        affected_number="36",
+        affected_provisions="s. 63(1)",
+        affecting_uri="/id/uksi/2025/1",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="art. 2",
+        affecting_title="Test Amendment Order",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+    assert rejection["family"] == "lowering_filter"
+    assert rejection["reason_code"] == "overlap_substitution_parse_failed"
+    assert rejection["effect_id"] == "uk_test_overlap_substitution_parse_failed"
+    assert rejection["affected_provisions"] == "s. 63(1)"
+    assert rejection["unlowered_target_candidates"] == ["s. 63(1)"]
+    assert rejection["target_candidate_count"] == 1
+    assert rejection["parser"] == "parse_fragment_substitution"
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+    assert rejection["quirks_disposition"] == "record"
+    assert "relevant words are changed" in rejection["extracted_text_preview"]
+
+
+def test_compile_multi_anchor_overlap_substitution_records_unlowered_rejection() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <Text>In paragraphs (a) and (b), the overlapping words are changed.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_overlap_substitution_arity_failed",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2025/36",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2025",
+        affected_number="36",
+        affected_provisions="s. 63(1)(a)(b)",
+        affecting_uri="/id/uksi/2025/1",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="art. 2",
+        affecting_title="Test Amendment Order",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+    assert rejection["reason_code"] == "overlap_substitution_arity_unsupported"
+    assert rejection["effect_id"] == "uk_test_overlap_substitution_arity_failed"
+    assert rejection["original_target_candidates"] == ["s. 63(1)(a)", "s. 63(1)(b)"]
+    assert rejection["unlowered_target_candidates"] == ["s. 63(1)(a)", "s. 63(1)(b)"]
+    assert rejection["target_candidate_count"] == 2
+    assert rejection["strict_disposition"] == "block"
+    assert rejection["quirks_disposition"] == "record"
+
+
 def test_compile_plain_text_schedule_sibling_omission_expands_targets() -> None:
     extracted_el = ET.fromstring(
         f"""
