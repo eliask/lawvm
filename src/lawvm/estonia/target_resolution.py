@@ -43,6 +43,7 @@ _EE_OLD_FORMAT_CONTAINER_HEADING_TARGET_BLOCKS_SECTION_CARRY_RULE = (
 _EE_PREAMBLE_CLAUSE_NON_BODY_RULE = "ee_preamble_clause_non_body"
 _EE_STATUTE_TITLE_REPLACE_RULE = "ee_statute_title_replace"
 _EE_TITLE_CLAUSE_UNRESOLVED_NON_BODY_RULE = "ee_title_clause_unresolved_non_body"
+_EE_NEW_FORMAT_OP_TEXT_TARGET_TITLE_MISMATCH_RULE = "ee_new_format_op_text_target_title_mismatch"
 _EE_OLD_FORMAT_OUT_OF_BODY_APPENDIX_CLAUSE_RULE = "ee_old_format_out_of_body_appendix_clause_not_section_scoped"
 _EE_OUT_OF_BODY_APPENDIX_CLAUSE_RULE = "ee_out_of_body_appendix_clause_not_section_scoped"
 _EE_UNPARSED_OPERATION_CLAUSE_RULE = "ee_unparsed_operation_clause"
@@ -153,6 +154,12 @@ def _is_container_heading_target_clause(text: str) -> bool:
             re.IGNORECASE,
         )
     )
+
+
+def _looks_like_legal_title_surface(text: str) -> bool:
+    """Return True for target titles whose surface names a legal act kind."""
+    lowered = text.lower()
+    return any(kind in lowered for kind in ("seadus", "seadustik", "koodeks", "määrus"))
 
 
 def _non_body_meta_op(
@@ -1034,6 +1041,7 @@ def new_format_lower_op_texts(
     has_section_ref: Callable[[str], bool],
     section_from_ops: Callable[[list[LegalOperation]], str | None],
     normalize_act_id: Callable[[str], str],
+    adjudications_out: list[CompileAdjudication] | None = None,
 ) -> tuple[list[LegalOperation], int]:
     """Lower new-format op texts with carried section context and cross-statute guard."""
     lowered: list[LegalOperation] = []
@@ -1052,29 +1060,44 @@ def new_format_lower_op_texts(
             op_text = op_text[end + len(_OP_TEXT_RULE_SUFFIX):]
         original_op_text = op_text
         amendment_item_label = old_format_item_label(op_text)
-        if target_title:
+        if target_title and _looks_like_legal_title_surface(target_title):
+            target_guard_text = old_format_strip_item_label(op_text)
             m_stat_ref = re.match(
-                r'^([A-ZÜÕÖÄ][^\n.]{4,80}?'
-                r'\b(?:seaduse|seadustiku|koodeksi|määruse)\b[^\n]{0,10}?)'
+                r'^([A-ZÜÕÖÄ][^\n.]{2,120}?(?:seaduse|seadustiku|koodeksi|määruse))'
+                r'[^\n]{0,10}?'
                 r'(?:§\s*\d|paragrahvi?\s+\d)',
-                op_text,
-                re.IGNORECASE,
+                target_guard_text,
             )
             if m_stat_ref:
                 stat_fragment = m_stat_ref.group(1)
-                registry_record = lookup_act_identity(
-                    akt_viide=source.statute_id,
-                    title=target_title,
-                    alias=stat_fragment,
-                )
-                if registry_record is not None and (
-                    _registry_record_matches_all(registry_record, target_title, stat_fragment)
-                ):
-                    pass
-                elif normalize_act_id(stat_fragment) == normalize_act_id(target_title):
-                    pass
-                elif not title_matcher(target_title, stat_fragment):
-                    continue
+                if not stat_fragment.lower().startswith(("käesoleva ", "sama ")):
+                    registry_record = lookup_act_identity(
+                        akt_viide=source.statute_id,
+                        title=target_title,
+                        alias=stat_fragment,
+                    )
+                    if registry_record is not None and (
+                        _registry_record_matches_all(registry_record, target_title, stat_fragment)
+                    ):
+                        pass
+                    elif normalize_act_id(stat_fragment) == normalize_act_id(target_title):
+                        pass
+                    elif not title_matcher(target_title, stat_fragment):
+                        _record_ee_parse_rejection(
+                            adjudications_out,
+                            kind="ee_parse_new_format_op_text_rejected",
+                            message=(
+                                "Estonia new-format op text was not parsed because its explicit "
+                                "statute fragment did not match the requested target title."
+                            ),
+                            source_id=source.statute_id,
+                            rule_id=_EE_NEW_FORMAT_OP_TEXT_TARGET_TITLE_MISMATCH_RULE,
+                            reason="target_title_mismatch",
+                            family="target_resolution_recovery",
+                            target_title=target_title,
+                            statute_fragment=stat_fragment,
+                        )
+                        continue
 
         effective = re.sub(r'^\(?\d[\d\s_]*\)\s*', '', op_text).strip()
         if _is_title_clause_non_body(original_op_text):
@@ -1197,6 +1220,7 @@ def new_format_collect_all_ops(
     extract_ops: Callable[[str, OperationSource, int], list[LegalOperation]],
     has_section_ref: Callable[[str], bool],
     section_from_ops: Callable[[list[LegalOperation]], str | None],
+    adjudications_out: list[CompileAdjudication] | None = None,
 ) -> tuple[list[LegalOperation], int]:
     """Collect all lowered ops for a new-format amendment act."""
     all_ops: list[LegalOperation] = []
@@ -1260,6 +1284,7 @@ def new_format_collect_all_ops(
             has_section_ref=has_section_ref,
             section_from_ops=section_from_ops,
             normalize_act_id=normalize_act_id,
+            adjudications_out=adjudications_out,
         )
         all_ops.extend(ops)
 

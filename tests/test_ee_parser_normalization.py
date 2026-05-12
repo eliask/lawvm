@@ -7718,6 +7718,45 @@ def test_parse_ee_amendment_ops_keeps_direct_target_clause_inside_other_act_para
     assert ops[0].payload.text == "lasteaed"
 
 
+def test_parse_ee_amendment_ops_records_new_format_op_text_target_mismatch() -> None:
+    xml = """
+    <akt xmlns="akt_1_10.06.2010">
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>1</paragrahvNr>
+          <paragrahvPealkiri>Toiduseaduse muutmine</paragrahvPealkiri>
+          <sisuTekst>
+            <HTMLKonteiner><![CDATA[
+              <p><b>1)</b> Liiklusseaduse § 8 lõike 1 punktis 1 asendatakse sõna „vana” sõnaga „uus”.</p>
+            ]]></HTMLKonteiner>
+          </sisuTekst>
+        </paragrahv>
+      </sisu>
+    </akt>
+    """.encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Toiduseadus",
+        adjudications_out=adjudications,
+    )
+
+    assert ops == []
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "ee_parse_new_format_op_text_rejected"
+    ]
+    assert adjudications[0].detail["rule_id"] == "ee_new_format_op_text_target_title_mismatch"
+    assert adjudications[0].detail["phase"] == "parse"
+    assert adjudications[0].detail["family"] == "target_resolution_recovery"
+    assert adjudications[0].detail["reason"] == "target_title_mismatch"
+    assert adjudications[0].detail["target_title"] == "Toiduseadus"
+    assert adjudications[0].detail["statute_fragment"] == "Liiklusseaduse"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+
+
 def test_parse_ee_amendment_ops_ignores_direct_target_title_quote_for_text_replace_args() -> None:
     xml = """
     <akt xmlns="akt_1_10.06.2010">
