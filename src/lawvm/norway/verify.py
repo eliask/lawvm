@@ -38,6 +38,19 @@ _NO_VERIFY_SECTION_SHELL_RE = re.compile(
 
 
 @dataclass
+class NOFilteredDivergence:
+    divergence: ConsistencyDivergence
+    rule_id: str
+    reason: str
+
+
+@dataclass
+class NOPrimaryDivergencePartition:
+    primary: list[ConsistencyDivergence]
+    filtered: list[NOFilteredDivergence]
+
+
+@dataclass
 class NOVerifyResult:
     base_id: str
     as_of: str
@@ -48,6 +61,9 @@ class NOVerifyResult:
     divergence_counts: dict[str, int] | None = None
     raw_divergence_count: int = 0
     raw_divergence_counts: dict[str, int] | None = None
+    filtered_divergence_count: int = 0
+    filtered_divergence_rule_counts: dict[str, int] | None = None
+    filtered_divergences: list[NOFilteredDivergence] | None = None
     divergences: list[ConsistencyDivergence] | None = None
     indexed_amendment_count: int = 0
     applied_amendment_count: int = 0
@@ -508,12 +524,20 @@ def _is_chapter_relocation_pair(
     return left_path != right_path and _non_container_path(left_path) == _non_container_path(right_path)
 
 
-def _primary_divergences(divergences: list[ConsistencyDivergence]) -> list[ConsistencyDivergence]:
+def _partition_primary_divergences(divergences: list[ConsistencyDivergence]) -> NOPrimaryDivergencePartition:
     primary_candidates: list[ConsistencyDivergence] = []
+    filtered: list[NOFilteredDivergence] = []
     paths = [tuple(div.address.path) for div in divergences]
     for idx, divergence in enumerate(divergences):
         path = paths[idx]
         if any(_is_prefix_address(path, other_path) for j, other_path in enumerate(paths) if j != idx):
+            filtered.append(
+                NOFilteredDivergence(
+                    divergence=divergence,
+                    rule_id="no_verify.prefix_descendant_suppressed",
+                    reason="Divergence address is a strict prefix of another raw divergence address.",
+                )
+            )
             continue
         primary_candidates.append(divergence)
 
@@ -532,9 +556,27 @@ def _primary_divergences(divergences: list[ConsistencyDivergence]) -> list[Consi
         )
         if partner_idx is not None:
             paired.add(partner_idx)
+            filtered.append(
+                NOFilteredDivergence(
+                    divergence=divergence,
+                    rule_id="no_verify.chapter_relocation_pair",
+                    reason="Replay and current contain the same non-container provision text at different chapter paths.",
+                )
+            )
+            filtered.append(
+                NOFilteredDivergence(
+                    divergence=primary_candidates[partner_idx],
+                    rule_id="no_verify.chapter_relocation_pair",
+                    reason="Replay and current contain the same non-container provision text at different chapter paths.",
+                )
+            )
             continue
         primary.append(divergence)
-    return primary
+    return NOPrimaryDivergencePartition(primary=primary, filtered=filtered)
+
+
+def _primary_divergences(divergences: list[ConsistencyDivergence]) -> list[ConsistencyDivergence]:
+    return _partition_primary_divergences(divergences).primary
 
 
 def load_no_current_statute(base_id: str, data_dir: Optional[Path] = None) -> IRStatute:
@@ -633,19 +675,26 @@ def verify_no_against_current(
         text_normalizer=normalize_no_comparison_text,
         missing_equals_empty=True,
     )
-    primary = _primary_divergences(divergences)
+    partition = _partition_primary_divergences(divergences)
+    primary = partition.primary
     counts: dict[str, int] = {}
     raw_counts: dict[str, int] = {}
+    filtered_rule_counts: dict[str, int] = {}
     for divergence in primary:
         counts[divergence.divergence_type] = counts.get(divergence.divergence_type, 0) + 1
     for divergence in divergences:
         raw_counts[divergence.divergence_type] = raw_counts.get(divergence.divergence_type, 0) + 1
+    for filtered in partition.filtered:
+        filtered_rule_counts[filtered.rule_id] = filtered_rule_counts.get(filtered.rule_id, 0) + 1
 
     result.consistent = not primary
     result.divergence_count = len(primary)
     result.divergence_counts = counts
     result.raw_divergence_count = len(divergences)
     result.raw_divergence_counts = raw_counts
+    result.filtered_divergence_count = len(partition.filtered)
+    result.filtered_divergence_rule_counts = filtered_rule_counts
+    result.filtered_divergences = partition.filtered
     result.divergences = primary
     base_year = 0
     try:

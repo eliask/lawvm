@@ -49,6 +49,8 @@ def main(args: "argparse.Namespace") -> None:
         "divergence_counts": dict(result.divergence_counts or {}),
         "raw_divergence_count": result.raw_divergence_count,
         "raw_divergence_counts": dict(result.raw_divergence_counts or {}),
+        "filtered_divergence_count": int(getattr(result, "filtered_divergence_count", 0) or 0),
+        "filtered_divergence_rule_counts": dict(getattr(result, "filtered_divergence_rule_counts", None) or {}),
         "indexed_amendment_count": result.indexed_amendment_count,
         "applied_amendment_count": result.applied_amendment_count,
         "replay_op_count": result.replay_op_count,
@@ -83,6 +85,20 @@ def main(args: "argparse.Namespace") -> None:
                 "consolidated_text": divergence.consolidated_text,
             }
             for divergence in divergences
+        ]
+        filtered_divergences = getattr(result, "filtered_divergences", None) or []
+        if isinstance(max_divergences, int) and max_divergences >= 0:
+            filtered_divergences = filtered_divergences[:max_divergences]
+        payload["filtered_divergences"] = [
+            {
+                "rule_id": filtered.rule_id,
+                "reason": filtered.reason,
+                "address": list(filtered.divergence.address.path),
+                "divergence_type": filtered.divergence.divergence_type,
+                "ops_text": filtered.divergence.ops_text,
+                "consolidated_text": filtered.divergence.consolidated_text,
+            }
+            for filtered in filtered_divergences
         ]
 
     if getattr(args, "json", False):
@@ -121,6 +137,8 @@ def main(args: "argparse.Namespace") -> None:
             "  raw divergences : "
             f"{payload['raw_divergence_count']}"
         )
+    if payload["filtered_divergence_count"]:
+        print(f"  filtered divs   : {payload['filtered_divergence_count']}")
     if getattr(args, "verbose", False):
         for divergence in cast(list[dict[str, Any]], payload.get("divergences", [])):
             address = "/".join(f"{kind}:{label}" for kind, label in divergence["address"])
