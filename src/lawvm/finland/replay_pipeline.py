@@ -6,9 +6,10 @@ from typing import Any, Callable, Dict, List, Literal, Optional
 
 from lawvm.corpus_store import CorpusStore
 from lawvm.core.provenance import MigrationEvent
-from lawvm.core.phase_result import Finding, PhaseResult
+from lawvm.core.phase_result import Finding, OBLIGATION_ROLE, OBSERVATION_ROLE, PhaseResult
 from lawvm.core.replay_contracts import ReplayCheckpoint, ReplayCheckpointCallback
 from lawvm.core.tree_ops import resort_children as _resort_children
+from lawvm.finland.chapter_seed import ChapterSeedDiagnostic
 
 from lawvm.finland.statute import ReplayState, StatuteContext, _serialize_text_node as _serialize_text
 
@@ -170,6 +171,28 @@ def build_tree_invariant_finding(
     )
 
 
+def build_chapter_seed_finding(diagnostic: ChapterSeedDiagnostic) -> Finding:
+    """Project chapter-seed diagnostics onto the governed finding ledger."""
+    detail = diagnostic.as_detail()
+    if diagnostic.family == "source_pathology":
+        return Finding(
+            kind="ELAB.CHAPTER_SEED_SOURCE_PATHOLOGY",
+            role=OBLIGATION_ROLE,
+            stage="execute_replay_plan",
+            blocking=True,
+            source_statute=diagnostic.source_statute,
+            detail=detail,
+        )
+    return Finding(
+        kind="ELAB.CHAPTER_SEED_REPAIR",
+        role=OBSERVATION_ROLE,
+        stage="execute_replay_plan",
+        blocking=False,
+        source_statute=diagnostic.source_statute,
+        detail=detail,
+    )
+
+
 def execute_replay_plan(
     plan: ReplayPlan,
     *,
@@ -200,9 +223,20 @@ def execute_replay_plan(
     """Execute the replay fold for a prepared plan."""
     state = plan.initial_state
 
-    seeded_ir, chapter_seed_skip = seed_missing_chapters(state.ir, plan.amendment_ids, corpus)
+    chapter_seed_diagnostics: list[ChapterSeedDiagnostic] = []
+    seeded_ir, chapter_seed_skip = seed_missing_chapters(
+        state.ir,
+        plan.amendment_ids,
+        corpus,
+        diagnostics_out=chapter_seed_diagnostics,
+    )
     if seeded_ir is not state.ir:
         state = state.with_ir(seeded_ir)
+    if findings_out is not None:
+        findings_out.extend(
+            build_chapter_seed_finding(diagnostic)
+            for diagnostic in chapter_seed_diagnostics
+        )
 
     repeal_schedule = pre_scan_repeal_targets(
         plan.amendment_ids,
