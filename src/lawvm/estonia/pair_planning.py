@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 from lawvm.estonia.fetch import (
     AmendmentRef,
+    RedactionsFeedDiagnostic,
     extract_amendment_refs,
     extract_effective_date,
     extract_grupi_id,
@@ -38,6 +39,17 @@ _EE_MUUTMISMARGE_PUBLICATION_NUMBER_REPAIR_XML_PARSE_FAILED_RULE = (
 )
 _EE_ORACLE_FETCH_FAILED_RULE = "ee_oracle_fetch_failed"
 _EE_ORACLE_REF_EXTRACTION_FAILED_RULE = "ee_oracle_ref_extraction_failed"
+
+
+def _redactions_feed_diagnostic_finding(
+    diagnostic: RedactionsFeedDiagnostic,
+) -> dict[str, Any]:
+    detail = diagnostic.as_detail()
+    return {
+        "kind": "source_pathology",
+        "rule": diagnostic.rule_id,
+        **detail,
+    }
 
 
 def _ref_slice_key(ref: AmendmentRef) -> tuple[str, str]:
@@ -328,8 +340,14 @@ def plan_ee_oracle_pair(
     oracle_xml: bytes | None = None
     oracle_fetch_findings: list[dict[str, Any]] = []
 
+    oracle_selection_diagnostics: list[RedactionsFeedDiagnostic] = []
     if selected_oracle_id is None and grupi_id:
-        selected_oracle_id = get_oracle_aktviide_for_pit(grupi_id, as_of, archive)
+        selected_oracle_id = get_oracle_aktviide_for_pit(
+            grupi_id,
+            as_of,
+            archive,
+            diagnostics_out=oracle_selection_diagnostics,
+        )
 
     if selected_oracle_id == base_id:
         oracle_xml = base_xml
@@ -473,6 +491,10 @@ def plan_ee_oracle_pair(
     lineage = [
         *base_ref_repair_findings,
         *base_ref_number_repair_findings,
+        *[
+            _redactions_feed_diagnostic_finding(diagnostic)
+            for diagnostic in oracle_selection_diagnostics
+        ],
         *oracle_fetch_findings,
         *oracle_ref_repair_findings,
         *oracle_ref_number_repair_findings,
