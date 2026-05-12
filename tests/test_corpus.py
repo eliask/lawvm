@@ -128,6 +128,71 @@ def test_cache_only_suspect_flags_base_oracle_with_pre_cutoff_amendment(monkeypa
     assert suspect == "oracle_missing_version_pin despite amendment 2021/609 eff 2021-07-01 <= cutoff 2022-05-20"
 
 
+def test_cache_only_suspect_records_unparseable_missing_pin_child(monkeypatch) -> None:
+    sid = "2020/508"
+    oracle_path = "akn/fi/act/statute-consolidated/2020/508/fin@/main.xml"
+    oracle_xml = b"""
+    <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <meta>
+        <identification source="">
+          <FRBRExpression>
+            <FRBRdate date="2022-05-20" name="dateConsolidated"/>
+          </FRBRExpression>
+        </identification>
+      </meta>
+    </akn>
+    """
+    fake = _FakeCorpus(
+        {sid: oracle_path},
+        {
+            oracle_path: oracle_xml,
+            corpus.statute_url("2021/609"): b"<akn>",
+        },
+    )
+    monkeypatch.setattr(corpus, "_get_amendment_children_map", lambda: {sid: {"2021/609"}})
+
+    suspect, pending = corpus.get_consolidated_oracle_suspect_cache_only(sid, cast(Any, fake))
+
+    assert suspect == ""
+    assert pending == "oracle_missing_version_pin_amendment_unparseable:2021/609"
+
+
+def test_cache_only_suspect_prefers_proven_child_over_unparseable_pending(monkeypatch) -> None:
+    sid = "2020/508"
+    oracle_path = "akn/fi/act/statute-consolidated/2020/508/fin@/main.xml"
+    oracle_xml = b"""
+    <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <meta>
+        <identification source="">
+          <FRBRExpression>
+            <FRBRdate date="2022-05-20" name="dateConsolidated"/>
+          </FRBRExpression>
+        </identification>
+      </meta>
+    </akn>
+    """
+    amend_xml = b"""
+    <akn xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0">
+      <meta><proprietary><dateEntryIntoForce date="2021-07-01"/></proprietary></meta>
+      <dateEntryIntoForce date="2021-07-01"/>
+    </akn>
+    """
+    fake = _FakeCorpus(
+        {sid: oracle_path},
+        {
+            oracle_path: oracle_xml,
+            corpus.statute_url("2021/1"): b"<akn>",
+            corpus.statute_url("2021/609"): amend_xml,
+        },
+    )
+    monkeypatch.setattr(corpus, "_get_amendment_children_map", lambda: {sid: {"2021/1", "2021/609"}})
+
+    suspect, pending = corpus.get_consolidated_oracle_suspect_cache_only(sid, cast(Any, fake))
+
+    assert pending == ""
+    assert suspect == "oracle_missing_version_pin despite amendment 2021/609 eff 2021-07-01 <= cutoff 2022-05-20"
+
+
 def test_cache_only_suspect_flags_expired_temporary_version_mid(monkeypatch) -> None:
     sid = "2006/1096"
     oracle_path = "akn/fi/act/statute-consolidated/2006/1096/fin@20151425/main.xml"

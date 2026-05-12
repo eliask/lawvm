@@ -523,17 +523,19 @@ def get_consolidated_oracle_suspect_cache_only(
         if not children:
             return "", ""
 
-        first_uncached = ""
+        first_pending_detail = ""
         for mid in children:
             source_url = statute_url(mid)
             xml_bytes = corpus.read_locator(source_url)
             if xml_bytes is None:
-                if not first_uncached:
-                    first_uncached = mid
+                if not first_pending_detail:
+                    first_pending_detail = f"oracle_missing_version_pin_amendment_uncached:{mid}"
                 continue
             try:
                 source_tree = etree.fromstring(xml_bytes)
             except etree.XMLSyntaxError:
+                if not first_pending_detail:
+                    first_pending_detail = f"oracle_missing_version_pin_amendment_unparseable:{mid}"
                 continue
             eff_date = _amendment_effective_date(source_tree)
             if eff_date is not None and eff_date <= cutoff_date:
@@ -542,8 +544,8 @@ def get_consolidated_oracle_suspect_cache_only(
                     f"{eff_date.isoformat()} <= cutoff {cutoff_date.isoformat()}",
                     "",
                 )
-        if first_uncached:
-            return "", f"oracle_missing_version_pin_amendment_uncached:{first_uncached}"
+        if first_pending_detail:
+            return "", first_pending_detail
         return "", ""
 
     source_url = statute_url(oracle_version_amendment_id)
