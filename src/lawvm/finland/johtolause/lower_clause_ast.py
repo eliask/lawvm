@@ -46,6 +46,7 @@ ResolvedMetaClause                              -> MetaClause(...)
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from dataclasses import replace as _dc_replace
 from typing import List, Optional, Tuple
 
@@ -75,6 +76,24 @@ from lawvm.finland.johtolause.surface_resolve import (
     ResolvedVerbGroup,
     ResolutionWitness,
 )
+
+
+FI_TEXT_AMEND_UNLOWERABLE_EMPTY_SELECTOR_RULE_ID = "fi.text_amend.unlowerable_empty_selector.v1"
+FI_TEXT_AMEND_UNLOWERABLE_EMPTY_SELECTOR_KIND = "JOHTOLAUSE.TEXT_AMEND_UNLOWERABLE_EMPTY_SELECTOR"
+
+
+@dataclass(frozen=True)
+class ClauseAstLoweringDiagnostic:
+    """Typed diagnostic for resolved surface nodes that cannot lower to ClauseAST."""
+
+    kind: str
+    rule_id: str
+    phase: str
+    family: str
+    reason_code: str
+    strict_disposition: str
+    quirks_disposition: str
+    detail: dict[str, object]
 
 
 # ---------------------------------------------------------------------------
@@ -681,6 +700,9 @@ def _lower_resolved_descendant_coordination(
 def _lower_resolved_text_amend(
     node: ResolvedTextAmend,
     _verb: VerbKind,
+    diagnostics_out: Optional[List[ClauseAstLoweringDiagnostic]] = None,
+    *,
+    placement: str = "inline",
 ) -> List[ClauseNode]:
     """Lower a ResolvedTextAmend to a TextAmend.
 
@@ -701,10 +723,26 @@ def _lower_resolved_text_amend(
         target = LegalAddress(path=())
 
     # Build a TextPatchSpec from the surface old_text / new_text pair.
-    # If old_text is empty (unresolved text amend) skip the TextAmend — the
-    # TextSelector requires a non-empty match_text and we cannot construct a
-    # semantically valid patch without it.
+    # If old_text is empty (unresolved text amend), do not fabricate a selector.
+    # Record the rejected lowerable shape when a diagnostic sink is provided.
     if not node.old_text:
+        _record_unlowerable_text_amend(
+            diagnostics_out,
+            target=target,
+            old_text=node.old_text,
+            new_text=node.new_text,
+            witness_rule_id=(
+                node.surface_witness.rule_id
+                if node.surface_witness is not None
+                else ""
+            ),
+            source_span=(
+                node.surface_witness.source_span
+                if node.surface_witness is not None
+                else None
+            ),
+            placement=placement,
+        )
         return []
 
     if node.new_text:
@@ -720,11 +758,48 @@ def _lower_resolved_text_amend(
         )
     return [
         TextAmend(
-            action=StructuralAction.REPLACE,
+            action=(
+                StructuralAction.TEXT_REPLACE
+                if node.new_text
+                else StructuralAction.TEXT_REPEAL
+            ),
             target=target,
             text_patch=patch,
         )
     ]
+
+
+def _record_unlowerable_text_amend(
+    diagnostics_out: Optional[List[ClauseAstLoweringDiagnostic]],
+    *,
+    target: LegalAddress,
+    old_text: str,
+    new_text: str,
+    witness_rule_id: str,
+    source_span: Optional[Tuple[int, int]],
+    placement: str,
+) -> None:
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        ClauseAstLoweringDiagnostic(
+            kind=FI_TEXT_AMEND_UNLOWERABLE_EMPTY_SELECTOR_KIND,
+            rule_id=FI_TEXT_AMEND_UNLOWERABLE_EMPTY_SELECTOR_RULE_ID,
+            phase="lower_clause_ast",
+            family="unsupported_action",
+            reason_code="EMPTY_TEXT_SELECTOR",
+            strict_disposition="block",
+            quirks_disposition="record",
+            detail={
+                "old_text": old_text,
+                "new_text": new_text,
+                "target": str(target),
+                "witness_rule_id": witness_rule_id,
+                "source_span": source_span,
+                "placement": placement,
+            },
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -745,7 +820,11 @@ def _lower_resolved_meta_clause(
 # ---------------------------------------------------------------------------
 
 
-def _lower_resolved_node(node: ResolvedNode, verb: VerbKind) -> List[ClauseNode]:
+def _lower_resolved_node(
+    node: ResolvedNode,
+    verb: VerbKind,
+    diagnostics_out: Optional[List[ClauseAstLoweringDiagnostic]] = None,
+) -> List[ClauseNode]:
     """Dispatch one ResolvedNode to its lowering handler.
 
     Returns a list because some node types (sub_refs, DescendantCoordination)
@@ -762,7 +841,7 @@ def _lower_resolved_node(node: ResolvedNode, verb: VerbKind) -> List[ClauseNode]
     if isinstance(node, ResolvedDescendantCoordination):
         return _lower_resolved_descendant_coordination(node, verb)
     if isinstance(node, ResolvedTextAmend):
-        return _lower_resolved_text_amend(node, verb)
+        return _lower_resolved_text_amend(node, verb, diagnostics_out)
     if isinstance(node, ResolvedMetaClause):
         return _lower_resolved_meta_clause(node, verb)
     raise TypeError(f"lower_clause_ast: unknown ResolvedNode type: {type(node).__name__}")
@@ -773,7 +852,10 @@ def _lower_resolved_node(node: ResolvedNode, verb: VerbKind) -> List[ClauseNode]
 # ---------------------------------------------------------------------------
 
 
-def _lower_verb_group(vg: ResolvedVerbGroup) -> VerbGroup:
+def _lower_verb_group(
+    vg: ResolvedVerbGroup,
+    diagnostics_out: Optional[List[ClauseAstLoweringDiagnostic]] = None,
+) -> VerbGroup:
     """Lower one ResolvedVerbGroup to a VerbGroup.
 
     The VerbGroup.verb uses the neutral StructuralAction vocabulary.
@@ -793,7 +875,7 @@ def _lower_verb_group(vg: ResolvedVerbGroup) -> VerbGroup:
 
     nodes: List[ClauseNode] = []
     for node in vg.nodes:
-        nodes.extend(_lower_resolved_node(node, verb))
+        nodes.extend(_lower_resolved_node(node, verb, diagnostics_out))
 
     return VerbGroup(verb=verb_action, nodes=tuple(nodes))
 
@@ -804,6 +886,14 @@ def _lower_verb_group(vg: ResolvedVerbGroup) -> VerbGroup:
 
 
 def lower_to_clause_ast(resolved: ResolvedSurfaceClause) -> ClauseAST:
+    """Lower a resolved surface clause to ClauseAST, discarding diagnostics."""
+    ast, _diagnostics = lower_to_clause_ast_with_diagnostics(resolved)
+    return ast
+
+
+def lower_to_clause_ast_with_diagnostics(
+    resolved: ResolvedSurfaceClause,
+) -> tuple[ClauseAST, tuple[ClauseAstLoweringDiagnostic, ...]]:
     """Lower a resolved surface clause to the public ClauseAST waist.
 
     This is the native lowering path — no ParsedOp intermediary.
@@ -822,9 +912,10 @@ def lower_to_clause_ast(resolved: ResolvedSurfaceClause) -> ClauseAST:
         resolved: A ResolvedSurfaceClause from surface_resolve.py.
 
     Returns:
-        A ClauseAST with verb_groups in source order.
+        A ClauseAST with verb_groups in source order plus lowering diagnostics.
         source_text is taken from resolved.source_text.
     """
+    diagnostics: List[ClauseAstLoweringDiagnostic] = []
     verb_groups: List[VerbGroup] = []
     for vg in resolved.verb_groups:
         # Skip META verb groups that have no nodes — they were placeholder
@@ -832,7 +923,7 @@ def lower_to_clause_ast(resolved: ResolvedSurfaceClause) -> ClauseAST:
         # meta_clauses became a top-level SurfaceClause field.
         if vg.verb == VerbKind.META and not vg.nodes:
             continue
-        verb_groups.append(_lower_verb_group(vg))
+        verb_groups.append(_lower_verb_group(vg, diagnostics))
 
     # Emit top-level meta_clauses and text_amend_clauses as a synthetic META
     # verb group if either is present.  These are the supplementary nodes that
@@ -842,53 +933,68 @@ def lower_to_clause_ast(resolved: ResolvedSurfaceClause) -> ClauseAST:
     for mc in resolved.meta_clauses:
         supplementary_nodes.append(MetaClause(kind=mc.kind, raw_text=mc.text))
     for ta in resolved.text_amend_clauses:
-        if ta.old_text:  # skip text amends with no match_text (unresolvable)
-            if ta.target is not None:
-                ta_targets = (
-                    _build_target_address(
-                        ta.target.kind,
-                        ta.target.label,
-                        ta.target.chapter,
-                        ta.target.part,
-                        momentti=0,
-                        item="",
-                        special="",
-                    ),
-                )
-            else:
-                ta_targets = fallback_text_targets
+        if ta.target is not None:
+            ta_targets = (
+                _build_target_address(
+                    ta.target.kind,
+                    ta.target.label,
+                    ta.target.chapter,
+                    ta.target.part,
+                    momentti=0,
+                    item="",
+                    special="",
+                ),
+            )
+        else:
+            ta_targets = fallback_text_targets
+        if not ta_targets:
+            ta_targets = (LegalAddress(path=()),)
 
-            if ta.new_text:
-                patch = TextPatchSpec(
-                    kind=TextPatchKindEnum.REPLACE,
-                    selector=TextSelector(match_text=ta.old_text),
-                    replacement=ta.new_text,
-                )
-            else:
-                patch = TextPatchSpec(
-                    kind=TextPatchKindEnum.DELETE,
-                    selector=TextSelector(match_text=ta.old_text),
-                )
-
+        if not ta.old_text:
             for ta_target in ta_targets:
-                supplementary_nodes.append(
-                    TextAmend(
-                        action=(
-                            StructuralAction.TEXT_REPLACE
-                            if ta.new_text
-                            else StructuralAction.TEXT_REPEAL
-                        ),
-                        target=ta_target,
-                        text_patch=patch,
-                    )
+                _record_unlowerable_text_amend(
+                    diagnostics,
+                    target=ta_target,
+                    old_text=ta.old_text,
+                    new_text=ta.new_text,
+                    witness_rule_id=ta.witness.rule_id if ta.witness is not None else "",
+                    source_span=ta.witness.source_span if ta.witness is not None else None,
+                    placement="supplementary",
                 )
+            continue
+
+        if ta.new_text:
+            patch = TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text=ta.old_text),
+                replacement=ta.new_text,
+            )
+        else:
+            patch = TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text=ta.old_text),
+            )
+
+        for ta_target in ta_targets:
+            supplementary_nodes.append(
+                TextAmend(
+                    action=(
+                        StructuralAction.TEXT_REPLACE
+                        if ta.new_text
+                        else StructuralAction.TEXT_REPEAL
+                    ),
+                    target=ta_target,
+                    text_patch=patch,
+                )
+            )
 
     if supplementary_nodes:
         verb_groups.append(
             VerbGroup(verb=StructuralAction.META, nodes=tuple(supplementary_nodes))
         )
 
-    return ClauseAST(
+    ast = ClauseAST(
         source_text=resolved.source_text,
         verb_groups=tuple(verb_groups),
     )
+    return ast, tuple(diagnostics)

@@ -30,14 +30,20 @@ from lawvm.core.clause_ast import (
     MetaClause,
     RefAmend,
     ScopedBlock,
+    TextAmend,
     clause_ast_to_legal_ops,
 )
 from lawvm.core.ir import LegalAddress
 from lawvm.core.semantic_types import FacetKind, LabelAction, MetaClauseKind, StructuralAction
-from lawvm.finland.johtolause.lower_clause_ast import lower_to_clause_ast
+from lawvm.finland.johtolause.lower_clause_ast import (
+    FI_TEXT_AMEND_UNLOWERABLE_EMPTY_SELECTOR_KIND,
+    lower_to_clause_ast,
+    lower_to_clause_ast_with_diagnostics,
+)
 from lawvm.finland.johtolause.parsed_op_clause_ast import build_clause_ast
 from lawvm.finland.johtolause.surface_model import (
     ScopeKind,
+    SurfaceTextAmend,
     SurfaceSubRef,
     SurfaceWitness,
     TargetKind,
@@ -51,6 +57,7 @@ from lawvm.finland.johtolause.surface_resolve import (
     ResolvedScopeBlock,
     ResolvedSurfaceClause,
     ResolvedTargetRef,
+    ResolvedTextAmend,
     ResolvedVerbGroup,
 )
 
@@ -431,7 +438,88 @@ class TestResolvedMetaClause:
 
 
 # ---------------------------------------------------------------------------
-# 10. Multi-verb clause
+# 10. ResolvedTextAmend -> TextAmend or diagnostic
+# ---------------------------------------------------------------------------
+
+class TestResolvedTextAmend:
+    """ResolvedTextAmend preserves text patches and records unlowerable selectors."""
+
+    def test_text_amend_with_selector_lowers(self):
+        text_amend = ResolvedTextAmend(
+            target=_tref(label="5"),
+            old_text="vanha",
+            new_text="uusi",
+        )
+
+        ast, diagnostics = lower_to_clause_ast_with_diagnostics(
+            _clause(_vg(VerbKind.MUUTTAA, text_amend))
+        )
+        nodes = _flatten_nodes(ast)
+
+        assert diagnostics == ()
+        assert len(nodes) == 1
+        assert isinstance(nodes[0], TextAmend)
+        assert nodes[0].target == _addr(("section", "5"))
+        assert nodes[0].text_patch.selector.match_text == "vanha"
+        assert nodes[0].text_patch.replacement == "uusi"
+
+    def test_inline_empty_selector_records_diagnostic(self):
+        text_amend = ResolvedTextAmend(
+            target=_tref(label="5"),
+            old_text="",
+            new_text="uusi",
+            surface_witness=SurfaceWitness(
+                rule_id="fi.text_amend_sana",
+                source_span=(3, 7),
+            ),
+        )
+
+        ast, diagnostics = lower_to_clause_ast_with_diagnostics(
+            _clause(_vg(VerbKind.MUUTTAA, text_amend))
+        )
+
+        assert _flatten_nodes(ast) == []
+        assert len(diagnostics) == 1
+        diagnostic = diagnostics[0]
+        assert diagnostic.kind == FI_TEXT_AMEND_UNLOWERABLE_EMPTY_SELECTOR_KIND
+        assert diagnostic.reason_code == "EMPTY_TEXT_SELECTOR"
+        assert diagnostic.strict_disposition == "block"
+        assert diagnostic.quirks_disposition == "record"
+        assert diagnostic.detail["placement"] == "inline"
+        assert diagnostic.detail["target"] == "section:5"
+        assert diagnostic.detail["witness_rule_id"] == "fi.text_amend_sana"
+        assert diagnostic.detail["source_span"] == (3, 7)
+
+    def test_supplementary_empty_selector_records_diagnostic(self):
+        resolved = ResolvedSurfaceClause(
+            verb_groups=(_vg(VerbKind.MUUTTAA, _tref(label="5")),),
+            text_amend_clauses=(
+                SurfaceTextAmend(
+                    old_text="",
+                    new_text="uusi",
+                    witness=SurfaceWitness(
+                        rule_id="fi.text_amend_sanat",
+                        source_span=(8, 12),
+                    ),
+                ),
+            ),
+        )
+
+        ast, diagnostics = lower_to_clause_ast_with_diagnostics(resolved)
+        nodes = _flatten_nodes(ast)
+
+        assert len([node for node in nodes if isinstance(node, TextAmend)]) == 0
+        assert len(diagnostics) == 1
+        diagnostic = diagnostics[0]
+        assert diagnostic.kind == FI_TEXT_AMEND_UNLOWERABLE_EMPTY_SELECTOR_KIND
+        assert diagnostic.detail["placement"] == "supplementary"
+        assert diagnostic.detail["target"] == "section:5"
+        assert diagnostic.detail["witness_rule_id"] == "fi.text_amend_sanat"
+        assert diagnostic.detail["source_span"] == (8, 12)
+
+
+# ---------------------------------------------------------------------------
+# 11. Multi-verb clause
 # ---------------------------------------------------------------------------
 
 class TestMultiVerbClause:

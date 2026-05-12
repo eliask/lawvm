@@ -77,9 +77,9 @@ def test_resolver_crash_tagged_as_internal_error() -> None:
 
 def test_lowerer_crash_tagged_as_internal_error() -> None:
     """A lowerer crash must produce an 'internal_error:' diagnostic, not 'lower_error:'."""
-    # lower_to_clause_ast is imported lazily inside parse_clause; patch the source module.
+    # lower_to_clause_ast_with_diagnostics is imported lazily inside parse_clause; patch the source module.
     with patch(
-        "lawvm.finland.johtolause.lower_clause_ast.lower_to_clause_ast",
+        "lawvm.finland.johtolause.lower_clause_ast.lower_to_clause_ast_with_diagnostics",
         side_effect=RuntimeError("synthetic lowerer failure"),
     ):
         result = parse_clause("muutetaan 5 §")
@@ -111,7 +111,7 @@ def test_failure_reason_is_internal_error_on_lowerer_crash() -> None:
     from lawvm.finland.johtolause.diagnostics import extract_ops_diagnostic
 
     with patch(
-        "lawvm.finland.johtolause.lower_clause_ast.lower_to_clause_ast",
+        "lawvm.finland.johtolause.lower_clause_ast.lower_to_clause_ast_with_diagnostics",
         side_effect=RuntimeError("synthetic lowerer failure"),
     ):
         diag = extract_ops_diagnostic("muutetaan 5 §")
@@ -303,7 +303,7 @@ def test_resolver_crash_propagates() -> None:
 def test_lowerer_crash_propagates() -> None:
     """A lowerer crash propagates to the caller — not swallowed."""
     with patch(
-        "lawvm.finland.johtolause.lower_clause_ast.lower_to_clause_ast",
+        "lawvm.finland.johtolause.lower_clause_ast.lower_to_clause_ast_with_diagnostics",
         side_effect=TypeError("synthetic lowerer failure"),
     ):
         with pytest.raises(TypeError, match="synthetic lowerer failure"):

@@ -109,6 +109,45 @@ def test_text_amend_in_clause_ast():
     assert ta.text_patch.replacement == "aluehallintovirasto"
 
 
+def test_text_amend_empty_selector_is_exposed_as_lowering_diagnostic():
+    """Synthetic malformed text amend does not disappear from parse result evidence."""
+    from lawvm.finland.johtolause.lower_clause_ast import (
+        FI_TEXT_AMEND_UNLOWERABLE_EMPTY_SELECTOR_KIND,
+        lower_to_clause_ast_with_diagnostics,
+    )
+    from lawvm.finland.johtolause.surface_model import SurfaceWitness
+    from lawvm.finland.johtolause.surface_resolve import (
+        ResolvedSurfaceClause,
+        ResolvedTextAmend,
+        ResolvedVerbGroup,
+    )
+    from lawvm.finland.johtolause.surface_model import VerbKind
+
+    resolved = ResolvedSurfaceClause(
+        verb_groups=(
+            ResolvedVerbGroup(
+                verb=VerbKind.MUUTTAA,
+                nodes=(
+                    ResolvedTextAmend(
+                        target=None,
+                        old_text="",
+                        new_text="uusi",
+                        surface_witness=SurfaceWitness(rule_id="fi.text_amend_sana"),
+                    ),
+                ),
+            ),
+        ),
+        source_text='sana "" korvataan sanalla "uusi"',
+    )
+
+    ast, diagnostics = lower_to_clause_ast_with_diagnostics(resolved)
+
+    assert ast.verb_groups[0].nodes == ()
+    assert len(diagnostics) == 1
+    assert diagnostics[0].kind == FI_TEXT_AMEND_UNLOWERABLE_EMPTY_SELECTOR_KIND
+    assert diagnostics[0].detail["target"] == ""
+
+
 def test_text_amend_in_resolved_surface():
     """Text amend appears as ResolvedTextAmend in the resolved surface."""
     from lawvm.finland.johtolause.surface_resolve import (
