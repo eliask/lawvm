@@ -10,6 +10,7 @@ import lawvm.core.timeline_consistency as timeline_consistency
 from lawvm.core.timeline_consistency import ConsistencyDivergence
 from lawvm.estonia.residual_reporting import build_ee_residual_summary
 from lawvm.estonia.residual_inventory import EEPairResidualInventory, EEResidualRecord
+from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.tools.ee_reporting import (
     EEBenchmarkReportingStratum,
     build_ee_benchmark_reporting_summary,
@@ -196,6 +197,7 @@ def test_build_ee_consistency_payload_attaches_residual_inventory(monkeypatch) -
             n_ops_missing=0,
             n_con_missing=0,
             timelines={"one": object(), "two": object()},
+            adjudications=[],
         ),
     )
     monkeypatch.setattr(timeline_consistency, "ingest_consolidated", lambda con, as_of: {"one": object()})
@@ -226,6 +228,70 @@ def test_build_ee_consistency_payload_attaches_residual_inventory(monkeypatch) -
     assert payload["residual_inventory"]["unknown_current_divergence_count"] == 0
     assert payload["divergences"][0]["residual_bucket"] == "source_oracle_drift"
     assert "lasteaed-algkoolid" in (payload["divergences"][0]["residual_evidence"] or "")
+
+
+def test_build_ee_consistency_payload_preserves_replay_adjudication_evidence(monkeypatch) -> None:
+    adjudication = CompileAdjudication(
+        kind="ee_replay_unsupported_action",
+        message="EE replay skipped unsupported action.",
+        source_statute="130122025021",
+        op_id="ee-op-1",
+        detail={
+            "rule_id": "ee.replay.unsupported_action",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+            "action": "move",
+        },
+    )
+
+    monkeypatch.setattr(
+        ee_replay_impl,
+        "replay_ee_to_pit",
+        lambda **kwargs: SimpleNamespace(
+            base_id="130122025021",
+            as_of="2025-12-30",
+            base_title="Käibemaksuseadus",
+            source_basis="pairwise_terviktekst_delta",
+            error="",
+            grupi_id="grp",
+            oracle_id="130122025022",
+            comparison_class="commensurable_delta",
+            amendments_total=[],
+            amendments_applied=[],
+            amendments_skipped=[],
+            amendments_failed=[],
+            n_ops=1,
+            oracle=SimpleNamespace(title="Käibemaksuseadus"),
+            divergences=[],
+            n_mismatch=0,
+            n_ops_missing=0,
+            n_con_missing=0,
+            timelines={},
+            adjudications=[adjudication],
+        ),
+    )
+    monkeypatch.setattr(timeline_consistency, "ingest_consolidated", lambda con, as_of: {})
+
+    payload = verify_consistency._build_ee_consistency_payload(
+        Namespace(
+            base="130122025021",
+            consolidated="130122025022",
+            cache_dir=None,
+            as_of="2025-12-30",
+        )
+    )
+
+    assert payload["replay_adjudication_count"] == 1
+    assert payload["replay_adjudication_kind_counts"] == {"ee_replay_unsupported_action": 1}
+    assert payload["replay_adjudications"][0]["detail"]["action"] == "move"
+    row = payload["evidence"]["finding_rows"][0]
+    assert row["family"] == "ee_replay_unsupported_action"
+    assert row["rule_id"] == "ee.replay.unsupported_action"
+    assert row["blocking"] is True
+    assert row["strict_disposition"] == "block"
+    assert row["source_artifact_id"] == "130122025021"
+    assert row["source_unit_id"] == "ee-op-1"
 
 
 def test_build_ee_consistency_payload_uses_oracle_effective_date_when_as_of_missing(

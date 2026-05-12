@@ -75,6 +75,10 @@ def _resolve_ee_gid_pair_as_of(args: "argparse.Namespace") -> str:
 
 
 def _build_ee_replay_consistency_payload(args: "argparse.Namespace") -> dict:
+    from lawvm.core.adjudication_evidence import (
+        adjudication_finding_evidence_rows,
+        adjudication_kind_counts,
+    )
     from lawvm.core.timeline_consistency import ingest_consolidated
     from lawvm.estonia.residual_reporting import build_ee_residual_summary
     from lawvm.estonia.replay import replay_ee_to_pit
@@ -103,6 +107,12 @@ def _build_ee_replay_consistency_payload(args: "argparse.Namespace") -> dict:
         divergence_addresses=divergence_addresses,
     )
     adjudications = list(getattr(result, "adjudications", []) or [])
+    finding_rows = adjudication_finding_evidence_rows(
+        adjudications,
+        frontend_id="estonia",
+        base_id=result.base_id,
+        as_of=as_of,
+    )
     reporting_summary = build_ee_benchmark_reporting_summary(
         getattr(result, "source_basis", ""),
         result.comparison_class,
@@ -125,6 +135,20 @@ def _build_ee_replay_consistency_payload(args: "argparse.Namespace") -> dict:
         "divergence_count": len(result.divergences),
         "replay_adjudication_count": len(adjudications),
         "replay_adjudication_kinds": sorted({a.kind for a in adjudications}),
+        "replay_adjudication_kind_counts": adjudication_kind_counts(adjudications),
+        "replay_adjudications": [
+            {
+                "kind": adjudication.kind,
+                "message": adjudication.message,
+                "source_statute": adjudication.source_statute,
+                "op_id": adjudication.op_id,
+                "detail": dict(adjudication.detail),
+            }
+            for adjudication in adjudications
+        ],
+        "evidence": {
+            "finding_rows": [row.to_dict() for row in finding_rows],
+        },
         "mismatch_count": result.n_mismatch,
         "ops_missing_count": result.n_ops_missing,
         "consolidated_missing_count": result.n_con_missing,
