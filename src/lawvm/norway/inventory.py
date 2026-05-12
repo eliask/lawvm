@@ -29,6 +29,7 @@ class NOInventory:
     base_to_statuses: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
     base_to_sources: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
     malformed_base_refs: Counter[str] = field(default_factory=Counter)
+    current_law_source_diagnostics: list[dict[str, Any]] = field(default_factory=list)
 
     def law_status_map(self) -> dict[str, str]:
         laws_with_amendments = self.current_law_ids & set(self.base_to_statuses)
@@ -140,6 +141,11 @@ class NOInventory:
                 for base_id, count in top_missing_base
             ],
             "malformed_base_refs": dict(self.malformed_base_refs),
+            "current_law_source_diagnostic_count": len(self.current_law_source_diagnostics),
+            "current_law_source_diagnostic_rule_counts": dict(
+                Counter(str(row.get("rule_id") or "") for row in self.current_law_source_diagnostics)
+            ),
+            "current_law_source_diagnostics": list(self.current_law_source_diagnostics),
         }
 
     def _base_replay_status(self, base_id: str) -> str:
@@ -169,9 +175,31 @@ def build_no_inventory(
         index = apply_no_commencement_overrides(index, overrides)
     inventory = NOInventory(data_dir=data_dir)
 
-    inventory.current_law_ids = load_no_current_law_ids(data_dir)
+    current_law_source_diagnostics: list[dict[str, Any]] = []
+    inventory.current_law_ids = load_no_current_law_ids(
+        data_dir,
+        diagnostics_out=current_law_source_diagnostics,
+    )
     if not inventory.current_law_ids:
-        inventory.current_law_ids = {artifact.logical_id for artifact in iter_no_current_artifacts(data_dir)}
+        fallback_ids = {artifact.logical_id for artifact in iter_no_current_artifacts(data_dir)}
+        if fallback_ids:
+            current_law_source_diagnostics.append(
+                {
+                    "rule_id": "no_inventory_current_law_id_artifact_fallback_used",
+                    "family": "source_pathology",
+                    "phase": "acquisition",
+                    "reason": (
+                        "Norway inventory used current artifact locators as a fallback because the current-law ID "
+                        "parser returned no retained IDs."
+                    ),
+                    "fallback_current_law_count": len(fallback_ids),
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                }
+            )
+        inventory.current_law_ids = fallback_ids
+    inventory.current_law_source_diagnostics = current_law_source_diagnostics
     inventory.current_law_ids_with_local_base_source = (
         inventory.current_law_ids & load_available_lti_law_ids(data_dir)
     )
