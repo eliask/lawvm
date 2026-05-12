@@ -1910,6 +1910,7 @@ def parse_ee_amendment_ops(
                 _normalize_paths(payload.attrs.get("selector_composition_exclude_paths"))
             )
             seen_paths = set(rewrite.exclude_paths) | set(selector_excluded_paths)
+            inferred_exclusions: list[tuple[LegalOperation, tuple[tuple[str, str], ...], str]] = []
             for op in ops:
                 if op is global_op or _action_name(op) != "text_replace" or not op.target.path or op.payload is None:
                     continue
@@ -1924,6 +1925,7 @@ def parse_ee_amendment_ops(
                 if path and path not in seen_paths:
                     selector_excluded_paths.append(path)
                     seen_paths.add(path)
+                    inferred_exclusions.append((op, path, other_old_text))
             if selector_excluded_paths:
                 canonical_excluded_paths = tuple(
                     dict.fromkeys(
@@ -1948,6 +1950,36 @@ def parse_ee_amendment_ops(
                     if op is global_op:
                         ops[idx] = updated_op
                         break
+            if inferred_exclusions and adjudications_out is not None:
+                rule_id = "ee_source_local_global_text_replace_selector_exclusion_inferred"
+                for local_op, path, local_old_text in inferred_exclusions:
+                    adjudications_out.append(
+                        CompileAdjudication(
+                            kind=rule_id,
+                            message=(
+                                "Estonia parser inferred a source-local selector exclusion for a "
+                                "statute-wide text replacement."
+                            ),
+                            source_statute=global_op.source.statute_id if global_op.source else source_id,
+                            op_id=global_op.op_id,
+                            detail={
+                                "rule_id": rule_id,
+                                "phase": "payload_normalization",
+                                "family": "target_resolution_recovery",
+                                "reason": "target_specific_selector_contains_global_old_text",
+                                "blocking": True,
+                                "strict_disposition": "block",
+                                "quirks_disposition": "record",
+                                "global_op_id": global_op.op_id,
+                                "target_specific_op_id": local_op.op_id,
+                                "excluded_target": str(local_op.target),
+                                "excluded_target_path": path,
+                                "global_old_text": old_text,
+                                "global_new_text": rewrite.new_surface,
+                                "target_specific_old_text": local_old_text,
+                            },
+                        )
+                    )
 
     def _compose_global_text_replaces_into_later_payloads(ops: List[LegalOperation]) -> List[LegalOperation]:
         """Apply same-source statute-wide lexical replacements to later payload text.

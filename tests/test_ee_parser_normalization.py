@@ -11296,11 +11296,13 @@ def test_parse_ee_amendment_ops_keeps_excluded_global_rewrite_selectors_source_l
 def test_parse_ee_amendment_ops_keeps_selector_exclusion_out_of_global_replay_scope() -> None:
     archive = open_rt_archive(readonly=True)
     base = parse_ee_statute(fetch_rt_xml("110082017006", archive), "ee/110082017006")
+    adjudications: list[CompileAdjudication] = []
 
     ops = parse_ee_amendment_ops(
         fetch_rt_xml("122112023003", archive),
         "ee/122112023003",
         target_title=base.title,
+        adjudications_out=adjudications,
     )
 
     global_op = next(
@@ -11331,6 +11333,71 @@ def test_parse_ee_amendment_ops_keeps_selector_exclusion_out_of_global_replay_sc
         "ee_source_local_global_text_replace_selector_composition_skipped_for_excluded_target"
         in local_op.provenance_tags
     )
+    selector_adjudications = [
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind == "ee_source_local_global_text_replace_selector_exclusion_inferred"
+    ]
+    assert len(selector_adjudications) == 1
+    detail = selector_adjudications[0].detail
+    assert detail["phase"] == "payload_normalization"
+    assert detail["family"] == "target_resolution_recovery"
+    assert detail["reason"] == "target_specific_selector_contains_global_old_text"
+    assert detail["blocking"] is True
+    assert detail["strict_disposition"] == "block"
+    assert detail["quirks_disposition"] == "record"
+    assert detail["excluded_target_path"] == (("section", "3"), ("subsection", "3"))
+    assert detail["global_old_text"] == "reagent"
+    assert detail["target_specific_old_text"] == "kontrollreagenti"
+
+
+def test_parse_ee_amendment_ops_does_not_infer_selector_exclusion_without_old_text_overlap() -> None:
+    xml = """
+    <oigusakt xmlns="muutmisseadus_1_10.02.2010">
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>1</paragrahvNr>
+          <paragrahvPealkiri>Testi seaduse muutmine</paragrahvPealkiri>
+          <sisuTekst>
+            <tavatekst>Testi seaduses asendatakse läbivalt sõna „reagent” sõnaga „reaktiiv”.</tavatekst>
+          </sisuTekst>
+        </paragrahv>
+        <paragrahv>
+          <paragrahvNr>2</paragrahvNr>
+          <paragrahvPealkiri>Testi seaduse muutmine</paragrahvPealkiri>
+          <sisuTekst>
+            <tavatekst>Paragrahvi 3 lõikes 3 asendatakse sõna „kontrollaine” sõnaga „kontrollreaktiiv”.</tavatekst>
+          </sisuTekst>
+        </paragrahv>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+    adjudications: list[CompileAdjudication] = []
+
+    ops = parse_ee_amendment_ops(
+        xml,
+        "ee/test",
+        target_title="Testi seadus",
+        adjudications_out=adjudications,
+    )
+
+    global_op = next(
+        op
+        for op in ops
+        if op.target.path == ()
+        and op.action is StructuralAction.TEXT_REPLACE
+        and op.payload is not None
+        and op.payload.attrs.get("old_text") == "reagent"
+    )
+
+    assert global_op.payload is not None
+    assert "exclude_paths" not in global_op.payload.attrs
+    assert "selector_composition_exclude_paths" not in global_op.payload.attrs
+    assert not [
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind == "ee_source_local_global_text_replace_selector_exclusion_inferred"
+    ]
 
 
 def test_parse_html_op_items_splits_bold_number_with_trailing_paren_outside_tag() -> None:
