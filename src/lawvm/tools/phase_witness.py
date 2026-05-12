@@ -16,6 +16,7 @@ from typing import Any, Iterable, Literal, Optional
 
 from lxml import etree
 
+from lawvm.core.compile_result import StrictProfile
 from lawvm.core.ir_helpers import irnode_to_text
 from lawvm.finland.acquisition import build_amendment_acquisition_result
 from lawvm.finland.grafter import (
@@ -64,6 +65,7 @@ def _build_acquisition_witness(
     source_id: str,
     source_title: str,
     xml_bytes: bytes,
+    strict_profile: Optional[StrictProfile] = None,
 ) -> dict[str, Any]:
     result = build_amendment_acquisition_result(
         xml_bytes=xml_bytes,
@@ -71,6 +73,7 @@ def _build_acquisition_witness(
         amendment_id=source_id,
         source_title=source_title,
         parent_title=parent_title,
+        strict_profile=strict_profile,
     )
 
     return {
@@ -82,6 +85,7 @@ def _build_acquisition_witness(
             "target_amendment_id": result.decision.route_target_amendment_id,
         },
         "raw_operative_text_candidates": [_jsonable(candidate) for candidate in result.candidates],
+        "diagnostics": [_jsonable(diagnostic) for diagnostic in result.diagnostics],
         "rejected_lanes": [
             {"lane": lane, "reason": reason}
             for lane, reason in result.rejected_lanes

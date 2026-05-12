@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from lawvm.core.compile_result import StrictProfile
 from lawvm.finland.acquisition import build_amendment_acquisition_result
 from lawvm.tools.phase_witness import _build_acquisition_witness
 
@@ -97,6 +98,84 @@ def test_phase_witness_acquisition_projects_shared_acquisition_result() -> None:
     assert witness["route"]["should_apply"] == result.decision.should_apply
     assert witness["route"]["reason"] == result.decision.route_reason
     assert witness["route"]["target_amendment_id"] == result.decision.route_target_amendment_id
+    assert witness["diagnostics"] == []
+
+
+def test_strict_profile_records_blocked_sec1_pre_routing_fallback() -> None:
+    strict_profile = StrictProfile(
+        name="test_strict",
+        allows_context_dependent_anchor_resolution=False,
+    )
+
+    result = build_amendment_acquisition_result(
+        xml_bytes=_sec1_fallback_xml(),
+        parent_id="1958/370",
+        amendment_id="1993/949",
+        source_title="Rakennuslain muuttamisesta",
+        parent_title="Rakennuslaki",
+        strict_profile=strict_profile,
+    )
+
+    assert result.decision.pre_routing_sec1_requested is True
+    assert result.decision.pre_routing_sec1_applied is False
+    assert result.decision.selected_lane == "preamble"
+    assert ("sec1_fallback", "strict_profile_blocked_context_dependent_anchor_resolution") in result.rejected_lanes
+    sec1_candidate = next(candidate for candidate in result.candidates if candidate.lane == "sec1_fallback")
+    assert sec1_candidate.reason == "strict_profile_blocked_context_dependent_anchor_resolution"
+    assert [diagnostic.rule_id for diagnostic in result.diagnostics] == [
+        "ACQ.OPERATIVE_LANE_STRICT_BLOCKED",
+        "ACQ.OPERATIVE_LANE_STRICT_BLOCKED",
+    ]
+    assert [diagnostic.lane for diagnostic in result.diagnostics] == [
+        "sec1_fallback_pre_routing",
+        "sec1_fallback_post_routing",
+    ]
+    assert {diagnostic.strict_disposition for diagnostic in result.diagnostics} == {"block"}
+
+
+def test_phase_witness_projects_strict_blocked_acquisition_diagnostics() -> None:
+    witness = _build_acquisition_witness(
+        parent_id="1958/370",
+        parent_title="Rakennuslaki",
+        source_id="1993/949",
+        source_title="Rakennuslain muuttamisesta",
+        xml_bytes=_sec1_fallback_xml(),
+        strict_profile=StrictProfile(
+            name="test_strict",
+            allows_context_dependent_anchor_resolution=False,
+        ),
+    )
+
+    assert witness["diagnostics"] == [
+        {
+            "rule_id": "ACQ.OPERATIVE_LANE_STRICT_BLOCKED",
+            "family": "target_resolution_recovery",
+            "phase": "acquisition",
+            "reason": "strict profile blocked context-dependent section 1 operative fallback",
+            "lane": "sec1_fallback_pre_routing",
+            "strict_profile": "test_strict",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        },
+        {
+            "rule_id": "ACQ.OPERATIVE_LANE_STRICT_BLOCKED",
+            "family": "target_resolution_recovery",
+            "phase": "acquisition",
+            "reason": "strict profile blocked context-dependent section 1 operative fallback after routing",
+            "lane": "sec1_fallback_post_routing",
+            "strict_profile": "test_strict",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
+    assert witness["rejected_lanes"] == [
+        {
+            "lane": "sec1_fallback",
+            "reason": "strict_profile_blocked_context_dependent_anchor_resolution",
+        }
+    ]
 
 
 def test_build_amendment_acquisition_result_uses_body_lead_pre_routing_fallback() -> None:

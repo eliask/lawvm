@@ -61,6 +61,19 @@ class OperativeLaneDecision:
 
 
 @dataclass(frozen=True)
+class AcquisitionDiagnostic:
+    rule_id: str
+    family: str
+    phase: str
+    reason: str
+    lane: str
+    strict_profile: str
+    blocking: bool
+    strict_disposition: str
+    quirks_disposition: str
+
+
+@dataclass(frozen=True)
 class AmendmentAcquisitionResult:
     preamble_text: str
     preamble_normalized: str
@@ -74,6 +87,7 @@ class AmendmentAcquisitionResult:
     operative_structure_tags: tuple[str, ...]
     candidates: tuple[OperativeLaneCandidate, ...]
     rejected_lanes: tuple[tuple[str, str], ...]
+    diagnostics: tuple[AcquisitionDiagnostic, ...]
     decision: OperativeLaneDecision
 
 
@@ -179,15 +193,25 @@ def build_amendment_acquisition_result(
     body_repeal_candidate_normalized = _normalize_johtolause_verbs(body_repeal_candidate) if body_repeal_candidate else ""
 
     pre_routing_sec1_requested = bool(should_use_sec1_fallback_pre_routing(preamble_text) and sec1_text)
+    allows_context_dependent_anchor_resolution = (
+        strict_profile is None or strict_profile.allows_context_dependent_anchor_resolution
+    )
     pre_routing_sec1_applied = bool(
         pre_routing_sec1_requested
-        and (strict_profile is None or strict_profile.allows_context_dependent_anchor_resolution)
+        and allows_context_dependent_anchor_resolution
     )
-    body_lead_pre_routing_applied = bool(
+    pre_routing_sec1_blocked = bool(pre_routing_sec1_requested and not allows_context_dependent_anchor_resolution)
+    body_lead_pre_routing_requested = bool(
         not pre_routing_sec1_applied
         and body_lead_text
         and not any(kw in (preamble_text or "").lower() for kw in OP_KEYWORDS)
-        and (strict_profile is None or strict_profile.allows_context_dependent_anchor_resolution)
+    )
+    body_lead_pre_routing_applied = bool(
+        body_lead_pre_routing_requested
+        and allows_context_dependent_anchor_resolution
+    )
+    body_lead_pre_routing_blocked = bool(
+        body_lead_pre_routing_requested and not allows_context_dependent_anchor_resolution
     )
 
     working_text = preamble_text
@@ -202,9 +226,7 @@ def build_amendment_acquisition_result(
 
     citation_guard_johto = _normalize_johtolause_verbs(working_text or "")
     citation_guard_sec1 = ""
-    if not pre_routing_sec1_applied and sec1_text and (
-        strict_profile is None or strict_profile.allows_context_dependent_anchor_resolution
-    ):
+    if not pre_routing_sec1_applied and sec1_text and allows_context_dependent_anchor_resolution:
         citation_guard_sec1 = sec1_normalized
 
     working_normalized = _normalize_johtolause_verbs(working_text or "")
@@ -229,10 +251,17 @@ def build_amendment_acquisition_result(
             or ""
         )
 
-    post_routing_sec1_applied = bool(
+    post_routing_sec1_requested = bool(
         should_apply
         and sec1_text
         and should_use_sec1_fallback_post_routing(working_normalized, sec1_normalized)
+    )
+    post_routing_sec1_applied = bool(
+        post_routing_sec1_requested
+        and allows_context_dependent_anchor_resolution
+    )
+    post_routing_sec1_blocked = bool(
+        post_routing_sec1_requested and not allows_context_dependent_anchor_resolution
     )
     if post_routing_sec1_applied:
         working_text = sec1_text
@@ -257,6 +286,50 @@ def build_amendment_acquisition_result(
         "body_repeal_candidate": "body_repeal_candidate_selected",
     }
     selected_reason = selected_reason_map[selected_lane]
+    strict_block_reason = "strict_profile_blocked_context_dependent_anchor_resolution"
+    diagnostics: list[AcquisitionDiagnostic] = []
+    if pre_routing_sec1_blocked:
+        diagnostics.append(
+            AcquisitionDiagnostic(
+                rule_id="ACQ.OPERATIVE_LANE_STRICT_BLOCKED",
+                family="target_resolution_recovery",
+                phase="acquisition",
+                reason="strict profile blocked context-dependent section 1 operative fallback",
+                lane="sec1_fallback_pre_routing",
+                strict_profile=strict_profile.name if strict_profile is not None else "",
+                blocking=True,
+                strict_disposition="block",
+                quirks_disposition="record",
+            )
+        )
+    if post_routing_sec1_blocked:
+        diagnostics.append(
+            AcquisitionDiagnostic(
+                rule_id="ACQ.OPERATIVE_LANE_STRICT_BLOCKED",
+                family="target_resolution_recovery",
+                phase="acquisition",
+                reason="strict profile blocked context-dependent section 1 operative fallback after routing",
+                lane="sec1_fallback_post_routing",
+                strict_profile=strict_profile.name if strict_profile is not None else "",
+                blocking=True,
+                strict_disposition="block",
+                quirks_disposition="record",
+            )
+        )
+    if body_lead_pre_routing_blocked:
+        diagnostics.append(
+            AcquisitionDiagnostic(
+                rule_id="ACQ.OPERATIVE_LANE_STRICT_BLOCKED",
+                family="target_resolution_recovery",
+                phase="acquisition",
+                reason="strict profile blocked context-dependent body lead operative fallback",
+                lane="body_lead_fallback_pre_routing",
+                strict_profile=strict_profile.name if strict_profile is not None else "",
+                blocking=True,
+                strict_disposition="block",
+                quirks_disposition="record",
+            )
+        )
 
     candidates = [
         OperativeLaneCandidate(
@@ -276,7 +349,9 @@ def build_amendment_acquisition_result(
                 normalized_text=sec1_normalized,
                 usable=bool(sec1_text),
                 selected=selected_lane.startswith("sec1_fallback"),
-                reason=selected_reason if selected_lane.startswith("sec1_fallback") else "not_selected",
+                reason=selected_reason if selected_lane.startswith("sec1_fallback") else (
+                    strict_block_reason if pre_routing_sec1_blocked or post_routing_sec1_blocked else "not_selected"
+                ),
             )
         )
     if body_lead_text:
@@ -287,7 +362,9 @@ def build_amendment_acquisition_result(
                 normalized_text=body_lead_normalized,
                 usable=bool(body_lead_text),
                 selected=selected_lane == "body_lead_fallback_pre_routing",
-                reason=selected_reason if selected_lane == "body_lead_fallback_pre_routing" else "not_selected",
+                reason=selected_reason if selected_lane == "body_lead_fallback_pre_routing" else (
+                    strict_block_reason if body_lead_pre_routing_blocked else "not_selected"
+                ),
             )
         )
     if body_repeal_candidate:
@@ -306,9 +383,23 @@ def build_amendment_acquisition_result(
     if preamble_text and selected_lane != "preamble":
         rejected_lanes.append(("preamble", selected_reason))
     if sec1_text and not selected_lane.startswith("sec1_fallback"):
-        rejected_lanes.append(("sec1_fallback", "preamble_selected" if selected_lane == "preamble" else selected_reason))
+        rejected_lanes.append(
+            (
+                "sec1_fallback",
+                strict_block_reason if pre_routing_sec1_blocked or post_routing_sec1_blocked else (
+                    "preamble_selected" if selected_lane == "preamble" else selected_reason
+                ),
+            )
+        )
     if body_lead_text and selected_lane != "body_lead_fallback_pre_routing":
-        rejected_lanes.append(("body_lead_fallback", "preamble_selected" if selected_lane == "preamble" else selected_reason))
+        rejected_lanes.append(
+            (
+                "body_lead_fallback",
+                strict_block_reason if body_lead_pre_routing_blocked else (
+                    "preamble_selected" if selected_lane == "preamble" else selected_reason
+                ),
+            )
+        )
     if body_repeal_candidate and selected_lane != "body_repeal_candidate":
         rejected_lanes.append(("body_repeal_candidate", "preamble_selected" if selected_lane == "preamble" else selected_reason))
 
@@ -325,6 +416,7 @@ def build_amendment_acquisition_result(
         operative_structure_tags=tuple(operative_structure_tags or ()),
         candidates=tuple(candidates),
         rejected_lanes=tuple(rejected_lanes),
+        diagnostics=tuple(diagnostics),
         decision=OperativeLaneDecision(
             selected_lane=selected_lane,
             chosen_operative_text=working_text,
