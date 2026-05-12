@@ -98,6 +98,32 @@ def test_build_no_amendment_index_records_artifacts_without_change_ops(tmp_path)
     assert index.to_dict()["diagnostics"] == index.diagnostics
 
 
+def test_build_no_amendment_index_records_unmapped_xml_members(tmp_path) -> None:
+    _write_archive(
+        tmp_path / "lovtidend-avd1-2025.tar.bz2",
+        [("lti/2025/unexpected-name.xml", _amendment_xml("2025-02-10"))],
+    )
+
+    index = build_no_amendment_index(tmp_path)
+
+    assert index.entries == []
+    assert index.diagnostics == [
+        {
+            "rule_id": "no_amendment_index_unmapped_lovtidend_xml_member",
+            "family": "source_pathology",
+            "phase": "acquisition",
+            "reason": "Norway Lovtidend XML member filename could not be mapped to a law or amendment source id",
+            "source_id": "",
+            "locator": "",
+            "archive": "lovtidend-avd1-2025.tar.bz2",
+            "member_name": "lti/2025/unexpected-name.xml",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
 def test_save_and_load_no_amendment_index_round_trips(tmp_path) -> None:
     _write_archive(
         tmp_path / "lovtidend-avd1-2025.tar.bz2",

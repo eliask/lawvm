@@ -265,6 +265,23 @@ def _iter_amendment_artifacts_from_dir(data_dir: Path) -> Iterator[NOLocatedArti
         )
 
 
+def iter_no_unmapped_lovtidend_xml_members(source_path: Path | None = None) -> Iterator[NOLocatedArtifact]:
+    """Yield Lovtidend XML members whose filename cannot be mapped to a legal source id."""
+    source_path = resolve_no_source_path(source_path)
+    if is_no_farchive_path(source_path):
+        return
+    for base_id, source_id, archive_name, member_name, payload in _iter_lovtidend_members_from_dir(source_path):
+        if base_id is not None or source_id is not None:
+            continue
+        yield NOLocatedArtifact(
+            locator="",
+            logical_id="",
+            source_name=archive_name,
+            member_name=member_name,
+            payload=payload,
+        )
+
+
 def _iter_artifacts_from_farchive(
     db_path: Path,
     *,

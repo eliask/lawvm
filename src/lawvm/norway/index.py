@@ -12,6 +12,7 @@ from lawvm.norway.sources import (
     NOLocatedArtifact,
     effective_date_from_amendment,
     iter_no_amendment_artifacts,
+    iter_no_unmapped_lovtidend_xml_members,
     no_source_metadata,
     parse_header_value,
     resolve_no_source_path,
@@ -174,6 +175,14 @@ def build_no_amendment_index(data_dir: Optional[Path] = None) -> NOAmendmentInde
         archive_metadata=archive_metadata,
     )
 
+    if index.source_kind == "dir":
+        for artifact in iter_no_unmapped_lovtidend_xml_members(data_dir):
+            index.diagnostics.append(
+                _no_index_unmapped_member_diagnostic(
+                    artifact=artifact,
+                )
+            )
+
     for artifact in iter_no_amendment_artifacts(data_dir):
         source_id = artifact.logical_id
         if lovdata_amendment_filename_to_id(artifact.member_name) is None and not artifact.locator.startswith("no://lovtid/"):
@@ -209,6 +218,25 @@ def build_no_amendment_index(data_dir: Optional[Path] = None) -> NOAmendmentInde
 
     index.entries.sort(key=lambda entry: (entry.source_id, entry.archive, entry.member_name))
     return index
+
+
+def _no_index_unmapped_member_diagnostic(
+    *,
+    artifact: NOLocatedArtifact,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "no_amendment_index_unmapped_lovtidend_xml_member",
+        "family": "source_pathology",
+        "phase": "acquisition",
+        "reason": "Norway Lovtidend XML member filename could not be mapped to a law or amendment source id",
+        "source_id": "",
+        "locator": "",
+        "archive": artifact.source_name,
+        "member_name": artifact.member_name,
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+    }
 
 
 def _no_index_skipped_artifact_diagnostic(
