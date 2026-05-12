@@ -2883,7 +2883,9 @@ def test_apply_no_ops_renumber_can_clear_occupied_destination_not_moved_elsewher
         ),
     ]
 
-    updated = apply_no_ops(statute, ops)
+    adjudications: list[CompileAdjudication] = []
+
+    updated = apply_no_ops(statute, ops, adjudications_out=adjudications)
 
     chapter_5 = updated.body.children[0]
     chapter_6 = updated.body.children[1]
@@ -2891,6 +2893,60 @@ def test_apply_no_ops_renumber_can_clear_occupied_destination_not_moved_elsewher
     assert [child.text for child in chapter_5.children] == ["new 19", "old 21a", "new 21"]
     assert [child.label for child in chapter_6.children] == ["22", "23"]
     assert [child.text for child in chapter_6.children] == ["old 23", "old 24"]
+    assert [item.kind for item in adjudications] == [
+        "no_replay_renumber_occupied_destination_removed",
+        "no_replay_renumber_occupied_destination_removed",
+    ]
+    assert adjudications[0].detail["rule_id"] == "no_renumber_occupied_destination_removed"
+    assert adjudications[0].detail["phase"] == "replay"
+    assert adjudications[0].detail["family"] == "migration_or_lineage_recovery"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
+    assert adjudications[0].detail["source_path"] == "chapter:6/section:23"
+    assert adjudications[0].detail["destination_path"] == "chapter:5/section:22"
+    assert adjudications[0].detail["removed_kind"] == "section"
+    assert adjudications[0].detail["removed_label"] == "22"
+    assert adjudications[1].detail["source_path"] == "chapter:5/section:21a"
+    assert adjudications[1].detail["destination_path"] == "chapter:5/section:20"
+    assert adjudications[1].detail["removed_label"] == "20"
+
+
+def test_apply_no_ops_strict_recovery_rejects_occupied_renumber_destination_removal() -> None:
+    statute = IRStatute(
+        statute_id="no/lov/2004-12-17-99",
+        title="Strict renumber recovery test",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(kind=IRNodeKind.SECTION, label="20", text="old 20"),
+                IRNode(kind=IRNodeKind.SECTION, label="21a", text="old 21a"),
+            ),
+        ),
+    )
+    source = OperationSource(statute_id="no/lovtid/2012-05-25-29")
+    op = LegalOperation(
+        op_id="renumber-21a-20",
+        sequence=1,
+        action=StructuralAction.RENUMBER,
+        target=LegalAddress(path=(("section", "21a"),)),
+        destination=LegalAddress(path=(("section", "20"),)),
+        source=source,
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    with pytest.raises(ValueError, match="no_replay_renumber_occupied_destination_removed"):
+        apply_no_ops(
+            statute,
+            [op],
+            adjudications_out=adjudications,
+            strict_recovery=True,
+        )
+
+    assert [item.kind for item in adjudications] == [
+        "no_replay_renumber_occupied_destination_removed"
+    ]
+    assert adjudications[0].detail["strict_disposition"] == "block"
 
 
 def test_apply_no_ops_sorts_by_effective_date_not_local_sequence() -> None:
