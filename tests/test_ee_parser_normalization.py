@@ -40,7 +40,11 @@ from lawvm.core.ir import (
 from lawvm.core.semantic_types import FacetKind, TextPatchKindEnum, IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.estonia.peg import extract_ee_ops, parse_html_op_items, parse_target
-from lawvm.estonia.target_resolution import split_embedded_act_sections, split_plaintext_numbered_op_texts
+from lawvm.estonia.target_resolution import (
+    old_format_lower_op_texts,
+    split_embedded_act_sections,
+    split_plaintext_numbered_op_texts,
+)
 
 
 def _payload(op):
@@ -11620,6 +11624,34 @@ def test_extract_ee_ops_unparsed_clause_has_source_family_payload() -> None:
     assert _payload(ops[0]).attrs["source_family"] == "ee_unparsed_operation_clause"
     assert _payload(ops[0]).attrs["parser_action"] == "unknown"
     assert ops[0].witness_rule_id == "ee_unparsed_operation_clause"
+
+
+def test_old_format_lower_op_texts_records_rejected_unparsed_meta() -> None:
+    adjudications: list[CompileAdjudication] = []
+
+    ops, next_seq, last_section = old_format_lower_op_texts(
+        ["1) rakendatakse tagasiulatuvalt 1. jaanuarist 2020;"],
+        OperationSource(statute_id="ee/test", title="Sihtseadus"),
+        seq_start=7,
+        target_title="Sihtseadus",
+        adjudications_out=adjudications,
+    )
+
+    assert ops == []
+    assert next_seq == 7
+    assert last_section is None
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "ee_parse_old_format_unparsed_meta_rejected"
+    ]
+    detail = adjudications[0].detail
+    assert detail["rule_id"] == "ee_old_format_unparsed_meta_rejected"
+    assert detail["phase"] == "parse"
+    assert detail["family"] == "unsupported_source_lane"
+    assert detail["reason"] == "unparsed_meta_not_executable"
+    assert detail["target_title"] == "Sihtseadus"
+    assert detail["source_text"] == "1) rakendatakse tagasiulatuvalt 1. jaanuarist 2020;"
+    assert detail["blocking"] is True
+    assert detail["strict_disposition"] == "block"
 
 
 def test_extract_ee_ops_targeted_unparsed_clause_has_source_family_payload() -> None:
