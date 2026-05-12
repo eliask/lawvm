@@ -58,12 +58,15 @@ class VtsSkippedTarget:
     phase: str = "frontend_extraction"
     family: str = "unsupported_target"
     blocking: bool = False
+    strict_disposition: str = "record"
+    quirks_disposition: str = "record"
 
     def as_detail(self) -> dict[str, object]:
         return {
             "rule_id": self.rule_id,
             "reason_code": self.reason_code,
             "source_reason": self.source_reason,
+            "source_statute": self.source_statute,
             "source_excerpt": self.source_excerpt,
             "target_section": self.target_section,
             "target_chapter": self.target_chapter,
@@ -74,6 +77,8 @@ class VtsSkippedTarget:
             "phase": self.phase,
             "family": self.family,
             "blocking": self.blocking,
+            "strict_disposition": self.strict_disposition,
+            "quirks_disposition": self.quirks_disposition,
         }
 
 
@@ -97,6 +102,7 @@ class VtsSourceDiagnostic:
             "rule_id": self.rule_id,
             "reason_code": self.reason_code,
             "source_reason": self.source_reason,
+            "source_statute": self.source_statute,
             "source_excerpt": self.source_excerpt,
             "phase": self.phase,
             "family": self.family,

@@ -430,6 +430,7 @@ def test_extract_voimaantulo_repeals_records_bad_xml_source_diagnostic() -> None
     assert record.family == "source_pathology"
     assert record.strict_disposition == "record"
     assert record.as_detail()["reason_code"] == "xml_syntax_error"
+    assert record.as_detail()["source_statute"] == "1979/925"
 
 
 def test_extract_voimaantulo_repeals_records_empty_vts_source_diagnostic() -> None:
@@ -497,8 +498,13 @@ def test_extract_voimaantulo_repeals_records_skipped_alakohta_target() -> None:
     assert record.target_item == "3"
     assert record.target_subitem == "a"
     assert record.blocking is False
+    assert record.strict_disposition == "record"
+    assert record.quirks_disposition == "record"
     assert get_finding_spec(record.rule_id) is not None
     assert record.as_detail()["reason_code"] == "unsupported_subitem_target"
+    assert record.as_detail()["source_statute"] == "1979/925"
+    assert record.as_detail()["strict_disposition"] == "record"
+    assert record.as_detail()["quirks_disposition"] == "record"
 
 
 def test_extract_voimaantulo_repeals_records_skipped_kohta_only_bare_section_target() -> None:
