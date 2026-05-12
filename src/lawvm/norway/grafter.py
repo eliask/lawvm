@@ -1419,6 +1419,33 @@ def _iter_unstructured_no_change_groups(
             dest_targets = _infer_same_base_subsection_targets_from_lead(
                 f"§ {section_label} {repeal_renumber_match.group(4)} ledd skal lyde"
             )
+            paired_renumber_count = min(len(source_targets), len(dest_targets))
+            if len(source_targets) != len(dest_targets):
+                _append_no_unstructured_parse_adjudication(
+                    adjudications_out,
+                    kind="no_parse_unstructured_renumber_arity_mismatch_skipped",
+                    message=(
+                        "Norway unstructured repeal/renumber lead resolved unequal source "
+                        "and destination target counts; unmatched targets were not compiled."
+                    ),
+                    source_id=source_id,
+                    lead=lead,
+                    base_id=lead_base_id,
+                    detail={
+                        "section": section_label,
+                        "source_count": len(source_targets),
+                        "destination_count": len(dest_targets),
+                        "paired_count": paired_renumber_count,
+                        "source_targets": [_no_address_detail(target) for target in source_targets],
+                        "destination_targets": [_no_address_detail(target) for target in dest_targets],
+                        "unmatched_source_targets": [
+                            _no_address_detail(target) for target in source_targets[paired_renumber_count:]
+                        ],
+                        "unmatched_destination_targets": [
+                            _no_address_detail(target) for target in dest_targets[paired_renumber_count:]
+                        ],
+                    },
+                )
             for target in repeal_targets:
                 doc_ops.append(
                     LegalOperation(
