@@ -1692,6 +1692,24 @@ def test_wording_attribution_suffix_normalized() -> None:
     assert _normalize_wording_for_diff(base) == _normalize_wording_for_diff(with_attr)
 
 
+@pytest.mark.parametrize(
+    ("left", "right"),
+    [
+        ("9 §: ssä tarkoitetussa laissa (216/ 69)", "9 §:ssä tarkoitetussa laissa (216/69)"),
+        ("40 §: n mukainen lupa", "40 §:n mukainen lupa"),
+        ("lämpötila on 20 o C", "lämpötila on 20°C"),
+        ("lämpötila on 20˚C", "lämpötila on 20°C"),
+        ("EU - asianajaja", "EU-asianajaja"),
+        ("''vakuutuskassa''", '"vakuutuskassa"'),
+    ],
+)
+def test_wording_presentation_artifact_variants_normalized(left: str, right: str) -> None:
+    """Known old-source/oracle presentation variants should not create text diffs."""
+    from lawvm.semantic.diff import _normalize_wording_for_diff
+
+    assert _normalize_wording_for_diff(left) == _normalize_wording_for_diff(right)
+
+
 # ---------------------------------------------------------------------------
 # Parametric: editorial kumottu pattern exemplars
 # Every real-world variant we've encountered must match _KUMOTTU_WHOLE_NODE_RE.
