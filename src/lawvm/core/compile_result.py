@@ -1007,7 +1007,10 @@ def strict_fail_reasons_from_finding_ledger(
         if spec.role == "barrier":
             triggered.add(spec.code)
             continue
-        if spec.code == "PARSE.SEMANTIC_COLLAPSE_MOVE_RENUMBER":
+        if spec.code in {
+            "PARSE.SEMANTIC_COLLAPSE_MOVE_RENUMBER",
+            "PARSE.UNOWNED_BODY_SECTION",
+        }:
             triggered.add(spec.code)
             continue
         if finding.blocking and spec.default_enforcement in ("strict_fail", "hard_fail"):

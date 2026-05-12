@@ -159,6 +159,14 @@ def test_restructure_plan_deferred_op_registry_code_is_runtime_observation() -> 
     validate_finding_projection(spec.code, "observation", False)
 
 
+def test_unowned_body_section_registry_code_is_strict_runtime_observation() -> None:
+    spec = get_finding_spec("PARSE.UNOWNED_BODY_SECTION")
+    assert spec is not None
+    assert spec.role == "observation"
+    assert spec.default_enforcement == "strict_fail"
+    validate_finding_projection(spec.code, "observation", False)
+
+
 def test_failed_operation_registry_code_is_runtime_obligation() -> None:
     spec = get_finding_spec("APPLY.FAILED_OPERATION")
     assert spec is not None
