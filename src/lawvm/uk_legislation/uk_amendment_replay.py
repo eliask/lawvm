@@ -1071,6 +1071,7 @@ def parse_effects_from_bytes(
     feed_bytes_list: list[bytes],
     *,
     parse_rejections_out: Optional[list[dict[str, Any]]] = None,
+    feed_locators: Optional[list[str]] = None,
 ) -> list[UKEffectRecord]:
     """Parse effect feed pages from raw bytes into a list of UKEffectRecord.
 
@@ -1087,39 +1088,41 @@ def parse_effects_from_bytes(
             root = ET.fromstring(raw)
         except ET.ParseError as exc:
             if parse_rejections_out is not None:
-                parse_rejections_out.append(
-                    {
-                        "rule_id": "uk_effect_feed_xml_parse_rejected",
-                        "family": "source_pathology",
-                        "phase": "parse",
-                        "feed_index": feed_index,
-                        "reason": "UK effect feed page is not well-formed XML.",
-                        "parse_error": str(exc),
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                    }
-                )
+                rejection: dict[str, Any] = {
+                    "rule_id": "uk_effect_feed_xml_parse_rejected",
+                    "family": "source_pathology",
+                    "phase": "parse",
+                    "feed_index": feed_index,
+                    "reason": "UK effect feed page is not well-formed XML.",
+                    "parse_error": str(exc),
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                }
+                if feed_locators is not None and feed_index < len(feed_locators):
+                    rejection["feed_locator"] = feed_locators[feed_index]
+                parse_rejections_out.append(rejection)
             continue
         for entry_index, entry in enumerate(root.findall("atom:entry", ns)):
             effect = entry.find(".//ukm:Effect", ns)
             if effect is None:
                 if parse_rejections_out is not None:
-                    parse_rejections_out.append(
-                        {
-                            "rule_id": "uk_effect_feed_entry_missing_effect_rejected",
-                            "family": "source_pathology",
-                            "phase": "parse",
-                            "feed_index": feed_index,
-                            "entry_index": entry_index,
-                            "entry_id": entry.findtext("atom:id", default="", namespaces=ns),
-                            "entry_title": entry.findtext("atom:title", default="", namespaces=ns),
-                            "reason": "UK effect feed entry did not contain a ukm:Effect payload.",
-                            "blocking": True,
-                            "strict_disposition": "block",
-                            "quirks_disposition": "record",
-                        }
-                    )
+                    rejection = {
+                        "rule_id": "uk_effect_feed_entry_missing_effect_rejected",
+                        "family": "source_pathology",
+                        "phase": "parse",
+                        "feed_index": feed_index,
+                        "entry_index": entry_index,
+                        "entry_id": entry.findtext("atom:id", default="", namespaces=ns),
+                        "entry_title": entry.findtext("atom:title", default="", namespaces=ns),
+                        "reason": "UK effect feed entry did not contain a ukm:Effect payload.",
+                        "blocking": True,
+                        "strict_disposition": "block",
+                        "quirks_disposition": "record",
+                    }
+                    if feed_locators is not None and feed_index < len(feed_locators):
+                        rejection["feed_locator"] = feed_locators[feed_index]
+                    parse_rejections_out.append(rejection)
                 continue
             in_force_dates = []
             for inf in effect.findall(".//ukm:InForceDates/ukm:InForce", ns):
@@ -1156,6 +1159,8 @@ def parse_effects_from_bytes(
 def load_effects_for_statute_from_archive(
     statute_id: str,
     archive: Any,
+    *,
+    parse_rejections_out: Optional[list[dict[str, Any]]] = None,
 ) -> list[UKEffectRecord]:
     """Load effects for a statute from a Farchive.
 
@@ -1172,12 +1177,18 @@ def load_effects_for_statute_from_archive(
     ).fetchall()
 
     feed_bytes_list: list[bytes] = []
+    feed_locators: list[str] = []
     for (url,) in rows:
         data = archive.get(url)
         if data:
             feed_bytes_list.append(data)
+            feed_locators.append(url)
 
-    return parse_effects_from_bytes(feed_bytes_list)
+    return parse_effects_from_bytes(
+        feed_bytes_list,
+        parse_rejections_out=parse_rejections_out,
+        feed_locators=feed_locators,
+    )
 
 
 def get_affecting_act_xml_from_archive(
@@ -3357,6 +3368,7 @@ class UKReplayPipeline:
         authority_mode: str = "current_mixed",
         authority_rejections_out: Optional[list[dict[str, Any]]] = None,
         lowering_rejections_out: Optional[list[dict[str, Any]]] = None,
+        effect_feed_parse_rejections_out: Optional[list[dict[str, Any]]] = None,
     ) -> list[LegalOperation]:
         """Compile IR ops for *affected_act_id*.
 
@@ -3371,7 +3383,14 @@ class UKReplayPipeline:
             )
 
         # ── Load effects ────────────────────────────────────────────────────
-        effects = load_effects_for_statute_from_archive(affected_act_id, archive)
+        if effect_feed_parse_rejections_out is None:
+            effects = load_effects_for_statute_from_archive(affected_act_id, archive)
+        else:
+            effects = load_effects_for_statute_from_archive(
+                affected_act_id,
+                archive,
+                parse_rejections_out=effect_feed_parse_rejections_out,
+            )
 
         replayable = list(effects)
         if pit_date:
