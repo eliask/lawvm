@@ -96,6 +96,10 @@ def _apply_replace(
         findings.append(_target_finding(op, resolved))
         return current
     resolve_required(current, resolved.tree_path)
+    mismatch = _payload_target_mismatch_finding(op, expected_key=resolved.tree_path[-1])
+    if mismatch is not None:
+        findings.append(mismatch)
+        return current
     updated = replace_at_required(current, resolved.tree_path, op.payload)
     mutations.append(
         OpenLawAppliedMutation(
@@ -152,6 +156,10 @@ def _apply_replace_or_insert(
             )
         )
         return current
+    mismatch = _payload_insert_target_mismatch_finding(op)
+    if mismatch is not None:
+        findings.append(mismatch)
+        return current
     inserted_path = parent.tree_path + ((_kind_str(op.payload.kind), op.payload.label or ""),)
     updated = insert_sorted_required(current, parent.tree_path, op.payload)
     findings.append(
@@ -172,6 +180,55 @@ def _apply_replace_or_insert(
         )
     )
     return updated
+
+
+def _payload_key(payload: IRNode) -> tuple[str, str]:
+    return (_kind_str(payload.kind), payload.label or "")
+
+
+def _payload_target_mismatch_finding(
+    op: OpenLawOperation,
+    *,
+    expected_key: tuple[str, str],
+) -> OpenLawFinding | None:
+    if op.payload is None:
+        return None
+    actual_key = _payload_key(op.payload)
+    if actual_key == expected_key:
+        return None
+    return OpenLawFinding(
+        kind="open_law_payload_target_mismatch",
+        message=(
+            "Open Law codify payload identity does not match the declared target; "
+            f"expected {expected_key[0]}:{expected_key[1]!r}, got {actual_key[0]}:{actual_key[1]!r}."
+        ),
+        op_id=op.op_id,
+        path=op.path,
+        blocking=True,
+    )
+
+
+def _payload_insert_target_mismatch_finding(op: OpenLawOperation) -> OpenLawFinding | None:
+    if op.payload is None or not op.path:
+        return None
+    final_segment = op.path[-1]
+    if final_segment == "heading":
+        return _payload_target_mismatch_finding(op, expected_key=("heading", ""))
+    if final_segment == "annos":
+        return _payload_target_mismatch_finding(op, expected_key=("hcontainer", "annos"))
+    actual_key = _payload_key(op.payload)
+    if actual_key[1] == final_segment:
+        return None
+    return OpenLawFinding(
+        kind="open_law_payload_target_mismatch",
+        message=(
+            "Open Law codify payload label does not match the declared insert target; "
+            f"expected label {final_segment!r}, got {actual_key[0]}:{actual_key[1]!r}."
+        ),
+        op_id=op.op_id,
+        path=op.path,
+        blocking=True,
+    )
 
 
 def _target_finding(op: OpenLawOperation, resolved: "OpenLawResolvedPath") -> OpenLawFinding:

@@ -171,6 +171,20 @@ def test_replay_codify_replace_changes_exact_declared_target() -> None:
     assert "Old text." not in irnode_to_text(section)
 
 
+def test_replay_codify_replace_rejects_payload_target_identity_mismatch() -> None:
+    tree = parse_open_law_xml(_BASE_XML)
+    xml = _REPLACE_XML.replace("<num>.04</num>", "<num>.05</num>", 1)
+    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/payload-mismatch.xml")
+
+    result = replay_open_law_ops(tree, ops)
+
+    assert result.tree == tree
+    assert not result.mutations
+    assert [finding.kind for finding in result.findings] == ["open_law_payload_target_mismatch"]
+    assert result.findings[0].blocking is True
+    assert "expected section:'.04', got section:'.05'" in result.findings[0].message
+
+
 def test_replay_missing_target_emits_blocking_finding_without_mutation() -> None:
     tree = parse_open_law_xml(_BASE_XML)
     xml = _REPLACE_XML.replace("10|41|02|.04", "10|41|99|.04")
@@ -253,6 +267,24 @@ def test_replace_or_insert_inserts_missing_target_with_visible_finding() -> None
     assert [finding.kind for finding in result.findings] == ["open_law_replace_or_insert_inserted_missing_target"]
     assert len(result.mutations) == 1
     assert result.mutations[0].tree_path[-1] == ("section", ".05")
+
+
+def test_replace_or_insert_rejects_missing_target_payload_label_mismatch() -> None:
+    tree = parse_open_law_xml(_BASE_XML)
+    xml = _REPLACE_XML.replace("codify:replace", "codify:replace-or-insert").replace(
+        "</codify:replace>", "</codify:replace-or-insert>"
+    ).replace(
+        "path=\"10|41|02|.04\"", "path=\"10|41|02|.06\""
+    )
+    ops = parse_open_law_codify_ops(xml, source_id="editorial-actions/payload-mismatch.xml")
+
+    result = replay_open_law_ops(tree, ops)
+
+    assert result.tree == tree
+    assert not result.mutations
+    assert [finding.kind for finding in result.findings] == ["open_law_payload_target_mismatch"]
+    assert result.findings[0].blocking is True
+    assert "expected label '.06', got section:'.04'" in result.findings[0].message
 
 
 def test_unsupported_codify_action_blocks_in_strict_mode() -> None:
