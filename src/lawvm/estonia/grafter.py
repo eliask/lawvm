@@ -3966,9 +3966,11 @@ def _record_old_format_ref_slice_filtered_ops(
                 source_statute=op.source.statute_id if op.source is not None else "",
                 op_id=op.op_id,
                 detail={
+                    "rule_id": _EE_REF_SLICE_OP_FILTER_RULE,
                     "reason": "old_format_ref_slice_target_not_owned",
                     "phase": "parse",
                     "family": "temporal_recovery",
+                    "blocking": True,
                     "strict_disposition": "block",
                     "quirks_disposition": "record",
                     "ref_effective": ref_effective,

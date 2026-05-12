@@ -8556,10 +8556,13 @@ def test_parse_ee_amendment_ops_skips_old_format_later_slice_when_target_section
     assert [adjudication.kind for adjudication in adjudications] == [
         "ee_ref_slice_operation_filtered"
     ]
+    assert adjudications[0].detail["rule_id"] == "ee_ref_slice_operation_filtered"
     assert adjudications[0].detail["reason"] == "old_format_ref_slice_target_not_owned"
     assert adjudications[0].detail["phase"] == "parse"
     assert adjudications[0].detail["family"] == "temporal_recovery"
+    assert adjudications[0].detail["blocking"] is True
     assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
 
     owned_adjudications = []
     owned_later_ops = parse_ee_amendment_ops(
