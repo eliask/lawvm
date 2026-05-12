@@ -1,7 +1,6 @@
 """EU replay pipeline-focused regression tests."""
 from __future__ import annotations
 
-from pathlib import Path
 from lawvm.core.compile_result import TemporalEvent, TemporalScope
 from lawvm.core.ir import IRNode, IRStatute, LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.core.semantic_types import IRNodeKind
@@ -10,7 +9,7 @@ from lawvm.eu.pipeline import EUReplayPipeline, EUReplayResult, apply_eu_ops
 from lawvm.replay_adjudication import CompileAdjudication
 
 
-def test_discover_affecting_acts_deduplicates_filters_and_sorts(monkeypatch) -> None:
+def test_discover_affecting_acts_deduplicates_filters_and_sorts(monkeypatch, tmp_path) -> None:
     calls: list[str] = []
 
     def fake_request_notice(notice):
@@ -47,10 +46,27 @@ def test_discover_affecting_acts_deduplicates_filters_and_sorts(monkeypatch) -> 
 
     monkeypatch.setattr("lawvm.eu.pipeline._request_notice", fake_request_notice)
 
-    affecting = EUReplayPipeline(cache_dir=Path(".tmp")).discover_affecting_acts("32000R0000")
+    pipeline = EUReplayPipeline(cache_dir=tmp_path)
+    affecting = pipeline.discover_affecting_acts("32000R0000")
 
     assert calls == ["32000R0000"]
     assert affecting == ["32000R0001", "32000R0002", "32000R0003"]
+    rejection_rows = [
+        diagnostic for diagnostic in pipeline.diagnostics if diagnostic.rule_id == "eu_affecting_candidate_celex_rejected"
+    ]
+    assert [row.exception_type for row in rejection_rows] == [
+        "invalid_candidate_celex",
+        "invalid_candidate_celex",
+        "self_reference_candidate",
+        "invalid_candidate_celex",
+    ]
+    assert [row.detail["reason_code"] for row in rejection_rows] == [
+        "invalid_candidate_celex",
+        "invalid_candidate_celex",
+        "self_reference_candidate",
+        "invalid_candidate_celex",
+    ]
+    assert all(row.strict_disposition == "block" for row in rejection_rows)
 
 
 def test_discover_affecting_acts_records_acquisition_failure(monkeypatch, tmp_path) -> None:

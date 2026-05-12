@@ -50,9 +50,10 @@ class EUPipelineDiagnostic:
     blocking: bool = True
     strict_disposition: str = "block"
     quirks_disposition: str = "record"
+    detail: dict[str, object] = field(default_factory=dict)
 
     def as_detail(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "rule_id": self.rule_id,
             "family": self.family,
             "phase": self.phase,
@@ -63,6 +64,9 @@ class EUPipelineDiagnostic:
             "strict_disposition": self.strict_disposition,
             "quirks_disposition": self.quirks_disposition,
         }
+        if self.detail:
+            payload["detail"] = dict(self.detail)
+        return payload
 
 
 def _map_address(addr: LegalAddress) -> LegalAddress:
@@ -448,8 +452,44 @@ class EUReplayPipeline:
 
                         if candidate_celex:
                             if candidate_celex.startswith("0") or not candidate_celex[0].isdigit():
+                                self.diagnostics.append(
+                                    EUPipelineDiagnostic(
+                                        rule_id="eu_affecting_candidate_celex_rejected",
+                                        family="source_pathology",
+                                        phase="acquisition",
+                                        reason=(
+                                            "EU Cellar affecting-act candidate was rejected because its CELEX "
+                                            "identifier was not a usable affecting act ID."
+                                        ),
+                                        celex=celex,
+                                        exception_type="invalid_candidate_celex",
+                                        detail={
+                                            "candidate_celex": candidate_celex,
+                                            "relation_tag": tag,
+                                            "reason_code": "invalid_candidate_celex",
+                                        },
+                                    )
+                                )
                                 continue
                             if candidate_celex == celex:
+                                self.diagnostics.append(
+                                    EUPipelineDiagnostic(
+                                        rule_id="eu_affecting_candidate_celex_rejected",
+                                        family="source_pathology",
+                                        phase="acquisition",
+                                        reason=(
+                                            "EU Cellar affecting-act candidate was rejected because it points "
+                                            "back to the affected act itself."
+                                        ),
+                                        celex=celex,
+                                        exception_type="self_reference_candidate",
+                                        detail={
+                                            "candidate_celex": candidate_celex,
+                                            "relation_tag": tag,
+                                            "reason_code": "self_reference_candidate",
+                                        },
+                                    )
+                                )
                                 continue
                             affecting_celexes.append(candidate_celex)
 
