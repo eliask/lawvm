@@ -1462,6 +1462,45 @@ def test_compile_se_official_act_ops_emits_renumber_plus_mixed_section_family() 
     ]
 
 
+def test_compile_se_official_act_ops_records_renumber_arity_mismatch() -> None:
+    act = {
+        "sfs_id": "2026:777",
+        "title": "Förordning om ändring i förordningen (2026:106) om något",
+        "act_type": "förordning",
+        "amended_act_sfs_id": "2026:106",
+        "is_amending_act": True,
+        "published_date": "2026-03-24",
+        "issued_date": "2026-03-19",
+        "enacting_clause": (
+            "Regeringen föreskriver i fråga om förordningen (2026:106) om något "
+            "dels att nuvarande 2 och 3 §§ ska betecknas 4 §, "
+            "dels att 4 § ska ha följande lydelse."
+        ),
+        "effective_clause": "Denna förordning träder i kraft den 15 april 2026.",
+        "affected_section_labels": ["4"],
+        "provisions": [{"label": "4", "text": "Ny lydelse."}],
+        "signatories": [],
+        "footnotes": [],
+    }
+    adjudications: list[CompileAdjudication] = []
+
+    ops = compile_se_official_act_ops(act, source_id="2026:777", adjudications_out=adjudications)
+
+    assert [op.action for op in ops] == [StructuralAction.REPLACE]
+    assert [op.target.path for op in ops] == [(("section", "4"),)]
+    mismatch = [
+        adjudication
+        for adjudication in adjudications
+        if adjudication.detail["rule_id"] == "se_official_clause_renumber_arity_mismatch"
+    ]
+    assert len(mismatch) == 1
+    assert mismatch[0].kind == "se_official_clause_surface_skipped"
+    assert mismatch[0].detail["phase"] == "parse"
+    assert mismatch[0].detail["source_labels"] == ["2", "3"]
+    assert mismatch[0].detail["destination_labels"] == ["4"]
+    assert mismatch[0].detail["strict_disposition"] == "block"
+
+
 def test_compile_se_official_act_ops_emits_repeal_renumber_replace_insert_family() -> None:
     act = {
         "sfs_id": "2026:63",
