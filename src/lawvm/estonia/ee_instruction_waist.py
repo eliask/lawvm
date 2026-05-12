@@ -116,6 +116,8 @@ class EEParsedInstruction:
     section_selection_meta: Optional[EESectionSelectionMeta] = None
     subsection_selection_meta: Optional[EESubsectionSelectionMeta] = None
     item_selection_meta: Optional[EEItemSelectionMeta] = None
+    subsection_text_scope_meta: Optional[EESubsectionTextScopeMeta] = None
+    persistent_postpass: bool = False
     is_wrapper_payload: bool = False
     wrapper_source_text: Optional[str] = None
     provenance_tags: tuple[str, ...] = ()
@@ -484,6 +486,7 @@ def to_ee_parsed_instructions(
         section_selection_meta = read_section_selection_meta(op.payload)
         subsection_selection_meta = read_subsection_selection_meta(op.payload)
         item_selection_meta = read_item_selection_meta(op.payload)
+        subsection_text_scope_meta = read_subsection_text_scope_meta(op.payload)
         instructions.append(
             EEParsedInstruction(
                 family=_instruction_family(op.action, is_wrapper),
@@ -500,6 +503,8 @@ def to_ee_parsed_instructions(
                 section_selection_meta=section_selection_meta,
                 subsection_selection_meta=subsection_selection_meta,
                 item_selection_meta=item_selection_meta,
+                subsection_text_scope_meta=subsection_text_scope_meta,
+                persistent_postpass=payload_meta.persistent_postpass,
                 is_wrapper_payload=is_wrapper,
                 wrapper_source_text=wrapper_source_text,
                 provenance_tags=tuple(op.provenance_tags),
