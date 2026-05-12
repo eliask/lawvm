@@ -22,6 +22,7 @@ from lawvm.core.ir import (
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.sweden.fetch import (
     _ArchiveLike,
+    _reverse_patch_se_available_later_chain,
     analyze_se_official_replay_feasibility,
     attach_official_artifacts_to_bundle,
     archive_se_source_bundle,
@@ -3364,6 +3365,57 @@ def test_analyze_se_official_replay_feasibility_detects_available_later_reverse_
             "candidate_chain_sfs_ids": [],
         }
     ]
+
+
+def test_later_chain_reverse_records_skipped_inverse_ops() -> None:
+    later_op = LegalOperation(
+        op_id="se_test_later_insert_99",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "99"),)),
+        payload=IRNode(
+            kind=IRNodeKind.SECTION,
+            label="99",
+            children=(IRNode(kind=IRNodeKind.SUBSECTION, text="Later text."),),
+        ),
+        source=OperationSource(statute_id="se/2020:10", title="Later act"),
+    )
+    archive = _FakeArchive(
+        stored={
+            se_official_ops_locator("2020:10"): json.dumps(
+                [se_legal_operation_to_dict(later_op)],
+                ensure_ascii=False,
+            ).encode("utf-8"),
+        }
+    )
+    statute = IRStatute(
+        statute_id="se/2015:284",
+        title="Base",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(),
+        metadata={},
+    )
+
+    patched = _reverse_patch_se_available_later_chain(
+        archive,
+        statute,
+        "2018:1381",
+        [{"source_sfs_id": "2020:10"}],
+    )
+
+    assert patched.metadata["later_chain_reverse_applied"] is True
+    adjudications = patched.metadata["later_chain_reverse_adjudications"]
+    assert len(adjudications) == 1
+    assert adjudications[0]["kind"] == "se_replay_target_not_found"
+    assert adjudications[0]["source_statute"] == "se/2020:10"
+    assert adjudications[0]["op_id"] == "se_reverse_insert_2020:10_99_1"
+    assert adjudications[0]["detail"]["rule_id"] == "se_replay_target_not_found"
+    assert adjudications[0]["detail"]["phase"] == "replay"
+    assert adjudications[0]["detail"]["family"] == "unsupported_or_unresolved_action"
+    assert adjudications[0]["detail"]["blocking"] is True
+    assert adjudications[0]["detail"]["strict_disposition"] == "block"
+    assert adjudications[0]["detail"]["quirks_disposition"] == "record"
+    assert adjudications[0]["detail"]["reverse_source_sfs_id"] == "2020:10"
 
 
 def test_analyze_se_official_replay_feasibility_classifies_noninvertible_placeholder_blocker() -> None:

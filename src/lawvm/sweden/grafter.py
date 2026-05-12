@@ -2935,11 +2935,10 @@ def _append_se_replay_adjudication(
         normalized_detail["action"] = action_value.value
     normalized_detail.setdefault("rule_id", kind)
     normalized_detail.setdefault("phase", "replay")
-    if kind == "se_replay_unsupported_action":
-        normalized_detail.setdefault("family", "unsupported_or_unresolved_action")
-        normalized_detail.setdefault("blocking", True)
-        normalized_detail.setdefault("strict_disposition", "block")
-        normalized_detail.setdefault("quirks_disposition", "record")
+    normalized_detail.setdefault("family", "unsupported_or_unresolved_action")
+    normalized_detail.setdefault("blocking", True)
+    normalized_detail.setdefault("strict_disposition", "block")
+    normalized_detail.setdefault("quirks_disposition", "record")
     adjudications_out.append(
         CompileAdjudication(
             kind=kind,
