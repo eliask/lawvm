@@ -144,11 +144,13 @@ def test_fetch_se_official_artifacts_fetches_doc_and_pdf_and_stores_text(monkeyp
             pdf_url: b"%PDF-1.7 fake",
         }
     )
+    diagnostics: list[dict[str, object]] = []
     monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered PDF text")
 
-    bundle = fetch_se_official_artifacts("2026:286", archive)
+    bundle = fetch_se_official_artifacts("2026:286", archive, diagnostics_out=diagnostics)
 
     assert bundle is not None
+    assert diagnostics == []
     assert bundle.doc_url == doc_url
     assert bundle.doc_locator == se_official_doc_locator("2026:286")
     assert bundle.pdf_url == pdf_url
@@ -412,16 +414,41 @@ def test_fetch_official_falls_back_to_legacy_sfspdf_direct_url(monkeypatch) -> N
             legacy_pdf_url: b"%PDF-1.7 legacy",
         }
     )
+    diagnostics: list[dict[str, object]] = []
     monkeypatch.setattr("lawvm.sweden.fetch.time.sleep", lambda s: None)
     monkeypatch.setattr("lawvm.sweden.fetch.se_pdf_bytes_to_text", lambda pdf_bytes: "Recovered legacy PDF text")
     monkeypatch.setattr("lawvm.sweden.fetch.search_se_legacy_pdf_url", lambda sfs_id: None)
 
-    bundle = fetch_se_official_artifacts("2015:284", archive)
+    bundle = fetch_se_official_artifacts("2015:284", archive, diagnostics_out=diagnostics)
 
     assert bundle is not None
     assert bundle.doc_url == "https://rkrattsdb.gov.se/sfspdf/"
     assert bundle.pdf_url == legacy_pdf_url
     assert archive.stored[se_official_pdf_locator("2015:284")] == b"%PDF-1.7 legacy"
+    assert diagnostics == [
+        {
+            "rule_id": "se_official_pdf_source_lane_fallback",
+            "family": "source_pathology",
+            "phase": "acquisition",
+            "reason": "Sweden official SFS PDF was recovered through a fallback source lane",
+            "sfs_id": "2015:284",
+            "locator": se_official_pdf_locator("2015:284"),
+            "doc_url": "https://rkrattsdb.gov.se/sfspdf/",
+            "pdf_url": legacy_pdf_url,
+            "blocking": False,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+            "doc_status": "missing",
+            "selected_pdf_lane": "legacy_direct_guess",
+            "pdf_source_attempts": (
+                {
+                    "lane": "legacy_direct_guess",
+                    "url": legacy_pdf_url,
+                    "status": "valid_pdf",
+                },
+            ),
+        }
+    ]
 
 
 def test_has_valid_se_official_pdf_checks_magic_header() -> None:
