@@ -132,6 +132,8 @@ def main(args: "argparse.Namespace") -> None:
 
     report: dict[str, Any] = {
         "inventory": inventory_data,
+        "index_diagnostic_count": len(index.diagnostics),
+        "index_diagnostics": index.diagnostics[:limit],
         "unlock_queue": unlock_report,
         "commencement_candidate_source_counts": unlock_report["candidate_source_counts"],
         "executable_blockers": blocked_report,
@@ -164,6 +166,8 @@ def main(args: "argparse.Namespace") -> None:
     )
     if report.get("index_stale"):
         print("  index stale                   : yes")
+    if index.diagnostics:
+        print(f"  index diagnostics             : {len(index.diagnostics)}")
     print(
         "  consistency sample           : "
         + ", ".join(f"{k}={v}" for k, v in sorted(verify_report["summary"].items()))

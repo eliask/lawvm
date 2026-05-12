@@ -377,6 +377,21 @@ def test_no_frontier_tool_emits_json(tmp_path, monkeypatch, capsys) -> None:
             {
                 "data_dir": str(tmp_path),
                 "archive_names": [],
+                "diagnostics": [
+                    {
+                        "rule_id": "no_amendment_index_no_change_ops",
+                        "family": "source_pathology",
+                        "phase": "extraction",
+                        "reason": "Norway amendment artifact did not yield document-change operations",
+                        "source_id": "no/lovtid/2025-03-03-6",
+                        "locator": "no://lovtid/2025-03-03-6/amendment.xml",
+                        "archive": "a.tar.bz2",
+                        "member_name": "empty.xml",
+                        "blocking": True,
+                        "strict_disposition": "block",
+                        "quirks_disposition": "record",
+                    }
+                ],
                 "entries": [
                     {
                         "source_id": "no/lovtid/2025-02-02-5",
@@ -450,6 +465,8 @@ def test_no_frontier_tool_emits_json(tmp_path, monkeypatch, capsys) -> None:
     assert "missing_base_source" in data
     assert "consistency_sample" in data
     assert "consistency_partition" in data
+    assert data["index_diagnostic_count"] == 1
+    assert data["index_diagnostics"][0]["rule_id"] == "no_amendment_index_no_change_ops"
     assert data["active_consistency_lane"] in {
         "replay_defect",
         "untouched_drift",
