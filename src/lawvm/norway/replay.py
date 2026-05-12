@@ -15,7 +15,7 @@ import re
 import sys
 from dataclasses import dataclass, field, replace as dc_replace
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from lawvm.core.ir import IRStatute, LegalOperation
 from lawvm.core.ir_helpers import irnode_to_text
@@ -49,6 +49,30 @@ NO_REPLAY_FUTURE_EFFECTIVE_SKIPPED = "no_replay_future_effective_skipped"
 
 # Back-compat for tests and call sites that imported the helper from replay.py.
 _effective_date_from_amendment = effective_date_from_amendment
+
+
+def _no_replay_skip_adjudication(
+    *,
+    kind: str,
+    message: str,
+    source_id: str,
+    phase: str,
+    detail: dict[str, Any],
+    blocking: bool,
+) -> CompileAdjudication:
+    normalized_detail = dict(detail)
+    normalized_detail.setdefault("rule_id", kind)
+    normalized_detail.setdefault("phase", phase)
+    normalized_detail.setdefault("source_id", source_id)
+    normalized_detail.setdefault("blocking", blocking)
+    normalized_detail.setdefault("strict_disposition", "block" if blocking else "record")
+    normalized_detail.setdefault("quirks_disposition", "record")
+    return CompileAdjudication(
+        kind=kind,
+        message=message,
+        source_statute=source_id,
+        detail=normalized_detail,
+    )
 
 
 @dataclass
@@ -144,14 +168,13 @@ def replay_no_to_pit(
         if entry.effective_status == "contingent":
             result.amendments_skipped_contingent.append(source_id)
             result.adjudications.append(
-                CompileAdjudication(
+                _no_replay_skip_adjudication(
                     kind=NO_REPLAY_CONTINGENT_COMMENCEMENT_SKIPPED,
                     message="Norway replay skipped amendment: commencement is contingent and unresolved.",
-                    source_statute=source_id,
+                    source_id=source_id,
+                    phase="temporal",
+                    blocking=True,
                     detail={
-                        "rule_id": NO_REPLAY_CONTINGENT_COMMENCEMENT_SKIPPED,
-                        "phase": "temporal",
-                        "source_id": source_id,
                         "effective_status": entry.effective_status,
                     },
                 )
@@ -160,14 +183,13 @@ def replay_no_to_pit(
         if entry.effective_status in {"missing", "unknown"} or effective_date is None:
             result.amendments_skipped_unknown_effective.append(source_id)
             result.adjudications.append(
-                CompileAdjudication(
+                _no_replay_skip_adjudication(
                     kind=NO_REPLAY_UNKNOWN_EFFECTIVE_SKIPPED,
                     message="Norway replay skipped amendment: effective date is missing or unknown.",
-                    source_statute=source_id,
+                    source_id=source_id,
+                    phase="temporal",
+                    blocking=True,
                     detail={
-                        "rule_id": NO_REPLAY_UNKNOWN_EFFECTIVE_SKIPPED,
-                        "phase": "temporal",
-                        "source_id": source_id,
                         "effective_status": entry.effective_status,
                     },
                 )
@@ -176,20 +198,16 @@ def replay_no_to_pit(
         if effective_date > as_of:
             result.amendments_skipped_future.append(source_id)
             result.adjudications.append(
-                CompileAdjudication(
+                _no_replay_skip_adjudication(
                     kind=NO_REPLAY_FUTURE_EFFECTIVE_SKIPPED,
                     message="Norway replay skipped amendment: effective date is after the requested point in time.",
-                    source_statute=source_id,
+                    source_id=source_id,
+                    phase="temporal",
+                    blocking=False,
                     detail={
-                        "rule_id": NO_REPLAY_FUTURE_EFFECTIVE_SKIPPED,
-                        "phase": "temporal",
-                        "source_id": source_id,
                         "effective_status": entry.effective_status,
                         "effective_date": effective_date,
                         "as_of": as_of,
-                        "blocking": False,
-                        "strict_disposition": "record",
-                        "quirks_disposition": "record",
                     },
                 )
             )
@@ -199,14 +217,13 @@ def replay_no_to_pit(
         if html_bytes is None:
             result.amendments_skipped_missing_source.append(source_id)
             result.adjudications.append(
-                CompileAdjudication(
+                _no_replay_skip_adjudication(
                     kind=NO_REPLAY_MISSING_AMENDMENT_SOURCE,
                     message="Norway replay skipped amendment: source bytes not found.",
-                    source_statute=source_id,
+                    source_id=source_id,
+                    phase="acquisition",
+                    blocking=True,
                     detail={
-                        "rule_id": NO_REPLAY_MISSING_AMENDMENT_SOURCE,
-                        "phase": "acquisition",
-                        "source_id": source_id,
                         "effective_date": effective_date,
                     },
                 )
