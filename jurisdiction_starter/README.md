@@ -36,6 +36,8 @@ current LawVM constitution and cross-jurisdiction contracts win.
    - `ROADMAP.md`
 4. Then fill:
    - `FILE_MAP.md`
+   - `API_CORPUS_FRONTEND_ADDENDUM.md` if the jurisdiction exposes an API,
+     feed, local git corpus, or other corpus-wide source index
    - `AI_AGENT_PROTOCOL.md`
    - `TASK_CARD_TEMPLATE.md`
    - `REVIEW_CHECKLIST.md`
@@ -55,6 +57,9 @@ The starter is considered ready when a reviewer can answer all of the following 
 - What does “replay-capable” mean for this jurisdiction?
 - What evidence-pack summary separates claimed rows from non-claimed rows?
 - What evidence would prove that a divergence is source-sparse rather than replay-bug?
+- If acquisition depends on an API, feed, or source graph, how does the
+  frontend resume, respect rate limits, and preserve acquisition-frontier
+  state?
 
 ---
 
@@ -160,6 +165,21 @@ Good news:
 Obligation:
 - do not confuse current surface with replay substrate.
 - historical rebuild may require staged source recovery.
+
+### 4. API or feed-backed corpus exists
+Examples: New Zealand-like, registry-backed, or local git-corpus frontends.
+
+Good news:
+- corpus inventory, current versions, and historical consolidated snapshots may
+  be obtainable without scraping presentation HTML.
+
+Obligation:
+- live API reads remain acquisition only; replay and audit consume the local
+  archive, clone, or manifest produced by acquisition.
+- rate limits, beta API gaps, pagination, and incomplete source lanes must be
+  recorded as acquisition diagnostics rather than hidden by retry loops.
+- dependency closure from current/history notes, effect feeds, or version graph
+  records is a source claim, not proof that amendment semantics were compiled.
 
 ---
 

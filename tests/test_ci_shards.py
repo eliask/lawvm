@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -16,6 +17,17 @@ def _load_test_shard_module():
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
+
+
+def _ci_sharded_default_bounded_shards() -> list[str]:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "ci_sharded.sh"
+    match = re.search(
+        r'^ALL_BOUNDED_SHARDS="([^"]+)"$',
+        script_path.read_text(encoding="utf-8"),
+        flags=re.MULTILINE,
+    )
+    assert match is not None
+    return match.group(1).split()
 
 
 def test_test_shard_validate_is_clean() -> None:
@@ -96,6 +108,9 @@ def test_test_shard_named_groups_expand_to_stable_shards() -> None:
         "estonia",
         "eu",
         "finland",
+        "new_zealand_sources",
+        "new_zealand_effects",
+        "new_zealand_reports",
         "norway",
         "starter",
         "sweden",
@@ -105,6 +120,9 @@ def test_test_shard_named_groups_expand_to_stable_shards() -> None:
         "estonia",
         "eu",
         "finland",
+        "new_zealand_sources",
+        "new_zealand_effects",
+        "new_zealand_reports",
         "norway",
         "starter",
         "sweden",
@@ -113,6 +131,32 @@ def test_test_shard_named_groups_expand_to_stable_shards() -> None:
         "evidence",
         "properties",
         "tools",
+    ]
+
+
+def test_ci_default_bounded_shards_cover_frontends_and_modules() -> None:
+    module = _load_test_shard_module()
+    default_shards = _ci_sharded_default_bounded_shards()
+    expected_default_shards = sorted({
+        *module.expand_shard_names(["frontends"]),
+        *module.expand_shard_names(["modules"]),
+    })
+
+    assert sorted(default_shards) == expected_default_shards
+    assert {"new_zealand_sources", "new_zealand_effects", "new_zealand_reports"} <= set(default_shards)
+
+
+def test_test_shard_new_zealand_group_expands_to_subshards() -> None:
+    module = _load_test_shard_module()
+
+    assert module.expand_shard_names(["new_zealand"]) == [
+        "new_zealand_sources",
+        "new_zealand_effects",
+        "new_zealand_reports",
+    ]
+    assert module.shard_plan("new_zealand")["assigned_file_count"] == 15
+    assert module.affected_shards(["tests/test_new_zealand_acquisition.py"]) == [
+        "new_zealand_sources"
     ]
 
 
@@ -318,6 +362,7 @@ def test_test_shard_maps_source_modules_to_frontend_shards() -> None:
     assert module.affected_shards(["src/lawvm/tools/finland_rulebook.py"]) == ["finland", "tools"]
     assert module.affected_shards(["src/lawvm/tools/sync_finlex_latest.py"]) == ["finland", "tools"]
     assert module.affected_shards(["src/lawvm/tools/no_op_trace.py"]) == ["norway", "tools"]
+    assert module.affected_shards(["src/lawvm/new_zealand/acquisition.py"]) == ["new_zealand"]
     assert module.affected_shards(["src/lawvm/tools/sweden.py"]) == ["sweden", "tools"]
     assert module.affected_shards(["src/lawvm/tools/uk_replay.py"]) == ["tools", "uk"]
     assert module.affected_shards(["src/lawvm/tools/evidence.py"]) == ["evidence", "tools"]

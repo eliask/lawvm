@@ -181,6 +181,25 @@ def validate_corpus_finding_evidence_row(row: Mapping[str, Any]) -> tuple[str, .
     return tuple(issues)
 
 
+def evidence_rule_ids(row: Mapping[str, Any]) -> set[str]:
+    """Extract stable rule ids referenced by a shared evidence-row dict."""
+
+    values = {_scalar(row.get("rule_id"))}
+    finding_ids = row.get("finding_ids", ())
+    if isinstance(finding_ids, (list, tuple)):
+        values.update(str(value) for value in finding_ids)
+    for evidence in _evidence_maps(row):
+        for key in _RULE_DETAIL_KEYS:
+            value = evidence.get(key)
+            if isinstance(value, str) and (key != "reason" or _looks_like_rule_id(value)):
+                values.add(value)
+        for key in _RULE_LIST_DETAIL_KEYS:
+            value = evidence.get(key)
+            if isinstance(value, (list, tuple)):
+                values.update(str(item) for item in value if str(item))
+    return {value for value in values if value}
+
+
 def _require_non_empty_string(row: Mapping[str, Any], key: str, issues: list[str]) -> None:
     value = row.get(key)
     if not isinstance(value, str) or not value:
@@ -189,3 +208,46 @@ def _require_non_empty_string(row: Mapping[str, Any], key: str, issues: list[str
 
 def _has_reason_detail(detail: Mapping[str, Any]) -> bool:
     return any(detail.get(key) for key in ("reason", "error", "message", "finding", "status"))
+
+
+def _evidence_maps(row: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    return tuple(value for key in ("detail", "evidence") if isinstance((value := row.get(key)), Mapping))
+
+
+def _scalar(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value)
+
+
+_RULE_DETAIL_KEYS = (
+    "reason",
+    "blocking_rule_id",
+    "candidate_blocking_rule_id",
+    "batch_blocking_rule_id",
+    "preflight_blocking_rule_id",
+    "replay_blocking_rule_id",
+    "effect_blocking_rule_id",
+    "operation_target_blocking_rule_id",
+    "oracle_agreement_blocking_rule_id",
+    "candidate_witness_rule_id",
+    "instruction_semantic_rule_id",
+    "instruction_subfamily_rule_id",
+    "payload_structural_subfamily_rule_id",
+    "latest_oracle_text_rule_id",
+    "latest_oracle_target_resolution_rule_id",
+    "repeal_payload_corroboration_rule_id",
+)
+
+
+_RULE_LIST_DETAIL_KEYS = (
+    "declared_recovery_rule_ids",
+    "declared_migration_rule_ids",
+    "matched_allowance_rule_ids",
+)
+
+
+def _looks_like_rule_id(value: str) -> bool:
+    if not value or " " in value:
+        return False
+    return "_" in value or ":" in value or "." in value

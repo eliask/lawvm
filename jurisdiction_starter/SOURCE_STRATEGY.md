@@ -59,6 +59,8 @@ For each source family, define:
 - immutability expectations,
 - refresh TTL,
 - whether cleaned/derived artifacts are stored separately.
+- if live acquisition is needed, the pagination, retry, rate-limit, and resume
+  behavior that produces the local substrate.
 
 ### Required rule
 
@@ -67,6 +69,24 @@ Raw source bytes must remain archived separately from any cleaned or derived tex
 Replay, verification, and audit jobs consume local substrate only. Network
 fetching is an acquisition phase that must produce a local archive, clone,
 fixture, or manifest before replay begins.
+
+### API/feed acquisition rule
+
+If a source family is reached through an API, feed, or generated index, the
+frontend must define:
+
+- the request identity stored in the archive, excluding secrets;
+- the response identity stored in the archive, including content type and
+  source status where available;
+- the local cache key or archive member convention;
+- pagination and cursor behavior;
+- rate-limit behavior, including retry disposition and whether the acquisition
+  process can sleep until reset;
+- a resumable frontier or state file for long-running corpus syncs;
+- diagnostics for 429, 403, schema drift, unavailable artifacts, and beta API
+  limitations;
+- a rule that API keys, tokens, and cookies never enter persisted artifacts,
+  logs, diagnostics, or findings.
 
 ### Local substrate table
 
@@ -151,7 +171,32 @@ If any one of those is absent, the frontend must downgrade its capability claim.
 
 ---
 
-## 9. Inventory-first contract
+## 9. Dependency and closure strategy
+
+If the jurisdiction has source-declared amendment links, history notes, effect
+feeds, version graphs, or registry relationships, describe how they are turned
+into an acquisition frontier.
+
+Template:
+
+- Seed source family:
+- Dependency witness family:
+- Dependency edge types:
+- What counts as a transitive dependency:
+- What is archived for each dependency before semantic claims:
+- What unresolved dependency rows look like:
+- Whether consolidated snapshot versions are fetched as witnesses, replay
+  targets, or both:
+- How the frontend avoids treating a dependency edge as a compiled amendment
+  effect:
+
+For New Zealand-like sources, current consolidated XML can expose amendment
+history witnesses and version metadata. Those witnesses are useful for corpus
+closure and source-tree comparison, but they are not themselves a replay proof.
+
+---
+
+## 10. Inventory-first contract
 
 Before the frontend claims parsing, replay, or verification support, it must be
 able to inventory the declared local substrate.

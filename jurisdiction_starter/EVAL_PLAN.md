@@ -16,6 +16,9 @@ Does one parser/compiler phase produce the right artifact from one small source?
 Examples:
 - source record fields,
 - current IR parse,
+- source-tree parse,
+- source dependency extraction,
+- snapshot-diff witness reports,
 - official-act parse,
 - clause surface rows,
 - payload extraction rows,
@@ -26,6 +29,18 @@ Does a small fixed source bundle produce the expected artifacts across multiple 
 
 The bundle must include the local source substrate and expected
 `inventory_manifest.json`, not only final parsed output.
+
+### Layer B2. Corpus-acquisition replayability tests
+If acquisition uses an API, feed, registry, or source graph, can a fixture or
+mocked source run resume safely and preserve rate-limit, dependency, and
+unavailable-artifact diagnostics?
+
+Examples:
+- paginated work index sync,
+- latest-version XML sync,
+- dependency closure from source history notes,
+- 429 or quota-reset behavior,
+- unresolved dependency rows.
 
 ### Layer C. End-to-end replay tests
 Given a base seed and amending source, does replay reach the expected post-state?

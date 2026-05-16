@@ -15,6 +15,11 @@ src/lawvm/<code>/
     inventory.py
     evidence.py             # row/finding/evidence-pack emitters
     fetch.py                # only if live/public fetch is part of the boundary
+    acquisition.py          # API/feed/archive sync, if larger than fetch.py
+    closure.py              # corpus frontier/dependency acquisition, if needed
+    dependencies.py         # source-declared amendment/effect/history edges
+    source_tree.py          # source structural parse before IR/replay claims
+    version_diff.py         # consolidated snapshot diffs as witness reports
     grafter.py              # parse current / official artifacts into IR or intermediate surfaces
     replay.py
     verify.py
@@ -76,6 +81,61 @@ Must not own:
 - semantic parse,
 - replay.
 
+### `acquisition.py`
+Owns:
+- API/feed/git/archive synchronization when acquisition is a multi-command
+  subsystem rather than a small fetch helper,
+- request/response provenance without secrets,
+- pagination, retry, rate-limit, and resume behavior,
+- writing local archives or manifests used by later phases.
+
+Must not own:
+- clause/effect semantics,
+- oracle comparison,
+- replay success claims.
+
+Use `fetch.py` for small one-shot download boundaries. Use `acquisition.py`
+when the jurisdiction needs resumable corpus sync, rate-limit handling, or
+multiple source lanes.
+
+### `closure.py`
+Owns:
+- expanding seed works into a corpus acquisition frontier,
+- dependency-closure orchestration over source-declared links,
+- state files for long-running corpus completion.
+
+Must not own:
+- interpreting dependency edges as canonical amendment operations,
+- hiding unresolved dependencies.
+
+### `dependencies.py`
+Owns:
+- parsing source-declared amendment, history, effect, or registry edges,
+- emitting dependency reports and unresolved edge diagnostics.
+
+Must not own:
+- replay ordering,
+- action-family lowering.
+
+### `source_tree.py`
+Owns:
+- structural parsing of official XML/HTML/source snapshots into source nodes,
+- source labels, headings, deletion markers, text witnesses, and history notes,
+- summaries that are honest source-shape reports before IR/replay claims.
+
+Must not own:
+- legal identity migration semantics,
+- canonical operation effects.
+
+### `version_diff.py`
+Owns:
+- comparing local consolidated snapshots as witness surfaces,
+- added/removed/changed source-path reports.
+
+Must not own:
+- proof that a snapshot delta was caused by a specific amendment operation,
+- replay-vs-oracle adjudication.
+
 ### `grafter.py`
 Owns:
 - current IR parse,
@@ -129,12 +189,16 @@ Recommended order:
 1. `sources.py`
 2. `inventory.py`
 3. `evidence.py` minimal findings and summary emitters
-4. `grafter.py` current IR
-5. official-act / structured-amendment parse in `grafter.py` or split module
-6. `replay.py`
-7. `verify.py`
-8. `commencement.py`
-9. `source_adjudication.py` refinement and partitioning helpers
+4. `fetch.py` or `acquisition.py` if live/corpus sync is needed
+5. `closure.py` and `dependencies.py` if source-declared corpus closure exists
+6. `source_tree.py` for current/historical source snapshots before replay
+7. `version_diff.py` if consolidated versions are available as witnesses
+8. `grafter.py` current IR
+9. official-act / structured-amendment parse in `grafter.py` or split module
+10. `replay.py`
+11. `verify.py`
+12. `commencement.py`
+13. `source_adjudication.py` refinement and partitioning helpers
 
 ---
 
