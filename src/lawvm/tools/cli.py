@@ -37,6 +37,7 @@ Subcommands:
     bench-regression-guard Compare saved bench runs and fail on excessive regressions.
     bench-hydrate          Serially hydrate source/oracle cache for a benchmark corpus.
     sync-finlex-latest     Sync latest Finnish PIT XMLs for known statutes into farchive.
+    nz-corpus sync          Sync New Zealand API v0 metadata/XML into farchive.
     corrigendum status|apply|classify|report|sources  Corrigendum (oikaisu) inspection and classification.
     audit     formats|staleness|html  Cross-format consistency audit (oracle staleness).
     ee-residual-inventory            Print deterministic EE residual adjudication inventory.
@@ -95,7 +96,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "-j",
         "--jurisdiction",
         default=os.environ.get("LAWVM_JURISDICTION", "fi"),
-        choices=["fi", "ee", "uk", "no"],
+        choices=["fi", "ee", "uk", "no", "nz"],
         help="jurisdiction (default: fi, or LAWVM_JURISDICTION env var)",
     )
 
@@ -4886,6 +4887,644 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     ee_corpus_stats_p.add_argument("--json", action="store_true", help="emit JSON")
 
+    # --- nz-corpus ---
+    nz_corpus_p = sub.add_parser(
+        "nz-corpus",
+        help="New Zealand API v0 acquisition helpers",
+        description=(
+            "Acquire New Zealand Legislation API v0 work/version metadata and "
+            "XML manifestations into farchive. Uses NZ_API_KEY from the "
+            "environment and sends it only as an X-Api-Key header."
+        ),
+    )
+    nz_corpus_sub = nz_corpus_p.add_subparsers(dest="nz_corpus_command", metavar="<subcommand>")
+    nz_sync_p = nz_corpus_sub.add_parser(
+        "sync",
+        help="sync NZ API v0 metadata/XML into farchive",
+        description=(
+            "Resumable, rate-limit-aware acquisition. Existing locators are "
+            "skipped unless --refetch is passed. Search discovery is used when "
+            "no --work-id or --version-id is supplied."
+        ),
+    )
+    nz_sync_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_sync_p.add_argument("--search-term", default="", metavar="TEXT", help="search term for /v0/works/")
+    nz_sync_p.add_argument("--work-id", action="append", default=[], metavar="ID", help="work_id to sync")
+    nz_sync_p.add_argument(
+        "--version-id",
+        action="append",
+        default=[],
+        metavar="ID",
+        help="version_id to sync directly",
+    )
+    nz_sync_p.add_argument(
+        "--legislation-type",
+        default="",
+        choices=["", "act", "amendment_paper", "bill", "secondary_legislation"],
+        help="optional /v0/works legislation_type filter",
+    )
+    nz_sync_p.add_argument(
+        "--publisher",
+        default="",
+        choices=["", "Agency", "Parliamentary Counsel Office"],
+        help="optional /v0/works publisher filter",
+    )
+    nz_sync_p.add_argument(
+        "--version-sort",
+        default="desc",
+        choices=["asc", "desc"],
+        help="sort order for /v0/works/{work_id}/versions/ (default: desc)",
+    )
+    nz_sync_p.add_argument("--per-page", type=int, default=100, metavar="N", help="search page size, max 100")
+    nz_sync_p.add_argument("--max-pages", type=int, default=None, metavar="N", help="maximum search pages")
+    nz_sync_p.add_argument("--max-works", type=int, default=None, metavar="N", help="maximum works")
+    nz_sync_p.add_argument("--max-versions", type=int, default=None, metavar="N", help="maximum versions")
+    nz_sync_p.add_argument(
+        "--max-versions-per-work",
+        type=int,
+        default=None,
+        metavar="N",
+        help="maximum versions to acquire for each work_id",
+    )
+    nz_sync_p.add_argument("--no-xml", action="store_true", help="capture API JSON only")
+    nz_sync_p.add_argument("--refetch", action="store_true", help="refetch even when locator is already cached")
+    nz_sync_p.add_argument(
+        "--delay",
+        type=float,
+        default=0.5,
+        metavar="SECONDS",
+        help="minimum delay between live requests (default: 0.5)",
+    )
+    nz_sync_p.add_argument(
+        "--request-budget",
+        type=int,
+        default=None,
+        metavar="N",
+        help="stop after N live requests",
+    )
+    nz_sync_p.add_argument(
+        "--reserve-remaining",
+        type=int,
+        default=100,
+        metavar="N",
+        help="stop when X-RateLimit-Remaining is <= N (default: 100)",
+    )
+    nz_sync_p.add_argument(
+        "--sleep-on-rate-limit",
+        action="store_true",
+        help="sleep until the API reset time after 429/403 or quota-reserve stop, then continue",
+    )
+    nz_sync_p.add_argument(
+        "--max-sleep-seconds",
+        type=int,
+        default=None,
+        metavar="N",
+        help="testing/supervisor guard: refuse a rate-limit sleep longer than N seconds",
+    )
+    nz_sync_p.add_argument(
+        "--rate-limit-retry-attempts",
+        type=int,
+        default=3,
+        metavar="N",
+        help="short retries before sleeping until reset after HTTP 429/403 (default: 3)",
+    )
+    nz_sync_p.add_argument(
+        "--diagnostics-jsonl",
+        metavar="PATH",
+        help="write acquisition diagnostics/failures as JSONL",
+    )
+    nz_sync_p.add_argument("--verbose", "-v", action="store_true", help="print progress details")
+    nz_deps_p = nz_corpus_sub.add_parser(
+        "deps",
+        help="extract amendment dependency candidates from archived NZ XML",
+        description=(
+            "Read an archived NZ consolidated XML and extract amendment work "
+            "candidates from reprint notes and provision-level history notes. "
+            "This is evidence extraction, not replay."
+        ),
+    )
+    nz_deps_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_deps_p.add_argument("--work-id", default="", metavar="ID", help="archived work_id whose latest XML to inspect")
+    nz_deps_p.add_argument("--version-id", default="", metavar="ID", help="optional version_id label for explicit XML")
+    nz_deps_p.add_argument("--xml-locator", default="", metavar="LOCATOR", help="explicit archived XML locator")
+    nz_deps_p.add_argument("--limit", type=int, default=40, metavar="N", help="rows to print in text mode")
+    nz_deps_p.add_argument("--output-json", metavar="PATH", help="write full dependency report JSON")
+    nz_deps_p.add_argument("--json", action="store_true", help="emit full dependency report JSON")
+    nz_closure_p = nz_corpus_sub.add_parser(
+        "closure",
+        help="resumable NZ frontier acquisition",
+        description=(
+            "Acquire useful NZ source frontiers: target work versions/XML, "
+            "dependency reports from latest XML, and latest XML for discovered "
+            "amending works. With --sleep-on-rate-limit it can run under a "
+            "supervisor and continue after quota resets."
+        ),
+    )
+    nz_closure_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_closure_p.add_argument("--work-id", action="append", default=[], metavar="ID", help="seed work_id")
+    nz_closure_p.add_argument(
+        "--all-acts",
+        action="store_true",
+        help="sync latest versions/XML for all search-discovered Acts instead of dependency closure",
+    )
+    nz_closure_p.add_argument("--search-term", default="", metavar="TEXT", help="optional all-acts search term")
+    nz_closure_p.add_argument(
+        "--legislation-type",
+        default="act",
+        choices=["", "act", "amendment_paper", "bill", "secondary_legislation"],
+        help="all-acts legislation_type filter (default: act)",
+    )
+    nz_closure_p.add_argument(
+        "--publisher",
+        default="",
+        choices=["", "Agency", "Parliamentary Counsel Office"],
+        help="optional all-acts publisher filter",
+    )
+    nz_closure_p.add_argument(
+        "--dependency-depth",
+        type=int,
+        default=1,
+        metavar="N",
+        help="dependency expansion depth for seed work_ids (default: 1)",
+    )
+    nz_closure_p.add_argument(
+        "--seed-latest-only",
+        action="store_true",
+        help="fetch only latest seed version instead of full seed version graph",
+    )
+    nz_closure_p.add_argument(
+        "--max-versions-per-work",
+        type=int,
+        default=1,
+        metavar="N",
+        help="versions per non-seed/all-acts work (default: 1)",
+    )
+    nz_closure_p.add_argument("--version-sort", default="desc", choices=["asc", "desc"], help="version sort")
+    nz_closure_p.add_argument("--per-page", type=int, default=100, metavar="N", help="API page size, max 100")
+    nz_closure_p.add_argument("--max-pages", type=int, default=None, metavar="N", help="maximum search/version pages")
+    nz_closure_p.add_argument("--max-works", type=int, default=None, metavar="N", help="maximum discovered works")
+    nz_closure_p.add_argument("--max-versions", type=int, default=None, metavar="N", help="maximum versions")
+    nz_closure_p.add_argument("--no-xml", action="store_true", help="capture API JSON only")
+    nz_closure_p.add_argument("--refetch", action="store_true", help="refetch even when locator is cached")
+    nz_closure_p.add_argument("--delay", type=float, default=0.5, metavar="SECONDS", help="delay between requests")
+    nz_closure_p.add_argument("--request-budget", type=int, default=None, metavar="N", help="stop after N requests")
+    nz_closure_p.add_argument(
+        "--reserve-remaining",
+        type=int,
+        default=100,
+        metavar="N",
+        help="stop when X-RateLimit-Remaining is <= N (default: 100)",
+    )
+    nz_closure_p.add_argument("--sleep-on-rate-limit", action="store_true", help="sleep until reset, then continue")
+    nz_closure_p.add_argument("--max-sleep-seconds", type=int, default=None, metavar="N", help="sleep guard")
+    nz_closure_p.add_argument(
+        "--rate-limit-retry-attempts",
+        type=int,
+        default=3,
+        metavar="N",
+        help="short retries before reset sleep (default: 3)",
+    )
+    nz_closure_p.add_argument(
+        "--diagnostics-jsonl",
+        metavar="PATH",
+        help="write latest sync phase diagnostics as JSONL",
+    )
+    nz_closure_p.add_argument(
+        "--state-json",
+        default=".tmp/nz_closure_state.json",
+        metavar="PATH",
+        help="write resumable closure state summary (default: .tmp/nz_closure_state.json)",
+    )
+    nz_closure_p.add_argument("--verbose", "-v", action="store_true", help="print rate-limit waits")
+    nz_source_p = nz_corpus_sub.add_parser(
+        "source-summary",
+        help="parse archived NZ XML into a typed source-tree summary",
+        description=(
+            "Inspect archived NZ XML as source structure: labels, headings, "
+            "provision paths, deletion status, and amendment-history witnesses. "
+            "This does not lower to replay operations."
+        ),
+    )
+    nz_source_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_source_p.add_argument("--work-id", default="", metavar="ID", help="work_id whose latest archived XML to parse")
+    nz_source_p.add_argument("--xml-locator", default="", metavar="LOCATOR", help="explicit archived XML locator")
+    nz_source_p.add_argument("--version-id", default="", metavar="ID", help="optional version_id label for explicit XML")
+    nz_source_p.add_argument("--summary-only", action="store_true", help="omit source nodes from JSON output")
+    nz_source_p.add_argument("--limit", type=int, default=40, metavar="N", help="rows to print in text mode")
+    nz_source_p.add_argument("--json", action="store_true", help="emit parsed source document JSON")
+    nz_diff_p = nz_corpus_sub.add_parser(
+        "version-diff",
+        help="compare two archived NZ consolidated XML versions",
+        description=(
+            "Compare parsed source nodes between two archived consolidated XML "
+            "versions. Defaults to latest vs previous archived version for the work."
+        ),
+    )
+    nz_diff_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_diff_p.add_argument("--work-id", required=True, metavar="ID", help="work_id to compare")
+    nz_diff_p.add_argument("--before-version-id", default="", metavar="ID", help="older version_id")
+    nz_diff_p.add_argument("--after-version-id", default="", metavar="ID", help="newer version_id")
+    nz_diff_p.add_argument(
+        "--list-versions",
+        action="store_true",
+        help="list archived XML version witnesses for the work instead of diffing",
+    )
+    nz_diff_p.add_argument(
+        "--version-date",
+        default="",
+        metavar="YYYY-MM-DD",
+        help="with --list-versions, also report source-version date witnesses bracketing this date",
+    )
+    nz_diff_p.add_argument(
+        "--change-window",
+        action="store_true",
+        help="with --list-versions --version-date, also report strict-before/on-or-after source witnesses",
+    )
+    nz_diff_p.add_argument("--limit", type=int, default=40, metavar="N", help="rows to print in text mode")
+    nz_diff_p.add_argument("--json", action="store_true", help="emit full diff JSON")
+    nz_agreement_p = nz_corpus_sub.add_parser(
+        "agreement",
+        help="compare candidate NZ XML source tree against oracle XML",
+        description=(
+            "Compare two archived NZ XML source trees as candidate-vs-oracle "
+            "agreement. This does not produce a candidate replay; it is the "
+            "agreement metric surface future NZ replay should feed."
+        ),
+    )
+    nz_agreement_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_agreement_p.add_argument("--candidate-xml-locator", required=True, metavar="LOCATOR")
+    nz_agreement_p.add_argument("--oracle-xml-locator", required=True, metavar="LOCATOR")
+    nz_agreement_p.add_argument("--candidate-version-id", default="", metavar="ID")
+    nz_agreement_p.add_argument("--oracle-version-id", default="", metavar="ID")
+    nz_agreement_p.add_argument("--limit", type=int, default=40, metavar="N", help="mismatch rows to print")
+    nz_agreement_p.add_argument("--json", action="store_true", help="emit full agreement report JSON")
+    nz_ops_p = nz_corpus_sub.add_parser(
+        "operation-surface",
+        help="extract typed NZ operation witnesses from history notes",
+        description=(
+            "Build a P5/P6 operation-witness surface from archived NZ XML "
+            "history notes. This classifies source operation words and remains "
+            "blocked for canonical effect lowering."
+        ),
+    )
+    nz_ops_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_ops_p.add_argument("--work-id", required=True, metavar="ID", help="archived work_id")
+    nz_ops_p.add_argument(
+        "--limit",
+        type=int,
+        default=40,
+        metavar="N",
+        help="rows to print in text mode or include in JSON (default: 40)",
+    )
+    nz_ops_p.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="emit only operation-surface summary counts, omitting row payloads",
+    )
+    nz_ops_p.add_argument("--operation-family", default="", help="filter rows by classified operation family")
+    nz_ops_p.add_argument("--target-address-status", default="", help="filter rows by target-address status")
+    nz_ops_p.add_argument("--dependency-status", default="", help="filter rows by dependency status")
+    nz_ops_p.add_argument("--lowering-readiness-status", default="", help="filter rows by lowering-readiness status")
+    nz_ops_p.add_argument("--target-hint-status", default="", help="filter rows by target-hint status")
+    nz_ops_p.add_argument(
+        "--evidence-rows",
+        action="store_true",
+        help="include shared corpus evidence rows in JSON output",
+    )
+    nz_ops_p.add_argument(
+        "--evidence-jsonl",
+        metavar="PATH",
+        help="write shared corpus operation/finding evidence rows as JSONL",
+    )
+    nz_ops_p.add_argument("--json", action="store_true", help="emit operation witness report JSON")
+    nz_payload_p = nz_corpus_sub.add_parser(
+        "payload-surface",
+        help="link NZ operation witnesses to archived amending-act payload nodes",
+        description=(
+            "Build an archive-first payload witness surface from operation "
+            "history-note amending-provision hrefs. This does not lower "
+            "canonical effects or claim replay support."
+        ),
+    )
+    nz_payload_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_payload_p.add_argument("--work-id", required=True, metavar="ID", help="archived work_id")
+    nz_payload_p.add_argument("--limit", type=int, default=40, metavar="N", help="rows to print/include")
+    nz_payload_p.add_argument("--summary-only", action="store_true", help="emit only payload summary counts")
+    nz_payload_p.add_argument("--payload-status", default="", help="filter rows by payload status")
+    nz_payload_p.add_argument("--operation-family", default="", help="filter rows by operation family")
+    nz_payload_p.add_argument("--instruction-shape", default="", help="filter rows by payload instruction shape")
+    nz_payload_p.add_argument("--instruction-safety", default="", help="filter rows by payload instruction safety")
+    nz_payload_p.add_argument("--json", action="store_true", help="emit payload witness report JSON")
+    nz_effect_ready_p = nz_corpus_sub.add_parser(
+        "effect-readiness",
+        help="classify NZ rows that are ready for future canonical effect lowering",
+        description=(
+            "Combine operation and payload witness surfaces to classify "
+            "pre-lowering readiness. This emits no canonical operations and "
+            "does not claim replay support."
+        ),
+    )
+    nz_effect_ready_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_effect_ready_p.add_argument("--work-id", required=True, metavar="ID", help="archived work_id")
+    nz_effect_ready_p.add_argument("--limit", type=int, default=40, metavar="N", help="rows to print/include")
+    nz_effect_ready_p.add_argument("--summary-only", action="store_true", help="emit only readiness summary counts")
+    nz_effect_ready_p.add_argument("--effect-readiness-status", default="", help="filter rows by readiness status")
+    nz_effect_ready_p.add_argument("--operation-family", default="", help="filter rows by operation family")
+    nz_effect_ready_p.add_argument("--payload-status", default="", help="filter rows by payload status")
+    nz_effect_ready_p.add_argument(
+        "--instruction-semantic-candidate-status",
+        default="",
+        help="filter rows by instruction semantic candidate status",
+    )
+    nz_effect_ready_p.add_argument(
+        "--operation-target-address-status",
+        default="",
+        help="filter rows by original operation target-address status",
+    )
+    nz_effect_ready_p.add_argument("--json", action="store_true", help="emit readiness report JSON")
+    nz_instruction_queue_p = nz_corpus_sub.add_parser(
+        "instruction-workqueue",
+        help="list NZ direct-instruction lowering candidates and blockers",
+        description=(
+            "Build a diagnostic work queue from NZ payload instruction-shape "
+            "classification. This is not canonical lowering and emits no "
+            "replay or agreement claim."
+        ),
+    )
+    nz_instruction_queue_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_instruction_queue_p.add_argument("--work-id", required=True, metavar="ID", help="archived work_id")
+    nz_instruction_queue_p.add_argument("--limit", type=int, default=40, metavar="N", help="rows to print/include")
+    nz_instruction_queue_p.add_argument("--summary-only", action="store_true", help="emit only workqueue summary counts")
+    nz_instruction_queue_p.add_argument(
+        "--queue-status",
+        choices=("candidate", "review", "blocked", "not_required"),
+        default="",
+        help="filter rows by workqueue status",
+    )
+    nz_instruction_queue_p.add_argument("--instruction-family", default="", help="filter by instruction family")
+    nz_instruction_queue_p.add_argument("--instruction-shape", default="", help="filter by payload instruction shape")
+    nz_instruction_queue_p.add_argument("--instruction-subfamily-status", default="", help="filter by subfamily status")
+    nz_instruction_queue_p.add_argument("--instruction-subfamily", default="", help="filter by instruction subfamily")
+    nz_instruction_queue_p.add_argument(
+        "--payload-structural-subfamily-status",
+        default="",
+        help="filter by report-only structural payload subfamily status",
+    )
+    nz_instruction_queue_p.add_argument(
+        "--payload-structural-subfamily",
+        default="",
+        help="filter by report-only structural payload subfamily",
+    )
+    nz_instruction_queue_p.add_argument("--candidate-only", action="store_true", help="include only direct candidate rows")
+    nz_instruction_queue_p.add_argument(
+        "--evidence-rows",
+        action="store_true",
+        help="include shared evidence rows in JSON output",
+    )
+    nz_instruction_queue_p.add_argument(
+        "--evidence-jsonl",
+        metavar="PATH",
+        help="write shared instruction-workqueue evidence rows as JSONL",
+    )
+    nz_instruction_queue_p.add_argument("--json", action="store_true", help="emit instruction workqueue report JSON")
+    nz_effect_candidates_p = nz_corpus_sub.add_parser(
+        "effect-candidates",
+        help="emit NZ candidate canonical effects without replaying them",
+        description=(
+            "Build candidate LegalOperation envelopes for rows already proven "
+            "ready for canonical effect lowering. Currently repeal and directly "
+            "witnessed text-replacement candidates may be emitted; all other "
+            "rows remain blocked with evidence."
+        ),
+    )
+    nz_effect_candidates_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_effect_candidates_p.add_argument("--work-id", required=True, metavar="ID", help="archived work_id")
+    nz_effect_candidates_p.add_argument("--limit", type=int, default=40, metavar="N", help="rows to print/include")
+    nz_effect_candidates_p.add_argument("--summary-only", action="store_true", help="emit only candidate summary counts")
+    nz_effect_candidates_p.add_argument("--candidate-status", default="", help="filter rows by candidate status")
+    nz_effect_candidates_p.add_argument("--action", default="", help="filter rows by emitted canonical action")
+    nz_effect_candidates_p.add_argument("--operation-family", default="", help="filter rows by source operation family")
+    nz_effect_candidates_p.add_argument("--blocking-rule", default="", help="filter rows by blocking rule id")
+    nz_effect_candidates_p.add_argument(
+        "--instruction-subfamily-status",
+        default="",
+        help="filter rows by instruction-workqueue subfamily status",
+    )
+    nz_effect_candidates_p.add_argument(
+        "--instruction-subfamily",
+        default="",
+        help="filter rows by instruction-workqueue subfamily",
+    )
+    nz_effect_candidates_p.add_argument(
+        "--payload-structural-subfamily-status",
+        default="",
+        help="filter rows by instruction-workqueue structural payload subfamily status",
+    )
+    nz_effect_candidates_p.add_argument(
+        "--payload-structural-subfamily",
+        default="",
+        help="filter rows by instruction-workqueue structural payload subfamily",
+    )
+    nz_effect_candidates_p.add_argument(
+        "--repeal-payload-corroboration-status",
+        default="",
+        help="filter rows by repeal payload corroboration status",
+    )
+    nz_effect_candidates_p.add_argument(
+        "--operation-lowering-readiness-status",
+        default="",
+        help="filter rows by original operation lowering-readiness status",
+    )
+    nz_effect_candidates_p.add_argument(
+        "--operation-target-address-status",
+        default="",
+        help="filter rows by original operation target-address status",
+    )
+    nz_effect_candidates_p.add_argument(
+        "--operation-dependency-status",
+        default="",
+        help="filter rows by original operation dependency status",
+    )
+    nz_effect_candidates_p.add_argument(
+        "--payload-instruction-shape",
+        default="",
+        help="filter rows by payload instruction shape",
+    )
+    nz_effect_candidates_p.add_argument(
+        "--payload-instruction-safety",
+        default="",
+        help="filter rows by payload instruction safety classification",
+    )
+    nz_effect_candidates_p.add_argument(
+        "--instruction-semantic-candidate-status",
+        default="",
+        help="filter rows by instruction semantic candidate status",
+    )
+    nz_effect_candidates_p.add_argument(
+        "--latest-oracle-text-status",
+        default="",
+        help="filter rows by latest-oracle text witness status",
+    )
+    nz_effect_candidates_p.add_argument(
+        "--text-replace-witness-support-status",
+        default="",
+        help="filter rows by text-replacement witness support classification",
+    )
+    nz_effect_candidates_p.add_argument(
+        "--source-change-text-witness-status",
+        default="",
+        help="filter rows by archived source-change text witness status",
+    )
+    nz_effect_candidates_p.add_argument("--evidence-rows", action="store_true", help="include shared evidence rows in JSON output")
+    nz_effect_candidates_p.add_argument("--evidence-jsonl", metavar="PATH", help="write shared candidate evidence rows as JSONL")
+    nz_effect_candidates_p.add_argument("--json", action="store_true", help="emit candidate report JSON")
+    nz_effect_preflight_p = nz_corpus_sub.add_parser(
+        "candidate-preflight",
+        help="dry-run NZ candidate replay preconditions without applying operations",
+        description=(
+            "Refuse dry-run replay unless every operation witness row has a "
+            "candidate canonical effect. This checks preconditions only and "
+            "does not mutate or materialize legal text."
+        ),
+    )
+    nz_effect_preflight_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_effect_preflight_p.add_argument("--work-id", required=True, metavar="ID", help="archived work_id")
+    nz_effect_preflight_p.add_argument("--limit", type=int, default=40, metavar="N", help="blocked rows to print/include")
+    nz_effect_preflight_p.add_argument("--summary-only", action="store_true", help="emit only preflight summary counts")
+    nz_effect_preflight_p.add_argument("--evidence-rows", action="store_true", help="include shared evidence rows in JSON output")
+    nz_effect_preflight_p.add_argument("--evidence-jsonl", metavar="PATH", help="write shared preflight evidence rows as JSONL")
+    nz_effect_preflight_p.add_argument("--json", action="store_true", help="emit preflight report JSON")
+    nz_evidence_pack_p = nz_corpus_sub.add_parser(
+        "evidence-pack",
+        help="write one report-query-compatible NZ evidence JSONL pack",
+        description=(
+            "Bundle existing NZ operation witness, effect candidate, "
+            "candidate preflight, and instruction-workqueue evidence rows. "
+            "This creates no new replay or agreement claim."
+        ),
+    )
+    nz_evidence_pack_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_evidence_pack_p.add_argument("--work-id", required=True, metavar="ID", help="archived work_id")
+    nz_evidence_pack_p.add_argument("--limit", type=int, default=40, metavar="N", help="rows to include in JSON output")
+    nz_evidence_pack_p.add_argument(
+        "--surface",
+        choices=("operation-surface", "effect-candidates", "candidate-preflight", "instruction-workqueue"),
+        default="",
+        help="filter evidence rows by NZ source surface",
+    )
+    nz_evidence_pack_p.add_argument(
+        "--row-kind",
+        choices=("operation", "finding"),
+        default="",
+        help="filter evidence rows by shared row kind",
+    )
+    nz_evidence_pack_p.add_argument("--status", default="", help="filter operation evidence rows by shared status")
+    nz_evidence_pack_p.add_argument("--rule-id", default="", help="filter evidence rows by rule/finding id")
+    nz_evidence_pack_p.add_argument("--blocking", action="store_true", help="filter to blocking evidence rows")
+    nz_evidence_pack_p.add_argument("--output-jsonl", metavar="PATH", help="write shared evidence rows as JSONL")
+    nz_evidence_pack_p.add_argument("--json", action="store_true", help="emit evidence-pack report JSON")
+    nz_benchmark_p = nz_corpus_sub.add_parser(
+        "benchmark",
+        help="report archive-first NZ replay readiness coverage",
+        description=(
+            "Build a benchmark coverage report from archived NZ API/XML data. "
+            "This measures source-tree, dependency, and snapshot-diff coverage "
+            "and emits blocked replay status until canonical NZ effects exist."
+        ),
+    )
+    nz_benchmark_p.add_argument(
+        "--db",
+        default="data/nz_legislation.farchive",
+        metavar="PATH",
+        help="Farchive DB path (default: data/nz_legislation.farchive)",
+    )
+    nz_benchmark_p.add_argument(
+        "--work-id",
+        action="append",
+        default=[],
+        metavar="ID",
+        help="specific work_id to include; defaults to all archived version details",
+    )
+    nz_benchmark_p.add_argument("--max-works", type=int, default=None, metavar="N", help="maximum works")
+    nz_benchmark_p.add_argument(
+        "--include-diffs",
+        action="store_true",
+        help="compare latest archived XML to previous archived XML where available",
+    )
+    nz_benchmark_p.add_argument(
+        "--include-payloads",
+        action="store_true",
+        help="resolve operation witnesses to archived amending-act payload nodes where possible",
+    )
+    nz_benchmark_p.add_argument("--limit", type=int, default=40, metavar="N", help="rows to print in text mode")
+    nz_benchmark_p.add_argument("--output-json", metavar="PATH", help="write full benchmark report JSON")
+    nz_benchmark_p.add_argument("--json", action="store_true", help="emit full benchmark report JSON")
+
     # --- verify-chain ---
     verify_chain_p = sub.add_parser(
         "verify-chain",
@@ -5385,6 +6024,13 @@ def _build_parser() -> argparse.ArgumentParser:
     report_query_p.add_argument("--source-unit", default="", metavar="ID", help="source unit id")
     report_query_p.add_argument("--locator", default="", metavar="LOC", help="source locator or evidence codify_path")
     report_query_p.add_argument("--blocking", action="store_true", help="keep only blocking rows")
+    report_query_p.add_argument(
+        "--detail",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="filter by evidence detail/evidence field; may be repeated",
+    )
     report_query_p.add_argument("--limit", type=int, default=20, metavar="N", help="maximum rows to emit")
     report_query_p.add_argument("--validate", action="store_true", help="validate selected rows against the shared envelope")
     report_query_p.add_argument("--json", action="store_true", help="emit JSON")
@@ -5828,6 +6474,66 @@ def main() -> None:
         from lawvm.tools.ee_corpus import main as ee_corpus_main
 
         ee_corpus_main(args)
+
+    elif args.command == "nz-corpus":
+        if args.nz_corpus_command == "sync":
+            from lawvm.new_zealand.acquisition import main as nz_corpus_sync_main
+
+            nz_corpus_sync_main(args)
+        elif args.nz_corpus_command == "deps":
+            from lawvm.new_zealand.dependencies import main as nz_corpus_deps_main
+
+            nz_corpus_deps_main(args)
+        elif args.nz_corpus_command == "closure":
+            from lawvm.new_zealand.closure import main as nz_corpus_closure_main
+
+            nz_corpus_closure_main(args)
+        elif args.nz_corpus_command == "source-summary":
+            from lawvm.new_zealand.source_tree import main as nz_corpus_source_summary_main
+
+            nz_corpus_source_summary_main(args)
+        elif args.nz_corpus_command == "version-diff":
+            from lawvm.new_zealand.version_diff import main as nz_corpus_version_diff_main
+
+            nz_corpus_version_diff_main(args)
+        elif args.nz_corpus_command == "agreement":
+            from lawvm.new_zealand.agreement import main as nz_corpus_agreement_main
+
+            nz_corpus_agreement_main(args)
+        elif args.nz_corpus_command == "operation-surface":
+            from lawvm.new_zealand.operation_surface import main as nz_corpus_operation_surface_main
+
+            nz_corpus_operation_surface_main(args)
+        elif args.nz_corpus_command == "payload-surface":
+            from lawvm.new_zealand.payload_surface import main as nz_corpus_payload_surface_main
+
+            nz_corpus_payload_surface_main(args)
+        elif args.nz_corpus_command == "effect-readiness":
+            from lawvm.new_zealand.effect_readiness import main as nz_corpus_effect_readiness_main
+
+            nz_corpus_effect_readiness_main(args)
+        elif args.nz_corpus_command == "instruction-workqueue":
+            from lawvm.new_zealand.instruction_workqueue import main as nz_corpus_instruction_workqueue_main
+
+            nz_corpus_instruction_workqueue_main(args)
+        elif args.nz_corpus_command == "effect-candidates":
+            from lawvm.new_zealand.effect_candidates import main as nz_corpus_effect_candidates_main
+
+            nz_corpus_effect_candidates_main(args)
+        elif args.nz_corpus_command == "candidate-preflight":
+            from lawvm.new_zealand.effect_candidates import preflight_main as nz_corpus_candidate_preflight_main
+
+            nz_corpus_candidate_preflight_main(args)
+        elif args.nz_corpus_command == "evidence-pack":
+            from lawvm.new_zealand.evidence_pack import main as nz_corpus_evidence_pack_main
+
+            nz_corpus_evidence_pack_main(args)
+        elif args.nz_corpus_command == "benchmark":
+            from lawvm.new_zealand.benchmark import main as nz_corpus_benchmark_main
+
+            nz_corpus_benchmark_main(args)
+        else:
+            parser.error("nz-corpus requires a subcommand")
 
     elif args.command == "bench-regression-guard":
         from lawvm.tools.bench_regression_guard import main as bench_regression_guard_main

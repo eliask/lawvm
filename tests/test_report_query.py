@@ -29,7 +29,18 @@ def test_report_query_filters_nested_operation_evidence_row(tmp_path) -> None:
                 "strict_disposition": "record",
                 "quirks_disposition": "record",
                 "finding_ids": ["open_law_metadata_target_replayed"],
-                "detail": {},
+                "detail": {
+                    "operation_family": "replace",
+                    "changed_paths": ["10|27|02", "10|27|03"],
+                    "reason": "candidate canonical effect emitted but not replayed",
+                    "operation_target_blocking_rule_id": "nz_target_address_duplicate_source_path",
+                    "candidate_witness_rule_id": "nz_repeal_candidate_from_history_note_payload_witness",
+                    "matched_allowance_rule_ids": ["section_move_replace_destination_rebind"],
+                },
+                "evidence": {
+                    "projection_lane": "secondary-map",
+                    "latest_oracle_text_rule_id": "nz_latest_oracle_text_secondary_rule",
+                },
             },
         })
         + "\n",
@@ -37,11 +48,54 @@ def test_report_query_filters_nested_operation_evidence_row(tmp_path) -> None:
     )
 
     records = load_report_query_records((path,), validate=True)
-    selected = filter_report_query_records(records, ReportQueryFilters(status="matched", locator="10|27|02|annos"))
+    selected = filter_report_query_records(
+        records,
+        ReportQueryFilters(
+            status="matched",
+            locator="10|27|02|annos",
+            detail=(("operation_family", "replace"), ("changed_paths", "10|27|02|10|27|03")),
+        ),
+    )
 
     assert len(selected) == 1
     assert selected[0].validation_issues == ()
     assert "row-1 matched editorial-actions/x.xml 10|27|02|annos" in format_report_query_rows(selected)
+    assert len(filter_report_query_records(
+        records,
+        ReportQueryFilters(rule_id="nz_repeal_candidate_from_history_note_payload_witness"),
+    )) == 1
+    assert len(filter_report_query_records(
+        records,
+        ReportQueryFilters(rule_id="section_move_replace_destination_rebind"),
+    )) == 1
+    assert len(filter_report_query_records(
+        records,
+        ReportQueryFilters(rule_id="nz_target_address_duplicate_source_path"),
+    )) == 1
+    assert len(filter_report_query_records(
+        records,
+        ReportQueryFilters(rule_id="nz_latest_oracle_text_secondary_rule"),
+    )) == 1
+    assert len(filter_report_query_records(
+        records,
+        ReportQueryFilters(detail=(("projection_lane", "secondary-map"),)),
+    )) == 1
+    payload = report_query_rows_to_jsonable(records)
+    assert "nz_target_address_duplicate_source_path" in payload[0]["rule_ids"]
+    assert "section_move_replace_destination_rebind" in payload[0]["rule_ids"]
+    assert "nz_latest_oracle_text_secondary_rule" in payload[0]["rule_ids"]
+    rendered = format_report_query_rows(records)
+    assert "nz_repeal_candidate_from_history_note_payload_witness" in rendered
+    assert "nz_target_address_duplicate_source_path" in rendered
+    assert "section_move_replace_destination_rebind" in rendered
+    assert filter_report_query_records(
+        records,
+        ReportQueryFilters(rule_id="candidate canonical effect emitted but not replayed"),
+    ) == ()
+    assert filter_report_query_records(
+        records,
+        ReportQueryFilters(detail=(("operation_family", "insert"),)),
+    ) == ()
 
 
 def test_report_query_filters_direct_finding_rows_by_rule_and_phase(tmp_path) -> None:
@@ -72,6 +126,7 @@ def test_report_query_filters_direct_finding_rows_by_rule_and_phase(tmp_path) ->
     assert len(payload) == 1
     assert payload[0]["row_kind"] == "finding"
     assert payload[0]["validation_issues"] == []
+    assert payload[0]["rule_ids"] == ["starter.unsupported.v1"]
 
 
 def test_report_query_expands_nested_evidence_finding_rows(tmp_path) -> None:
@@ -178,6 +233,7 @@ def test_report_query_main_exits_nonzero_on_selected_validation_failure(tmp_path
                 source_unit="",
                 locator="",
                 blocking=False,
+                detail=[],
                 limit=20,
                 validate=True,
                 json=False,

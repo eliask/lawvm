@@ -37,6 +37,27 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_no_*.py",
         "test_norway_*.py",
     ),
+    "new_zealand_sources": (
+        "test_new_zealand_acquisition.py",
+        "test_new_zealand_closure.py",
+        "test_new_zealand_dates.py",
+        "test_new_zealand_dependencies.py",
+        "test_new_zealand_source_tree.py",
+        "test_new_zealand_version_diff.py",
+    ),
+    "new_zealand_effects": (
+        "test_new_zealand_effect_candidates.py",
+        "test_new_zealand_effect_preflight.py",
+        "test_new_zealand_effect_readiness.py",
+        "test_new_zealand_instruction_workqueue.py",
+    ),
+    "new_zealand_reports": (
+        "test_new_zealand_agreement.py",
+        "test_new_zealand_benchmark.py",
+        "test_new_zealand_evidence_pack.py",
+        "test_new_zealand_operation_surface.py",
+        "test_new_zealand_payload_surface.py",
+    ),
     "sweden": (
         "test_sweden_*.py",
     ),
@@ -220,8 +241,9 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
 }
 
 SHARD_GROUPS: dict[str, tuple[str, ...]] = {
-    "frontends": ("estonia", "eu", "finland", "norway", "starter", "sweden", "uk"),
+    "frontends": ("estonia", "eu", "finland", "new_zealand", "norway", "starter", "sweden", "uk"),
     "modules": ("core", "evidence", "properties", "tools"),
+    "new_zealand": ("new_zealand_sources", "new_zealand_effects", "new_zealand_reports"),
 }
 
 SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -232,6 +254,7 @@ SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("src/lawvm/estonia/", ("estonia",)),
     ("src/lawvm/eu/", ("eu",)),
     ("src/lawvm/finland/", ("finland",)),
+    ("src/lawvm/new_zealand/", ("new_zealand",)),
     ("src/lawvm/norway/", ("norway",)),
     ("src/lawvm/open_law/", ("starter",)),
     ("src/lawvm/sweden/", ("sweden",)),
@@ -297,14 +320,30 @@ def shard_assignments() -> dict[str, list[str]]:
 
 def expand_shard_names(shards: list[str]) -> list[str]:
     """Expand named shard groups while preserving order and de-duplicating."""
+
     expanded: list[str] = []
-    for shard in shards:
-        members = SHARD_GROUPS.get(shard, (shard,))
+
+    def expand_one(shard: str, ancestry: tuple[str, ...]) -> None:
+        if shard == "all":
+            expanded.clear()
+            expanded.append("all")
+            return
+        members = SHARD_GROUPS.get(shard)
+        if members is None:
+            if shard not in expanded:
+                expanded.append(shard)
+            return
+        if shard in ancestry:
+            raise ValueError(f"Shard group cycle: {' -> '.join((*ancestry, shard))}")
         for member in members:
-            if member == "all":
-                return ["all"]
-            if member not in expanded:
-                expanded.append(member)
+            if expanded == ["all"]:
+                return
+            expand_one(member, (*ancestry, shard))
+
+    for shard in shards:
+        expand_one(shard, ())
+        if expanded == ["all"]:
+            return expanded
     return expanded
 
 
@@ -534,7 +573,7 @@ def run_shard(shard: str, *, pytest_args: list[str], timing_jsonl: str | None = 
     elif shard in SHARD_GROUPS:
         filenames = sorted(
             filename
-            for member in SHARD_GROUPS[shard]
+            for member in expand_shard_names([shard])
             for filename in assignments[member]
         )
     else:
@@ -605,7 +644,7 @@ def list_files(shard: str) -> int:
     if shard == "all":
         filenames = sorted(filename for names in assignments.values() for filename in names)
     elif shard in SHARD_GROUPS:
-        filenames = sorted(filename for member in SHARD_GROUPS[shard] for filename in assignments[member])
+        filenames = sorted(filename for member in expand_shard_names([shard]) for filename in assignments[member])
     else:
         filenames = assignments.get(shard)
         if filenames is None:

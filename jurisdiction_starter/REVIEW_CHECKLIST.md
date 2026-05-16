@@ -21,6 +21,10 @@ Use this before merging any meaningful frontend work.
 - [ ] The owning phase is clear.
 - [ ] Inputs/outputs are explicit.
 - [ ] Inventory is emitted before replay or verification claims.
+- [ ] API/feed/git acquisition, if present, emits local substrate before replay
+      and does not read live sources during replay/audit.
+- [ ] Long-running or rate-limited acquisition, if present, has resumable
+      frontier state and visible diagnostics.
 - [ ] The new artifact is serializable.
 - [ ] The artifact is inspectable without re-running the whole stack.
 - [ ] Compression, if any, still emits a synthetic equivalent artifact.
@@ -47,6 +51,8 @@ Use this before merging any meaningful frontend work.
 - [ ] Skipped/rejected cases remain visible in reports.
 - [ ] Evidence-pack summary separates claim and non-claim counts.
 - [ ] End-state verification still uses an independent oracle.
+- [ ] Corpus-acquisition fixtures cover pagination, unavailable artifacts, or
+      rate-limit behavior where those are part of the frontend boundary.
 
 ---
 

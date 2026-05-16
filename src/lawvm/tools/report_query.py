@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, cast
 
 from lawvm.core.evidence_contracts import (
+    evidence_rule_ids,
     validate_corpus_finding_evidence_row,
     validate_corpus_operation_evidence_row,
 )
@@ -36,6 +37,7 @@ class ReportQueryFilters:
     source_unit: str = ""
     locator: str = ""
     blocking: bool = False
+    detail: tuple[tuple[str, str], ...] = ()
 
 
 def load_report_query_records(paths: Iterable[str | Path], *, validate: bool = False) -> tuple[ReportQueryRecord, ...]:
@@ -84,6 +86,7 @@ def report_query_rows_to_jsonable(records: Iterable[ReportQueryRecord]) -> list[
             "line_no": record.line_no,
             "row_kind": record.row_kind,
             "validation_issues": list(record.validation_issues),
+            "rule_ids": sorted(evidence_rule_ids(record.evidence_row)),
             "evidence_row": dict(record.evidence_row),
             "record": dict(record.original),
         }
@@ -105,14 +108,21 @@ def format_report_query_rows(records: Iterable[ReportQueryRecord]) -> str:
         phase = _scalar(row.get("phase"))
         finding_ids = row.get("finding_ids", ())
         finding_text = ""
+        existing_rule_ids: set[str] = set()
         if isinstance(finding_ids, (list, tuple)) and finding_ids:
+            existing_rule_ids.update(str(item) for item in finding_ids)
             finding_text = " findings=" + ",".join(str(item) for item in finding_ids)
         if rule_id:
+            existing_rule_ids.add(rule_id)
             finding_text = f" rule={rule_id}"
+        detail_rule_ids = sorted(evidence_rule_ids(row) - existing_rule_ids)
+        detail_rule_text = ""
+        if detail_rule_ids:
+            detail_rule_text = " rules=" + ",".join(detail_rule_ids)
         phase_text = f" phase={phase}" if phase else ""
         invalid_text = f" invalid={len(record.validation_issues)}" if record.validation_issues else ""
         lines.append(
-            f"{row_id} {status} {source} {locator}{phase_text}{finding_text}{invalid_text}".rstrip()
+            f"{row_id} {status} {source} {locator}{phase_text}{finding_text}{detail_rule_text}{invalid_text}".rstrip()
         )
         for issue in record.validation_issues:
             lines.append(f"  issue: {issue}")
@@ -136,6 +146,7 @@ def main(args: Any) -> None:
         source_unit=str(getattr(args, "source_unit", "") or ""),
         locator=str(getattr(args, "locator", "") or ""),
         blocking=bool(getattr(args, "blocking", False)),
+        detail=_parse_detail_filters(tuple(getattr(args, "detail", ()) or ())),
     )
     selected = filter_report_query_records(records, filters)
     limit = int(getattr(args, "limit", 0) or 0)
@@ -166,6 +177,9 @@ def _matches(row: Mapping[str, Any], filters: ReportQueryFilters) -> bool:
         return False
     if filters.blocking and row.get("blocking") is not True:
         return False
+    for key, expected in filters.detail:
+        if _evidence_value(row, key) != expected:
+            return False
     return True
 
 
@@ -216,21 +230,40 @@ def _validate_evidence_row(row: Mapping[str, Any], row_kind: str) -> tuple[str, 
 
 
 def _rule_ids(row: Mapping[str, Any]) -> set[str]:
-    values = {_scalar(row.get("rule_id"))}
-    finding_ids = row.get("finding_ids", ())
-    if isinstance(finding_ids, (list, tuple)):
-        values.update(str(value) for value in finding_ids)
-    return {value for value in values if value}
+    return evidence_rule_ids(row)
 
 
 def _evidence_value(row: Mapping[str, Any], key: str) -> str:
-    evidence = row.get("evidence") or row.get("detail") or {}
-    if not isinstance(evidence, Mapping):
-        return ""
-    value = evidence.get(key)
-    if isinstance(value, (list, tuple)):
-        return "|".join(str(part) for part in value)
-    return _scalar(value)
+    for evidence in _evidence_maps(row):
+        if key not in evidence:
+            continue
+        value = evidence.get(key)
+        if isinstance(value, (list, tuple)):
+            return "|".join(str(part) for part in value)
+        return _scalar(value)
+    return ""
+
+
+def _parse_detail_filters(values: tuple[str, ...]) -> tuple[tuple[str, str], ...]:
+    filters: list[tuple[str, str]] = []
+    for value in values:
+        if "=" not in value:
+            raise SystemExit(f"--detail expects KEY=VALUE, got: {value}")
+        key, expected = value.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise SystemExit(f"--detail expects non-empty KEY, got: {value}")
+        filters.append((key, expected))
+    return tuple(filters)
+
+
+def _evidence_maps(row: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    maps: list[Mapping[str, Any]] = []
+    for key in ("detail", "evidence"):
+        value = row.get(key)
+        if isinstance(value, Mapping):
+            maps.append(value)
+    return tuple(maps)
 
 
 def _scalar(value: Any) -> str:

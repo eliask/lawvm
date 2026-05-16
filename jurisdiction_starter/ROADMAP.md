@@ -48,18 +48,35 @@ Deliverables:
 - P1 archive
 - canonical locators
 - P2 source record / bundle
+- acquisition diagnostics for live/API/feed sources
+- resumable acquisition frontier state where corpus sync is long-running or
+  rate-limited
 
 Exit gate:
 - raw and derived artifacts are clearly separated.
+- retry, quota, and unavailable-source behavior is visible.
 
 ## M2. Current parse
 Deliverables:
 - P3 current IR
+- source-tree summary where source XML/HTML has meaningful pre-IR structure
+- consolidated snapshot diff report where multiple official versions exist
 - current-structure fixtures
 - contamination notes
 
 Exit gate:
 - current text can be parsed honestly without replay claims.
+
+## M2.5. Source closure
+Deliverables:
+- source-declared dependency extraction from history notes, effect feeds,
+  registry links, version graphs, or equivalent witnesses
+- unresolved dependency rows with source locators and reasons
+- acquisition-frontier expansion for reachable amending or related works
+
+Exit gate:
+- reviewers know which amendment/source families have been fetched and which
+  remain blocked before semantic lowering begins.
 
 ## M3. Amendment semantics surface
 Deliverables:

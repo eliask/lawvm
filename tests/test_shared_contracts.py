@@ -3,6 +3,7 @@ from lawvm.core.evidence_contracts import (
     CorpusOperationEvidenceRow,
     CorpusRowStatus,
     EvidenceSummary,
+    evidence_rule_ids,
     validate_corpus_finding_evidence_row,
     validate_corpus_operation_evidence_row,
 )
@@ -181,6 +182,70 @@ def test_corpus_finding_evidence_validation_rejects_bad_shapes() -> None:
     assert "blocking must be a boolean" in issues
     assert "evidence must be a mapping" in issues
     assert "related_row_ids must be a list or tuple" in issues
+
+
+def test_evidence_rule_ids_extracts_stable_detail_rule_ids() -> None:
+    row = CorpusOperationEvidenceRow(
+        row_id="row-1",
+        frontend_id="new_zealand",
+        source_artifact_id="act_public_2020_1",
+        status=CorpusRowStatus.ACCEPTED,
+        strict_disposition="candidate_only",
+        quirks_disposition="candidate_only",
+        finding_ids=("nz_existing_finding",),
+        detail={
+            "reason": "candidate canonical effect emitted but not replayed",
+            "blocking_rule_id": "nz_effect_readiness_amendment_semantics_not_extracted",
+            "operation_target_blocking_rule_id": "nz_target_address_duplicate_source_path",
+            "effect_blocking_rule_id": "nz_operation_surface_effect_lowering_not_implemented",
+            "candidate_witness_rule_id": "nz_repeal_candidate_from_history_note_payload_witness",
+            "preflight_blocking_rule_id": "nz_effect_preflight_candidate_operation_missing",
+            "declared_recovery_rule_ids": ["section_move_replace_destination_rebind"],
+            "declared_migration_rule_ids": (),
+            "matched_allowance_rule_ids": ("section_materialization_root_move_destination_rebind",),
+        },
+    )
+
+    assert evidence_rule_ids(row.to_dict()) == {
+        "nz_existing_finding",
+        "nz_effect_readiness_amendment_semantics_not_extracted",
+        "nz_target_address_duplicate_source_path",
+        "nz_operation_surface_effect_lowering_not_implemented",
+        "nz_repeal_candidate_from_history_note_payload_witness",
+        "nz_effect_preflight_candidate_operation_missing",
+        "section_move_replace_destination_rebind",
+        "section_materialization_root_move_destination_rebind",
+    }
+
+
+def test_evidence_rule_ids_allows_stable_reason_rule_ids() -> None:
+    row = CorpusOperationEvidenceRow(
+        row_id="row-1",
+        frontend_id="starter",
+        source_artifact_id="act.xml",
+        status=CorpusRowStatus.UNSUPPORTED,
+        blocking=True,
+        strict_disposition="block",
+        quirks_disposition="record",
+        detail={"reason": "starter.unsupported.v1"},
+    )
+
+    assert evidence_rule_ids(row.to_dict()) == {"starter.unsupported.v1"}
+
+
+def test_evidence_rule_ids_scans_detail_and_evidence_maps_when_both_exist() -> None:
+    row = {
+        "row_id": "row-1",
+        "frontend_id": "starter",
+        "source_artifact_id": "act.xml",
+        "status": "unsupported",
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+        "detail": {"candidate_witness_rule_id": "starter.detail_witness"},
+        "evidence": {"blocking_rule_id": "starter.evidence_blocker"},
+    }
+
+    assert evidence_rule_ids(row) == {"starter.detail_witness", "starter.evidence_blocker"}
 
 
 def test_to_wire_jsonable_normalizes_nested_runtime_shapes() -> None:

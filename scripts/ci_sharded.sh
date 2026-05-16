@@ -20,7 +20,7 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-ALL_BOUNDED_SHARDS="core estonia eu evidence finland norway properties starter sweden tools uk"
+ALL_BOUNDED_SHARDS="core estonia eu evidence finland new_zealand_effects new_zealand_reports new_zealand_sources norway properties starter sweden tools uk"
 
 AFFECTED_PATHS=()
 REQUESTED_SHARDS=()

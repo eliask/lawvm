@@ -13,7 +13,7 @@ Do not merely say “supported” or “TODO”. State what artifact exists, who
 | P0 Capability/inventory |  | `inventory_manifest.json` plus omitted/skipped rows |  |  |
 | P1 Acquisition/archive |  |  |  |  |
 | P2 Source record |  |  |  |  |
-| P3 Current IR parse |  |  |  |  |
+| P3 Current source-tree / IR parse |  |  |  |  |
 | P4 Official-act parse |  |  |  |  |
 | P5 Clause surface |  |  |  |  |
 | P6 Payload surface |  |  |  |  |
@@ -58,6 +58,26 @@ For each phase, answer:
 ### P9
 ### P10
 ### P11
+
+---
+
+## 2.1 Corpus acquisition sidecars
+
+If the jurisdiction has a corpus API, feed, registry export, or local source
+repository, declare these acquisition-sidecar artifacts even if they are not
+LawVM replay phases:
+
+| Sidecar | Required when | What it proves | What it must not claim |
+|---|---|---|---|
+| `acquisition_frontier_state.json` | long-running or rate-limited sync | which pages, works, versions, or dependencies were requested and what remains | semantic replay success |
+| `acquisition_diagnostics.jsonl` | any live acquisition | request failures, rate-limit waits, unavailable artifacts, schema drift, and beta API gaps | that failed or skipped sources are harmless |
+| `dependency_report.json` | source has amendment/effect/history links | source-declared dependency candidates and unresolved edges | that dependency edges are canonical operations |
+| `source_tree_summary.json` | current or historical XML/HTML can be parsed structurally | source shape, labels, headings, text, deletion markers, and history witnesses | that the structure is an executable history |
+| `snapshot_diff_report.json` | multiple consolidated versions are available | source-visible changes between versions | that a change was produced by a known amendment operation |
+
+These sidecars are especially relevant for New Zealand-like frontends where API
+metadata, XML history notes, and consolidated versions can bootstrap source
+closure before clause/effect replay exists.
 
 ---
 
