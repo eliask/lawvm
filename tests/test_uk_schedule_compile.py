@@ -3595,6 +3595,113 @@ def test_compile_source_carried_multi_subunit_repeal_rejects_mismatched_section_
     assert lowering_records[0]["blocking"] is True
 
 
+def test_compile_amendment_inserted_text_substitution_from_exact_schedule_instruction_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="regulation-42-3-c">
+          <Pnumber>c</Pnumber>
+          <P3para>
+            <Text>c in paragraph 17 (amendments to section 43 of the 2011 Act), in sub-paragraph (a), for the inserted text substitute— aa its chief executive appointed under— i section 54 of the Local Government and Elections (Wales) Act 2021 (chief executive of council in Wales), or ii regulations made under Part 5 of that Act (chief executive of a corporate joint committee).</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-016ee323c8bba8433b758c4267695140",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-10-04",
+        affected_uri="/id/asc/2021/1",
+        affected_class="WelshParliamentAct",
+        affected_year="2021",
+        affected_number="1",
+        affected_provisions="Sch. 5 para. 17(a)",
+        affecting_uri="/id/wsi/2021/1349",
+        affecting_class="WelshStatutoryInstrument",
+        affecting_year="2021",
+        affecting_number="1349",
+        affecting_provisions="reg. 42(3)(c)",
+        affecting_title="Test Amendment Regulations",
+        in_force_dates=[{"date": "2021-12-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("schedule", "5"), ("paragraph", "17"), ("item", "a"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_AMENDMENT_INSERT_TO_END"
+    assert ops[0].text_patch.replacement == (
+        "aa its chief executive appointed under— "
+        "i section 54 of the Local Government and Elections (Wales) Act 2021 "
+        "(chief executive of council in Wales), or ii regulations made under Part 5 "
+        "of that Act (chief executive of a corporate joint committee)"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_amendment_inserted_text_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_amendment_inserted_text_substitution_text_patch",
+    ]
+    assert lowering_records[0]["blocking"] is False
+
+
+def test_compile_amendment_inserted_text_substitution_rejects_mismatched_schedule_instruction_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="regulation-42-3-c">
+          <Pnumber>c</Pnumber>
+          <P3para>
+            <Text>c in paragraph 18, in sub-paragraph (a), for the inserted text substitute— aa replacement text.</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-amendment-inserted-text-mismatch",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-10-04",
+        affected_uri="/id/asc/2021/1",
+        affected_class="WelshParliamentAct",
+        affected_year="2021",
+        affected_number="1",
+        affected_provisions="Sch. 5 para. 17(a)",
+        affecting_uri="/id/wsi/2021/1349",
+        affecting_class="WelshStatutoryInstrument",
+        affecting_year="2021",
+        affecting_number="1349",
+        affecting_provisions="reg. 42(3)(c)",
+        affecting_title="Test Amendment Regulations",
+        in_force_dates=[{"date": "2021-12-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_overlap_substitution_unlowered",
+    ]
+    assert lowering_records[0]["blocking"] is True
+
+
 def test_compile_words_inserted_at_end_of_numbered_subparagraph_to_text_replace() -> None:
     extracted_el = ET.fromstring(
         f"""

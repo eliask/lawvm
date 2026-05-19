@@ -5543,6 +5543,13 @@ _SOURCE_CARRIED_MULTI_SUBUNIT_REPEAL_RE = re.compile(
     r",?\s+are\s+repealed\s*\.?\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_AMENDMENT_INSERTED_TEXT_SUBSTITUTION_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"in\s+paragraph\s+(?P<paragraph>[0-9A-Za-z]+)\b.*?,\s+"
+    r"in\s+sub-?paragraph\s+\((?P<item>[0-9A-Za-z]+)\),?\s+"
+    r"for\s+the\s+inserted\s+text\s+substitute\s*[—-]\s*(?P<replacement>.+?)\s*\.?\s*$",
+    flags=re.I | re.S,
+)
 
 
 def _source_definition_term_from_ancestors(ancestors: tuple[ET.Element, ...]) -> str:
@@ -5680,6 +5687,39 @@ def _fragment_substitution_source_carried_multi_subunit_repeal(
         "source_section_label": source_section,
         "source_child_labels": ",".join(labels),
         "rule_id": "uk_effect_source_carried_multi_subunit_repeal_text_patch",
+    }
+
+
+def _fragment_substitution_amendment_inserted_text_substitution(
+    *,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Resolve source rows that amend text inserted by a targeted amendment instruction."""
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return None
+    match = _SOURCE_AMENDMENT_INSERTED_TEXT_SUBSTITUTION_RE.match(text)
+    if match is None:
+        return None
+    if _addr_container(target) != "schedule":
+        return None
+    target_paragraph, _, target_items = _schedule_target_levels(target)
+    source_paragraph = _clean_num(match.group("paragraph"))
+    source_item = _clean_num(match.group("item"))
+    if not source_paragraph or _clean_num(target_paragraph or "") != source_paragraph:
+        return None
+    if not source_item or not target_items or _clean_num(target_items[-1]) != source_item:
+        return None
+    replacement = " ".join(match.group("replacement").split()).strip()
+    if not replacement:
+        return None
+    return {
+        "original": "TEXT_AFTER_AMENDMENT_INSERT_TO_END",
+        "replacement": replacement,
+        "source_paragraph_label": source_paragraph,
+        "source_item_label": source_item,
+        "rule_id": "uk_effect_amendment_inserted_text_substitution_text_patch",
     }
 
 
@@ -6867,6 +6907,15 @@ def compile_effect_to_ir_ops(
                     )
                     if source_carried_multi_subunit_repeal is not None:
                         subs = [source_carried_multi_subunit_repeal]
+                if not subs:
+                    amendment_inserted_text_substitution = (
+                        _fragment_substitution_amendment_inserted_text_substitution(
+                            extracted_text=extracted_text,
+                            target=target,
+                        )
+                    )
+                    if amendment_inserted_text_substitution is not None:
+                        subs = [amendment_inserted_text_substitution]
                 if subs:
                     if table_cell_selector is not None:
                         subs = [
@@ -7031,6 +7080,29 @@ def compile_effect_to_ir_ops(
                                 "text_match": op_text_match,
                                 "source_child_labels": str(primary.get("source_child_labels") or ""),
                                 "source_section_label": str(primary.get("source_section_label") or ""),
+                            },
+                        )
+                    if "uk_effect_amendment_inserted_text_substitution_text_patch" in _fragment_rule_ids(fragment_subs):
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id="uk_effect_amendment_inserted_text_substitution_text_patch",
+                            family="amendment_program_lowering",
+                            reason_code="source_targets_inserted_text_in_amendment_instruction",
+                            reason=(
+                                "UK source text substitutes text inserted by a named amendment "
+                                "instruction; lowering preserves that as a bounded rewrite of "
+                                "the target amendment instruction's inserted payload, not as a "
+                                "base-law text guess."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "text_match": op_text_match,
+                                "source_paragraph_label": str(primary.get("source_paragraph_label") or ""),
+                                "source_item_label": str(primary.get("source_item_label") or ""),
                             },
                         )
                     if op_text_end_occurrence:
@@ -12271,6 +12343,19 @@ class UKReplayExecutor:
             if len(direct_child_matches) != 1:
                 return node, False
             rebuilt = dc_replace(node, text=replacement)
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match == "TEXT_AFTER_AMENDMENT_INSERT_TO_END":
+            text = node.text or ""
+            insert_matches = list(re.finditer(r"\binsert\s*[—–-]", text, flags=re.I))
+            if not insert_matches or not replacement:
+                return node, False
+            insert_match = insert_matches[-1]
+            rebuilt = dc_replace(
+                node,
+                text=f"{text[: insert_match.end()].rstrip()} {replacement.strip()}",
+            )
             self._replace_node_in_statute(node, rebuilt)
             return rebuilt, True
 
