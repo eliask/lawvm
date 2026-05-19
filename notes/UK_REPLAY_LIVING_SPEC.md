@@ -1660,6 +1660,16 @@ Current block-substitution context invariant:
   `repeal_schedule_table_source_unsupported` and
   `uk_manual_frontier_repeal_table_candidate`. This keeps the table witness
   visible without smuggling the whole repeal schedule into a single target.
+- bounded repeal-table quoted-words rows are now owned by
+  `uk_effect_repeal_table_quoted_words_text_repeal`: the compiler must match a
+  unique repeal table row by affected Act identity, split only explicit extent
+  clauses inside that owned row, match the clause to the affected provision, and
+  lower `the word(s) "..."` to `TEXT_REPEAL`. Non-unique rows, whole-provision
+  repeal clauses, ranges, and multi-action clauses remain blocking
+  `uk_effect_repeal_table_quoted_words_text_repeal_unresolved` / manual
+  frontier cases. This is a source-table elaboration rule, not a replay
+  fallback, and its observation records the enactment cell, extent clause, and
+  selected quoted preimage.
 - table-entry source that says a named entry/column is `added` or `amended`
   remains in `table_entry_target_unsupported` until a table compiler owns the
   row/cell and any referenced amount schedule. It is not a generic parser miss.

@@ -519,6 +519,9 @@ _UK_REPLAY_TABLE_ENTRY_INLINE_PREIMAGE_GAP_RULE_ID = "uk_replay_table_entry_inli
 _UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID = "uk_effect_schedule_list_entry_insert"
 _UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID = "uk_effect_schedule_list_entry_repeal"
 _UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID = "uk_effect_schedule_list_entry_replace"
+_UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID = (
+    "uk_effect_repeal_table_quoted_words_text_repeal"
+)
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID = (
     "uk_replay_schedule_list_entry_anchor_unresolved"
 )
@@ -3876,6 +3879,18 @@ class _UKTableDrivenWordSubstitution:
     row_text: str = ""
 
 
+@dataclass(frozen=True)
+class _UKRepealTableQuotedWordsTextRepeal:
+    recognized: bool
+    original: Optional[str] = None
+    reason_code: str = ""
+    match_count: int = 0
+    table_index: int = -1
+    row_text: str = ""
+    enactment_cell: str = ""
+    extent_cell: str = ""
+
+
 def _strip_outer_uk_quotes(text: str) -> str:
     stripped = " ".join(text.split()).strip()
     quote_pairs = (("\u201c", "\u201d"), ("\u2018", "\u2019"), ('"', '"'), ("'", "'"))
@@ -3883,6 +3898,187 @@ def _strip_outer_uk_quotes(text: str) -> str:
         if stripped.startswith(left) and stripped.endswith(right) and len(stripped) >= 2:
             return stripped[1:-1].strip()
     return stripped
+
+
+def _uk_effect_act_slug(effect: UKEffectRecord) -> str:
+    cls_map = {
+        "UnitedKingdomPublicGeneralAct": "ukpga",
+        "UnitedKingdomStatutoryInstrument": "uksi",
+        "WelshParliamentAct": "asc",
+        "WelshStatutoryInstrument": "wsi",
+        "ScottishAct": "asp",
+        "ScottishStatutoryInstrument": "ssi",
+        "NorthernIrelandAssemblyMeasure": "mnia",
+        "NorthernIrelandParliamentAct": "apni",
+        "NorthernIrelandStatutoryRule": "nisr",
+        "UnitedKingdomChurchInstrument": "ukci",
+        "UnitedKingdomMinisterialOrder": "ukmo",
+        "EuropeanUnionRegulation": "eur",
+        "EuropeanUnionDecision": "eudn",
+        "EuropeanUnionDirective": "eudr",
+    }
+    return cls_map.get(effect.affected_class, effect.affected_class.lower())
+
+
+def _uk_repeal_table_enactment_matches_effect(cell_text: str, effect: UKEffectRecord) -> bool:
+    """Conservatively match a repeal-table enactment cell to the affected Act."""
+    text = " ".join(cell_text.split()).lower()
+    if not text:
+        return False
+    year = str(effect.affected_year or "").strip()
+    number = str(effect.affected_number or "").strip()
+    slug = _uk_effect_act_slug(effect)
+    if not year or not number or year not in text:
+        return False
+    num_pat = re.escape(number.lower())
+    if slug == "asp":
+        return re.search(rf"\basp\s*{num_pat}\b", text) is not None
+    if slug == "ukpga":
+        return re.search(rf"\bc\.?\s*{num_pat}\b", text) is not None
+    if slug == "uksi":
+        return re.search(rf"\b(?:s\.?\s*i\.?|si|uksi)\s*{re.escape(year)}\s*/\s*{num_pat}\b", text) is not None
+    return re.search(rf"\b{re.escape(slug)}\s*{num_pat}\b", text) is not None
+
+
+def _uk_repeal_table_columns(row: Sequence[str]) -> tuple[int, int] | None:
+    enactment_idx: int | None = None
+    extent_idx: int | None = None
+    for idx, cell in enumerate(row):
+        text = " ".join(cell.split()).lower()
+        if not text:
+            continue
+        if extent_idx is None and "extent of repeal" in text:
+            extent_idx = idx
+        if enactment_idx is None and (
+            "enactment" in text or "short title and chapter" in text or "title and chapter" in text
+        ):
+            enactment_idx = idx
+    if enactment_idx is None or extent_idx is None or enactment_idx == extent_idx:
+        return None
+    return enactment_idx, extent_idx
+
+
+def _uk_repeal_table_quoted_words_original(extent_cell: str) -> str:
+    text = " ".join(extent_cell.split()).strip()
+    if not text or ";" in text:
+        return ""
+    match = re.match(
+        r"^In\s+"
+        r"(?:(?:section|sections|s)\.?\s+[0-9A-Za-z]+(?:\s*\([^)]*\))?"
+        r"|(?:paragraph|paragraphs|para)\.?\s+[0-9A-Za-z]+(?:\s*\([^)]*\))?"
+        r"|schedule\s+[0-9A-Za-z]+(?:\s*,\s*paragraph\s+[0-9A-Za-z]+(?:\s*\([^)]*\))?)?)"
+        r"(?:,\s+in\s+(?:subsection|paragraph|sub-paragraph)\s+\([^)]+\))*"
+        r",\s+the\s+words?\s+"
+        r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\"|'(?P<single>.*?)')"
+        r"\.?\s*$",
+        text,
+        re.I,
+    )
+    if match is None:
+        return ""
+    original = next(
+        group.strip()
+        for group in (
+            match.group("curly"),
+            match.group("double"),
+            match.group("single"),
+        )
+        if group is not None
+    )
+    return " ".join(original.split()).strip()
+
+
+def _uk_repeal_table_extent_clauses(extent_cell: str) -> list[str]:
+    text = " ".join(extent_cell.split()).strip()
+    if not text:
+        return []
+    clauses = re.split(
+        r"(?<=\.)\s+(?=(?:In\s+)?(?:section|sections|schedule|paragraph)\b)",
+        text,
+        flags=re.I,
+    )
+    return [clause.strip() for clause in clauses if clause.strip()]
+
+
+def _uk_table_is_repeal_extent_source_table(table: ET.Element) -> tuple[int, int] | None:
+    for row in _uk_table_rows_with_rowspans(table)[:4]:
+        columns = _uk_repeal_table_columns(row)
+        if columns is not None:
+            return columns
+    return None
+
+
+def _uk_table_driven_repeal_table_quoted_words_text_repeal(
+    *,
+    effect: UKEffectRecord,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    source_root: Optional[ET.Element],
+    target: LegalAddress,
+) -> _UKRepealTableQuotedWordsTextRepeal:
+    """Resolve bounded repeal-schedule rows to quoted word-level text deletes."""
+    effect_type = str(effect.effect_type or "").strip().lower()
+    if effect_type not in {"words repealed", "word repealed", "words omitted", "word omitted"}:
+        return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
+    source_text = " ".join((extracted_text or "").split()).lower()
+    if "extent of repeal" not in source_text:
+        return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
+    search_roots = [root for root in (extracted_el, source_root) if root is not None]
+    if not search_roots:
+        return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
+
+    matches: list[tuple[int, str, str, str, str]] = []
+    tables = []
+    seen_table_ids: set[int] = set()
+    for root in search_roots:
+        for el in root.iter():
+            if _tag(el).lower() != "table" or id(el) in seen_table_ids:
+                continue
+            seen_table_ids.add(id(el))
+            columns = _uk_table_is_repeal_extent_source_table(el)
+            if columns is not None:
+                tables.append((el, columns))
+    for table_index, (table, (enactment_idx, extent_idx)) in enumerate(tables):
+        rows = _uk_table_rows_with_rowspans(table)
+        for row in rows[1:]:
+            if len(row) <= max(enactment_idx, extent_idx):
+                continue
+            enactment_cell = row[enactment_idx]
+            extent_cell = row[extent_idx]
+            if not _uk_repeal_table_enactment_matches_effect(enactment_cell, effect):
+                continue
+            for extent_clause in _uk_repeal_table_extent_clauses(extent_cell):
+                if not _uk_table_cell_mentions_target(
+                    extent_clause,
+                    target=target,
+                    affected_year=str(effect.affected_year or ""),
+                ):
+                    continue
+                original = _uk_repeal_table_quoted_words_original(extent_clause)
+                if not original:
+                    continue
+                matches.append(
+                    (table_index, original, " | ".join((enactment_cell, extent_clause)), enactment_cell, extent_clause)
+                )
+
+    if len(matches) != 1:
+        return _UKRepealTableQuotedWordsTextRepeal(
+            recognized=True,
+            reason_code="no_unique_matching_repeal_table_row",
+            match_count=len(matches),
+        )
+
+    table_index, original, row_text, enactment_cell, extent_cell = matches[0]
+    return _UKRepealTableQuotedWordsTextRepeal(
+        recognized=True,
+        original=original,
+        reason_code="",
+        match_count=1,
+        table_index=table_index,
+        row_text=row_text,
+        enactment_cell=enactment_cell,
+        extent_cell=extent_cell,
+    )
 
 
 def _uk_parenthetical_labels(text: str) -> list[str]:
@@ -6555,6 +6751,118 @@ def compile_effect_to_ir_ops(
                     ),
                     witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID,
                 )
+            )
+            continue
+        repeal_table_text_repeal = _uk_table_driven_repeal_table_quoted_words_text_repeal(
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            source_root=source_root,
+            target=target,
+        )
+        if repeal_table_text_repeal.recognized and repeal_table_text_repeal.original:
+            fragment_subs = [
+                {
+                    "original": repeal_table_text_repeal.original,
+                    "replacement": "",
+                    "rule_id": _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID,
+                }
+            ]
+            text_patch = TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(
+                    match_text=repeal_table_text_repeal.original,
+                    occurrence=0,
+                ),
+            )
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID,
+                family="source_repeal_table_elaboration",
+                reason_code="unique_repeal_table_extent_row_quoted_words",
+                reason=(
+                    "UK repeal-table source row matched the affected Act and "
+                    "provision exactly, and its extent cell names a quoted "
+                    "word-level repeal; lowering emits a text delete instead "
+                    "of replaying the broad repeal schedule."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "target": str(target),
+                    "table_index": repeal_table_text_repeal.table_index,
+                    "row_text": repeal_table_text_repeal.row_text,
+                    "enactment_cell": repeal_table_text_repeal.enactment_cell,
+                    "extent_cell": repeal_table_text_repeal.extent_cell,
+                    "original": repeal_table_text_repeal.original,
+                },
+            )
+            src = OperationSource(
+                statute_id=effect.affecting_act_id,
+                title=effect.affecting_title,
+                effective=effect_witness.applicability.effective_date or "",
+                raw_text=extraction_witness.extracted_text,
+            )
+            target_expansion_witness = _uk_target_expansion_witness(
+                t_str,
+                [t_str],
+                original_targets_str=original_targets_str,
+            )
+            text_rewrite_witness = _uk_text_rewrite_spec(
+                fragment_subs=fragment_subs,
+                text_patch=text_patch,
+                op_text_match=repeal_table_text_repeal.original,
+                op_text_replacement="",
+                op_text_occurrence=0,
+            )
+            lowered_witness = UKLoweredOperationWitness(
+                op_id=effect.effect_id,
+                sequence=sequence,
+                action=StructuralAction.TEXT_REPEAL,
+                target=target,
+                payload=None,
+                source=src,
+                effect_witness=effect_witness,
+                extraction_witness=extraction_witness,
+                target_expansion_witness=target_expansion_witness,
+                text_rewrite_witness=text_rewrite_witness,
+                insertion_anchor_witness=None,
+            )
+            ops.append(
+                LegalOperation(
+                    op_id=lowered_witness.op_id,
+                    sequence=lowered_witness.sequence,
+                    action=StructuralAction.TEXT_REPEAL,
+                    target=target,
+                    payload=None,
+                    source=src,
+                    group_id=_uk_temporal_group_id(effect),
+                    provenance_tags=_uk_lowered_op_provenance_tags(lowered_witness),
+                    text_patch=text_patch,
+                    witness_rule_id=_UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID,
+                )
+            )
+            continue
+        if repeal_table_text_repeal.recognized:
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id=f"{_UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID}_unresolved",
+                family="source_repeal_table_elaboration",
+                reason_code=repeal_table_text_repeal.reason_code,
+                reason=(
+                    "UK repeal-table source could not be resolved to one "
+                    "bounded quoted-words extent row for the affected target."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "target": str(target),
+                    "match_count": repeal_table_text_repeal.match_count,
+                },
             )
             continue
         table_cell_selector = _uk_table_entry_inline_text_selector(
