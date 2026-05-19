@@ -1624,6 +1624,12 @@ Current block-substitution context invariant:
   direct table under the broad target and exactly one cell in the named column
   containing that preimage before mutating cell text. Entry-number and
   multi-entry instructions remain rejected/manual until they have a row model.
+  Because the row-level effect inspector currently compares broad schedule text
+  surfaces rather than table-cell surfaces, those deterministic table-cell ops
+  are classified as `table_cell_text_patch_requires_table_surface` instead of
+  `uk_manual_frontier_text_patch_preimage_chain_gap`. That classification is an
+  evidence-surface limitation, not permission to replay against the schedule
+  body or to treat a named column as a missing source chain.
 - source targets such as `Sch. 8 Note 1` are schedule-note/facet claims, not
   schedule paragraph claims. Lowering emits
   `uk_effect_schedule_note_target_rejected` until a note compiler or manual
@@ -2936,7 +2942,9 @@ Current bench replay-regime invariant:
   `asp/2000/2`, affected by `ssi/2001/68 art. 2(2)`, and `asp/2001/4`,
   affected by `asp/2003/6 s. 8(a)`. Row-level effect inspection classifies both
   as `uk_manual_frontier_text_patch_preimage_chain_gap`, because the source
-  preimage is absent from the available enacted/current target surfaces.
+  preimage is absent from the available enacted/current target surfaces. This
+  differs from owned table-cell selectors, where the preimage belongs to a table
+  cell and the current non-cell compare surface is classified separately.
 - Parenthetical omission effects are exact text-surface operations. If the
   quoted parenthetical is absent from the resolved target, replay emits
   `uk_replay_text_parenthetical_omission_preimage_gap`; it does not delete a
