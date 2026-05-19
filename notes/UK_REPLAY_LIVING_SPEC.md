@@ -1556,12 +1556,14 @@ Current block-substitution context invariant:
   and a blocking overlap-lowering record should remain a deterministic frontend
   candidate until the parser/executor family is either implemented or ruled out
   with a narrower source-pathology finding.
-- source text like `for the inserted text substitute-` is not an ordinary
-  replacement against the current base statute. It targets text introduced by a
-  prior amendment instruction, so UK classifies it as
-  `amendment_text_target_unsupported` and
-  `uk_manual_frontier_amendment_program_target_candidate` until LawVM has an
-  explicit amendment-program compilation lane.
+- source text like `in paragraph 17 ..., in sub-paragraph (a), for the
+  inserted text substitute-` is not an ordinary replacement against the current
+  base statute. When the source paragraph and subparagraph exactly match the
+  feed target, UK lowers this through
+  `uk_effect_amendment_inserted_text_substitution_text_patch`: replay rewrites
+  only the target amendment instruction's payload after its own `insert-` verb.
+  If the source context does not match the feed target, the row remains an
+  amendment-program frontier instead of becoming a base-law text guess.
 - source text that targets a table entry or table column, for example
   `after entry 4 in the table insert-` or `after the third entry in the
   second column ... insert-`, is classified as

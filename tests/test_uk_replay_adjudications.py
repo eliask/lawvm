@@ -3797,6 +3797,112 @@ def test_executor_rejects_multi_subunit_text_delete_when_named_child_missing() -
     assert adjudications[0].detail["blocking"] is True
 
 
+def test_executor_rewrites_inserted_payload_of_target_amendment_instruction() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asc/2021/1",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text=""),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="5",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="17",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.ITEM,
+                                label="a",
+                                text=(
+                                    "after paragraph (a) insert— aa its chief executive "
+                                    "appointed under section 54 of the 2021 Act;"
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_amendment_inserted_text_substitution",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("schedule", "5"), ("paragraph", "17"), ("item", "a"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="TEXT_AFTER_AMENDMENT_INSERT_TO_END", occurrence=0),
+                replacement=(
+                    "aa its chief executive appointed under— i section 54 of the 2021 Act, "
+                    "or ii regulations made under Part 5 of that Act"
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    item = executor.statute.supplements[0].children[0].children[0]
+    assert item.text == (
+        "after paragraph (a) insert— aa its chief executive appointed under— "
+        "i section 54 of the 2021 Act, or ii regulations made under Part 5 of that Act"
+    )
+    assert adjudications == []
+
+
+def test_executor_rejects_inserted_payload_rewrite_without_insert_verb() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asc/2021/1",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text=""),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="5",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="17",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.ITEM,
+                                label="a",
+                                text="after paragraph (a) omit the old words",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_amendment_inserted_text_substitution_no_insert",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("schedule", "5"), ("paragraph", "17"), ("item", "a"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="TEXT_AFTER_AMENDMENT_INSERT_TO_END", occurrence=0),
+                replacement="aa replacement text",
+            ),
+            source=_source(),
+        )
+    )
+
+    item = executor.statute.supplements[0].children[0].children[0]
+    assert item.text == "after paragraph (a) omit the old words"
+    assert [finding.kind for finding in adjudications] == ["uk_replay_text_match_synthetic_selector_gap"]
+    assert adjudications[0].detail["blocking"] is True
+
+
 def test_executor_occurrence_text_replacements_preserve_later_occurrences() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(
