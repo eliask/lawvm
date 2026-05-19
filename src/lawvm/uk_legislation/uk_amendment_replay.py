@@ -572,6 +572,7 @@ _NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR = "schedule_list_entry_repeal_selector
 _NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR = "schedule_list_entry_replace_selector:"
 
 _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID = "uk_effect_table_entry_inline_text_insertion"
+_UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID = "uk_effect_table_column_text_patch"
 _UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID = "uk_effect_table_entry_instruction_rejected"
 _UK_REPLAY_TABLE_ENTRY_INLINE_UNRESOLVED_RULE_ID = "uk_replay_table_entry_inline_text_insertion_unresolved"
 _UK_REPLAY_TABLE_ENTRY_INLINE_PREIMAGE_GAP_RULE_ID = "uk_replay_table_entry_inline_text_preimage_gap"
@@ -4609,6 +4610,49 @@ def _uk_table_entry_inline_text_selector(
     }
 
 
+def _uk_table_column_text_patch_selector(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: Optional[str],
+) -> dict[str, Any] | None:
+    """Extract a unique-column preimage selector for broad schedule/part table text patches."""
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    if "table" in " ".join((target_ref, str(target))).lower():
+        return None
+    if re.search(r"\b(?:entry|entries)\b", text, flags=re.I):
+        return None
+    target_kind = target.path[-1][0] if target.path else ""
+    if target_kind not in {"schedule", "part"}:
+        return None
+    column_match = re.search(
+        r"\bin\s+column\s+(?P<column>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\b",
+        text,
+        flags=re.I,
+    )
+    if column_match is None:
+        return None
+    column_index = _uk_ordinal_to_int(column_match.group("column"))
+    if column_index is None or column_index < 1:
+        return None
+    fragments = parse_fragment_substitution(text)
+    if not fragments:
+        return None
+    match_text = str(fragments[0].get("original") or "").strip()
+    if not match_text:
+        return None
+    return {
+        "rule_id": _UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID,
+        "selector_mode": "unique_column_text",
+        "column_index": column_index,
+        "match_text": match_text,
+        "target_ref": target_ref,
+        "original_target": str(target),
+    }
+
+
 def _strip_schedule_entry_phrase(raw: str) -> str:
     text = " ".join(str(raw or "").split()).strip(" ,;.")
     text = text.strip("“”\"'‘’")
@@ -7250,8 +7294,20 @@ def compile_effect_to_ir_ops(
             target=target,
             extracted_text=extracted_text,
         )
+        if table_cell_selector is None:
+            table_cell_selector = _uk_table_column_text_patch_selector(
+                target_ref=t_str,
+                target=target,
+                extracted_text=extracted_text,
+            )
         if table_cell_selector is not None:
-            parent_target = _uk_parent_target_before_table_marker(target)
+            selector_rule_id = str(table_cell_selector.get("rule_id") or _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID)
+            selector_mode = str(table_cell_selector.get("selector_mode") or "")
+            parent_target = (
+                target
+                if selector_mode == "unique_column_text"
+                else _uk_parent_target_before_table_marker(target)
+            )
             if parent_target is None:
                 _append_uk_effect_lowering_rejection(
                     lowering_rejections_out,
@@ -7271,12 +7327,16 @@ def compile_effect_to_ir_ops(
                 continue
             _append_uk_effect_lowering_observation(
                 lowering_rejections_out,
-                rule_id=_UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID,
+                rule_id=selector_rule_id,
                 family="source_table_elaboration",
-                reason_code="explicit_table_entry_column_selector",
+                reason_code=(
+                    "explicit_table_column_preimage_selector"
+                    if selector_mode == "unique_column_text"
+                    else "explicit_table_entry_column_selector"
+                ),
                 reason=(
-                    "UK table-entry word effect lowered as a typed table-cell "
-                    "text patch; replay must resolve the rowspanned table cell "
+                    "UK table word effect lowered as a typed table-cell text "
+                    "patch; replay must resolve the source-owned table cell "
                     "before mutating text."
                 ),
                 effect=effect,
@@ -7914,7 +7974,7 @@ def compile_effect_to_ir_ops(
                         subs = [
                             {
                                 **dict(item),
-                                "rule_id": str(item.get("rule_id") or _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID),
+                                "rule_id": str(item.get("rule_id") or selector_rule_id),
                             }
                             for item in subs
                         ]
@@ -9443,6 +9503,9 @@ class UKReplayExecutor:
         selector: dict[str, Any],
     ) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
         """Resolve a source-owned "nth entry in column N relating to X" table cell."""
+        if str(selector.get("selector_mode") or "") == "unique_column_text":
+            return self._resolve_unique_table_column_text_cell(node, selector)
+
         try:
             column_index = int(selector.get("column_index") or 0)
             entry_index = int(selector.get("entry_index") or 0)
@@ -9490,6 +9553,56 @@ class UKReplayExecutor:
         return matching_cells[entry_index - 1], "", {
             "matching_entry_count": len(matching_cells),
             "matched_row": matching_rows[entry_index - 1] if entry_index - 1 < len(matching_rows) else "",
+        }
+
+    def _resolve_unique_table_column_text_cell(
+        self,
+        node: UKMutableNode,
+        selector: dict[str, Any],
+    ) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
+        try:
+            column_index = int(selector.get("column_index") or 0)
+        except (TypeError, ValueError):
+            return None, "invalid_selector", {}
+        match_norm = _compact_normalized_text(str(selector.get("match_text") or ""))
+        if column_index < 1 or not match_norm:
+            return None, "invalid_selector", {}
+
+        tables = [
+            child
+            for child in node.children
+            if _uk_kind_value(child.kind).lower() == "table"
+        ]
+        if len(tables) != 1:
+            return None, "table_not_unique", {"table_count": len(tables)}
+
+        matching_cells: list[UKMutableNode] = []
+        matching_rows: list[str] = []
+        for row_cells in self._expanded_table_rows(tables[0]):
+            target_cell = row_cells.get(column_index)
+            if target_cell is None:
+                continue
+            if _compact_normalized_text(target_cell.text or "").find(match_norm) < 0:
+                continue
+            if not matching_cells or matching_cells[-1] is not target_cell:
+                matching_cells.append(target_cell)
+                matching_rows.append(
+                    " | ".join(
+                        str(row_cells[col].text or "")
+                        for col in sorted(row_cells)
+                        if str(row_cells[col].text or "")
+                    )[:240]
+                )
+
+        if len(matching_cells) == 1:
+            return matching_cells[0], "", {
+                "matching_cell_count": 1,
+                "matched_row": matching_rows[0] if matching_rows else "",
+            }
+        reason = "cell_text_not_found" if not matching_cells else "cell_text_ambiguous"
+        return None, reason, {
+            "matching_cell_count": len(matching_cells),
+            "matching_rows": tuple(matching_rows[:5]),
         }
 
     def _heading_facet_carrier_for_target(

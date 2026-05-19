@@ -1618,6 +1618,12 @@ Current block-substitution context invariant:
   `in column 1 of the table, in entry number 1 ... is omitted` and separately
   substitutes an amount; neither instruction authorizes repealing the whole
   schedule part.
+- Broad schedule/part targets with explicit `in column N` wording may lower
+  under `uk_effect_table_column_text_patch` only when the source text also
+  carries an explicit text patch preimage. Replay then requires exactly one
+  direct table under the broad target and exactly one cell in the named column
+  containing that preimage before mutating cell text. Entry-number and
+  multi-entry instructions remain rejected/manual until they have a row model.
 - source targets such as `Sch. 8 Note 1` are schedule-note/facet claims, not
   schedule paragraph claims. Lowering emits
   `uk_effect_schedule_note_target_rejected` until a note compiler or manual
