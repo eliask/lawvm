@@ -2425,14 +2425,23 @@ def test_apply_no_ops_resolves_shallow_section_sentence_replace_via_unique_subse
         payload=IRNode(kind=IRNodeKind.SENTENCE, label="1", text="New only sentence."),
         source=OperationSource(statute_id="no/lovtid/2025-12-22-123"),
     )
+    adjudications: list[CompileAdjudication] = []
 
-    updated = apply_no_ops(statute, [op])
+    updated = apply_no_ops(statute, [op], adjudications_out=adjudications)
 
     subsection = updated.body.children[0].children[0]
     assert subsection.text == ""
     assert [(child.kind, child.label, child.text) for child in subsection.children] == [
         (IRNodeKind.SENTENCE, "1", "New only sentence."),
     ]
+    assert [(item.kind, item.detail["rule_id"]) for item in adjudications] == [
+        ("no_replay_sentence_children_materialized", "no_sentence_text_materialized_for_shallow_sentence_target"),
+        ("no_replay_shallow_sentence_target_rebound", "no_shallow_sentence_target_rebound_to_unique_host"),
+    ]
+    assert adjudications[0].detail["family"] == "ontology_normalization"
+    assert adjudications[0].detail["materialized_parent_path"] == "section:1-2/subsection:1"
+    assert adjudications[1].detail["family"] == "target_resolution_recovery"
+    assert adjudications[1].detail["host_path"] == "section:1-2/subsection:1"
 
 
 def test_apply_no_ops_treats_missing_section_replace_as_insert() -> None:
@@ -2556,8 +2565,13 @@ def test_apply_no_ops_appends_next_sentence_on_replace_when_target_missing() -> 
         (IRNodeKind.SENTENCE, "3", "Tredje punktum."),
     ]
     assert [(item.kind, item.detail["rule_id"]) for item in adjudications] == [
-        ("no_replay_replace_recovered_by_insert", "no_replace_missing_sentence_append_to_resolved_parent")
+        ("no_replay_sentence_children_materialized", "no_sentence_text_materialized_for_sentence_target"),
+        ("no_replay_replace_recovered_by_insert", "no_replace_missing_sentence_append_to_resolved_parent"),
     ]
+    assert adjudications[0].detail["family"] == "ontology_normalization"
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["materialized_parent_path"] == "section:6/subsection:1"
+    assert adjudications[0].detail["materialized_sentence_count"] == 2
 
 
 def test_apply_no_ops_appends_last_item_on_replace_when_target_missing() -> None:

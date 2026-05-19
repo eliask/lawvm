@@ -5,6 +5,7 @@ frontend so Phase 4 file decomposition can start without changing behavior.
 """
 from __future__ import annotations
 
+from functools import lru_cache
 import re
 
 _EE_AMETIKOHT_TEENISTUSKOHT_FORMS_RULE = "ee_case_inflected_ametikoht_teenistuskoht_forms"
@@ -2327,7 +2328,8 @@ def _ee_normalize_text_replace_surface(text: str) -> str:
     return normalized.strip()
 
 
-def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> list[tuple[str, str]]:
+@lru_cache(maxsize=4096)
+def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> tuple[tuple[str, str], ...]:
     """Build replacement pairs, longest-first, for bounded case-aware rewrites."""
     variants: dict[str, str] = {}
 
@@ -2982,7 +2984,7 @@ def _ee_text_replace_variants(old: str, new: str, *, case_inflected: bool) -> li
             for old_form, new_form in special_pairs.items():
                 if old_form not in variants:
                     variants[old_form] = new_form
-    return sorted(variants.items(), key=lambda item: len(item[0]), reverse=True)
+    return tuple(sorted(variants.items(), key=lambda item: len(item[0]), reverse=True))
 
 
 def _ee_genitive_singular_modifier_phrase_to_plural(text: str) -> str:

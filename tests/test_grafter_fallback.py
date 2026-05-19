@@ -142,6 +142,54 @@ LEGACY_MOVE_CLAUSE_RESIDUE = pytest.mark.skip(
 )
 
 
+@pytest.fixture(scope="module")
+def amendment_bundle_2010_182_2020_766() -> dict[str, Any]:
+    try:
+        return build_amendment_bundle("2010/182", "2020/766", "legal_pit")
+    except (OSError, RuntimeError) as exc:
+        pytest.skip(f"Finlex archive unavailable in this environment: {exc}")
+
+
+@pytest.fixture(scope="module")
+def amendment_bundle_2010_1396_2018_441() -> dict[str, Any]:
+    return build_amendment_bundle("2010/1396", "2018/441", "legal_pit")
+
+
+@pytest.fixture(scope="module")
+def amendment_bundle_2013_588_2025_201() -> dict[str, Any]:
+    return build_amendment_bundle("2013/588", "2025/201", mode="finlex_oracle")
+
+
+@pytest.fixture(scope="module")
+def replay_2013_588_finlex_oracle() -> Any:
+    return pinned_replay("2013/588", mode="finlex_oracle", quiet=True)
+
+
+@pytest.fixture(scope="module")
+def replay_2004_699_finlex_oracle() -> Any:
+    return pinned_replay("2004/699", mode="finlex_oracle", quiet=True)
+
+
+@pytest.fixture(scope="module")
+def replay_2016_1227_finlex_oracle() -> Any:
+    return pinned_replay("2016/1227", mode="finlex_oracle", quiet=True)
+
+
+@pytest.fixture(scope="module")
+def replay_2005_579_finlex_oracle() -> Any:
+    return pinned_replay("2005/579", mode="finlex_oracle", quiet=True)
+
+
+@pytest.fixture(scope="module")
+def replay_2003_549_finlex_oracle() -> Any:
+    return pinned_replay("2003/549", mode="finlex_oracle", quiet=True, build_full_products=False)
+
+
+@pytest.fixture(scope="module")
+def replay_2007_1024_finlex_oracle() -> Any:
+    return pinned_replay("2007/1024", mode="finlex_oracle", quiet=True)
+
+
 class _MapCorpus:
     def __init__(self, mapping: dict[str, bytes]) -> None:
         self._mapping = mapping
@@ -4585,7 +4633,9 @@ def test_drop_payloadless_source_replace_shadowed_by_same_group_relabel_keeps_re
     assert rejected == []
 
 
-def test_build_amendment_bundle_keeps_scoped_move_targets_as_section_groups() -> None:
+def test_build_amendment_bundle_keeps_scoped_move_targets_as_section_groups(
+    amendment_bundle_2010_182_2020_766: dict[str, Any],
+) -> None:
     """Scoped move-tail section targets must stay chapter-scoped after PEG migration.
 
     The old xfail expected a specific container-pruning count and observation.
@@ -4593,7 +4643,7 @@ def test_build_amendment_bundle_keeps_scoped_move_targets_as_section_groups() ->
     moved section targets continue to materialize as separate chapter-scoped
     section groups instead of being lost inside the chapter container payload.
     """
-    bundle = build_amendment_bundle("2010/182", "2020/766", "legal_pit")
+    bundle = amendment_bundle_2010_182_2020_766
     chapter5 = next(g for g in bundle["groups"] if g["target_unit_kind"] == "chapter" and g["target_norm"] == "5")
     sec33 = next(g for g in bundle["groups"] if g["target_unit_kind"] == "section" and g["target_norm"] == "33")
     sec34 = next(g for g in bundle["groups"] if g["target_unit_kind"] == "section" and g["target_norm"] == "34")
@@ -4603,12 +4653,10 @@ def test_build_amendment_bundle_keeps_scoped_move_targets_as_section_groups() ->
     assert sec34["target_chapter"] == "5"
 
 
-def test_build_amendment_bundle_keeps_post_move_clause_trailing_replace_targets() -> None:
-    try:
-        bundle = build_amendment_bundle("2010/182", "2020/766", "legal_pit")
-    except (OSError, RuntimeError) as exc:
-        pytest.skip(f"Finlex archive unavailable in this environment: {exc}")
-
+def test_build_amendment_bundle_keeps_post_move_clause_trailing_replace_targets(
+    amendment_bundle_2010_182_2020_766: dict[str, Any],
+) -> None:
+    bundle = amendment_bundle_2010_182_2020_766
     compiled = set(bundle["compiled_ops"])
 
     assert "REPLACE 7 luku otsikko" in compiled
@@ -4664,8 +4712,10 @@ def test_build_amendment_bundle_expands_letter_suffix_range_with_hyphen_dash() -
     assert "INSERT 2 luku 17d §" in compiled
 
 
-def test_build_amendment_bundle_folds_terminal_continuation_subsection_for_2018_441() -> None:
-    bundle = build_amendment_bundle("2010/1396", "2018/441", "legal_pit")
+def test_build_amendment_bundle_folds_terminal_continuation_subsection_for_2018_441(
+    amendment_bundle_2010_1396_2018_441: dict[str, Any],
+) -> None:
+    bundle = amendment_bundle_2010_1396_2018_441
 
     group48 = next(group for group in bundle["groups"] if group["target_norm"] == "48")
 
@@ -4685,8 +4735,10 @@ def test_build_amendment_bundle_folds_terminal_continuation_subsection_for_2018_
     ]
 
 
-def test_build_amendment_bundle_splits_fused_restarted_subsection_for_2018_441() -> None:
-    bundle = build_amendment_bundle("2010/1396", "2018/441", "legal_pit")
+def test_build_amendment_bundle_splits_fused_restarted_subsection_for_2018_441(
+    amendment_bundle_2010_1396_2018_441: dict[str, Any],
+) -> None:
+    bundle = amendment_bundle_2010_1396_2018_441
 
     group51 = next(group for group in bundle["groups"] if group["target_norm"] == "51")
 
@@ -6903,9 +6955,10 @@ def test_replay_xml_2002_1330_prefers_live_substantive_section_8_over_repeal_pla
     assert "julkisesta työvoima- ja yrityspalvelusta annetun lain 4 luvun 12 §:ssä" not in text
 
 
-def test_replay_xml_2013_588_retargets_explicit_chunk_sections_from_2023_497_to_live_part_chapter() -> None:
-    replay = pinned_replay("2013/588", mode="finlex_oracle", quiet=True)
-    sections = extract_ir_sections(replay.products.materialized_state.ir)
+def test_replay_xml_2013_588_retargets_explicit_chunk_sections_from_2023_497_to_live_part_chapter(
+    replay_2013_588_finlex_oracle: Any,
+) -> None:
+    sections = extract_ir_sections(replay_2013_588_finlex_oracle.products.materialized_state.ir)
 
     for wrong_path in (
         "part:3/section:84",
@@ -7932,23 +7985,32 @@ def test_uncovered_body_records_same_wave_relabel_destination_owned_skip_for_lea
     assert all(f.detail.get("reason") == "same_wave_relabel_destination_owned" for f in skipped)
 
 
-def test_process_muutoslaki_2017_320_2019_371_records_relabel_destination_owned_skips_for_leaf_destinations() -> None:
+def test_process_muutoslaki_2017_320_2019_371_recodification_regressions() -> None:
     corpus = get_corpus()
     orig = corpus.read_source("2017/320")
     if orig is None:
         pytest.skip("corpus archive not available")
 
     ctx = StatuteContext.from_xml(orig, _fi_label_postprocessor)
-    before = pinned_replay("2017/320", mode="legal_pit", stop_before="2019/371", quiet=True)
-
-    phase = process_muutoslaki(
-        "2019/371",
-        before.replay_fold_state,
-        ctx,
-        replay_mode="legal_pit",
-        parent_id="2017/320",
-        corpus=corpus,
+    before = pinned_replay(
+        "2017/320",
+        mode="legal_pit",
+        stop_before="2019/371",
+        quiet=True,
+        build_full_products=False,
     )
+    failed: list[FailedOp] = []
+
+    with redirect_stdout(StringIO()):
+        phase = process_muutoslaki(
+            "2019/371",
+            before.replay_fold_state,
+            ctx,
+            replay_mode="legal_pit",
+            parent_id="2017/320",
+            corpus=corpus,
+            failed_ops_out=failed,
+        )
 
     skipped = [
         f for f in phase.findings()
@@ -7964,56 +8026,12 @@ def test_process_muutoslaki_2017_320_2019_371_records_relabel_destination_owned_
         for f in skipped
     )
 
-
-def test_process_muutoslaki_2017_320_2019_371_no_longer_fails_old_section6_subsection_replaces_after_renumber() -> None:
-    corpus = get_corpus()
-    orig = corpus.read_source("2017/320")
-    if orig is None:
-        pytest.skip("corpus archive not available")
-
-    ctx = StatuteContext.from_xml(orig, _fi_label_postprocessor)
-    before = pinned_replay("2017/320", mode="legal_pit", stop_before="2019/371", quiet=True)
-    failed: list[FailedOp] = []
-
-    with redirect_stdout(StringIO()):
-        process_muutoslaki(
-            "2019/371",
-            before.replay_fold_state,
-            ctx,
-            replay_mode="legal_pit",
-            parent_id="2017/320",
-            corpus=corpus,
-            failed_ops_out=failed,
-        )
-
     assert not any(
         f.target_chapter == "12"
         and f.target_section == "6"
         and f.reason_code == "section_not_found"
         for f in failed
     )
-
-
-def test_process_muutoslaki_2017_320_2019_371_no_longer_fails_old_section8_9_11_replaces_after_part_scoped_section_renumber() -> None:
-    corpus = get_corpus()
-    orig = corpus.read_source("2017/320")
-    if orig is None:
-        pytest.skip("corpus archive not available")
-
-    ctx = StatuteContext.from_xml(orig, _fi_label_postprocessor)
-    before = pinned_replay("2017/320", mode="legal_pit", stop_before="2019/371", quiet=True)
-    failed: list[FailedOp] = []
-
-    with redirect_stdout(StringIO()):
-        process_muutoslaki(
-            "2019/371",
-            before.replay_fold_state,
-            ctx,
-            replay_mode="legal_pit",
-            parent_id="2017/320",
-            corpus=corpus,
-            failed_ops_out=failed,
-        )
 
     blocked = {
         (f.target_chapter, f.target_section, f.description)
@@ -8023,28 +8041,6 @@ def test_process_muutoslaki_2017_320_2019_371_no_longer_fails_old_section8_9_11_
     assert ("1", "8", "REPLACE 1 luku 8 §") not in blocked
     assert ("1", "9", "REPLACE 1 luku 9 §") not in blocked
     assert ("1", "11", "REPLACE 1 luku 11 §") not in blocked
-
-
-def test_process_muutoslaki_2017_320_2019_371_no_longer_fails_iia_heading_replaces() -> None:
-    corpus = get_corpus()
-    orig = corpus.read_source("2017/320")
-    if orig is None:
-        pytest.skip("corpus archive not available")
-
-    ctx = StatuteContext.from_xml(orig, _fi_label_postprocessor)
-    before = pinned_replay("2017/320", mode="legal_pit", stop_before="2019/371", quiet=True)
-    failed: list[FailedOp] = []
-
-    with redirect_stdout(StringIO()):
-        process_muutoslaki(
-            "2019/371",
-            before.replay_fold_state,
-            ctx,
-            replay_mode="legal_pit",
-            parent_id="2017/320",
-            corpus=corpus,
-            failed_ops_out=failed,
-        )
 
     assert not any(
         f.description == "REPLACE 2 luku 4 § otsikko"
@@ -8061,28 +8057,6 @@ def test_process_muutoslaki_2017_320_2019_371_no_longer_fails_iia_heading_replac
         for f in failed
     )
 
-
-def test_process_muutoslaki_2017_320_2019_371_follows_descendant_replace_through_relabel_destination_frame() -> None:
-    corpus = get_corpus()
-    orig = corpus.read_source("2017/320")
-    if orig is None:
-        pytest.skip("corpus archive not available")
-
-    ctx = StatuteContext.from_xml(orig, _fi_label_postprocessor)
-    before = pinned_replay("2017/320", mode="legal_pit", stop_before="2019/371", quiet=True)
-    failed: list[FailedOp] = []
-
-    with redirect_stdout(StringIO()):
-        process_muutoslaki(
-            "2019/371",
-            before.replay_fold_state,
-            ctx,
-            replay_mode="legal_pit",
-            parent_id="2017/320",
-            corpus=corpus,
-            failed_ops_out=failed,
-        )
-
     assert not any(
         f.description == "REPLACE 1 luku 10 §"
         and f.target_part == "4"
@@ -8092,26 +8066,6 @@ def test_process_muutoslaki_2017_320_2019_371_follows_descendant_replace_through
         for f in failed
     )
     assert not [f for f in failed if f.reason_code == "section_not_found"]
-
-
-def test_process_muutoslaki_2017_320_2019_371_uses_destination_payload_surface_for_sparse_source_shells() -> None:
-    corpus = get_corpus()
-    orig = corpus.read_source("2017/320")
-    if orig is None:
-        pytest.skip("corpus archive not available")
-
-    ctx = StatuteContext.from_xml(orig, _fi_label_postprocessor)
-    before = pinned_replay("2017/320", mode="legal_pit", stop_before="2019/371", quiet=True)
-
-    with redirect_stdout(StringIO()):
-        phase = process_muutoslaki(
-            "2019/371",
-            before.replay_fold_state,
-            ctx,
-            replay_mode="legal_pit",
-            parent_id="2017/320",
-            corpus=corpus,
-        )
 
     observations = [
         f
@@ -8131,30 +8085,8 @@ def test_process_muutoslaki_2017_320_2019_371_uses_destination_payload_surface_f
         and f.detail.get("destination_target_norm") == "221"
         and f.detail.get("target_part") == "2"
         and f.detail.get("target_chapter") == "1"
-        for f in observations
+            for f in observations
     )
-
-
-def test_process_muutoslaki_2017_320_2019_371_governs_pending_relabel_gap_failure() -> None:
-    corpus = get_corpus()
-    orig = corpus.read_source("2017/320")
-    if orig is None:
-        pytest.skip("corpus archive not available")
-
-    ctx = StatuteContext.from_xml(orig, _fi_label_postprocessor)
-    before = pinned_replay("2017/320", mode="legal_pit", stop_before="2019/371", quiet=True)
-    failed: list[FailedOp] = []
-
-    with redirect_stdout(StringIO()):
-        phase = process_muutoslaki(
-            "2019/371",
-            before.replay_fold_state,
-            ctx,
-            replay_mode="legal_pit",
-            parent_id="2017/320",
-            corpus=corpus,
-            failed_ops_out=failed,
-        )
 
     assert not [
         f
@@ -8186,7 +8118,13 @@ def test_replay_xml_2017_320_2018_301_keeps_part_scoped_chapter_4_section_11() -
         pytest.skip("corpus archive not available")
 
     ctx = StatuteContext.from_xml(orig, _fi_label_postprocessor)
-    before = pinned_replay("2017/320", mode="legal_pit", stop_before="2018/301", quiet=True)
+    before = pinned_replay(
+        "2017/320",
+        mode="legal_pit",
+        stop_before="2018/301",
+        quiet=True,
+        build_full_products=False,
+    )
 
     with redirect_stdout(StringIO()):
         phase = process_muutoslaki(
@@ -9752,9 +9690,10 @@ def test_replay_xml_1920_26_applies_conclusions_repeal_clause_for_section_6() ->
     assert replay.find_section("26") is not None
 
 
-def test_replay_xml_2004_699_preserves_section_31_items_when_2013_984_inserts_subsection_2() -> None:
-    replay = pinned_replay("2004/699", mode="finlex_oracle", quiet=True)
-    sec31 = replay.find_section("31")
+def test_replay_xml_2004_699_preserves_section_31_items_when_2013_984_inserts_subsection_2(
+    replay_2004_699_finlex_oracle: Any,
+) -> None:
+    sec31 = replay_2004_699_finlex_oracle.find_section("31")
 
     assert sec31 is not None
     sub1 = next(child for child in sec31.children if child.kind is IRNodeKind.SUBSECTION and child.label == "1")
@@ -9766,14 +9705,14 @@ def test_replay_xml_2004_699_preserves_section_31_items_when_2013_984_inserts_su
     assert "Euroopan keskuspankkiin" in irnode_to_text(sub2)
 
 
-def test_replay_xml_2004_699_exact_section_replaces_do_not_keep_stale_subsection_tails() -> None:
-    replay = pinned_replay("2004/699", mode="finlex_oracle", quiet=True)
-
-    sec7 = replay.find_section("7")
-    sec12 = replay.find_section("12")
-    sec21 = replay.find_section("21")
-    sec23 = replay.find_section("23")
-    sec32 = replay.find_section("32")
+def test_replay_xml_2004_699_exact_section_replaces_do_not_keep_stale_subsection_tails(
+    replay_2004_699_finlex_oracle: Any,
+) -> None:
+    sec7 = replay_2004_699_finlex_oracle.find_section("7")
+    sec12 = replay_2004_699_finlex_oracle.find_section("12")
+    sec21 = replay_2004_699_finlex_oracle.find_section("21")
+    sec23 = replay_2004_699_finlex_oracle.find_section("23")
+    sec32 = replay_2004_699_finlex_oracle.find_section("32")
 
     assert sec7 is not None
     assert sec12 is not None
@@ -11582,10 +11521,11 @@ def test_replay_xml_1990_1341_removes_repealed_8a_subsection_2_from_2010_512() -
     )
 
 
-def test_replay_xml_2016_1227_keeps_section_12_subsection_5_after_2022_1149() -> None:
+def test_replay_xml_2016_1227_keeps_section_12_subsection_5_after_2022_1149(
+    replay_2016_1227_finlex_oracle: Any,
+) -> None:
     """Sparse middle-slot replace must preserve the carried tail in 2016/1227 §12."""
-    master = pinned_replay("2016/1227", mode="finlex_oracle", quiet=True)
-    sec = master.find_section("12", chapter_num="2")
+    sec = replay_2016_1227_finlex_oracle.find_section("12", chapter_num="2")
 
     assert sec is not None
     subsections = [child for child in sec.children if child.kind is IRNodeKind.SUBSECTION]
@@ -11596,10 +11536,11 @@ def test_replay_xml_2016_1227_keeps_section_12_subsection_5_after_2022_1149() ->
     )
 
 
-def test_replay_xml_2016_1227_reuses_repealed_section_51_subsection_3_slot() -> None:
+def test_replay_xml_2016_1227_reuses_repealed_section_51_subsection_3_slot(
+    replay_2016_1227_finlex_oracle: Any,
+) -> None:
     """2022/1149 must fill the repealed 3rd-moment slot without shifting old 4 -> 5."""
-    master = pinned_replay("2016/1227", mode="finlex_oracle", quiet=True)
-    sec = master.find_section("51", chapter_num="5")
+    sec = replay_2016_1227_finlex_oracle.find_section("51", chapter_num="5")
 
     assert sec is not None
     subsections = [child for child in sec.children if child.kind is IRNodeKind.SUBSECTION]
@@ -11913,7 +11854,9 @@ def test_replay_xml_2017_444_applies_explicit_2023_444_targets_for_sections_10_a
     assert "ilmoitusvelvollisen ylemmän johdon on hyväksyttävä asiakassuhteen aloittaminen" in sec13_text
 
 
-def test_replay_xml_2003_549_replaces_occupied_section_163_without_stale_tail() -> None:
+def test_replay_xml_2003_549_replaces_occupied_section_163_without_stale_tail(
+    replay_2003_549_finlex_oracle: Any,
+) -> None:
     """A complete same-label section INSERT must suppress stale old subsection tail.
 
     Regression family: `2003/549 <- 2011/682` compiles `163 §` as
@@ -11921,8 +11864,7 @@ def test_replay_xml_2003_549_replaces_occupied_section_163_without_stale_tail() 
     but the replacement content did not carry exact whole-section tail policy,
     so PIT materialization kept stale older `3` and `4 momentti` timelines.
     """
-    master = pinned_replay("2003/549", mode="finlex_oracle", quiet=True)
-    sec = master.find_section("163", chapter_num="12")
+    sec = replay_2003_549_finlex_oracle.find_section("163", chapter_num="12")
 
     assert sec is not None
     assert [child.label for child in sec.children if child.kind is IRNodeKind.SUBSECTION] == ["1", "2"]
@@ -12430,8 +12372,10 @@ def test_process_muutoslaki_2011_1552_composes_pending_amendment_on_processed_ta
     )
 
 
-def test_inspect_amendment_2013_588_2025_201_owns_sparse_higher_moment_and_trailing_insert_bindings() -> None:
-    bundle = build_amendment_bundle("2013/588", "2025/201", mode="finlex_oracle")
+def test_inspect_amendment_2013_588_2025_201_owns_sparse_higher_moment_and_trailing_insert_bindings(
+    amendment_bundle_2013_588_2025_201: dict[str, Any],
+) -> None:
+    bundle = amendment_bundle_2013_588_2025_201
     group21b = next(group for group in bundle["groups"] if group["target_norm"] == "21b")
     group87 = next(group for group in bundle["groups"] if group["target_norm"] == "87" and group["target_part"] == "5")
     group87_insert = next(
@@ -12489,8 +12433,10 @@ def test_inspect_amendment_2012_1020_2015_1328_keeps_bare_johdanto_targets_and_l
     assert got["11"] == ["REPEAL 5 luku 11 § 1 mom 4 kohta"]
 
 
-def test_inspect_amendment_2013_588_2025_201_recovers_section_49a_item_10_insert() -> None:
-    bundle = build_amendment_bundle("2013/588", "2025/201", mode="finlex_oracle")
+def test_inspect_amendment_2013_588_2025_201_recovers_section_49a_item_10_insert(
+    amendment_bundle_2013_588_2025_201: dict[str, Any],
+) -> None:
+    bundle = amendment_bundle_2013_588_2025_201
     group49a = next(group for group in bundle["groups"] if group["target_norm"] == "49a")
 
     assert group49a["ops_raw"] == ["REPLACE 5 luku 49a § 1 mom 9 kohta", "INSERT 5 luku 49a § 1 mom 10 kohta"]
@@ -12506,9 +12452,10 @@ def test_inspect_amendment_2002_780_2003_666_keeps_head_insert_and_renumber_grou
     assert group4["ops_final"] == ["RENUMBER 4 § 1 mom", "INSERT 4 § 1 mom"]
 
 
-def test_replay_xml_2013_588_restores_section_49a_item_10_after_2025_201() -> None:
-    replay = pinned_replay("2013/588", mode="finlex_oracle", quiet=True)
-    sec = replay.materialized_state.find_section("49a", "5")
+def test_replay_xml_2013_588_restores_section_49a_item_10_after_2025_201(
+    replay_2013_588_finlex_oracle: Any,
+) -> None:
+    sec = replay_2013_588_finlex_oracle.materialized_state.find_section("49a", "5")
 
     assert sec is not None
     sub1 = next(
@@ -12520,9 +12467,10 @@ def test_replay_xml_2013_588_restores_section_49a_item_10_after_2025_201() -> No
     assert "tietojen säilyttäminen" in irnode_to_text(sub1)
 
 
-def test_replay_xml_2013_588_routes_section_87_only_under_chapter_13_after_2025_201() -> None:
-    replay = pinned_replay("2013/588", mode="finlex_oracle", quiet=True)
-    state = replay.materialized_state
+def test_replay_xml_2013_588_routes_section_87_only_under_chapter_13_after_2025_201(
+    replay_2013_588_finlex_oracle: Any,
+) -> None:
+    state = replay_2013_588_finlex_oracle.materialized_state
     sec = state.find_section("87", "13", "5")
 
     assert sec is not None
@@ -12619,7 +12567,13 @@ def test_inspect_amendment_1959_191_1992_203_keeps_following_targets_after_inclu
 
 
 def test_replay_xml_1959_191_updates_section_53_after_1992_203() -> None:
-    replay = pinned_replay("1959/191", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay(
+        "1959/191",
+        mode="finlex_oracle",
+        quiet=True,
+        build_full_products=False,
+        stop_before="1994/443",
+    )
     sec = replay.materialized_state.find_section("53")
 
     assert sec is not None
@@ -12664,9 +12618,10 @@ def test_inspect_amendment_2013_588_2019_108_keeps_section_87_subsection_replace
     )
 
 
-def test_replay_xml_2013_588_does_not_keep_section_87_under_chapter_11a_after_2019_108() -> None:
-    replay = pinned_replay("2013/588", mode="finlex_oracle", quiet=True)
-    materialized = extract_ir_sections(replay.products.materialized_state.ir)
+def test_replay_xml_2013_588_does_not_keep_section_87_under_chapter_11a_after_2019_108(
+    replay_2013_588_finlex_oracle: Any,
+) -> None:
+    materialized = extract_ir_sections(replay_2013_588_finlex_oracle.products.materialized_state.ir)
 
     assert "part:4/chapter:11a/section:87" not in materialized
 
@@ -12687,9 +12642,10 @@ def test_inspect_amendment_2013_588_2023_497_owns_sparse_higher_moment_binding_f
     )
 
 
-def test_replay_xml_2013_588_updates_section_93_subsection_4_after_2023_497() -> None:
-    replay = pinned_replay("2013/588", mode="finlex_oracle", quiet=True)
-    sections = extract_ir_sections(replay.products.materialized_state.ir)
+def test_replay_xml_2013_588_updates_section_93_subsection_4_after_2023_497(
+    replay_2013_588_finlex_oracle: Any,
+) -> None:
+    sections = extract_ir_sections(replay_2013_588_finlex_oracle.products.materialized_state.ir)
     sec93 = sections["part:5/chapter:13/section:93"]
     sub4 = next(
         child for child in sec93.children if child.kind is IRNodeKind.SUBSECTION and child.label == "4"
@@ -12703,7 +12659,7 @@ def test_replay_xml_2013_588_updates_section_93_subsection_4_after_2023_497() ->
 
 
 def test_replay_xml_2014_527_keeps_section_221c_subsection_2_after_2022_490() -> None:
-    replay = pinned_replay("2014/527", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("2014/527", mode="finlex_oracle", quiet=True, build_full_products=False)
     sec221c = replay.materialized_state.find_section("221c", "20")
 
     assert sec221c is not None
@@ -12717,9 +12673,10 @@ def test_replay_xml_2014_527_keeps_section_221c_subsection_2_after_2022_490() ->
     assert "Eläimistä saatavista sivutuotteista annetussa laissa" in text2
 
 
-def test_replay_xml_2005_579_preserves_section_9_structure_after_2013_1230_and_2014_751() -> None:
-    master = pinned_replay("2005/579", mode="finlex_oracle", quiet=True)
-    sec = master.find_section("9", chapter_num="1")
+def test_replay_xml_2005_579_preserves_section_9_structure_after_2013_1230_and_2014_751(
+    replay_2005_579_finlex_oracle: Any,
+) -> None:
+    sec = replay_2005_579_finlex_oracle.find_section("9", chapter_num="1")
 
     assert sec is not None
     subsections = [child for child in sec.children if child.kind is IRNodeKind.SUBSECTION]
@@ -12738,10 +12695,11 @@ def test_replay_xml_2005_579_preserves_section_9_structure_after_2013_1230_and_2
     assert "rajavartiolain 31 §:ssä säädetyn tunnistamisen suorittamiseksi" in sub3_text
 
 
-def test_replay_xml_2003_549_keeps_section_149_subsection_4_as_wrapup_only() -> None:
+def test_replay_xml_2003_549_keeps_section_149_subsection_4_as_wrapup_only(
+    replay_2003_549_finlex_oracle: Any,
+) -> None:
     """`149 § 4 momentti` must remain the wrap-up paragraph, not a duplicated item list."""
-    master = pinned_replay("2003/549", mode="finlex_oracle", quiet=True)
-    sec = master.find_section("149", chapter_num="11")
+    sec = replay_2003_549_finlex_oracle.find_section("149", chapter_num="11")
 
     assert sec is not None
     sub4 = next(
@@ -12795,10 +12753,11 @@ def test_replay_xml_1987_693_restores_inserted_sections_10d_and_10e_from_2002_11
     assert "Erityislupa myönnetään enintään yhden vuoden hoitoa varten" in sec10e_text
 
 
-def test_replay_xml_2005_579_preserves_section_39_sparse_omission_items_and_later_item_insert() -> None:
+def test_replay_xml_2005_579_preserves_section_39_sparse_omission_items_and_later_item_insert(
+    replay_2005_579_finlex_oracle: Any,
+) -> None:
     """`39 §` must preserve omitted sibling items and the later inserted `8 kohta`."""
-    master = pinned_replay("2005/579", mode="finlex_oracle", quiet=True)
-    sec = master.find_section("39", chapter_num="4")
+    sec = replay_2005_579_finlex_oracle.find_section("39", chapter_num="4")
 
     assert sec is not None
     sub1 = next(child for child in sec.children if child.kind is IRNodeKind.SUBSECTION and child.label == "1")
@@ -13020,15 +12979,15 @@ def test_replay_xml_2016_1503_preserves_section_4_first_moment_tail_once_after_2
     assert first_text.count(duplicated_tail) == 1
 
 
-def test_replay_xml_2007_1024_section_2_no_spurious_third_subsection_after_2022_525() -> None:
+def test_replay_xml_2007_1024_section_2_no_spurious_third_subsection_after_2022_525(
+    replay_2007_1024_finlex_oracle: Any,
+) -> None:
     """Regression: 2022/525 item-INSERT into section:2 subsection:2 must not create a
     spurious subsection:3.  The amendment XML carries the full updated subsection:2 content
     (OMISSION + SUBSECTION, no trailing omission) — the johtolause parser failed to extract
     target_item, so the op only carries target_paragraph=2.  The in-place merge path must
     replace subsection:2 in-place, not push it to subsection:3."""
-    result = pinned_replay("2007/1024", mode="finlex_oracle", quiet=True)
-
-    sec2 = result.find_section("2")
+    sec2 = replay_2007_1024_finlex_oracle.find_section("2")
     assert sec2 is not None
 
     subs = [c for c in sec2.children if c.kind == IRNodeKind.SUBSECTION]
@@ -13041,14 +13000,14 @@ def test_replay_xml_2007_1024_section_2_no_spurious_third_subsection_after_2022_
     assert "Työkanava Oy" in sub2_text
 
 
-def test_replay_xml_2007_1024_section_3_restored_after_2020_818() -> None:
+def test_replay_xml_2007_1024_section_3_restored_after_2020_818(
+    replay_2007_1024_finlex_oracle: Any,
+) -> None:
     """Regression: 2020/818 johtolause contained a U+200D zero-width joiner in '3‌ §:n'
     which caused the PEG parser to fail to detect the REPLACE op for section:3 subsection:1.
     After fixing Cf-character stripping in metadata normalisation, section:3 should have 3
     subsections with the correct content."""
-    result = pinned_replay("2007/1024", mode="finlex_oracle", quiet=True)
-
-    sec3 = result.find_section("3")
+    sec3 = replay_2007_1024_finlex_oracle.find_section("3")
     assert sec3 is not None
 
     subs = [c for c in sec3.children if c.kind == IRNodeKind.SUBSECTION]

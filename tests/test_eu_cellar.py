@@ -1,11 +1,82 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from argparse import Namespace
 from typing import Any
 from urllib.error import URLError
 
 from lawvm.eu import cellar
+
+
+class _FakeResponse:
+    status = 200
+
+    def __init__(self, data: bytes, *, final_url: str = "http://example.test/final", content_type: str = "text/xml"):
+        self._data = data
+        self._final_url = final_url
+        self.headers = {"Content-Type": content_type}
+
+    def __enter__(self) -> _FakeResponse:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self._data
+
+    def geturl(self) -> str:
+        return self._final_url
+
+
+def test_request_notice_metadata_includes_source_sha256(monkeypatch) -> None:
+    data = b"<NOTICE/>"
+    seen_timeout = None
+
+    def fake_urlopen(_request: Any, timeout: int):
+        nonlocal seen_timeout
+        seen_timeout = timeout
+        return _FakeResponse(data, content_type="application/xml")
+
+    monkeypatch.setattr(cellar, "urlopen", fake_urlopen)
+
+    payload, meta = cellar._request_notice(
+        cellar.NoticeRequest(
+            celex="32016R0679",
+            notice_format="xml",
+            notice_type="tree",
+            decode_language="eng",
+            accept_language="eng",
+            filter_in_notice_only=True,
+        ),
+        timeout_s=17,
+    )
+
+    assert payload == data
+    assert seen_timeout == 17
+    assert meta["bytes"] == len(data)
+    assert meta["sha256"] == hashlib.sha256(data).hexdigest()
+
+
+def test_request_url_metadata_includes_source_sha256(monkeypatch) -> None:
+    data = b"<html><body>ok</body></html>"
+
+    def fake_urlopen(_request: Any, timeout: int):
+        assert timeout == 23
+        return _FakeResponse(data, content_type="application/xhtml+xml")
+
+    monkeypatch.setattr(cellar, "urlopen", fake_urlopen)
+
+    payload, meta = cellar._request_url(
+        "http://example.test/source.xhtml",
+        timeout_s=23,
+        accept="application/xhtml+xml",
+    )
+
+    assert payload == data
+    assert meta["bytes"] == len(data)
+    assert meta["sha256"] == hashlib.sha256(data).hexdigest()
 
 
 def test_fetch_manifest_records_failed_request_rows(monkeypatch, tmp_path) -> None:

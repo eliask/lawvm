@@ -10,6 +10,7 @@ Imports vocabulary and regex patterns from lexicon.py.
 
 from __future__ import annotations
 
+from functools import lru_cache
 import re
 
 from lawvm.finland.johtolause.lexicon import (
@@ -38,6 +39,12 @@ _SPLIT_PYKALA_SUFFIXES = frozenset({"n", "in", "en", "ään", "iin", "aan", "een
 
 
 def tokenize(text: str) -> list[Token]:
+    """Tokenize Finnish amendment clause text into classified tokens."""
+    return list(_tokenize_tuple(text))
+
+
+@lru_cache(maxsize=8192)
+def _tokenize_tuple(text: str) -> tuple[Token, ...]:
     """Tokenize Finnish amendment clause text into classified tokens.
 
     No NLP model needed.  Uses a ~120-entry vocabulary lookup table plus
@@ -161,7 +168,7 @@ def tokenize(text: str) -> list[Token]:
             continue
         _emit_token(raw, tokens, char_off)
         i += 1
-    return tokens
+    return tuple(tokens)
 
 
 def _emit_token(raw: str, out: list[Token], char_offset: int = -1) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -101,6 +102,7 @@ def _request_notice(notice: NoticeRequest, timeout_s: int = DEFAULT_TIMEOUT_S) -
             "final_url": response.geturl(),
             "status": getattr(response, "status", None),
             "bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
             "content_type": response.headers.get("Content-Type", ""),
             "accept": headers["Accept"],
             "accept_language": headers.get("Accept-Language", ""),
@@ -121,6 +123,7 @@ def _request_url(url: str, timeout_s: int = DEFAULT_TIMEOUT_S, accept: str | Non
             "final_url": response.geturl(),
             "status": getattr(response, "status", None),
             "bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
             "content_type": response.headers.get("Content-Type", ""),
             "accept": headers.get("Accept", ""),
             "timeout_s": timeout_s,
