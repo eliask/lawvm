@@ -3198,6 +3198,21 @@ from lawvm.tools.diff import _extract_sections_ir
 from tests.corpus_pin_helpers import pinned_replay
 
 
+@pytest.fixture(scope="module")
+def replay_1990_845_finlex_oracle():
+    return pinned_replay("1990/845", mode="finlex_oracle", quiet=True)
+
+
+@pytest.fixture(scope="module")
+def replay_1992_480_finlex_oracle():
+    return pinned_replay("1992/480", mode="finlex_oracle", quiet=True, build_full_products=False)
+
+
+@pytest.fixture(scope="module")
+def replay_1982_710_legal_pit():
+    return pinned_replay("1982/710", mode="legal_pit", quiet=True)
+
+
 def test_replay_deterministic() -> None:
     """replay_xml('2009/953') called twice produces identical irnode_to_text output."""
     master1 = pinned_replay("2009/953")
@@ -3211,9 +3226,9 @@ def test_replay_deterministic() -> None:
     )
 
 
-def test_omnibus_repeal_sec1_fallback_does_not_skip_parent_repeal() -> None:
+def test_omnibus_repeal_sec1_fallback_does_not_skip_parent_repeal(replay_1992_480_finlex_oracle) -> None:
     """Generic preambles must not make sec_1 omnibus repeals look misrouted."""
-    master = pinned_replay("1992/480", mode="finlex_oracle")
+    master = replay_1992_480_finlex_oracle
     sec24 = _extract_sections_ir(master.ir).get("24")
 
     assert sec24 is None or sec24.attrs.get("lawvm_repeal_placeholder") == "1"
@@ -3238,9 +3253,11 @@ def test_generic_preamble_sec1_repeal_keeps_inserted_chapter_live_before_repeal(
     assert sorted(secs) == ["2", "3", "4", "5", "7", "8", "9"]
 
 
-def test_large_johtolause_subsection_insert_supplement_recovers_missing_moments() -> None:
+def test_large_johtolause_subsection_insert_supplement_recovers_missing_moments(
+    replay_1992_480_finlex_oracle,
+) -> None:
     """Complex mixed amendments should recover explicit `§:ään uusi N momentti` inserts."""
-    master = pinned_replay("1992/480", mode="finlex_oracle")
+    master = replay_1992_480_finlex_oracle
     secs = _extract_sections_ir(master.ir)
 
     sec15 = secs["15"]
@@ -3256,9 +3273,11 @@ def test_large_johtolause_subsection_insert_supplement_recovers_missing_moments(
     assert "Kilpailuvirasto voi tarvittaessa antaa soveltamiskäytäntöään" in text29
 
 
-def test_insertions_originals_johtolause_recovers_missing_subsection_insert() -> None:
+def test_insertions_originals_johtolause_recovers_missing_subsection_insert(
+    replay_1992_480_finlex_oracle,
+) -> None:
     """Split insertions blocks should still compile the inserted subsection."""
-    master = pinned_replay("1992/480", mode="finlex_oracle")
+    master = replay_1992_480_finlex_oracle
     sec11f = _extract_sections_ir(master.ir)["11f"]
     labels = [child.label for child in sec11f.children if child.kind == IRNodeKind.SUBSECTION]
     text = irnode_to_text(sec11f)
@@ -3267,9 +3286,9 @@ def test_insertions_originals_johtolause_recovers_missing_subsection_insert() ->
     assert "sovelletaan myös liikepankeista ja muista osakeyhtiömuotoisista luottolaitoksista" in text
 
 
-def test_omission_bracketed_replace_drops_stale_predecessor_moment() -> None:
+def test_omission_bracketed_replace_drops_stale_predecessor_moment(replay_1992_480_finlex_oracle) -> None:
     """Bracketed single-subsection replaces must not leave the old predecessor moment behind."""
-    master = pinned_replay("1992/480", mode="finlex_oracle")
+    master = replay_1992_480_finlex_oracle
     sec2 = _extract_sections_ir(master.ir)["2"]
     labels = [child.label for child in sec2.children if child.kind == IRNodeKind.SUBSECTION]
     text = irnode_to_text(sec2)
@@ -3420,7 +3439,7 @@ def test_temporary_5e_section_expires_out_of_1995_1556_legal_pit() -> None:
     assert "1 päivän tammikuuta 2007 ja 31 päivän joulukuuta 2009 väliseltä ajalta" not in text4
 
 
-def test_1982_710_temporary_12c_section_expires_after_commencement_override() -> None:
+def test_1982_710_temporary_12c_section_expires_after_commencement_override(replay_1982_710_legal_pit) -> None:
     """Later voimaantulosäännös amendments must extend temporary section expiry.
 
     Chapter 2a was eventually repealed (2022/588 eff 2023-01-01), so the
@@ -3429,7 +3448,7 @@ def test_1982_710_temporary_12c_section_expires_after_commencement_override() ->
     version at 2016-05-01 (before its expiry of 2016-12-31), and the last
     timeline version must carry that expiry date.
     """
-    master = pinned_replay("1982/710", mode="legal_pit")
+    master = replay_1982_710_legal_pit
 
     timelines = master.timelines or {}
     target_tl = None
@@ -3447,18 +3466,18 @@ def test_1982_710_temporary_12c_section_expires_after_commencement_override() ->
     assert active_at_pit is not None, "section 12c must be active at 2016-05-01"
 
 
-def test_1982_710_omaishoidon_tuki_law_repeals_27abc_sections() -> None:
+def test_1982_710_omaishoidon_tuki_law_repeals_27abc_sections(replay_1982_710_legal_pit) -> None:
     """Standalone omaishoidon tuki law should repeal SHL 27 a-c via voimaantulo."""
-    master = pinned_replay("1982/710", mode="legal_pit")
+    master = replay_1982_710_legal_pit
     for label in ("27a", "27b", "27c"):
         sec = master.find_section(label)
         assert sec is not None
         assert sec.attrs.get("lawvm_repeal_placeholder") == "1"
 
 
-def test_1982_710_section_17_does_not_duplicate_second_moment_after_2005_938() -> None:
+def test_1982_710_section_17_does_not_duplicate_second_moment_after_2005_938(replay_1982_710_legal_pit) -> None:
     """Sparse moment replacement should not merge 17 § 2 mom into 1 mom."""
-    master = pinned_replay("1982/710", mode="legal_pit")
+    master = replay_1982_710_legal_pit
     sec17 = master.find_section("17")
 
     assert sec17 is not None
@@ -3467,7 +3486,7 @@ def test_1982_710_section_17_does_not_duplicate_second_moment_after_2005_938() -
     assert "Kunta voi 1 ja 2 momenteissa tarkoitettujen sosiaalipalveluiden lisäksi" in text17
 
 
-def test_1982_710_section_6_keeps_2006_1329_first_moment_after_temporary_expiry() -> None:
+def test_1982_710_section_6_keeps_2006_1329_first_moment_after_temporary_expiry(replay_1982_710_legal_pit) -> None:
     """Persistent 6 § 1 mom replacement must survive expiry of temporary 2 mom.
 
     Chapter 2 was repealed by 2022/588 (eff 2023-01-01) so section 6 no longer
@@ -3479,7 +3498,7 @@ def test_1982_710_section_6_keeps_2006_1329_first_moment_after_temporary_expiry(
     - the temporary section body (2003/155, which contained "Sen estämättä...")
       is no longer active at 2009-01-01
     """
-    master = pinned_replay("1982/710", mode="legal_pit")
+    master = replay_1982_710_legal_pit
 
     timelines = master.timelines or {}
 
@@ -3636,10 +3655,9 @@ def test_sec1_repeal_subsection_range_is_applied() -> None:
         assert sub is not None and sub.attrs.get("lawvm_repeal_placeholder") == "1", f"sub {lbl}"
 
 
-def test_kumottu_range_consolidation_reaches_nested_sections() -> None:
+def test_kumottu_range_consolidation_reaches_nested_sections(replay_1990_845_finlex_oracle) -> None:
     """Range consolidation must also rewrite chapter-contained sections after PIT materialization."""
-    master = pinned_replay("1990/845", mode="finlex_oracle")
-    sec = _extract_sections_ir(master.ir)["26"]
+    sec = _extract_sections_ir(replay_1990_845_finlex_oracle.ir)["26"]
     text = irnode_to_text(sec)
 
     # Subsections 2-3 should be repeal placeholders
@@ -3648,29 +3666,28 @@ def test_kumottu_range_consolidation_reaches_nested_sections() -> None:
         assert sub is not None and sub.attrs.get("lawvm_repeal_placeholder") == "1", f"sub {lbl}"
 
 
-def test_wrong_single_target_amendment_title_is_skipped() -> None:
+def test_wrong_single_target_amendment_title_is_skipped(replay_1990_845_finlex_oracle) -> None:
     """A single-target amendment of another statute must not rewrite this parent by section-number collision."""
-    master = pinned_replay("1990/845", mode="finlex_oracle")
-    sec = _extract_sections_ir(master.ir)["12"]
+    sec = _extract_sections_ir(replay_1990_845_finlex_oracle.ir)["12"]
     text = irnode_to_text(sec)
 
     assert "Ajoneuvorekisteristä voidaan luovuttaa tietoja mielipide- ja markkinatutkimukseen" not in text
     assert "Lyhytaikaista ajokorttia seuraavan" in text
 
 
-def test_plain_subsection_insert_chains_keep_numeric_order() -> None:
+def test_plain_subsection_insert_chains_keep_numeric_order(replay_1990_845_finlex_oracle) -> None:
     """Pure plain momentti insert chains should apply in ascending subsection order."""
-    master = pinned_replay("1990/845", mode="finlex_oracle")
-    sec = _extract_sections_ir(master.ir)["2"]
+    sec = _extract_sections_ir(replay_1990_845_finlex_oracle.ir)["2"]
     labels = [child.label for child in sec.children if child.kind == IRNodeKind.SUBSECTION]
 
     assert labels == ["1", "2", "3", "4", "5"]
 
 
-def test_later_inserted_whole_section_repeal_respects_oracle_horizon_in_finlex_oracle() -> None:
+def test_later_inserted_whole_section_repeal_respects_oracle_horizon_in_finlex_oracle(
+    replay_1990_845_finlex_oracle,
+) -> None:
     """Later-added sections stay live until the oracle horizon reaches the repeal date."""
-    master = pinned_replay("1990/845", mode="finlex_oracle")
-    secs = _extract_sections_ir(master.ir)
+    secs = _extract_sections_ir(replay_1990_845_finlex_oracle.ir)
 
     assert "31a" not in secs
 
@@ -3756,11 +3773,11 @@ def test_apply_overlays_records_duplicate_normalized_sibling_issue() -> None:
     )
 
 
-def test_repealed_section_ranges_collapse_in_finlex_oracle_materialization() -> None:
+def test_repealed_section_ranges_collapse_in_finlex_oracle_materialization(
+    replay_1990_845_finlex_oracle,
+) -> None:
     """Future repeal ranges must stay live before the oracle horizon reaches them."""
-    master = pinned_replay("1990/845", mode="finlex_oracle")
-
-    secs = _extract_sections_ir(master.ir)
+    secs = _extract_sections_ir(replay_1990_845_finlex_oracle.ir)
     assert "39" not in secs
 
 

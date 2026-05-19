@@ -96,7 +96,7 @@ def test_classify_statute_1974_258_repeal_stub_is_editorial_convention() -> None
     replay = pinned_replay("1974/258", mode="finlex_oracle", quiet=True)
     assert replay.materialized_state.find_section("15") is None
 
-    result = _classify_statute("1974/258", "finlex_oracle")
+    result = _classify_statute("1974/258", "finlex_oracle", replay_result=replay)
 
     assert result is not None
     row = next(item for item in result.section_results if item["section"] == "section:15")
@@ -2146,8 +2146,51 @@ def test_classify_statute_replays_quietly(monkeypatch) -> None:
     assert quiet_calls == [True]
 
 
-def test_classify_statute_suppresses_raw_replay_failed_chatter_for_1978_38(capsys) -> None:
-    result = _classify_statute("1978/38", "legal_pit")
+def test_classify_statute_suppresses_raw_replay_failed_chatter(capsys, monkeypatch) -> None:
+    class FakeMaster:
+        title = "Test statute"
+        materialized_state = SimpleNamespace(
+            ir=IRNode(kind=IRNodeKind.BODY, children=()),
+        )
+        source_adjudication = SimpleNamespace(source_pathologies=[])
+        findings = ()
+
+        def source_pathology_rows(self):
+            return ()
+
+        def serialize_text(self) -> str:
+            return ""
+
+    def fake_replay_xml(_sid: str, mode: str, compiled_ops_out=None, failed_ops_out=None, quiet=False, **_kwargs):
+        assert mode == "legal_pit"
+        if not quiet:
+            print("REPLACE 10 luku otsikko → FAILED")
+            print("INSERT 10 luku 16 § 2 mom → FAILED")
+        return FakeMaster()
+
+    monkeypatch.setattr("lawvm.tools.oracle_check.replay_xml", fake_replay_xml)
+    monkeypatch.setattr(
+        "lawvm.tools.oracle_check.get_consolidated_oracle_context",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            locator="",
+            cutoff_date=None,
+            oracle_version_amendment_id="",
+            selector_mode="latest_cached_editorial",
+        ),
+    )
+    monkeypatch.setattr("lawvm.tools.oracle_check.get_ground_truth_tree", lambda _sid: etree.fromstring("<act><body /></act>"))
+    monkeypatch.setattr("lawvm.tools.oracle_check.get_consolidated_meta", lambda _sid: (None, ""))
+    monkeypatch.setattr(
+        "lawvm.tools.audit._audit_html_one",
+        lambda _sid: SimpleNamespace(
+            missing_from_xml=[],
+            extra_in_xml=[],
+            html_error="",
+            noncommensurable_reason="",
+        ),
+    )
+
+    result = _classify_statute("1990/100", "legal_pit")
     out = capsys.readouterr().out
 
     assert result is not None

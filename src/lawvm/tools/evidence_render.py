@@ -53,6 +53,8 @@ class CompilerObservationsView:
 @dataclass(frozen=True)
 class ReviewRowView:
     statute_id: str = ""
+    evidence_review_lane: str = ""
+    evidence_review_materialization_lane: str = ""
     display_primary_tier: str = ""
     primary_proof_tier: str = ""
     proof_kinds: tuple[str, ...] = ()
@@ -78,6 +80,19 @@ class ReviewRowView:
     sparse_blockers: tuple[dict[str, Any], ...] = ()
     sparse_slot_binding_count: int = 0
     sparse_leftover_count: int = 0
+    enacted_source_status: str = ""
+    oracle_source_status: str = ""
+    enacted_source_size: int = 0
+    oracle_source_size: int = 0
+    enacted_source_sha256: str = ""
+    oracle_source_sha256: str = ""
+    enacted_source_url: str = ""
+    oracle_source_url: str = ""
+    uk_comparison_class: str = ""
+    uk_core_comparison: bool = False
+    uk_replay_adjudication_count: int = 0
+    uk_replay_adjudication_bucket_counts: dict[str, int] = field(default_factory=dict)
+    uk_replay_adjudication_kind_counts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -113,7 +128,19 @@ class ReviewSummaryView:
     by_evidence_context_degradation_rail: dict[str, int] = field(default_factory=dict)
     by_evidence_context_degradation_exception: dict[str, int] = field(default_factory=dict)
     by_mixed_replay_risk_reason: dict[str, int] = field(default_factory=dict)
+    by_evidence_review_lane: dict[str, int] = field(default_factory=dict)
+    by_evidence_review_materialization_lane: dict[str, int] = field(default_factory=dict)
+    by_enacted_source_status: dict[str, int] = field(default_factory=dict)
+    by_oracle_source_status: dict[str, int] = field(default_factory=dict)
+    by_uk_comparison_class: dict[str, int] = field(default_factory=dict)
+    by_uk_core_comparison: dict[str, int] = field(default_factory=dict)
+    by_uk_replay_adjudication_bucket: dict[str, int] = field(default_factory=dict)
+    by_uk_replay_adjudication_kind: dict[str, int] = field(default_factory=dict)
     evidence_context_degraded_count: int = 0
+    uk_metadata_backfill_enabled: bool | None = None
+    uk_oracle_alignment_enabled: bool | None = None
+    uk_applicability_mode: str = ""
+    uk_authority_mode: str = ""
     rows: tuple[ReviewRowView, ...] = ()
 
 
@@ -132,6 +159,212 @@ def _coerce_int_map(values: object) -> dict[str, int]:
         for key, value in mapping.items()
         if str(key)
     }
+
+
+def _coerce_mapping(values: object) -> Mapping[str, Any]:
+    if not isinstance(values, Mapping):
+        return {}
+    return cast(Mapping[str, Any], values)
+
+
+def _format_count_map(values: object) -> str:
+    counts = _coerce_int_map(values)
+    return ", ".join(f"{key}={value}" for key, value in sorted(counts.items()))
+
+
+def _uk_compiler_observation_text_lines(raw: object) -> tuple[str, ...]:
+    mapping = _coerce_mapping(raw)
+    if not mapping:
+        return ()
+    lines: list[str] = []
+    authority = _coerce_mapping(mapping.get("uk_source_authority_summary"))
+    if authority:
+        reason_text = _format_count_map(authority.get("authority_rejection_reason_counts"))
+        suffix = f" reasons=[{reason_text}]" if reason_text else ""
+        lines.append(
+            "authority: "
+            f"mode={authority.get('authority_mode', '')} "
+            f"metadata_backfill_ops={int(authority.get('metadata_backfill_op_count', 0) or 0)} "
+            f"rejections={int(authority.get('authority_rejection_count', 0) or 0)}"
+            f"{suffix}"
+        )
+    compile_rejections = _coerce_mapping(mapping.get("uk_compile_rejection_summary"))
+    compile_observations = _coerce_mapping(mapping.get("uk_compile_observation_summary"))
+    if compile_observations:
+        lines.append(
+            "compile observations: "
+            f"source_parse={int(compile_observations.get('source_parse_observation_count', 0) or 0)} "
+            f"feed_parse={int(compile_observations.get('effect_feed_parse_observation_count', 0) or 0)} "
+            f"effect_source_pathology={int(compile_observations.get('effect_source_pathology_observation_count', 0) or 0)} "
+            f"manual_compile_frontier={int(compile_observations.get('manual_compile_frontier_observation_count', 0) or 0)} "
+            f"source_acquisition={int(compile_observations.get('source_acquisition_observation_count', 0) or 0)} "
+            f"lowering={int(compile_observations.get('lowering_observation_count', 0) or 0)}"
+        )
+        source_parse_observation_rules = _format_count_map(
+            compile_observations.get("source_parse_observation_rule_counts")
+        )
+        if source_parse_observation_rules:
+            lines.append(f"source parse observation rules: {source_parse_observation_rules}")
+        feed_observation_rules = _format_count_map(
+            compile_observations.get("effect_feed_parse_observation_rule_counts")
+        )
+        if feed_observation_rules:
+            lines.append(f"feed observation rules: {feed_observation_rules}")
+        effect_source_pathology_observation_rules = _format_count_map(
+            compile_observations.get("effect_source_pathology_observation_rule_counts")
+        )
+        if effect_source_pathology_observation_rules:
+            lines.append(
+                "effect source pathology observation rules: "
+                f"{effect_source_pathology_observation_rules}"
+            )
+        manual_compile_status_counts = _format_count_map(
+            compile_observations.get("manual_compile_status_counts")
+        )
+        if manual_compile_status_counts:
+            lines.append(f"manual compile frontier statuses: {manual_compile_status_counts}")
+        manual_compile_rule_counts = _format_count_map(
+            compile_observations.get("manual_compile_rule_counts")
+        )
+        if manual_compile_rule_counts:
+            lines.append(f"manual compile frontier rules: {manual_compile_rule_counts}")
+        source_acquisition_observation_rules = _format_count_map(
+            compile_observations.get("source_acquisition_observation_rule_counts")
+        )
+        if source_acquisition_observation_rules:
+            lines.append(
+                f"source acquisition observation rules: {source_acquisition_observation_rules}"
+            )
+        lowering_observation_rules = _format_count_map(
+            compile_observations.get("lowering_observation_rule_counts")
+        )
+        if lowering_observation_rules:
+            lines.append(f"lowering observation rules: {lowering_observation_rules}")
+    if compile_rejections:
+        lines.append(
+            "compile rejections: "
+            f"source_parse={int(compile_rejections.get('source_parse_rejection_count', 0) or 0)} "
+            f"blocking_source_parse={int(compile_rejections.get('blocking_source_parse_rejection_count', 0) or 0)} "
+            f"feed_parse={int(compile_rejections.get('effect_feed_parse_rejection_count', 0) or 0)} "
+            f"blocking_feed_parse={int(compile_rejections.get('blocking_effect_feed_parse_rejection_count', 0) or 0)} "
+            f"effect_source_pathology={int(compile_rejections.get('effect_source_pathology_rejection_count', 0) or 0)} "
+            f"blocking_effect_source_pathology={int(compile_rejections.get('blocking_effect_source_pathology_rejection_count', 0) or 0)} "
+            f"source_acquisition={int(compile_rejections.get('source_acquisition_rejection_count', 0) or 0)} "
+            f"blocking_source_acquisition={int(compile_rejections.get('blocking_source_acquisition_rejection_count', 0) or 0)} "
+            f"lowering={int(compile_rejections.get('lowering_rejection_count', 0) or 0)} "
+            f"blocking_lowering={int(compile_rejections.get('blocking_lowering_rejection_count', 0) or 0)}"
+        )
+        source_parse_rules = _format_count_map(compile_rejections.get("source_parse_rejection_rule_counts"))
+        if source_parse_rules:
+            lines.append(f"source parse rules: {source_parse_rules}")
+        blocking_source_parse_rules = _format_count_map(
+            compile_rejections.get("blocking_source_parse_rejection_rule_counts")
+        )
+        if blocking_source_parse_rules:
+            lines.append(f"blocking source parse rules: {blocking_source_parse_rules}")
+        feed_rules = _format_count_map(compile_rejections.get("effect_feed_parse_rejection_rule_counts"))
+        if feed_rules:
+            lines.append(f"feed rules: {feed_rules}")
+        blocking_feed_rules = _format_count_map(
+            compile_rejections.get("blocking_effect_feed_parse_rejection_rule_counts")
+        )
+        if blocking_feed_rules:
+            lines.append(f"blocking feed rules: {blocking_feed_rules}")
+        effect_source_pathology_rules = _format_count_map(
+            compile_rejections.get("effect_source_pathology_rejection_rule_counts")
+        )
+        if effect_source_pathology_rules:
+            lines.append(f"effect source pathology rules: {effect_source_pathology_rules}")
+        blocking_effect_source_pathology_rules = _format_count_map(
+            compile_rejections.get("blocking_effect_source_pathology_rejection_rule_counts")
+        )
+        if blocking_effect_source_pathology_rules:
+            lines.append(
+                "blocking effect source pathology rules: "
+                f"{blocking_effect_source_pathology_rules}"
+            )
+        source_acquisition_rules = _format_count_map(
+            compile_rejections.get("source_acquisition_rejection_rule_counts")
+        )
+        if source_acquisition_rules:
+            lines.append(f"source acquisition rules: {source_acquisition_rules}")
+        blocking_source_acquisition_rules = _format_count_map(
+            compile_rejections.get("blocking_source_acquisition_rejection_rule_counts")
+        )
+        if blocking_source_acquisition_rules:
+            lines.append(
+                f"blocking source acquisition rules: {blocking_source_acquisition_rules}"
+            )
+        lowering_rules = _format_count_map(compile_rejections.get("lowering_rejection_rule_counts"))
+        if lowering_rules:
+            lines.append(f"lowering rules: {lowering_rules}")
+        blocking_lowering_rules = _format_count_map(
+            compile_rejections.get("blocking_lowering_rejection_rule_counts")
+        )
+        if blocking_lowering_rules:
+            lines.append(f"blocking lowering rules: {blocking_lowering_rules}")
+    replay_adjudications = _coerce_mapping(mapping.get("uk_replay_adjudication_summary"))
+    if replay_adjudications:
+        total = int(replay_adjudications.get("replay_adjudication_count", 0) or 0)
+        if total:
+            lines.append(f"replay adjudications: total={total}")
+            bucket_counts = _format_count_map(
+                replay_adjudications.get("replay_adjudication_bucket_counts")
+            )
+            if bucket_counts:
+                lines.append(f"replay adjudication buckets: {bucket_counts}")
+            kind_counts = _format_count_map(
+                replay_adjudications.get("replay_adjudication_kind_counts")
+            )
+            if kind_counts:
+                lines.append(f"replay adjudication kinds: {kind_counts}")
+    residual_claim = _coerce_mapping(mapping.get("uk_residual_claim_summary"))
+    if residual_claim:
+        lines.append(
+            "residual claim: "
+            f"tier={residual_claim.get('selected_tier', '')} "
+            f"kind={residual_claim.get('selected_kind', '')} "
+            f"comparison={residual_claim.get('comparison_class', '')} "
+            f"core={residual_claim.get('core_comparison', False)} "
+            f"only_in_replayed={int(residual_claim.get('only_in_replayed_count', 0) or 0)} "
+            f"only_in_oracle={int(residual_claim.get('only_in_oracle_count', 0) or 0)} "
+            f"section_claims={int(residual_claim.get('section_claim_count', 0) or 0)}"
+        )
+    witness = _coerce_mapping(mapping.get("uk_witness_migration_summary"))
+    if witness:
+        lines.append(
+            "witness migration: "
+            f"payload_sidecars={int(witness.get('payload_sidecar_attached_op_count', 0) or 0)} "
+            f"text_rewrite_witness={int(witness.get('text_rewrite_witness_op_count', 0) or 0)} "
+            f"fragment_runtime_fallback={int(witness.get('fragment_substitution_runtime_note_fallback_count', 0) or 0)} "
+            f"insertion_note_only={int(witness.get('insertion_anchor_note_only_count', 0) or 0)}"
+        )
+    alignment = _coerce_mapping(mapping.get("uk_oracle_alignment_summary"))
+    if alignment:
+        method_text = _format_count_map(alignment.get("match_method_counts"))
+        suffix = f" methods=[{method_text}]" if method_text else ""
+        lines.append(
+            "oracle alignment: "
+            f"enabled={alignment.get('enabled', '')} "
+            f"stage={alignment.get('stage', '')} "
+            f"changed={int(alignment.get('changed_count', 0) or 0)} "
+            f"oracle_assigned={int(alignment.get('oracle_assigned_count', 0) or 0)} "
+            f"local_fallback={int(alignment.get('local_fallback_count', 0) or 0)} "
+            f"before_nodes={int(alignment.get('before_node_count', 0) or 0)} "
+            f"after_nodes={int(alignment.get('after_node_count', 0) or 0)} "
+            f"node_mismatch={alignment.get('node_count_mismatch', False)}"
+            f"{suffix}"
+        )
+    applicability = _coerce_mapping(mapping.get("uk_applicability_summary"))
+    if applicability:
+        lines.append(
+            "applicability: "
+            f"effective_date={int(applicability.get('effective_date_op_count', 0) or 0)} "
+            f"multi_in_force={int(applicability.get('multi_in_force_date_op_count', 0) or 0)} "
+            f"requires_applied={int(applicability.get('requires_applied_op_count', 0) or 0)} "
+            f"unapplied={int(applicability.get('unapplied_op_count', 0) or 0)}"
+        )
+    return tuple(lines)
 
 
 def _coerce_compiler_observations(raw: object) -> CompilerObservationsView:
@@ -211,6 +444,10 @@ def _coerce_review_rows(raw: object) -> tuple[ReviewRowView, ...]:
         rows.append(
             ReviewRowView(
                 statute_id=str(mapping.get("statute_id") or ""),
+                evidence_review_lane=str(mapping.get("evidence_review_lane") or ""),
+                evidence_review_materialization_lane=str(
+                    mapping.get("evidence_review_materialization_lane") or ""
+                ),
                 display_primary_tier=str(mapping.get("display_primary_tier") or ""),
                 primary_proof_tier=str(mapping.get("primary_proof_tier") or ""),
                 proof_kinds=_coerce_str_tuple(mapping.get("proof_kinds", ())),
@@ -248,6 +485,25 @@ def _coerce_review_rows(raw: object) -> tuple[ReviewRowView, ...]:
                 ),
                 sparse_slot_binding_count=int(mapping.get("sparse_slot_binding_count", 0) or 0),
                 sparse_leftover_count=int(mapping.get("sparse_leftover_count", 0) or 0),
+                enacted_source_status=str(mapping.get("enacted_source_status") or ""),
+                oracle_source_status=str(mapping.get("oracle_source_status") or ""),
+                enacted_source_size=int(mapping.get("enacted_source_size", 0) or 0),
+                oracle_source_size=int(mapping.get("oracle_source_size", 0) or 0),
+                enacted_source_sha256=str(mapping.get("enacted_source_sha256") or ""),
+                oracle_source_sha256=str(mapping.get("oracle_source_sha256") or ""),
+                enacted_source_url=str(mapping.get("enacted_source_url") or ""),
+                oracle_source_url=str(mapping.get("oracle_source_url") or ""),
+                uk_comparison_class=str(mapping.get("uk_comparison_class") or ""),
+                uk_core_comparison=bool(mapping.get("uk_core_comparison", False)),
+                uk_replay_adjudication_count=int(
+                    mapping.get("uk_replay_adjudication_count", 0) or 0
+                ),
+                uk_replay_adjudication_bucket_counts=_coerce_int_map(
+                    mapping.get("uk_replay_adjudication_bucket_counts", {})
+                ),
+                uk_replay_adjudication_kind_counts=_coerce_int_map(
+                    mapping.get("uk_replay_adjudication_kind_counts", {})
+                ),
             )
         )
     return tuple(rows)
@@ -257,6 +513,8 @@ def _coerce_review_summary(review: object) -> ReviewSummaryView:
     if not isinstance(review, Mapping):
         return ReviewSummaryView()
     review_map = cast(Mapping[str, Any], review)
+    uk_metadata_backfill_raw = review_map.get("uk_metadata_backfill_enabled")
+    uk_oracle_alignment_raw = review_map.get("uk_oracle_alignment_enabled")
     return ReviewSummaryView(
         artifact_count=(
             int(review_map["artifact_count"]) if "artifact_count" in review_map and review_map["artifact_count"] is not None else None
@@ -297,7 +555,29 @@ def _coerce_review_summary(review: object) -> ReviewSummaryView:
             review_map.get("by_evidence_context_degradation_exception", {})
         ),
         by_mixed_replay_risk_reason=_coerce_int_map(review_map.get("by_mixed_replay_risk_reason", {})),
+        by_evidence_review_lane=_coerce_int_map(review_map.get("by_evidence_review_lane", {})),
+        by_evidence_review_materialization_lane=_coerce_int_map(
+            review_map.get("by_evidence_review_materialization_lane", {})
+        ),
+        by_enacted_source_status=_coerce_int_map(review_map.get("by_enacted_source_status", {})),
+        by_oracle_source_status=_coerce_int_map(review_map.get("by_oracle_source_status", {})),
+        by_uk_comparison_class=_coerce_int_map(review_map.get("by_uk_comparison_class", {})),
+        by_uk_core_comparison=_coerce_int_map(review_map.get("by_uk_core_comparison", {})),
+        by_uk_replay_adjudication_bucket=_coerce_int_map(
+            review_map.get("by_uk_replay_adjudication_bucket", {})
+        ),
+        by_uk_replay_adjudication_kind=_coerce_int_map(
+            review_map.get("by_uk_replay_adjudication_kind", {})
+        ),
         evidence_context_degraded_count=int(review_map.get("evidence_context_degraded_count", 0) or 0),
+        uk_metadata_backfill_enabled=(
+            bool(uk_metadata_backfill_raw) if uk_metadata_backfill_raw is not None else None
+        ),
+        uk_oracle_alignment_enabled=(
+            bool(uk_oracle_alignment_raw) if uk_oracle_alignment_raw is not None else None
+        ),
+        uk_applicability_mode=str(review_map.get("uk_applicability_mode") or ""),
+        uk_authority_mode=str(review_map.get("uk_authority_mode") or ""),
         rows=_coerce_review_rows(review_map.get("rows", ())),
     )
 
@@ -489,7 +769,9 @@ def _render_markdown_bundle(bundle: Dict, *, oracle_only: bool = False) -> str:
     proof_tiers = bundle.get("proof_tiers") or []
     if proof_tiers:
         lines.append(f"**All Tiers:** {', '.join(proof_tiers)}")
-    compiler_observations = _coerce_compiler_observations(bundle.get("compiler_observations"))
+    raw_compiler_observations = bundle.get("compiler_observations")
+    compiler_observations = _coerce_compiler_observations(raw_compiler_observations)
+    uk_compiler_lines = _uk_compiler_observation_text_lines(raw_compiler_observations)
     if any(
         (
             compiler_observations.elaboration_observation_count,
@@ -505,6 +787,7 @@ def _render_markdown_bundle(bundle: Dict, *, oracle_only: bool = False) -> str:
             compiler_observations.provenance_projection_rows,
             compiler_observations.section_bisect_rows_with_observation_support,
             compiler_observations.unowned_observation_rows,
+            uk_compiler_lines,
         )
     ):
         unowned_count, unowned_family_summary = _summarize_unowned_observations(compiler_observations)
@@ -532,6 +815,8 @@ def _render_markdown_bundle(bundle: Dict, *, oracle_only: bool = False) -> str:
                     f"target=`{item.get('target_unit_kind', '')}` coords=`{target_coords}` "
                     f"path=`{target_path}` count={int(item.get('count', 0) or 0)}"
                 )
+        for line in uk_compiler_lines:
+            lines.append(f"- UK {line}")
     lines.append("")
     lines.append("## Proof Claims")
     for claim in bundle.get("proof_claims", []):
@@ -849,7 +1134,9 @@ def _print_evidence_bundle(bundle: Dict) -> None:
                 f"{item.get('rail', '')} {item.get('exception_type', '')}: "
                 f"{item.get('message', '')}"
             )
-    compiler_observations = _coerce_compiler_observations(bundle.get("compiler_observations"))
+    raw_compiler_observations = bundle.get("compiler_observations")
+    compiler_observations = _coerce_compiler_observations(raw_compiler_observations)
+    uk_compiler_lines = _uk_compiler_observation_text_lines(raw_compiler_observations)
     if any(
         (
             compiler_observations.elaboration_observation_count,
@@ -865,6 +1152,7 @@ def _print_evidence_bundle(bundle: Dict) -> None:
             compiler_observations.provenance_projection_rows,
             compiler_observations.section_bisect_rows_with_observation_support,
             compiler_observations.unowned_observation_rows,
+            uk_compiler_lines,
         )
     ):
         unowned_count, unowned_family_summary = _summarize_unowned_observations(compiler_observations)
@@ -891,12 +1179,18 @@ def _print_evidence_bundle(bundle: Dict) -> None:
                     f"path={item.get('target_path', '')} "
                     f"count={int(item.get('count', 0) or 0)}"
                 )
+        if uk_compiler_lines:
+            print("UK compiler obs:")
+            for line in uk_compiler_lines:
+                print(f"  {line}")
     print()
 
     print("Claims:")
     for claim in bundle["proof_claims"]:
-        print(f"  {claim['tier']}  {claim['kind']}")
-        print(f"    {claim['summary']}")
+        print(f"  {claim.get('tier', '')}  {claim.get('kind', '')}")
+        summary = str(claim.get("summary") or "")
+        if summary:
+            print(f"    {summary}")
     print()
 
     if bundle.get("section_claims"):
@@ -1004,6 +1298,53 @@ def _print_review_summary(review: Dict) -> None:
         print(f"Statutes      : {summary.statute_count}")
     print(f"Bundles       : {summary.bundle_count}")
     print(f"Selected      : {summary.selected_count}")
+    if summary.by_evidence_review_lane or summary.by_evidence_review_materialization_lane:
+        lanes = ", ".join(
+            f"{lane}={count}" for lane, count in summary.by_evidence_review_lane.items()
+        ) or "-"
+        materialization = ", ".join(
+            f"{lane}={count}"
+            for lane, count in summary.by_evidence_review_materialization_lane.items()
+        ) or "-"
+        print(f"Review Lanes  : input={lanes} materialization={materialization}")
+    if (
+        summary.uk_metadata_backfill_enabled is not None
+        or summary.uk_oracle_alignment_enabled is not None
+        or summary.uk_applicability_mode
+        or summary.uk_authority_mode
+    ):
+        print(
+            "UK Regime     : "
+            f"metadata_backfill={summary.uk_metadata_backfill_enabled} "
+            f"oracle_alignment={summary.uk_oracle_alignment_enabled} "
+            f"applicability={summary.uk_applicability_mode or '-'} "
+            f"authority={summary.uk_authority_mode or '-'}"
+        )
+    if summary.by_enacted_source_status or summary.by_oracle_source_status:
+        enacted = ", ".join(
+            f"{status}={count}" for status, count in summary.by_enacted_source_status.items()
+        ) or "-"
+        oracle = ", ".join(
+            f"{status}={count}" for status, count in summary.by_oracle_source_status.items()
+        ) or "-"
+        print(f"UK Source     : enacted={enacted} oracle={oracle}")
+    if summary.by_uk_comparison_class or summary.by_uk_core_comparison:
+        classes = ", ".join(
+            f"{name}={count}" for name, count in summary.by_uk_comparison_class.items()
+        ) or "-"
+        core = ", ".join(
+            f"{name}={count}" for name, count in summary.by_uk_core_comparison.items()
+        ) or "-"
+        print(f"UK Compare    : class={classes} core={core}")
+    if summary.by_uk_replay_adjudication_bucket or summary.by_uk_replay_adjudication_kind:
+        buckets = ", ".join(
+            f"{name}={count}"
+            for name, count in summary.by_uk_replay_adjudication_bucket.items()
+        ) or "-"
+        kinds = ", ".join(
+            f"{name}={count}" for name, count in summary.by_uk_replay_adjudication_kind.items()
+        ) or "-"
+        print(f"UK Replay Adj : buckets={buckets} kinds={kinds}")
     active_filters = [
         f"{key}={value}"
         for key, value in summary.filters.items()
@@ -1169,6 +1510,12 @@ def _print_review_summary(review: Dict) -> None:
     print("Top Rows:")
     for row in summary.rows:
         kinds = ", ".join(row.proof_kinds) or "-"
+        review_lane_suffix = ""
+        if row.evidence_review_lane or row.evidence_review_materialization_lane:
+            review_lane_suffix = (
+                f"review_lane={row.evidence_review_lane or '-'} "
+                f"review_materialization={row.evidence_review_materialization_lane or '-'} "
+            )
         section_kinds = ", ".join(row.selected_section_claim_kinds) or "-"
         defeated_kinds = ", ".join(row.defeated_section_claim_kinds) or "-"
         section_rules = ", ".join(row.selected_section_claim_rules) or "-"
@@ -1190,8 +1537,43 @@ def _print_review_summary(review: Dict) -> None:
             for item in row.sparse_blockers
             if str(item.get("source_statute", "") or "") or str(item.get("section", "") or "")
         ) or "-"
+        uk_suffix = ""
+        has_uk_surface = any(
+            (
+                row.enacted_source_status,
+                row.oracle_source_status,
+                row.enacted_source_url,
+                row.oracle_source_url,
+                row.enacted_source_sha256,
+                row.oracle_source_sha256,
+                row.uk_comparison_class,
+                row.uk_replay_adjudication_count,
+                row.uk_replay_adjudication_bucket_counts,
+                row.uk_replay_adjudication_kind_counts,
+            )
+        )
+        if has_uk_surface:
+            uk_core = "yes" if row.uk_core_comparison else "no"
+            replay_buckets = _format_count_map(row.uk_replay_adjudication_bucket_counts) or "-"
+            replay_kinds = _format_count_map(row.uk_replay_adjudication_kind_counts) or "-"
+            uk_source = (
+                f"enacted={row.enacted_source_status or '-'}({row.enacted_source_size}b)"
+                f"@{row.enacted_source_url or '-'}"
+                f"#{row.enacted_source_sha256 or '-'} "
+                f"oracle={row.oracle_source_status or '-'}({row.oracle_source_size}b)"
+                f"@{row.oracle_source_url or '-'}"
+                f"#{row.oracle_source_sha256 or '-'}"
+            )
+            uk_suffix = (
+                f"uk_source=[{uk_source}] "
+                f"uk_compare={row.uk_comparison_class or '-'} uk_core={uk_core} "
+                f"uk_replay_adj={row.uk_replay_adjudication_count} "
+                f"uk_replay_adj_buckets=[{replay_buckets}] "
+                f"uk_replay_adj_kinds=[{replay_kinds}] "
+            )
         print(
             f"  {row.statute_id:<12} {row.display_primary_tier or row.primary_proof_tier:<32} "
+            f"{review_lane_suffix}"
             f"claims=[{kinds}] sections=[{section_kinds}] defeated=[{defeated_kinds}] "
             f"section_rules=[{section_rules}] defeated_rules=[{defeated_rules}] "
             f"elaboration_obs=[{frontend_obs}] payload=[{payload_kinds}] tails=[{payload_tails}] "
@@ -1205,5 +1587,6 @@ def _print_review_summary(review: Dict) -> None:
             f"sparse_leftovers={row.sparse_leftover_count} "
             f"sparse_leftover_labels=[{leftover_labels}] "
             f"sparse_blockers=[{sparse_blockers}] "
+            f"{uk_suffix}"
             f"mixed_replay_risk={mixed_replay} mixed_replay_reasons=[{mixed_replay_reasons}]"
         )

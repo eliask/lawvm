@@ -152,6 +152,36 @@ These may later support:
 
 But the raw observation should still exist independently of the final claim.
 
+### 3.6 Manual compilation observations
+
+Meaning:
+
+- facts emitted when a deterministic frontend creates, consumes, rejects, or
+  validates a human/LLM compilation claim
+
+These observations are not replay operations by themselves. They explain which
+manual claim ledger was consulted, which claim was selected, and why the claim
+was accepted or rejected.
+
+Required distinctions:
+
+- `source_reconstruction_claim`: a claim about text/structure recovered from a
+  scan, PDF, OCR output, or LLM-transcribed source
+- `semantic_compile_claim`: a claim about legal amendment meaning recovered
+  from available source witnesses
+- `claim_validation`: deterministic validator result
+- `claim_rejection`: a failed or unsafe claim, preserved as evidence
+
+Required fields:
+
+- claim id
+- claim kind
+- claimant lane: human, LLM, OCR, tool, or combined review
+- validation status
+- source witness locator/hash
+- affected target/facet
+- accepted canonical op ids or rejected reason
+
 ## 4. Observation Shape
 
 The cleanroom target is one conceptual schema, even if the implementation uses
@@ -164,6 +194,7 @@ Minimum shared fields:
   - `frontend_sparse_payload_leftovers`
   - `apply_mutation`
   - `source_pathology`
+  - `manual_compilation`
 - `phase`
 - `source_statute`
 - `scope`

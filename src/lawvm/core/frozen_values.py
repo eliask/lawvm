@@ -40,6 +40,9 @@ class FrozenDict(dict[str, Any]):
         memo[id(self)] = frozen
         return frozen
 
+    def __reduce_ex__(self, protocol: int) -> tuple[type["FrozenDict"], tuple[dict[str, Any]]]:
+        return (FrozenDict, (dict(self),))
+
 
 def _freeze_value(value: Any) -> Any:
     """Recursively freeze mutable container values used inside kernel payloads."""

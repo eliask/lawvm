@@ -29,6 +29,17 @@ def test_legal_operation_accepts_explicit_text_patch_spec() -> None:
     assert op.text_patch.replacement == "new"
 
 
+def test_text_selector_accepts_final_occurrence_sentinel() -> None:
+    selector = TextSelector(match_text="and", occurrence=-1)
+
+    assert selector.occurrence == -1
+
+
+def test_text_selector_rejects_invalid_negative_occurrence() -> None:
+    with pytest.raises(ValueError, match="occurrence must be >= -1"):
+        TextSelector(match_text="and", occurrence=-2)
+
+
 def test_missing_text_patch_leaves_patch_empty_for_non_text_action() -> None:
     op = LegalOperation(
         op_id="txt-2",
@@ -102,6 +113,14 @@ def test_text_patch_spec_replace_requires_replacement() -> None:
         TextPatchSpec(
             kind=TextPatchKindEnum.REPLACE,
             selector=TextSelector(match_text="old"),
+        )
+
+
+def test_text_patch_spec_append_requires_replacement() -> None:
+    with pytest.raises(ValueError, match="requires replacement"):
+        TextPatchSpec(
+            kind=TextPatchKindEnum.APPEND,
+            selector=TextSelector(match_text="TEXT_END"),
         )
 
 

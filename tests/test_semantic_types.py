@@ -242,12 +242,13 @@ class TestTextPatchKindEnum:
         """TextPatchKindEnum.value must match the TextPatchKind Literal values."""
         assert TextPatchKindEnum.REPLACE.value == "replace"
         assert TextPatchKindEnum.DELETE.value == "delete"
+        assert TextPatchKindEnum.APPEND.value == "append"
 
     def test_not_string_comparable(self):
         assert TextPatchKindEnum.REPLACE != "replace"
 
     def test_all_members_present(self):
-        assert len(TextPatchKindEnum) == 2
+        assert len(TextPatchKindEnum) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +327,7 @@ class TestEnumStringRepr:
         assert IRNodeKind.SECTION.value == "section"
         assert IRNodeKind.CHAPTER.value == "chapter"
         assert IRNodeKind.CROSS_HEADING.value == "crossHeading"
+        assert IRNodeKind.PGROUP.value == "pgroup"
         assert str(IRNodeKind.SECTION) == "section"
         assert str(IRNodeKind.CROSS_HEADING) == "crossHeading"
         assert IRNodeKind.SECTION != "section"

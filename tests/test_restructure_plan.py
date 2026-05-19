@@ -13,6 +13,9 @@ from __future__ import annotations
 from collections import Counter
 from typing import Literal, cast
 
+from lxml import etree
+import pytest
+
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource, StructuralAction
 from lawvm.finland.restructure_plan import (
     deferred_plan_op_finding,
@@ -35,10 +38,15 @@ from lawvm.finland.body_pairing import (
     assign_body_units_subtree_aware,
     build_chapter_subtree_coverage,
 )
+from lawvm.finland.frontend_compile import normalize_and_compile_ops
+from lawvm.finland.grafter import get_corpus
 from lawvm.finland.ops import AmendmentOp
 from lawvm.finland.migration_ledger import MigrationLedger
 from lawvm.core.semantic_types import IRNodeKind
+from lawvm.finland.statute import ReplayResult
 from lawvm.finland.target_kind import TargetKind
+from lawvm.tools.inspect_amendment import _working_johtolause
+from tests.corpus_pin_helpers import pinned_replay
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +119,67 @@ def _make_chapter_insert_claim(
         chapter="",
         part=part,
     )
+
+
+def _build_live_relabel_plan(statute_id: str, source_id: str) -> tuple[ReplayResult, StructuralTransformPlan]:
+    corpus = get_corpus()
+    xml_bytes = corpus.read_source(source_id)
+    assert xml_bytes is not None
+
+    before_master = pinned_replay(
+        statute_id,
+        mode="legal_pit",
+        stop_before=source_id,
+        quiet=True,
+        build_full_products=False,
+    )
+    _muutos_tree, johto, used_sec1_fallback, should_apply, _route_reason = _working_johtolause(
+        statute_id,
+        before_master.title,
+        source_id,
+        xml_bytes,
+        "",
+    )
+    assert should_apply is True
+
+    phase = normalize_and_compile_ops(
+        johto,
+        etree.fromstring(xml_bytes),
+        before_master.replay_fold_state,
+        source_id,
+        source_title="",
+        used_sec1_fallback=used_sec1_fallback,
+        parent_id=statute_id,
+        strict_profile=None,
+    )
+    plan = build_restructure_plan(
+        statute_id,
+        source_id,
+        ops=phase.output,
+        uncov_ratio=0.0,
+        total_units=1,
+    )
+    assert plan is not None
+    return before_master, plan
+
+
+@pytest.fixture(scope="module")
+def live_relabel_plan_2017_320_2019_371() -> tuple[ReplayResult, StructuralTransformPlan]:
+    return _build_live_relabel_plan("2017/320", "2019/371")
+
+
+@pytest.fixture(scope="module")
+def live_relabel_plan_2017_320_2020_1256() -> tuple[ReplayResult, StructuralTransformPlan]:
+    return _build_live_relabel_plan("2017/320", "2020/1256")
+
+
+@pytest.fixture(scope="module")
+def executed_live_relabel_plan_2017_320_2019_371(
+    live_relabel_plan_2017_320_2019_371: tuple[ReplayResult, StructuralTransformPlan],
+) -> list[ExecutedOp]:
+    before_master, plan = live_relabel_plan_2017_320_2019_371
+    _new_tree, executed = execute_restructure_plan(plan, before_master.replay_fold_state.ir)
+    return executed
 
 
 # ---------------------------------------------------------------------------
@@ -1232,49 +1301,13 @@ class TestExecuteRelabel:
         assert by_target["part:5"].success is True
         assert [child.label for child in new_tree.children if child.kind is IRNodeKind.PART] == ["4", "5", "6"]
 
-    def test_2017_320_2019_371_single_relabel_resolves_pre_part_frame(self) -> None:
+    def test_2017_320_2019_371_single_relabel_resolves_pre_part_frame(
+        self,
+        live_relabel_plan_2017_320_2019_371: tuple[ReplayResult, StructuralTransformPlan],
+    ) -> None:
         """Live 2019/371 relabel lookup must resolve the owned pre-part source path."""
-        from lxml import etree
-
-        from lawvm.finland.frontend_compile import normalize_and_compile_ops
-        from lawvm.finland.grafter import get_corpus
-        from lawvm.tools.inspect_amendment import _working_johtolause
-        from tests.corpus_pin_helpers import pinned_replay
-
-        statute_id = "2017/320"
         source_id = "2019/371"
-        corpus = get_corpus()
-        xml_bytes = corpus.read_source(source_id)
-        assert xml_bytes is not None
-
-        before_master = pinned_replay(statute_id, mode="legal_pit", stop_before=source_id, quiet=True)
-        _muutos_tree, johto, used_sec1_fallback, should_apply, _route_reason = _working_johtolause(
-            statute_id,
-            before_master.title,
-            source_id,
-            xml_bytes,
-            "",
-        )
-        assert should_apply is True
-
-        phase = normalize_and_compile_ops(
-            johto,
-            etree.fromstring(xml_bytes),
-            before_master.replay_fold_state,
-            source_id,
-            source_title="",
-            used_sec1_fallback=used_sec1_fallback,
-            parent_id=statute_id,
-            strict_profile=None,
-        )
-        plan = _build_plan(
-            statute_id,
-            source_id,
-            ops=phase.output,
-            uncov_ratio=0.0,
-            total_units=1,
-        )
-        assert plan is not None
+        before_master, plan = live_relabel_plan_2017_320_2019_371
         op = next(candidate for candidate in plan.ops if candidate.target == "part:3/chapter:1/section:4")
 
         new_tree, executed = _execute_relabel(
@@ -1291,101 +1324,24 @@ class TestExecuteRelabel:
         section_labels = [child.label for child in chapter_1.children if child.kind is IRNodeKind.SECTION]
         assert "153" in section_labels
 
-    def test_2017_320_2019_371_relabel_skip_explains_consumed_pre_part_source(self) -> None:
+    def test_2017_320_2019_371_relabel_skip_explains_consumed_pre_part_source(
+        self,
+        executed_live_relabel_plan_2017_320_2019_371: list[ExecutedOp],
+    ) -> None:
         """Legacy consumed-pre-part fixture is now resolved and should succeed."""
-        from lxml import etree
-
-        from lawvm.finland.frontend_compile import normalize_and_compile_ops
-        from lawvm.finland.grafter import get_corpus
-        from lawvm.tools.inspect_amendment import _working_johtolause
-        from tests.corpus_pin_helpers import pinned_replay
-
-        statute_id = "2017/320"
-        source_id = "2019/371"
-        corpus = get_corpus()
-        xml_bytes = corpus.read_source(source_id)
-        assert xml_bytes is not None
-
-        before_master = pinned_replay(statute_id, mode="legal_pit", stop_before=source_id, quiet=True)
-        _muutos_tree, johto, used_sec1_fallback, should_apply, _route_reason = _working_johtolause(
-            statute_id,
-            before_master.title,
-            source_id,
-            xml_bytes,
-            "",
-        )
-        assert should_apply is True
-
-        phase = normalize_and_compile_ops(
-            johto,
-            etree.fromstring(xml_bytes),
-            before_master.replay_fold_state,
-            source_id,
-            source_title="",
-            used_sec1_fallback=used_sec1_fallback,
-            parent_id=statute_id,
-            strict_profile=None,
-        )
-        plan = build_restructure_plan(
-            statute_id,
-            source_id,
-            ops=phase.output,
-            uncov_ratio=0.0,
-            total_units=1,
-        )
-        assert plan is not None
-
-        _new_tree, executed = execute_restructure_plan(plan, before_master.replay_fold_state.ir)
+        executed = executed_live_relabel_plan_2017_320_2019_371
         target_exec = next(item for item in executed if item.op.target == "part:3/chapter:1/section:4")
 
         assert target_exec.success is True
         assert target_exec.reason_code == ""
 
-    def test_2017_320_2019_371_relabel_skips_classify_sparse_target_families(self) -> None:
+    def test_2017_320_2019_371_relabel_skips_classify_sparse_target_families(
+        self,
+        executed_live_relabel_plan_2017_320_2019_371: list[ExecutedOp],
+    ) -> None:
         """Live 2019/371 sparse misses should classify leaf-vs-container absence explicitly."""
-        from lxml import etree
-
-        from lawvm.finland.frontend_compile import normalize_and_compile_ops
-        from lawvm.finland.grafter import get_corpus
-        from lawvm.tools.inspect_amendment import _working_johtolause
-        from tests.corpus_pin_helpers import pinned_replay
-
-        statute_id = "2017/320"
         source_id = "2019/371"
-        corpus = get_corpus()
-        xml_bytes = corpus.read_source(source_id)
-        assert xml_bytes is not None
-
-        before_master = pinned_replay(statute_id, mode="legal_pit", stop_before=source_id, quiet=True)
-        _muutos_tree, johto, used_sec1_fallback, should_apply, _route_reason = _working_johtolause(
-            statute_id,
-            before_master.title,
-            source_id,
-            xml_bytes,
-            "",
-        )
-        assert should_apply is True
-
-        phase = normalize_and_compile_ops(
-            johto,
-            etree.fromstring(xml_bytes),
-            before_master.replay_fold_state,
-            source_id,
-            source_title="",
-            used_sec1_fallback=used_sec1_fallback,
-            parent_id=statute_id,
-            strict_profile=None,
-        )
-        plan = build_restructure_plan(
-            statute_id,
-            source_id,
-            ops=phase.output,
-            uncov_ratio=0.0,
-            total_units=1,
-        )
-        assert plan is not None
-
-        _new_tree, executed = execute_restructure_plan(plan, before_master.replay_fold_state.ir)
+        executed = executed_live_relabel_plan_2017_320_2019_371
         by_target = {
             item.op.target: item
             for item in executed
@@ -1402,49 +1358,12 @@ class TestExecuteRelabel:
         assert pathology.detail["code"] == "RECODIFICATION_SOURCE_CHAIN_GAP"
         assert pathology.detail["target_label"] == "2 luku 7 §"
 
-    def test_2017_320_2020_1256_vi_chapter_26_28_relabels_execute_in_part_vi(self) -> None:
+    def test_2017_320_2020_1256_vi_chapter_26_28_relabels_execute_in_part_vi(
+        self,
+        live_relabel_plan_2017_320_2020_1256: tuple[ReplayResult, StructuralTransformPlan],
+    ) -> None:
         """2020/1256 chapter 26-28 renumbers should execute from Part VI, not stale Part V."""
-        from lxml import etree
-
-        from lawvm.finland.frontend_compile import normalize_and_compile_ops
-        from lawvm.finland.grafter import get_corpus
-        from lawvm.tools.inspect_amendment import _working_johtolause
-        from tests.corpus_pin_helpers import pinned_replay
-
-        statute_id = "2017/320"
-        source_id = "2020/1256"
-        corpus = get_corpus()
-        xml_bytes = corpus.read_source(source_id)
-        assert xml_bytes is not None
-
-        before_master = pinned_replay(statute_id, mode="legal_pit", stop_before=source_id, quiet=True)
-        _muutos_tree, johto, used_sec1_fallback, should_apply, _route_reason = _working_johtolause(
-            statute_id,
-            before_master.title,
-            source_id,
-            xml_bytes,
-            "",
-        )
-        assert should_apply is True
-
-        phase = normalize_and_compile_ops(
-            johto,
-            etree.fromstring(xml_bytes),
-            before_master.replay_fold_state,
-            source_id,
-            source_title="",
-            used_sec1_fallback=used_sec1_fallback,
-            parent_id=statute_id,
-            strict_profile=None,
-        )
-        plan = build_restructure_plan(
-            statute_id,
-            source_id,
-            ops=phase.output,
-            uncov_ratio=0.0,
-            total_units=1,
-        )
-        assert plan is not None
+        before_master, plan = live_relabel_plan_2017_320_2020_1256
 
         _new_tree, executed = execute_restructure_plan(plan, before_master.replay_fold_state.ir)
         by_target_dest = {(item.op.target, item.op.destination): item for item in executed}
