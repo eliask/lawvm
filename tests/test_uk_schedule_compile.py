@@ -10651,6 +10651,52 @@ def test_compile_crossheading_before_paragraph_replace_lowers_to_heading_patch()
     assert observations[0]["blocking"] is False
 
 
+def test_compile_crossheading_before_section_word_substitution_lowers_to_heading_patch() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>89</Pnumber>
+          <Text>In the cross-heading before section 21 (Chief Surveillance Commissioner) for “Chief Surveillance” substitute “Investigatory Powers”.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_crossheading_before_section_word_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2016-11-29",
+        affected_uri="/id/asp/2000/11",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="11",
+        affected_provisions="s. 21 cross-heading",
+        affecting_uri="/id/ukpga/2016/25",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2016",
+        affecting_number="25",
+        affecting_provisions="Sch. 10 para. 89",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2016-11-29", "prospective": "false"}],
+    )
+
+    observations: list[dict[str, object]] = []
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(path=(("section", "21"),), special=FacetKind.HEADING)
+    assert ops[0].text_patch == _replace_patch("Chief Surveillance", "Investigatory Powers")
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_crossheading_before_anchor_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in observations] == [
+        "uk_effect_crossheading_before_anchor_text_patch_lowered"
+    ]
+    assert observations[0]["blocking"] is False
+
+
 def test_replay_crossheading_before_anchor_replace_mutates_crossheading_parent_only() -> None:
     base = IRStatute(
         statute_id="ukpga/2004/12",
@@ -10698,6 +10744,53 @@ def test_replay_crossheading_before_anchor_replace_mutates_crossheading_parent_o
     sibling = crossheading.children[1]
     assert crossheading.text == "Modifications of scheme rules"
     assert paragraph.text == "Paragraph body must not be replaced."
+    assert sibling.text == "Sibling body."
+
+
+def test_replay_crossheading_before_anchor_text_patch_mutates_crossheading_parent_only() -> None:
+    base = IRStatute(
+        statute_id="asp/2000/11",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.CROSSHEADING,
+                    label=None,
+                    text="Chief Surveillance Commissioner",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="21",
+                            text="Section body must not be replaced.",
+                            children=(),
+                        ),
+                        IRNode(kind=IRNodeKind.SECTION, label="22", text="Sibling body."),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    op = LegalOperation(
+        op_id="uk_test_crossheading_before_anchor_text_patch_apply",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "21"),), special=FacetKind.HEADING),
+        source=OperationSource(statute_id="ukpga/2016/25", title="Test Act", effective="2016-11-29"),
+        text_patch=_replace_patch("Chief Surveillance", "Investigatory Powers"),
+        provenance_tags=("text_rewrite_rule:uk_effect_crossheading_before_anchor_text_patch",),
+    )
+
+    result = replay_uk_ops(base, [op])
+
+    crossheading = result.body.children[0]
+    section = crossheading.children[0]
+    sibling = crossheading.children[1]
+    assert crossheading.text == "Investigatory Powers Commissioner"
+    assert section.text == "Section body must not be replaced."
     assert sibling.text == "Sibling body."
 
 

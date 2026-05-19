@@ -368,6 +368,7 @@ def _is_schedule_note_ref(ref: str) -> bool:
 
 
 _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE = "uk_effect_crossheading_before_anchor_replacement_text_patch"
+_CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE = "uk_effect_crossheading_before_anchor_text_patch"
 
 
 def _crossheading_before_anchor_replacement_text(extracted_text: Optional[str]) -> Optional[str]:
@@ -387,6 +388,32 @@ def _crossheading_before_anchor_replacement_text(extracted_text: Optional[str]) 
     replacement = match.group(1).strip()
     replacement = re.sub(r"\s+\.$", "", replacement).strip()
     return replacement or None
+
+
+def _crossheading_before_anchor_text_patch_fragment(extracted_text: Optional[str]) -> Optional[dict[str, str]]:
+    """Return a quoted text patch for ``cross-heading before section X`` claims."""
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    if not re.search(
+        r"\b(?:heading|cross-heading|cross heading)\s+before\s+(?:paragraph|section|article)\s+[0-9A-Za-z().]+",
+        text,
+        flags=re.I,
+    ):
+        return None
+    fragments = parse_fragment_substitution(text)
+    if len(fragments) != 1:
+        return None
+    fragment = dict(fragments[0])
+    original = str(fragment.get("original") or "").strip()
+    replacement = str(fragment.get("replacement") or "").strip()
+    if not original or replacement == "":
+        return None
+    return {
+        "original": original,
+        "replacement": replacement,
+        "rule_id": _CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE,
+    }
 
 
 def _clone_element(el: ET.Element) -> ET.Element:
@@ -6149,7 +6176,17 @@ def compile_effect_to_ir_ops(
             if action == "replace" and _is_crossheading_ref(t_str)
             else None
         )
-        if action == "replace" and _is_crossheading_ref(t_str) and crossheading_replacement_text is None:
+        crossheading_text_patch_fragment = (
+            _crossheading_before_anchor_text_patch_fragment(extracted_text)
+            if action == "replace" and _is_crossheading_ref(t_str)
+            else None
+        )
+        if (
+            action == "replace"
+            and _is_crossheading_ref(t_str)
+            and crossheading_replacement_text is None
+            and crossheading_text_patch_fragment is None
+        ):
             _append_uk_effect_lowering_rejection(
                 lowering_rejections_out,
                 rule_id="uk_effect_crossheading_replace_rejected",
@@ -6430,6 +6467,27 @@ def compile_effect_to_ir_ops(
                     "target_ref": t_str,
                     "target": str(target),
                     "replacement_text_preview": crossheading_replacement_text[:200],
+                },
+            )
+        if crossheading_text_patch_fragment is not None:
+            target = LegalAddress(path=target.path, special=FacetKind.HEADING)
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_effect_crossheading_before_anchor_text_patch_lowered",
+                family="target_facet_lowering",
+                reason_code="explicit_crossheading_before_anchor_text_patch",
+                reason=(
+                    "UK cross-heading replacement lowered as a typed heading "
+                    "facet text patch anchored by the named following provision"
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "target": str(target),
+                    "match_text": str(crossheading_text_patch_fragment["original"]),
+                    "replacement_text_preview": str(crossheading_text_patch_fragment["replacement"])[:200],
                 },
             )
         if heading_facet_target:
@@ -6767,6 +6825,12 @@ def compile_effect_to_ir_ops(
                     "rule_id": _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
                 }
             ]
+        elif crossheading_text_patch_fragment is not None:
+            curr_action = "text_replace"
+            content_ir = None
+            fragment_subs = [crossheading_text_patch_fragment]
+            op_text_match = crossheading_text_patch_fragment["original"]
+            op_text_replacement = crossheading_text_patch_fragment["replacement"]
         substituted_series_insert_detail = _substituted_series_new_sibling_insert_detail(
             effect_type=effect.effect_type,
             original_target_refs=original_targets_str,
@@ -6823,7 +6887,7 @@ def compile_effect_to_ir_ops(
             )
 
         word_level_text_patch_required = is_word_level and curr_action != "repeal"
-        if (curr_action == "replace" or word_level_text_patch_required) and extracted_text:
+        if fragment_subs is None and (curr_action == "replace" or word_level_text_patch_required) and extracted_text:
             treat_as_source_structural_replace = (
                 curr_action == "replace"
                 and not is_word_level
@@ -11407,7 +11471,11 @@ class UKReplayExecutor:
             if node:
                 recovery_rule_ids: list[str] = []
                 allow_crossheading_parent = any(
-                    str(note) == f"{_NOTE_TEXT_REWRITE_RULE}{_CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE}"
+                    str(note)
+                    in {
+                        f"{_NOTE_TEXT_REWRITE_RULE}{_CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE}",
+                        f"{_NOTE_TEXT_REWRITE_RULE}{_CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE}",
+                    }
                     for note in (op.provenance_tags or ())
                 )
                 heading_carrier = self._heading_facet_carrier_for_target(
