@@ -28,7 +28,7 @@ class NZPayloadNodeWitness:
     heading: str
     text: str
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "xml_id": self.xml_id,
             "path": list(self.path),
@@ -60,7 +60,7 @@ class NZPayloadWitnessRow:
     matches: tuple[NZPayloadNodeWitness, ...] = ()
     blocking_rule_id: str = ""
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "row_id": self.row_id,
             "operation_row_id": self.operation_row_id,
@@ -89,7 +89,7 @@ class NZPayloadSurfaceReport:
     operation_version_id: str
     rows: tuple[NZPayloadWitnessRow, ...]
 
-    def summary(self) -> dict[str, object]:
+    def summary(self) -> dict[str, Any]:
         status_counts = Counter(row.payload_status for row in self.rows)
         role_counts = Counter(row.payload_role or "__none__" for row in self.rows)
         semantics_counts = Counter(row.payload_semantics_status or "__none__" for row in self.rows)
@@ -125,7 +125,7 @@ class NZPayloadSurfaceReport:
         operation_family: str = "",
         instruction_shape: str = "",
         instruction_safety: str = "",
-    ) -> dict[str, object]:
+    ) -> dict[str, Any]:
         filtered_rows = _filter_rows(
             self.rows,
             payload_status=payload_status,
@@ -133,7 +133,7 @@ class NZPayloadSurfaceReport:
             instruction_shape=instruction_shape,
             instruction_safety=instruction_safety,
         )
-        payload: dict[str, object] = {
+        payload: dict[str, Any] = {
             "jurisdiction": "nz",
             "report_kind": "payload_witness_surface",
             "truth_claim": "archived_amending_act_payload_witnesses",

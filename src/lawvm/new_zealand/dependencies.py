@@ -13,7 +13,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Protocol
+from typing import Any, Iterable, Mapping, Protocol, cast
 
 from lxml import etree
 
@@ -43,7 +43,7 @@ class NZAmendingWorkRef:
     citation_text: str
     occurrence_count: int = 1
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "work_id": self.work_id,
             "title": self.title,
@@ -63,9 +63,9 @@ class NZDependencyReport:
     reprint_amendment_count: int
     history_note_count: int
     amending_works: tuple[NZAmendingWorkRef, ...]
-    diagnostics: tuple[dict[str, object], ...]
+    diagnostics: tuple[dict[str, Any], ...]
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "xml_locator": self.xml_locator,
             "work_id": self.work_id,
@@ -73,6 +73,22 @@ class NZDependencyReport:
             "reprint_amendment_count": self.reprint_amendment_count,
             "history_note_count": self.history_note_count,
             "amending_works": [ref.to_jsonable() for ref in self.amending_works],
+            "diagnostics": list(self.diagnostics),
+        }
+
+
+@dataclass(frozen=True)
+class NZLatestXMLLocatorSelection:
+    work_id: str
+    version_id: str
+    xml_locator: str
+    diagnostics: tuple[dict[str, Any], ...]
+
+    def to_jsonable(self) -> dict[str, Any]:
+        return {
+            "work_id": self.work_id,
+            "version_id": self.version_id,
+            "xml_locator": self.xml_locator,
             "diagnostics": list(self.diagnostics),
         }
 
@@ -87,7 +103,7 @@ def extract_dependency_report(
     root = etree.fromstring(xml_bytes)
     reprint_refs = list(_iter_reprint_amend_refs(root))
     history_refs = list(_iter_history_note_refs(root))
-    diagnostics: list[dict[str, object]] = []
+    diagnostics: list[dict[str, Any]] = []
     by_work: dict[str, NZAmendingWorkRef] = {}
     counts: Counter[str] = Counter()
 
@@ -136,24 +152,101 @@ def extract_dependency_report(
 
 def latest_xml_locator_for_work(archive: ArchiveReader, work_id: str) -> tuple[str, str]:
     """Return ``(version_id, xml_locator)`` for the newest archived version detail."""
+    selection = latest_xml_locator_selection_for_work(archive, work_id)
+    return selection.version_id, selection.xml_locator
+
+
+def latest_xml_locator_selection_for_work(archive: ArchiveReader, work_id: str) -> NZLatestXMLLocatorSelection:
+    """Return the latest archived XML locator plus rejected source-lane diagnostics."""
     prefix = f"https://api.legislation.govt.nz/v0/versions/{work_id}_en_"
     version_locs = sorted(archive.locators(prefix + "%"), reverse=True)
+    diagnostics: list[dict[str, Any]] = []
     for loc in version_locs:
         version_id = loc.rstrip("/").rsplit("/", 1)[-1]
         detail_bytes = archive.get(loc)
         if detail_bytes is None:
+            diagnostics.append(
+                _latest_xml_locator_candidate_diagnostic(
+                    work_id=work_id,
+                    version_id=version_id,
+                    version_locator=loc,
+                    reason_code="detail_missing",
+                    reason="NZ version detail candidate was skipped because the archived detail JSON is missing",
+                )
+            )
             continue
         try:
             detail = json.loads(detail_bytes.decode("utf-8"))
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            diagnostics.append(
+                _latest_xml_locator_candidate_diagnostic(
+                    work_id=work_id,
+                    version_id=version_id,
+                    version_locator=loc,
+                    reason_code="detail_json_invalid",
+                    reason="NZ version detail candidate was skipped because the archived detail JSON is invalid",
+                    detail={"json_error": str(exc)},
+                )
+            )
             continue
         xml_locator = _xml_locator_from_version_detail(detail)
-        if xml_locator and archive.get(xml_locator) is not None:
-            return version_id, xml_locator
-    return "", ""
+        if not xml_locator:
+            diagnostics.append(
+                _latest_xml_locator_candidate_diagnostic(
+                    work_id=work_id,
+                    version_id=version_id,
+                    version_locator=loc,
+                    reason_code="xml_locator_missing",
+                    reason="NZ version detail candidate was skipped because it exposes no XML format locator",
+                )
+            )
+            continue
+        if archive.get(xml_locator) is None:
+            diagnostics.append(
+                _latest_xml_locator_candidate_diagnostic(
+                    work_id=work_id,
+                    version_id=version_id,
+                    version_locator=loc,
+                    reason_code="xml_not_archived",
+                    reason="NZ version detail candidate was skipped because its XML locator is not archived",
+                    detail={"xml_locator": xml_locator},
+                )
+            )
+            continue
+        return NZLatestXMLLocatorSelection(
+            work_id=work_id,
+            version_id=version_id,
+            xml_locator=xml_locator,
+            diagnostics=tuple(diagnostics),
+        )
+    return NZLatestXMLLocatorSelection(work_id=work_id, version_id="", xml_locator="", diagnostics=tuple(diagnostics))
 
 
-def _xml_locator_from_version_detail(detail: Mapping[str, object]) -> str:
+def _latest_xml_locator_candidate_diagnostic(
+    *,
+    work_id: str,
+    version_id: str,
+    version_locator: str,
+    reason_code: str,
+    reason: str,
+    detail: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "nz_latest_xml_locator_candidate_rejected",
+        "phase": "acquisition",
+        "family": "source_pathology",
+        "work_id": work_id,
+        "version_id": version_id,
+        "version_locator": version_locator,
+        "reason": reason,
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+        "detail": {"reason_code": reason_code, **dict(detail or {})},
+    }
+
+
+def _xml_locator_from_version_detail(detail: Mapping[str, Any]) -> str:
     version_id = str(detail.get("version_id") or "")
     version_date = version_id.rsplit("_", 1)[-1] if "_" in version_id else ""
     formats = detail.get("formats")
@@ -162,8 +255,9 @@ def _xml_locator_from_version_detail(detail: Mapping[str, object]) -> str:
     for row in formats:
         if not isinstance(row, Mapping):
             continue
-        url = str(row.get("url") or "")
-        kind = str(row.get("type") or row.get("format") or "").lower()
+        row_map = cast(Mapping[str, Any], row)
+        url = str(row_map.get("url") or "")
+        kind = str(row_map.get("type") or row_map.get("format") or "").lower()
         if kind == "xml" or url.endswith(".xml"):
             if version_date:
                 return url.replace("/latest.xml", f"/{version_date}.xml")
@@ -218,7 +312,7 @@ def _iter_localname(root: etree._Element, localname: str) -> Iterable[etree._Ele
 
 
 def _node_text(node: etree._Element) -> str:
-    return " ".join("".join(node.itertext()).split())
+    return " ".join("".join(str(part) for part in node.itertext()).split())
 
 
 def _parse_act_citation(text: str) -> tuple[str, str, str] | None:
@@ -253,13 +347,17 @@ def _ref_sort_key(ref: NZAmendingWorkRef) -> tuple[int, int, str, str]:
 
 def main(args: Any) -> None:
     archive = open_farchive(Path(args.db))
+    selector_diagnostics: tuple[dict[str, Any], ...] = ()
     try:
         xml_locator = args.xml_locator or ""
         version_id = args.version_id or ""
         if not xml_locator:
             if not args.work_id:
                 raise SystemExit("ERROR: pass --work-id or --xml-locator")
-            version_id, xml_locator = latest_xml_locator_for_work(archive, args.work_id)
+            selection = latest_xml_locator_selection_for_work(archive, args.work_id)
+            version_id = selection.version_id
+            xml_locator = selection.xml_locator
+            selector_diagnostics = selection.diagnostics
             if not xml_locator:
                 raise SystemExit(f"ERROR: no archived latest XML found for {args.work_id}")
         data = archive.get(xml_locator)
@@ -274,6 +372,16 @@ def main(args: Any) -> None:
         work_id=args.work_id or "",
         version_id=version_id,
     )
+    if selector_diagnostics:
+        report = NZDependencyReport(
+            xml_locator=report.xml_locator,
+            work_id=report.work_id,
+            version_id=report.version_id,
+            reprint_amendment_count=report.reprint_amendment_count,
+            history_note_count=report.history_note_count,
+            amending_works=report.amending_works,
+            diagnostics=selector_diagnostics + report.diagnostics,
+        )
     if args.output_json:
         Path(args.output_json).parent.mkdir(parents=True, exist_ok=True)
         Path(args.output_json).write_text(

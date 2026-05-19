@@ -33,11 +33,11 @@ from lawvm.new_zealand.dependencies import (
 class NZClosureState:
     seed_work_ids: list[str] = field(default_factory=list)
     discovered_work_ids: list[str] = field(default_factory=list)
-    unresolved_work_ids: list[dict[str, object]] = field(default_factory=list)
-    dependency_reports: list[dict[str, object]] = field(default_factory=list)
-    sync_summaries: list[dict[str, object]] = field(default_factory=list)
+    unresolved_work_ids: list[dict[str, Any]] = field(default_factory=list)
+    dependency_reports: list[dict[str, Any]] = field(default_factory=list)
+    sync_summaries: list[dict[str, Any]] = field(default_factory=list)
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "seed_work_ids": self.seed_work_ids,
             "discovered_work_ids": self.discovered_work_ids,

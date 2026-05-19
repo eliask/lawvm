@@ -29,7 +29,7 @@ class NZNodeChange:
     before_heading: str = ""
     after_heading: str = ""
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "path": list(self.path),
             "change_type": self.change_type,
@@ -52,7 +52,7 @@ class NZArchivedVersion:
     xml_locator: str
     version_date: str = ""
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "version_id": self.version_id,
             "xml_locator": self.xml_locator,
@@ -69,7 +69,7 @@ class NZArchivedVersionDateWindow:
     rule_id: str = "nz_archived_xml_version_date_window_source_only"
     truth_claim: str = "source_version_date_window_not_effective_date"
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "work_id": self.work_id,
             "requested_version_date": self.requested_version_date,
@@ -90,7 +90,7 @@ class NZArchivedVersionChangeWindow:
     rule_id: str = "nz_archived_xml_version_change_window_source_only"
     truth_claim: str = "source_change_window_not_effective_date"
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "work_id": self.work_id,
             "requested_version_date": self.requested_version_date,
@@ -110,7 +110,7 @@ class NZVersionDiff:
     after_xml_locator: str
     changes: tuple[NZNodeChange, ...]
 
-    def summary(self) -> dict[str, object]:
+    def summary(self) -> dict[str, Any]:
         counts: dict[str, int] = {}
         for change in self.changes:
             counts[change.change_type] = counts.get(change.change_type, 0) + 1
@@ -123,7 +123,7 @@ class NZVersionDiff:
             "change_counts": counts,
         }
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "summary": self.summary(),
             "changes": [change.to_jsonable() for change in self.changes],

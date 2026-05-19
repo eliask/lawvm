@@ -119,7 +119,7 @@ def test_nz_corpus_sync_fetches_version_detail_and_xml_without_query_key(tmp_pat
         delay=0.0,
     )
 
-    stats = sync_nz_corpus(archive, api_key="secret-test-key", options=options, transport=transport)
+    stats = sync_nz_corpus(archive, api_key="test", options=options, transport=transport)
 
     assert stats.requests == 2
     assert stats.stored_json == 1
@@ -128,8 +128,8 @@ def test_nz_corpus_sync_fetches_version_detail_and_xml_without_query_key(tmp_pat
     assert archive.rows[xml_url].storage_class == "xml"
     metadata = archive.rows[version_url].metadata or {}
     assert metadata["request_url_without_api_key"] == version_url
-    assert "secret-test-key" not in json.dumps(metadata)
-    assert all(call[1] == "secret-test-key" for call in transport.calls)
+    assert "test" not in json.dumps(metadata)
+    assert all(call[1] == "test" for call in transport.calls)
 
 
 def test_nz_corpus_sync_canonicalizes_latest_xml_alias(tmp_path: Path) -> None:
@@ -161,7 +161,7 @@ def test_nz_corpus_sync_canonicalizes_latest_xml_alias(tmp_path: Path) -> None:
         delay=0.0,
     )
 
-    stats = sync_nz_corpus(archive, api_key="secret-test-key", options=options, transport=transport)
+    stats = sync_nz_corpus(archive, api_key="test", options=options, transport=transport)
 
     assert stats.stored_xml == 1
     assert canonical_xml_url in archive.rows
@@ -208,7 +208,7 @@ def test_nz_corpus_sync_searches_work_versions_and_records_missing_xml(tmp_path:
         delay=0.0,
     )
 
-    stats = sync_nz_corpus(archive, api_key="secret-test-key", options=options, transport=transport)
+    stats = sync_nz_corpus(archive, api_key="test", options=options, transport=transport)
 
     assert stats.requests == 3
     assert stats.works_seen == 1
@@ -246,7 +246,7 @@ def test_nz_corpus_sync_limits_versions_per_work(tmp_path: Path) -> None:
         delay=0.0,
     )
 
-    stats = sync_nz_corpus(archive, api_key="secret-test-key", options=options, transport=transport)
+    stats = sync_nz_corpus(archive, api_key="test", options=options, transport=transport)
 
     assert stats.versions_seen == 2
     assert f"https://api.legislation.govt.nz/v0/versions/{first_latest}/" in archive.rows
@@ -277,7 +277,7 @@ def test_nz_corpus_sync_stops_at_rate_limit_reserve(tmp_path: Path) -> None:
         reserve_remaining=100,
     )
 
-    stats = sync_nz_corpus(archive, api_key="secret-test-key", options=options, transport=transport)
+    stats = sync_nz_corpus(archive, api_key="test", options=options, transport=transport)
 
     assert stats.requests == 1
     assert stats.stopped_reason == "rate_limit_reserve_reached"
@@ -308,7 +308,7 @@ def test_nz_corpus_sync_retries_429_before_recording_failure(tmp_path: Path) -> 
         rate_limit_retry_attempts=1,
     )
 
-    stats = sync_nz_corpus(archive, api_key="secret-test-key", options=options, transport=transport)
+    stats = sync_nz_corpus(archive, api_key="test", options=options, transport=transport)
 
     assert transport.calls == 2
     assert stats.stored_json == 1

@@ -44,7 +44,7 @@ class NZEffectReadinessRow:
     payload_match_kinds: tuple[str, ...] = ()
     payload_match_headings: tuple[str, ...] = ()
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "row_id": self.row_id,
             "operation_row_id": self.operation_row_id,
@@ -79,7 +79,7 @@ class NZEffectReadinessReport:
     work_id: str
     rows: tuple[NZEffectReadinessRow, ...]
 
-    def summary(self) -> dict[str, object]:
+    def summary(self) -> dict[str, Any]:
         readiness_counts = Counter(row.effect_readiness_status for row in self.rows)
         family_counts = Counter(row.operation_family for row in self.rows)
         canonical_counts = Counter(row.canonical_family_candidate or "__none__" for row in self.rows)
@@ -116,7 +116,7 @@ class NZEffectReadinessReport:
         payload_status: str = "",
         instruction_semantic_candidate_status: str = "",
         operation_target_address_status: str = "",
-    ) -> dict[str, object]:
+    ) -> dict[str, Any]:
         filtered_rows = self.filtered_rows(
             effect_readiness_status=effect_readiness_status,
             operation_family=operation_family,
@@ -124,7 +124,7 @@ class NZEffectReadinessReport:
             instruction_semantic_candidate_status=instruction_semantic_candidate_status,
             operation_target_address_status=operation_target_address_status,
         )
-        payload: dict[str, object] = {
+        payload: dict[str, Any] = {
             "jurisdiction": "nz",
             "report_kind": "canonical_effect_readiness",
             "truth_claim": "pre_lowering_readiness_classification",

@@ -35,7 +35,7 @@ class NZEvidencePackReport:
     candidate_preflight: NZEffectCandidatePreflightReport
     instruction_workqueue: NZInstructionWorkQueueReport
 
-    def summary(self) -> dict[str, object]:
+    def summary(self) -> dict[str, Any]:
         operation_rows = self.operation_surface.operation_evidence_rows()
         operation_findings = self.operation_surface.finding_evidence_rows()
         candidate_rows = self.effect_candidates.operation_evidence_rows()
@@ -204,7 +204,7 @@ class NZEvidencePackReport:
         status: str = "",
         rule_id: str = "",
         blocking: bool = False,
-    ) -> dict[str, object]:
+    ) -> dict[str, Any]:
         rows = self.filtered_evidence_rows(
             surface=surface,
             row_kind=row_kind,
@@ -214,7 +214,7 @@ class NZEvidencePackReport:
         )
         selected_rows = rows if row_limit is None else rows[:row_limit]
         row_dicts = tuple(row.to_dict() for row in rows)
-        payload: dict[str, object] = {
+        payload: dict[str, Any] = {
             "jurisdiction": "nz",
             "report_kind": "shared_evidence_pack",
             "truth_claim": "evidence_rows_only",
@@ -370,8 +370,8 @@ def _jsonable_filters(
     status: str,
     rule_id: str,
     blocking: bool,
-) -> dict[str, object]:
-    filters: dict[str, object] = {
+) -> dict[str, Any]:
+    filters: dict[str, Any] = {
         key: value
         for key, value in {
             "surface": surface,
@@ -386,7 +386,7 @@ def _jsonable_filters(
     return filters
 
 
-def _evidence_rows_summary(rows: tuple[Mapping[str, Any], ...]) -> dict[str, object]:
+def _evidence_rows_summary(rows: tuple[Mapping[str, Any], ...]) -> dict[str, Any]:
     return {
         "row_kind_counts": _row_kind_counts(rows),
         "surface_status_counts": _surface_status_counts(rows),

@@ -202,7 +202,7 @@ class NZCanonicalEffectCandidateRow:
     payload_match_labels: tuple[str, ...] = ()
     payload_match_texts: tuple[str, ...] = ()
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "row_id": self.row_id,
             "operation_row_id": self.operation_row_id,
@@ -302,7 +302,7 @@ class NZCanonicalEffectCandidateReport:
     work_id: str
     rows: tuple[NZCanonicalEffectCandidateRow, ...]
 
-    def summary(self) -> dict[str, object]:
+    def summary(self) -> dict[str, Any]:
         status_counts = Counter(row.status for row in self.rows)
         emitted_rows = tuple(row for row in self.rows if row.status == "candidate_emitted")
         candidate_rows = tuple(row for row in emitted_rows if row.operation is not None)
@@ -467,7 +467,7 @@ class NZCanonicalEffectCandidateReport:
         latest_oracle_text_status: str = "",
         text_replace_witness_support_status: str = "",
         source_change_text_witness_status: str = "",
-    ) -> dict[str, object]:
+    ) -> dict[str, Any]:
         filtered_rows = self.filtered_rows(
             candidate_status=candidate_status,
             action=action,
@@ -488,7 +488,7 @@ class NZCanonicalEffectCandidateReport:
             text_replace_witness_support_status=text_replace_witness_support_status,
             source_change_text_witness_status=source_change_text_witness_status,
         )
-        payload: dict[str, object] = {
+        payload: dict[str, Any] = {
             "jurisdiction": "nz",
             "report_kind": "canonical_effect_candidates",
             "truth_claim": "candidate_canonical_effects_not_replayed",
@@ -677,7 +677,7 @@ class NZEffectCandidatePreflightReport:
     work_id: str
     candidate_report: NZCanonicalEffectCandidateReport
 
-    def summary(self) -> dict[str, object]:
+    def summary(self) -> dict[str, Any]:
         emitted_rows = tuple(row for row in self.candidate_report.rows if row.status == "candidate_emitted")
         candidate_rows = tuple(row for row in emitted_rows if row.operation is not None)
         source_change_only_rows = tuple(row for row in candidate_rows if _source_change_only_candidate(row))
@@ -738,8 +738,8 @@ class NZEffectCandidatePreflightReport:
             "blocking_rule_id": blocking_rule_id,
         }
 
-    def to_jsonable(self, *, summary_only: bool = False, row_limit: int | None = None) -> dict[str, object]:
-        payload: dict[str, object] = {
+    def to_jsonable(self, *, summary_only: bool = False, row_limit: int | None = None) -> dict[str, Any]:
+        payload: dict[str, Any] = {
             "jurisdiction": "nz",
             "report_kind": "effect_candidate_preflight",
             "truth_claim": "candidate_set_replay_precondition_check",
@@ -839,7 +839,7 @@ def _preflight_blocked_rows(
     )
 
 
-def _preflight_blocked_row_jsonable(row: NZCanonicalEffectCandidateRow) -> dict[str, object]:
+def _preflight_blocked_row_jsonable(row: NZCanonicalEffectCandidateRow) -> dict[str, Any]:
     payload = row.to_jsonable()
     payload["preflight_blocking_rule_id"] = _preflight_row_blocking_rule_id(row)
     payload["preflight_blocking_rule_ids"] = _preflight_row_blocking_rule_ids(row)
@@ -1588,7 +1588,7 @@ def _text_selector_occurrence(row: NZInstructionWorkQueueRow) -> int:
     return 1
 
 
-def _instruction_candidate_fields(row: NZInstructionWorkQueueRow | None) -> dict[str, object]:
+def _instruction_candidate_fields(row: NZInstructionWorkQueueRow | None) -> dict[str, Any]:
     if row is None:
         return {}
     return {
@@ -1617,7 +1617,7 @@ def _text_replace_witness_support_fields(
     *,
     witness_is_usable: bool,
     source_change_text_witnesses: Mapping[str, _SourceChangeTextWitness] | None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     witness = source_change_text_witnesses.get(row.operation_row_id) if source_change_text_witnesses is not None else None
     source_change_observed_status = witness is not None and witness.status in _TEXT_REPLACE_OBSERVED_SOURCE_CHANGE_STATUSES
     source_change_target_mismatch = (
@@ -1653,7 +1653,7 @@ def _source_change_witness_matches_target(
     return bool(row.latest_oracle_target_source_path) and witness.target_source_path == row.latest_oracle_target_source_path
 
 
-def _operation_context_fields(row: Any) -> dict[str, object]:
+def _operation_context_fields(row: Any) -> dict[str, Any]:
     return {
         "operation_family": row.operation_family,
         "operation_lowering_readiness_status": row.operation_lowering_readiness_status,
@@ -1668,7 +1668,7 @@ def _operation_context_fields(row: Any) -> dict[str, object]:
 def _source_witness_fields(
     row: NZOperationWitnessRow | None,
     source_version_date_windows: Mapping[str, NZArchivedVersionDateWindow] | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     if row is None:
         return {}
     return {
@@ -1693,7 +1693,7 @@ def _source_witness_fields(
 def _source_version_date_window_fields(
     row: NZOperationWitnessRow,
     source_version_date_windows: Mapping[str, NZArchivedVersionDateWindow] | None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     if source_version_date_windows is None:
         return {}
     if not row.amendment_date_iso:
@@ -1736,7 +1736,7 @@ def _source_version_date_window_fields(
 def _source_change_text_witness_fields(
     row: NZOperationWitnessRow,
     source_change_text_witnesses: Mapping[str, _SourceChangeTextWitness] | None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     if source_change_text_witnesses is None:
         return {}
     witness = source_change_text_witnesses.get(row.row_id)
@@ -1764,7 +1764,7 @@ def _source_change_text_witness_fields(
     }
 
 
-def _payload_match_witness_fields(row: NZPayloadWitnessRow | None) -> dict[str, object]:
+def _payload_match_witness_fields(row: NZPayloadWitnessRow | None) -> dict[str, Any]:
     if row is None:
         return {}
     return {
@@ -1775,7 +1775,7 @@ def _payload_match_witness_fields(row: NZPayloadWitnessRow | None) -> dict[str, 
     }
 
 
-def _operation_context_detail(row: NZCanonicalEffectCandidateRow) -> dict[str, object]:
+def _operation_context_detail(row: NZCanonicalEffectCandidateRow) -> dict[str, Any]:
     return {
         "operation_family": row.operation_family,
         "operation_lowering_readiness_status": row.operation_lowering_readiness_status,
@@ -1787,7 +1787,7 @@ def _operation_context_detail(row: NZCanonicalEffectCandidateRow) -> dict[str, o
     }
 
 
-def _source_witness_detail(row: NZCanonicalEffectCandidateRow) -> dict[str, object]:
+def _source_witness_detail(row: NZCanonicalEffectCandidateRow) -> dict[str, Any]:
     return {
         "source_path": row.source_path,
         "source_xml_id": row.source_xml_id,
@@ -1843,7 +1843,7 @@ def _legal_address(row: NZOperationWitnessRow) -> LegalAddress:
     return LegalAddress(path=path, special=special)
 
 
-def _operation_jsonable(operation: LegalOperation | None) -> dict[str, object] | None:
+def _operation_jsonable(operation: LegalOperation | None) -> dict[str, Any] | None:
     if operation is None:
         return None
     text_patch = None
@@ -1874,7 +1874,7 @@ def _operation_jsonable(operation: LegalOperation | None) -> dict[str, object] |
     }
 
 
-def _candidate_operation_detail(row: NZCanonicalEffectCandidateRow) -> dict[str, object]:
+def _candidate_operation_detail(row: NZCanonicalEffectCandidateRow) -> dict[str, Any]:
     if row.operation is None:
         return {
             "candidate_operation_missing": row.status == "candidate_emitted",

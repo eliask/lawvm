@@ -107,9 +107,9 @@ class NZBenchmarkWorkReport:
     oracle_agreement_status: str = "blocked_no_candidate_replay"
     oracle_agreement_blocking_rule_id: str = NZ_ORACLE_AGREEMENT_BLOCKED_RULE_ID
     oracle_agreement_exact_ratio: float | None = None
-    findings: tuple[dict[str, object], ...] = ()
+    findings: tuple[dict[str, Any], ...] = ()
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "work_id": self.work_id,
             "latest_version_id": self.latest_version_id,
@@ -233,7 +233,7 @@ class NZBenchmarkReport:
     available_work_count: int = 0
     max_works: int | None = None
 
-    def summary(self) -> dict[str, object]:
+    def summary(self) -> dict[str, Any]:
         source_ready = sum(1 for row in self.work_reports if row.source_status == "parsed")
         dependency_ready = sum(1 for row in self.work_reports if row.dependency_count > 0)
         diff_ready = sum(1 for row in self.work_reports if row.snapshot_diff_status == "diffed")
@@ -479,7 +479,7 @@ class NZBenchmarkReport:
             },
         }
 
-    def selection_context(self) -> dict[str, object]:
+    def selection_context(self) -> dict[str, Any]:
         selected_work_ids = self.selected_work_ids or tuple(row.work_id for row in self.work_reports)
         requested_work_ids = self.requested_work_ids
         selected_sample = selected_work_ids[:_SELECTION_WORK_ID_SAMPLE_LIMIT]
@@ -497,7 +497,7 @@ class NZBenchmarkReport:
             "truncated_by_max_works": self.max_works is not None and len(selected_work_ids) < base_count,
         }
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "jurisdiction": "nz",
             "report_kind": "benchmark_source_coverage",
@@ -1012,7 +1012,7 @@ def _triage_exemplars(
     return dict(sorted(exemplars.items()))
 
 
-def _string_int_mapping(value: object) -> dict[str, int]:
+def _string_int_mapping(value: Any) -> dict[str, int]:
     if not isinstance(value, Mapping):
         return {}
     return {str(key): int(count) for key, count in value.items()}
@@ -1042,7 +1042,7 @@ def _finding(
     reason: str,
     locator: str = "",
     blocking: bool,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     return {
         "rule_id": rule_id,
         "phase": phase,
