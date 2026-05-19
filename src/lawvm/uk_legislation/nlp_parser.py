@@ -638,6 +638,32 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
             patch["rule_id"] = "uk_effect_after_quoted_anchor_insert_text_patch"
         subs.append(patch)
 
+    matches_bare_quoted_anchor_insert = re.finditer(
+        r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+        r"[“\"'‘](?P<original>.*?)[”\"'’]\s+"
+        r"(?:there is inserted|there are inserted|there shall be inserted)"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]"
+        r"\s*;?\s*(?:and)?\s*\.?\s*$",
+        text,
+        re.I,
+    )
+    for m in matches_bare_quoted_anchor_insert:
+        original = m.group("original")
+        inserted = m.group("inserted")
+        joiner = (
+            ""
+            if original.endswith((" ", "\t", "\n", "\r"))
+            or inserted.startswith((" ", ",", ".", ";", ":", ")"))
+            else " "
+        )
+        subs.append(
+            {
+                "original": original,
+                "replacement": f"{original}{joiner}{inserted}",
+                "rule_id": "uk_effect_bare_quoted_anchor_insert_text_patch",
+            }
+        )
+
     matches_after_each_occurrence_insert = re.finditer(
         r"after\s+each\s+occurrence\s+of\s+[“\"'‘](?P<original>.*?)[”\"'’],?\s+"
         r"insert\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",

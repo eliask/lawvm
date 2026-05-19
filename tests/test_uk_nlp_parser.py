@@ -35,6 +35,20 @@ def test_parse_fragment_substitution_handles_after_the_word_there_is_inserted() 
     ]
 
 
+def test_parse_fragment_substitution_handles_bare_quoted_anchor_insert() -> None:
+    subs = parse_fragment_substitution(
+        "i \u201c18,\u201d there shall be inserted \u201c 18A, 18B, 18C, \u201d ; and"
+    )
+
+    assert subs == [
+        {
+            "original": "18,",
+            "replacement": "18, 18A, 18B, 18C, ",
+            "rule_id": "uk_effect_bare_quoted_anchor_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_after_anchor_in_both_places_insert() -> None:
     subs = parse_fragment_substitution(
         "b in that sub-paragraph, after \u201cmember\u2019s entitlement to\u201d, "
