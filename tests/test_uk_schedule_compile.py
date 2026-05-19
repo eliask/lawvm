@@ -680,6 +680,162 @@ def test_compile_synthesizes_local_eids_for_inserted_body_payload_descendants() 
     assert lowering_records[0]["strict_disposition"] == "record"
 
 
+def test_compile_mixed_heading_structural_insert_expands_source_owned_siblings() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-13-paragraph-11-4-b">
+          <Pnumber>b</Pnumber>
+          <Text>after subsection (2) insert—</Text>
+          <BlockAmendment>
+            <P2>
+              <Pnumber>2A</Pnumber>
+              <Title>Serious terrorism sentence: determination of appropriate custodial term</Title>
+              <Text>Subsection (2B) applies where a court is required to impose a serious terrorism sentence for an offence.</Text>
+            </P2>
+            <P2>
+              <Pnumber>2B</Pnumber>
+              <Text>In determining the appropriate custodial term, section 60 applies to the court.</Text>
+            </P2>
+          </BlockAmendment>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_mixed_heading_structural_insert",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2021-06-29",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 61(2A)(2B) and heading",
+        affecting_uri="/id/ukpga/2021/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="11",
+        affecting_provisions="Sch. 13 para. 11(4)(b)",
+        affecting_title="Counter-Terrorism and Sentencing Act 2021",
+        comments="",
+        in_force_dates=[{"date": "2021-06-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 2
+    assert [op.action for op in ops] == [StructuralAction.INSERT, StructuralAction.INSERT]
+    assert [op.target for op in ops] == [
+        LegalAddress((("section", "61"), ("subsection", "2a"))),
+        LegalAddress((("section", "61"), ("subsection", "2b"))),
+    ]
+    assert [op.payload.label if op.payload is not None else "" for op in ops] == ["2A", "2B"]
+    assert any(
+        record["rule_id"] == "uk_effect_mixed_heading_structural_insert_target_normalized"
+        and record["heading_facet_status"] == "unresolved"
+        for record in lowering_records
+    )
+    assert not any(record.get("blocking") is True for record in lowering_records)
+
+
+def test_compile_mixed_heading_structural_insert_blocks_without_source_payload() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-13-paragraph-11-4-b">
+          <Pnumber>b</Pnumber>
+          <Text>after subsection (2) insert— Serious terrorism sentence text only.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_mixed_heading_structural_insert_missing_payload",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2021-06-29",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 61(2A) and heading",
+        affecting_uri="/id/ukpga/2021/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="11",
+        affecting_provisions="Sch. 13 para. 11(4)(b)",
+        affecting_title="Counter-Terrorism and Sentencing Act 2021",
+        comments="",
+        in_force_dates=[{"date": "2021-06-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_mixed_heading_structural_insert_payload_unresolved"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
+def test_compile_mixed_heading_multi_label_insert_does_not_synthesize_nested_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-13-paragraph-11-4-b">
+          <Pnumber>b</Pnumber>
+          <Text>after subsection (2) insert— Serious terrorism sentence text only.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_mixed_heading_structural_insert_unexpanded_multi",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2021-06-29",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 61(2A)(2B) and heading",
+        affecting_uri="/id/ukpga/2021/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="11",
+        affecting_provisions="Sch. 13 para. 11(4)(b)",
+        affecting_title="Counter-Terrorism and Sentencing Act 2021",
+        comments="",
+        in_force_dates=[{"date": "2021-06-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert any(record["rule_id"] == "uk_effect_heading_only_ref_rejected" for record in lowering_records)
+    assert not any(
+        record["rule_id"] == "uk_effect_mixed_heading_structural_insert_target_normalized"
+        for record in lowering_records
+    )
+
+
 def test_compile_insert_uses_extracted_after_section_anchor() -> None:
     extracted_el = ET.fromstring(
         f"""

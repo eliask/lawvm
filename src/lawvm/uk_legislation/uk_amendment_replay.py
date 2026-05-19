@@ -299,6 +299,27 @@ def _is_heading_only_ref(ref: str) -> bool:
     return ref_clean.endswith(" heading") or ref_clean.endswith(" title") or ref_clean.endswith(" sidenote")
 
 
+def _mixed_heading_structural_insert_ref(ref: str, *, action: str) -> str:
+    """Return the structural component of ``X and heading`` insert targets.
+
+    UK effects sometimes report an inserted structural payload plus its heading
+    carrier as one affected-provision string, e.g. ``s. 61(2A)(2B) and
+    heading``.  The heading suffix is not a body target, but it also must not
+    block the source-owned inserted children.
+    """
+    if action != "insert":
+        return ""
+    ref_clean = " ".join(str(ref or "").split()).strip()
+    if not re.search(r"\s+and\s+heading\s*$", ref_clean, flags=re.I):
+        return ""
+    if "cross-heading" in ref_clean.lower() or "cross heading" in ref_clean.lower():
+        return ""
+    structural_ref = re.sub(r"\s+and\s+heading\s*$", "", ref_clean, flags=re.I).strip()
+    if "(" not in structural_ref or ")" not in structural_ref:
+        return ""
+    return structural_ref
+
+
 def _heading_facet_append_fragment(extracted_text: Optional[str]) -> Optional[dict[str, Any]]:
     for fragment in parse_fragment_substitution(extracted_text or ""):
         if str(fragment.get("original") or "") == "TEXT_FROM__TO_END":
@@ -5578,6 +5599,17 @@ def _expand_sibling_targets_from_extracted(
     return [f"{base}({raw_num})" for raw_num in child_raw_nums]
 
 
+def _first_amendment_container(el: Optional[ET.Element]) -> Optional[ET.Element]:
+    if el is None:
+        return None
+    if _tag(el) in ("BlockAmendment", "InlineAmendment"):
+        return el
+    for child in el.iter():
+        if child is not el and _tag(child) in ("BlockAmendment", "InlineAmendment"):
+            return child
+    return None
+
+
 def _retarget_substituted_series_to_replaced_anchor(
     effect_type: str,
     target_refs: list[str],
@@ -6668,6 +6700,7 @@ def compile_effect_to_ir_ops(
     # ALWAYS split metadata provisions to handle ranges and lists
     targets_str = _split_metadata_provisions(effect.affected_provisions)
     original_targets_str = list(targets_str)
+    mixed_heading_source_ref_by_target: dict[str, str] = {}
     trailing_repeal_refs: list[str] = []
     replacement_leaf_override: Optional[str] = None
     replacement_leaf_kind: Optional[str] = None
@@ -6689,11 +6722,51 @@ def compile_effect_to_ir_ops(
                 replacement_leaf_override = _addr_leaf_label(replacement_target)
                 replacement_leaf_kind = _addr_leaf_kind(replacement_target)
     if len(targets_str) == 1:
-        expanded_targets = _expand_sibling_targets_from_extracted(targets_str[0], extracted_el)
+        mixed_heading_structural_ref = _mixed_heading_structural_insert_ref(
+            targets_str[0],
+            action=action,
+        )
+        expansion_source_el = extracted_el
+        expansion_ref = targets_str[0]
+        if mixed_heading_structural_ref:
+            expansion_ref = mixed_heading_structural_ref
+            amendment_container = _first_amendment_container(extracted_el)
+            expansion_source_el = amendment_container if amendment_container is not None else extracted_el
+        expanded_targets = _expand_sibling_targets_from_extracted(expansion_ref, expansion_source_el)
         if not expanded_targets:
-            expanded_targets = _expand_sibling_targets_from_text(targets_str[0], extracted_text)
+            expanded_targets = _expand_sibling_targets_from_text(expansion_ref, extracted_text)
         if expanded_targets:
             targets_str = expanded_targets
+            if mixed_heading_structural_ref:
+                mixed_heading_source_ref_by_target = {
+                    target_ref: original_targets_str[0] for target_ref in expanded_targets
+                }
+        elif mixed_heading_structural_ref and len(re.findall(r"\([0-9A-Z]+\)", mixed_heading_structural_ref, re.I)) == 1:
+            targets_str = [mixed_heading_structural_ref]
+            mixed_heading_source_ref_by_target = {
+                mixed_heading_structural_ref: original_targets_str[0],
+            }
+        if mixed_heading_structural_ref and mixed_heading_source_ref_by_target:
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_effect_mixed_heading_structural_insert_target_normalized",
+                family="target_shape_normalization",
+                reason_code="mixed_heading_structural_insert_target_split",
+                reason=(
+                    "UK effect target combines inserted structural provisions "
+                    "with a heading facet; lowering removes the heading suffix "
+                    "only for source-owned structural insert targets and keeps "
+                    "the heading facet unresolved."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "original_target_ref": original_targets_str[0],
+                    "structural_targets": list(targets_str),
+                    "heading_facet_status": "unresolved",
+                },
+            )
     if not targets_str:
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
@@ -7644,6 +7717,29 @@ def compile_effect_to_ir_ops(
                             },
                         )
                     source_structural_payload_matches_target = _source_payload_matches_target_leaf(content_ir, target)
+
+        if content_ir is None and t_str in mixed_heading_source_ref_by_target:
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id="uk_effect_mixed_heading_structural_insert_payload_unresolved",
+                family="source_shape_filter",
+                reason_code="mixed_heading_structural_insert_payload_missing",
+                reason=(
+                    "UK mixed structural-plus-heading insert target was "
+                    "normalized to its structural component, but no matching "
+                    "source-owned structural payload was found; lowering must "
+                    "not synthesize inserted body text from the heading-qualified "
+                    "metadata string."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "original_target_ref": mixed_heading_source_ref_by_target[t_str],
+                    "structural_target_ref": t_str,
+                },
+            )
+            continue
 
         if content_ir is None:
             # Infer kind and label from target if metadata points to a specific provision
