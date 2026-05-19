@@ -35,6 +35,7 @@ from __future__ import annotations
 import html as _html
 import re
 from dataclasses import dataclass, replace
+from functools import lru_cache
 from typing import AbstractSet, Any, List, Literal, Optional, Sequence, cast
 import xml.etree.ElementTree as ET
 
@@ -6208,6 +6209,15 @@ def _ee_wrap_word_boundaries(pattern: str, text: str) -> str:
     return _tm_wrap_word_boundaries(pattern, text)
 
 
+@lru_cache(maxsize=8192)
+def _ee_text_replace_regex(old_variant: str, *, case_inflected: bool) -> re.Pattern[str]:
+    """Compile stable rewrite selectors once per variant/flag pair."""
+    return re.compile(
+        _ee_wrap_word_boundaries(_ee_surface_pattern(old_variant), old_variant),
+        _ee_text_replace_regex_flags(old_variant, case_inflected=case_inflected),
+    )
+
+
 def _ee_replace_case_preserving(
     text: str,
     old: str,
@@ -6643,10 +6653,7 @@ def _ee_apply_text_replace_value(
         placeholders: dict[str, str] = {}
         replaced_once = False
         for idx, (old_variant, new_variant) in enumerate(variants):
-            pattern = re.compile(
-                _ee_wrap_word_boundaries(_ee_surface_pattern(old_variant), old_variant),
-                _ee_text_replace_regex_flags(old_variant, case_inflected=case_inflected),
-            )
+            pattern = _ee_text_replace_regex(old_variant, case_inflected=case_inflected)
             if all_occurrences:
                 def _repl(match: re.Match[str], *, idx: int = idx, new_variant: str = new_variant) -> str:
                     token = f"\x00ee-after-{idx}-{len(placeholders)}\x00"
@@ -6718,10 +6725,7 @@ def _ee_apply_text_replace_value(
         placeholders: dict[str, str] = {}
         working = replaced
         for idx, (old_variant, new_variant) in enumerate(variants):
-            pattern = re.compile(
-                _ee_wrap_word_boundaries(_ee_surface_pattern(old_variant), old_variant),
-                _ee_text_replace_regex_flags(old_variant, case_inflected=case_inflected),
-            )
+            pattern = _ee_text_replace_regex(old_variant, case_inflected=case_inflected)
 
             if single_occurrence:
                 selected_match: re.Match[str] | None = None

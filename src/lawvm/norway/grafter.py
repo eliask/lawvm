@@ -2618,18 +2618,18 @@ def _ensure_no_container_chain(
     return body, tuple(current_path)
 
 
-def _materialize_no_sentence_children(body: IRNode, parent_path: tree_ops.Path) -> IRNode:
+def _materialize_no_sentence_children_with_count(body: IRNode, parent_path: tree_ops.Path) -> tuple[IRNode, int]:
     """Split raw subsection/item text into sentence children on demand."""
     parent = tree_ops.resolve(body, parent_path)
     if parent is None:
-        return body
+        return body, 0
     if _no_kind_value(parent.kind) not in {"subsection", "item"}:
-        return body
+        return body, 0
     if not parent.text or any(_no_kind_value(child.kind) == "sentence" for child in parent.children):
-        return body
+        return body, 0
     sentences = _split_no_sentences(parent.text)
     if not sentences:
-        return body
+        return body, 0
     replacement = IRNode(
         kind=parent.kind,
         label=parent.label,
@@ -2643,55 +2643,60 @@ def _materialize_no_sentence_children(body: IRNode, parent_path: tree_ops.Path) 
             + [child for child in parent.children]
         ),
     )
-    return tree_ops.replace_at(body, parent_path, replacement)
+    return tree_ops.replace_at(body, parent_path, replacement), len(sentences)
+
+
+def _materialize_no_sentence_children(body: IRNode, parent_path: tree_ops.Path) -> IRNode:
+    materialized_body, _count = _materialize_no_sentence_children_with_count(body, parent_path)
+    return materialized_body
 
 
 def _resolve_shallow_no_sentence_path(
     body: IRNode,
     target: LegalAddress,
-) -> tuple[IRNode, Optional[tree_ops.Path]]:
+) -> tuple[IRNode, Optional[tree_ops.Path], Optional[tree_ops.Path], int]:
     """Resolve section-level sentence targets via a unique direct text container."""
     if len(target.path) != 2 or target.path[0][0] != "section" or target.path[1][0] != "sentence":
-        return body, None
+        return body, None, None, 0
     section_path = _resolve_no_path(body, LegalAddress(path=(target.path[0],)))
     if section_path is None:
-        return body, None
+        return body, None, None, 0
     section_node = tree_ops.resolve(body, section_path)
     if section_node is None:
-        return body, None
+        return body, None, None, 0
     hosts = [child for child in section_node.children if _no_kind_value(child.kind) in {"subsection", "item"}]
     if len(hosts) != 1:
-        return body, None
+        return body, None, None, 0
     host = hosts[0]
     host_path = section_path + ((str(host.kind), host.label or ""),)
-    body = _materialize_no_sentence_children(body, host_path)
+    body, materialized_count = _materialize_no_sentence_children_with_count(body, host_path)
     if target.path[1][1] == "last":
         resolved = _find_last_direct_child_path(body, host_path, "sentence")
     else:
         resolved = _find_direct_child_path(body, host_path, "sentence", target.path[1][1])
-    return body, resolved
+    return body, resolved, host_path, materialized_count
 
 
 def _resolve_shallow_no_sentence_host_path(
     body: IRNode,
     target: LegalAddress,
-) -> tuple[IRNode, Optional[tree_ops.Path]]:
+) -> tuple[IRNode, Optional[tree_ops.Path], int]:
     """Resolve the unique host path for section-level sentence targets."""
     if len(target.path) != 2 or target.path[0][0] != "section" or target.path[1][0] != "sentence":
-        return body, None
+        return body, None, 0
     section_path = _resolve_no_path(body, LegalAddress(path=(target.path[0],)))
     if section_path is None:
-        return body, None
+        return body, None, 0
     section_node = tree_ops.resolve(body, section_path)
     if section_node is None:
-        return body, None
+        return body, None, 0
     hosts = [child for child in section_node.children if _no_kind_value(child.kind) in {"subsection", "item"}]
     if len(hosts) != 1:
-        return body, None
+        return body, None, 0
     host = hosts[0]
     host_path = section_path + ((str(host.kind), host.label or ""),)
-    body = _materialize_no_sentence_children(body, host_path)
-    return body, host_path
+    body, materialized_count = _materialize_no_sentence_children_with_count(body, host_path)
+    return body, host_path, materialized_count
 
 
 def _roman_to_int(label: str) -> Optional[int]:
@@ -3099,6 +3104,28 @@ def apply_no_ops(
             f"{op.target.path!r} from {source_id or '<unknown>'}"
         )
 
+    def _record_structural_recovery(
+        *,
+        kind: str,
+        message: str,
+        op: LegalOperation,
+        detail: dict[str, Any],
+    ) -> None:
+        _append_no_replay_adjudication(
+            adjudications_out,
+            kind=kind,
+            message=message,
+            op=op,
+            detail=detail,
+        )
+        if not strict_recovery:
+            return
+        source_id = op.source.statute_id if op.source else ""
+        raise ValueError(
+            f"Norway replay recovery {kind} after {op.action} "
+            f"{op.target.path!r} from {source_id or '<unknown>'}"
+        )
+
     for op, renumber_sources in ordered_ops:
         if _no_action_value(op.action) == "text_replace":
             patch = op.text_patch
@@ -3185,7 +3212,23 @@ def apply_no_ops(
         if op.target.leaf_kind() == "sentence" and op.target.parent() is not None:
             parent_path = _resolve_no_path(body, cast(LegalAddress, op.target.parent()))
             if parent_path is not None:
-                body = _materialize_no_sentence_children(body, parent_path)
+                body, materialized_count = _materialize_no_sentence_children_with_count(body, parent_path)
+                if materialized_count:
+                    _record_structural_recovery(
+                        kind="no_replay_sentence_children_materialized",
+                        message=(
+                            "Norway replay materialized sentence children from parent text "
+                            "before applying a sentence-level operation."
+                        ),
+                        op=op,
+                        detail={
+                            "rule_id": "no_sentence_text_materialized_for_sentence_target",
+                            "family": "ontology_normalization",
+                            "target": str(op.target),
+                            "materialized_parent_path": _no_path_label(parent_path),
+                            "materialized_sentence_count": materialized_count,
+                        },
+                    )
         resolved_path = _resolve_no_path(body, op.target)
         if (
             resolved_path is None
@@ -3197,7 +3240,42 @@ def apply_no_ops(
             if parent_path is not None:
                 resolved_path = _resolve_no_last_child_path(body, parent_path, "sentence")
         if resolved_path is None and op.target.leaf_kind() == "sentence":
-            body, resolved_path = _resolve_shallow_no_sentence_path(body, op.target)
+            body, resolved_path, shallow_host_path, materialized_count = _resolve_shallow_no_sentence_path(
+                body,
+                op.target,
+            )
+            if shallow_host_path is not None and materialized_count:
+                _record_structural_recovery(
+                    kind="no_replay_sentence_children_materialized",
+                    message=(
+                        "Norway replay materialized sentence children from a unique shallow "
+                        "sentence host before applying a sentence-level operation."
+                    ),
+                    op=op,
+                    detail={
+                        "rule_id": "no_sentence_text_materialized_for_shallow_sentence_target",
+                        "family": "ontology_normalization",
+                        "target": str(op.target),
+                        "materialized_parent_path": _no_path_label(shallow_host_path),
+                        "materialized_sentence_count": materialized_count,
+                    },
+                )
+            if resolved_path is not None and shallow_host_path is not None:
+                _record_structural_recovery(
+                    kind="no_replay_shallow_sentence_target_rebound",
+                    message=(
+                        "Norway replay resolved a section-level sentence target through "
+                        "the section's unique direct sentence host."
+                    ),
+                    op=op,
+                    detail={
+                        "rule_id": "no_shallow_sentence_target_rebound_to_unique_host",
+                        "family": "target_resolution_recovery",
+                        "target": str(op.target),
+                        "resolved_path": _no_path_label(resolved_path),
+                        "host_path": _no_path_label(shallow_host_path),
+                    },
+                )
 
         if op.action is StructuralAction.REPLACE and op.payload is not None:
             payload = op.payload
@@ -3250,7 +3328,38 @@ def apply_no_ops(
                         _assert_no_invariant_violations(op)
                         continue
                 if op.target.leaf_kind() == "sentence" and _no_kind_value(payload.kind) == "sentence":
-                    body, shallow_host_path = _resolve_shallow_no_sentence_host_path(body, op.target)
+                    body, shallow_host_path, materialized_count = _resolve_shallow_no_sentence_host_path(body, op.target)
+                    if shallow_host_path is not None and materialized_count:
+                        _record_structural_recovery(
+                            kind="no_replay_sentence_children_materialized",
+                            message=(
+                                "Norway replay materialized sentence children from a unique shallow "
+                                "sentence host before recovering replace as insert."
+                            ),
+                            op=op,
+                            detail={
+                                "rule_id": "no_sentence_text_materialized_for_shallow_sentence_target",
+                                "family": "ontology_normalization",
+                                "target": str(op.target),
+                                "materialized_parent_path": _no_path_label(shallow_host_path),
+                                "materialized_sentence_count": materialized_count,
+                            },
+                        )
+                    if shallow_host_path is not None:
+                        _record_structural_recovery(
+                            kind="no_replay_shallow_sentence_target_rebound",
+                            message=(
+                                "Norway replay resolved a section-level sentence target through "
+                                "the section's unique direct sentence host."
+                            ),
+                            op=op,
+                            detail={
+                                "rule_id": "no_shallow_sentence_target_rebound_to_unique_host",
+                                "family": "target_resolution_recovery",
+                                "target": str(op.target),
+                                "host_path": _no_path_label(shallow_host_path),
+                            },
+                        )
                     if (
                         shallow_host_path is not None
                         and _find_direct_child_path(

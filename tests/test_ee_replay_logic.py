@@ -1,9 +1,15 @@
 from __future__ import annotations
 from lawvm.core.ir import IRStatute
 
+from collections.abc import Iterator
 from dataclasses import replace
 from types import SimpleNamespace
+from typing import Any
 
+import pytest
+
+from lawvm.estonia import fetch as ee_fetch
+from lawvm.estonia import replay as ee_replay_module
 from lawvm.estonia.fetch import AmendmentRef
 from lawvm.estonia.ee_instruction_waist import make_section_selection_meta
 from lawvm.estonia.grafter import (
@@ -27,8 +33,66 @@ from lawvm.core.ir import OperationSource
 from lawvm.core.semantic_types import IRNodeKind
 
 
+class _ReadOnlyArchiveLease:
+    """Per-test close calls must not close the module-owned archive."""
+
+    def __init__(self, archive: Any) -> None:
+        self._archive = archive
+
+    def close(self) -> None:
+        return None
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._archive, name)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _shared_readonly_rt_archive() -> Iterator[None]:
+    original_fetch_open = ee_fetch.open_rt_archive
+    archive = original_fetch_open(readonly=True)
+    lease = _ReadOnlyArchiveLease(archive)
+    patch = pytest.MonkeyPatch()
+
+    def open_shared_archive(db_path: Any = None, *, readonly: bool = False) -> Any:
+        if db_path is None:
+            return lease
+        return original_fetch_open(db_path, readonly=readonly)
+
+    patch.setattr(ee_fetch, "open_rt_archive", open_shared_archive)
+    patch.setattr(ee_replay_module, "open_rt_archive", open_shared_archive)
+    try:
+        yield
+    finally:
+        patch.undo()
+        archive.close()
+
+
 def _ref(akt_viide: str, passed: str, joustumine: str) -> AmendmentRef:
     return AmendmentRef(aktViide=akt_viide, passed=passed, joustumine=joustumine)
+
+
+def test_ee_successful_xml_fetch_cache_reuses_successes_but_not_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def fake_fetch_rt_xml(akt_viide: str, archive: object) -> bytes:
+        calls.append(akt_viide)
+        if akt_viide == "fail":
+            raise RuntimeError("missing")
+        return f"<akt>{akt_viide}</akt>".encode()
+
+    monkeypatch.setattr(ee_replay_module, "fetch_rt_xml", fake_fetch_rt_xml)
+    cache: dict[str, bytes] = {}
+
+    assert ee_replay_module._ee_fetch_rt_xml_cached("ok", object(), cache) == b"<akt>ok</akt>"
+    assert ee_replay_module._ee_fetch_rt_xml_cached("ok", object(), cache) == b"<akt>ok</akt>"
+    assert calls == ["ok"]
+
+    for _ in range(2):
+        with pytest.raises(RuntimeError):
+            ee_replay_module._ee_fetch_rt_xml_cached("fail", object(), cache)
+
+    assert calls == ["ok", "fail", "fail"]
+    assert "fail" not in cache
 
 
 def test_replay_ee_preambul_plain_paragraph_items_for_2012_001() -> None:
@@ -1476,25 +1540,7 @@ def test_replay_ee_to_pit_preserves_nested_quoted_act_title_in_text_insert() -> 
     )
 
 
-def test_replay_ee_to_pit_repeals_flat_part_section_run() -> None:
-    from lawvm.estonia.fetch import open_rt_archive
-    from lawvm.estonia.replay import replay_ee_to_pit
-
-    archive = open_rt_archive(readonly=True)
-
-    result = replay_ee_to_pit(
-        "129052012009",
-        "2013-04-01",
-        archive=archive,
-        oracle_id="128032013017",
-    )
-
-    assert result.error is None
-    assert not any(str(div.address).startswith("section:15") for div in result.divergences)
-    assert any(adjudication.kind == "ee_flat_part_repeal_span" for adjudication in result.adjudications)
-
-
-def test_replay_ee_to_pit_applies_nik_plural_case_inflection() -> None:
+def test_replay_ee_to_pit_repeals_flat_part_section_run_and_applies_nik_plural_case_inflection() -> None:
     from lawvm.estonia.fetch import open_rt_archive
     from lawvm.estonia.replay import replay_ee_to_pit
 
@@ -1520,6 +1566,9 @@ def test_replay_ee_to_pit_applies_nik_plural_case_inflection() -> None:
     )
 
     assert result.error is None
+    assert not any(str(div.address).startswith("section:15") for div in result.divergences)
+    assert any(adjudication.kind == "ee_flat_part_repeal_span" for adjudication in result.adjudications)
+
     assert result.replayed is not None
     section_16_item_2 = find_item(result.replayed.body, "16", "2")
     section_18_item_19 = find_item(result.replayed.body, "18", "19")
@@ -1680,8 +1729,9 @@ def test_replay_ee_to_pit_keeps_subsection_intro_text_replace_local_in_maagaasis
     assert ambiguity[0].detail["match_count"] == "2"
 
 
-def test_replay_ee_to_pit_applies_case_inflected_protocol_compound_rewrite() -> None:
+def test_replay_ee_to_pit_applies_case_inflected_protocol_compound_rewrite_and_classifies_oracle_drift() -> None:
     from lawvm.estonia.fetch import open_rt_archive
+    from lawvm.estonia.residual_reporting import build_ee_residual_summary
 
     archive = open_rt_archive(readonly=True)
 
@@ -1694,6 +1744,7 @@ def test_replay_ee_to_pit_applies_case_inflected_protocol_compound_rewrite() -> 
 
     assert result.error is None
     divergence_by_address = {str(div.address): div for div in result.divergences}
+    divergence_addresses = tuple(divergence_by_address)
     assert "chapter:2/section:7" not in divergence_by_address
     assert "chapter:3/section:10/subsection:2" not in divergence_by_address
     assert "chapter:3/section:10/subsection:4" not in divergence_by_address
@@ -1701,6 +1752,16 @@ def test_replay_ee_to_pit_applies_case_inflected_protocol_compound_rewrite() -> 
     subsection_1 = divergence_by_address["chapter:3/section:10/subsection:1"]
     assert "transfusiooniprotokollis" in (subsection_1.ops_text or "")
     assert "transfusiooniprotokolliks" in (subsection_1.consolidated_text or "")
+    assert "chapter:3/section:10/subsection:1" in divergence_addresses
+    residual_summary = build_ee_residual_summary(
+        base_id="112032019073",
+        oracle_id="115072023052",
+        divergence_addresses=divergence_addresses,
+    )
+    assert residual_summary is not None
+    assert residual_summary.unknown_current_divergence_count == 0
+    assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
+    assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": len(divergence_addresses)}
 
 
 def test_replay_ee_to_pit_applies_old_format_typographic_quote_text_replace() -> None:
@@ -1827,34 +1888,6 @@ def test_replay_ee_to_pit_recovers_newcastle_single_clause_and_nested_quote_fami
     assert "chapter:2/section:4_1/subsection:8" not in divergence_addresses
     assert "chapter:3/division:1/section:8/subsection:1/item:8" not in divergence_addresses
     assert "chapter:3/division:3/section:16/subsection:3/item:3" not in divergence_addresses
-
-
-def test_replay_ee_to_pit_classifies_vereulekanne_protocol_case_oracle_drift() -> None:
-    from lawvm.estonia.fetch import open_rt_archive
-    from lawvm.estonia.residual_reporting import build_ee_residual_summary
-    from lawvm.estonia.replay import replay_ee_to_pit
-
-    archive = open_rt_archive(readonly=True)
-
-    result = replay_ee_to_pit(
-        "112032019073",
-        "2023-07-18",
-        archive=archive,
-        oracle_id="115072023052",
-    )
-
-    assert result.error is None
-    divergence_addresses = tuple(str(div.address) for div in result.divergences)
-    assert "chapter:3/section:10/subsection:1" in divergence_addresses
-    residual_summary = build_ee_residual_summary(
-        base_id="112032019073",
-        oracle_id="115072023052",
-        divergence_addresses=divergence_addresses,
-    )
-    assert residual_summary is not None
-    assert residual_summary.unknown_current_divergence_count == 0
-    assert residual_summary.matched_current_divergence_count == len(divergence_addresses)
-    assert residual_summary.matched_current_bucket_counts == {"source_oracle_drift": len(divergence_addresses)}
 
 
 def test_replay_ee_to_pit_adjudicates_spent_repeal_clause_presentation_drift() -> None:
@@ -3394,6 +3427,53 @@ def test_precompose_pending_amendment_text_patch_requires_exact_old_format_item(
         if adjudication.detail.get("amendment_section") == "97"
         and adjudication.detail.get("amendment_item") == "18"
     ) == 1
+
+
+def test_precompose_pending_amendment_prefilter_skips_unrelated_later_source(
+    monkeypatch,
+) -> None:
+    earlier_xml = """
+    <oigusakt xmlns="akt_1_10.06.2010">
+      <aktinimi><nimi><pealkiri>Esimese seaduse muutmise seadus</pealkiri></nimi></aktinimi>
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>1</paragrahvNr>
+          <paragrahvPealkiri>Esimese seaduse muutmine</paragrahvPealkiri>
+        </paragrahv>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+    unrelated_later_xml = """
+    <oigusakt xmlns="akt_1_10.06.2010">
+      <aktinimi><nimi><pealkiri>Teise seaduse muutmise seadus</pealkiri></nimi></aktinimi>
+      <sisu>
+        <paragrahv>
+          <paragrahvNr>1</paragrahvNr>
+          <paragrahvPealkiri>Teise seaduse muutmine</paragrahvPealkiri>
+        </paragrahv>
+      </sisu>
+    </oigusakt>
+    """.encode("utf-8")
+
+    def fail_parse(*_args: object, **_kwargs: object) -> list[LegalOperation]:
+        raise AssertionError("unrelated later source should not be reparsed")
+
+    monkeypatch.setattr(ee_replay_module, "parse_ee_amendment_ops", fail_parse)
+
+    patched, adjudications = _ee_precompose_pending_amendment_text_patches(
+        [],
+        refs=(
+            _ref("earlier", "2022-01-01", "2023-01-01"),
+            _ref("later", "2022-02-01", "2023-01-01"),
+        ),
+        amendment_xml_by_ref={
+            "earlier": earlier_xml,
+            "later": unrelated_later_xml,
+        },
+    )
+
+    assert patched == []
+    assert adjudications == ()
 
 
 def test_precompose_pending_amendment_applies_final_target_meta_euro_conversions() -> None:

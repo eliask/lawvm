@@ -5,6 +5,7 @@ No lxml, no corpus access, no grafter state.
 """
 from __future__ import annotations
 
+import functools
 import re
 from typing import Dict, List, Optional, Set
 
@@ -24,7 +25,8 @@ def _strip_source_provenance_tail(kumotaan_text: str) -> str:
     return re.split(r",\s*sellais[a-zäöå\s]*kuin\b", kumotaan_text, maxsplit=1, flags=re.I)[0]
 
 
-def _expand_kumotaan_section_range(start: str, end: str) -> List[str]:
+@functools.lru_cache(maxsize=8192)
+def _expand_kumotaan_section_range_tuple(start: str, end: str) -> tuple[str, ...]:
     """Expand a repeal section range, including same-base letter suffix ranges.
 
     ``helpers._expand_section_range()`` already handles pure numeric ranges.
@@ -35,7 +37,7 @@ def _expand_kumotaan_section_range(start: str, end: str) -> List[str]:
     start_norm = re.sub(r"\s+", "", start).lower()
     end_norm = re.sub(r"\s+", "", end).lower()
 
-    expanded = _expand_section_range(f"{start_norm}-{end_norm}")
+    expanded = tuple(_expand_section_range(f"{start_norm}-{end_norm}"))
     if len(expanded) != 1 or expanded[0] != f"{start_norm}-{end_norm}":
         return expanded
 
@@ -51,10 +53,21 @@ def _expand_kumotaan_section_range(start: str, end: str) -> List[str]:
         return expanded
 
     base = m_start.group(1)
-    return [f"{base}{chr(code)}" for code in range(ord(m_start.group(2)), ord(m_end.group(2)) + 1)]
+    return tuple(f"{base}{chr(code)}" for code in range(ord(m_start.group(2)), ord(m_end.group(2)) + 1))
+
+
+def _expand_kumotaan_section_range(start: str, end: str) -> List[str]:
+    """Expand a repeal section range, including same-base letter suffix ranges."""
+    return list(_expand_kumotaan_section_range_tuple(start, end))
 
 
 def _extract_muutetaan_section_refs(johto: str) -> Set[str]:
+    """Extract whole-section labels from the muutetaan clause of a johtolause."""
+    return set(_extract_muutetaan_section_refs_frozenset(johto))
+
+
+@functools.lru_cache(maxsize=8192)
+def _extract_muutetaan_section_refs_frozenset(johto: str) -> frozenset[str]:
     """Extract whole-section labels from the muutetaan clause of a johtolause.
 
     Used to detect the "recycle-and-rename" pattern where the same section
@@ -77,7 +90,7 @@ def _extract_muutetaan_section_refs(johto: str) -> Set[str]:
         text, re.DOTALL
     )
     if not muutetaan_match:
-        return set()
+        return frozenset()
 
     muutetaan_text = _strip_source_provenance_tail(muutetaan_match.group(1))
 
@@ -85,7 +98,7 @@ def _extract_muutetaan_section_refs(johto: str) -> Set[str]:
     # statutes — skip to avoid false positives.
     statute_refs = re.findall(r'\d+/\d{2,4}', muutetaan_text)
     if len(set(statute_refs)) > 1 and muutetaan_text.count("§") > 1:
-        return set()
+        return frozenset()
 
     labels: Set[str] = set()
     # Match whole-section refs: N §, N a §, range N–M § — skip momentti refs
@@ -103,7 +116,7 @@ def _extract_muutetaan_section_refs(johto: str) -> Set[str]:
                 labels.add(expanded)
         else:
             labels.add(start)
-    return labels
+    return frozenset(labels)
 
 
 def _extract_muutetaan_chapter_section_map(johto: str) -> Dict[Optional[str], List[str]]:
@@ -170,6 +183,12 @@ def _extract_muutetaan_chapter_section_map(johto: str) -> Dict[Optional[str], Li
 
 
 def _extract_kumotaan_section_refs(johto: str) -> List[str]:
+    """Extract section-level repeal references from kumotaan clauses."""
+    return list(_extract_kumotaan_section_refs_tuple(johto))
+
+
+@functools.lru_cache(maxsize=8192)
+def _extract_kumotaan_section_refs_tuple(johto: str) -> tuple[str, ...]:
     """Extract section-level repeal references from kumotaan clauses.
 
     Catches kumotaan section references that the PEG parser might miss,
@@ -186,7 +205,7 @@ def _extract_kumotaan_section_refs(johto: str) -> List[str]:
         text, re.DOTALL
     )
     if not kumotaan_match:
-        return []
+        return ()
 
     full_body = kumotaan_match.group(1)
     kumotaan_text = _strip_source_provenance_tail(full_body)
@@ -198,7 +217,7 @@ def _extract_kumotaan_section_refs(johto: str) -> List[str]:
     # statute references (NNN/YYYY or NNN/YY patterns).
     statute_refs = re.findall(r'\d+/\d{2,4}', kumotaan_text)
     if len(set(statute_refs)) > 1 and kumotaan_text.count("§") > 1:
-        return []
+        return ()
 
     def _sections_from_block(block: str) -> List[str]:
         """Extract whole-section refs from a single already-stripped block."""
@@ -274,7 +293,7 @@ def _extract_kumotaan_section_refs(johto: str) -> List[str]:
             deduped.append(sec)
             seen.add(sec)
 
-    return deduped
+    return tuple(deduped)
 
 
 def _extract_kumotaan_chapter_section_map(johto: str) -> Dict[Optional[str], List[str]]:
@@ -343,6 +362,12 @@ def _extract_kumotaan_chapter_section_map(johto: str) -> Dict[Optional[str], Lis
 
 def _extract_sections_from_block(block_text: str) -> List[str]:
     """Extract whole-section repeal labels from a single chapter block of kumotaan text."""
+    return list(_extract_sections_from_block_tuple(block_text))
+
+
+@functools.lru_cache(maxsize=8192)
+def _extract_sections_from_block_tuple(block_text: str) -> tuple[str, ...]:
+    """Extract whole-section repeal labels from a single chapter block of kumotaan text."""
     sections: List[str] = []
     for m in re.finditer(
         r'((?:'
@@ -389,7 +414,7 @@ def _extract_sections_from_block(block_text: str) -> List[str]:
         if sec not in seen:
             deduped.append(sec)
             seen.add(sec)
-    return deduped
+    return tuple(deduped)
 
 
 def _extract_kumotaan_subsection_refs(johto: str) -> Dict[str, List[str]]:

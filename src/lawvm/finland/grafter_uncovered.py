@@ -16,6 +16,7 @@ Functions exported:
 
 from __future__ import annotations
 
+import functools
 import logging
 import re
 import datetime as dt
@@ -377,6 +378,7 @@ def _coverage_unresolved_gap_finding(
     )
 
 
+@functools.lru_cache(maxsize=8192)
 def _expand_johto_section_label_range(start: str, end: str) -> tuple[str, ...]:
     """Expand a johto-mentioned section range into normalized labels.
 
@@ -411,6 +413,11 @@ def _expand_johto_section_label_range(start: str, end: str) -> tuple[str, ...]:
 
 
 def _collect_johto_mentioned_section_labels(johto_text: str) -> set[str]:
+    return set(_collect_johto_mentioned_section_labels_frozenset(johto_text))
+
+
+@functools.lru_cache(maxsize=8192)
+def _collect_johto_mentioned_section_labels_frozenset(johto_text: str) -> frozenset[str]:
     labels: set[str] = set()
     for m in re.finditer(r"(\d+\s*[a-z]?)(?:[-\u2014\u2013\u2015](\d+\s*[a-z]?))?\s*§", johto_text, re.I):
         start = m.group(1)
@@ -436,7 +443,7 @@ def _collect_johto_mentioned_section_labels(johto_text: str) -> set[str]:
                 labels.update(_expand_johto_section_label_range(range_match.group(1), range_match.group(2)))
                 continue
             labels.add(_norm_num_token(seg))
-    return labels
+    return frozenset(labels)
 
 
 def _recover_uncovered_body_ops(

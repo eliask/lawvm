@@ -218,6 +218,16 @@ def _compile_facade_with_replay(
     return replay_result, facade
 
 
+@pytest.fixture(scope="module")
+def replay_1987_990_finlex_oracle() -> ReplayResult:
+    return cast(ReplayResult, pinned_replay("1987/990", mode="finlex_oracle", quiet=True))
+
+
+@pytest.fixture(scope="module")
+def facade_2009_953_legal_pit_quirks() -> Any:
+    return compile_fi_facade("2009/953", replay_mode="legal_pit", compile_mode="quirks")
+
+
 def test_strict_fail_reasons_detect_known_recovery_paths() -> None:
     profile = default_finland_strict_profile()
     recovered = [
@@ -611,15 +621,16 @@ def test_replay_xml_preserves_letter_suffix_item_spacing_for_2014_346() -> None:
     assert num_text == "3 a)"
 
 
-def test_replay_xml_keeps_2008_342_section_21_sparse_tail_unreattached_without_authority() -> None:
+def test_replay_xml_keeps_2008_342_section_21_sparse_tail_unreattached_without_authority(
+    replay_1987_990_finlex_oracle: ReplayResult,
+) -> None:
     """Sparse tail prose stays in the following moment unless a frontend repair owns it.
 
     LawVM currently does not treat this source shape as auto-repair authority, so
     the carried tail remains as plain content in the next subsection rather than
     being reattached under item 7.
     """
-    replay = pinned_replay("1987/990", mode="finlex_oracle", quiet=True)
-    section = extract_ir_sections(replay.materialized_state.ir)["chapter:5/section:21"]
+    section = extract_ir_sections(replay_1987_990_finlex_oracle.materialized_state.ir)["chapter:5/section:21"]
 
     subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
     assert [child.label for child in subsections[:4]] == ["1", "2", "3", "4"]
@@ -639,7 +650,7 @@ def test_replay_xml_keeps_2008_342_section_21_sparse_tail_unreattached_without_a
 
 
 def test_replay_xml_keeps_1967_550_section_2_sparse_insert_on_fifth_moment() -> None:
-    replay = pinned_replay("1967/550", mode="finlex_oracle")
+    replay = pinned_replay("1967/550", mode="finlex_oracle", quiet=True)
     section = extract_ir_sections(replay.materialized_state.ir)["chapter:1/section:2"]
 
     subsections = [child for child in section.children if child.kind == IRNodeKind.SUBSECTION]
@@ -655,7 +666,12 @@ def test_replay_xml_keeps_1967_550_section_2_sparse_insert_on_fifth_moment() -> 
 
 def test_replay_xml_places_2019_371_section_159_in_final_container_frame() -> None:
     """2019/371 preserves §159 text under the final replay and materialized frame."""
-    replay = pinned_replay("2017/320", mode="finlex_oracle", quiet=True, strict_johto_temporal=False)
+    replay = pinned_replay(
+        "2017/320",
+        mode="finlex_oracle",
+        quiet=True,
+        strict_johto_temporal=False,
+    )
     for ir in (replay.replay_fold_state.ir, replay.materialized_state.ir):
         sections = extract_ir_sections(ir)
         section_159_keys = [key for key in sections if key.endswith("/section:159") or key == "section:159"]
@@ -689,7 +705,13 @@ def test_2020_1256_compile_keeps_vi_part_scope_for_chapter_26_28_renumbers() -> 
     xml_bytes = corpus.read_source(source_id)
     assert xml_bytes is not None
 
-    before_master = pinned_replay(statute_id, mode="legal_pit", stop_before=source_id, quiet=True)
+    before_master = pinned_replay(
+        statute_id,
+        mode="legal_pit",
+        stop_before=source_id,
+        quiet=True,
+        build_full_products=False,
+    )
     _muutos_tree, johto, used_sec1_fallback, should_apply, _route_reason = _working_johtolause(
         statute_id,
         before_master.title,
@@ -894,16 +916,14 @@ def test_strict_fail_reasons_from_finding_ledger_accept_semantic_collapse_move_r
     assert "PARSE.SEMANTIC_COLLAPSE_MOVE_RENUMBER" in reasons
 
 
-def test_compile_fi_facade_returns_path_aware_dossier() -> None:
-    facade = compile_fi_facade("2009/953", replay_mode="legal_pit", compile_mode="quirks")
-
-    assert facade.bundle.target_statute == "2009/953"
-    assert facade.replay_mode == "legal_pit"
-    assert facade.strict_profile_name == "finland_ingestion_v1"
-    assert isinstance(facade.bundle.structural_ops, tuple)
-    assert isinstance(_projection_rows(facade), tuple)
-    assert isinstance(_source_pathology_rows(facade), tuple)
-    assert isinstance(tuple(facade.to_wire_artifact().status.blockers or ()), tuple)
+def test_compile_fi_facade_returns_path_aware_dossier(facade_2009_953_legal_pit_quirks: Any) -> None:
+    assert facade_2009_953_legal_pit_quirks.bundle.target_statute == "2009/953"
+    assert facade_2009_953_legal_pit_quirks.replay_mode == "legal_pit"
+    assert facade_2009_953_legal_pit_quirks.strict_profile_name == "finland_ingestion_v1"
+    assert isinstance(facade_2009_953_legal_pit_quirks.bundle.structural_ops, tuple)
+    assert isinstance(_projection_rows(facade_2009_953_legal_pit_quirks), tuple)
+    assert isinstance(_source_pathology_rows(facade_2009_953_legal_pit_quirks), tuple)
+    assert isinstance(tuple(facade_2009_953_legal_pit_quirks.to_wire_artifact().status.blockers or ()), tuple)
 
 
 def test_compile_fi_facade_strict_mode_passes_strict_temporal_authority(monkeypatch) -> None:
@@ -1249,15 +1269,13 @@ def test_compile_fi_facade_from_replay_prefers_replay_result_findings() -> None:
     assert [row["kind"] for row in _projection_rows(facade)] == ["APPLY.LEGACY_DISPATCH_FALLBACK"]
 
 
-def test_compile_fi_facade_returns_native_dossier() -> None:
-    facade = compile_fi_facade("2009/953", replay_mode="legal_pit", compile_mode="quirks")
-
-    assert facade.bundle.target_statute == "2009/953"
-    assert facade.replay_mode == "legal_pit"
-    assert facade.strict_profile_name == "finland_ingestion_v1"
-    assert isinstance(facade.bundle.structural_ops, tuple)
-    assert isinstance(_projection_rows(facade), tuple)
-    assert isinstance(tuple(facade.to_wire_artifact().status.blockers or ()), tuple)
+def test_compile_fi_facade_returns_native_dossier(facade_2009_953_legal_pit_quirks: Any) -> None:
+    assert facade_2009_953_legal_pit_quirks.bundle.target_statute == "2009/953"
+    assert facade_2009_953_legal_pit_quirks.replay_mode == "legal_pit"
+    assert facade_2009_953_legal_pit_quirks.strict_profile_name == "finland_ingestion_v1"
+    assert isinstance(facade_2009_953_legal_pit_quirks.bundle.structural_ops, tuple)
+    assert isinstance(_projection_rows(facade_2009_953_legal_pit_quirks), tuple)
+    assert isinstance(tuple(facade_2009_953_legal_pit_quirks.to_wire_artifact().status.blockers or ()), tuple)
 
 
 def test_compile_fi_facade_returns_native_finland_facade(monkeypatch) -> None:
@@ -2163,14 +2181,14 @@ def test_compile_fi_surfaces_sparse_slot_bindings_as_projection_rows(
 
 
 def test_replay_xml_exposes_fold_and_materialized_state() -> None:
-    replay = pinned_replay("2009/953", mode="legal_pit")
+    replay = pinned_replay("2009/953", mode="legal_pit", quiet=True)
 
     assert replay.replay_fold_state is not None
     assert replay.materialized_state is replay.state
 
 
 def test_replay_xml_exposes_replay_time_projection_rows_without_explicit_sink() -> None:
-    replay = pinned_replay("1991/1707", mode="legal_pit")
+    replay = pinned_replay("1991/1707", mode="legal_pit", quiet=True)
 
     assert "adjudications" not in replay.__dict__
     contingent_sources = sorted({
@@ -2216,9 +2234,10 @@ def test_replay_xml_matches_current_oracle_order_for_1987_990_section_55_second_
     assert second_subsection_labels == ["1", "2", "3", "4", "5", "6", "6a", "7", "8", "9", "10"]
 
 
-def test_replay_xml_matches_current_oracle_order_for_1987_990_section_3_first_moment() -> None:
-    replay = pinned_replay("1987/990", mode="finlex_oracle", quiet=True)
-    section = extract_ir_sections(replay.materialized_state.ir)["chapter:1/section:3"]
+def test_replay_xml_matches_current_oracle_order_for_1987_990_section_3_first_moment(
+    replay_1987_990_finlex_oracle: ReplayResult,
+) -> None:
+    section = extract_ir_sections(replay_1987_990_finlex_oracle.materialized_state.ir)["chapter:1/section:3"]
 
     subsection_1 = next(
         child for child in section.children if child.kind == IRNodeKind.SUBSECTION and child.label == "1"
@@ -2234,9 +2253,10 @@ def test_replay_xml_matches_current_oracle_order_for_1987_990_section_3_first_mo
     assert "14" in paragraph_labels
 
 
-def test_replay_xml_matches_current_oracle_text_for_1987_990_section_73() -> None:
-    replay = pinned_replay("1987/990", mode="finlex_oracle", quiet=True)
-    section = extract_ir_sections(replay.materialized_state.ir)["chapter:11/section:73"]
+def test_replay_xml_matches_current_oracle_text_for_1987_990_section_73(
+    replay_1987_990_finlex_oracle: ReplayResult,
+) -> None:
+    section = extract_ir_sections(replay_1987_990_finlex_oracle.materialized_state.ir)["chapter:11/section:73"]
     section_text = irnode_to_text(section)
 
     assert "malminrikastuslaitos" in section_text
@@ -2252,24 +2272,20 @@ def test_replay_xml_matches_current_oracle_text_for_1987_990_section_73() -> Non
     ) in section_text
 
 
-def test_replay_xml_preserves_2010_1020_section_20_johdanto_order() -> None:
+def test_replay_xml_preserves_2010_1020_johdanto_order() -> None:
     replay = pinned_replay("1998/28", mode="finlex_oracle", quiet=True)
-    section = extract_ir_sections(replay.materialized_state.ir)["chapter:3/section:20"]
-    section_text = irnode_to_text(section)
+    sections = extract_ir_sections(replay.materialized_state.ir)
+    section_20_text = irnode_to_text(sections["chapter:3/section:20"])
 
-    assert "Lupaviranomainen voi viran puolesta muuttaa lupapäätöstä, jos:" in section_text
-    assert "Lupaviranomainen voi viran puolesta peruuttaa luvan, jos:" in section_text
-    assert section_text.index("muuttaa lupapäätöstä, jos:") < section_text.index("peruuttaa luvan, jos:")
+    assert "Lupaviranomainen voi viran puolesta muuttaa lupapäätöstä, jos:" in section_20_text
+    assert "Lupaviranomainen voi viran puolesta peruuttaa luvan, jos:" in section_20_text
+    assert section_20_text.index("muuttaa lupapäätöstä, jos:") < section_20_text.index("peruuttaa luvan, jos:")
 
+    section_25_text = irnode_to_text(sections["chapter:4/section:25"])
 
-def test_replay_xml_preserves_2010_1020_section_25_johdanto_before_registry_sentence() -> None:
-    replay = pinned_replay("1998/28", mode="finlex_oracle", quiet=True)
-    section = extract_ir_sections(replay.materialized_state.ir)["chapter:4/section:25"]
-    section_text = irnode_to_text(section)
-
-    assert "Lupapäätökseen lupaviranomaisen on:" in section_text
-    assert "Lupaviranomainen pitää rekisteriä" in section_text
-    assert section_text.index("Lupapäätökseen lupaviranomaisen on:") < section_text.index(
+    assert "Lupapäätökseen lupaviranomaisen on:" in section_25_text
+    assert "Lupaviranomainen pitää rekisteriä" in section_25_text
+    assert section_25_text.index("Lupapäätökseen lupaviranomaisen on:") < section_25_text.index(
         "Lupaviranomainen pitää rekisteriä"
     )
 
@@ -3620,5 +3636,5 @@ def test_compute_verdict_from_registry_uses_registry_descriptions() -> None:
 
 def test_replay_xml_2002_1290_does_not_crash_on_registered_item_like_normalization() -> None:
     """Replay should classify 2002/1290 without tripping unregistered payload-normalization findings."""
-    result = pinned_replay("2002/1290", mode="finlex_oracle", quiet=True)
+    result = pinned_replay("2002/1290", mode="finlex_oracle", quiet=True, build_full_products=False)
     assert result is not None

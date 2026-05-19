@@ -61,6 +61,19 @@ def _ee_xml_ns(root: ET.Element) -> str:
     return root.tag.split("}")[0].strip("{")
 
 
+def _ee_fetch_rt_xml_cached(
+    akt_viide: str,
+    archive: Any,
+    successful_xml_cache: dict[str, bytes] | None,
+) -> bytes:
+    if successful_xml_cache is not None and akt_viide in successful_xml_cache:
+        return successful_xml_cache[akt_viide]
+    xml_bytes = fetch_rt_xml(akt_viide, archive)
+    if successful_xml_cache is not None:
+        successful_xml_cache[akt_viide] = xml_bytes
+    return xml_bytes
+
+
 def _ee_extract_act_title(xml_bytes: bytes) -> str:
     try:
         root = ET.fromstring(xml_bytes)
@@ -250,6 +263,41 @@ def _ee_extract_target_matching_paragraph_numbers(xml_bytes: bytes, target_title
     return matches
 
 
+def _ee_source_surface_may_target_title(xml_bytes: bytes, target_title: str) -> bool:
+    """Conservative prefilter for expensive source-targeted reparsing.
+
+    A parse failure returns true: this helper may only skip clearly unrelated
+    source surfaces, never hide uncertainty.
+    """
+    if not target_title.strip():
+        return False
+    try:
+        root = ET.fromstring(xml_bytes)
+    except Exception:
+        return True
+    ns = _ee_xml_ns(root)
+    act_title = _ee_extract_act_title(xml_bytes)
+    if act_title and _title_matches_para(target_title, act_title):
+        return True
+    for para in root.iter(f"{{{ns}}}paragrahv"):
+        para_title = para.findtext(f"{{{ns}}}paragrahvPealkiri") or ""
+        first_tava = _first_tavatekst_text(para, ns)
+        stat_fragment = _extract_intro_statute_fragment(first_tava)
+        if para_title and (
+            _strict_title_match_para(target_title, para_title)
+            or _title_matches_para(target_title, para_title)
+        ):
+            return True
+        if stat_fragment and _title_matches_para(target_title, stat_fragment):
+            return True
+        if first_tava and _title_matches_para(target_title, first_tava):
+            return True
+    body_text = " ".join(part.strip() for part in root.itertext() if part.strip())
+    if body_text and _title_matches_para(target_title, body_text):
+        return True
+    return False
+
+
 def _ee_extract_repealed_source_paragraph_numbers(
     xml_bytes: bytes,
     amended_act_title: str,
@@ -365,6 +413,7 @@ def _ee_filter_cancelled_pending_refs(
     target_title: str,
     archive: Any,
     adjudications_out: list[CompileAdjudication] | None = None,
+    successful_xml_cache: dict[str, bytes] | None = None,
 ) -> list[AmendmentRef]:
     if len(refs) < 2 or not target_title:
         return refs
@@ -374,7 +423,7 @@ def _ee_filter_cancelled_pending_refs(
     target_sections: dict[str, set[str]] = {}
     for ref in refs:
         try:
-            xml_bytes = fetch_rt_xml(ref.aktViide, archive)
+            xml_bytes = _ee_fetch_rt_xml_cached(ref.aktViide, archive, successful_xml_cache)
         except Exception as exc:
             if adjudications_out is not None:
                 adjudications_out.append(
@@ -648,6 +697,7 @@ def _ee_precompose_pending_source_act_commencements(
     *,
     as_of: str,
     archive: Any,
+    successful_xml_cache: dict[str, bytes] | None = None,
 ) -> tuple[tuple[AmendmentRef, ...], tuple[CompileAdjudication, ...]]:
     """Apply source-backed commencement amendments to pending source-act refs."""
     if len(refs) < 2:
@@ -658,7 +708,7 @@ def _ee_precompose_pending_source_act_commencements(
     adjudications: list[CompileAdjudication] = []
     for ref in refs:
         try:
-            xml_bytes = fetch_rt_xml(ref.aktViide, archive)
+            xml_bytes = _ee_fetch_rt_xml_cached(ref.aktViide, archive, successful_xml_cache)
         except Exception as exc:
             adjudications.append(
                 _ee_orchestration_adjudication(
@@ -761,6 +811,12 @@ def _ee_precompose_pending_amendment_text_patches(
     adjudications: list[CompileAdjudication] = []
     sorted_refs = tuple(sorted(refs, key=_ee_ref_sort_key))
     parsed_meta_ops: dict[tuple[str, str], tuple[LegalOperation, ...]] = {}
+    title_by_ref = {
+        ref.aktViide: _ee_extract_act_title(xml_bytes)
+        for ref in sorted_refs
+        if (xml_bytes := amendment_xml_by_ref.get(ref.aktViide)) is not None
+    }
+    surface_may_target_cache: dict[tuple[str, str], bool] = {}
 
     for later_index, later_ref in enumerate(sorted_refs):
         later_xml = amendment_xml_by_ref.get(later_ref.aktViide)
@@ -772,8 +828,16 @@ def _ee_precompose_pending_amendment_text_patches(
             earlier_xml = amendment_xml_by_ref.get(earlier_ref.aktViide)
             if earlier_xml is None:
                 continue
-            earlier_title = _ee_extract_act_title(earlier_xml)
+            earlier_title = title_by_ref.get(earlier_ref.aktViide, "")
             if not earlier_title:
+                continue
+            surface_key = (later_ref.aktViide, earlier_title)
+            if surface_key not in surface_may_target_cache:
+                surface_may_target_cache[surface_key] = _ee_source_surface_may_target_title(
+                    later_xml,
+                    earlier_title,
+                )
+            if not surface_may_target_cache[surface_key]:
                 continue
             meta_key = (later_ref.aktViide, earlier_title)
             if meta_key not in parsed_meta_ops:
@@ -1152,16 +1216,19 @@ def replay_ee_to_pit(
         )
     ]
     cancellation_filter_adjudications: list[CompileAdjudication] = []
+    successful_amendment_xml_cache: dict[str, bytes] = {}
     to_apply = _ee_filter_cancelled_pending_refs(
         sorted(pair_plan.amendments_to_apply, key=_ee_ref_sort_key),
         target_title=base.title,
         archive=_archive,
         adjudications_out=cancellation_filter_adjudications,
+        successful_xml_cache=successful_amendment_xml_cache,
     )
     to_apply, commencement_precomposition_adjudications = _ee_precompose_pending_source_act_commencements(
         tuple(to_apply),
         as_of=as_of,
         archive=_archive,
+        successful_xml_cache=successful_amendment_xml_cache,
     )
     to_skip = [
         ref for ref in pair_plan.base_refs if ref.aktViide not in {x.aktViide for x in to_apply}
@@ -1179,7 +1246,7 @@ def replay_ee_to_pit(
     for ref in sorted(to_apply, key=_ee_ref_sort_key):
         _log(f"  {ref.aktViide}  effective={ref.joustumine}...")
         try:
-            amend_xml = fetch_rt_xml(ref.aktViide, _archive)
+            amend_xml = _ee_fetch_rt_xml_cached(ref.aktViide, _archive, successful_amendment_xml_cache)
         except Exception as e:
             _log(f"    fetch failed: {e}")
             result.amendments_failed.append(ref.aktViide)
@@ -1294,7 +1361,7 @@ def replay_ee_to_pit(
             if (ref.aktViide, ref.joustumine) in applied_keys:
                 continue
             try:
-                amend_xml = fetch_rt_xml(ref.aktViide, _archive)
+                amend_xml = _ee_fetch_rt_xml_cached(ref.aktViide, _archive, successful_amendment_xml_cache)
                 temporal_ops = parse_ee_amendment_ops(
                     amend_xml,
                     f"ee/{ref.aktViide}",

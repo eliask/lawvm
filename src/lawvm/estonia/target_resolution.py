@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace
+from functools import lru_cache
 from typing import Callable, Iterable, Sequence, cast
 import xml.etree.ElementTree as ET
 import html as html_lib
@@ -355,6 +356,7 @@ class NewFormatParagraphContext:
     source: OperationSource
 
 
+@lru_cache(maxsize=8192)
 def title_matches_para(target_title: str, para_title: str) -> bool:
     """Return True if para_title refers to the same statute as target_title."""
     if not para_title:
@@ -403,6 +405,7 @@ def title_matches_para(target_title: str, para_title: str) -> bool:
     return all(_word_matches(w) for w in target_words)
 
 
+@lru_cache(maxsize=8192)
 def strict_title_match_para(target: str, para: str) -> bool:
     """Strict title match for wrapper headers that must name the same statute."""
     if not para or not target:

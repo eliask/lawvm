@@ -136,6 +136,11 @@ class _FakeArchive(_ArchiveLike):
         return [k for k in self.stored if pattern.replace("%", "") in k]
 
 
+@pytest.fixture(autouse=True)
+def _disable_sweden_fetch_retry_sleep(monkeypatch) -> None:
+    monkeypatch.setattr("lawvm.sweden.fetch.time.sleep", lambda seconds: None)
+
+
 def test_fetch_se_official_artifacts_fetches_doc_and_pdf_and_stores_text(monkeypatch) -> None:
     doc_url = "https://svenskforfattningssamling.se/doc/2026286.html"
     pdf_url = "https://svenskforfattningssamling.se/sites/default/files/sfs/2026-03/SFS2026-286.pdf"

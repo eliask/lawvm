@@ -48,6 +48,7 @@ import re
 import sys
 import unicodedata
 from dataclasses import replace
+from functools import lru_cache
 from typing import List, Optional, Tuple
 
 from lawvm.core.ir import (
@@ -1540,26 +1541,27 @@ def _extract_balanced_quoted_contents(text: str, open_quote: str, close_quote: s
     return contents
 
 
-def _extract_quoted_contents(text: str) -> List[str]:
+@lru_cache(maxsize=8192)
+def _extract_quoted_contents_cached(text: str) -> tuple[str, ...]:
     """Extract one or more payload blocks between quotation marks."""
     balanced_left_right = _extract_balanced_quoted_contents(text, '\u201c', '\u201d')
     if balanced_left_right:
-        return balanced_left_right
+        return tuple(balanced_left_right)
     balanced_estonian_left_close = _extract_balanced_quoted_contents(text, '\u201e', '\u201c')
     if balanced_estonian_left_close:
-        return balanced_estonian_left_close
+        return tuple(balanced_estonian_left_close)
     balanced_estonian = _extract_balanced_quoted_contents(text, '\u201e', '\u201d')
     if balanced_estonian:
-        return balanced_estonian
+        return tuple(balanced_estonian)
     balanced_estonian_ascii = _extract_balanced_quoted_contents(text, '\u201e', '"')
     if balanced_estonian_ascii:
-        return balanced_estonian_ascii
+        return tuple(balanced_estonian_ascii)
     balanced_estonian_prime = _extract_balanced_quoted_contents(text, '\u201e', '\u02ee')
     if balanced_estonian_prime:
-        return balanced_estonian_prime
+        return tuple(balanced_estonian_prime)
     balanced_french = _extract_balanced_quoted_contents(text, '\u00ab', '\u00bb')
     if balanced_french:
-        return balanced_french
+        return tuple(balanced_french)
     for pat in (
         r'\u201c(.*?)\u201d',
         r'\u201e(.*?)\u201c',
@@ -1574,8 +1576,13 @@ def _extract_quoted_contents(text: str) -> List[str]:
     ):
         matches = [m.strip() for m in re.findall(pat, text, re.DOTALL) if m.strip()]
         if matches:
-            return matches
-    return []
+            return tuple(matches)
+    return ()
+
+
+def _extract_quoted_contents(text: str) -> List[str]:
+    """Extract one or more payload blocks between quotation marks."""
+    return list(_extract_quoted_contents_cached(text))
 
 
 def _extract_payload_after_marker(text: str) -> Optional[str]:

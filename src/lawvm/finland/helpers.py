@@ -43,6 +43,7 @@ def _norm_num_token(text: str) -> str:
     return token
 
 
+@functools.lru_cache(maxsize=8192)
 def _norm_row_anchor_text(text: str) -> str:
     """Normalize Finland table-row anchor text for replay matching."""
     cleaned = text.lower().replace("\xa0", " ")
@@ -62,6 +63,7 @@ def _norm_row_anchor_text(text: str) -> str:
     return " ".join(cleaned.split())
 
 
+@functools.lru_cache(maxsize=8192)
 def _section_sort_key(text: str) -> Tuple[int, str]:
     """Return a sort key for a Finnish section/chapter label string.
 
@@ -255,7 +257,8 @@ def _fi_label_postprocessor(tag: str, norm: str) -> str:
     return norm
 
 
-def _expand_section_range(section: str) -> List[str]:
+@functools.lru_cache(maxsize=8192)
+def _expand_section_range_tuple(section: str) -> tuple[str, ...]:
     """Expand a Finnish section range like ``'12―14'`` → ``['12', '13', '14']``.
 
     Handles horizontal bar (―), em-dash (—), en-dash (–) and ASCII hyphen (-)
@@ -273,7 +276,7 @@ def _expand_section_range(section: str) -> List[str]:
             parts = section.split(dash, 1)
             start, end = parts[0].strip(), parts[1].strip()
             if start.isdigit() and end.isdigit():
-                return [str(i) for i in range(int(start), int(end) + 1)]
+                return tuple(str(i) for i in range(int(start), int(end) + 1))
             m_start = re.fullmatch(r"(\d+)([a-z])", start, re.IGNORECASE)
             m_end = re.fullmatch(r"(\d+)([a-z])", end, re.IGNORECASE)
             if m_start and m_end and m_start.group(1) == m_end.group(1):
@@ -281,11 +284,18 @@ def _expand_section_range(section: str) -> List[str]:
                 s_c = m_start.group(2).lower()
                 e_c = m_end.group(2).lower()
                 if ord(s_c) <= ord(e_c):
-                    return [f"{base}{chr(c)}" for c in range(ord(s_c), ord(e_c) + 1)]
+                    return tuple(f"{base}{chr(c)}" for c in range(ord(s_c), ord(e_c) + 1))
             if m_start and end.isdigit():
                 s_n = int(m_start.group(1))
                 e_n = int(end)
                 if s_n < e_n:
-                    return [f"{s_n}{m_start.group(2).lower()}"] + [str(i) for i in range(s_n + 1, e_n + 1)]
+                    return (f"{s_n}{m_start.group(2).lower()}",) + tuple(
+                        str(i) for i in range(s_n + 1, e_n + 1)
+                    )
             break
-    return [section]
+    return (section,)
+
+
+def _expand_section_range(section: str) -> List[str]:
+    """Expand a Finnish section range like ``'12―14'`` → ``['12', '13', '14']``."""
+    return list(_expand_section_range_tuple(section))

@@ -6,6 +6,7 @@ layer. It is intentionally small and lookup-oriented.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 import re
 
 
@@ -97,10 +98,12 @@ _EE_ACT_IDENTITY_REGISTRY: tuple[EEActIdentityRecord, ...] = (
 )
 
 
+@lru_cache(maxsize=8192)
 def _normalize_identity_text(text: str) -> str:
     return " ".join((text or "").split()).strip().casefold()
 
 
+@lru_cache(maxsize=8192)
 def _normalize_identity_surface(text: str) -> str:
     """Normalize a statute title surface, including common clause suffixes."""
     normalized = _normalize_identity_text(text)
@@ -119,6 +122,7 @@ def _normalize_identity_surface(text: str) -> str:
     return normalized
 
 
+@lru_cache(maxsize=8192)
 def _identity_surfaces(text: str) -> tuple[str, ...]:
     """Return exact-match surfaces carried by a statute title or wrapper header."""
     surfaces: list[str] = []
@@ -140,19 +144,26 @@ def _record_titles(record: EEActIdentityRecord) -> tuple[str, ...]:
     )
 
 
+@lru_cache(maxsize=8192)
+def _record_surfaces(record: EEActIdentityRecord) -> frozenset[str]:
+    return frozenset(
+        _normalize_identity_surface(candidate)
+        for candidate in _record_titles(record)
+        if candidate
+    )
+
+
+@lru_cache(maxsize=8192)
 def act_identity_matches_title(record: EEActIdentityRecord, title: str) -> bool:
     """Return True if the registry record supports the given title string."""
     normalized_titles = _identity_surfaces(title)
     if not normalized_titles:
         return False
-    record_surfaces = {
-        _normalize_identity_surface(candidate)
-        for candidate in _record_titles(record)
-        if candidate
-    }
+    record_surfaces = _record_surfaces(record)
     return any(surface in record_surfaces for surface in normalized_titles)
 
 
+@lru_cache(maxsize=8192)
 def lookup_ee_act_identity(
     *,
     akt_viide: str = "",
@@ -177,12 +188,7 @@ def lookup_ee_act_identity(
         return None
 
     for record in registry:
-        record_candidates = {
-            surface
-            for candidate in _record_titles(record)
-            if candidate
-            for surface in _identity_surfaces(candidate)
-        }
+        record_candidates = _record_surfaces(record)
         if any(candidate in record_candidates for candidate in normalized_candidates):
             return record
     return None
