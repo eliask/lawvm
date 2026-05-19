@@ -1628,6 +1628,205 @@ def test_compile_before_anchor_insert_places_nested_alpha_label_before_named_sib
     assert adjudications[0].detail["blocking"] is False
 
 
+def test_compile_source_owned_schedule_structural_sibling_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-14-paragraph-12-2-a">
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>
+              a after paragraph (a) insert—
+              aa if the community order qualifies for special procedures for
+              the purposes of section 217A, the court that made the order; ;
+            </Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-7cbe521cfe46b55f7208964e3b575105",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-04-25",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="Sch. 10 para. 1",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="Sch. 14 para. 12(2)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2022-06-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("schedule", "10"), ("paragraph", "1"), ("item", "aa"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.ITEM
+    assert ops[0].payload.label == "aa"
+    assert ops[0].payload.text == (
+        "if the community order qualifies for special procedures for the "
+        "purposes of section 217A, the court that made the order;"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_structural_sibling_insert_lowered"
+        not in ops[0].provenance_tags
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_structural_sibling_insert_lowered",
+    ]
+    assert lowering_records[0]["target"] == "schedule:10/paragraph:1/item:aa"
+    assert lowering_records[0]["blocking"] is False
+
+    base = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="10",
+                attrs={"eId": "schedule-10"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        attrs={"eId": "schedule-10-paragraph-1"},
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.ITEM,
+                                label="a",
+                                text="the offender;",
+                                attrs={"eId": "schedule-10-paragraph-1-a"},
+                            ),
+                            IRNode(
+                                kind=IRNodeKind.ITEM,
+                                label="b",
+                                text="the responsible officer;",
+                                attrs={"eId": "schedule-10-paragraph-1-b"},
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(base, ops)
+    paragraph = replayed.supplements[0].children[0]
+    assert [child.label for child in paragraph.children] == ["a", "aa", "b"]
+    assert paragraph.children[1].attrs["eId"] == "schedule-10-paragraph-1-aa"
+
+
+def test_compile_structural_sibling_insert_keeps_inserted_parent_context_unsupported() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-14-paragraph-14-2-b">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>
+              b in sub-paragraph (3)(a), in the inserted paragraph (d),
+              before sub-paragraph (i) insert—
+              ai a court acting for a local justice area in which the offender resides;
+            </Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-9f32dbeb13e3cc664eb08d4dca67b98b",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-04-25",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="Sch. 22 para. 21(3)(a)",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="Sch. 14 para. 14(2)(b)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2022-06-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert "uk_effect_structural_sibling_insert_lowered" not in {
+        row["rule_id"] for row in lowering_records
+    }
+    assert "uk_effect_overlap_substitution_unlowered" in {
+        row["rule_id"] for row in lowering_records
+    }
+
+
+def test_compile_structural_sibling_insert_does_not_append_when_feed_target_is_inserted_child() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="regulation-5-3-b">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>
+              b after sub-paragraph (1) insert—
+              2 After subsection (2) insert—
+              2A But the compulsory referral conditions are not met.
+            </Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-feed-target-already-inserted-child",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2020-12-31",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="Sch. 22 para. 87(2)",
+        affecting_uri="/id/uksi/2020/1520",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2020",
+        affecting_number="1520",
+        affecting_provisions="reg. 5(3)(b)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2020-12-31", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert all(row["rule_id"] != "uk_effect_structural_sibling_insert_lowered" for row in lowering_records)
+    assert all(op.target.path != (("schedule", "22"), ("paragraph", "87"), ("subparagraph", "2"), ("item", "2")) for op in ops)
+
+
 def test_extract_provision_bytes_keeps_enclosing_instruction_when_only_inline_amendment() -> None:
     xml_bytes = f"""
     <Legislation xmlns="{_LEG_NS}">

@@ -1555,13 +1555,15 @@ Current block-substitution context invariant:
   `TEXT_AFTER_DEFINITION_2002 Act`. Current witness: `asp/2007/3` affected
   `s. 221` by `ssi/2012/301` `Sch. para. 3(2)(a)`.
 - `after paragraph/sub-paragraph/subsection (X) insert- <new sibling block>` is
-  a structural sibling-insertion family, not a child-text append. While LawVM
-  lacks a compiler that splits the new sibling block into owned child payloads,
-  such rows are classified as `structural_sibling_insert_unsupported` and
-  `uk_manual_frontier_structural_sibling_insert_candidate`. The existing
+  a structural sibling-insertion family, not a child-text append. LawVM lowers
+  the bounded source-owned form to `uk_effect_structural_sibling_insert_lowered`
+  only when the effect-feed target is the parent container and the source names
+  both the existing anchor child and the inserted child label. Example:
+  `ukpga/2020/17` `Sch. 10 para. 1`, affected by `ukpga/2022/32`
+  `Sch. 14 para. 12(2)(a)`, lowers `after paragraph (a) insert- aa ...` to an
+  `insert` at `schedule:10/paragraph:1/item:aa`. The existing
   `TEXT_AFTER_CHILD_*` text patch remains valid only for inline insertions into
-  the named child, not for creating siblings. Current witness: `asp/2007/3`
-  affected `s. 221` by `ssi/2012/301` `Sch. para. 3(2)(b)(ii)`.
+  the named child, not for creating siblings.
 - Deictic and mixed block forms such as `after that paragraph, insert- <new
   sibling block>` and `at the end of paragraph (b), insert- <punctuation plus
   new sibling>` are the same unsupported structural-sibling family until a
@@ -1573,6 +1575,8 @@ Current block-substitution context invariant:
   nested paragraph is also a structural-sibling frontier. It is classified as
   `structural_sibling_insert_unsupported` rather than a parser miss until a
   compiler can own the parent context, sibling anchor, and inserted payload.
+  Current witnesses: `ukpga/2020/17` affected `Sch. 22 para. 21(2)(a)` and
+  `Sch. 22 para. 21(3)(a)` by `ukpga/2022/32` `Sch. 14 para. 14(2)(a)-(b)`.
 - definition-scoped all-occurrence insertions such as `in the definition of
   "X" after "Y", in both places where it appears, insert "Z"` lower to
   `TEXT_IN_DEFINITION_X/AFTER_EACH/Y` using

@@ -1505,12 +1505,16 @@ def _separate_occurrence_text_replace_fragments(
     return tuple(fragments)
 
 
-def _source_after_insertion_anchor(text: str) -> tuple[Optional[str], Optional[str]]:
+def _source_after_insertion_anchor(
+    text: str,
+    target: Optional[LegalAddress] = None,
+) -> tuple[Optional[str], Optional[str]]:
     lead = " ".join(str(text or "").split())
     if not lead:
         return None, None
     match = re.search(
-        r"\bafter\s+(?P<kind>paragraph|section|ss\.|s\.)\s*\(?(?P<label>[0-9a-zA-Z]+)\)?\b",
+        r"\bafter\s+(?P<kind>sub-?paragraph|paragraph|subsection|section|ss\.|s\.)\s*"
+        r"\(?(?P<label>[0-9a-zA-Z]+)\)?\b",
         lead,
         flags=re.I,
     )
@@ -1520,6 +1524,12 @@ def _source_after_insertion_anchor(text: str) -> tuple[Optional[str], Optional[s
     label = str(match.group("label") or "")
     if not label:
         return None, None
+    if target is not None and len(target.path) > 1:
+        parent = target.parent()
+        sibling_kind = _addr_leaf_kind(target)
+        if parent is not None and sibling_kind:
+            sibling = LegalAddress(path=(*parent.path, (sibling_kind, label)))
+            return _fallback_target_eid(sibling), "extracted_source_after_clause"
     prefix = "p1" if kind == "paragraph" else "section"
     return f"{prefix}-{label}", "extracted_source_after_clause"
 
@@ -6238,6 +6248,14 @@ _SOURCE_CARRIED_CHILD_TAIL_SUBSTITUTION_RE = re.compile(
     r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*;?\s*(?:and)?\s*\.?\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_CARRIED_STRUCTURAL_SIBLING_INSERT_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"after\s+(?P<source_kind>sub-?paragraph|paragraph|subsection|item)\s+"
+    r"\((?P<anchor_label>[0-9A-Za-z]+)\),?\s+"
+    r"insert\s*[—-]\s*(?P<inserted_label>[0-9A-Za-z]+)\s+"
+    r"(?P<inserted_text>.+?)\s*$",
+    flags=re.I | re.S,
+)
 _SOURCE_CARRIED_MULTI_SUBUNIT_REPEAL_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"in\s+section\s+(?P<section>[0-9A-Za-z]+)\b.*?,\s+"
@@ -6429,6 +6447,85 @@ def _fragment_substitution_source_carried_child_tail_substitution(
         "source_subsection_label": source_subsection,
         "source_anchor_child_label": anchor_label,
         "rule_id": "uk_effect_source_carried_child_tail_substitution_text_patch",
+    }
+
+
+def _normalize_structural_sibling_source_kind(text: str) -> str:
+    normalized = re.sub(r"[^a-z]+", "", str(text or "").lower())
+    if normalized.endswith("s"):
+        normalized = normalized[:-1]
+    if normalized == "subparagraph":
+        return "subparagraph"
+    return normalized
+
+
+def _child_kind_for_structural_sibling_insert(
+    *,
+    target: LegalAddress,
+    source_kind: str,
+    inserted_label: str,
+) -> str:
+    """Return the LawVM child kind for a source-owned structural sibling insert."""
+    target_leaf_kind = str(_addr_leaf_kind(target) or "").lower()
+    if not target_leaf_kind:
+        return ""
+    normalized_source_kind = _normalize_structural_sibling_source_kind(source_kind)
+    if _addr_container(target) == "schedule":
+        if target_leaf_kind == "paragraph" and normalized_source_kind == "paragraph":
+            return "item" if _looks_like_lettered_item_label(inserted_label) else "subparagraph"
+        if target_leaf_kind == "subparagraph" and normalized_source_kind in {"subparagraph", "paragraph"}:
+            return "item"
+        if target_leaf_kind in {"item", "point"} and normalized_source_kind in {"subparagraph", "paragraph", "item"}:
+            return "item"
+        return ""
+    if target_leaf_kind == "section" and normalized_source_kind == "subsection":
+        return "subsection"
+    if target_leaf_kind == "subsection" and normalized_source_kind == "paragraph":
+        return "paragraph"
+    if target_leaf_kind == "paragraph" and normalized_source_kind == "subparagraph":
+        return "subparagraph"
+    if target_leaf_kind in {"subparagraph", "item", "point"} and normalized_source_kind in {"item", "paragraph"}:
+        return "item"
+    return ""
+
+
+def _structural_sibling_insert_from_source(
+    *,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Lower explicit source-owned sibling insertions to a child insert payload."""
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text or re.search(r"\bin\s+the\s+inserted\s+", text, flags=re.I):
+        return None
+    match = _SOURCE_CARRIED_STRUCTURAL_SIBLING_INSERT_RE.match(text)
+    if match is None:
+        return None
+    inserted_label = _clean_num(match.group("inserted_label"))
+    anchor_label = _clean_num(match.group("anchor_label"))
+    if not inserted_label or not anchor_label or inserted_label == anchor_label:
+        return None
+    if inserted_label == _clean_num(_addr_leaf_label(target) or ""):
+        return None
+    child_kind = _child_kind_for_structural_sibling_insert(
+        target=target,
+        source_kind=match.group("source_kind"),
+        inserted_label=inserted_label,
+    )
+    if not child_kind:
+        return None
+    inserted_text = " ".join(match.group("inserted_text").split()).strip()
+    inserted_text = re.sub(r"\s*;\s*;\s*$", ";", inserted_text).strip()
+    if not inserted_text:
+        return None
+    new_target = canonicalize_uk_address(LegalAddress(path=(*target.path, (child_kind, inserted_label))))
+    return {
+        "anchor_label": anchor_label,
+        "child_kind": child_kind,
+        "inserted_label": inserted_label,
+        "inserted_text": inserted_text,
+        "new_target": str(new_target),
+        "source_kind": _normalize_structural_sibling_source_kind(match.group("source_kind")),
     }
 
 
@@ -7951,6 +8048,63 @@ def compile_effect_to_ir_ops(
                 detail=substituted_series_insert_detail,
             )
 
+        structural_sibling_insert_detail = (
+            _structural_sibling_insert_from_source(
+                extracted_text=extracted_text,
+                target=target,
+            )
+            if curr_action == "insert"
+            and effect_type in {"words inserted", "word inserted"}
+            and extracted_text
+            else None
+        )
+        if structural_sibling_insert_detail is not None:
+            target = canonicalize_uk_address(
+                LegalAddress(
+                    path=(
+                        *target.path,
+                        (
+                            structural_sibling_insert_detail["child_kind"],
+                            structural_sibling_insert_detail["inserted_label"],
+                        ),
+                    )
+                )
+            )
+            content_ir = {
+                "kind": structural_sibling_insert_detail["child_kind"],
+                "label": structural_sibling_insert_detail["inserted_label"],
+                "text": structural_sibling_insert_detail["inserted_text"],
+                "attrs": {
+                    "source_rule_id": "uk_effect_structural_sibling_insert_lowered",
+                    "source_anchor_child_label": structural_sibling_insert_detail["anchor_label"],
+                    "source_child_kind": structural_sibling_insert_detail["source_kind"],
+                },
+                "children": [],
+            }
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_effect_structural_sibling_insert_lowered",
+                family="source_context_elaboration",
+                reason_code="source_owned_structural_sibling_insert",
+                reason=(
+                    "UK source text explicitly inserts a new labelled structural "
+                    "sibling after a named child of the affected parent; lowering "
+                    "emits a child insert at the source-owned sibling target "
+                    "instead of appending payload text to the anchor."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "original_target_ref": t_str,
+                    "source_anchor_child_label": structural_sibling_insert_detail["anchor_label"],
+                    "source_child_kind": structural_sibling_insert_detail["source_kind"],
+                    "inserted_child_kind": structural_sibling_insert_detail["child_kind"],
+                    "inserted_child_label": structural_sibling_insert_detail["inserted_label"],
+                    "target": str(target),
+                },
+            )
+
         # Grounding 2.0: Fragment substitutions
         structural_omission_reclassification = _word_level_structural_subsection_omission(
             effect_type=effect.effect_type,
@@ -7979,7 +8133,11 @@ def compile_effect_to_ir_ops(
                 },
             )
 
-        word_level_text_patch_required = is_word_level and curr_action != "repeal"
+        word_level_text_patch_required = (
+            is_word_level
+            and curr_action != "repeal"
+            and structural_sibling_insert_detail is None
+        )
         if fragment_subs is None and (curr_action == "replace" or word_level_text_patch_required) and extracted_text:
             treat_as_source_structural_replace = (
                 curr_action == "replace"
@@ -8582,7 +8740,10 @@ def compile_effect_to_ir_ops(
             source_anchor_text = ""
             if extracted_el is not None:
                 source_anchor_text = _instruction_text_before_amendment_container(extracted_el) or (extracted_text or "")
-            source_preceding_eid, source_preceding_eid_source = _source_after_insertion_anchor(source_anchor_text)
+            source_preceding_eid, source_preceding_eid_source = _source_after_insertion_anchor(
+                source_anchor_text,
+                target,
+            )
             if source_preceding_eid and not preceding_eid:
                 preceding_eid = source_preceding_eid
                 preceding_eid_source = source_preceding_eid_source or preceding_eid_source
