@@ -3885,6 +3885,137 @@ def test_compile_corresponding_table_entry_word_substitution_with_rowspan_source
     )
 
 
+def test_compile_repeal_table_quoted_words_text_repeal() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule id="schedule-15">
+            <Title>Repeals</Title>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td rowspan="2">Abolition of Feudal Tenure etc. (Scotland) Act 2000 (asp 5)</td>
+                  <td>In section 17(1), the words “23,”.</td>
+                </tr>
+                <tr><td>Section 20(8)(b) and (c).</td></tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_quoted_words",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=False,
+        modified="2004-11-28",
+        affected_uri="/id/asp/2000/5",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="5",
+        affected_provisions="s. 17(1)",
+        affecting_uri="/id/asp/2003/9",
+        affecting_class="ScottishAct",
+        affecting_year="2003",
+        affecting_number="9",
+        affecting_provisions="Sch. 15",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2004-11-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "17"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "23,"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_repeal_table_quoted_words_text_repeal"
+        in ops[0].provenance_tags
+    )
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_quoted_words_text_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_quoted_words_text_repeal"
+        and record["family"] == "source_repeal_table_elaboration"
+        and record["blocking"] is False
+        and record["strict_disposition"] == "record"
+        and record["extent_cell"] == "In section 17(1), the words “23,”."
+        for record in lowering_records
+    )
+
+
+def test_compile_repeal_table_quoted_words_blocks_without_unique_owned_row() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Abolition of Feudal Tenure etc. (Scotland) Act 2000 (asp 5)</td>
+                  <td>Section 20(8)(b) and (c).</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_no_quoted_words",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=False,
+        modified="2004-11-28",
+        affected_uri="/id/asp/2000/5",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="5",
+        affected_provisions="s. 20(8)(b)",
+        affecting_uri="/id/asp/2003/9",
+        affecting_class="ScottishAct",
+        affecting_year="2003",
+        affecting_number="9",
+        affecting_provisions="Sch. 15",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2004-11-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_quoted_words_text_repeal_unresolved"
+        and record["blocking"] is True
+        and record["strict_disposition"] == "block"
+        and record["match_count"] == 0
+        for record in lowering_records
+    )
+
+
 def test_compile_corresponding_table_entry_word_substitution_matches_plural_section_list() -> None:
     source_root = ET.fromstring(
         """
