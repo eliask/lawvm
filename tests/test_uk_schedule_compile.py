@@ -9972,7 +9972,7 @@ def test_compile_heading_facet_words_following_anchor_to_tail_replace() -> None:
     assert ops[0].text_patch.replacement == "or Northern Ireland."
 
 
-def test_compile_heading_facet_insert_without_append_stays_unsupported() -> None:
+def test_compile_heading_facet_after_anchor_insert_targets_heading_carrier() -> None:
     extracted_el = ET.fromstring(
         f"""
         <P xmlns="{_LEG_NS}">
@@ -9981,7 +9981,51 @@ def test_compile_heading_facet_insert_without_append_stays_unsupported() -> None
         """
     )
     effect = UKEffectRecord(
-        effect_id="uk_test_heading_facet_insert_after_unsupported",
+        effect_id="uk_test_heading_facet_insert_after_anchor",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2020-12-31",
+        affected_uri="/id/ukpga/2020/1/section/38/heading",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="1",
+        affected_provisions="s. 38 heading",
+        affecting_uri="/id/ukpga/2020/27",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2020",
+        affecting_number="27",
+        affecting_provisions="Sch. 3 para. 1",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2020-12-31", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(path=(("section", "38"),), special=FacetKind.HEADING)
+    assert ops[0].text_patch == _replace_patch("Parliamentary", "Parliamentary and democratic")
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_heading_facet_after_anchor_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_heading_facet_after_anchor_insert_lowered"
+    ]
+
+
+def test_compile_heading_facet_before_anchor_insert_stays_unsupported() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P xmlns="{_LEG_NS}">
+          <Text>In the heading, before “sovereignty” insert “democratic”.</Text>
+        </P>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_heading_facet_insert_before_unsupported",
         effect_type="words inserted",
         applied=True,
         requires_applied=False,
@@ -10112,6 +10156,40 @@ def test_replay_heading_facet_append_mutates_unique_p1group_heading_only() -> No
     section = p1group.children[0]
     assert p1group.text == "Parliamentary sovereignty and the constitutional status of Northern Ireland"
     assert section.children[0].text == "Body text."
+
+
+def test_replay_heading_facet_after_anchor_insert_preserves_heading_tail() -> None:
+    base = IRStatute(
+        statute_id="asc/2021/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="6",
+                    text="PRINCIPAL COUNCILS: INTERVENTION",
+                    children=(IRNode(kind=IRNodeKind.CHAPTER, label="1", text="INTERVENTION"),),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    op = LegalOperation(
+        op_id="uk_test_heading_facet_after_anchor_insert_apply",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("part", "6"),), special=FacetKind.HEADING),
+        text_patch=_replace_patch("PRINCIPAL COUNCILS", "PRINCIPAL COUNCILS AND CORPORATE JOINT COMMITTEES"),
+    )
+
+    result = replay_uk_ops(base, [op])
+
+    part = result.body.children[0]
+    assert part.text == "PRINCIPAL COUNCILS AND CORPORATE JOINT COMMITTEES: INTERVENTION"
+    assert part.children[0].text == "INTERVENTION"
 
 
 def test_replay_heading_facet_after_anchor_tail_replace_mutates_heading_only() -> None:

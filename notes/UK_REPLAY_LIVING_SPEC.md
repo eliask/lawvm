@@ -264,11 +264,13 @@ enough evidence for a human or LLM to propose closed operations, but the current
 frontend cannot yet lower them safely:
 
 - heading/title/sidenote targets that are not explicit word substitutions,
-  omissions, or `at the end insert ...` appends. Explicit word-level heading
+  omissions, `at the end insert ...` appends, or `after "X" insert "Y"`
+  insertions against a quoted heading anchor. Explicit word-level heading
   patches can lower to `section:.../heading`; append lowers as a typed
-  `TextPatchKindEnum.APPEND` patch. Other heading inserts still need a typed
-  placement/compiler lane rather than a whole-body or synthetic text
-  replacement.
+  `TextPatchKindEnum.APPEND` patch; quoted-anchor heading insertion lowers via
+  `uk_effect_heading_facet_after_anchor_insert_text_patch`. Other heading
+  inserts still need a typed placement/compiler lane rather than a whole-body
+  or synthetic text replacement.
 - cross-heading replacements lower only when the source gives an explicit
   `heading before paragraph/section/article X substitute ...` shape. The
   current owned lane is `uk_effect_crossheading_before_anchor_replacement_lowered`:
@@ -1682,8 +1684,9 @@ Current block-substitution context invariant:
   affected `s. 8(3)` by `asp/2010/11 Sch. 2 para. 1(a)`.
 - source text that targets `heading`, `title`, or `sidenote` facets lowers
   when it is an explicit word substitution/omission with a concrete old text
-  selector, or an explicit `at the end insert ...` append. Replay then mutates
-  only the heading carrier: direct heading text on title-bearing nodes, an
+  selector, an explicit `at the end insert ...` append, or an explicit
+  `after "X" insert "Y"` insertion against a quoted heading anchor. Replay then
+  mutates only the heading carrier: direct heading text on title-bearing nodes, an
   explicit `heading` child under the target section, a unique `P1group`
   heading that wraps the target section, or a subordinate source `P2group` /
   `P3group` / `P4group` preserved as `pgroup` under

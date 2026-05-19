@@ -306,6 +306,32 @@ def _heading_facet_append_fragment(extracted_text: Optional[str]) -> Optional[di
     return None
 
 
+def _heading_facet_after_anchor_insert_fragment(extracted_text: Optional[str]) -> Optional[dict[str, Any]]:
+    """Return a bounded heading/title insertion after an explicit quoted anchor."""
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return None
+    match = re.search(
+        r"\bafter\s+[“\"'‘](?P<anchor>.*?)[”\"'’],?\s+"
+        r"(?:there\s+(?:is|are|shall\s+be)\s+inserted|insert)"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
+        text,
+        flags=re.I | re.S,
+    )
+    if match is None:
+        return None
+    anchor = match.group("anchor").strip()
+    inserted = match.group("inserted").strip()
+    if not anchor or not inserted:
+        return None
+    joiner = "" if anchor.endswith((" ", "\t", "\n", "\r")) or inserted.startswith((" ", ",", ".", ";", ":", ")")) else " "
+    return {
+        "original": anchor,
+        "replacement": f"{anchor}{joiner}{inserted}",
+        "rule_id": "uk_effect_heading_facet_after_anchor_insert_text_patch",
+    }
+
+
 def _is_heading_facet_word_patch_supported(effect_type: str, extracted_text: Optional[str] = None) -> bool:
     """Return whether a UK heading-facet effect can carry an explicit text patch."""
     normalized = " ".join((effect_type or "").lower().split())
@@ -319,7 +345,10 @@ def _is_heading_facet_word_patch_supported(effect_type: str, extracted_text: Opt
     }:
         return True
     if normalized in {"words inserted", "word inserted"}:
-        return _heading_facet_append_fragment(extracted_text) is not None
+        return (
+            _heading_facet_append_fragment(extracted_text) is not None
+            or _heading_facet_after_anchor_insert_fragment(extracted_text) is not None
+        )
     return False
 
 
@@ -6406,25 +6435,29 @@ def compile_effect_to_ir_ops(
         if heading_facet_target:
             target = LegalAddress(path=target.path, special=FacetKind.HEADING)
             heading_append_fragment = _heading_facet_append_fragment(extracted_text)
-            heading_observation_rule = (
-                "uk_effect_heading_facet_append_lowered"
-                if heading_append_fragment is not None
-                else "uk_effect_heading_facet_word_patch_lowered"
-            )
-            heading_reason_code = (
-                "explicit_heading_facet_append"
-                if heading_append_fragment is not None
-                else "explicit_heading_facet_word_patch"
-            )
-            heading_reason = (
-                "UK heading/title/sidenote target lowered as a typed facet "
-                "append; replay must mutate only the heading carrier."
-                if heading_append_fragment is not None
-                else (
+            heading_after_anchor_insert_fragment = _heading_facet_after_anchor_insert_fragment(extracted_text)
+            if heading_append_fragment is not None:
+                heading_observation_rule = "uk_effect_heading_facet_append_lowered"
+                heading_reason_code = "explicit_heading_facet_append"
+                heading_reason = (
+                    "UK heading/title/sidenote target lowered as a typed facet "
+                    "append; replay must mutate only the heading carrier."
+                )
+            elif heading_after_anchor_insert_fragment is not None:
+                heading_observation_rule = "uk_effect_heading_facet_after_anchor_insert_lowered"
+                heading_reason_code = "explicit_heading_facet_after_anchor_insert"
+                heading_reason = (
+                    "UK heading/title/sidenote target lowered as a facet text "
+                    "insertion after an explicit heading anchor; replay must "
+                    "mutate only the heading carrier."
+                )
+            else:
+                heading_observation_rule = "uk_effect_heading_facet_word_patch_lowered"
+                heading_reason_code = "explicit_heading_facet_word_patch"
+                heading_reason = (
                     "UK heading/title/sidenote target lowered as a facet "
                     "text patch; replay must mutate only the heading carrier."
                 )
-            )
             _append_uk_effect_lowering_observation(
                 lowering_rejections_out,
                 rule_id=heading_observation_rule,
@@ -6858,9 +6891,14 @@ def compile_effect_to_ir_ops(
                     )
                     curr_action = None
                     continue
+                heading_after_anchor_insert = (
+                    _heading_facet_after_anchor_insert_fragment(extracted_text) if heading_facet_target else None
+                )
                 subs = (
                     fragment_subs
                     if table_substitution.recognized
+                    else [heading_after_anchor_insert]
+                    if heading_after_anchor_insert is not None
                     else parse_fragment_substitution(extracted_text)
                 )
                 if not subs:
