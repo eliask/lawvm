@@ -4017,6 +4017,16 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     uk_candidates_p.add_argument(
+        "--manual-compile-evidence-status",
+        action="append",
+        metavar="STATUS",
+        help=(
+            "with --manual-compile-evidence-jsonl, export rows with this "
+            "manual compile frontier status; repeatable (default: "
+            "manual_compile_candidate)"
+        ),
+    )
+    uk_candidates_p.add_argument(
         "--replay-adjudication-kind",
         nargs="+",
         metavar="KIND",

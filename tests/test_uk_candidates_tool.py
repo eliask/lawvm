@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from argparse import Namespace
+from dataclasses import replace
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -2491,6 +2492,7 @@ def test_uk_candidates_full_mode_exports_manual_compile_evidence_jsonl(
     assert payload["manual_compile_evidence_jsonl"] == {
         "path": str(out_path),
         "rows": 1,
+        "statuses": ["manual_compile_candidate"],
     }
     assert rows[0]["statute_id"] == "ukpga/2000/1"
     assert rows[0]["effect_id"] == "eff-heading"
@@ -2530,6 +2532,193 @@ def test_uk_candidates_full_mode_exports_manual_compile_evidence_jsonl(
     }
 
 
+def test_uk_candidates_manual_compile_evidence_jsonl_can_export_frontend_candidates(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    import farchive
+    from lawvm.tools import uk_effects
+    from lawvm.uk_legislation import uk_amendment_replay
+    from lawvm.uk_legislation.uk_amendment_replay import UKEffectRecord
+
+    db_path = tmp_path / "uk.farchive"
+    db_path.write_bytes(b"placeholder")
+    out_path = tmp_path / "manual" / "uk-frontier.jsonl"
+    bench_row = SimpleNamespace(
+        statute_id="asp/2001/2",
+        status="OK",
+        year=2001,
+        act_type="asp",
+        replay_commencement_score=-1.0,
+        replay_score=0.8,
+        commencement_score=-1.0,
+        score=0.8,
+        n_commenced_eids=0,
+        comparison_class="commensurable",
+        n_enacted_eids=10,
+        n_oracle_eids=12,
+        n_effects=2,
+        n_effect_rows=2,
+        enacted_source_status="available",
+        oracle_source_status="available",
+        uk_metadata_backfill_enabled=False,
+        uk_oracle_alignment_enabled=False,
+        uk_metadata_only_effects_enabled=False,
+        uk_applicability_mode="effective_date_only",
+        uk_authority_mode="source_text_only",
+    )
+    manual_effect = UKEffectRecord(
+        effect_id="eff-manual",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/asp/2001/2",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 1",
+        affecting_uri="/id/asp/2025/1",
+        affecting_class="ScottishAct",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="s. 2",
+        affecting_title="Manual Act",
+    )
+    frontend_effect = replace(
+        manual_effect,
+        effect_id="eff-frontend",
+        effect_type="words inserted",
+        affecting_provisions="art. 6(2)(b)",
+        affecting_title="Frontend Act",
+    )
+
+    class FakeArchive:
+        def __init__(self, _path: str) -> None:
+            pass
+
+        def __enter__(self) -> "FakeArchive":
+            return self
+
+        def __exit__(self, *_args: object) -> bool:
+            return False
+
+    context = uk_effects._EffectSummaryContext(
+        statute_id="asp/2001/2",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+        archive_path=str(db_path),
+        enacted_url="https://example.test/enacted.xml",
+        oracle_url="https://example.test/current.xml",
+        enacted_source_status="available",
+        oracle_source_status="available",
+    )
+
+    def fake_summary(effect: UKEffectRecord, *_args: object, **_kwargs: object) -> uk_effects._EffectSummary:
+        if effect.effect_id == "eff-frontend":
+            return uk_effects._EffectSummary(
+                source_pathology="structural_sibling_insert_unsupported",
+                compare_shape="commensurable",
+                n_ops=0,
+                candidate=False,
+                resolver_eids=(),
+                lowering_rejections=(
+                    {"rule_id": "uk_effect_overlap_substitution_unlowered", "blocking": True},
+                ),
+                replay_applicable=True,
+                structural_for_replay=True,
+                source_extracted=True,
+                source_extracted_tag="P3",
+                source_extracted_text_preview="after that paragraph, insert...",
+                affecting_source_status="available",
+                affecting_source_size=17,
+                affecting_source_sha256="affecting-sha",
+                manual_compile_status="deterministic_frontend_candidate",
+                manual_compile_rule_id="uk_manual_frontier_structural_sibling_insert_candidate",
+                manual_compile_reason="Deterministic frontend lowering candidate.",
+            )
+        return uk_effects._EffectSummary(
+            source_pathology="unhandled_instruction_text",
+            compare_shape="commensurable",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_heading_only_ref_rejected", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview='In the title, for "old" substitute "new".',
+            affecting_source_status="available",
+            affecting_source_size=17,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_heading_facet_candidate",
+            manual_compile_reason="Heading facet requires manual compile.",
+        )
+
+    monkeypatch.setattr(farchive, "Farchive", FakeArchive)
+    monkeypatch.setattr("lawvm.tools.uk_bench._load_run", lambda _label: [bench_row])
+    monkeypatch.setattr(
+        uk_amendment_replay,
+        "load_effects_for_statute_from_archive",
+        lambda *_args, **_kwargs: [manual_effect, frontend_effect],
+    )
+    monkeypatch.setattr(
+        uk_effects,
+        "build_uk_effect_summary_context",
+        lambda *_args, **_kwargs: context,
+    )
+    monkeypatch.setattr(uk_effects, "summarize_uk_effect", fake_summary)
+
+    uk_candidates.main(
+        Namespace(
+            label="demo",
+            top=1,
+            fast=False,
+            effect_budget=None,
+            residual_budget=None,
+            score_mode="auto",
+            residual_only=False,
+            json=True,
+            summary_only=False,
+            min_year=None,
+            max_year=None,
+            types=None,
+            db=str(db_path),
+            manual_compile_evidence_jsonl=str(out_path),
+            manual_compile_evidence_status=["deterministic_frontend_candidate"],
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    rows = [json.loads(line) for line in out_path.read_text(encoding="utf-8").splitlines()]
+    assert payload["manual_compile_evidence_jsonl"] == {
+        "path": str(out_path),
+        "rows": 1,
+        "statuses": ["deterministic_frontend_candidate"],
+    }
+    assert rows[0]["effect_id"] == "eff-frontend"
+    assert rows[0]["manual_compile_status"] == "deterministic_frontend_candidate"
+    assert rows[0]["manual_compile_rule_id"] == (
+        "uk_manual_frontier_structural_sibling_insert_candidate"
+    )
+    assert rows[0]["source_pathology"] == "structural_sibling_insert_unsupported"
+    assert rows[0]["lowering_rejections"] == [
+        {"rule_id": "uk_effect_overlap_substitution_unlowered", "blocking": True},
+    ]
+
+
 def test_uk_candidates_manual_compile_evidence_jsonl_writes_empty_frontier(
     monkeypatch,
     tmp_path: Path,
@@ -2564,6 +2753,7 @@ def test_uk_candidates_manual_compile_evidence_jsonl_writes_empty_frontier(
     assert payload["manual_compile_evidence_jsonl"] == {
         "path": str(out_path),
         "rows": 0,
+        "statuses": ["manual_compile_candidate"],
     }
     assert out_path.read_text(encoding="utf-8") == ""
 
