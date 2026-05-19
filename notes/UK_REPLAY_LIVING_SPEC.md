@@ -1729,6 +1729,21 @@ Current block-substitution context invariant:
   classified as `payload_fragment_without_action_formula` when the operative
   formula is absent from the extracted source. Current witness: `asp/2000/7`
   affected `s. 8(3)` by `asp/2010/11 Sch. 2 para. 1(a)`.
+- Payload-only `BlockAmendment` fragments whose parent source instruction
+  supplies the anchor but whose payload visibly introduces child structure are
+  triaged as
+  `uk_manual_frontier_source_carried_structured_text_patch_candidate`. These
+  rows are not safe flat text rewrites: a compiler or manual claim must combine
+  the parent formula with the structured payload and preserve the child
+  boundary. Current witnesses:
+  - `asp/2000/11` affected `s. 11(4)(b)` by `asp/2006/10` Sch. 6 para.
+    9(4)(c)(ii): parent says `in paragraph (b), for "a police force," there is
+    substituted--`; payload contains child `i`/`ii` alternatives.
+  - `asp/2001/10` affected Sch. 6 para. 2 by `asp/2004/8` Sch. 4 para. 6(3):
+    parent gives the substituted preimage; payload contains an `a`/`b` list.
+  - `asp/2001/2` affected `s. 82(1)` by `asp/2005/12` s. 51(8)(c): parent says
+    `after "authority" there is inserted`; payload contains `; or` plus a new
+    child `b` row.
 - source text that targets `heading`, `title`, or `sidenote` facets lowers
   when it is an explicit word substitution/omission with a concrete old text
   selector, an explicit `at the end insert ...` append, or an explicit
