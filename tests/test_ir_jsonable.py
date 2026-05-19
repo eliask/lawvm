@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pickle
 from typing import Any, cast
 
 import pytest
@@ -54,6 +55,20 @@ def test_irnode_freezes_nested_attrs_recursively() -> None:
     nested_set.add("z")
     assert node.attrs["meta"]["items"] == ("a", FrozenDict({"inner": ("b", "c")}))
     assert node.attrs["meta"]["tags"] == frozenset({"x", "y"})
+
+
+def test_frozen_dict_round_trips_through_pickle_without_losing_immutability() -> None:
+    original = FrozenDict({"items": (FrozenDict({"inner": ("a", "b")}),)})
+
+    restored = pickle.loads(pickle.dumps(original))
+
+    assert isinstance(restored, FrozenDict)
+    assert restored == original
+    assert isinstance(restored["items"][0], FrozenDict)
+    with pytest.raises(TypeError):
+        restored["items"] = ()  # type: ignore[index]
+    with pytest.raises(TypeError):
+        restored["items"][0]["inner"] = ()  # type: ignore[index]
 
 
 def test_irnode_to_jsonable_dict_rejects_non_jsonable_values() -> None:

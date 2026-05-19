@@ -3461,6 +3461,57 @@ def test_evidence_review_filters_context_degradation() -> None:
     assert review["rows"][0]["evidence_context_degradation_rails"] == ["chain_completeness"]
 
 
+def test_evidence_review_exposes_review_materialization_lanes() -> None:
+    review = _review_bundles(
+        [
+            {
+                "statute_id": "1990/1295",
+                "title": "A",
+                "evidence_review_lane": "artifact_bundle",
+                "evidence_review_materialization_lane": "artifact_bundle",
+                "primary_proof_tier": "UNRESOLVED",
+                "proof_tiers": ["UNRESOLVED"],
+                "proof_claims": [],
+                "section_claims": [],
+                "strict_fail_reasons": [],
+                "compiler_observations": {},
+                "source_pathologies": [],
+                "html_topology": {},
+            },
+            {
+                "statute_id": "1991/1",
+                "title": "B",
+                "evidence_review_lane": "live_statute_id",
+                "evidence_review_materialization_lane": "live_bundle_cache_hit",
+                "primary_proof_tier": "UNRESOLVED",
+                "proof_tiers": ["UNRESOLVED"],
+                "proof_claims": [],
+                "section_claims": [],
+                "strict_fail_reasons": [],
+                "compiler_observations": {},
+                "source_pathologies": [],
+                "html_topology": {},
+            },
+        ]
+    )
+
+    assert review["by_evidence_review_lane"] == {
+        "artifact_bundle": 1,
+        "live_statute_id": 1,
+    }
+    assert review["by_evidence_review_materialization_lane"] == {
+        "artifact_bundle": 1,
+        "live_bundle_cache_hit": 1,
+    }
+    assert {
+        (row["statute_id"], row["evidence_review_lane"], row["evidence_review_materialization_lane"])
+        for row in review["rows"]
+    } == {
+        ("1990/1295", "artifact_bundle", "artifact_bundle"),
+        ("1991/1", "live_statute_id", "live_bundle_cache_hit"),
+    }
+
+
 def test_evidence_review_rejects_malformed_source_pathology_rows() -> None:
     bundles = [
         {

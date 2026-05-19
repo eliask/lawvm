@@ -67,12 +67,15 @@ class TextSelector:
 
     match_text: str
     occurrence: int = 0
+    end_occurrence: int = 0
 
     def __post_init__(self) -> None:
         if not self.match_text:
             raise ValueError("TextSelector.match_text must be non-empty")
-        if self.occurrence < 0:
-            raise ValueError("TextSelector.occurrence must be >= 0")
+        if self.occurrence < -1:
+            raise ValueError("TextSelector.occurrence must be >= -1")
+        if self.end_occurrence < 0:
+            raise ValueError("TextSelector.end_occurrence must be >= 0")
 
 
 @dataclass(frozen=True)
@@ -84,8 +87,8 @@ class TextPatchSpec:
     replacement: Optional[str] = None
 
     def __post_init__(self) -> None:
-        if self.kind is TextPatchKindEnum.REPLACE and self.replacement is None:
-            raise ValueError("TextPatchSpec(kind='replace') requires replacement")
+        if self.kind in {TextPatchKindEnum.REPLACE, TextPatchKindEnum.APPEND} and self.replacement is None:
+            raise ValueError(f"TextPatchSpec(kind={self.kind.value!r}) requires replacement")
         if self.kind is TextPatchKindEnum.DELETE and self.replacement is not None:
             raise ValueError("TextPatchSpec(kind='delete') must not set replacement")
 

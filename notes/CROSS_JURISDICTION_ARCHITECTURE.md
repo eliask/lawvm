@@ -86,6 +86,33 @@ It must not still carry unresolved meaning like:
 - broad section target unless rows found later
 - free-text hints the kernel must interpret
 
+## 2.1 Manual And LLM Compilation Claims
+
+Some jurisdictions expose public source surfaces that are not sufficient for a
+fully deterministic frontend to recover every amendment instruction. Others may
+start from scanned paper where the first machine-readable text is itself a
+derived witness.
+
+LawVM may use humans, LLMs, OCR systems, or external editorial tools in these
+cases, but only as governed claim producers. They do not become replay
+executors.
+
+The portable shape is:
+
+- source reconstruction claims for scan/PDF/OCR-to-XML work
+- semantic compilation claims for hard amendment interpretation
+- deterministic validation of those claims
+- canonical operations or typed findings as the only replay input
+
+The kernel must still receive closed canonical operations. A manual or LLM
+claim that has not validated to closed operations remains evidence, not legal
+state.
+
+Replay and benchmark surfaces must distinguish deterministic source-only
+replay from replay using validated manual claims or reconstructed source. A
+score that used manual claims is useful, but it is a different authority regime
+from source-only replay.
+
 ## 3. Finland Implication
 
 For Finland, complexity should move leftward:

@@ -118,6 +118,7 @@ class TextPatchKindEnum(Enum):
 
     REPLACE = "replace"
     DELETE = "delete"
+    APPEND = "append"
 
 
 # ---------------------------------------------------------------------------
@@ -298,9 +299,11 @@ class IRNodeKind(Enum):
     CROSSHEADING = "crossheading"
     APPENDIX = "appendix"
     SCHEDULE = "schedule"
+    SCHEDULE_ENTRY = "schedule_entry"
     RECITAL = "recital"
     PREAMBLE = "preamble"
     P1GROUP = "p1group"
+    PGROUP = "pgroup"
     FINAL = "final"
     TABLE = "table"
     ROW = "row"

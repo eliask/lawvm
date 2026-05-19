@@ -21,6 +21,7 @@ from typing import Any, Dict, Iterable, List, Optional, cast
 import yaml
 from lxml import etree
 
+from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.compile_result import CompileFailure
 from lawvm.core.target_scope import TargetUnitKind
 from lawvm.finland.corrigendum_records import load_patch_records, load_source_records
@@ -256,6 +257,23 @@ def _call_with_supported_kwargs(fn: Any, /, *args: Any, **kwargs: Any) -> Any:
     return fn(*args, **supported)
 
 
+def _uk_rejection_rule_counts(rows: Iterable[dict[str, Any]]) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        rule_id = str(row.get("rule_id") or row.get("reason") or "").strip()
+        if rule_id:
+            counts[rule_id] += 1
+    return dict(sorted(counts.items()))
+
+
+def _uk_blocking_rejection_rule_counts(rows: Iterable[dict[str, Any]]) -> dict[str, int]:
+    return _uk_rejection_rule_counts(row for row in rows if is_blocking_compile_record(row))
+
+
+def _uk_blocking_rejection_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [dict(row) for row in rows if is_blocking_compile_record(row)]
+
+
 def _bundle_cache_path(
     cache_dir: str,
     statute_id: str,
@@ -270,6 +288,7 @@ def _bundle_cache_path(
     allow_oracle_alignment: Optional[bool] = None,
     applicability_mode: Optional[str] = None,
     authority_mode: Optional[str] = None,
+    allow_metadata_only_effects: Optional[bool] = None,
 ) -> Path:
     safe_statute = re.sub(r"[^A-Za-z0-9._-]+", "_", str(statute_id or "").strip()) or "statute"
     effective_applicability_mode = _normalize_uk_applicability_mode(applicability_mode)
@@ -286,6 +305,7 @@ def _bundle_cache_path(
         "allow_oracle_alignment": allow_oracle_alignment,
         "applicability_mode": effective_applicability_mode,
         "authority_mode": authority_mode,
+        "allow_metadata_only_effects": allow_metadata_only_effects,
     }
     digest = hashlib.sha1(json.dumps(key_payload, sort_keys=True, ensure_ascii=True).encode("utf-8")).hexdigest()[:16]
     return Path(cache_dir) / f"{safe_statute}__{digest}.json"
@@ -319,6 +339,18 @@ def _write_cached_bundle(path: Path, bundle: Dict) -> None:
     tmp_path.replace(path)
 
 
+def _with_evidence_review_lanes(
+    bundle: Dict,
+    *,
+    review_lane: str,
+    materialization_lane: str,
+) -> Dict:
+    annotated = dict(bundle or {})
+    annotated["evidence_review_lane"] = str(review_lane or "")
+    annotated["evidence_review_materialization_lane"] = str(materialization_lane or "")
+    return annotated
+
+
 def _load_cached_review_bundle(
     statute_id: str,
     *,
@@ -333,6 +365,7 @@ def _load_cached_review_bundle(
     allow_oracle_alignment: Optional[bool] = None,
     applicability_mode: Optional[str] = None,
     authority_mode: Optional[str] = None,
+    allow_metadata_only_effects: Optional[bool] = None,
 ) -> tuple[bool, Optional[Dict], bool]:
     if not bundle_cache_dir:
         return False, None, False
@@ -349,6 +382,7 @@ def _load_cached_review_bundle(
         allow_oracle_alignment=allow_oracle_alignment,
         applicability_mode=applicability_mode,
         authority_mode=authority_mode,
+        allow_metadata_only_effects=allow_metadata_only_effects,
     )
     if not cache_path.exists():
         return False, None, False
@@ -1125,6 +1159,54 @@ def _review_bundles(
     by_oracle_artifact_family: Counter[str] = Counter()
     by_oracle_artifact_complexity: Counter[str] = Counter()
     by_oracle_artifact_gap: Counter[str] = Counter()
+    by_evidence_review_lane: Counter[str] = Counter(
+        str(bundle.get("evidence_review_lane") or "")
+        for bundle in bundle_list
+        if str(bundle.get("evidence_review_lane") or "")
+    )
+    by_evidence_review_materialization_lane: Counter[str] = Counter(
+        str(bundle.get("evidence_review_materialization_lane") or "")
+        for bundle in bundle_list
+        if str(bundle.get("evidence_review_materialization_lane") or "")
+    )
+    by_enacted_source_status: Counter[str] = Counter(
+        str(bundle.get("enacted_source_status") or "unknown")
+        for bundle in bundle_list
+        if "enacted_source_status" in bundle
+    )
+    by_oracle_source_status: Counter[str] = Counter(
+        str(bundle.get("oracle_source_status") or "unknown")
+        for bundle in bundle_list
+        if "oracle_source_status" in bundle
+    )
+    by_uk_comparison_class: Counter[str] = Counter()
+    by_uk_core_comparison: Counter[str] = Counter()
+    by_uk_replay_adjudication_bucket: Counter[str] = Counter()
+    by_uk_replay_adjudication_kind: Counter[str] = Counter()
+    for bundle in bundle_list:
+        uk_comparison = bundle.get("uk_oracle_comparison")
+        if isinstance(uk_comparison, dict):
+            comparison_class = str(uk_comparison.get("comparison_class") or "unknown")
+            by_uk_comparison_class[comparison_class] += 1
+            by_uk_core_comparison[
+                "core" if bool(uk_comparison.get("core_comparison", False)) else "non_core"
+            ] += 1
+        compiler_observations = bundle.get("compiler_observations")
+        if not isinstance(compiler_observations, dict):
+            continue
+        replay_summary = compiler_observations.get("uk_replay_adjudication_summary")
+        if not isinstance(replay_summary, dict):
+            continue
+        for bucket, count in (replay_summary.get("replay_adjudication_bucket_counts") or {}).items():
+            bucket_text = str(bucket or "")
+            if bucket_text:
+                by_uk_replay_adjudication_bucket[bucket_text] += int(count or 0)
+        for adjudication_kind, count in (
+            replay_summary.get("replay_adjudication_kind_counts") or {}
+        ).items():
+            kind_text = str(adjudication_kind or "")
+            if kind_text:
+                by_uk_replay_adjudication_kind[kind_text] += int(count or 0)
 
     rows: List[Dict] = []
     for bundle in ok_bundles:
@@ -1249,8 +1331,8 @@ def _review_bundles(
             complexity_text = str(complexity or "")
             if complexity_text:
                 by_oracle_artifact_complexity[complexity_text] += int(count or 0)
-        for gap, count in (artifact_summary.get("verification_gaps") or {}).items():
-            gap_text = str(gap or "")
+        for artifact_gap, count in (artifact_summary.get("verification_gaps") or {}).items():
+            gap_text = str(artifact_gap or "")
             if gap_text:
                 by_oracle_artifact_gap[gap_text] += int(count or 0)
 
@@ -1308,10 +1390,52 @@ def _review_bundles(
         )
         source_pathologies = _bundle_dict_rows(bundle, "source_pathologies")
         evidence_context_diagnostics = _evidence_context_diagnostics(bundle)
+        uk_comparison = bundle.get("uk_oracle_comparison")
+        if not isinstance(uk_comparison, dict):
+            uk_comparison = {}
+        compiler_observations = bundle.get("compiler_observations")
+        if not isinstance(compiler_observations, dict):
+            compiler_observations = {}
+        replay_adjudication_summary = compiler_observations.get("uk_replay_adjudication_summary")
+        if not isinstance(replay_adjudication_summary, dict):
+            replay_adjudication_summary = {}
+        replay_adjudication_bucket_counts = {
+            str(key): int(value or 0)
+            for key, value in (
+                replay_adjudication_summary.get("replay_adjudication_bucket_counts") or {}
+            ).items()
+            if str(key or "")
+        }
+        replay_adjudication_kind_counts = {
+            str(key): int(value or 0)
+            for key, value in (
+                replay_adjudication_summary.get("replay_adjudication_kind_counts") or {}
+            ).items()
+            if str(key or "")
+        }
         rows.append(
             {
                 "statute_id": str(bundle.get("statute_id") or ""),
                 "title": str(bundle.get("title") or ""),
+                "evidence_review_lane": str(bundle.get("evidence_review_lane") or ""),
+                "evidence_review_materialization_lane": str(
+                    bundle.get("evidence_review_materialization_lane") or ""
+                ),
+                "enacted_source_status": str(bundle.get("enacted_source_status") or ""),
+                "oracle_source_status": str(bundle.get("oracle_source_status") or ""),
+                "enacted_source_size": int(bundle.get("enacted_source_size") or 0),
+                "oracle_source_size": int(bundle.get("oracle_source_size") or 0),
+                "enacted_source_sha256": str(bundle.get("enacted_source_sha256") or ""),
+                "oracle_source_sha256": str(bundle.get("oracle_source_sha256") or ""),
+                "enacted_source_url": str(bundle.get("enacted_source_url") or ""),
+                "oracle_source_url": str(bundle.get("oracle_source_url") or ""),
+                "uk_comparison_class": str(uk_comparison.get("comparison_class") or ""),
+                "uk_core_comparison": bool(uk_comparison.get("core_comparison", False)),
+                "uk_replay_adjudication_count": int(
+                    replay_adjudication_summary.get("replay_adjudication_count", 0) or 0
+                ),
+                "uk_replay_adjudication_bucket_counts": replay_adjudication_bucket_counts,
+                "uk_replay_adjudication_kind_counts": replay_adjudication_kind_counts,
                 "primary_proof_tier": str(bundle.get("primary_proof_tier") or "UNRESOLVED"),
                 "display_primary_tier": _display_primary_tier(
                     str(bundle.get("primary_proof_tier") or "UNRESOLVED"),
@@ -1831,6 +1955,18 @@ def _review_bundles(
         "by_oracle_artifact_family": dict(sorted(by_oracle_artifact_family.items())),
         "by_oracle_artifact_complexity": dict(sorted(by_oracle_artifact_complexity.items())),
         "by_oracle_artifact_gap": dict(sorted(by_oracle_artifact_gap.items())),
+        "by_evidence_review_lane": dict(sorted(by_evidence_review_lane.items())),
+        "by_evidence_review_materialization_lane": dict(
+            sorted(by_evidence_review_materialization_lane.items())
+        ),
+        "by_enacted_source_status": dict(sorted(by_enacted_source_status.items())),
+        "by_oracle_source_status": dict(sorted(by_oracle_source_status.items())),
+        "by_uk_comparison_class": dict(sorted(by_uk_comparison_class.items())),
+        "by_uk_core_comparison": dict(sorted(by_uk_core_comparison.items())),
+        "by_uk_replay_adjudication_bucket": dict(
+            sorted(by_uk_replay_adjudication_bucket.items())
+        ),
+        "by_uk_replay_adjudication_kind": dict(sorted(by_uk_replay_adjudication_kind.items())),
         "actionable_unresolved_count": sum(1 for row in rows if bool(row.get("actionable_unresolved"))),
         "nontrivial_unresolved_count": sum(1 for row in rows if bool(row.get("nontrivial_unresolved", True))),
         "mixed_replay_risk_count": sum(1 for row in rows if bool(row.get("mixed_replay_risk"))),
@@ -1857,6 +1993,7 @@ def _build_live_review_bundle_one(
     allow_oracle_alignment: Optional[bool] = None,
     applicability_mode: Optional[str] = None,
     authority_mode: Optional[str] = None,
+    allow_metadata_only_effects: Optional[bool] = None,
 ) -> Dict:
     jurisdiction = _assert_live_evidence_review_supported(jurisdiction)
     cache_path: Optional[Path] = None
@@ -1874,6 +2011,7 @@ def _build_live_review_bundle_one(
             allow_oracle_alignment=allow_oracle_alignment,
             applicability_mode=applicability_mode,
             authority_mode=authority_mode,
+            allow_metadata_only_effects=allow_metadata_only_effects,
         )
         if cache_path.exists():
             cached_bundle = _read_cached_bundle(cache_path)
@@ -1890,6 +2028,7 @@ def _build_live_review_bundle_one(
                 allow_oracle_alignment=allow_oracle_alignment,
                 applicability_mode=applicability_mode,
                 authority_mode=authority_mode,
+                allow_metadata_only_effects=allow_metadata_only_effects,
             )
         elif str(jurisdiction or "fi").lower() == "ee":
             bundle = build_ee_evidence_bundle(
@@ -1963,6 +2102,7 @@ def _build_live_review_bundles(
     allow_oracle_alignment: Optional[bool] = None,
     applicability_mode: Optional[str] = None,
     authority_mode: Optional[str] = None,
+    allow_metadata_only_effects: Optional[bool] = None,
 ) -> List[Dict]:
     statute_id_list = [str(statute_id) for statute_id in statute_ids if str(statute_id)]
     if not statute_id_list:
@@ -1988,9 +2128,14 @@ def _build_live_review_bundles(
             allow_oracle_alignment=allow_oracle_alignment,
             applicability_mode=applicability_mode,
             authority_mode=authority_mode,
+            allow_metadata_only_effects=allow_metadata_only_effects,
         )
         if hit and cached_bundle is not None:
-            bundles[idx] = cached_bundle
+            bundles[idx] = _with_evidence_review_lanes(
+                cached_bundle,
+                review_lane="live_statute_id",
+                materialization_lane="live_bundle_cache_hit",
+            )
             cache_hits += 1
             continue
         if cache_error:
@@ -2001,7 +2146,7 @@ def _build_live_review_bundles(
     if miss_items:
         if worker_count <= 1 or len(miss_items) <= 1:
             for idx, statute_id in miss_items:
-                bundles[idx] = _build_live_review_bundle_one(
+                built_bundle = _build_live_review_bundle_one(
                     statute_id,
                     jurisdiction=jurisdiction,
                     mode=mode,
@@ -2014,6 +2159,16 @@ def _build_live_review_bundles(
                     allow_oracle_alignment=allow_oracle_alignment,
                     applicability_mode=applicability_mode,
                     authority_mode=authority_mode,
+                    allow_metadata_only_effects=allow_metadata_only_effects,
+                )
+                bundles[idx] = _with_evidence_review_lanes(
+                    built_bundle,
+                    review_lane="live_statute_id",
+                    materialization_lane=(
+                        "live_bundle_cache_miss"
+                        if bundle_cache_dir
+                        else "live_bundle_uncached"
+                    ),
                 )
         else:
             with concurrent.futures.ProcessPoolExecutor(max_workers=worker_count) as executor:
@@ -2032,12 +2187,21 @@ def _build_live_review_bundles(
                         allow_oracle_alignment=allow_oracle_alignment,
                         applicability_mode=applicability_mode,
                         authority_mode=authority_mode,
+                        allow_metadata_only_effects=allow_metadata_only_effects,
                     ): idx
                     for idx, statute_id in miss_items
                 }
                 for future in concurrent.futures.as_completed(future_map):
                     idx = future_map[future]
-                    bundles[idx] = future.result()
+                    bundles[idx] = _with_evidence_review_lanes(
+                        future.result(),
+                        review_lane="live_statute_id",
+                        materialization_lane=(
+                            "live_bundle_cache_miss"
+                            if bundle_cache_dir
+                            else "live_bundle_uncached"
+                        ),
+                    )
 
     if cache_stats_out is not None:
         cache_stats_out["bundle_cache_hits"] = int(cache_stats_out.get("bundle_cache_hits", 0) or 0) + cache_hits
@@ -2049,6 +2213,7 @@ def _build_live_review_bundles(
 
 _REVIEW_COUNT_FIELDS = (
     "by_primary_tier",
+    "by_display_primary_tier",
     "by_claim_kind",
     "by_section_claim_kind",
     "by_section_claim_inference_rule",
@@ -2056,6 +2221,8 @@ _REVIEW_COUNT_FIELDS = (
     "by_defeated_section_claim_inference_rule",
     "by_strict_fail_reason",
     "by_elaboration_observation_kind",
+    "by_sparse_blocker_source",
+    "by_sparse_blocker_section",
     "by_payload_completeness_kind",
     "by_payload_tail_policy",
     "by_provenance_projection_kind",
@@ -2073,6 +2240,14 @@ _REVIEW_COUNT_FIELDS = (
     "by_oracle_artifact_family",
     "by_oracle_artifact_complexity",
     "by_oracle_artifact_gap",
+    "by_evidence_review_lane",
+    "by_evidence_review_materialization_lane",
+    "by_enacted_source_status",
+    "by_oracle_source_status",
+    "by_uk_comparison_class",
+    "by_uk_core_comparison",
+    "by_uk_replay_adjudication_bucket",
+    "by_uk_replay_adjudication_kind",
     "by_unresolved_exclusion_reason",
     "by_mixed_replay_risk_reason",
     "by_trigger",
@@ -2603,6 +2778,7 @@ def review_live_oracle_corpus(
     allow_oracle_alignment: Optional[bool] = None,
     applicability_mode: Optional[str] = None,
     authority_mode: Optional[str] = None,
+    allow_metadata_only_effects: Optional[bool] = None,
 ) -> Dict:
     jurisdiction = _assert_live_evidence_review_supported(jurisdiction)
     oracle_only = bool(ready_oracle_artifacts_only)
@@ -2685,6 +2861,7 @@ def review_live_oracle_corpus(
             "limit": limit,
         },
         "by_primary_tier": {},
+        "by_display_primary_tier": {},
         "by_claim_kind": {},
         "by_section_claim_kind": {},
         "by_section_claim_inference_rule": {},
@@ -2692,6 +2869,8 @@ def review_live_oracle_corpus(
         "by_defeated_section_claim_inference_rule": {},
         "by_strict_fail_reason": {},
         "by_elaboration_observation_kind": {},
+        "by_sparse_blocker_source": {},
+        "by_sparse_blocker_section": {},
         "by_payload_completeness_kind": {},
         "by_payload_tail_policy": {},
         "by_provenance_projection_kind": {},
@@ -2709,6 +2888,12 @@ def review_live_oracle_corpus(
         "by_oracle_artifact_family": {},
         "by_oracle_artifact_complexity": {},
         "by_oracle_artifact_gap": {},
+        "by_enacted_source_status": {},
+        "by_oracle_source_status": {},
+        "by_uk_comparison_class": {},
+        "by_uk_core_comparison": {},
+        "by_uk_replay_adjudication_bucket": {},
+        "by_uk_replay_adjudication_kind": {},
         "by_unresolved_exclusion_reason": {},
         "by_mixed_replay_risk_reason": {},
         "by_trigger": {},
@@ -2871,12 +3056,19 @@ def review_live_oracle_corpus(
             allow_oracle_alignment=allow_oracle_alignment,
             applicability_mode=applicability_mode,
             authority_mode=authority_mode,
+            allow_metadata_only_effects=allow_metadata_only_effects,
         )
         if cache_error:
             acc["bundle_cache_errors"] += 1
         if hit and cached_bundle is not None:
             acc["bundle_cache_hits"] += 1
-            _process_one_bundle(cached_bundle)
+            _process_one_bundle(
+                _with_evidence_review_lanes(
+                    cached_bundle,
+                    review_lane="live_oracle_corpus",
+                    materialization_lane="live_bundle_cache_hit",
+                )
+            )
         else:
             acc["bundle_cache_misses"] += 1
             pending_ids.append(statute_id)
@@ -2898,8 +3090,19 @@ def review_live_oracle_corpus(
                     allow_oracle_alignment=allow_oracle_alignment,
                     applicability_mode=applicability_mode,
                     authority_mode=authority_mode,
+                    allow_metadata_only_effects=allow_metadata_only_effects,
                 )
-                _process_one_bundle(bundle)
+                _process_one_bundle(
+                    _with_evidence_review_lanes(
+                        bundle,
+                        review_lane="live_oracle_corpus",
+                        materialization_lane=(
+                            "live_bundle_cache_miss"
+                            if effective_bundle_cache_dir
+                            else "live_bundle_uncached"
+                        ),
+                    )
+                )
         else:
             with concurrent.futures.ProcessPoolExecutor(max_workers=worker_count) as executor:
                 future_map = {
@@ -2917,11 +3120,22 @@ def review_live_oracle_corpus(
                         allow_oracle_alignment=allow_oracle_alignment,
                         applicability_mode=applicability_mode,
                         authority_mode=authority_mode,
+                        allow_metadata_only_effects=allow_metadata_only_effects,
                     ): statute_id
                     for statute_id in pending_ids
                 }
                 for future in concurrent.futures.as_completed(future_map):
-                    _process_one_bundle(future.result())
+                    _process_one_bundle(
+                        _with_evidence_review_lanes(
+                            future.result(),
+                            review_lane="live_oracle_corpus",
+                            materialization_lane=(
+                                "live_bundle_cache_miss"
+                                if effective_bundle_cache_dir
+                                else "live_bundle_uncached"
+                            ),
+                        )
+                    )
 
     acc["error_rows"] = sorted(
         [
@@ -2982,7 +3196,14 @@ def review_bundle_artifacts(
 ) -> Dict:
     path_list = [str(path) for path in paths if str(path)]
     review = _review_bundles(
-        _load_bundle_artifacts(path_list),
+        (
+            _with_evidence_review_lanes(
+                bundle,
+                review_lane="artifact_bundle",
+                materialization_lane="artifact_bundle",
+            )
+            for bundle in _load_bundle_artifacts(path_list)
+        ),
         primary_tier=primary_tier,
         tier=tier,
         kind=kind,
@@ -3610,12 +3831,19 @@ def build_uk_evidence_bundle(
     allow_oracle_alignment: Optional[bool] = None,
     applicability_mode: Optional[str] = None,
     authority_mode: Optional[str] = None,
+    allow_metadata_only_effects: Optional[bool] = None,
 ) -> Dict:
     from farchive import Farchive
     from lawvm.tools.uk_replay import _get_all_eids
-    from lawvm.uk_legislation.oracle_align import align_uk_replay_to_oracle
+    from lawvm.uk_legislation.oracle_align import align_uk_replay_to_oracle_with_report
+    from lawvm.uk_legislation.source_state import (
+        classify_uk_source_blob,
+        is_uk_affecting_act_xml_source_observation,
+        uk_source_xml_parse_rejection,
+    )
     from lawvm.uk_legislation.source_adjudication import (
         classify_uk_bench_comparison,
+        classify_uk_replay_adjudication_bucket,
         classify_uk_replay_residual,
         is_core_uk_comparison,
         normalize_uk_replay_compare_eids,
@@ -3634,6 +3862,8 @@ def build_uk_evidence_bundle(
         allow_metadata_backfill = True
     if allow_oracle_alignment is None:
         allow_oracle_alignment = True
+    if allow_metadata_only_effects is None:
+        allow_metadata_only_effects = True
     applicability_mode = _normalize_uk_applicability_mode(applicability_mode)
     if authority_mode is None:
         authority_mode = "current_mixed"
@@ -3645,25 +3875,232 @@ def build_uk_evidence_bundle(
         enacted_url = _uk_archive_url_for_statute(statute_id, enacted=True)
         current_url = _uk_archive_url_for_statute(statute_id, enacted=False)
         enacted_bytes = archive.get(enacted_url)
-        if not enacted_bytes:
-            return {"statute_id": statute_id, "mode": mode, "jurisdiction": "uk", "error": "NO_ENACTED"}
+        enacted_source = classify_uk_source_blob(enacted_bytes)
         current_bytes = archive.get(current_url)
-        if not current_bytes:
-            return {"statute_id": statute_id, "mode": mode, "jurisdiction": "uk", "error": "NO_ORACLE"}
+        oracle_source = classify_uk_source_blob(current_bytes)
+        source_surface = {
+            "enacted_source_url": enacted_url,
+            "oracle_source_url": current_url,
+            "enacted_source_status": enacted_source.status.value,
+            "oracle_source_status": oracle_source.status.value,
+            "enacted_source_size": enacted_source.size,
+            "oracle_source_size": oracle_source.size,
+            "enacted_source_sha256": hashlib.sha256(enacted_bytes).hexdigest()
+            if enacted_bytes is not None
+            else "",
+            "oracle_source_sha256": hashlib.sha256(current_bytes).hexdigest()
+            if current_bytes is not None
+            else "",
+            "enacted_source_parse_failed": False,
+            "oracle_source_parse_failed": False,
+        }
+        source_unavailable_replay_regime = {
+            "semantic_replay_lane": "not_run_source_unavailable",
+            "oracle_alignment_lane": "not_run_source_unavailable",
+            "source_purity_lane": "not_run_source_unavailable",
+            "source_semantics_clean": False,
+            "source_first_candidate": False,
+            "source_first_candidate_reasons": ["source_unavailable"],
+            "structural_canonicalization_lane": "not_run_source_unavailable",
+            "comparison_lane": "current_pair_benchmark",
+            "oracle_alignment_stage": "none",
+            "metadata_backfill_enabled": bool(allow_metadata_backfill),
+            "oracle_alignment_enabled": bool(allow_oracle_alignment),
+            "applicability_mode": applicability_mode,
+            "authority_mode": authority_mode,
+            "metadata_only_effects_enabled": bool(allow_metadata_only_effects),
+        }
+        def source_unavailable_compile_observations(
+            source_parse_observations: Iterable[dict[str, Any]] = (),
+        ) -> dict[str, Any]:
+            source_parse_observation_rows = [dict(row) for row in source_parse_observations]
+            source_parse_rejection_rows = _uk_blocking_rejection_rows(source_parse_observation_rows)
+            return {
+                "uk_source_availability_summary": dict(source_surface),
+                "uk_replay_adjudication_summary": {
+                    "replay_adjudication_count": 0,
+                    "replay_adjudication_kind_counts": {},
+                    "replay_adjudication_bucket_counts": {},
+                },
+                "uk_residual_claim_summary": {
+                    "selected_tier": "UNRESOLVED",
+                    "selected_kind": "not_run_source_unavailable",
+                    "comparison_class": "source_unavailable",
+                    "core_comparison": False,
+                    "only_in_replayed_count": 0,
+                    "only_in_oracle_count": 0,
+                    "adjudication_kinds": [],
+                    "section_claim_count": 0,
+                    "section_claim_emitted": False,
+                },
+                "uk_compile_rejection_summary": {
+                    "source_parse_rejection_count": len(source_parse_rejection_rows),
+                    "source_parse_rejection_rule_counts": _uk_rejection_rule_counts(
+                        source_parse_rejection_rows
+                    ),
+                    "blocking_source_parse_rejection_count": len(source_parse_rejection_rows),
+                    "blocking_source_parse_rejection_rule_counts": (
+                        _uk_blocking_rejection_rule_counts(source_parse_observation_rows)
+                    ),
+                    "source_parse_rejections": source_parse_rejection_rows,
+                    "effect_feed_parse_rejection_count": 0,
+                    "effect_feed_parse_rejection_rule_counts": {},
+                    "blocking_effect_feed_parse_rejection_count": 0,
+                    "blocking_effect_feed_parse_rejection_rule_counts": {},
+                    "effect_feed_parse_rejections": [],
+                    "effect_source_pathology_rejection_count": 0,
+                    "effect_source_pathology_rejection_rule_counts": {},
+                    "blocking_effect_source_pathology_rejection_count": 0,
+                    "blocking_effect_source_pathology_rejection_rule_counts": {},
+                    "effect_source_pathology_rejections": [],
+                    "source_acquisition_rejection_count": 0,
+                    "source_acquisition_rejection_rule_counts": {},
+                    "blocking_source_acquisition_rejection_count": 0,
+                    "blocking_source_acquisition_rejection_rule_counts": {},
+                    "source_acquisition_rejections": [],
+                    "lowering_rejection_count": 0,
+                    "lowering_rejection_rule_counts": {},
+                    "blocking_lowering_rejection_count": 0,
+                    "blocking_lowering_rejection_rule_counts": {},
+                    "lowering_rejections": [],
+                },
+                "uk_compile_observation_summary": {
+                    "source_parse_observation_count": len(source_parse_observation_rows),
+                    "source_parse_observation_rule_counts": _uk_rejection_rule_counts(
+                        source_parse_observation_rows
+                    ),
+                    "source_parse_observations": source_parse_observation_rows,
+                    "effect_feed_parse_observation_count": 0,
+                    "effect_feed_parse_observation_rule_counts": {},
+                    "effect_feed_parse_observations": [],
+                    "effect_source_pathology_observation_count": 0,
+                    "effect_source_pathology_observation_rule_counts": {},
+                    "effect_source_pathology_observations": [],
+                    "manual_compile_frontier_observation_count": 0,
+                    "manual_compile_status_counts": {},
+                    "manual_compile_rule_counts": {},
+                    "manual_compile_frontier_observations": [],
+                    "source_acquisition_observation_count": 0,
+                    "source_acquisition_observation_rule_counts": {},
+                    "source_acquisition_observations": [],
+                    "lowering_observation_count": 0,
+                    "lowering_observation_rule_counts": {},
+                    "lowering_observations": [],
+                },
+            }
+        source_unavailable_common = {
+            "uk_applicability_mode": applicability_mode,
+            "uk_respect_feed_applied": applicability_mode == "effective_date_plus_feed_applied",
+            "uk_replay_regime": source_unavailable_replay_regime,
+            "uk_applicability_regime": {
+                "ordering_model": "effective_date",
+                "selection_model": applicability_mode,
+                "raw_feed_applicability_retained": True,
+                "first_class_commencement": False,
+                "feed_applied_gate_enabled": applicability_mode == "effective_date_plus_feed_applied",
+                "requires_applied_gate_enabled": applicability_mode == "effective_date_plus_requires_applied",
+            },
+            "compiler_observations": source_unavailable_compile_observations(),
+        }
 
-        base_ir = parse_uk_statute_ir_bytes(
-            enacted_bytes,
-            statute_id=statute_id,
-            version_label="enacted",
-            source_path=enacted_url,
-        )
-        oracle_ir = parse_uk_statute_ir_bytes(
-            current_bytes,
-            statute_id=statute_id,
-            version_label="oracle",
-            source_path=current_url,
-        )
-        oracle_data = extract_eid_map_bytes(current_bytes)
+        def unavailable_source_comparison(comparison_class: str) -> dict[str, Any]:
+            return {
+                "uk_oracle_comparison": {
+                    "comparison_class": comparison_class,
+                    "core_comparison": False,
+                    "n_enacted_eids": None,
+                    "n_oracle_eids": None,
+                    "n_replayed_eids": None,
+                    "n_effects": None,
+                    "only_in_replayed": [],
+                    "only_in_oracle": [],
+                }
+            }
+
+        if not enacted_source.available:
+            return {
+                "statute_id": statute_id,
+                "mode": mode,
+                "jurisdiction": "uk",
+                "error": "NO_ENACTED",
+                **source_surface,
+                **source_unavailable_common,
+                **unavailable_source_comparison("no_enacted_eids"),
+            }
+        if not oracle_source.available:
+            return {
+                "statute_id": statute_id,
+                "mode": mode,
+                "jurisdiction": "uk",
+                "error": "NO_ORACLE",
+                **source_surface,
+                **source_unavailable_common,
+                **unavailable_source_comparison("no_oracle_eids"),
+            }
+        assert enacted_bytes is not None
+        assert current_bytes is not None
+
+        try:
+            base_ir = parse_uk_statute_ir_bytes(
+                enacted_bytes,
+                statute_id=statute_id,
+                version_label="enacted",
+                source_path=enacted_url,
+            )
+        except Exception as exc:
+            source_surface["enacted_source_parse_failed"] = True
+            source_parse_observations = [
+                uk_source_xml_parse_rejection(
+                    statute_id=statute_id,
+                    side="enacted",
+                    source_url=enacted_url,
+                    exc=exc,
+                )
+            ]
+            source_parse_common = dict(source_unavailable_common)
+            source_parse_common["compiler_observations"] = source_unavailable_compile_observations(
+                source_parse_observations
+            )
+            return {
+                "statute_id": statute_id,
+                "mode": mode,
+                "jurisdiction": "uk",
+                "error": "NO_ENACTED",
+                **source_surface,
+                **source_parse_common,
+                **unavailable_source_comparison("no_enacted_eids"),
+            }
+        try:
+            oracle_ir = parse_uk_statute_ir_bytes(
+                current_bytes,
+                statute_id=statute_id,
+                version_label="oracle",
+                source_path=current_url,
+            )
+            oracle_data = extract_eid_map_bytes(current_bytes)
+        except Exception as exc:
+            source_surface["oracle_source_parse_failed"] = True
+            source_parse_observations = [
+                uk_source_xml_parse_rejection(
+                    statute_id=statute_id,
+                    side="oracle",
+                    source_url=current_url,
+                    exc=exc,
+                )
+            ]
+            source_parse_common = dict(source_unavailable_common)
+            source_parse_common["compiler_observations"] = source_unavailable_compile_observations(
+                source_parse_observations
+            )
+            return {
+                "statute_id": statute_id,
+                "mode": mode,
+                "jurisdiction": "uk",
+                "error": "NO_ORACLE",
+                **source_surface,
+                **source_parse_common,
+                **unavailable_source_comparison("no_oracle_eids"),
+            }
         eid_map = dict(oracle_data.get("eid_map", {}) or {})
         text_map = dict(oracle_data.get("text_map", {}) or {})
 
@@ -3671,10 +4108,37 @@ def build_uk_evidence_bundle(
         for schedule in base_ir.supplements:
             base_eids.update(_get_all_eids([schedule]))
         oracle_eids = set(eid_map.values())
-        n_effects = len(load_effects_for_statute_from_archive(statute_id, archive))
+        effect_feed_count_observations: list[dict[str, Any]] = []
+        try:
+            n_effects = len(
+                load_effects_for_statute_from_archive(
+                    statute_id,
+                    archive,
+                    parse_rejections_out=effect_feed_count_observations,
+                )
+            )
+        except Exception as exc:
+            n_effects = 0
+            effect_feed_count_observations.append(
+                {
+                    "rule_id": "uk_effect_feed_count_error",
+                    "family": "source_pathology",
+                    "phase": "parse",
+                    "statute_id": statute_id,
+                    "reason": "UK evidence effect-feed count load failed before replay compile.",
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc),
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                }
+            )
 
         pipeline = UKReplayPipeline(_REPO_ROOT)
         authority_rejections: list[dict[str, Any]] = []
+        lowering_rejections: list[dict[str, Any]] = []
+        effect_diagnostics: list[dict[str, Any]] = []
+        effect_feed_parse_rejections: list[dict[str, Any]] = list(effect_feed_count_observations)
         compiled_ops = _call_with_supported_kwargs(
             pipeline.compile_ops_for_statute,
             statute_id,
@@ -3682,7 +4146,11 @@ def build_uk_evidence_bundle(
             allow_metadata_backfill=allow_metadata_backfill,
             applicability_mode=applicability_mode,
             authority_mode=authority_mode,
+            allow_metadata_only_effects=allow_metadata_only_effects,
             authority_rejections_out=authority_rejections,
+            lowering_rejections_out=lowering_rejections,
+            effect_feed_parse_rejections_out=effect_feed_parse_rejections,
+            effect_diagnostics_out=effect_diagnostics,
         )
         replay_adjudications: List[Any] = []
         replayed_ir = _call_with_supported_kwargs(
@@ -3694,12 +4162,22 @@ def build_uk_evidence_bundle(
             adjudications_out=replay_adjudications,
             allow_oracle_alignment=allow_oracle_alignment,
         )
+        oracle_alignment_summary: dict[str, object] = {
+            "enabled": bool(allow_oracle_alignment),
+            "stage": "post_replay_adapter" if allow_oracle_alignment else "none",
+            "rule_id": "uk_oracle_eid_alignment_adapter",
+            "changed_count": 0,
+            "oracle_assigned_count": 0,
+            "local_fallback_count": 0,
+        }
         if allow_oracle_alignment and hasattr(replayed_ir, "to_dict"):
-            replayed_ir = align_uk_replay_to_oracle(
+            alignment_result = align_uk_replay_to_oracle_with_report(
                 replayed_ir,
                 eid_map=eid_map,
                 text_map=text_map,
             )
+            replayed_ir = alignment_result.statute
+            oracle_alignment_summary = alignment_result.report.to_jsonable_dict()
 
     replayed_eids = _get_all_eids([replayed_ir.body])
     for schedule in replayed_ir.supplements:
@@ -3769,6 +4247,21 @@ def build_uk_evidence_bundle(
             if str(getattr(adj, "kind", "") or "")
         }
     )
+    replay_adjudication_kind_counts = dict(
+        sorted(
+            Counter(
+                str(getattr(adj, "kind", "") or "")
+                for adj in replay_adjudications
+                if str(getattr(adj, "kind", "") or "")
+            ).items()
+        )
+    )
+    replay_adjudication_bucket_counter: Counter[str] = Counter()
+    for adjudication_kind, count in replay_adjudication_kind_counts.items():
+        replay_adjudication_bucket_counter[
+            classify_uk_replay_adjudication_bucket(adjudication_kind)
+        ] += count
+    replay_adjudication_bucket_counts = dict(sorted(replay_adjudication_bucket_counter.items()))
     semantic_replay_lane = "metadata_backfilled_replay" if metadata_backfill_op_count else "effects_assisted_replay"
     oracle_alignment_lane = "oracle_alignment_adapter" if allow_oracle_alignment else "none"
     source_purity_lane = (
@@ -3780,12 +4273,19 @@ def build_uk_evidence_bundle(
         if oracle_alignment_lane != "none"
         else "source_backed_effects_assisted"
     )
-    source_semantics_clean = bool(not metadata_backfill_op_count and oracle_alignment_lane == "none")
+    source_semantics_clean = bool(
+        authority_mode == "source_text_only"
+        and not metadata_backfill_op_count
+        and not allow_metadata_only_effects
+        and oracle_alignment_lane == "none"
+    )
     source_first_candidate_reasons: list[str] = []
     if metadata_backfill_op_count:
         source_first_candidate_reasons.append("metadata_backfill_ops_present")
     if oracle_alignment_lane != "none":
         source_first_candidate_reasons.append("oracle_alignment_adapter_active")
+    if allow_metadata_only_effects:
+        source_first_candidate_reasons.append("metadata_only_effects_enabled")
     if applicability_mode != "effective_date_plus_feed_applied":
         source_first_candidate_reasons.append("applicability_selection_not_feed_applied")
     if authority_mode != "source_text_only":
@@ -3807,6 +4307,71 @@ def build_uk_evidence_bundle(
                 if not reason_key:
                     continue
                 authority_rejection_reason_counts[reason_key] = authority_rejection_reason_counts.get(reason_key, 0) + 1
+    effect_feed_parse_observations = [dict(row) for row in effect_feed_parse_rejections]
+    effect_source_pathology_observations = [
+        dict(row)
+        for row in effect_diagnostics
+        if str(row.get("rule_id") or "") == "uk_effect_source_pathology_classified"
+    ]
+    manual_compile_frontier_observations = [
+        dict(row)
+        for row in effect_diagnostics
+        if str(row.get("rule_id") or "") == "uk_manual_compile_frontier_classified"
+    ]
+    source_acquisition_observations = [
+        dict(row)
+        for row in effect_diagnostics
+        if is_uk_affecting_act_xml_source_observation(row)
+    ]
+    lowering_observations = [dict(row) for row in lowering_rejections]
+    blocking_effect_feed_parse_rejections = _uk_blocking_rejection_rows(effect_feed_parse_observations)
+    blocking_effect_source_pathology_rejections = _uk_blocking_rejection_rows(
+        effect_source_pathology_observations
+    )
+    blocking_source_acquisition_rejections = _uk_blocking_rejection_rows(
+        source_acquisition_observations
+    )
+    blocking_lowering_rejections = _uk_blocking_rejection_rows(lowering_observations)
+    lowering_observation_rule_counts = _uk_rejection_rule_counts(lowering_observations)
+    lowering_rejection_rule_counts = _uk_rejection_rule_counts(blocking_lowering_rejections)
+    effect_feed_parse_observation_rule_counts = _uk_rejection_rule_counts(effect_feed_parse_observations)
+    effect_feed_parse_rejection_rule_counts = _uk_rejection_rule_counts(blocking_effect_feed_parse_rejections)
+    effect_source_pathology_observation_rule_counts = _uk_rejection_rule_counts(
+        effect_source_pathology_observations
+    )
+    effect_source_pathology_rejection_rule_counts = _uk_rejection_rule_counts(
+        blocking_effect_source_pathology_rejections
+    )
+    manual_compile_status_counts = dict(
+        sorted(
+            Counter(
+                str(row.get("manual_compile_status") or "__none__")
+                for row in manual_compile_frontier_observations
+            ).items()
+        )
+    )
+    manual_compile_rule_counts = dict(
+        sorted(
+            Counter(
+                str(row.get("manual_compile_rule_id") or "__none__")
+                for row in manual_compile_frontier_observations
+            ).items()
+        )
+    )
+    source_acquisition_observation_rule_counts = _uk_rejection_rule_counts(
+        source_acquisition_observations
+    )
+    source_acquisition_rejection_rule_counts = _uk_rejection_rule_counts(
+        blocking_source_acquisition_rejections
+    )
+    blocking_lowering_rejection_rule_counts = _uk_blocking_rejection_rule_counts(lowering_observations)
+    blocking_effect_feed_parse_rejection_rule_counts = _uk_blocking_rejection_rule_counts(effect_feed_parse_observations)
+    blocking_effect_source_pathology_rejection_rule_counts = _uk_blocking_rejection_rule_counts(
+        effect_source_pathology_observations
+    )
+    blocking_source_acquisition_rejection_rule_counts = _uk_blocking_rejection_rule_counts(
+        source_acquisition_observations
+    )
 
     trigger_observations = [
         {"source": "uk_oracle_comparison", "field": "comparison_class", "value": comparison_class},
@@ -3854,14 +4419,34 @@ def build_uk_evidence_bundle(
                 "tier": "UNRESOLVED",
                 "kind": "no_strong_claim",
                 "trigger_observations": trigger_observations,
-            }
-        ]
+                }
+            ]
+
+    residual_claim_summary = {
+        "selected_tier": str(proof_claims[0].get("tier") or "") if proof_claims else "",
+        "selected_kind": str(proof_claims[0].get("kind") or "") if proof_claims else "",
+        "comparison_class": comparison_class,
+        "core_comparison": core_comparison,
+        "only_in_replayed_count": len(only_in_replayed),
+        "only_in_oracle_count": len(only_in_oracle),
+        "adjudication_kinds": adjudication_kinds,
+        "section_claim_count": len(section_claims),
+        "section_claim_emitted": bool(section_claims),
+    }
 
     return {
         "statute_id": statute_id,
         "title": str(getattr(oracle_ir, "title", "") or getattr(base_ir, "title", "") or ""),
         "mode": mode,
         "jurisdiction": "uk",
+        "enacted_source_url": enacted_url,
+        "oracle_source_url": current_url,
+        "enacted_source_status": enacted_source.status.value,
+        "oracle_source_status": oracle_source.status.value,
+        "enacted_source_size": enacted_source.size,
+        "oracle_source_size": oracle_source.size,
+        "enacted_source_sha256": source_surface["enacted_source_sha256"],
+        "oracle_source_sha256": source_surface["oracle_source_sha256"],
         "uk_applicability_mode": applicability_mode,
         "uk_respect_feed_applied": applicability_mode == "effective_date_plus_feed_applied",
         "uk_replay_regime": {
@@ -3878,6 +4463,7 @@ def build_uk_evidence_bundle(
             "oracle_alignment_enabled": bool(allow_oracle_alignment),
             "applicability_mode": applicability_mode,
             "authority_mode": authority_mode,
+            "metadata_only_effects_enabled": bool(allow_metadata_only_effects),
         },
         "uk_applicability_regime": {
             "ordering_model": "effective_date",
@@ -3904,6 +4490,12 @@ def build_uk_evidence_bundle(
         "contingent_effective_sources": [],
         "supporting_amendments": [],
         "compiler_observations": {
+            "uk_replay_adjudication_summary": {
+                "replay_adjudication_count": sum(replay_adjudication_kind_counts.values()),
+                "replay_adjudication_kind_counts": replay_adjudication_kind_counts,
+                "replay_adjudication_bucket_counts": replay_adjudication_bucket_counts,
+            },
+            "uk_residual_claim_summary": residual_claim_summary,
             "uk_source_authority_summary": {
                 "authority_counts": authority_counts,
                 "metadata_backfill_op_count": metadata_backfill_op_count,
@@ -3911,6 +4503,80 @@ def build_uk_evidence_bundle(
                 "authority_rejection_count": len(authority_rejections),
                 "authority_rejection_reason_counts": dict(sorted(authority_rejection_reason_counts.items())),
                 "authority_rejections": authority_rejections,
+            },
+            "uk_compile_rejection_summary": {
+                "source_parse_rejection_count": 0,
+                "source_parse_rejection_rule_counts": {},
+                "blocking_source_parse_rejection_count": 0,
+                "blocking_source_parse_rejection_rule_counts": {},
+                "source_parse_rejections": [],
+                "effect_feed_parse_rejection_count": len(blocking_effect_feed_parse_rejections),
+                "effect_feed_parse_rejection_rule_counts": effect_feed_parse_rejection_rule_counts,
+                "blocking_effect_feed_parse_rejection_count": len(blocking_effect_feed_parse_rejections),
+                "blocking_effect_feed_parse_rejection_rule_counts": (
+                    blocking_effect_feed_parse_rejection_rule_counts
+                ),
+                "effect_feed_parse_rejections": blocking_effect_feed_parse_rejections,
+                "effect_source_pathology_rejection_count": len(
+                    blocking_effect_source_pathology_rejections
+                ),
+                "effect_source_pathology_rejection_rule_counts": (
+                    effect_source_pathology_rejection_rule_counts
+                ),
+                "blocking_effect_source_pathology_rejection_count": len(
+                    blocking_effect_source_pathology_rejections
+                ),
+                "blocking_effect_source_pathology_rejection_rule_counts": (
+                    blocking_effect_source_pathology_rejection_rule_counts
+                ),
+                "effect_source_pathology_rejections": (
+                    blocking_effect_source_pathology_rejections
+                ),
+                "source_acquisition_rejection_count": len(blocking_source_acquisition_rejections),
+                "source_acquisition_rejection_rule_counts": source_acquisition_rejection_rule_counts,
+                "blocking_source_acquisition_rejection_count": len(
+                    blocking_source_acquisition_rejections
+                ),
+                "blocking_source_acquisition_rejection_rule_counts": (
+                    blocking_source_acquisition_rejection_rule_counts
+                ),
+                "source_acquisition_rejections": blocking_source_acquisition_rejections,
+                "lowering_rejection_count": len(blocking_lowering_rejections),
+                "lowering_rejection_rule_counts": lowering_rejection_rule_counts,
+                "blocking_lowering_rejection_count": len(blocking_lowering_rejections),
+                "blocking_lowering_rejection_rule_counts": blocking_lowering_rejection_rule_counts,
+                "lowering_rejections": blocking_lowering_rejections,
+            },
+            "uk_compile_observation_summary": {
+                "source_parse_observation_count": 0,
+                "source_parse_observation_rule_counts": {},
+                "source_parse_observations": [],
+                "effect_feed_parse_observation_count": len(effect_feed_parse_observations),
+                "effect_feed_parse_observation_rule_counts": (
+                    effect_feed_parse_observation_rule_counts
+                ),
+                "effect_feed_parse_observations": effect_feed_parse_observations,
+                "effect_source_pathology_observation_count": len(
+                    effect_source_pathology_observations
+                ),
+                "effect_source_pathology_observation_rule_counts": (
+                    effect_source_pathology_observation_rule_counts
+                ),
+                "effect_source_pathology_observations": effect_source_pathology_observations,
+                "manual_compile_frontier_observation_count": len(
+                    manual_compile_frontier_observations
+                ),
+                "manual_compile_status_counts": manual_compile_status_counts,
+                "manual_compile_rule_counts": manual_compile_rule_counts,
+                "manual_compile_frontier_observations": manual_compile_frontier_observations,
+                "source_acquisition_observation_count": len(source_acquisition_observations),
+                "source_acquisition_observation_rule_counts": (
+                    source_acquisition_observation_rule_counts
+                ),
+                "source_acquisition_observations": source_acquisition_observations,
+                "lowering_observation_count": len(lowering_observations),
+                "lowering_observation_rule_counts": lowering_observation_rule_counts,
+                "lowering_observations": lowering_observations,
             },
             "uk_witness_migration_summary": {
                 "payload_sidecar_attached_op_count": sum(authority_counts.values()) - authority_counts.get("UNSPECIFIED", 0),
@@ -3930,6 +4596,7 @@ def build_uk_evidence_bundle(
                 "compound_subsection_alias_policy": "uk_canonicalize_api_v1",
                 "recursive_lookup_policy": "uk_canonicalize_api_v1",
             },
+            "uk_oracle_alignment_summary": oracle_alignment_summary,
             "uk_applicability_summary": {
                 "effective_date_op_count": applicability_effective_date_op_count,
                 "multi_in_force_date_op_count": applicability_multi_in_force_date_op_count,
@@ -4391,7 +5058,37 @@ def build_oracle_proof_bundle(
     }
 
 
+def _print_uk_error_bundle_context(bundle: Dict) -> None:
+    if str(bundle.get("jurisdiction") or "") != "uk":
+        return
+    enacted_status = str(bundle.get("enacted_source_status") or "unknown")
+    oracle_status = str(bundle.get("oracle_source_status") or "unknown")
+    enacted_size = int(bundle.get("enacted_source_size", 0) or 0)
+    oracle_size = int(bundle.get("oracle_source_size", 0) or 0)
+    enacted_url = str(bundle.get("enacted_source_url") or "(unknown)")
+    oracle_url = str(bundle.get("oracle_source_url") or "(unknown)")
+    enacted_sha = str(bundle.get("enacted_source_sha256") or "")
+    oracle_sha = str(bundle.get("oracle_source_sha256") or "")
+    source_hashes = ""
+    if enacted_sha or oracle_sha:
+        source_hashes = f" hashes=enacted:{enacted_sha or '(none)'} oracle:{oracle_sha or '(none)'}"
+    print(
+        "UK source: "
+        f"enacted={enacted_status}({enacted_size}b)@{enacted_url} "
+        f"oracle={oracle_status}({oracle_size}b)@{oracle_url}"
+        f"{source_hashes}",
+        file=sys.stderr,
+    )
+    comparison = bundle.get("uk_oracle_comparison")
+    if isinstance(comparison, dict):
+        comparison_class = str(comparison.get("comparison_class") or "unknown")
+        core = "yes" if bool(comparison.get("core_comparison", False)) else "no"
+        print(f"UK compare: class={comparison_class} core={core}", file=sys.stderr)
+
+
 def main(args) -> None:
+    from lawvm.tools.uk_replay_regime import normalize_uk_replay_regime
+
     command = getattr(args, "command", "")
     jurisdiction = str(getattr(args, "jurisdiction", "fi") or "fi").lower()
     uk_allow_metadata_backfill = getattr(args, "uk_allow_metadata_backfill", None)
@@ -4400,6 +5097,7 @@ def main(args) -> None:
     uk_applicability_mode = getattr(args, "uk_applicability_mode", None)
     uk_source_first_candidate = bool(getattr(args, "uk_source_first_candidate", False))
     uk_authority_mode = getattr(args, "uk_authority_mode", None)
+    uk_allow_metadata_only_effects = getattr(args, "uk_allow_metadata_only_effects", None)
     if jurisdiction != "uk" and (
         uk_allow_metadata_backfill is not None
         or uk_allow_oracle_alignment is not None
@@ -4407,12 +5105,13 @@ def main(args) -> None:
         or uk_applicability_mode is not None
         or uk_source_first_candidate
         or uk_authority_mode is not None
+        or uk_allow_metadata_only_effects is not None
     ):
         print(
             "ERROR: UK replay regime flags are only supported with -j uk",
             file=sys.stderr,
         )
-        sys.exit(1)
+        sys.exit(2)
     if jurisdiction != "uk":
         uk_allow_metadata_backfill = None
         uk_allow_oracle_alignment = None
@@ -4420,46 +5119,15 @@ def main(args) -> None:
         uk_applicability_mode = None
         uk_source_first_candidate = False
         uk_authority_mode = None
+        uk_allow_metadata_only_effects = None
     if jurisdiction == "uk":
-        if (
-            uk_applicability_mode is not None
-            and uk_respect_feed_applied is True
-            and uk_applicability_mode != "effective_date_plus_feed_applied"
-        ):
-            print("ERROR: --applicability-mode conflicts with --respect-feed-applied", file=sys.stderr)
-            sys.exit(1)
-        if (
-            uk_applicability_mode is not None
-            and uk_respect_feed_applied is False
-            and uk_applicability_mode != "effective_date_only"
-        ):
-            print("ERROR: --applicability-mode conflicts with --ignore-feed-applied", file=sys.stderr)
-            sys.exit(1)
-        if uk_applicability_mode is None:
-            if uk_respect_feed_applied is True:
-                uk_applicability_mode = "effective_date_plus_feed_applied"
-            elif uk_respect_feed_applied is False:
-                uk_applicability_mode = "effective_date_only"
-            else:
-                uk_applicability_mode = "effective_date_plus_feed_applied"
-    if jurisdiction == "uk" and uk_source_first_candidate:
-        if uk_allow_metadata_backfill is True:
-            print("ERROR: --source-first-candidate conflicts with --metadata-backfill", file=sys.stderr)
-            sys.exit(1)
-        if uk_allow_oracle_alignment is True:
-            print("ERROR: --source-first-candidate conflicts with --oracle-alignment", file=sys.stderr)
-            sys.exit(1)
-        if uk_applicability_mode != "effective_date_plus_feed_applied":
-            print("ERROR: --source-first-candidate conflicts with --applicability-mode", file=sys.stderr)
-            sys.exit(1)
-        if uk_authority_mode == "current_mixed":
-            print("ERROR: --source-first-candidate conflicts with --authority-mode current_mixed", file=sys.stderr)
-            sys.exit(1)
-        uk_allow_metadata_backfill = False
-        uk_allow_oracle_alignment = False
-        uk_respect_feed_applied = True
-        uk_applicability_mode = "effective_date_plus_feed_applied"
-        uk_authority_mode = "source_text_only"
+        uk_regime = normalize_uk_replay_regime(args)
+        uk_allow_metadata_backfill = uk_regime.allow_metadata_backfill
+        uk_allow_oracle_alignment = uk_regime.allow_oracle_alignment
+        uk_applicability_mode = uk_regime.applicability_mode
+        uk_respect_feed_applied = uk_applicability_mode == "effective_date_plus_feed_applied"
+        uk_authority_mode = uk_regime.authority_mode
+        uk_allow_metadata_only_effects = uk_regime.allow_metadata_only_effects
     if command == "evidence-review":
         raw_statute_ids = getattr(args, "statute_id", None) or []
         if isinstance(raw_statute_ids, str):
@@ -4624,6 +5292,7 @@ def main(args) -> None:
                     allow_oracle_alignment=uk_allow_oracle_alignment,
                     applicability_mode=uk_applicability_mode,
                     authority_mode=uk_authority_mode,
+                    allow_metadata_only_effects=uk_allow_metadata_only_effects,
                 )
             else:
                 cache_stats = {
@@ -4646,6 +5315,7 @@ def main(args) -> None:
                     allow_oracle_alignment=uk_allow_oracle_alignment,
                     applicability_mode=uk_applicability_mode,
                     authority_mode=uk_authority_mode,
+                    allow_metadata_only_effects=uk_allow_metadata_only_effects,
                 )
                 review = _review_bundles(
                     bundles,
@@ -4698,6 +5368,7 @@ def main(args) -> None:
                 review["uk_oracle_alignment_enabled"] = uk_allow_oracle_alignment
                 review["uk_applicability_mode"] = uk_applicability_mode
                 review["uk_authority_mode"] = uk_authority_mode
+                review["uk_metadata_only_effects_enabled"] = uk_allow_metadata_only_effects
         if bool(getattr(args, "json", False) or getattr(args, "json_output", False)):
             print(json.dumps(review, ensure_ascii=False, indent=2))
         else:
@@ -4730,6 +5401,7 @@ def main(args) -> None:
                     allow_oracle_alignment=uk_allow_oracle_alignment,
                     applicability_mode=uk_applicability_mode,
                     authority_mode=uk_authority_mode,
+                    allow_metadata_only_effects=uk_allow_metadata_only_effects,
                 )
             elif include_bisect:
                 bundle = build_evidence_bundle(statute_id, mode=mode, include_bisect=True)
@@ -4745,6 +5417,7 @@ def main(args) -> None:
                     allow_oracle_alignment=uk_allow_oracle_alignment,
                     applicability_mode=uk_applicability_mode,
                     authority_mode=uk_authority_mode,
+                    allow_metadata_only_effects=uk_allow_metadata_only_effects,
                 )
             elif include_bisect:
                 bundle = build_oracle_proof_bundle(statute_id, mode=mode, include_bisect=True)
@@ -4754,7 +5427,10 @@ def main(args) -> None:
             print(f"Unknown evidence command: {command}", file=sys.stderr)
             sys.exit(1)
         if bundle.get("error"):
+            if json_output:
+                print(json.dumps(bundle, ensure_ascii=False, indent=2))
             print(f"ERROR: {bundle['error']}", file=sys.stderr)
+            _print_uk_error_bundle_context(bundle)
             sys.exit(1)
         bundles.append(bundle)
 

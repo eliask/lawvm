@@ -27,10 +27,10 @@ _CORPUS_AVAILABLE = os.path.exists("data/finlex.farchive")
 pytestmark = pytest.mark.skipif(not _CORPUS_AVAILABLE, reason="corpus data not available")
 
 from tests.corpus_pin_helpers import pinned_replay
+from lawvm.finland.statute import ReplayResult
 
-
-def _replay(sid: str) -> IRNode:
-    master = pinned_replay(sid, quiet=True)
+def _replay(sid: str, **kwargs: Any) -> IRNode:
+    master = pinned_replay(sid, quiet=True, **kwargs)
     return master.ir
 
 
@@ -39,6 +39,32 @@ def _replay_meta(sid: str) -> dict[str, object]:
     replay_meta: dict[str, object] = {}
     pinned_replay(sid, quiet=True, replay_meta_out=replay_meta)
     return replay_meta
+
+
+def _replay_ir_and_meta(sid: str) -> tuple[IRNode, dict[str, object]]:
+    replay_meta: dict[str, object] = {}
+    master = pinned_replay(sid, quiet=True, replay_meta_out=replay_meta)
+    return master.ir, replay_meta
+
+
+@pytest.fixture(scope="module")
+def replay_2012_746() -> ReplayResult:
+    return cast(ReplayResult, pinned_replay("2012/746", quiet=True))
+
+
+@pytest.fixture(scope="module")
+def replay_2017_320_legal_pit_with_meta() -> tuple[ReplayResult, dict[str, object]]:
+    replay_meta: dict[str, object] = {}
+    replay = cast(
+        ReplayResult,
+        pinned_replay("2017/320", mode="legal_pit", quiet=True, replay_meta_out=replay_meta),
+    )
+    return replay, replay_meta
+
+
+@pytest.fixture(scope="module")
+def replay_2017_519() -> ReplayResult:
+    return cast(ReplayResult, pinned_replay("2017/519", quiet=True))
 
 
 def _subsection_text(
@@ -66,7 +92,13 @@ def _subsection_text(
 def test_2014_1194_2017_821_corrigendum_patch_keeps_late_clause_targets() -> None:
     """Duplicate 821/2017 johtolause patches must not truncate the amendment clause."""
 
-    replay = pinned_replay("2014/1194", mode="legal_pit", quiet=True, stop_before="2017/1084")
+    replay = pinned_replay(
+        "2014/1194",
+        mode="legal_pit",
+        quiet=True,
+        stop_before="2017/1084",
+        build_full_products=False,
+    )
 
     chapter_4_sub2 = _subsection_text(
         replay.replay_fold_state,
@@ -92,7 +124,13 @@ def test_2014_1194_2017_821_corrigendum_patch_keeps_late_clause_targets() -> Non
 def test_2014_1194_2021_234_part_scoped_body_insert_keeps_section_1_tail_once() -> None:
     """A body-derived insert under 1 luku must not duplicate 1 § 2 moment text."""
 
-    replay = pinned_replay("2014/1194", mode="legal_pit", quiet=True, stop_before="2021/529")
+    replay = pinned_replay(
+        "2014/1194",
+        mode="legal_pit",
+        quiet=True,
+        stop_before="2021/529",
+        build_full_products=False,
+    )
     section_path = replay.replay_fold_state.find_section_path("1", "1", "1")
     assert section_path is not None
     from lawvm.core import tree_ops as _tops
@@ -114,11 +152,12 @@ def test_2014_1194_2021_234_part_scoped_body_insert_keeps_section_1_tail_once() 
     )
 
 
-def test_2017_519_2019_979_official_johtolause_corrigendum_updates_section_15() -> None:
+def test_2017_519_2019_979_official_johtolause_corrigendum_updates_section_15(
+    replay_2017_519: ReplayResult,
+) -> None:
     """Official 979/2019 johtolause corrigendum must compile and replay 4 luvun 15 §."""
 
-    replay = pinned_replay("2017/519", quiet=True)
-    section_node = replay.find_section("15", "4", None)
+    section_node = replay_2017_519.find_section("15", "4", None)
     assert section_node is not None
     section_text = " ".join(irnode_to_text(section_node).split())
 
@@ -141,7 +180,7 @@ def test_2012_980_2022_604_johtolause_corrigendum_repeals_subsection_3_not_2() -
     """Official 604/2022 johtolause corrigendum must target 2 § 3 mom, not 2 mom."""
     from lawvm.core import tree_ops as _tops
 
-    replay = pinned_replay("2012/980", quiet=True, mode="finlex_oracle")
+    replay = pinned_replay("2012/980", quiet=True, mode="finlex_oracle", build_full_products=False)
     section_path = replay.replay_fold_state.find_section_path("2", "1", None)
     assert section_path is not None
     section_node = _tops.resolve(replay.replay_fold_state.ir, section_path)
@@ -163,7 +202,7 @@ def test_2009_1672_2017_275_body_lead_lane_recovers_section_13_3_paragraph_8a() 
     """A ceremonial preamble must not hide the 2017/275 13 luvun 3 § 2 mom 8 a kohta insert."""
     from lawvm.core import tree_ops as _tops
 
-    replay = pinned_replay("2009/1672", quiet=True, stop_before="2017/628")
+    replay = pinned_replay("2009/1672", quiet=True, stop_before="2017/628", build_full_products=False)
     section_path = replay.replay_fold_state.find_section_path("3", "13", None)
     assert section_path is not None
     section_node = _tops.resolve(replay.replay_fold_state.ir, section_path)
@@ -225,12 +264,6 @@ class TestNoOmissionsInPIT:
         omissions = _find_omissions(ir)
         assert not omissions, f"Found omissions in materialized PIT: {omissions[:5]}"
 
-    def test_2014_917_no_omissions(self) -> None:
-        """Tietoyhteiskuntakaari had omission markers in multiple sections."""
-        ir = _replay("2014/917")
-        omissions = _find_omissions(ir)
-        assert not omissions, f"Found omissions in materialized PIT: {omissions[:5]}"
-
     def test_2000_609_no_omissions(self) -> None:
         """VN asetus maaseudun kehittämisestä had omission markers."""
         ir = _replay("2000/609")
@@ -249,6 +282,8 @@ class TestNoDuplicatesInPIT:
         """Tietoyhteiskuntakaari § 265 had duplicate subsection:1."""
         ir = _replay("2014/917")
         dups = _find_duplicates(ir)
+        omissions = _find_omissions(ir)
+        assert not omissions, f"Found omissions in materialized PIT: {omissions[:5]}"
         assert not dups, f"Found duplicates in materialized PIT: {dups[:5]}"
 
     def test_2025_89_section_154_no_duplicate_paragraphs(self) -> None:
@@ -265,29 +300,17 @@ class TestNoDuplicatesInPIT:
 
     def test_1976_673_section_13_no_duplicate_subsection(self) -> None:
         """The 1976/673 replay must not duplicate subsection 3 in section 13."""
-        ir = _replay("1976/673")
+        ir, replay_meta = _replay_ir_and_meta("1976/673")
         dups = _find_duplicates(ir)
         assert not dups, f"Found duplicates in materialized PIT: {dups[:5]}"
-
-    def test_1976_673_no_replay_fold_structural_dedup_warning(self) -> None:
-        """The 1976/673 sparse item payload should no longer need replay-fold dedup."""
-        replay_meta = _replay_meta("1976/673")
         assert replay_meta.get("structural_dedup_warnings") in (None, [])
 
     def test_1979_1062_sections_no_duplicate_subsection(self) -> None:
         """The 1979/1062 replay must not duplicate subsection 2 in chapter 18."""
-        ir = _replay("1979/1062")
+        ir, replay_meta = _replay_ir_and_meta("1979/1062")
         dups = _find_duplicates(ir)
         assert not dups, f"Found duplicates in materialized PIT: {dups[:5]}"
-
-    def test_1979_1062_no_replay_fold_structural_dedup_warning(self) -> None:
-        """The 1979/1062 replay should not need the global structural dedup backstop."""
-        replay_meta = _replay_meta("1979/1062")
         assert replay_meta.get("structural_dedup_warnings") in (None, [])
-
-    def test_1979_1062_does_not_leave_pseudochapter_marker_as_section(self) -> None:
-        """The malformed 1997/611 '16 b luku' marker must not survive as section 16bluku."""
-        ir = _replay("1979/1062")
         chapter_16a = next(
             child for child in ir.children if child.kind is IRNodeKind.CHAPTER and child.label == "16a"
         )
@@ -298,7 +321,10 @@ class TestNoDuplicatesInPIT:
             for child in ir.children
         )
 
-    def test_2017_320_no_duplicate_sections_or_dedup_warning(self) -> None:
+    def test_2017_320_no_duplicate_sections_or_dedup_warning(
+        self,
+        replay_2017_320_legal_pit_with_meta: tuple[ReplayResult, dict[str, object]],
+    ) -> None:
         """2017/320 materialized PIT must not have final duplicates.
 
         The replay-fold dedup backstop may fire due to a conflict between
@@ -307,16 +333,21 @@ class TestNoDuplicatesInPIT:
         relabel ops for 2019/371.  The backstop resolves the conflict correctly,
         so the final PIT must still be clean even if the warning fires.
         """
-        ir = _replay("2017/320")
+        replay, _replay_meta = replay_2017_320_legal_pit_with_meta
+        ir = replay.ir
         dups = _find_duplicates(ir)
         assert not dups, f"Found duplicates in materialized PIT: {dups[:5]}"
         # NOTE: structural_dedup_warnings may fire for 2017/320 due to a known
         # interaction between individual RENUMBER ops and the StructuralTransformPlan
         # relabel for 2019/371 — tracked as a future improvement.
 
-    def test_2017_320_part_2_chapter_1_keeps_section_5(self) -> None:
+    def test_2017_320_part_2_chapter_1_keeps_section_5(
+        self,
+        replay_2017_320_legal_pit_with_meta: tuple[ReplayResult, dict[str, object]],
+    ) -> None:
         """2017/320 must keep the early Part II chapter-1 section wave after later chapter relabeling."""
-        ir = _replay("2017/320")
+        replay, _replay_meta = replay_2017_320_legal_pit_with_meta
+        ir = replay.ir
         part_2 = next(
             child
             for child in ir.children
@@ -335,10 +366,12 @@ class TestNoDuplicatesInPIT:
         assert "5" in section_labels
         assert "21" not in section_labels
 
-    def test_2017_320_delayed_section_268_materializes_under_current_chapter_32(self) -> None:
+    def test_2017_320_delayed_section_268_materializes_under_current_chapter_32(
+        self,
+        replay_2017_320_legal_pit_with_meta: tuple[ReplayResult, dict[str, object]],
+    ) -> None:
         """2018/731's delayed section must survive the 2019/371 and 2020/1256 recodification chain."""
-        replay_meta: dict[str, object] = {}
-        replay = pinned_replay("2017/320", mode="legal_pit", quiet=True, replay_meta_out=replay_meta)
+        replay, replay_meta = replay_2017_320_legal_pit_with_meta
         ir = replay.ir
         part_7 = next(
             child
@@ -377,8 +410,8 @@ class TestNoDuplicatesInPIT:
             if isinstance(pathology, dict)
         )
 
-    def test_2017_320_2018_301_does_not_flatten_sections_19_21_to_root(self) -> None:
-        """2018/301 must not materialize chapter-owned sections 19-21 as root siblings."""
+    def test_2017_320_2018_301_keeps_new_part_5_chapters_scoped(self) -> None:
+        """2018/301 must keep new part-5 chapters scoped and not flatten sections 19-21."""
         ir = pinned_replay(
             "2017/320",
             mode="legal_pit",
@@ -393,15 +426,6 @@ class TestNoDuplicatesInPIT:
         ]
         assert not {"19", "20", "21"} & set(root_section_labels)
 
-    def test_2017_320_2018_301_keeps_part_5_new_chapters_under_part_5(self) -> None:
-        """2018/301 must route V osan 2 ja 3 luku under part 5, not merge into other parts."""
-        ir = pinned_replay(
-            "2017/320",
-            mode="legal_pit",
-            stop_before="2018/539",
-            quiet=True,
-            build_full_products=False,
-        ).ir
         root = next(
             (child for child in ir.children if child.kind is IRNodeKind.HCONTAINER),
             ir,
@@ -418,8 +442,8 @@ class TestNoDuplicatesInPIT:
         ]
         assert {"2", "3"} <= set(chapter_labels)
 
-    def test_2017_320_2018_301_keeps_part_5_new_chapter_children_before_2019_371(self) -> None:
-        """2018/301 must keep V osan 2 ja 3 luku child sections under part 5."""
+    def test_2017_320_2018_301_keeps_chapter_children_and_part_scoped_inserts_before_2019_371(self) -> None:
+        """2018/301 must keep child sections and canonicalized part-scoped inserts before 2019/371."""
         ir = pinned_replay(
             "2017/320",
             mode="legal_pit",
@@ -449,19 +473,6 @@ class TestNoDuplicatesInPIT:
         assert any(child.kind is IRNodeKind.SECTION for child in chapter_2.children)
         assert any(child.kind is IRNodeKind.SECTION for child in chapter_3.children)
 
-    def test_2017_320_2018_301_canonicalized_part_scoped_inserts_exist_before_2019_371(self) -> None:
-        """2018/301 inserts under III and VI osa must materialize under replay parts 3 and 6."""
-        ir = pinned_replay(
-            "2017/320",
-            mode="legal_pit",
-            stop_before="2019/371",
-            quiet=True,
-            build_full_products=False,
-        ).ir
-        root = next(
-            (child for child in ir.children if child.kind is IRNodeKind.HCONTAINER),
-            ir,
-        )
         part_3 = next(
             child
             for child in root.children
@@ -499,7 +510,7 @@ class TestNoDuplicatesInPIT:
 
     def test_2009_1599_2023_152_keeps_tail_subsection_replaces_in_19_and_20_luku(self) -> None:
         """2023/152 must append the new tail moments in 19:14 and 20:14."""
-        ir = _replay("2009/1599")
+        ir = _replay("2009/1599", stop_before="2023/577")
         root = next(
             (child for child in ir.children if child.kind is IRNodeKind.HCONTAINER),
             ir,
@@ -534,8 +545,8 @@ class TestNoDuplicatesInPIT:
         assert labels_19 == ["1", "2", "3", "4"]
         assert labels_20 == ["1", "2", "3"]
 
-    def test_2017_320_2018_984_part_scoped_uncovered_replaces_do_not_hijack_part_iia(self) -> None:
-        """2018/984 must keep the historically IIa-scoped sections under canonical part 3."""
+    def test_2017_320_2018_984_keeps_iia_scoped_replaces_and_fragmentary_chapter_before_2018_1303(self) -> None:
+        """2018/984 must keep IIa-scoped replaces and fragmentary chapter payload under canonical part 3."""
         ir = pinned_replay(
             "2017/320",
             mode="legal_pit",
@@ -597,29 +608,6 @@ class TestNoDuplicatesInPIT:
         assert "3a" in chapter_4_2_labels
         assert "2a" in chapter_6_1_labels
 
-    def test_2017_320_2018_984_fragmentary_chapter_replace_keeps_iia_sections_before_2018_1303(self) -> None:
-        """A fragmentary chapter payload must keep the canonicalized part-3 chapter structure."""
-        ir = pinned_replay(
-            "2017/320",
-            mode="legal_pit",
-            stop_before="2018/1303",
-            quiet=True,
-            build_full_products=False,
-        ).ir
-        root = next(
-            (child for child in ir.children if child.kind is IRNodeKind.HCONTAINER),
-            ir,
-        )
-        part_3 = next(
-            child
-            for child in root.children
-            if child.kind is IRNodeKind.PART and child.label == "3"
-        )
-        chapter_1_part_3 = next(
-            child
-            for child in part_3.children
-            if child.kind is IRNodeKind.CHAPTER and child.label == "1"
-        )
         chapter_2_part_3 = next(
             child
             for child in part_3.children
@@ -639,9 +627,12 @@ class TestNoDuplicatesInPIT:
         assert chapter_1_part_3_labels == ["1", "2", "3", "4"]
         assert {"5", "6", "7"} <= set(chapter_2_part_3_labels)
 
-    def test_2017_519_no_root_section_10_after_jolloin_renumber_insert(self) -> None:
+    def test_2017_519_no_root_section_10_after_jolloin_renumber_insert(
+        self,
+        replay_2017_519: ReplayResult,
+    ) -> None:
         """2017/519 must keep reborn 10 § under chapter 3 after 2019/979."""
-        ir = _replay("2017/519")
+        ir = replay_2017_519.ir
         root_section_10 = [
             child
             for child in ir.children
@@ -662,9 +653,9 @@ class TestNoDuplicatesInPIT:
         assert "10a" in chapter_3_sections
         assert check_invariants(ir) == []
 
-    def test_2012_746_chapter_19_stays_under_part_6(self) -> None:
+    def test_2012_746_chapter_19_stays_under_part_6(self, replay_2012_746: ReplayResult) -> None:
         """2012/746 must not leave chapter 19 as a root sibling outside part 6."""
-        ir = _replay("2012/746")
+        ir = replay_2012_746.ir
         root_chapter_19 = [
             child
             for child in ir.children
@@ -689,9 +680,12 @@ class TestNoDuplicatesInPIT:
         assert "3" in chapter_19_sections
         assert check_invariants(ir) == []
 
-    def test_2012_746_container_replace_updates_part_wrapped_section_1_children(self) -> None:
+    def test_2012_746_container_replace_updates_part_wrapped_section_1_children(
+        self,
+        replay_2012_746: ReplayResult,
+    ) -> None:
         """2012/746 chapter snapshots must not skip part-wrapped section 1 child payloads."""
-        ir = _replay("2012/746")
+        ir = replay_2012_746.ir
         part_3 = next(
             child
             for child in ir.children
@@ -729,9 +723,12 @@ class TestNoDuplicatesInPIT:
         assert "Tämän lain 12—14 lukua sovelletaan" not in section_1_ch12_text
         assert check_invariants(ir) == []
 
-    def test_2012_746_section_6_2_keeps_insert_scoped_to_chapter_17(self) -> None:
+    def test_2012_746_section_6_2_keeps_insert_scoped_to_chapter_17(
+        self,
+        replay_2012_746: ReplayResult,
+    ) -> None:
         """2012/746 6 luvun 2 § must not absorb the trailing 17 luvun insert."""
-        ir = _replay("2012/746")
+        ir = replay_2012_746.ir
         part_3 = next(
             child
             for child in ir.children
@@ -756,14 +753,17 @@ class TestNoDuplicatesInPIT:
         assert section_2_text.count(needle) == 1
         assert check_invariants(ir) == []
 
-    def test_2012_746_section_16_1_keeps_later_commencement_version(self) -> None:
+    def test_2012_746_section_16_1_keeps_later_commencement_version(
+        self,
+        replay_2012_746: ReplayResult,
+    ) -> None:
         """2012/746 16 luvun 1 § must keep the delayed 2019/511 text at 2019-07-22."""
 
-        master = pinned_replay("2012/746", quiet=True)
         section_key = "part:6/chapter:16/section:1"
+        assert replay_2012_746.timelines is not None
         timeline = next(
             tl
-            for addr, tl in master.timelines.items()
+            for addr, tl in replay_2012_746.timelines.items()
             if str(addr) == section_key
         )
         july_2019_versions = [
@@ -775,7 +775,7 @@ class TestNoDuplicatesInPIT:
         latest_july_version = max(july_2019_versions, key=lambda version: version.enacted)
         assert latest_july_version.enacted == "2019-04-12"
 
-        ir = master.ir
+        ir = replay_2012_746.ir
         part_6 = next(
             child
             for child in ir.children
@@ -796,7 +796,7 @@ class TestNoDuplicatesInPIT:
 
     def test_2016_768_section_36_keeps_replaced_fifth_subsection_after_same_wave_renumber(self) -> None:
         """2016/768 36 § must keep the 2024/936 replacement on migrated 5 mom."""
-        ir = _replay("2016/768")
+        ir = _replay("2016/768", stop_before="2025/383")
         chapter_7 = next(
             child
             for child in ir.children
@@ -816,34 +816,30 @@ class TestNoDuplicatesInPIT:
 
     def test_1997_1339_no_duplicate_paragraphs_or_dedup_warning(self) -> None:
         """1997/1339 must not need replay-fold dedup for subsection paragraph duplicates."""
-        ir = _replay("1997/1339")
+        ir, replay_meta = _replay_ir_and_meta("1997/1339")
         dups = _find_duplicates(ir)
         assert not dups, f"Found duplicates in materialized PIT: {dups[:5]}"
-        replay_meta = _replay_meta("1997/1339")
         assert replay_meta.get("structural_dedup_warnings") in (None, [])
 
     def test_2002_64_section_2_no_duplicate_paragraphs_or_dedup_warning(self) -> None:
         """2002/64 must not leave repeated a/b/c paragraph labels flat at subsection scope."""
-        ir = _replay("2002/64")
+        ir, replay_meta = _replay_ir_and_meta("2002/64")
         dups = _find_duplicates(ir)
         assert not dups, f"Found duplicates in materialized PIT: {dups[:5]}"
-        replay_meta = _replay_meta("2002/64")
         assert replay_meta.get("structural_dedup_warnings") in (None, [])
 
     def test_2002_1244_section_21c_no_duplicate_paragraphs_or_dedup_warning(self) -> None:
         """2002/1244 §21c must not leave repeated i/ii labels flat in replay fold."""
-        ir = _replay("2002/1244")
+        ir, replay_meta = _replay_ir_and_meta("2002/1244")
         dups = _find_duplicates(ir)
         assert not dups, f"Found duplicates in materialized PIT: {dups[:5]}"
-        replay_meta = _replay_meta("2002/1244")
         assert replay_meta.get("structural_dedup_warnings") in (None, [])
 
     def test_1997_108_sections_2_and_3_no_duplicate_paragraphs_or_dedup_warning(self) -> None:
         """1997/108 must nest its repeated digit families instead of leaving duplicates flat."""
-        ir = _replay("1997/108")
+        ir, replay_meta = _replay_ir_and_meta("1997/108")
         dups = _find_duplicates(ir)
         assert not dups, f"Found duplicates in materialized PIT: {dups[:5]}"
-        replay_meta = _replay_meta("1997/108")
         assert replay_meta.get("structural_dedup_warnings") in (None, [])
 
     def test_2002_672_section_1_no_direct_paragraph_child(self) -> None:
@@ -853,33 +849,29 @@ class TestNoDuplicatesInPIT:
 
     def test_2000_154_section_1_no_duplicate_subparagraphs_or_dedup_warning(self) -> None:
         """2000/154 must split the buried 5)-reset into a new paragraph instead of duplicating a/b."""
-        ir = _replay("2000/154")
+        ir, replay_meta = _replay_ir_and_meta("2000/154")
         dups = _find_duplicates(ir)
         assert not dups, f"Found duplicates in materialized PIT: {dups[:5]}"
-        replay_meta = _replay_meta("2000/154")
         assert replay_meta.get("structural_dedup_warnings") in (None, [])
 
     def test_1999_589_section_7_no_normalized_duplicate_paragraphs(self) -> None:
         """1999/589 §7 must recover dotted intro labels instead of colliding at paragraph 1."""
-        ir = _replay("1999/589")
+        ir, replay_meta = _replay_ir_and_meta("1999/589")
         assert check_invariants(ir) == []
-        replay_meta = _replay_meta("1999/589")
         assert replay_meta.get("invariant_violations") in (None, [])
 
 
     def test_1995_398_section_20_no_duplicate_5a_after_sparse_plain_plus_item_mix(self) -> None:
         """1995/398 §20 must not replay 5a twice when a plain sparse slot already carries it."""
-        ir = _replay("1995/398")
+        ir, replay_meta = _replay_ir_and_meta("1995/398")
         assert check_invariants(ir) == []
-        replay_meta = _replay_meta("1995/398")
         assert replay_meta.get("invariant_violations") in (None, [])
         assert replay_meta.get("product_invariant_violations") in (None, [])
 
     def test_2006_624_sections_27_and_17_3_no_duplicate_7a_or_13a(self) -> None:
         """2006/624 must not duplicate carried explicit paragraph labels from 2022/1337."""
-        ir = _replay("2006/624")
+        ir, replay_meta = _replay_ir_and_meta("2006/624")
         assert check_invariants(ir) == []
-        replay_meta = _replay_meta("2006/624")
         assert replay_meta.get("invariant_violations") in (None, [])
         assert replay_meta.get("product_invariant_violations") in (None, [])
 
@@ -932,7 +924,7 @@ class TestNoDuplicatesInPIT:
         materialized PIT placed them in part:5 because section-level timeline ops emitted
         before the chapter move carried the old 'part:5' path prefix.
         """
-        ir = _replay("2016/673")
+        ir = _replay("2016/673", stop_before="2019/1509")
         assert check_invariants(ir) == []
         # Collect part labels for chapters 20 and 21
         ch_to_part: dict[str, str] = {}
@@ -964,7 +956,7 @@ class TestSubsectionInsertChapterCarryforward:
         from lawvm.finland.ops import FailedOp
 
         failed: list[FailedOp] = []
-        pinned_replay("1984/602", quiet=True, failed_ops_out=failed)
+        pinned_replay("1984/602", quiet=True, failed_ops_out=failed, build_full_products=False)
         problem_amendments = {"1994/1317", "1990/1367"}
         bad = [f for f in failed if f.amendment_id in problem_amendments]
         assert not bad, (

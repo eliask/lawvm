@@ -85,7 +85,13 @@ def build_snapshot_debug_bundle(
     source_idx = amendment_ids.index(source_id)
 
     # Build before_state
-    before_master = replay_xml(statute_id, mode=mode, stop_before=source_id, quiet=True)
+    before_master = replay_xml(
+        statute_id,
+        mode=mode,
+        stop_before=source_id,
+        quiet=True,
+        build_full_products=False,
+    )
     before_state = before_master.replay_fold_state
 
     # Run process_muutoslaki with lo_ops captured

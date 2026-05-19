@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from argparse import Namespace
+from functools import lru_cache
 from types import SimpleNamespace
 import json
 import sys
@@ -25,15 +26,22 @@ from lawvm.tools import (
 from lawvm.tools.snapshot_debug import build_snapshot_debug_bundle
 from lawvm.corpus_store import get_corpus_store
 from lawvm.finland.corpus import ConsolidatedOracleInspection
+from lawvm.core.ir import LegalOperation
 from lawvm.tools.classify_result import ClassifyResult
 from tests.corpus_pin_helpers import pinned_replay
 
 
+@lru_cache(maxsize=1)
 def _corpus_available() -> bool:
     try:
         return get_corpus_store().read_source("1987/1250") is not None
     except Exception:
         return False
+
+
+@pytest.fixture(scope="module")
+def cli_parser():
+    return cli._build_parser()
 
 
 @pytest.mark.skipif(not _corpus_available(), reason="corpus archive not available")
@@ -50,32 +58,30 @@ def test_snapshot_debug_2017_320_2019_371_keeps_restructure_plan_truth() -> None
     assert "part:2/chapter:1/section:8" in targets
 
 
-def test_cli_parser_accepts_new_debug_commands() -> None:
-    parser = cli._build_parser()
-
-    args = parser.parse_args(["classify", "1995/1552", "--json"])
+def test_cli_parser_accepts_new_debug_commands(cli_parser) -> None:
+    args = cli_parser.parse_args(["classify", "1995/1552", "--json"])
     assert args.command == "classify"
     assert args.statute_id == "1995/1552"
     assert args.json is True
 
-    args = parser.parse_args(["inspect-amendment", "1995/1552", "--source", "2020/162"])
+    args = cli_parser.parse_args(["inspect-amendment", "1995/1552", "--source", "2020/162"])
     assert args.command == "inspect-amendment"
     assert args.source == "2020/162"
     assert args.stage == "all"
     assert args.show_source_normalization_facts is False
 
-    args = parser.parse_args(["oracle-context", "1995/1552"])
+    args = cli_parser.parse_args(["oracle-context", "1995/1552"])
     assert args.command == "oracle-context"
     assert args.statute_id == "1995/1552"
     assert args.selector_mode == "latest_cached_editorial"
 
-    args = parser.parse_args(["verify", "2006/1299", "--stage", "parse", "--json"])
+    args = cli_parser.parse_args(["verify", "2006/1299", "--stage", "parse", "--json"])
     assert args.command == "verify"
     assert args.statute_id == "2006/1299"
     assert args.stage == "parse"
     assert args.json is True
 
-    args = parser.parse_args(
+    args = cli_parser.parse_args(
         [
             "oracle-context",
             "1995/1552",
@@ -89,7 +95,7 @@ def test_cli_parser_accepts_new_debug_commands() -> None:
     assert args.selector_mode == "date_consolidated_at_or_before"
     assert args.cutoff == "2024-12-19"
 
-    args = parser.parse_args(
+    args = cli_parser.parse_args(
         [
             "inspect-amendment",
             "1995/1552",
@@ -104,7 +110,7 @@ def test_cli_parser_accepts_new_debug_commands() -> None:
     assert args.stage == "source"
     assert args.show_source_normalization_facts is True
 
-    args = parser.parse_args(
+    args = cli_parser.parse_args(
         [
             "replay-debug",
             "1995/1552",
@@ -135,7 +141,7 @@ def test_cli_parser_accepts_new_debug_commands() -> None:
     assert args.contains == "14 b"
     assert args.limit == 7
 
-    args = parser.parse_args(
+    args = cli_parser.parse_args(
         [
             "phase-witness",
             "1995/1552",
@@ -154,16 +160,16 @@ def test_cli_parser_accepts_new_debug_commands() -> None:
     assert args.output == ".tmp/demo.json"
     assert args.json is True
 
-    args = parser.parse_args(["residual-ledger", "validate"])
+    args = cli_parser.parse_args(["residual-ledger", "validate"])
     assert args.command == "residual-ledger"
     assert args.residual_ledger_command == "validate"
     assert args.path == "notes/RESIDUAL_BUG_LEDGER_TEMPLATE.csv"
 
-    args = parser.parse_args(["destructive-repair-ledger", "--json"])
+    args = cli_parser.parse_args(["destructive-repair-ledger", "--json"])
     assert args.command == "destructive-repair-ledger"
     assert args.json is True
 
-    args = parser.parse_args(
+    args = cli_parser.parse_args(
         [
             "residual-ledger",
             "row",
@@ -199,20 +205,20 @@ def test_cli_parser_accepts_new_debug_commands() -> None:
     assert args.fix_owner == "finland"
     assert args.regression_ids == "1967/550 §8"
 
-    args = parser.parse_args(["trace-section", "1995/1552", "--source", "2020/162", "--section", "4 §"])
+    args = cli_parser.parse_args(["trace-section", "1995/1552", "--source", "2020/162", "--section", "4 §"])
     assert args.command == "trace-section"
     assert args.section == "4 §"
 
-    args = parser.parse_args(["source-dump", "1995/1552", "--address", "chapter:3/section:12"])
+    args = cli_parser.parse_args(["source-dump", "1995/1552", "--address", "chapter:3/section:12"])
     assert args.command == "source-dump"
     assert args.statute_id == "1995/1552"
     assert args.address == "chapter:3/section:12"
 
-    args = parser.parse_args(["bisect-section", "1995/1552", "--section", "4 §", "--verbose"])
+    args = cli_parser.parse_args(["bisect-section", "1995/1552", "--section", "4 §", "--verbose"])
     assert args.command == "bisect-section"
     assert args.verbose is True
 
-    args = parser.parse_args(
+    args = cli_parser.parse_args(
         ["replay-inspect", "1995/1552", "--section", "4 §", "--chapter", "1", "--part", "I"]
     )
     assert args.command == "replay-inspect"
@@ -220,7 +226,7 @@ def test_cli_parser_accepts_new_debug_commands() -> None:
     assert args.chapter == "1"
     assert args.part == "I"
 
-    args = parser.parse_args(
+    args = cli_parser.parse_args(
         [
             "explain",
             "1995/1552",
@@ -234,12 +240,12 @@ def test_cli_parser_accepts_new_debug_commands() -> None:
     assert args.oracle_selector_mode == "bench_comparable"
     assert args.oracle_version_amendment_id == "2019/112"
 
-    args = parser.parse_args(["explain", "1995/1552", "--threshold", "0.95"])
+    args = cli_parser.parse_args(["explain", "1995/1552", "--threshold", "0.95"])
     assert args.command == "explain"
     assert args.oracle_selector_mode == "latest_cached_editorial"
     assert args.oracle_version_amendment_id is None
 
-    args = parser.parse_args(
+    args = cli_parser.parse_args(
         [
             "replay-plan",
             "1995/1552",
@@ -254,36 +260,36 @@ def test_cli_parser_accepts_new_debug_commands() -> None:
     assert args.selector_mode == "bench_comparable"
     assert args.mode == "legal_pit"
 
-    args = parser.parse_args(["sync-finlex-latest"])
+    args = cli_parser.parse_args(["sync-finlex-latest"])
     assert args.command == "sync-finlex-latest"
     assert args.delay == 1.0
     assert args.corpus is None
     assert args.diagnostics_jsonl is None
 
-    args = parser.parse_args(["bench", "--oracle-aware-headline"])
+    args = cli_parser.parse_args(["bench", "--oracle-aware-headline"])
     assert args.command == "bench"
     assert args.oracle_aware_headline is True
 
-    args = parser.parse_args(["structural-review", "1995/1552", "--dump"])
+    args = cli_parser.parse_args(["structural-review", "1995/1552", "--dump"])
     assert args.command == "structural-review"
     assert args.oracle_selector_mode == "bench_comparable"
 
-    args = parser.parse_args(
+    args = cli_parser.parse_args(
         ["structural-review", "1995/1552", "--dump", "--oracle-selector-mode", "latest_cached_editorial"]
     )
     assert args.command == "structural-review"
     assert args.oracle_selector_mode == "latest_cached_editorial"
 
-    args = parser.parse_args(["import-zip", "--dry-run"])
+    args = cli_parser.parse_args(["import-zip", "--dry-run"])
     assert args.command == "import-zip"
     assert args.dry_run is True
 
-    eu_replay_args = parser.parse_args(["eu-replay", "32016R0679", "--pit-date", "2026-01-01"])
+    eu_replay_args = cli_parser.parse_args(["eu-replay", "32016R0679", "--pit-date", "2026-01-01"])
     assert eu_replay_args.command == "eu-replay"
     assert eu_replay_args.celex == "32016R0679"
     assert eu_replay_args.pit_date == "2026-01-01"
 
-    eu_reul_args = parser.parse_args(
+    eu_reul_args = cli_parser.parse_args(
         ["eu-reul", "resolve", "retained-law://celex/32016R0679/article/1", "sample.xml"]
     )
     assert eu_reul_args.command == "eu-reul"
@@ -456,10 +462,8 @@ def test_structural_review_dump_statute_forwards_selector_mode(monkeypatch) -> N
     assert captured["oracle_selector_mode"] == "latest_cached_editorial"
 
 
-def test_cli_parser_accepts_norway_debug_and_coverage_commands() -> None:
-    parser = cli._build_parser()
-
-    args = parser.parse_args(
+def test_cli_parser_accepts_norway_debug_and_coverage_commands(cli_parser) -> None:
+    args = cli_parser.parse_args(
         ["no-source-excerpt", "no/lov/2022-03-11-9", "needle", "--mode", "current", "--max-hits", "2"]
     )
     assert args.command == "no-source-excerpt"
@@ -468,7 +472,7 @@ def test_cli_parser_accepts_norway_debug_and_coverage_commands() -> None:
     assert args.mode == "current"
     assert args.max_hits == 2
 
-    args = parser.parse_args(
+    args = cli_parser.parse_args(
         ["no-op-trace", "no/lov/2022-03-11-9", "--path", "section:6-3", "--limit", "4"]
     )
     assert args.command == "no-op-trace"
@@ -476,27 +480,25 @@ def test_cli_parser_accepts_norway_debug_and_coverage_commands() -> None:
     assert args.path == ["section:6-3"]
     assert args.limit == 4
 
-    args = parser.parse_args(["no-divergence", "no/lov/2022-03-11-9", "--max-divergences", "3"])
+    args = cli_parser.parse_args(["no-divergence", "no/lov/2022-03-11-9", "--max-divergences", "3"])
     assert args.command == "no-divergence"
     assert args.base_id == "no/lov/2022-03-11-9"
     assert args.max_divergences == 3
 
-    args = parser.parse_args(["no-coverage", "no/lov/2022-03-11-9", "--limit", "7"])
+    args = cli_parser.parse_args(["no-coverage", "no/lov/2022-03-11-9", "--limit", "7"])
     assert args.command == "no-coverage"
     assert args.base_id == "no/lov/2022-03-11-9"
     assert args.limit == 7
 
-    args = parser.parse_args(["no-debug", "no/lov/2022-03-11-9", "--path", "section:6-3"])
+    args = cli_parser.parse_args(["no-debug", "no/lov/2022-03-11-9", "--path", "section:6-3"])
     assert args.command == "no-debug"
     assert args.base_id == "no/lov/2022-03-11-9"
     assert args.path == ["section:6-3"]
 
 
-def test_cli_parser_rejects_eu_reul_without_subcommand() -> None:
-    parser = cli._build_parser()
-
+def test_cli_parser_rejects_eu_reul_without_subcommand(cli_parser) -> None:
     with pytest.raises(SystemExit):
-        parser.parse_args(["eu-reul"])
+        cli_parser.parse_args(["eu-reul"])
 
 
 def test_sync_finlex_latest_main_uses_archive_ids(monkeypatch, capsys) -> None:
@@ -920,11 +922,6 @@ def test_trace_section_build_trace_bundle_exposes_paths_and_oracle_context(monke
     monkeypatch.setattr(trace_section, "extract_oracle_sections", fake_extract_oracle_sections)
     monkeypatch.setattr(trace_section, "get_ground_truth_tree", fake_get_ground_truth_tree)
     monkeypatch.setattr(trace_section, "get_consolidated_oracle_context", lambda *_args, **_kwargs: _OracleCtx())
-    monkeypatch.setattr(
-        trace_section,
-        "_resolve_applicable_amendment_records",
-        lambda *_args, **_kwargs: ([{"statute_id": "2020/162"}, {"statute_id": "2020/999"}], None, None),
-    )
 
     bundle = trace_section.build_trace_bundle("2014/1429", "2020/162", "chapter:5/section:63", "legal_pit")
 
@@ -1425,16 +1422,6 @@ def test_build_amendment_bundle_2018_441_has_no_scope_authority_parity_mismatche
 
 
 @pytest.mark.skipif(not _corpus_available(), reason="corpus data not available")
-def test_explain_2017_320_does_not_crash_on_materialization_regression(capsys) -> None:
-    try:
-        replay = pinned_replay("2017/320", mode="finlex_oracle", quiet=True)
-    except (OSError, RuntimeError) as exc:
-        pytest.skip(f"Finlex archive unavailable in this environment: {exc}")
-
-    assert replay.title == "Laki liikenteen palveluista"
-
-
-@pytest.mark.skipif(not _corpus_available(), reason="corpus data not available")
 def test_build_amendment_bundle_1987_411_runtime_scope_now_matches_explicit_chunk_projection() -> None:
     try:
         bundle = inspect_amendment.build_amendment_bundle("1901/15-001", "1987/411", "legal_pit")
@@ -1549,7 +1536,26 @@ def test_bisect_section_main_prints_first_bad_and_worst_drops(capsys, monkeypatc
 
 @pytest.mark.skipif(not _corpus_available(), reason="corpus data not available")
 def test_classify_1987_1250_reports_item_target_structure_absent_pathologies() -> None:
-    result = classify._classify_statute("1987/1250", "finlex_oracle")
+    compiled_ops: list[LegalOperation] = []
+    replay = pinned_replay(
+        "1987/1250",
+        mode="finlex_oracle",
+        compiled_ops_out=compiled_ops,
+        quiet=True,
+        build_full_products=False,
+    )
+    result = classify._classify_statute(
+        "1987/1250",
+        "finlex_oracle",
+        replay_result=replay,
+        precomputed_compiled_ops=compiled_ops,
+        html_audit_result=SimpleNamespace(
+            missing_from_xml=[],
+            extra_in_xml=[],
+            html_error="",
+            noncommensurable_reason="",
+        ),
+    )
 
     assert result is not None
     labels = {

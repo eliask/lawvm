@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from typing import cast
 
 import lxml.etree as etree
 import pytest
@@ -38,25 +39,120 @@ from lawvm.finland.replay_products import validate_replay_products
 from lawvm.core.timeline_addresses import _retarget_root_node
 from lawvm.tools.inspect_amendment import build_amendment_bundle
 from tests.corpus_pin_helpers import pinned_replay
-from lawvm.finland.statute import ReplayState, StatuteContext
+from lawvm.finland.statute import ReplayResult, ReplayState, StatuteContext
 
 
-def test_replay_xml_exposes_typed_replay_products() -> None:
-    replay = pinned_replay("2009/953", mode="legal_pit")
+@pytest.fixture(scope="module")
+def replay_1994_674_finlex_oracle() -> ReplayResult:
+    return cast(ReplayResult, pinned_replay("1994/674", mode="finlex_oracle", quiet=True))
 
-    assert replay.products.replay_fold_state is replay.replay_fold_state
-    assert replay.products.materialized_state is replay.materialized_state
-    assert replay.products.timelines is replay.timelines
-    assert replay.materialization_spec is not None
-    assert replay.source_adjudication is not None
-    assert replay.materialization_spec.as_of == replay.source_adjudication.cutoff_date
-    assert replay.materialization_spec.lineage_mode in {
+
+@pytest.fixture(scope="module")
+def replay_1999_488_legal_pit() -> ReplayResult:
+    return cast(ReplayResult, pinned_replay("1999/488", mode="legal_pit", quiet=True))
+
+
+@pytest.fixture(scope="module")
+def replay_2012_916_finlex_oracle() -> ReplayResult:
+    return cast(ReplayResult, pinned_replay("2012/916", mode="finlex_oracle", quiet=True))
+
+
+@pytest.fixture(scope="module")
+def replay_2014_1429_finlex_oracle() -> ReplayResult:
+    return cast(ReplayResult, pinned_replay("2014/1429", mode="finlex_oracle", quiet=True))
+
+
+@pytest.fixture(scope="module")
+def replay_2006_395_finlex_oracle() -> ReplayResult:
+    return cast(ReplayResult, pinned_replay("2006/395", mode="finlex_oracle", quiet=True))
+
+
+@pytest.fixture(scope="module")
+def replay_2009_953_legal_pit() -> ReplayResult:
+    return cast(ReplayResult, pinned_replay("2009/953", mode="legal_pit", quiet=True))
+
+
+@pytest.fixture(scope="module")
+def replay_1992_552_finlex_oracle() -> ReplayResult:
+    return cast(ReplayResult, pinned_replay("1992/552", mode="finlex_oracle", quiet=True))
+
+
+@pytest.fixture(scope="module")
+def replay_2014_938_finlex_oracle() -> ReplayResult:
+    return cast(ReplayResult, pinned_replay("2014/938", mode="finlex_oracle", quiet=True))
+
+
+@pytest.fixture(scope="module")
+def replay_1965_40_finlex_oracle() -> ReplayResult:
+    return cast(ReplayResult, pinned_replay("1965/40", mode="finlex_oracle", quiet=True))
+
+
+@pytest.fixture(scope="module")
+def replay_1967_550_legal_pit_with_lo_ops() -> tuple[ReplayResult, list[LegalOperation]]:
+    lo_ops: list[LegalOperation] = []
+    replay = cast(
+        ReplayResult,
+        pinned_replay("1967/550", mode="legal_pit", quiet=True, lo_ops_out=lo_ops),
+    )
+    return replay, lo_ops
+
+
+@pytest.fixture(scope="module")
+def replay_2009_1672_finlex_oracle_with_lo_ops() -> tuple[ReplayResult, list[LegalOperation]]:
+    lo_ops: list[LegalOperation] = []
+    replay = cast(
+        ReplayResult,
+        pinned_replay("2009/1672", mode="finlex_oracle", quiet=True, lo_ops_out=lo_ops),
+    )
+    return replay, lo_ops
+
+
+@pytest.fixture(scope="module")
+def replay_1997_1339_finlex_oracle_full_products() -> ReplayResult:
+    return cast(
+        ReplayResult,
+        pinned_replay("1997/1339", mode="finlex_oracle", quiet=True, build_full_products=True),
+    )
+
+
+@pytest.fixture(scope="module")
+def replay_2002_1244_finlex_oracle_full_products() -> ReplayResult:
+    return cast(
+        ReplayResult,
+        pinned_replay("2002/1244", mode="finlex_oracle", quiet=True, build_full_products=True),
+    )
+
+
+@pytest.fixture(scope="module")
+def replay_1977_603_finlex_oracle() -> ReplayResult:
+    return cast(ReplayResult, pinned_replay("1977/603", mode="finlex_oracle", quiet=True))
+
+
+@pytest.fixture(scope="module")
+def replay_1990_845_finlex_oracle() -> ReplayResult:
+    return cast(ReplayResult, pinned_replay("1990/845", mode="finlex_oracle", quiet=True))
+
+
+def test_replay_xml_exposes_typed_replay_products(replay_2009_953_legal_pit: ReplayResult) -> None:
+    assert replay_2009_953_legal_pit.products.replay_fold_state is replay_2009_953_legal_pit.replay_fold_state
+    assert replay_2009_953_legal_pit.products.materialized_state is replay_2009_953_legal_pit.materialized_state
+    assert replay_2009_953_legal_pit.products.timelines is replay_2009_953_legal_pit.timelines
+    assert replay_2009_953_legal_pit.materialization_spec is not None
+    assert replay_2009_953_legal_pit.source_adjudication is not None
+    assert (
+        replay_2009_953_legal_pit.materialization_spec.as_of
+        == replay_2009_953_legal_pit.source_adjudication.cutoff_date
+    )
+    assert replay_2009_953_legal_pit.materialization_spec.lineage_mode in {
         "rekeyed_with_migrations",
         "rekeyed_only",
         "raw_with_migrations",
     }
-    assert replay.materialization_spec.lineage_plan.mode == replay.materialization_spec.lineage_mode
-    assert replay.materialization_spec.lineage_reason in {
+    assert (
+        replay_2009_953_legal_pit.materialization_spec.lineage_plan.mode
+        == replay_2009_953_legal_pit.materialization_spec.lineage_mode
+    )
+    assert replay_2009_953_legal_pit.materialization_spec.lineage_reason in {
         "default_migration_projection",
         "native_rebirth_after_renumber",
         "leaf_stable_scope_renumber",
@@ -64,10 +160,10 @@ def test_replay_xml_exposes_typed_replay_products() -> None:
         "scope_changing_migration_fallback",
     }
     assert isinstance(
-        replay.materialization_spec.bridge_classification,
+        replay_2009_953_legal_pit.materialization_spec.bridge_classification,
         FinlandLineageBridgeClassification,
     )
-    assert replay.source_adjudication.statute_id == "2009/953"
+    assert replay_2009_953_legal_pit.source_adjudication.statute_id == "2009/953"
 
 
 def test_replay_xml_2016_258_section_3_matches_oracle_version_anchor() -> None:
@@ -157,7 +253,7 @@ def test_replay_xml_1987_1203_preserves_jolloin_section_renumber_chain() -> None
 
 
 def test_replay_xml_1968_360_handles_temporary_tax_year_window_without_crashing() -> None:
-    replay = pinned_replay("1968/360", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay("1968/360", mode="finlex_oracle", quiet=True, build_full_products=False)
 
     section = replay.materialized_state.find_section("46b")
     assert section is not None
@@ -212,19 +308,19 @@ def test_build_amendment_bundle_1992_552_keeps_heading_and_subsection_scope_sepa
     assert "REPLACE 8 § otsikko" in group8["ops_final"]
 
 
-def test_replay_xml_1992_552_preserves_section_8_subsection_4() -> None:
-    replay = pinned_replay("1992/552", mode="finlex_oracle", quiet=True)
-
-    section = replay.materialized_state.find_section("8")
+def test_replay_xml_1992_552_preserves_section_8_subsection_4(
+    replay_1992_552_finlex_oracle: ReplayResult,
+) -> None:
+    section = replay_1992_552_finlex_oracle.materialized_state.find_section("8")
     assert section is not None
     subsection_labels = [child.label for child in section.children if child.kind is IRNodeKind.SUBSECTION]
     assert "4" in subsection_labels
 
 
-def test_replay_xml_1992_552_updates_section_8_subsection_3_intro_text() -> None:
-    replay = pinned_replay("1992/552", mode="finlex_oracle", quiet=True)
-
-    section = replay.materialized_state.find_section("8")
+def test_replay_xml_1992_552_updates_section_8_subsection_3_intro_text(
+    replay_1992_552_finlex_oracle: ReplayResult,
+) -> None:
+    section = replay_1992_552_finlex_oracle.materialized_state.find_section("8")
     assert section is not None
     subsection = next(
         child for child in section.children if child.kind is IRNodeKind.SUBSECTION and child.label == "3"
@@ -317,11 +413,11 @@ def test_replay_xml_2011_1552_composes_pending_amendment_children() -> None:
     assert "Rajavartiolaitoksen" in text126
 
 
-def test_replay_xml_2014_938_composes_pending_amendment_children() -> None:
-    replay = pinned_replay("2014/938", mode="finlex_oracle", quiet=True)
-
-    sec29 = replay.materialized_state.find_section("29")
-    sec41 = replay.materialized_state.find_section("41")
+def test_replay_xml_2014_938_composes_pending_amendment_children(
+    replay_2014_938_finlex_oracle: ReplayResult,
+) -> None:
+    sec29 = replay_2014_938_finlex_oracle.materialized_state.find_section("29")
+    sec41 = replay_2014_938_finlex_oracle.materialized_state.find_section("41")
 
     assert sec29 is not None
     assert sec41 is not None
@@ -334,11 +430,11 @@ def test_replay_xml_2014_938_composes_pending_amendment_children() -> None:
     assert "8 §:n 2 momentin tai 8 a §:n" in text41
 
 
-def test_replay_xml_2014_938_keeps_permanent_section_25_change_after_temporary_51_expires() -> None:
-    replay = pinned_replay("2014/938", mode="finlex_oracle", quiet=True)
-
-    sec25 = replay.materialized_state.find_section("25")
-    sec51 = replay.materialized_state.find_section("51")
+def test_replay_xml_2014_938_keeps_permanent_section_25_change_after_temporary_51_expires(
+    replay_2014_938_finlex_oracle: ReplayResult,
+) -> None:
+    sec25 = replay_2014_938_finlex_oracle.materialized_state.find_section("25")
+    sec51 = replay_2014_938_finlex_oracle.materialized_state.find_section("51")
 
     assert sec25 is not None
     assert sec51 is not None
@@ -372,19 +468,19 @@ def test_replay_xml_1929_234_materializes_part_v_after_2001_1226() -> None:
     assert "Tarkemmat säännökset tämän osan täytäntöönpanosta" in " ".join(irnode_to_text(sec142).split())
 
 
-def test_replay_xml_1994_674_keeps_section_1_under_inserted_chapter_11a() -> None:
-    replay = pinned_replay("1994/674", mode="finlex_oracle", quiet=True)
-
-    inserted = replay.materialized_state.find_node("section", "1", "chapter", "11a")
+def test_replay_xml_1994_674_keeps_section_1_under_inserted_chapter_11a(
+    replay_1994_674_finlex_oracle: ReplayResult,
+) -> None:
+    inserted = replay_1994_674_finlex_oracle.materialized_state.find_node("section", "1", "chapter", "11a")
     assert inserted is not None
     inserted_text = " ".join(irnode_to_text(inserted).split())
     assert inserted_text.startswith("1 § Nairobin yleissopimuksen soveltaminen Suomessa")
 
 
-def test_replay_xml_1994_674_replaces_section_6_without_stale_subsection_tail() -> None:
-    replay = pinned_replay("1994/674", mode="finlex_oracle", quiet=True)
-
-    section = replay.materialized_state.find_node("section", "6", "chapter", "16")
+def test_replay_xml_1994_674_replaces_section_6_without_stale_subsection_tail(
+    replay_1994_674_finlex_oracle: ReplayResult,
+) -> None:
+    section = replay_1994_674_finlex_oracle.materialized_state.find_node("section", "6", "chapter", "16")
     assert section is not None
 
     subsections = [child for child in section.children if child.kind is IRNodeKind.SUBSECTION]
@@ -395,10 +491,11 @@ def test_replay_xml_1994_674_replaces_section_6_without_stale_subsection_tail() 
     assert "Sama koskee muulla tavalla tehtyä sopimusta" not in text
 
 
-def test_replay_xml_1994_674_replaces_section_1_without_stale_subsection_tail() -> None:
-    replay = pinned_replay("1994/674", mode="finlex_oracle", quiet=True)
+def test_replay_xml_1994_674_replaces_section_1_without_stale_subsection_tail(
+    replay_1994_674_finlex_oracle: ReplayResult,
+) -> None:
 
-    section = replay.materialized_state.find_node("section", "1", "chapter", "16")
+    section = replay_1994_674_finlex_oracle.materialized_state.find_node("section", "1", "chapter", "16")
     assert section is not None
 
     subsections = [child for child in section.children if child.kind is IRNodeKind.SUBSECTION]
@@ -410,10 +507,10 @@ def test_replay_xml_1994_674_replaces_section_1_without_stale_subsection_tail() 
     assert "Pelastuspalkkiota on vaadittaessa suoritettava myös silloin" not in text
 
 
-def test_replay_xml_1994_674_repeals_section_6_1_second_subsection_without_resurrection() -> None:
-    replay = pinned_replay("1994/674", mode="finlex_oracle", quiet=True)
-
-    section = replay.materialized_state.find_node("section", "1", "chapter", "6")
+def test_replay_xml_1994_674_repeals_section_6_1_second_subsection_without_resurrection(
+    replay_1994_674_finlex_oracle: ReplayResult,
+) -> None:
+    section = replay_1994_674_finlex_oracle.materialized_state.find_node("section", "1", "chapter", "6")
     assert section is not None
 
     subsections = [child for child in section.children if child.kind is IRNodeKind.SUBSECTION]
@@ -425,11 +522,11 @@ def test_replay_xml_1994_674_repeals_section_6_1_second_subsection_without_resur
     assert "Päällikön ja muiden päällystöön kuuluvien muista kelpoisuusvaatimuksista säädetään asetuksella." not in text
 
 
-def test_replay_xml_1965_40_keeps_sections_12a_and_1a_in_their_explicit_insert_chapters() -> None:
-    replay = pinned_replay("1965/40", mode="finlex_oracle", quiet=True)
-
-    sec12a = replay.materialized_state.find_node("section", "12a", "chapter", "19")
-    sec1a = replay.materialized_state.find_node("section", "1a", "chapter", "25")
+def test_replay_xml_1965_40_keeps_sections_12a_and_1a_in_their_explicit_insert_chapters(
+    replay_1965_40_finlex_oracle: ReplayResult,
+) -> None:
+    sec12a = replay_1965_40_finlex_oracle.materialized_state.find_node("section", "12a", "chapter", "19")
+    sec1a = replay_1965_40_finlex_oracle.materialized_state.find_node("section", "1a", "chapter", "25")
 
     assert sec12a is not None
     assert sec1a is not None
@@ -437,12 +534,12 @@ def test_replay_xml_1965_40_keeps_sections_12a_and_1a_in_their_explicit_insert_c
     assert "Tässä luvussa tarkoitetaan:" in " ".join(irnode_to_text(sec1a).split())
 
 
-def test_replay_xml_1965_40_materializes_sections_20_21_22_under_chapter_19() -> None:
-    replay = pinned_replay("1965/40", mode="finlex_oracle", quiet=True)
-
-    sec20 = replay.materialized_state.find_node("section", "20", "chapter", "19")
-    sec21 = replay.materialized_state.find_node("section", "21", "chapter", "19")
-    sec22 = replay.materialized_state.find_node("section", "22", "chapter", "19")
+def test_replay_xml_1965_40_materializes_sections_20_21_22_under_chapter_19(
+    replay_1965_40_finlex_oracle: ReplayResult,
+) -> None:
+    sec20 = replay_1965_40_finlex_oracle.materialized_state.find_node("section", "20", "chapter", "19")
+    sec21 = replay_1965_40_finlex_oracle.materialized_state.find_node("section", "21", "chapter", "19")
+    sec22 = replay_1965_40_finlex_oracle.materialized_state.find_node("section", "22", "chapter", "19")
 
     assert sec20 is not None
     assert sec21 is not None
@@ -452,9 +549,11 @@ def test_replay_xml_1965_40_materializes_sections_20_21_22_under_chapter_19() ->
     assert "Oikeuden tai tuomarin päätökseen" in " ".join(irnode_to_text(sec22).split())
 
 
-def test_replay_xml_nests_mixed_single_and_compound_letters_for_1997_1339_section_1() -> None:
+def test_replay_xml_nests_mixed_single_and_compound_letters_for_1997_1339_section_1(
+    replay_1997_1339_finlex_oracle_full_products: ReplayResult,
+) -> None:
     """Regression: the 2015/1752 amendment must not flatten repeated paragraph labels."""
-    replay = pinned_replay("1997/1339", mode="finlex_oracle", quiet=True, build_full_products=True)
+    replay = replay_1997_1339_finlex_oracle_full_products
 
     for state in (replay.replay_fold_state, replay.materialized_state):
         subsection = state.find_node("subsection", "1", "section", "1")
@@ -508,11 +607,12 @@ def test_replay_xml_keeps_inserted_moments_separate_for_2005_452_section_6() -> 
     assert "lyhyt kuvaus arvopaperiin tehtävän sijoituksen" in second_text or "lyhyt kuvaus kyseiseen arvopaperiin tehtävän sijoituksen" in second_text
 
 
-def test_replay_xml_1967_550_section_8_preserves_subsection_1_repeal_in_export() -> None:
+def test_replay_xml_1967_550_section_8_preserves_subsection_1_repeal_in_export(
+    replay_1967_550_legal_pit_with_lo_ops: tuple[ReplayResult, list[LegalOperation]],
+) -> None:
     oracle_lo_ops: list[LegalOperation] = []
-    legal_lo_ops: list[LegalOperation] = []
     oracle = pinned_replay("1967/550", mode="finlex_oracle", quiet=True, lo_ops_out=oracle_lo_ops)
-    legal = pinned_replay("1967/550", mode="legal_pit", quiet=True, lo_ops_out=legal_lo_ops)
+    legal, legal_lo_ops = replay_1967_550_legal_pit_with_lo_ops
 
     assert any(
         op.action is StructuralAction.REPEAL
@@ -540,8 +640,10 @@ def test_replay_xml_1967_550_section_8_preserves_subsection_1_repeal_in_export()
     assert [sub.label for sub in legal_subsections] == ["2", "3", "4", "5", "6", "7"]
 
 
-def test_replay_xml_1967_550_section_8_keeps_distinct_sparse_tail_moments() -> None:
-    replay = pinned_replay("1967/550", mode="legal_pit", quiet=True)
+def test_replay_xml_1967_550_section_8_keeps_distinct_sparse_tail_moments(
+    replay_1967_550_legal_pit_with_lo_ops: tuple[ReplayResult, list[LegalOperation]],
+) -> None:
+    replay, _lo_ops = replay_1967_550_legal_pit_with_lo_ops
 
     section = replay.materialized_state.find_section("8", "2")
     assert section is not None
@@ -729,14 +831,16 @@ def test_replay_xml_1967_551_strips_inline_corrigendum_note_from_section_2() -> 
     assert "tarkoitettua eurooppapatenttia koskeva hakemus" in text
 
 
-def test_replay_xml_nests_simple_letter_subparagraphs_for_1997_1339_section_4() -> None:
+def test_replay_xml_nests_simple_letter_subparagraphs_for_1997_1339_section_4(
+    replay_1997_1339_finlex_oracle_full_products: ReplayResult,
+) -> None:
     """Regression: section 4 must keep its simple letter families nested.
 
     This is the live 1997/1339 <- 2015/1752 mixed-scope tail family: the
     chapter-scoped 4 § group and the bare 4 § group must not both replay the
     same `7 kohta` tail.
     """
-    replay = pinned_replay("1997/1339", mode="finlex_oracle", quiet=True, build_full_products=True)
+    replay = replay_1997_1339_finlex_oracle_full_products
 
     section = replay.replay_fold_state.find_section("4", "1")
     assert section is not None
@@ -768,7 +872,13 @@ def test_replay_xml_nests_simple_letter_subparagraphs_for_1997_1339_section_4() 
 
 
 def test_normalize_and_compile_ops_1997_1339_rejects_ambiguous_unscoped_fallback_insert() -> None:
-    base_replay = pinned_replay("1997/1339", mode="legal_pit", stop_before="2015/1752", quiet=True)
+    base_replay = pinned_replay(
+        "1997/1339",
+        mode="legal_pit",
+        stop_before="2015/1752",
+        quiet=True,
+        build_full_products=False,
+    )
     xml_bytes = get_corpus().read_source("2015/1752")
     assert xml_bytes is not None
     muutos_tree = etree.fromstring(xml_bytes)
@@ -842,9 +952,11 @@ def test_replay_xml_splits_digit_reset_subparagraph_run_for_2000_154() -> None:
         assert [sp.label for sp in para5.children if sp.kind is IRNodeKind.SUBPARAGRAPH] == ["a", "b"]
 
 
-def test_replay_xml_nests_repeated_roman_subitems_for_2002_1244_section_21c() -> None:
+def test_replay_xml_nests_repeated_roman_subitems_for_2002_1244_section_21c(
+    replay_2002_1244_finlex_oracle_full_products: ReplayResult,
+) -> None:
     """Regression: malformed flat i/ii runs in 2018/1184 must nest under d/e in §21c."""
-    replay = pinned_replay("2002/1244", mode="finlex_oracle", quiet=True, build_full_products=True)
+    replay = replay_2002_1244_finlex_oracle_full_products
 
     for state in (replay.replay_fold_state, replay.materialized_state):
         section = state.find_section("21c", "3")
@@ -863,18 +975,18 @@ def test_replay_xml_nests_repeated_roman_subitems_for_2002_1244_section_21c() ->
 
 
 def test_finlex_oracle_replay_uses_cutoff_materialization_spec() -> None:
-    replay = pinned_replay("2009/953", mode="finlex_oracle")
+    replay = pinned_replay("2009/953", mode="finlex_oracle", quiet=True)
 
     assert replay.materialization_spec is not None
     assert replay.materialization_spec.as_of == "2020-01-01"
 
 
-def test_replay_products_validate_cleanly_for_known_statute() -> None:
-    replay = pinned_replay("2009/953", mode="legal_pit")
-
+def test_replay_products_validate_cleanly_for_known_statute(
+    replay_2009_953_legal_pit: ReplayResult,
+) -> None:
     violations = validate_replay_products(
-        replay.ctx,
-        replay.products,
+        replay_2009_953_legal_pit.ctx,
+        replay_2009_953_legal_pit.products,
         deep_materialization_check=True,
     )
 
@@ -882,7 +994,7 @@ def test_replay_products_validate_cleanly_for_known_statute() -> None:
 
 
 def test_replay_products_validate_cleanly_for_2004_1287_deep_materialization() -> None:
-    replay = pinned_replay("2004/1287", mode="finlex_oracle")
+    replay = pinned_replay("2004/1287", mode="finlex_oracle", quiet=True)
 
     violations = validate_replay_products(
         replay.ctx,
@@ -950,7 +1062,13 @@ def test_cleanup_sourceless_base_merge_conflicts_is_noop_without_sourceless_base
 
 
 def test_replay_xml_surfaces_migration_events_for_renumbered_statute() -> None:
-    replay = pinned_replay("2017/320", mode="legal_pit")
+    replay = pinned_replay(
+        "2017/320",
+        mode="legal_pit",
+        quiet=True,
+        build_full_products=False,
+        stop_before="2019/484",
+    )
 
     assert replay.migration_events
     assert any(event.kind == "renumber" for event in replay.migration_events)
@@ -978,6 +1096,7 @@ def test_replay_xml_emits_payloaded_part_snapshot_for_2020_1256() -> None:
         quiet=True,
         build_full_products=False,
         lo_ops_out=lo_ops,
+        stop_before="2021/91",
     )
 
     snapshot = next(
@@ -991,16 +1110,17 @@ def test_replay_xml_emits_payloaded_part_snapshot_for_2020_1256() -> None:
     assert snapshot.payload is not None
 
 
-def test_replay_xml_expires_2021_984_temporary_21b_section() -> None:
-    replay = pinned_replay("1999/488", mode="legal_pit", quiet=True)
+def test_replay_xml_expires_2021_984_temporary_21b_section(
+    replay_1999_488_legal_pit: ReplayResult,
+) -> None:
     addr = LegalAddress(path=(("chapter", "5"), ("section", "21b")))
 
-    assert replay.timelines is not None
-    assert addr in replay.timelines
-    assert replay.timelines[addr].versions[-1].expires == "2022-01-31"
-    assert select_active_version(replay.timelines[addr], "2025-01-01") is None
-    assert replay.replay_fold_state.find_section("21b") is not None
-    assert replay.materialized_state.find_section("21b") is None
+    assert replay_1999_488_legal_pit.timelines is not None
+    assert addr in replay_1999_488_legal_pit.timelines
+    assert replay_1999_488_legal_pit.timelines[addr].versions[-1].expires == "2022-01-31"
+    assert select_active_version(replay_1999_488_legal_pit.timelines[addr], "2025-01-01") is None
+    assert replay_1999_488_legal_pit.replay_fold_state.find_section("21b") is not None
+    assert replay_1999_488_legal_pit.materialized_state.find_section("21b") is None
 
 
 def test_replay_xml_expires_2020_292_temporary_99a_section() -> None:
@@ -1092,14 +1212,16 @@ def test_replay_xml_expires_2018_11_temporary_content_before_later_permanent_mer
         ) is None
 
 
-def test_replay_xml_keeps_2021_984_permanent_inserts_active() -> None:
+def test_replay_xml_keeps_2021_984_permanent_inserts_active(
+    replay_1999_488_legal_pit: ReplayResult,
+) -> None:
     """Regression: 2021/984 permanent inserts stay live in the replay products.
 
     The replay fold already contains the inserted sections. Materialization at a
     later PIT must keep the permanent inserts visible while the temporary
     chapter-5 `21b §` expires.
     """
-    replay = pinned_replay("1999/488", mode="legal_pit", quiet=True)
+    replay = replay_1999_488_legal_pit
 
     assert replay.replay_fold_state.find_section("4a", "2") is not None
     assert replay.replay_fold_state.find_section("5a", "2") is not None
@@ -1144,16 +1266,16 @@ def test_replay_xml_keeps_2021_984_permanent_inserts_active() -> None:
     assert replay.materialized_state.find_section("22b", "3") is None
 
 
-def test_replay_xml_1999_488_places_replaced_section_18_under_chapter_4_after_2021_984() -> None:
-    replay = pinned_replay("1999/488", mode="legal_pit", quiet=True)
-
-    sec18 = replay.materialized_state.find_section("18", "4")
+def test_replay_xml_1999_488_places_replaced_section_18_under_chapter_4_after_2021_984(
+    replay_1999_488_legal_pit: ReplayResult,
+) -> None:
+    sec18 = replay_1999_488_legal_pit.materialized_state.find_section("18", "4")
     assert sec18 is not None
     text18 = " ".join(irnode_to_text(sec18).split())
 
     assert "Alueellisen toimikunnan kokoonpano" in text18
     assert "Alueellisessa lääketieteellisessä tutkimuseettisessä toimikunnassa on oltava puheenjohtaja" in text18
-    assert replay.materialized_state.find_section("18", "3") is None
+    assert replay_1999_488_legal_pit.materialized_state.find_section("18", "3") is None
 
 
 def test_replay_xml_2004_1224_keeps_permanent_2016_1100_insert_sections_active() -> None:
@@ -1164,16 +1286,23 @@ def test_replay_xml_2004_1224_keeps_permanent_2016_1100_insert_sections_active()
     temporary `6 a §` as the only inserted section from that family, leaving the
     permanent `7 b §`, `18 a §`, and `22 b §` missing from the final PIT.
     """
-    replay = pinned_replay("2004/1224", mode="finlex_oracle", quiet=True)
+    replay = pinned_replay(
+        "2004/1224",
+        mode="finlex_oracle",
+        quiet=True,
+        build_full_products=False,
+        stop_before="2020/249",
+    )
 
     assert replay.materialized_state.find_section("7b", "6") is not None
     assert replay.materialized_state.find_section("18a", "6") is not None
     assert replay.materialized_state.find_section("22b", "6") is not None
 
 
-def test_replay_xml_applies_2025_1162_sparse_section_replace_to_22a() -> None:
-    replay = pinned_replay("1999/488", mode="legal_pit", quiet=True)
-    sec22a = replay.materialized_state.find_section("22a", "5")
+def test_replay_xml_applies_2025_1162_sparse_section_replace_to_22a(
+    replay_1999_488_legal_pit: ReplayResult,
+) -> None:
+    sec22a = replay_1999_488_legal_pit.materialized_state.find_section("22a", "5")
 
     assert sec22a is not None
     text = irnode_to_text(sec22a)
@@ -1181,7 +1310,7 @@ def test_replay_xml_applies_2025_1162_sparse_section_replace_to_22a() -> None:
         "sekä 21 c §:n 1 momentissa tarkoitetun viranomaisen tekemään "
         "rekisteritietojen luovuttamista koskevaan päätökseen"
     ) in text
-    assert replay.materialized_state.find_section("21b", "5") is None
+    assert replay_1999_488_legal_pit.materialized_state.find_section("21b", "5") is None
 
 
 def test_replay_xml_applies_2025_1162_21c_then_22a_sequentially_without_staling_22a() -> None:
@@ -1268,18 +1397,20 @@ def test_replay_xml_preserves_2013_393_body_chapter_scope_for_37a() -> None:
     assert not any(("chapter", "5") in path for path in found_paths)
 
 
-def test_replay_xml_repeals_2021_984_range_sections_10d_to_10i() -> None:
+def test_replay_xml_repeals_2021_984_range_sections_10d_to_10i(
+    replay_1999_488_legal_pit: ReplayResult,
+) -> None:
     """Regression: 2021/984 repeals the 10d–10i tail from the live statute."""
-    replay = pinned_replay("1999/488", mode="legal_pit", quiet=True)
 
     for label in ("10d", "10e", "10f", "10g", "10h", "10i"):
-        assert replay.materialized_state.find_section(label, "2a") is None
+        assert replay_1999_488_legal_pit.materialized_state.find_section(label, "2a") is None
 
 
-def test_replay_xml_2009_1672_whole_chapter_replace_retires_7a_2abc_from_materialized_state() -> None:
+def test_replay_xml_2009_1672_whole_chapter_replace_retires_7a_2abc_from_materialized_state(
+    replay_2009_1672_finlex_oracle_with_lo_ops: tuple[ReplayResult, list[LegalOperation]],
+) -> None:
     """Regression: later whole-chapter replace must retire historic non-base child sections."""
-    lo_ops: list[LegalOperation] = []
-    replay = pinned_replay("2009/1672", mode="finlex_oracle", quiet=True, lo_ops_out=lo_ops)
+    replay, lo_ops = replay_2009_1672_finlex_oracle_with_lo_ops
 
     for label in ("2a", "2b", "2c"):
         assert replay.replay_fold_state.find_section(label, "7a") is None
@@ -1298,9 +1429,11 @@ def test_replay_xml_2009_1672_whole_chapter_replace_retires_7a_2abc_from_materia
     assert (("chapter", "7a"), ("section", "2c")) in repeal_targets
 
 
-def test_replay_xml_2009_1672_keeps_section_2_8_body_when_vts_repeals_only_subsection() -> None:
+def test_replay_xml_2009_1672_keeps_section_2_8_body_when_vts_repeals_only_subsection(
+    replay_2009_1672_finlex_oracle_with_lo_ops: tuple[ReplayResult, list[LegalOperation]],
+) -> None:
     """Ambiguous granular voimaantulo repeal must not hijack the parent section snapshot."""
-    replay = pinned_replay("2009/1672", mode="finlex_oracle", quiet=True)
+    replay, _ = replay_2009_1672_finlex_oracle_with_lo_ops
 
     section = replay.replay_fold_state.find_section("8", "2")
     assert section is not None
@@ -1311,16 +1444,18 @@ def test_replay_xml_2009_1672_keeps_section_2_8_body_when_vts_repeals_only_subse
     assert "Muut haitallisten nestemäisten aineiden kuljetuksen todistuskirjat" not in text
 
 
-def test_replay_xml_2009_1672_sparse_chapter_replace_does_not_drop_section_5() -> None:
-    replay = pinned_replay("2009/1672", mode="finlex_oracle", quiet=True)
-
+def test_replay_xml_2009_1672_sparse_chapter_replace_does_not_drop_section_5(
+    replay_2009_1672_finlex_oracle_with_lo_ops: tuple[ReplayResult, list[LegalOperation]],
+) -> None:
+    replay, _ = replay_2009_1672_finlex_oracle_with_lo_ops
     section = replay.materialized_state.find_section("5", "1")
     assert section is not None
 
 
-def test_replay_xml_2009_1672_does_not_import_laivavarustelaki_section_13_11() -> None:
-    lo_ops: list[LegalOperation] = []
-    replay = pinned_replay("2009/1672", mode="finlex_oracle", quiet=True, lo_ops_out=lo_ops)
+def test_replay_xml_2009_1672_does_not_import_laivavarustelaki_section_13_11(
+    replay_2009_1672_finlex_oracle_with_lo_ops: tuple[ReplayResult, list[LegalOperation]],
+) -> None:
+    replay, lo_ops = replay_2009_1672_finlex_oracle_with_lo_ops
 
     assert replay.replay_fold_state.find_section("11", "13") is None
     assert replay.materialized_state.find_section("11", "13") is None
@@ -1346,12 +1481,13 @@ def test_replay_xml_2009_1672_does_not_import_laivavarustelaki_section_13_11() -
     )
 
 
-def test_replay_xml_repealed_2009_375_sections_25_26_do_not_revive_live_text() -> None:
+def test_replay_xml_repealed_2009_375_sections_25_26_do_not_revive_live_text(
+    replay_1999_488_legal_pit: ReplayResult,
+) -> None:
     """Regression: repealed 25–26 must not revive stale permanent body text."""
-    replay = pinned_replay("1999/488", mode="legal_pit", quiet=True)
 
-    sec25 = replay.materialized_state.find_section("25", "6")
-    sec26 = replay.materialized_state.find_section("26", "6")
+    sec25 = replay_1999_488_legal_pit.materialized_state.find_section("25", "6")
+    sec26 = replay_1999_488_legal_pit.materialized_state.find_section("26", "6")
 
     assert sec25 is None
     assert sec26 is None
@@ -1392,7 +1528,9 @@ def test_replay_xml_2009_617_moves_sections_39_to_41_into_inserted_chapter_4a() 
         assert sec_in_4 is None, f"§{label} must not remain in chapter 4 after move to 4a"
 
 
-def test_replay_xml_1977_603_top_level_pseudo_chapter_marker_inserts_sections() -> None:
+def test_replay_xml_1977_603_top_level_pseudo_chapter_marker_inserts_sections(
+    replay_1977_603_finlex_oracle: ReplayResult,
+) -> None:
     """Regression: 1996/476 introduces §72a/§72b/§72c under a top-level pseudo-chapter-marker
     '8 a luku' (not inside a <chapter> element).
 
@@ -1400,7 +1538,7 @@ def test_replay_xml_1977_603_top_level_pseudo_chapter_marker_inserts_sections() 
     to IRNodeKind.SECTION (enum) with `is not`, which always evaluated True and skipped
     all sections in the supplemental_candidates loop.  The fix changes to `!= "section"`.
     """
-    replay = pinned_replay("1977/603", mode="finlex_oracle", quiet=True)
+    replay = replay_1977_603_finlex_oracle
 
     # All three sections must be present after the fix
     sec72a = replay.materialized_state.find_section("72a")
@@ -1411,11 +1549,16 @@ def test_replay_xml_1977_603_top_level_pseudo_chapter_marker_inserts_sections() 
     assert sec72c is not None, "§72c must be inserted by 1996/476"
 
 
-def test_replay_xml_1977_603_realizes_section_72c_only_under_chapter_8a() -> None:
+def test_replay_xml_1977_603_realizes_section_72c_only_under_chapter_8a(
+    replay_1977_603_finlex_oracle: ReplayResult,
+) -> None:
     """Later chapter 8a realization must not leave a standalone §72c timeline bucket."""
-    replay = pinned_replay("1977/603", mode="finlex_oracle", quiet=True)
+    replay = replay_1977_603_finlex_oracle
 
-    timeline_keys = {str(address) for address in replay.products.timelines}
+    assert replay.products is not None
+    products = replay.products
+    assert products.timelines is not None
+    timeline_keys = {str(address) for address in products.timelines}
     assert "chapter:8a/section:72c" in timeline_keys
     assert "section:72c" not in timeline_keys
 
@@ -1508,7 +1651,9 @@ def test_replay_xml_recycle_rename_kumotaan_muutetaan_preserves_new_section_2010
     assert sec44 is not None, "§44 (new Ahvenanmaa content) must be present after recycle fix"
 
 
-def test_replay_xml_later_inserted_whole_section_repeal_respects_oracle_horizon() -> None:
+def test_replay_xml_later_inserted_whole_section_repeal_respects_oracle_horizon(
+    replay_1990_845_finlex_oracle: ReplayResult,
+) -> None:
     """Oracle PIT extends to the effective date of the latest amendment repeal.
 
     Oracle fin@20110427 was consolidated around 2011-05-05.  Amendment 2011/427
@@ -1516,7 +1661,7 @@ def test_replay_xml_later_inserted_whole_section_repeal_respects_oracle_horizon(
     to 2011-06-01 so that the materialized state reflects the completed repeal,
     matching what the Finlex consolidated XML shows.
     """
-    replay = pinned_replay("1990/845", mode="finlex_oracle", quiet=True)
+    replay = replay_1990_845_finlex_oracle
 
     sec31a = replay.materialized_state.find_section("31a")
     assert sec31a is None
@@ -1558,9 +1703,10 @@ def test_replay_xml_preserves_sparse_insert_before_terminal_voimaantulo_for_2006
     assert irnode_to_text(section_4).startswith("4 § Voimaantulo")
 
 
-def test_replay_xml_preserves_inserted_chapter_topology_for_2014_1429() -> None:
-    replay = pinned_replay("2014/1429", mode="finlex_oracle", quiet=True)
-    body = replay.materialized_state.ir
+def test_replay_xml_preserves_inserted_chapter_topology_for_2014_1429(
+    replay_2014_1429_finlex_oracle: ReplayResult,
+) -> None:
+    body = replay_2014_1429_finlex_oracle.materialized_state.ir
 
     chapter_labels = [child.label for child in body.children if child.kind == IRNodeKind.CHAPTER]
     assert "3a" in chapter_labels
@@ -1574,7 +1720,11 @@ def test_replay_xml_preserves_inserted_chapter_topology_for_2014_1429() -> None:
             for child in body.children
             if child.kind == IRNodeKind.CHAPTER and child.label == chapter_label
         )
-        return [child.label for child in chapter.children if child.kind == IRNodeKind.SECTION]
+        return [
+            child.label
+            for child in chapter.children
+            if child.kind == IRNodeKind.SECTION and child.label is not None
+        ]
 
     assert _chapter_section_labels("5a")[:4] == ["29a", "29b", "29c", "29d"]
     assert "29e" in _chapter_section_labels("5b")
@@ -1590,10 +1740,10 @@ def test_replay_xml_preserves_inserted_chapter_topology_for_2014_1429() -> None:
     assert irnode_to_text(section_18a).startswith("18 a § Pakottavuus")
 
 
-def test_replay_xml_keeps_2014_1429_18e_as_single_subsection_list_section() -> None:
-    replay = pinned_replay("2014/1429", mode="finlex_oracle", quiet=True)
-
-    sec18e = replay.materialized_state.find_section("18e", "3a")
+def test_replay_xml_keeps_2014_1429_18e_as_single_subsection_list_section(
+    replay_2014_1429_finlex_oracle: ReplayResult,
+) -> None:
+    sec18e = replay_2014_1429_finlex_oracle.materialized_state.find_section("18e", "3a")
     assert sec18e is not None
 
     subsection_labels = [child.label for child in sec18e.children if child.kind == IRNodeKind.SUBSECTION]
@@ -1647,12 +1797,13 @@ def test_replay_xml_drops_tax_year_scoped_temporary_sections_for_1967_543() -> N
     assert replay.materialized_state.find_section("12b") is None
 
 
-def test_replay_xml_moves_2014_1429_29e_into_chapter_5b() -> None:
+def test_replay_xml_moves_2014_1429_29e_into_chapter_5b(
+    replay_2014_1429_finlex_oracle: ReplayResult,
+) -> None:
     """29e follows the move clause into chapter 5b at the oracle horizon."""
-    replay = pinned_replay("2014/1429", mode="finlex_oracle", quiet=True)
 
-    chapter_5a_29e = replay.materialized_state.find_section("29e", "5a")
-    chapter_5b_29e = replay.materialized_state.find_section("29e", "5b")
+    chapter_5a_29e = replay_2014_1429_finlex_oracle.materialized_state.find_section("29e", "5a")
+    chapter_5b_29e = replay_2014_1429_finlex_oracle.materialized_state.find_section("29e", "5b")
 
     assert chapter_5a_29e is None
     assert chapter_5b_29e is not None
@@ -1688,9 +1839,11 @@ def test_replay_xml_preserves_explicit_body_chapter_ownership_for_2013_393() -> 
     assert replay.materialized_state.find_section("37a", "5") is None
 
 
-@pytest.mark.parametrize(
-    "section_num, chapter_num, expected_labels, expected_snippets",
-    [
+def test_replay_xml_preserves_2006_395_targeted_merge_sections(
+    replay_2006_395_finlex_oracle: ReplayResult,
+) -> None:
+    """Replay/product regression for 2006/395 targeted merge semantics."""
+    cases = (
         (
             "32",
             "3",
@@ -1724,49 +1877,44 @@ def test_replay_xml_preserves_explicit_body_chapter_ownership_for_2013_393() -> 
                 "Mitä tässä pykälässä säädetään hyvinvointialueesta",
             ],
         ),
-            (
-                    "205",
-                    "14",
-                    ["1", "2", "3", "4"],
-                    [
-                        "Eläkelaitoksella ja Eläketurvakeskuksella on oikeus salassapitosäännösten",
-                        "Annettavia tietoja ovat:",
-                        "Eläkelaitoksella ja Eläketurvakeskuksella on oikeus antaa 2 momentissa tarkoitettuja tietoja",
-                        "Tässä pykälässä tarkoitetuissa tilanteissa ei kuitenkaan saa antaa työntekijän terveydentilaa koskevia tietoja",
-                    ],
-                ),
-            (
-                "70",
-                "4",
-                ["1", "2", "3", "4", "5"],
-                [
-                    "Eläkkeen perusteena olevaa työansiota määrättäessä otetaan huomioon palkka",
-                    "Eläkkeen perusteena olevaan työansioon luetaan myös työstä maksettava vastike, joka on osaksi tai kokonaan sovittu hyvitettäväksi",
-                    "Edellä 1 momentissa tarkoitettuna vastikkeena työstä ei pidetä muun muassa",
-                    "Edellä 3 momentin 11 kohdassa tarkoitetussa tilanteessa edellytyksenä on lisäksi",
-                    "Yleisöltä palvelurahaa saavan työntekijän on ilmoitettava työnantajalleen veron perusteena olevan palvelurahan määrä",
-                ],
-            ),
-    ],
-)
-def test_replay_xml_preserves_2006_395_targeted_merge_sections(
-    section_num: str,
-    chapter_num: str,
-    expected_labels: list[str],
-    expected_snippets: list[str],
-) -> None:
-    """Replay/product regression for 2006/395 targeted merge semantics."""
-    replay = pinned_replay("2006/395", mode="finlex_oracle", quiet=True)
+        (
+            "205",
+            "14",
+            ["1", "2", "3", "4"],
+            [
+                "Eläkelaitoksella ja Eläketurvakeskuksella on oikeus salassapitosäännösten",
+                "Annettavia tietoja ovat:",
+                "Eläkelaitoksella ja Eläketurvakeskuksella on oikeus antaa 2 momentissa tarkoitettuja tietoja",
+                "Tässä pykälässä tarkoitetuissa tilanteissa ei kuitenkaan saa antaa työntekijän terveydentilaa koskevia tietoja",
+            ],
+        ),
+        (
+            "70",
+            "4",
+            ["1", "2", "3", "4", "5"],
+            [
+                "Eläkkeen perusteena olevaa työansiota määrättäessä otetaan huomioon palkka",
+                "Eläkkeen perusteena olevaan työansioon luetaan myös työstä maksettava vastike, joka on osaksi tai kokonaan sovittu hyvitettäväksi",
+                "Edellä 1 momentissa tarkoitettuna vastikkeena työstä ei pidetä muun muassa",
+                "Edellä 3 momentin 11 kohdassa tarkoitetussa tilanteessa edellytyksenä on lisäksi",
+                "Yleisöltä palvelurahaa saavan työntekijän on ilmoitettava työnantajalleen veron perusteena olevan palvelurahan määrä",
+            ],
+        ),
+    )
 
-    for state in (replay.replay_fold_state, replay.materialized_state):
-        section = state.find_section(section_num, chapter_num)
-        assert section is not None
-        subsections = [child for child in section.children if child.kind is IRNodeKind.SUBSECTION]
-        assert [child.label for child in subsections] == expected_labels
-        assert len(subsections) == len(expected_snippets)
-        for subsection, snippet in zip(subsections, expected_snippets, strict=True):
-            text = " ".join(irnode_to_text(subsection).split())
-            assert snippet in text
+    for section_num, chapter_num, expected_labels, expected_snippets in cases:
+        for state in (
+            replay_2006_395_finlex_oracle.replay_fold_state,
+            replay_2006_395_finlex_oracle.materialized_state,
+        ):
+            section = state.find_section(section_num, chapter_num)
+            assert section is not None
+            subsections = [child for child in section.children if child.kind is IRNodeKind.SUBSECTION]
+            assert [child.label for child in subsections] == expected_labels
+            assert len(subsections) == len(expected_snippets)
+            for subsection, snippet in zip(subsections, expected_snippets, strict=True):
+                text = " ".join(irnode_to_text(subsection).split())
+                assert snippet in text
 
 
 def test_validate_replay_products_detects_materialized_tree_invariants() -> None:
@@ -1799,7 +1947,7 @@ def test_validate_replay_products_detects_materialized_tree_invariants() -> None
 
 
 def test_replay_fold_does_not_duplicate_temporary_section_chain_for_1995_1556() -> None:
-    replay = pinned_replay("1995/1556", mode="legal_pit", stop_before="2022/439")
+    replay = pinned_replay("1995/1556", mode="legal_pit", stop_before="2022/439", quiet=True)
 
     violations = validate_replay_products(
         replay.ctx,
@@ -1811,7 +1959,7 @@ def test_replay_fold_does_not_duplicate_temporary_section_chain_for_1995_1556() 
 
 
 def test_replay_fold_splits_sparse_combined_subsection_replace_for_1991_827() -> None:
-    replay = pinned_replay("1991/827", mode="legal_pit", stop_before="1995/1387")
+    replay = pinned_replay("1991/827", mode="legal_pit", stop_before="1995/1387", quiet=True)
 
     for state in (replay.replay_fold_state, replay.materialized_state):
         sec6 = state.find_section("6")
@@ -2988,11 +3136,12 @@ def test_classify_finland_lineage_bridge_reports_native_rebirth_after_renumber()
     )
 
 
-def test_replay_xml_exposes_finland_lineage_bridge_classification() -> None:
-    replay = pinned_replay("2009/953", mode="legal_pit")
-
-    assert replay.materialization_spec is not None
-    assert replay.materialization_spec.bridge_classification == FinlandLineageBridgeClassification(
+def test_replay_xml_exposes_finland_lineage_bridge_classification(
+    replay_2009_953_legal_pit: ReplayResult,
+) -> None:
+    assert replay_2009_953_legal_pit.materialization_spec is not None
+    bridge_classification = replay_2009_953_legal_pit.materialization_spec.bridge_classification
+    assert bridge_classification == FinlandLineageBridgeClassification(
         native_rebirth_after_renumber=True,
         leaf_stable_scope_renumber=False,
         active_scope_changing=False,
@@ -3348,8 +3497,19 @@ def test_chapter_insert_onto_existing_chapter_produces_no_duplicate_label(statut
 
     Regression for the legal_pit mode path where `replace_same_numbered_container_insert=False`
     previously fell through to insert_sorted, creating a duplicate chapter label.
+    This is replay-fold invariant coverage; PIT/materialization coverage lives
+    in the statute-specific replay-product tests.
     """
-    replay = pinned_replay(statute_id, mode="legal_pit", quiet=True)
+    stop_before_by_statute = {
+        "1961/264": "2000/689",
+    }
+    replay = pinned_replay(
+        statute_id,
+        mode="legal_pit",
+        quiet=True,
+        build_full_products=False,
+        stop_before=stop_before_by_statute.get(statute_id),
+    )
     viols = [
         dict(getattr(f, "detail", {}) or {}).get("violation", "")
         for f in replay.findings
@@ -3412,7 +3572,9 @@ def test_replay_xml_2011_756_inserts_section_8a_into_chapter_5() -> None:
     assert "8a" in _chapter_section_labels("5"), "chapter 5 must have section 8a inserted by 2022/33"
 
 
-def test_replay_xml_2012_916_keeps_section_8_in_chapter_13() -> None:
+def test_replay_xml_2012_916_keeps_section_8_in_chapter_13(
+    replay_2012_916_finlex_oracle: ReplayResult,
+) -> None:
     """Whole-chapter REPLACE must not drop new sections shadowed in another chapter.
 
     Amendment 2022/337 replaces chapter 13 and also separately replaces
@@ -3420,10 +3582,12 @@ def test_replay_xml_2012_916_keeps_section_8_in_chapter_13() -> None:
     chapter 13 / section 8, and apply must not strip it just because another
     chapter has a same-labeled standalone section op.
     """
-    replay = pinned_replay("2012/916", mode="finlex_oracle", quiet=True)
-
     chapter = next(
-        (child for child in replay.materialized_state.ir.children if child.kind.name == "CHAPTER" and child.label == "13"),
+        (
+            child
+            for child in replay_2012_916_finlex_oracle.materialized_state.ir.children
+            if child.kind.name == "CHAPTER" and child.label == "13"
+        ),
         None,
     )
     assert chapter is not None, "chapter 13 must exist"
@@ -3431,7 +3595,9 @@ def test_replay_xml_2012_916_keeps_section_8_in_chapter_13() -> None:
     assert "8" in section_labels, "chapter 13 must keep section 8 from 2022/337"
 
 
-def test_replay_xml_2012_916_keeps_section_1_family_in_chapter_13() -> None:
+def test_replay_xml_2012_916_keeps_section_1_family_in_chapter_13(
+    replay_2012_916_finlex_oracle: ReplayResult,
+) -> None:
     """Later degraded subsection inserts must not erase chapter 13 / section 1.
 
     The current tree carries accepted degraded source lanes for 2022/244 and
@@ -3442,9 +3608,12 @@ def test_replay_xml_2012_916_keeps_section_1_family_in_chapter_13() -> None:
     not that the original paragraph numbering survives those later source-owned
     subsection replacements.
     """
-    replay = pinned_replay("2012/916", mode="finlex_oracle", quiet=True)
     chapter = next(
-        (child for child in replay.materialized_state.ir.children if child.kind.name == "CHAPTER" and child.label == "13"),
+        (
+            child
+            for child in replay_2012_916_finlex_oracle.materialized_state.ir.children
+            if child.kind.name == "CHAPTER" and child.label == "13"
+        ),
         None,
     )
     assert chapter is not None, "chapter 13 must exist"
@@ -3467,7 +3636,9 @@ def test_replay_xml_2012_916_keeps_section_1_family_in_chapter_13() -> None:
     assert "Työ- ja elinkeinotoimiston asiakastietojärjestelmää käytetään" in subsection_text
 
 
-def test_replay_xml_2012_916_surfaces_degraded_2023_371_subsection_lane() -> None:
+def test_replay_xml_2012_916_surfaces_degraded_2023_371_subsection_lane(
+    replay_2012_916_finlex_oracle: ReplayResult,
+) -> None:
     """The degraded 2023/371 subsection lane must stay explicitly owned.
 
     This statute currently carries accepted uncovered-body degradation for the
@@ -3475,11 +3646,9 @@ def test_replay_xml_2012_916_surfaces_degraded_2023_371_subsection_lane() -> Non
     alive, but the subsection-targeted follow-up is not a clean deterministic
     apply path. Future runs should not have to rediscover that from scratch.
     """
-    replay = pinned_replay("2012/916", mode="finlex_oracle", quiet=True)
-
     pathology_rows = [
         row
-        for row in replay.source_pathology_rows()
+        for row in replay_2012_916_finlex_oracle.source_pathology_rows()
         if row.get("source_statute") == "2023/371"
     ]
     assert any(
@@ -3490,7 +3659,7 @@ def test_replay_xml_2012_916_surfaces_degraded_2023_371_subsection_lane() -> Non
 
     degraded_findings = [
         finding
-        for finding in replay.findings
+        for finding in replay_2012_916_finlex_oracle.findings
         if finding.kind == "COVERAGE.HIGH_UNCOVERED_BODY_DEGRADED"
         and finding.source_statute == "2023/371"
     ]
@@ -3498,7 +3667,7 @@ def test_replay_xml_2012_916_surfaces_degraded_2023_371_subsection_lane() -> Non
 
     failed_ops = [
         finding
-        for finding in replay.findings
+        for finding in replay_2012_916_finlex_oracle.findings
         if finding.kind == "APPLY.FAILED_OPERATION"
         and (finding.detail or {}).get("amendment_id") == "2023/371"
     ]
@@ -3521,7 +3690,9 @@ def test_replay_xml_1995_370_does_not_leave_stale_cross_chapter_23_snapshots() -
     assert "chapter:6/section:23" in section_paths
 
 
-def test_replay_xml_1997_1339_anaphoric_pykala_ill_with_provenance_qualifier() -> None:
+def test_replay_xml_1997_1339_anaphoric_pykala_ill_with_provenance_qualifier(
+    replay_1997_1339_finlex_oracle_full_products: ReplayResult,
+) -> None:
     """Regression for anaphoric 'pykälään, sellaisena kuin se on ..., uusi N momentti/kohta'.
 
     Amendment 2015/1752 to 1997/1339 (kirjanpitoasetus) has a lisätään clause whose last
@@ -3534,7 +3705,7 @@ def test_replay_xml_1997_1339_anaphoric_pykala_ill_with_provenance_qualifier() -
     broke the parse chain, all subsequent targets including '5 a lukuun uusi 2 §' were
     silently dropped, leaving chapter 5a with only §1 and missing §2.
     """
-    replay = pinned_replay("1997/1339", mode="finlex_oracle", quiet=True)
+    replay = replay_1997_1339_finlex_oracle_full_products
     ch5a = replay.materialized_state.find_chapter("5a")
     assert ch5a is not None, "chapter 5a must be present in replay"
     sec_labels = [c.label for c in ch5a.children if c.kind.name == "SECTION"]
@@ -3562,7 +3733,9 @@ def test_replay_xml_2020_87_inserts_subsection_into_existing_section() -> None:
     assert "2" in sub_labels, "subsection 2 must be inserted by 2020/326"
 
 
-def test_replay_xml_2017_571_inserts_second_subsection_into_2002_1244_section_1() -> None:
+def test_replay_xml_2017_571_inserts_second_subsection_into_2002_1244_section_1(
+    replay_2002_1244_finlex_oracle_full_products: ReplayResult,
+) -> None:
     """DOC:ILL + provenance must still insert subsection 2 into existing section 1.
 
     2017/571 says ``lisätään asetukseen, sellaisena kuin se on asetuksessa
@@ -3570,7 +3743,7 @@ def test_replay_xml_2017_571_inserts_second_subsection_into_2002_1244_section_1(
     to skip the comma+provenance span and degraded this into a whole-section
     insert, wiping the older subsection chain in replay.
     """
-    replay = pinned_replay("2002/1244", mode="finlex_oracle", quiet=True)
+    replay = replay_2002_1244_finlex_oracle_full_products
     sec1 = replay.materialized_state.find_section("1")
     assert sec1 is not None, "section 1 must be present in replay"
     sub_labels = [
@@ -3616,7 +3789,7 @@ def test_replay_xml_2020_811_inserts_4a_and_11a_sections() -> None:
     never entered replay.
     """
 
-    replay = pinned_replay("2020/811", mode="finlex_oracle")
+    replay = pinned_replay("2020/811", mode="finlex_oracle", quiet=True)
 
     assert replay.find_section("4a") is not None, "2021/407 must insert section 4a"
     assert replay.find_section("11a") is not None, "2021/278 must insert section 11a"

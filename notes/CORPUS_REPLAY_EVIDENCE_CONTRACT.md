@@ -41,6 +41,8 @@ For each source artifact or transition that LawVM processes, the corpus output
 must answer:
 
 - which local source bytes or git objects were read;
+- which stable byte identity was read, normally a content hash such as
+  SHA-256 for downloaded artifacts;
 - which source lane or witness role each artifact had;
 - which source units were inventoried;
 - which operations or effects were parsed;
@@ -52,6 +54,13 @@ must answer:
   emitted.
 
 The output must not collapse these into a single success/failure score.
+
+Review tools that consume evidence bundles must preserve their own
+input/materialization lane separately from the legal evidence lane. For example,
+a review row may have been produced from an artifact bundle, a live cache hit, a
+live cache miss, or an uncached live build. That fact is operational provenance:
+it explains the review surface and cache behavior, but it does not change source
+authority, proof claims, replay adjudications, or legal materialization.
 
 ## 2. Input Boundary
 
@@ -272,6 +281,13 @@ Each category must be visible:
 
 Strict mode may make these rows blocking. Quirks mode may continue past them.
 Neither mode may hide them.
+
+Source selector helpers are part of this rule. A helper that chooses "latest
+archived XML", "best manifestation", "current consolidation", or equivalent
+must not expose only the winning artifact when newer or otherwise plausible
+source candidates were skipped. It may preserve a legacy convenience API, but
+the phase-owned API must return diagnostics for missing, malformed, unsupported,
+or unavailable candidates with stable rule ids and strict/quirks dispositions.
 
 ## 9. Strict And Quirks Semantics
 

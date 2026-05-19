@@ -9131,9 +9131,20 @@ class TestApplyItemReplace:
         assert xml_bytes is not None
         root = etree.fromstring(xml_bytes)
         johto = get_johtolause(xml_bytes)
-        replay = pinned_replay("2006/395", stop_before="2019/1468", mode="finlex_oracle", quiet=True)
+        replay = pinned_replay(
+            "2006/395",
+            stop_before="2019/1468",
+            mode="finlex_oracle",
+            quiet=True,
+            build_full_products=False,
+        )
         state = replay.replay_fold_state
         phase = normalize_and_compile_ops(johto, root, state, "2019/1468", "", False, parent_id="2006/395")
+        descriptions = [op.description() for op in phase.output if op.target_section == "70"]
+        assert "REPLACE 70 § 2 mom" in descriptions
+        assert "REPLACE 70 § 3 mom 4 kohta" in descriptions
+        assert "REPLACE 70 § 3 mom 5 kohta" in descriptions
+        assert "REPLACE 70 § 3 mom 12 kohta" in descriptions
         path = state.find_section_path("70", None, "2")
         assert path is not None
         sec = state.resolve(path)
@@ -9181,9 +9192,21 @@ class TestApplyItemReplace:
         assert xml_bytes is not None
         root = etree.fromstring(xml_bytes)
         johto = get_johtolause(xml_bytes)
-        replay = pinned_replay("2006/395", stop_before="2022/572", mode="finlex_oracle", quiet=True)
+        replay = pinned_replay(
+            "2006/395",
+            stop_before="2022/572",
+            mode="finlex_oracle",
+            quiet=True,
+            build_full_products=False,
+        )
         state = replay.replay_fold_state
         phase = normalize_and_compile_ops(johto, root, state, "2022/572", "", False, parent_id="2006/395")
+        descriptions = [op.description() for op in phase.output if op.target_section == "123"]
+        assert "REPLACE 123 § johd" in descriptions
+        assert "REPLACE 123 § 1 mom 8 kohta" in descriptions
+        assert "REPLACE 123 § 1 mom 9 kohta" in descriptions
+        assert "REPLACE 123 § 1 mom 15 kohta" in descriptions
+        assert "INSERT 8 luku 123 § 2 mom" in descriptions
         path = state.find_section_path("123", None, "2")
         assert path is not None
         sec = state.resolve(path)
@@ -9225,52 +9248,6 @@ class TestApplyItemReplace:
         assert paras["9"] == amend_paras["9"]
         assert paras["15"] == amend_paras["15"]
         assert "sosiaalihuoltolain mukaiselle toimielimelle" not in paras["8"]
-
-    def test_sparse_section_compile_keeps_plain_moment_and_insert_targets(self):
-        """Compile must retain the section-level targets that later replay applies."""
-        cases = [
-            (
-                "2019/1468",
-                "70",
-                [
-                    "REPLACE 70 § 2 mom",
-                    "REPLACE 70 § 3 mom 4 kohta",
-                    "REPLACE 70 § 3 mom 5 kohta",
-                    "REPLACE 70 § 3 mom 12 kohta",
-                ],
-            ),
-            (
-                "2022/572",
-                "123",
-                [
-                    "REPLACE 123 § johd",
-                    "REPLACE 123 § 1 mom 8 kohta",
-                    "REPLACE 123 § 1 mom 9 kohta",
-                    "REPLACE 123 § 1 mom 15 kohta",
-                    "INSERT 8 luku 123 § 2 mom",
-                ],
-            ),
-        ]
-
-        for amendment_id, section_num, expected_descriptions in cases:
-            xml_bytes = get_corpus_store().read_source(amendment_id)
-            assert xml_bytes is not None
-            root = etree.fromstring(xml_bytes)
-            johto = get_johtolause(xml_bytes)
-            replay = pinned_replay("2006/395", stop_before=amendment_id, mode="finlex_oracle", quiet=True)
-            phase = normalize_and_compile_ops(
-                johto,
-                root,
-                replay.replay_fold_state,
-                amendment_id,
-                "",
-                False,
-                parent_id="2006/395",
-            )
-            descriptions = [op.description() for op in phase.output if op.target_section == section_num]
-            for expected in expected_descriptions:
-                assert expected in descriptions
-
 
 # ---------------------------------------------------------------------------
 # _apply_item_insert
