@@ -61,7 +61,7 @@ class NZTargetHint:
     facet: str = ""
     raw: str = ""
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "status": self.status,
             "kind": self.kind,
@@ -81,7 +81,7 @@ class NZTargetAddressCandidate:
     special: str = ""
     blocking_rule_id: str = ""
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "status": self.status,
             "address": self.address,
@@ -120,7 +120,7 @@ class NZOperationWitnessRow:
     effect_status: str = "blocked_effect_lowering"
     effect_blocking_rule_id: str = NZ_OPERATION_EFFECT_BLOCKED_RULE_ID
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "row_id": self.row_id,
             "source_path": list(self.source_path),
@@ -157,9 +157,9 @@ class NZOperationSurfaceReport:
     version_id: str
     xml_locator: str
     rows: tuple[NZOperationWitnessRow, ...]
-    findings: tuple[dict[str, object], ...]
+    findings: tuple[dict[str, Any], ...]
 
-    def summary(self) -> dict[str, object]:
+    def summary(self) -> dict[str, Any]:
         status_counts = Counter(row.operation_status for row in self.rows)
         family_counts = Counter(row.operation_family for row in self.rows)
         target_counts = Counter(row.target_surface_status for row in self.rows)
@@ -197,7 +197,7 @@ class NZOperationSurfaceReport:
         self,
         rows: tuple[NZOperationWitnessRow, ...],
     ) -> tuple[CorpusOperationEvidenceRow, ...]:
-        findings_by_row_id: dict[str, list[dict[str, object]]] = {}
+        findings_by_row_id: dict[str, list[dict[str, Any]]] = {}
         for finding in self.findings:
             row_id = str(finding.get("row_id", ""))
             if row_id:
@@ -207,7 +207,7 @@ class NZOperationSurfaceReport:
     def finding_evidence_rows(self) -> tuple[CorpusFindingEvidenceRow, ...]:
         return tuple(_finding_evidence_row(self, finding) for finding in self.findings)
 
-    def findings_for(self, rows: tuple[NZOperationWitnessRow, ...]) -> tuple[dict[str, object], ...]:
+    def findings_for(self, rows: tuple[NZOperationWitnessRow, ...]) -> tuple[dict[str, Any], ...]:
         row_ids = {row.row_id for row in rows}
         return tuple(finding for finding in self.findings if str(finding.get("row_id", "")) in row_ids)
 
@@ -225,7 +225,7 @@ class NZOperationSurfaceReport:
         dependency_status: str = "",
         lowering_readiness_status: str = "",
         target_hint_status: str = "",
-    ) -> dict[str, object]:
+    ) -> dict[str, Any]:
         filtered_rows = self.filtered_rows(
             operation_family=operation_family,
             target_address_status=target_address_status,
@@ -234,7 +234,7 @@ class NZOperationSurfaceReport:
             target_hint_status=target_hint_status,
         )
         filtered_findings = self.findings_for(filtered_rows)
-        payload: dict[str, object] = {
+        payload: dict[str, Any] = {
             "jurisdiction": "nz",
             "report_kind": "operation_witness_surface",
             "truth_claim": "source_history_note_operation_witnesses",
@@ -321,7 +321,7 @@ def build_operation_surface(
     archived_dependency_work_ids: frozenset[str] = frozenset(),
 ) -> NZOperationSurfaceReport:
     rows: list[NZOperationWitnessRow] = []
-    findings: list[dict[str, object]] = []
+    findings: list[dict[str, Any]] = []
     duplicate_path_statuses = _duplicate_source_path_statuses(document)
     for index, (node, source_path, source_kind, witness) in enumerate(_iter_history_sources(document), start=1):
         operation_family = classify_operation_family(witness.operation)
@@ -765,7 +765,7 @@ def _finding(
     row_id: str,
     source_xml_id: str,
     blocking: bool,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     return {
         "rule_id": rule_id,
         "phase": phase,
@@ -782,7 +782,7 @@ def _finding(
 def _operation_evidence_row(
     report: NZOperationSurfaceReport,
     row: NZOperationWitnessRow,
-    row_findings: Iterable[dict[str, object]],
+    row_findings: Iterable[dict[str, Any]],
 ) -> CorpusOperationEvidenceRow:
     finding_ids = tuple(_finding_id(finding) for finding in row_findings)
     source_artifact_id = report.version_id or report.xml_locator or report.work_id or "new_zealand_operation_surface"
@@ -818,7 +818,7 @@ def _operation_evidence_row(
     )
 
 
-def _finding_evidence_row(report: NZOperationSurfaceReport, finding: dict[str, object]) -> CorpusFindingEvidenceRow:
+def _finding_evidence_row(report: NZOperationSurfaceReport, finding: dict[str, Any]) -> CorpusFindingEvidenceRow:
     row_id = str(finding.get("row_id", ""))
     source_artifact_id = report.version_id or report.xml_locator or report.work_id or "new_zealand_operation_surface"
     return CorpusFindingEvidenceRow(
@@ -841,7 +841,7 @@ def _finding_evidence_row(report: NZOperationSurfaceReport, finding: dict[str, o
     )
 
 
-def _finding_id(finding: dict[str, object]) -> str:
+def _finding_id(finding: dict[str, Any]) -> str:
     row_id = str(finding.get("row_id", ""))
     rule_id = str(finding.get("rule_id", ""))
     if row_id and rule_id:

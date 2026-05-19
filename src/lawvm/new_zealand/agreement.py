@@ -30,7 +30,7 @@ class NZAgreementRow:
     candidate_history_count: int = 0
     oracle_history_count: int = 0
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "path": list(self.path),
             "status": self.status,
@@ -51,7 +51,7 @@ class NZAgreementReport:
     oracle_xml_locator: str
     rows: tuple[NZAgreementRow, ...]
 
-    def summary(self) -> dict[str, object]:
+    def summary(self) -> dict[str, Any]:
         counts: dict[str, int] = {}
         for row in self.rows:
             counts[row.status] = counts.get(row.status, 0) + 1
@@ -68,7 +68,7 @@ class NZAgreementReport:
             "agreement_status": "exact" if exact == total else "mismatch",
         }
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "jurisdiction": "nz",
             "report_kind": "candidate_oracle_source_tree_agreement",

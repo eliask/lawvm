@@ -14,7 +14,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping, Protocol
+from typing import Any, Mapping, Protocol, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -29,7 +29,7 @@ _RATE_LIMIT_HEADERS = (
 
 
 class ArchiveWriter(Protocol):
-    def get(self, locator: str, *, at: datetime | None = None) -> bytes | None: ...
+    def get(self, locator: str, *, at: object | None = None) -> bytes | None: ...
 
     def store(
         self,
@@ -39,10 +39,14 @@ class ArchiveWriter(Protocol):
         observed_at: datetime | None = None,
         storage_class: str | None = None,
         series_key: str | None = None,
-        metadata: dict[str, object] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str: ...
 
     def close(self) -> None: ...
+
+
+class ArchiveStore(ArchiveWriter, Protocol):
+    def locators(self, pattern: str = "%") -> list[str]: ...
 
 
 @dataclass(frozen=True)
@@ -104,9 +108,9 @@ class NZAcquisitionDiagnostic:
     blocking: bool = False
     strict_disposition: str = "record"
     quirks_disposition: str = "record"
-    metadata: Mapping[str, object] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "rule_id": self.rule_id,
             "phase": self.phase,
@@ -160,7 +164,7 @@ class NZSyncStats:
     diagnostics: list[NZAcquisitionDiagnostic] = field(default_factory=list)
     stopped_reason: str = ""
 
-    def as_summary(self) -> dict[str, object]:
+    def as_summary(self) -> dict[str, Any]:
         return {
             "requests": self.requests,
             "cached": self.cached,
@@ -206,8 +210,8 @@ class NZRateLimitGate:
         self._last_request = time.monotonic()
         self.requests += 1
 
-    def observe(self, headers: Mapping[str, str]) -> dict[str, object]:
-        limit_headers: dict[str, object] = {}
+    def observe(self, headers: Mapping[str, str]) -> dict[str, Any]:
+        limit_headers: dict[str, Any] = {}
         for key in _RATE_LIMIT_HEADERS:
             value = _header_get(headers, key)
             if value:
@@ -256,7 +260,7 @@ class NZApiClient:
         self._transport = transport or UrllibNZTransport()
         self._rate_gate = rate_gate
 
-    def get_json(self, url: str) -> tuple[NZHttpResponse | None, dict[str, object], str]:
+    def get_json(self, url: str) -> tuple[NZHttpResponse | None, dict[str, Any], str]:
         ok, reason = self._rate_gate.can_request()
         if not ok:
             return None, {}, reason
@@ -265,7 +269,7 @@ class NZApiClient:
         rate_headers = self._rate_gate.observe(response.headers)
         return response, rate_headers, ""
 
-    def get_bytes(self, url: str) -> tuple[NZHttpResponse | None, dict[str, object], str]:
+    def get_bytes(self, url: str) -> tuple[NZHttpResponse | None, dict[str, Any], str]:
         ok, reason = self._rate_gate.can_request()
         if not ok:
             return None, {}, reason
@@ -348,13 +352,13 @@ def _iter_search_works(
     client: NZApiClient,
     options: NZSyncOptions,
     stats: NZSyncStats,
-) -> list[Mapping[str, object]]:
-    results: list[Mapping[str, object]] = []
+) -> list[Mapping[str, Any]]:
+    results: list[Mapping[str, Any]] = []
     page = 1
     while True:
         if options.max_pages is not None and page > options.max_pages:
             break
-        params: dict[str, object] = {
+        params: dict[str, Any] = {
             "page": page,
             "per_page": min(max(options.per_page, 1), 100),
         }
@@ -388,9 +392,9 @@ def _fetch_work_versions(
     work_id: str,
     options: NZSyncOptions,
     stats: NZSyncStats,
-) -> list[Mapping[str, object]]:
+) -> list[Mapping[str, Any]]:
     sort = "asc" if options.version_sort == "asc" else "desc"
-    versions: list[Mapping[str, object]] = []
+    versions: list[Mapping[str, Any]] = []
     page = 1
     while True:
         params = {
@@ -427,7 +431,7 @@ def _fetch_version_detail(
     version_id: str,
     options: NZSyncOptions,
     stats: NZSyncStats,
-) -> Mapping[str, object] | None:
+) -> Mapping[str, Any] | None:
     url = _api_url(f"/v0/versions/{version_id}/", {})
     return _get_or_fetch_json(
         archive,
@@ -444,7 +448,7 @@ def _fetch_version_detail(
 def _fetch_xml_formats(
     archive: ArchiveWriter,
     client: NZApiClient,
-    version_detail: Mapping[str, object],
+    version_detail: Mapping[str, Any],
     options: NZSyncOptions,
     stats: NZSyncStats,
 ) -> None:
@@ -496,7 +500,7 @@ def _get_or_fetch_json(
     stats: NZSyncStats,
     *,
     series_key: str | None = None,
-) -> Mapping[str, object] | None:
+) -> Mapping[str, Any] | None:
     cached = archive.get(locator) if options.skip_existing else None
     if cached is not None:
         stats.cached += 1
@@ -541,7 +545,7 @@ def _get_or_fetch_bytes(
     stats: NZSyncStats,
     *,
     series_key: str | None = None,
-    extra_metadata: Mapping[str, object] | None = None,
+    extra_metadata: Mapping[str, Any] | None = None,
 ) -> bytes | None:
     cached = archive.get(locator) if options.skip_existing else None
     if cached is not None:
@@ -588,7 +592,7 @@ def _request_with_rate_limit_recovery(
     url: str,
     accept_kind: str,
     rule_id: str,
-) -> tuple[NZHttpResponse | None, dict[str, object], str]:
+) -> tuple[NZHttpResponse | None, dict[str, Any], str]:
     attempts = 0
     while True:
         if accept_kind == "json":
@@ -640,7 +644,7 @@ def _record_rate_limit_stop(
     locator: str,
     url: str,
     stopped_reason: str,
-    rate_headers: Mapping[str, object],
+    rate_headers: Mapping[str, Any],
 ) -> None:
     stats.stopped_reason = stopped_reason
     stats.diagnostics.append(
@@ -703,7 +707,7 @@ def _decode_json(
     locator: str,
     url: str,
     stats: NZSyncStats,
-) -> Mapping[str, object] | None:
+) -> Mapping[str, Any] | None:
     try:
         value = json.loads(data.decode("utf-8"))
     except json.JSONDecodeError as exc:
@@ -742,7 +746,7 @@ def _http_diagnostic(
     locator: str,
     url: str,
     response: NZHttpResponse,
-    metadata: Mapping[str, object],
+    metadata: Mapping[str, Any],
 ) -> NZAcquisitionDiagnostic:
     blocking = response.status_code in {401, 403, 429} or response.status_code == 0
     return NZAcquisitionDiagnostic(
@@ -763,9 +767,9 @@ def _response_metadata(
     rule_id: str,
     url: str,
     response: NZHttpResponse,
-    rate_headers: Mapping[str, object],
-) -> dict[str, object]:
-    metadata: dict[str, object] = {
+    rate_headers: Mapping[str, Any],
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
         "rule_id": rule_id,
         "phase": "acquisition",
         "source_regime": "nz_legislation_api_v0",
@@ -788,7 +792,7 @@ def _write_diagnostics(path: Path | None, diagnostics: list[NZAcquisitionDiagnos
             handle.write(json.dumps(diagnostic.to_jsonable(), ensure_ascii=False) + "\n")
 
 
-def _api_url(path: str, params: Mapping[str, object]) -> str:
+def _api_url(path: str, params: Mapping[str, Any]) -> str:
     filtered = {key: value for key, value in params.items() if value not in ("", None)}
     query = urlencode(filtered)
     if query:
@@ -804,12 +808,12 @@ def _header_get(headers: Mapping[str, str], key: str) -> str:
     return ""
 
 
-def _string_field(row: Mapping[str, object], key: str) -> str:
+def _string_field(row: Mapping[str, Any], key: str) -> str:
     value = row.get(key)
     return value if isinstance(value, str) else ""
 
 
-def _int_field(row: Mapping[str, object], key: str) -> int | None:
+def _int_field(row: Mapping[str, Any], key: str) -> int | None:
     value = row.get(key)
     if isinstance(value, int):
         return value
@@ -821,7 +825,7 @@ def _int_field(row: Mapping[str, object], key: str) -> int | None:
     return None
 
 
-def _list_field(row: Mapping[str, object], key: str) -> list[object]:
+def _list_field(row: Mapping[str, Any], key: str) -> list[Any]:
     value = row.get(key)
     return value if isinstance(value, list) else []
 
@@ -829,15 +833,17 @@ def _list_field(row: Mapping[str, object], key: str) -> list[object]:
 def _format_url(row: object) -> str:
     if not isinstance(row, Mapping):
         return ""
-    value = row.get("url")
+    row_map = cast(Mapping[str, Any], row)
+    value = row_map.get("url")
     return value if isinstance(value, str) else ""
 
 
 def _is_xml_format(row: object) -> bool:
     if not isinstance(row, Mapping):
         return False
+    row_map = cast(Mapping[str, Any], row)
     url = _format_url(row).lower()
-    format_value = str(row.get("format") or row.get("type") or row.get("name") or "").lower()
+    format_value = str(row_map.get("format") or row_map.get("type") or row_map.get("name") or "").lower()
     return url.endswith(".xml") or format_value == "xml" or "xml" in format_value
 
 
@@ -857,11 +863,11 @@ def _version_date_from_version_id(version_id: str) -> str:
     return candidate if candidate else ""
 
 
-def open_farchive(path: Path) -> ArchiveWriter:
+def open_farchive(path: Path) -> ArchiveStore:
     from farchive import Farchive
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    return Farchive(path)
+    return cast(ArchiveStore, Farchive(path))
 
 
 def main(args: Any) -> None:

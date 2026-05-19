@@ -64,7 +64,7 @@ class NZInstructionWorkQueueRow:
     latest_oracle_old_text_occurrences: int = 0
     latest_oracle_new_text_occurrences: int = 0
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "row_id": self.row_id,
             "operation_row_id": self.operation_row_id,
@@ -110,7 +110,7 @@ class NZInstructionWorkQueueReport:
     work_id: str
     rows: tuple[NZInstructionWorkQueueRow, ...]
 
-    def summary(self) -> dict[str, object]:
+    def summary(self) -> dict[str, Any]:
         return _summarize_rows(self.work_id, self.rows)
 
     def to_jsonable(
@@ -125,7 +125,7 @@ class NZInstructionWorkQueueReport:
         instruction_subfamily: str = "",
         payload_structural_subfamily_status: str = "",
         payload_structural_subfamily: str = "",
-    ) -> dict[str, object]:
+    ) -> dict[str, Any]:
         rows = _filter_rows(
             self.rows,
             queue_status=queue_status,
@@ -145,7 +145,7 @@ class NZInstructionWorkQueueReport:
             payload_structural_subfamily_status=payload_structural_subfamily_status,
             payload_structural_subfamily=payload_structural_subfamily,
         )
-        payload: dict[str, object] = {
+        payload: dict[str, Any] = {
             "jurisdiction": "nz",
             "report_kind": "instruction_semantics_workqueue",
             "truth_claim": "diagnostic_instruction_semantics_queue",
@@ -195,7 +195,7 @@ class NZInstructionWorkQueueReport:
         return tuple(_workqueue_evidence_row(self, row) for row in rows)
 
 
-def _summarize_rows(work_id: str, rows: tuple[NZInstructionWorkQueueRow, ...]) -> dict[str, object]:
+def _summarize_rows(work_id: str, rows: tuple[NZInstructionWorkQueueRow, ...]) -> dict[str, Any]:
     queue_status_counts = Counter(row.queue_status for row in rows)
     operation_family_counts = Counter(row.operation_family for row in rows)
     candidate_status_counts = Counter(row.instruction_semantic_candidate_status for row in rows)
@@ -438,7 +438,7 @@ def _workqueue_evidence_row(
     )
 
 
-def _workqueue_evidence_detail(row: NZInstructionWorkQueueRow, *, reason: str) -> dict[str, object]:
+def _workqueue_evidence_detail(row: NZInstructionWorkQueueRow, *, reason: str) -> dict[str, Any]:
     return {
         "reason": reason,
         "queue_status": row.queue_status,

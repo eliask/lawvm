@@ -39,7 +39,7 @@ class NZHistoryWitness:
     amending_legislation: str
     amending_work_id: str
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "xml_id": self.xml_id,
             "xml_path": self.xml_path,
@@ -68,7 +68,7 @@ class NZSourceNode:
     text: str
     history: tuple[NZHistoryWitness, ...]
 
-    def to_jsonable(self) -> dict[str, object]:
+    def to_jsonable(self) -> dict[str, Any]:
         return {
             "kind": self.kind,
             "path": list(self.path),
@@ -91,7 +91,7 @@ class NZSourceDocument:
     nodes: tuple[NZSourceNode, ...]
     document_history: tuple[NZHistoryWitness, ...]
 
-    def summary(self) -> dict[str, object]:
+    def summary(self) -> dict[str, Any]:
         kinds = Counter(node.kind for node in self.nodes)
         deleted = sum(1 for node in self.nodes if node.deletion_status)
         history_count = sum(len(node.history) for node in self.nodes) + len(self.document_history)
@@ -117,7 +117,7 @@ class NZSourceDocument:
             "amending_works": amending_work_count,
         }
 
-    def to_jsonable(self, *, include_nodes: bool = True) -> dict[str, object]:
+    def to_jsonable(self, *, include_nodes: bool = True) -> dict[str, Any]:
         payload = {
             "xml_locator": self.xml_locator,
             "version_id": self.version_id,
@@ -355,7 +355,7 @@ def _descendant_attrs(node: etree._Element, localname: str, attr: str) -> Iterab
 
 
 def _node_text(node: etree._Element) -> str:
-    return _normalize_text(" ".join(node.itertext()))
+    return _normalize_text(" ".join(str(part) for part in node.itertext()))
 
 
 def _normalize_text(text: str) -> str:
