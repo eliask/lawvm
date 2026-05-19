@@ -7829,6 +7829,204 @@ def test_compile_broad_table_entry_instruction_rejects_host_repeal() -> None:
     assert rejection["quirks_disposition"] == "record"
 
 
+def test_compile_direct_table_after_that_entry_instruction_rejects_row_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>b</Pnumber>
+          <Text>after that entry insert\u2014 electronic whereabouts monitoring requirement Part 17 section 185(5).</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_direct_table_after_that_entry_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 174(1) Table",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="Sch. 17 para. 4(3)(b)",
+        affecting_title="Police, Crime, Sentencing and Courts Act 2022",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+    assert rejection["reason_code"] == "table_entry_instruction_without_cell_target"
+    assert rejection["target_ref"] == "s. 174(1) Table"
+    assert rejection["entry_shape"] == "deictic_table_entry"
+    assert rejection["blocking"] is True
+
+
+def test_compile_direct_table_between_columns_instruction_rejects_column_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>b</Pnumber>
+          <Text>between the second and third columns, insert\u2014 Offence committed on or after 1 May 1984 \u00a350 \u00a3100.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_direct_table_between_columns_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 122(1) Table",
+        affecting_uri="/id/ukpga/2020/17",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2020",
+        affecting_number="17",
+        affecting_provisions="Sch. 21 para. 3(b)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+    assert rejection["entry_shape"] == "between_columns"
+    assert rejection["blocking"] is True
+
+
+def test_compile_direct_table_relating_entry_instruction_rejects_row_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <Text>In section 201 (community order: community order requirements table), after the entry in the table relating to the drug rehabilitation requirement insert\u2014 electronic whereabouts monitoring requirement.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_direct_table_relating_entry_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 201 Table",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="Sch. 17 para. 13",
+        affecting_title="Police, Crime, Sentencing and Courts Act 2022",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+
+    table_rejections = [
+        row
+        for row in lowering_rejections
+        if row["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+    ]
+    assert table_rejections
+    assert not [
+        row for row in lowering_rejections if row["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+    ]
+    rejection = next(row for row in table_rejections if row["entry_shape"] == "relating_entry")
+    assert rejection["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+    assert rejection["entry_shape"] == "relating_entry"
+    assert rejection["blocking"] is True
+
+
+def test_compile_direct_table_appropriate_place_instruction_rejects_row_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>11</Pnumber>
+          <Text>In section 379, in the table in subsection (1), at the appropriate place insert\u2014 Northern Ireland Troubles (Legacy and Reconciliation) Act 2023.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_direct_table_appropriate_place_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 379(1) table",
+        affecting_uri="/id/ukpga/2023/41",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2023",
+        affecting_number="41",
+        affecting_provisions="s. 11",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+    assert rejection["entry_shape"] == "appropriate_place_table_entry"
+    assert rejection["blocking"] is True
+
+
 def test_compile_broad_schedule_column_instruction_lowers_to_table_cell_patch() -> None:
     extracted_el = ET.fromstring(
         f"""
