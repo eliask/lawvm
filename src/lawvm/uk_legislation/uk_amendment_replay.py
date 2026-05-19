@@ -5513,6 +5513,94 @@ def _fragment_substitution_grouped_anchor_occurrence(
     return None
 
 
+_SOURCE_CARRIED_AFTER_THAT_DEFINITION_CHILD_INSERT_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){1,2}after\s+that\s+paragraph,?\s+"
+    r"insert\s*[—-]\s*(?P<inserted>.+?)\s*$",
+    flags=re.I | re.S,
+)
+_SOURCE_CARRIED_AT_END_DEFINITION_CHILD_INSERT_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){1,2}at\s+the\s+end\s+of\s+paragraph\s+"
+    r"\((?P<label>[0-9A-Za-z]+)\),?\s+insert\s*[—-]\s*(?P<inserted>.+?)\s*$",
+    flags=re.I | re.S,
+)
+_SOURCE_DEFINITION_TERM_RE = re.compile(
+    r"\bin\s+the\s+definition\s+of\s+[“\"'‘](?P<term>.*?)[”\"'’]",
+    flags=re.I | re.S,
+)
+
+
+def _source_definition_term_from_ancestors(ancestors: tuple[ET.Element, ...]) -> str:
+    for ancestor in ancestors:
+        candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
+        if not candidate_text:
+            candidate_text = _instruction_text_before_amendment_container(ancestor)
+        match = _SOURCE_DEFINITION_TERM_RE.search(candidate_text)
+        if match is not None:
+            return " ".join(match.group("term").split()).strip()
+    return ""
+
+
+def _previous_source_sibling_label(
+    *,
+    parent: ET.Element,
+    extracted_el: Optional[ET.Element],
+) -> str:
+    children = list(parent)
+    extracted_id = extracted_el.get("id") if extracted_el is not None else None
+    for index, child in enumerate(children):
+        if child is extracted_el or (extracted_id and child.get("id") == extracted_id):
+            if index == 0:
+                return ""
+            return _clean_num(_direct_structural_num(children[index - 1]))
+    return ""
+
+
+def _fragment_substitution_source_carried_definition_child_insert(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve definition-child insertions whose child row says only "that paragraph"."""
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        return None
+    term = _source_definition_term_from_ancestors(ancestors)
+    if not term:
+        return None
+
+    parent = ancestors[0]
+    after_that_match = _SOURCE_CARRIED_AFTER_THAT_DEFINITION_CHILD_INSERT_RE.match(text)
+    if after_that_match is not None:
+        anchor_label = _previous_source_sibling_label(parent=parent, extracted_el=extracted_el)
+        inserted = after_that_match.group("inserted").strip()
+    else:
+        at_end_match = _SOURCE_CARRIED_AT_END_DEFINITION_CHILD_INSERT_RE.match(text)
+        if at_end_match is None:
+            return None
+        anchor_label = _clean_num(at_end_match.group("label"))
+        inserted = at_end_match.group("inserted").strip()
+    if not anchor_label or not inserted:
+        return None
+
+    source_parent_id = str(parent.get("id") or "")
+    if not source_parent_id:
+        source_parent_id = next(
+            (str(candidate.get("id")) for candidate in ancestors[1:] if candidate.get("id")),
+            "",
+        )
+    return {
+        "original": f"TEXT_AFTER_DEFINITION_PARAGRAPH_{term}_AFTER_{anchor_label}",
+        "replacement": inserted,
+        "source_parent_id": source_parent_id,
+        "source_anchor_child_label": anchor_label,
+        "rule_id": "uk_effect_source_carried_definition_child_insert_text_patch",
+    }
+
+
 _DEFINITION_LIST_OMISSION_CONTEXT_RE = re.compile(
     r"(?:^|\b)omit\s+(?:the\s+)?definitions?\s+of(?:\b|[\u2014-])",
     flags=re.I,
@@ -6669,6 +6757,16 @@ def compile_effect_to_ir_ops(
                     )
                     if grouped_anchor_occurrence is not None:
                         subs = [grouped_anchor_occurrence]
+                if not subs:
+                    source_carried_definition_child_insert = (
+                        _fragment_substitution_source_carried_definition_child_insert(
+                            extracted_el=extracted_el,
+                            source_root=source_root,
+                            extracted_text=extracted_text,
+                        )
+                    )
+                    if source_carried_definition_child_insert is not None:
+                        subs = [source_carried_definition_child_insert]
                 if subs:
                     if table_cell_selector is not None:
                         subs = [
@@ -12502,6 +12600,95 @@ class UKReplayExecutor:
                 child_label = definition_child_match.group(3).strip()
                 if child_kind != "paragraph" or not term or not child_label:
                     return node, False
+
+                def _definition_child_nodes(
+                    n: UKMutableNode,
+                    path: tuple[int, ...] = (),
+                ) -> list[tuple[tuple[int, ...], UKMutableNode]]:
+                    matches: list[tuple[tuple[int, ...], UKMutableNode]] = []
+                    for index, child in enumerate(n.children):
+                        child_path = path + (index,)
+                        if (
+                            child.kind is IRNodeKind.ITEM
+                            and str(child.attrs.get("definition_child_label") or "").lower() == child_label.lower()
+                            and child.attrs.get("source_rule_id") == "uk_definition_ordered_list_child_preserved"
+                            and _normalize_text(str(child.attrs.get("definition_term") or "")) == _normalize_text(term)
+                        ):
+                            matches.append((child_path, child))
+                        matches.extend(_definition_child_nodes(child, child_path))
+                    return matches
+
+                def _definition_insert_payload(
+                    raw_replacement: str,
+                ) -> tuple[str, list[UKMutableNode]]:
+                    text = " ".join(raw_replacement.split()).strip(" ,.")
+                    if not text:
+                        return "", []
+                    anchor_suffix = ""
+                    suffix_match = re.match(r"^(?P<suffix>;\s+(?:or|and))\s+(?P<body>.+)$", text, flags=re.I | re.S)
+                    if suffix_match is not None:
+                        anchor_suffix = " ".join(suffix_match.group("suffix").split())
+                        text = suffix_match.group("body").strip()
+                    item_matches = list(
+                        re.finditer(
+                            r"(?:(?<=^)|(?<=;\s))(?P<label>[0-9A-Za-z]+)\s+(?P<body>[^;]+;)",
+                            text,
+                            flags=re.S,
+                        )
+                    )
+                    items: list[UKMutableNode] = []
+                    if item_matches and item_matches[0].start() == 0:
+                        for item_match in item_matches:
+                            label = item_match.group("label").strip()
+                            item_text = " ".join(item_match.group("body").split()).strip()
+                            if not label or not item_text:
+                                return "", []
+                            items.append(
+                                UKMutableNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label=None,
+                                    text=item_text,
+                                    attrs={
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                        "definition_term": term,
+                                        "definition_child_label": label,
+                                        "source_rule_detail": (
+                                            "uk_effect_source_carried_definition_child_insert_text_patch"
+                                        ),
+                                    },
+                                )
+                            )
+                    return anchor_suffix, items
+
+                structured_child_matches = _definition_child_nodes(node)
+                if len(structured_child_matches) == 1:
+                    child_path, child_node = structured_child_matches[0]
+                    parent_path = child_path[:-1]
+                    child_index = child_path[-1]
+
+                    def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
+                        current = n
+                        for index in path:
+                            current = current.children[index]
+                        return current
+
+                    anchor_suffix, inserted_children = _definition_insert_payload(replacement)
+                    if inserted_children:
+                        parent_node = _node_at_path(node, parent_path)
+                        new_children = list(parent_node.children)
+                        if anchor_suffix:
+                            anchor_text = " ".join(f"{child_node.text.rstrip()} {anchor_suffix}".split()).strip()
+                            new_children[child_index] = dc_replace(child_node, text=anchor_text)
+                        new_children[child_index + 1 : child_index + 1] = inserted_children
+                        rebuilt_parent = dc_replace(parent_node, children=new_children)
+                        rebuilt = (
+                            rebuilt_parent
+                            if not parent_path
+                            else self._replace_descendant_at_path(node, parent_path, rebuilt_parent)
+                        )
+                        self._replace_node_in_statute(node, rebuilt)
+                        return rebuilt, True
+
                 full_text = " ".join(tn.text.strip() for _, tn in text_nodes if tn.text).strip()
                 if not full_text:
                     return node, False

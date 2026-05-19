@@ -3301,6 +3301,93 @@ def test_compile_words_inserted_after_definition_child_with_block_payload() -> N
     )
 
 
+def test_compile_source_carried_definition_child_insert_from_parent_context() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="article-6">
+              <Pnumber>6</Pnumber>
+              <P1para>
+                <P2 id="article-6-2">
+                  <Pnumber>2</Pnumber>
+                  <P2para>
+                    <Text>In the definition of “local transport authority” in section 82(1)—</Text>
+                    <P3 id="article-6-2-a">
+                      <Pnumber>a</Pnumber>
+                      <P3para><Text>a in paragraph (a), omit “or”,</Text></P3para>
+                    </P3>
+                    <P3 id="article-6-2-b">
+                      <Pnumber>b</Pnumber>
+                      <P3para>
+                        <Text>
+                          b after that paragraph, insert—
+                          aa the Shetland Transport Partnership;
+                          ab the South-West of Scotland Transport Partnership; ,
+                        </Text>
+                      </P3para>
+                    </P3>
+                  </P2para>
+                </P2>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='article-6-2-b']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-79af407f7fe6a5d5280ace6eb3eb1ee3",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-06-05",
+        affected_uri="/id/asp/2001/2",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 82(1)",
+        affecting_uri="/id/ssi/2024/161",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2024",
+        affecting_number="161",
+        affecting_provisions="art. 6(2)(b)",
+        affecting_title=(
+            "The Regional Transport Partnerships (Establishment, Constitution "
+            "and Membership) (Scotland) Amendment Order 2024"
+        ),
+        in_force_dates=[{"date": "2024-06-05", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+        source_root=source_root,
+    )
+
+    assert lowering_rejections == []
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "82"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_AFTER_DEFINITION_PARAGRAPH_local transport authority_AFTER_a"
+    )
+    assert ops[0].text_patch.replacement == (
+        "aa the Shetland Transport Partnership; "
+        "ab the South-West of Scotland Transport Partnership; ,"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_definition_child_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+
+
 def test_compile_words_inserted_at_end_of_numbered_subparagraph_to_text_replace() -> None:
     extracted_el = ET.fromstring(
         f"""
