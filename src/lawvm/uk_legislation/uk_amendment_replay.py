@@ -396,6 +396,9 @@ def _is_schedule_note_ref(ref: str) -> bool:
 
 _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE = "uk_effect_crossheading_before_anchor_replacement_text_patch"
 _CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE = "uk_effect_crossheading_before_anchor_text_patch"
+_CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE = (
+    "uk_effect_crossheading_and_structural_replacement_split_lowered"
+)
 
 
 def _crossheading_before_anchor_replacement_text(extracted_text: Optional[str]) -> Optional[str]:
@@ -441,6 +444,60 @@ def _crossheading_before_anchor_text_patch_fragment(extracted_text: Optional[str
         "replacement": replacement,
         "rule_id": _CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE,
     }
+
+
+def _structural_children(el: ET.Element) -> tuple[ET.Element, ...]:
+    structural_tags = {
+        "Part",
+        "Chapter",
+        "EUChapter",
+        "Pblock",
+        "P1group",
+        "Section",
+        "P1",
+        "Article",
+        "Rule",
+        "Subsection",
+        "P2",
+        "P3",
+        "P4",
+        "Schedule",
+    }
+    return tuple(child for child in list(el) if _tag(child) in structural_tags)
+
+
+def _crossheading_and_structural_replacement_heading_text(
+    *,
+    affected_ref: str,
+    extracted_el: Optional[ET.Element],
+    target: LegalAddress,
+) -> Optional[str]:
+    """Return title text for explicit ``paragraph X and cross-heading`` replacements."""
+    if extracted_el is None or "cross-heading" not in affected_ref.lower():
+        return None
+    target_label = _clean_num(_addr_leaf_label(target) or "")
+    if not target_label:
+        return None
+
+    for amendment in extracted_el.iter():
+        if _tag(amendment) not in {"BlockAmendment", "InlineAmendment"}:
+            continue
+        for wrapper in amendment.iter():
+            if _tag(wrapper) not in {"P1group", "Pblock"}:
+                continue
+            title_el = wrapper.find(f"./{{{_LEG_NS}}}Title")
+            if title_el is None:
+                continue
+            heading_text = _text_content(title_el)
+            if not heading_text:
+                continue
+            structural_children = _structural_children(wrapper)
+            if not structural_children:
+                continue
+            first_child_label = _clean_num(_direct_structural_num(structural_children[0]))
+            if first_child_label == target_label:
+                return heading_text
+    return None
 
 
 def _clone_element(el: ET.Element) -> ET.Element:
@@ -6462,6 +6519,8 @@ def compile_effect_to_ir_ops(
                 detail={"target_ref": t_str, "target_candidate_count": len(targets_str)},
             )
             continue
+        parsed_target = _parse_affected_target(t_str)
+        target = parsed_target if _is_direct_section_paragraph_ref(t_str) else canonicalize_uk_address(parsed_target)
         crossheading_replacement_text = (
             _crossheading_before_anchor_replacement_text(extracted_text)
             if action == "replace" and _is_crossheading_ref(t_str)
@@ -6472,11 +6531,21 @@ def compile_effect_to_ir_ops(
             if action == "replace" and _is_crossheading_ref(t_str)
             else None
         )
+        crossheading_compound_heading_text = (
+            _crossheading_and_structural_replacement_heading_text(
+                affected_ref=t_str,
+                extracted_el=extracted_el,
+                target=target,
+            )
+            if action == "replace" and _is_crossheading_ref(t_str)
+            else None
+        )
         if (
             action == "replace"
             and _is_crossheading_ref(t_str)
             and crossheading_replacement_text is None
             and crossheading_text_patch_fragment is None
+            and crossheading_compound_heading_text is None
         ):
             _append_uk_effect_lowering_rejection(
                 lowering_rejections_out,
@@ -6493,9 +6562,6 @@ def compile_effect_to_ir_ops(
                 detail={"target_ref": t_str},
             )
             continue
-
-        parsed_target = _parse_affected_target(t_str)
-        target = parsed_target if _is_direct_section_paragraph_ref(t_str) else canonicalize_uk_address(parsed_target)
         if extracted_el is None and effect_type in {"entry inserted", "entry repealed", "entry omitted"}:
             _append_uk_effect_lowering_rejection(
                 lowering_rejections_out,
@@ -6528,6 +6594,86 @@ def compile_effect_to_ir_ops(
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
                 detail={"target_ref": t_str, "target": str(target)},
+            )
+        if crossheading_compound_heading_text is not None:
+            heading_target = LegalAddress(path=target.path, special=FacetKind.HEADING)
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE,
+                family="target_facet_lowering",
+                reason_code="explicit_crossheading_and_structural_replacement_split",
+                reason=(
+                    "UK source replaces a provision and its cross-heading from a "
+                    "single titled payload; lowering emits a separate heading "
+                    "facet patch and leaves the structural payload on the named "
+                    "provision target."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "structural_target": str(target),
+                    "heading_target": str(heading_target),
+                    "replacement_text_preview": crossheading_compound_heading_text[:200],
+                },
+            )
+            fragment_subs_for_heading = [
+                {
+                    "original": "TEXT_ALL",
+                    "replacement": crossheading_compound_heading_text,
+                    "rule_id": _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
+                }
+            ]
+            heading_text_patch = TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="TEXT_ALL", occurrence=0),
+                replacement=crossheading_compound_heading_text,
+            )
+            src = OperationSource(
+                statute_id=effect.affecting_act_id,
+                title=effect.affecting_title,
+                effective=effect_witness.applicability.effective_date or "",
+                raw_text=extraction_witness.extracted_text,
+            )
+            target_expansion_witness = _uk_target_expansion_witness(
+                t_str,
+                [t_str],
+                original_targets_str=original_targets_str,
+            )
+            text_rewrite_witness = _uk_text_rewrite_spec(
+                fragment_subs=fragment_subs_for_heading,
+                text_patch=heading_text_patch,
+                op_text_match="TEXT_ALL",
+                op_text_replacement=crossheading_compound_heading_text,
+                op_text_occurrence=0,
+            )
+            lowered_witness = UKLoweredOperationWitness(
+                op_id=f"{effect.effect_id}_crossheading",
+                sequence=sequence,
+                action=StructuralAction.TEXT_REPLACE,
+                target=heading_target,
+                payload=None,
+                source=src,
+                effect_witness=effect_witness,
+                extraction_witness=extraction_witness,
+                target_expansion_witness=target_expansion_witness,
+                text_rewrite_witness=text_rewrite_witness,
+                insertion_anchor_witness=None,
+            )
+            ops.append(
+                LegalOperation(
+                    op_id=lowered_witness.op_id,
+                    sequence=lowered_witness.sequence,
+                    action=lowered_witness.action,
+                    target=lowered_witness.target,
+                    payload=None,
+                    source=lowered_witness.source,
+                    group_id=_uk_temporal_group_id(effect),
+                    provenance_tags=_uk_lowered_op_provenance_tags(lowered_witness),
+                    text_patch=heading_text_patch,
+                    witness_rule_id=_CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE,
+                )
             )
         schedule_list_entry_selector = (
             _uk_schedule_list_entry_insert_selector(

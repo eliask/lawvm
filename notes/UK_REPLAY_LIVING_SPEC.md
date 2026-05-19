@@ -279,7 +279,12 @@ frontend cannot yet lower them safely:
   replacement and `uk_effect_crossheading_before_anchor_text_patch_lowered` for
   quoted text patches; both target `X/heading`, use named text rewrite rules,
   and replay may mutate the crossheading parent only when `X` is the first
-  structural child under that parent. Other cross-heading replacements remain
+  structural child under that parent. A compound `paragraph X and cross-heading`
+  replacement may also lower through
+  `uk_effect_crossheading_and_structural_replacement_split_lowered` when the
+  affecting source payload is a titled wrapper whose first structural child is
+  exactly `X`; lowering emits a separate `X/heading` patch plus the ordinary
+  structural replacement for `X`. Other cross-heading replacements remain
   blocked by `uk_effect_crossheading_replace_rejected`.
 - repeal schedules and table rows where the table columns identify enactment
   and extent of repeal
