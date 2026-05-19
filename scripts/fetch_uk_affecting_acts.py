@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from collections import Counter
 import json
 import sys
 from pathlib import Path
@@ -88,6 +89,11 @@ def main() -> None:
         help="Show what would be fetched without actually downloading",
     )
     parser.add_argument(
+        "--include-enacted-affecting",
+        action="store_true",
+        help="Also fetch /enacted/data.xml for cached or newly fetched affecting acts",
+    )
+    parser.add_argument(
         "--verbose", "-v", action="store_true",
         help="Show per-act status (cached / fetched)",
     )
@@ -135,11 +141,18 @@ def main() -> None:
 
     total_fetched = total_cached = total_errors = 0
     total_events = 0
+    event_rule_counts: Counter[str] = Counter()
+    blocking_event_rule_counts: Counter[str] = Counter()
     n_statute = len(sids)
 
     for i, sid in enumerate(sids):
         report = fetch_missing_for_statute(
-            sid, archive, delay=delay, dry_run=args.dry_run, verbose=args.verbose,
+            sid,
+            archive,
+            delay=delay,
+            dry_run=args.dry_run,
+            verbose=args.verbose,
+            include_enacted=args.include_enacted_affecting,
         )
         fetched, cached, errors = report
         total_fetched += fetched
@@ -147,6 +160,11 @@ def main() -> None:
         total_errors += errors
         events = list(getattr(report, "events", ()) or ())
         total_events += len(events)
+        for event in events:
+            rule_id = str(event.get("rule_id") or "unknown")
+            event_rule_counts[rule_id] += 1
+            if bool(event.get("blocking", True)):
+                blocking_event_rule_counts[rule_id] += 1
         if events_path and events:
             with events_path.open("a", encoding="utf-8") as f:
                 for event in events:
@@ -166,6 +184,18 @@ def main() -> None:
     print(f"Acts fetched:        {total_fetched}")
     print(f"Acts already cached: {total_cached}")
     print(f"Fetch errors:        {total_errors}")
+    if total_events:
+        print(
+            "Acquisition event rules: "
+            + ", ".join(f"{rule}={count}" for rule, count in sorted(event_rule_counts.items()))
+        )
+    if blocking_event_rule_counts:
+        print(
+            "Blocking event rules:    "
+            + ", ".join(
+                f"{rule}={count}" for rule, count in sorted(blocking_event_rule_counts.items())
+            )
+        )
     if events_path:
         print(f"Acquisition events:  {total_events}")
         print(f"Events JSONL:        {events_path}")

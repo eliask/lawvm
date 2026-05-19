@@ -43,6 +43,7 @@ from lawvm.tools.editorial_hygiene import (
     normalize_finlex_oracle_comparison_text,
 )
 from lawvm.tools.frontier import _run_oracle_checks_parallel
+from lawvm.tools.uk_replay_regime import add_uk_replay_regime_arguments
 
 # ---------------------------------------------------------------------------
 # Live-filter helper (skip contentAbsent-oracle statutes)
@@ -2509,10 +2510,30 @@ def register_cli(sub: Any, _j_parent: Any) -> None:
         help="[-j uk] process only first N statutes (for quick smoke tests)",
     )
     bench_p.add_argument(
+        "--no-save",
+        action="store_true",
+        dest="no_save",
+        help="[-j uk] print a bench report without writing run CSV/history artifacts",
+    )
+    bench_p.add_argument(
         "--replay",
         action="store_true",
         help="[-j uk] also run amendment replay and report replayed vs enacted EID scores",
     )
+    bench_p.add_argument(
+        "--replay-adjudication-samples",
+        nargs="+",
+        metavar="KIND",
+        help="[-j uk --replay] print bounded sample rows for selected replay adjudication kinds",
+    )
+    bench_p.add_argument(
+        "--replay-adjudication-sample-limit",
+        type=int,
+        default=5,
+        metavar="N",
+        help="[-j uk --replay] samples per selected replay adjudication kind (default: 5)",
+    )
+    add_uk_replay_regime_arguments(bench_p, help_prefix="[-j uk --replay]")
     bench_p.add_argument(
         "--no-commencement",
         action="store_true",

@@ -8,13 +8,18 @@ Shared library used by:
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterator
+from collections import Counter
 from dataclasses import dataclass
 import sys
 import time
 import urllib.error
 import urllib.request
 from typing import Any
+
+from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.uk_legislation.source_state import UKSourceStatus, classify_uk_source_blob
 
 _LEG_BASE = "https://www.legislation.gov.uk"
 _USER_AGENT = "LawVM UK fetch/0.1 (+https://github.com/lawvm)"
@@ -43,10 +48,20 @@ class UKPrefetchReport:
         yield self.error_count
 
     def to_dict(self) -> dict[str, Any]:
+        event_rule_counts = Counter(str(event.get("rule_id") or "unknown") for event in self.events)
+        blocking_event_rule_counts = Counter(
+            str(event.get("rule_id") or "unknown")
+            for event in self.events
+            if is_blocking_compile_record(event)
+        )
         return {
             "fetched_count": self.fetched_count,
             "already_cached_count": self.already_cached_count,
             "error_count": self.error_count,
+            "event_count": len(self.events),
+            "event_rule_counts": dict(sorted(event_rule_counts.items())),
+            "blocking_event_count": sum(blocking_event_rule_counts.values()),
+            "blocking_event_rule_counts": dict(sorted(blocking_event_rule_counts.items())),
             "events": [dict(event) for event in self.events],
         }
 
@@ -54,6 +69,11 @@ class UKPrefetchReport:
 def _missing_affecting_locator(act_id: str) -> str:
     """Negative-cache locator for permanently missing affecting act XML."""
     return f"leg://missing/uk/{act_id}/data.xml"
+
+
+def _missing_affecting_enacted_locator(act_id: str) -> str:
+    """Negative-cache locator for permanently missing enacted affecting act XML."""
+    return f"leg://missing/uk/{act_id}/enacted/data.xml"
 
 
 def _prefetch_event(
@@ -82,12 +102,86 @@ def _prefetch_event(
     }
 
 
+def _prefetch_fetched_event(
+    *,
+    statute_id: str,
+    affecting_act_id: str,
+    url: str,
+    data: bytes,
+    final_url: str,
+    http_status: int | None,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "uk_prefetch_affecting_act_fetched",
+        "phase": "acquisition",
+        "family": "source_witness",
+        "statute_id": statute_id,
+        "affecting_act_id": affecting_act_id,
+        "locator": url,
+        "url": url,
+        "final_url": final_url,
+        "http_status": http_status,
+        "status": "fetched",
+        "bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+
+
+def _prefetch_cached_event(
+    *,
+    statute_id: str,
+    affecting_act_id: str,
+    url: str,
+    data: bytes,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "uk_prefetch_affecting_act_cached",
+        "phase": "acquisition",
+        "family": "source_witness",
+        "statute_id": statute_id,
+        "affecting_act_id": affecting_act_id,
+        "locator": url,
+        "url": url,
+        "status": "cached",
+        "bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+
+
+def _prefetch_would_fetch_event(
+    *,
+    statute_id: str,
+    affecting_act_id: str,
+    url: str,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "uk_prefetch_affecting_act_would_fetch",
+        "phase": "acquisition",
+        "family": "source_witness",
+        "statute_id": statute_id,
+        "affecting_act_id": affecting_act_id,
+        "locator": url,
+        "url": url,
+        "status": "dry_run_would_fetch",
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+
+
 def fetch_missing_for_statute(
     sid: str,
     archive: Any,  # Farchive — avoid circular import at module level
     delay: float = 0.8,
     dry_run: bool = False,
     verbose: bool = False,
+    include_enacted: bool = False,
 ) -> UKPrefetchReport:
     """Fetch affecting act XMLs that are referenced by *sid*'s effects but not yet cached.
 
@@ -106,23 +200,188 @@ def fetch_missing_for_statute(
     """
     from lawvm.uk_legislation.uk_amendment_replay import (
         load_effects_for_statute_from_archive,
+        get_affecting_act_enacted_xml_from_archive,
         get_affecting_act_xml_from_archive,
+        uk_effect_requires_affecting_source_for_replay,
     )
 
-    effects = load_effects_for_statute_from_archive(sid, archive)
-    structural = [e for e in effects if e.is_structural]
+    events: list[dict[str, Any]] = []
+    effect_feed_parse_rejections: list[dict[str, Any]] = []
+    effects = load_effects_for_statute_from_archive(
+        sid,
+        archive,
+        parse_rejections_out=effect_feed_parse_rejections,
+    )
+    for rejection in effect_feed_parse_rejections:
+        event = dict(rejection)
+        event.setdefault("statute_id", sid)
+        events.append(event)
+    source_error_count = sum(1 for event in events if is_blocking_compile_record(event))
+    source_required = [
+        e
+        for e in effects
+        if uk_effect_requires_affecting_source_for_replay(e)
+    ]
 
-    if not structural:
+    if not source_required:
         if verbose:
-            print(f"  {sid}: no structural effects in archive", file=sys.stderr)
-        return UKPrefetchReport(0, 0, 0)
+            print(f"  {sid}: no source-required effects in archive", file=sys.stderr)
+        return UKPrefetchReport(0, 0, source_error_count, tuple(events))
 
     effective_delay = max(delay, _MIN_DELAY)
-    fetched = cached = errors = 0
+    fetched = cached = 0
+    errors = source_error_count
     seen_acts: set[str] = set()
-    events: list[dict[str, Any]] = []
 
-    for e in structural:
+    def _ensure_enacted_cached(act_id: str) -> tuple[int, int, int, tuple[dict[str, Any], ...]]:
+        if not include_enacted:
+            return 0, 0, 0, ()
+
+        enacted_url = f"{_LEG_BASE}/{act_id}/enacted/data.xml"
+        missing_enacted_locator = _missing_affecting_enacted_locator(act_id)
+        if archive.has(missing_enacted_locator):
+            return (
+                0,
+                1,
+                0,
+                (
+                    _prefetch_event(
+                        statute_id=sid,
+                        affecting_act_id=act_id,
+                        url=enacted_url,
+                        status="skipped_cached_permanent_missing",
+                        rule_id="uk_prefetch_affecting_enacted_permanent_missing_marker_skipped",
+                        reason="permanent_missing_marker_cached",
+                        blocking=False,
+                    ),
+                ),
+            )
+
+        enacted_xml = get_affecting_act_enacted_xml_from_archive(act_id, archive)
+        if enacted_xml:
+            return (
+                0,
+                1,
+                0,
+                (
+                    _prefetch_cached_event(
+                        statute_id=sid,
+                        affecting_act_id=act_id,
+                        url=enacted_url,
+                        data=enacted_xml,
+                    ),
+                ),
+            )
+
+        if dry_run:
+            print(f"  DRY-RUN would fetch enacted: {enacted_url}")
+            return (
+                1,
+                0,
+                0,
+                (
+                    _prefetch_would_fetch_event(
+                        statute_id=sid,
+                        affecting_act_id=act_id,
+                        url=enacted_url,
+                    ),
+                ),
+            )
+
+        req = urllib.request.Request(enacted_url, headers={"User-Agent": _USER_AGENT})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = resp.read()
+                final_url = str(getattr(resp, "geturl", lambda: enacted_url)())
+                http_status = getattr(resp, "status", None)
+            source_state = classify_uk_source_blob(data)
+            if source_state.status is not UKSourceStatus.AVAILABLE:
+                return (
+                    0,
+                    0,
+                    1,
+                    (
+                        _prefetch_event(
+                            statute_id=sid,
+                            affecting_act_id=act_id,
+                            url=enacted_url,
+                            status="error",
+                            rule_id="uk_prefetch_affecting_enacted_suspicious_small_response",
+                            reason=f"suspiciously_small_response:{source_state.size}",
+                            blocking=True,
+                        ),
+                    ),
+                )
+            archive.store(enacted_url, data, storage_class="xml")
+            return (
+                1,
+                0,
+                0,
+                (
+                    _prefetch_fetched_event(
+                        statute_id=sid,
+                        affecting_act_id=act_id,
+                        url=enacted_url,
+                        data=data,
+                        final_url=final_url,
+                        http_status=http_status,
+                    ),
+                ),
+            )
+        except urllib.error.HTTPError as exc:
+            if exc.code in {404, 410}:
+                archive.store(missing_enacted_locator, b"404", storage_class="text")
+                return (
+                    0,
+                    1,
+                    0,
+                    (
+                        _prefetch_event(
+                            statute_id=sid,
+                            affecting_act_id=act_id,
+                            url=enacted_url,
+                            status="permanent_missing_cached",
+                            rule_id="uk_prefetch_affecting_enacted_permanent_missing",
+                            reason=f"http_{exc.code}",
+                            blocking=False,
+                        ),
+                    ),
+                )
+            return (
+                0,
+                0,
+                1,
+                (
+                    _prefetch_event(
+                        statute_id=sid,
+                        affecting_act_id=act_id,
+                        url=enacted_url,
+                        status="error",
+                        rule_id="uk_prefetch_affecting_enacted_http_error",
+                        reason=f"http_{exc.code}",
+                        blocking=True,
+                    ),
+                ),
+            )
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+            return (
+                0,
+                0,
+                1,
+                (
+                    _prefetch_event(
+                        statute_id=sid,
+                        affecting_act_id=act_id,
+                        url=enacted_url,
+                        status="error",
+                        rule_id="uk_prefetch_affecting_enacted_network_error",
+                        reason=exc.__class__.__name__,
+                        blocking=True,
+                    ),
+                ),
+            )
+
+    for e in source_required:
         act_id = e.affecting_act_id
         if act_id in seen_acts:
             continue
@@ -143,31 +402,54 @@ def fetch_missing_for_statute(
                 )
             )
             if verbose:
-                print(f"  MISSING  {act_id}", file=sys.stderr)
+                    print(f"  MISSING  {act_id}", file=sys.stderr)
             continue
+
+        url = f"{_LEG_BASE}/{act_id}/data.xml"
 
         # Check cache first — no network round-trip if already stored.
         xml = get_affecting_act_xml_from_archive(act_id, archive)
         if xml:
             cached += 1
+            events.append(
+                _prefetch_cached_event(
+                    statute_id=sid,
+                    affecting_act_id=act_id,
+                    url=url,
+                    data=xml,
+                )
+            )
             if verbose:
                 print(f"  CACHED  {act_id}", file=sys.stderr)
+            enacted_fetched, enacted_cached, enacted_errors, enacted_events = _ensure_enacted_cached(act_id)
+            fetched += enacted_fetched
+            cached += enacted_cached
+            errors += enacted_errors
+            events.extend(enacted_events)
             continue
-
-        url = f"{_LEG_BASE}/{act_id}/data.xml"
 
         if dry_run:
             print(f"  DRY-RUN would fetch: {url}")
             fetched += 1  # count "would-fetch" as fetched for summary purposes
+            events.append(
+                _prefetch_would_fetch_event(
+                    statute_id=sid,
+                    affecting_act_id=act_id,
+                    url=url,
+                )
+            )
             continue
 
         req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 data = resp.read()
-            if len(data) < 100:
+                final_url = str(getattr(resp, "geturl", lambda: url)())
+                http_status = getattr(resp, "status", None)
+            source_state = classify_uk_source_blob(data)
+            if source_state.status is not UKSourceStatus.AVAILABLE:
                 print(
-                    f"  WARN: suspiciously small response ({len(data)} bytes): {url}",
+                    f"  WARN: suspiciously small response ({source_state.size} bytes): {url}",
                     file=sys.stderr,
                 )
                 errors += 1
@@ -178,15 +460,30 @@ def fetch_missing_for_statute(
                         url=url,
                         status="error",
                         rule_id="uk_prefetch_suspicious_small_response",
-                        reason=f"suspiciously_small_response:{len(data)}",
+                        reason=f"suspiciously_small_response:{source_state.size}",
                         blocking=True,
                     )
                 )
             else:
                 archive.store(url, data, storage_class="xml")
+                events.append(
+                    _prefetch_fetched_event(
+                        statute_id=sid,
+                        affecting_act_id=act_id,
+                        url=url,
+                        data=data,
+                        final_url=final_url,
+                        http_status=http_status,
+                    )
+                )
                 fetched += 1
                 if verbose:
                     print(f"  FETCHED {act_id}  ({len(data):,} bytes)", file=sys.stderr)
+                enacted_fetched, enacted_cached, enacted_errors, enacted_events = _ensure_enacted_cached(act_id)
+                fetched += enacted_fetched
+                cached += enacted_cached
+                errors += enacted_errors
+                events.extend(enacted_events)
         except urllib.error.HTTPError as exc:
             if exc.code in {404, 410}:
                 archive.store(missing_locator, b"404", storage_class="text")

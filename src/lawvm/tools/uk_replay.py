@@ -15,10 +15,12 @@ Usage:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
+from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Sequence, Set
+from typing import TYPE_CHECKING, Any, Optional, Sequence, Set
 
 if TYPE_CHECKING:
     import argparse
@@ -26,6 +28,13 @@ if TYPE_CHECKING:
 
 from lawvm.core.ir import IRNode
 from lawvm.core.ir_helpers import is_zombie
+from lawvm.uk_legislation.source_state import (
+    is_uk_affecting_act_xml_source_observation,
+    uk_source_parse_observations_from_ir,
+    uk_source_xml_parse_rejection,
+    uk_source_state_wire_tuple as _source_state,
+)
+from lawvm.core.compile_records import is_blocking_compile_record
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]  # LawVM/
 _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
@@ -56,6 +65,432 @@ def _archive_url_for_statute(statute_id: str, *, pit_date: Optional[str], enacte
     return f"{_LEG_BASE}/{statute_id}/data.xml"
 
 
+def _source_sha256(blob: bytes | None) -> str | None:
+    if blob is None:
+        return None
+    return hashlib.sha256(blob).hexdigest()
+
+
+def _uk_replay_executor_oracle_alignment_summary(
+    *,
+    enabled: bool,
+    events: Sequence[dict[str, Any]],
+    oracle_eids: Set[str],
+    unavailable_reason: str = "",
+    sample_limit: int = 20,
+) -> dict[str, object]:
+    event_rows = [dict(event) for event in events]
+    event_samples = [
+        {
+            str(key): value if value is None or isinstance(value, (str, int, float, bool)) else str(value)
+            for key, value in event.items()
+        }
+        for event in event_rows[: max(0, sample_limit)]
+    ]
+    match_method_counts = Counter(str(event.get("match_method") or "unknown") for event in event_rows)
+    cleared_count = sum(1 for event in event_rows if event.get("before_eid") and event.get("after_eid") is None)
+    oracle_assigned_count = sum(
+        1
+        for event in event_rows
+        if event.get("after_eid") is not None and str(event.get("after_eid")) in oracle_eids
+    )
+    local_fallback_count = sum(
+        1 for event in event_rows if str(event.get("match_method") or "") == "local_fallback"
+    )
+    transparent_wrapper_cleared_count = sum(
+        1
+        for event in event_rows
+        if str(event.get("match_method") or "") == "transparent_wrapper_cleared"
+    )
+    return {
+        "enabled": enabled,
+        "stage": "replay_executor_inputs" if enabled else "none",
+        "rule_id": "uk_oracle_eid_alignment_adapter",
+        "phase": "oracle_alignment",
+        "family": "oracle_alignment_adapter",
+        "evidence_available": enabled,
+        "changed_count": len(event_rows) if enabled else None,
+        "cleared_count": cleared_count if enabled else None,
+        "oracle_assigned_count": oracle_assigned_count if enabled else None,
+        "local_fallback_count": local_fallback_count if enabled else None,
+        "transparent_wrapper_cleared_count": transparent_wrapper_cleared_count if enabled else None,
+        "match_method_counts": dict(sorted(match_method_counts.items())) if enabled else {},
+        "event_sample_limit": max(0, sample_limit),
+        "event_sample_count": len(event_samples) if enabled else 0,
+        "event_samples": event_samples if enabled else [],
+        "unavailable_reason": unavailable_reason,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+    }
+
+
+def _uk_oracle_alignment_text_lines(summary: dict[str, object]) -> list[str]:
+    """Render executor-input oracle alignment evidence for text output."""
+
+    lines = [
+        "Oracle alignment: "
+        f"enabled={str(summary['enabled']).lower()} "
+        f"changed={summary['changed_count']} "
+        f"cleared={summary['cleared_count']} "
+        f"oracle_assigned={summary['oracle_assigned_count']} "
+        f"local_fallback={summary['local_fallback_count']} "
+        f"transparent_wrapper_cleared={summary['transparent_wrapper_cleared_count']} "
+        f"samples={summary['event_sample_count']} "
+        f"reason={summary['unavailable_reason'] or 'none'}"
+    ]
+    method_counts = summary.get("match_method_counts")
+    if isinstance(method_counts, dict) and method_counts:
+        method_text = ", ".join(
+            f"{method}={count}"
+            for method, count in sorted(method_counts.items())
+        )
+        lines.append(f"Oracle alignment methods: {method_text}")
+    return lines
+
+
+def _uk_metadata_backfill_op_count(ops: Sequence[object]) -> int:
+    count = 0
+    for op in ops:
+        witness = getattr(op, "witness", None)
+        extraction_witness = getattr(witness, "extraction_witness", None)
+        if bool(getattr(extraction_witness, "metadata_fallback_used", False)):
+            count += 1
+    return count
+
+
+def _uk_replay_regime_payload(
+    *,
+    enacted_only: bool,
+    oracle_alignment_enabled: bool,
+    metadata_backfill_op_count: int,
+    allow_metadata_backfill: bool,
+    allow_metadata_only_effects: bool,
+    applicability_mode: str,
+    authority_mode: str,
+    source_unavailable_reason: str = "",
+) -> dict[str, object]:
+    if source_unavailable_reason:
+        semantic_replay_lane = "not_run_source_unavailable"
+        oracle_alignment_lane = "not_run_source_unavailable"
+        source_purity_lane = "not_run_source_unavailable"
+    else:
+        semantic_replay_lane = (
+            "source_first_enacted_base"
+            if enacted_only
+            else "metadata_backfilled_replay"
+            if metadata_backfill_op_count
+            else "effects_assisted_replay"
+        )
+        oracle_alignment_lane = "oracle_alignment_adapter" if oracle_alignment_enabled else "none"
+        source_purity_lane = (
+            "metadata_backfilled_with_oracle_adapter"
+            if metadata_backfill_op_count and oracle_alignment_lane != "none"
+            else "metadata_backfilled_source_semantics"
+            if metadata_backfill_op_count
+            else "source_backed_with_oracle_adapter"
+            if oracle_alignment_lane != "none"
+            else "source_backed_effects_assisted"
+        )
+    source_first_candidate_reasons: list[str] = []
+    if source_unavailable_reason:
+        source_first_candidate_reasons.append("source_unavailable")
+    else:
+        if enacted_only:
+            source_first_candidate_reasons.append("enacted_only_baseline")
+        if metadata_backfill_op_count:
+            source_first_candidate_reasons.append("metadata_backfill_ops_present")
+        if oracle_alignment_lane != "none":
+            source_first_candidate_reasons.append("oracle_alignment_adapter_active")
+        if allow_metadata_only_effects:
+            source_first_candidate_reasons.append("metadata_only_effects_enabled")
+        if applicability_mode != "effective_date_plus_feed_applied":
+            source_first_candidate_reasons.append("applicability_selection_not_feed_applied")
+        if authority_mode != "source_text_only":
+            source_first_candidate_reasons.append("authority_mode_not_source_text_only")
+    return {
+        "semantic_replay_lane": semantic_replay_lane,
+        "oracle_alignment_lane": oracle_alignment_lane,
+        "source_purity_lane": source_purity_lane,
+        "source_semantics_clean": bool(
+            not source_unavailable_reason
+            and not enacted_only
+            and authority_mode == "source_text_only"
+            and not metadata_backfill_op_count
+            and not allow_metadata_only_effects
+            and oracle_alignment_lane == "none"
+        ),
+        "source_first_candidate": not source_first_candidate_reasons,
+        "source_first_candidate_reasons": source_first_candidate_reasons,
+        "oracle_alignment_stage": "post_replay_adapter" if oracle_alignment_enabled else "none",
+        "oracle_alignment_enabled": oracle_alignment_enabled,
+        "metadata_backfill_enabled": allow_metadata_backfill,
+        "metadata_only_effects_enabled": allow_metadata_only_effects,
+        "applicability_mode": applicability_mode,
+        "authority_mode": authority_mode,
+    }
+
+
+def _uk_compile_rejection_text_lines(
+    *,
+    source_parse_rejections: Sequence[dict[str, object]] = (),
+    effect_feed_parse_rejections: Sequence[dict[str, object]],
+    effect_source_pathology_observations: Sequence[dict[str, object]] = (),
+    manual_compile_frontier_observations: Sequence[dict[str, object]] = (),
+    source_acquisition_rejections: Sequence[dict[str, object]] = (),
+    lowering_rejections: Sequence[dict[str, object]],
+    authority_rejections: Sequence[dict[str, object]],
+) -> list[str]:
+    def _counts(rows: Sequence[dict[str, object]]) -> dict[str, int]:
+        counts: Counter[str] = Counter()
+        for row in rows:
+            counts[str(row.get("rule_id") or "unknown")] += 1
+        return dict(sorted(counts.items()))
+
+    def _field_counts(rows: Sequence[dict[str, object]], field: str) -> dict[str, int]:
+        counts: Counter[str] = Counter()
+        for row in rows:
+            counts[str(row.get(field) or "__none__")] += 1
+        return dict(sorted(counts.items()))
+
+    def _format_counts(counts: dict[str, int]) -> str:
+        return ", ".join(f"{rule_id}={count}" for rule_id, count in counts.items())
+
+    compile_rejections = [
+        *source_parse_rejections,
+        *effect_feed_parse_rejections,
+        *effect_source_pathology_observations,
+        *manual_compile_frontier_observations,
+        *source_acquisition_rejections,
+        *lowering_rejections,
+        *authority_rejections,
+    ]
+    blocking_rejections = [row for row in compile_rejections if is_blocking_compile_record(row)]
+    blocking_by_lane = {
+        "source_parse": [row for row in source_parse_rejections if is_blocking_compile_record(row)],
+        "feed_parse": [row for row in effect_feed_parse_rejections if is_blocking_compile_record(row)],
+        "effect_source_pathology": [
+            row for row in effect_source_pathology_observations if is_blocking_compile_record(row)
+        ],
+        "manual_compile_frontier": [
+            row for row in manual_compile_frontier_observations if is_blocking_compile_record(row)
+        ],
+        "source_acquisition": [
+            row for row in source_acquisition_rejections if is_blocking_compile_record(row)
+        ],
+        "lowering": [row for row in lowering_rejections if is_blocking_compile_record(row)],
+        "authority": [row for row in authority_rejections if is_blocking_compile_record(row)],
+    }
+    total_count = (
+        len(source_parse_rejections)
+        + len(effect_feed_parse_rejections)
+        + len(effect_source_pathology_observations)
+        + len(manual_compile_frontier_observations)
+        + len(source_acquisition_rejections)
+        + len(lowering_rejections)
+        + len(authority_rejections)
+    )
+    if not total_count:
+        return []
+    lines = [
+        "Compile observations: "
+        f"source_parse={len(source_parse_rejections)} "
+        f"feed_parse={len(effect_feed_parse_rejections)} "
+        f"effect_source_pathology={len(effect_source_pathology_observations)} "
+        f"manual_compile_frontier={len(manual_compile_frontier_observations)} "
+        f"source_acquisition={len(source_acquisition_rejections)} "
+        f"lowering={len(lowering_rejections)} "
+        f"authority={len(authority_rejections)} "
+        f"total={total_count}",
+        "Compile rejections: "
+        f"source_parse={len(blocking_by_lane['source_parse'])} "
+        f"feed_parse={len(blocking_by_lane['feed_parse'])} "
+        f"effect_source_pathology={len(blocking_by_lane['effect_source_pathology'])} "
+        f"manual_compile_frontier={len(blocking_by_lane['manual_compile_frontier'])} "
+        f"source_acquisition={len(blocking_by_lane['source_acquisition'])} "
+        f"lowering={len(blocking_by_lane['lowering'])} "
+        f"authority={len(blocking_by_lane['authority'])} "
+        f"blocking={len(blocking_rejections)}"
+    ]
+    for label, rows in (
+        ("source_parse", source_parse_rejections),
+        ("feed_parse", effect_feed_parse_rejections),
+        ("effect_source_pathology", effect_source_pathology_observations),
+        ("manual_compile_frontier", manual_compile_frontier_observations),
+        ("source_acquisition", source_acquisition_rejections),
+        ("lowering", lowering_rejections),
+        ("authority", authority_rejections),
+    ):
+        counts = _counts(rows)
+        if counts:
+            rules_label = "lowering observation" if label == "lowering" else label
+            lines.append(f"{rules_label} rules: {_format_counts(counts)}")
+    manual_compile_status_counts = _field_counts(
+        manual_compile_frontier_observations,
+        "manual_compile_status",
+    )
+    if manual_compile_status_counts:
+        lines.append(
+            "manual_compile_frontier statuses: "
+            f"{_format_counts(manual_compile_status_counts)}"
+        )
+    manual_compile_rule_counts = _field_counts(
+        manual_compile_frontier_observations,
+        "manual_compile_rule_id",
+    )
+    if manual_compile_rule_counts:
+        lines.append(
+            "manual_compile_frontier manual rules: "
+            f"{_format_counts(manual_compile_rule_counts)}"
+        )
+    blocking_counts = _counts(blocking_rejections)
+    if blocking_counts:
+        lines.append(
+            "Compile blocking rejections: "
+            f"source_parse={len(blocking_by_lane['source_parse'])} "
+            f"feed_parse={len(blocking_by_lane['feed_parse'])} "
+            f"effect_source_pathology={len(blocking_by_lane['effect_source_pathology'])} "
+            f"manual_compile_frontier={len(blocking_by_lane['manual_compile_frontier'])} "
+            f"source_acquisition={len(blocking_by_lane['source_acquisition'])} "
+            f"lowering={len(blocking_by_lane['lowering'])} "
+            f"authority={len(blocking_by_lane['authority'])}"
+        )
+        lines.append(f"blocking rules: {_format_counts(blocking_counts)}")
+        for label, rows in blocking_by_lane.items():
+            counts = _counts(rows)
+            if counts:
+                lines.append(f"blocking {label} rules: {_format_counts(counts)}")
+    return lines
+
+
+def _uk_prefetch_text_lines(report: dict[str, Any]) -> list[str]:
+    if not bool(report.get("enabled", False)):
+        return []
+
+    def _format_counts(raw_counts: object) -> str:
+        if not isinstance(raw_counts, dict):
+            return ""
+        counts = {
+            str(rule_id): count
+            for rule_id, count in raw_counts.items()
+            if str(rule_id) and isinstance(count, int) and count
+        }
+        return ", ".join(f"{rule_id}={count}" for rule_id, count in sorted(counts.items()))
+
+    lines = [
+        "Prefetch:   "
+        f"fetched={int(report.get('fetched_count') or 0)} "
+        f"cached={int(report.get('already_cached_count') or 0)} "
+        f"errors={int(report.get('error_count') or 0)} "
+        f"events={int(report.get('event_count') or 0)} "
+        f"blocking={int(report.get('blocking_event_count') or 0)}"
+    ]
+    event_rules = _format_counts(report.get("event_rule_counts"))
+    if event_rules:
+        lines.append(f"Prefetch rules: {event_rules}")
+    blocking_event_rules = _format_counts(report.get("blocking_event_rule_counts"))
+    if blocking_event_rules:
+        lines.append(f"Prefetch blocking rules: {blocking_event_rules}")
+    return lines
+
+
+def _short_replay_adjudication_sample_value(value: object, *, limit: int = 120) -> str:
+    text = str(value or "").replace("\n", " ").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)].rstrip() + "..."
+
+
+def _uk_replay_adjudication_sample_lines(
+    adjudications: Sequence[object],
+    *,
+    kinds: Sequence[str],
+    limit: int,
+) -> list[str]:
+    wanted = {str(kind).strip() for kind in kinds if str(kind).strip()}
+    if not wanted or limit <= 0:
+        return []
+    total_by_kind: Counter[str] = Counter()
+    samples: list[object] = []
+    for adjudication in adjudications:
+        kind = str(getattr(adjudication, "kind", "") or "unknown")
+        if kind not in wanted:
+            continue
+        total_by_kind[kind] += 1
+        if len(samples) < limit:
+            samples.append(adjudication)
+    if not total_by_kind:
+        return []
+
+    lines = ["Replay adjudication samples:"]
+    for kind in sorted(wanted):
+        total = total_by_kind.get(kind, 0)
+        if not total:
+            continue
+        shown = sum(1 for sample in samples if str(getattr(sample, "kind", "") or "unknown") == kind)
+        lines.append(f"  {kind}: shown={shown} total={total} omitted={max(0, total - shown)}")
+
+    for adjudication in samples:
+        detail = getattr(adjudication, "detail", {}) or {}
+        if not isinstance(detail, dict):
+            detail = {}
+        parts = [
+            f"kind={str(getattr(adjudication, 'kind', '') or 'unknown')}",
+            f"source={str(getattr(adjudication, 'source_statute', '') or '')}",
+            f"op={str(getattr(adjudication, 'op_id', '') or '')}",
+        ]
+        target = _short_replay_adjudication_sample_value(detail.get("target"))
+        if target:
+            parts.append(f"target={target}")
+        text_match = _short_replay_adjudication_sample_value(detail.get("text_match"))
+        if text_match:
+            parts.append(f"text_match={text_match}")
+        replacement = _short_replay_adjudication_sample_value(detail.get("replacement_text"))
+        if replacement:
+            parts.append(f"replacement={replacement}")
+        source_shape = _short_replay_adjudication_sample_value(detail.get("source_shape"))
+        if source_shape:
+            parts.append(f"source_shape={source_shape}")
+        lines.append("    " + " ".join(parts))
+    return lines
+
+
+def _uk_replay_adjudication_text_lines(
+    adjudications: Sequence[object],
+    *,
+    sample_kinds: Sequence[str] = (),
+    sample_limit: int = 5,
+) -> list[str]:
+    from lawvm.uk_legislation.source_adjudication import (
+        classify_uk_replay_adjudication_bucket,
+    )
+
+    counts: Counter[str] = Counter()
+    bucket_counts: Counter[str] = Counter()
+    for adjudication in adjudications:
+        kind = str(getattr(adjudication, "kind", "") or "unknown")
+        counts[kind] += 1
+        bucket_counts[classify_uk_replay_adjudication_bucket(kind)] += 1
+    if not counts:
+        return []
+    kind_text = ", ".join(f"{kind}={count}" for kind, count in sorted(counts.items()))
+    bucket_text = ", ".join(
+        f"{bucket}={count}" for bucket, count in sorted(bucket_counts.items())
+    )
+    lines = [
+        f"Replay adjudications: {sum(counts.values())}",
+        f"Replay adjudication buckets: {bucket_text}",
+        f"Replay adjudication kinds: {kind_text}",
+    ]
+    lines.extend(
+        _uk_replay_adjudication_sample_lines(
+            adjudications,
+            kinds=sample_kinds,
+            limit=sample_limit,
+        )
+    )
+    return lines
+
+
 def main(args: "argparse.Namespace") -> None:
     from farchive import Farchive
     from lawvm.uk_legislation.source_adjudication import (
@@ -72,12 +507,28 @@ def main(args: "argparse.Namespace") -> None:
     from lawvm.core.timeline import compile_timelines, materialize_pit
     from lawvm.core.timeline_consistency import ingest_uk_snapshots
     from lawvm.tools.replay_payloads import build_uk_replay_payload
+    from lawvm.tools.uk_replay_regime import normalize_uk_replay_regime
 
     statute_id: str = args.statute_id
     pit_date: Optional[str] = getattr(args, "pit_date", None)
     enacted_only: bool = getattr(args, "enacted_only", False)
     verbose: bool = getattr(args, "verbose", False)
     fetch_missing: bool = getattr(args, "fetch_missing", False)
+    include_enacted_affecting: bool = getattr(args, "include_enacted_affecting", False)
+    replay_adjudication_sample_kinds = tuple(
+        str(kind).strip()
+        for kind in (getattr(args, "replay_adjudication_samples", None) or ())
+        if str(kind).strip()
+    )
+    replay_adjudication_sample_limit = int(
+        getattr(args, "replay_adjudication_sample_limit", 5) or 0
+    )
+    if replay_adjudication_sample_limit < 0:
+        print(
+            "error: --replay-adjudication-sample-limit must be zero or a positive integer",
+            file=sys.stderr,
+        )
+        sys.exit(2)
     as_json: bool = getattr(args, "json", False)
     db_arg: Optional[str] = getattr(args, "db", None)
     use_timeline: bool = getattr(args, "timeline", False)
@@ -96,19 +547,62 @@ def main(args: "argparse.Namespace") -> None:
     timelines = {}
     n_ops = 0
     similarity: Optional[float] = None
+    replay_compare_eid_count: int | None = None
+    oracle_compare_eid_count: int | None = None
+    common_eid_count: int | None = None
+    only_in_replayed_count: int | None = None
+    only_in_oracle_count: int | None = None
+    only_in_replayed_sample: list[str] = []
+    only_in_oracle_sample: list[str] = []
     replay_adjudications: list = []
+    oracle_alignment_events: list[dict[str, Any]] = []
+    source_parse_rejections: list[dict[str, object]] = []
     effect_feed_parse_rejections: list[dict[str, object]] = []
+    effect_source_pathology_observations: list[dict[str, object]] = []
+    manual_compile_frontier_observations: list[dict[str, object]] = []
+    source_acquisition_rejections: list[dict[str, object]] = []
+    effect_diagnostics: list[dict[str, object]] = []
     lowering_rejections: list[dict[str, object]] = []
     authority_rejections: list[dict[str, object]] = []
+    uk_prefetch_report: dict[str, Any] = {"enabled": bool(fetch_missing)}
+    replay_regime = normalize_uk_replay_regime(args)
+    allow_oracle_alignment = replay_regime.allow_oracle_alignment
+    applicability_mode = replay_regime.applicability_mode
+    authority_mode = replay_regime.authority_mode
+    allow_metadata_backfill = replay_regime.allow_metadata_backfill
+    allow_metadata_only_effects = replay_regime.allow_metadata_only_effects
+    if not as_json:
+        _out(
+            "Replay regime: "
+            f"metadata_backfill={allow_metadata_backfill} "
+            f"oracle_alignment={allow_oracle_alignment} "
+            f"metadata_only_effects={allow_metadata_only_effects} "
+            f"applicability={applicability_mode} "
+            f"authority={authority_mode}"
+        )
 
     with Farchive(db_path) as archive:
         if fetch_missing:
-            fetched, cached, errors = fetch_missing_for_statute(
+            prefetch_report = fetch_missing_for_statute(
                 statute_id,
                 archive,
                 delay=0.8,
                 verbose=verbose,
+                include_enacted=include_enacted_affecting,
             )
+            fetched, cached, errors = prefetch_report
+            report_to_dict = getattr(prefetch_report, "to_dict", None)
+            if callable(report_to_dict):
+                uk_prefetch_report = report_to_dict()
+                uk_prefetch_report["enabled"] = True
+            else:
+                uk_prefetch_report = {
+                    "enabled": True,
+                    "fetched_count": fetched,
+                    "already_cached_count": cached,
+                    "error_count": errors,
+                    "events": [],
+                }
             print(
                 f"Pre-fetch: {fetched} fetched, {cached} already cached, {errors} errors",
                 file=sys.stderr,
@@ -116,60 +610,189 @@ def main(args: "argparse.Namespace") -> None:
 
         enacted_url = _archive_url_for_statute(statute_id, pit_date=pit_date, enacted=True)
         enacted_bytes = archive.get(enacted_url)
-        if not enacted_bytes or len(enacted_bytes) < 100:
-            print(f"error: enacted XML missing from archive for {enacted_url}", file=sys.stderr)
+        enacted_source_status, enacted_source_size = _source_state(enacted_bytes)
+        enacted_source_sha256 = _source_sha256(enacted_bytes)
+        oracle_url = _archive_url_for_statute(statute_id, pit_date=pit_date, enacted=False)
+        oracle_bytes = archive.get(oracle_url)
+        oracle_source_status, oracle_source_size = _source_state(oracle_bytes)
+        oracle_source_sha256 = _source_sha256(oracle_bytes)
+        if enacted_source_status != "available":
+            error = f"enacted XML missing from archive for {enacted_url}"
+            if as_json:
+                payload = build_uk_replay_payload(
+                    statute_id=statute_id,
+                    pit_date=pit_date,
+                    enacted_only=enacted_only,
+                    db_path=str(db_path),
+                    n_effects=None,
+                    n_ops=0,
+                    similarity=None,
+                    comparison_class=None,
+                    oracle_available=False,
+                    n_provisions=0,
+                    n_versions=None,
+                    pit_materialized_eids=None,
+                    timeline_mode="states_first",
+                    enacted_url=enacted_url,
+                    oracle_url=oracle_url,
+                    enacted_source_status=enacted_source_status,
+                    oracle_source_status=oracle_source_status,
+                    enacted_source_size=enacted_source_size,
+                    oracle_source_size=oracle_source_size,
+                    enacted_source_sha256=enacted_source_sha256,
+                    oracle_source_sha256=oracle_source_sha256,
+                    uk_replay_regime=_uk_replay_regime_payload(
+                        enacted_only=enacted_only,
+                        oracle_alignment_enabled=False,
+                        metadata_backfill_op_count=0,
+                        allow_metadata_backfill=allow_metadata_backfill,
+                        allow_metadata_only_effects=allow_metadata_only_effects,
+                        applicability_mode=applicability_mode,
+                        authority_mode=authority_mode,
+                        source_unavailable_reason="enacted_xml_unavailable",
+                    ),
+                    uk_oracle_alignment_summary=_uk_replay_executor_oracle_alignment_summary(
+                        enabled=False,
+                        events=(),
+                        oracle_eids=set(),
+                        unavailable_reason="enacted_xml_unavailable",
+                    ),
+                    uk_prefetch_report=uk_prefetch_report,
+                    error=error,
+                )
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+            print(f"error: {error}", file=sys.stderr)
             sys.exit(1)
+        assert enacted_bytes is not None
 
         if verbose:
             print(f"Loading base IR from archive: {enacted_url}", file=sys.stderr)
-        base_ir = parse_uk_statute_ir_bytes(
-            enacted_bytes,
-            statute_id=statute_id,
-            version_label="enacted",
-            pit_date=pit_date,
-            source_path=enacted_url,
-        )
+        try:
+            base_ir = parse_uk_statute_ir_bytes(
+                enacted_bytes,
+                statute_id=statute_id,
+                version_label="enacted",
+                pit_date=pit_date,
+                source_path=enacted_url,
+            )
+            source_parse_rejections.extend(uk_source_parse_observations_from_ir(base_ir))
+        except Exception as exc:
+            source_parse_rejections.append(
+                uk_source_xml_parse_rejection(
+                    statute_id=statute_id,
+                    side="enacted",
+                    source_url=enacted_url,
+                    exc=exc,
+                )
+            )
+            error = f"enacted XML parse failed for {enacted_url}"
+            if as_json:
+                payload = build_uk_replay_payload(
+                    statute_id=statute_id,
+                    pit_date=pit_date,
+                    enacted_only=enacted_only,
+                    db_path=str(db_path),
+                    n_effects=None,
+                    n_ops=0,
+                    similarity=None,
+                    comparison_class=None,
+                    oracle_available=False,
+                    n_provisions=0,
+                    n_versions=None,
+                    pit_materialized_eids=None,
+                    timeline_mode="states_first",
+                    enacted_url=enacted_url,
+                    oracle_url=oracle_url,
+                    enacted_source_status=enacted_source_status,
+                    oracle_source_status=oracle_source_status,
+                    enacted_source_size=enacted_source_size,
+                    oracle_source_size=oracle_source_size,
+                    enacted_source_sha256=enacted_source_sha256,
+                    oracle_source_sha256=oracle_source_sha256,
+                    source_parse_rejections=source_parse_rejections,
+                    uk_replay_regime=_uk_replay_regime_payload(
+                        enacted_only=enacted_only,
+                        oracle_alignment_enabled=False,
+                        metadata_backfill_op_count=0,
+                        allow_metadata_backfill=allow_metadata_backfill,
+                        allow_metadata_only_effects=allow_metadata_only_effects,
+                        applicability_mode=applicability_mode,
+                        authority_mode=authority_mode,
+                        source_unavailable_reason="enacted_xml_parse_rejected",
+                    ),
+                    uk_oracle_alignment_summary=_uk_replay_executor_oracle_alignment_summary(
+                        enabled=False,
+                        events=(),
+                        oracle_eids=set(),
+                        unavailable_reason="enacted_xml_parse_rejected",
+                    ),
+                    uk_prefetch_report=uk_prefetch_report,
+                    error=error,
+                )
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+            print(f"error: {error}", file=sys.stderr)
+            sys.exit(1)
         base_eids = _get_all_eids([base_ir.body], pit_date=pit_date)
         for schedule in base_ir.supplements:
             base_eids.update(_get_all_eids([schedule], pit_date=pit_date))
         _out(f"Base EIDs: {len(base_eids)}")
 
-        oracle_url = _archive_url_for_statute(statute_id, pit_date=pit_date, enacted=False)
-        oracle_bytes = archive.get(oracle_url)
         eid_map: dict[str, str] = {}
         text_map: dict[str, str] = {}
         current_ir = None
         current_eids: Set[str] = set()
-        n_effects = len(load_effects_for_statute_from_archive(statute_id, archive))
+        effect_count_parse_rejections: list[dict[str, object]] = []
+        n_effects = len(
+            load_effects_for_statute_from_archive(
+                statute_id,
+                archive,
+                parse_rejections_out=effect_count_parse_rejections,
+            )
+        )
+        if enacted_only:
+            effect_feed_parse_rejections.extend(effect_count_parse_rejections)
         comparison_class = ""
         core_benchmark = False
 
-        if oracle_bytes and len(oracle_bytes) >= 100:
+        if oracle_source_status == "available":
+            assert oracle_bytes is not None
             if verbose:
                 print(
                     f"Extracting oracle EID map from archive: {oracle_url} (PIT: {pit_date or 'latest'})",
                     file=sys.stderr,
                 )
-            oracle_data = extract_eid_map_bytes(oracle_bytes, pit_date=pit_date)
-            eid_map = oracle_data.get("eid_map", {})
-            text_map = oracle_data.get("text_map", {})
-            current_eids = set(eid_map.values())
-            if verbose:
-                print(f"Oracle EID map entries: {len(eid_map)}", file=sys.stderr)
-            current_ir = parse_uk_statute_ir_bytes(
-                oracle_bytes,
-                statute_id=statute_id,
-                version_label="oracle",
-                pit_date=pit_date,
-                source_path=oracle_url,
-            )
-            comparison_class = classify_uk_bench_comparison(
-                n_enacted_eids=len(base_eids),
-                n_oracle_eids=len(current_eids),
-                n_effects=n_effects,
-                raw_score=(len(base_eids & current_eids) / max(len(base_eids), len(current_eids), 1)),
-            )
-            core_benchmark = is_core_uk_comparison(comparison_class)
+            try:
+                oracle_data = extract_eid_map_bytes(oracle_bytes, pit_date=pit_date)
+                current_ir = parse_uk_statute_ir_bytes(
+                    oracle_bytes,
+                    statute_id=statute_id,
+                    version_label="oracle",
+                    pit_date=pit_date,
+                    source_path=oracle_url,
+                )
+                source_parse_rejections.extend(uk_source_parse_observations_from_ir(current_ir))
+            except Exception as exc:
+                source_parse_rejections.append(
+                    uk_source_xml_parse_rejection(
+                        statute_id=statute_id,
+                        side="oracle",
+                        source_url=oracle_url,
+                        exc=exc,
+                    )
+                )
+            else:
+                eid_map = oracle_data.get("eid_map", {})
+                text_map = oracle_data.get("text_map", {})
+                current_eids = set(eid_map.values())
+                if verbose:
+                    print(f"Oracle EID map entries: {len(eid_map)}", file=sys.stderr)
+                comparison_class = classify_uk_bench_comparison(
+                    n_enacted_eids=len(base_eids),
+                    n_oracle_eids=len(current_eids),
+                    n_effects=n_effects,
+                    raw_score=(len(base_eids & current_eids) / max(len(base_eids), len(current_eids), 1)),
+                )
+                core_benchmark = is_core_uk_comparison(comparison_class)
 
         # ── 3. Replay ─────────────────────────────────────────────────────
         if enacted_only:
@@ -183,24 +806,41 @@ def main(args: "argparse.Namespace") -> None:
                 statute_id,
                 pit_date=pit_date,
                 archive=archive,
+                allow_metadata_backfill=allow_metadata_backfill,
+                applicability_mode=applicability_mode,
+                authority_mode=authority_mode,
+                allow_metadata_only_effects=allow_metadata_only_effects,
                 effect_feed_parse_rejections_out=effect_feed_parse_rejections,
+                effect_diagnostics_out=effect_diagnostics,
                 lowering_rejections_out=lowering_rejections,
                 authority_rejections_out=authority_rejections,
             )
+            effect_source_pathology_observations = [
+                row
+                for row in effect_diagnostics
+                if str(row.get("rule_id") or "") == "uk_effect_source_pathology_classified"
+            ]
+            manual_compile_frontier_observations = [
+                row
+                for row in effect_diagnostics
+                if str(row.get("rule_id") or "") == "uk_manual_compile_frontier_classified"
+            ]
+            source_acquisition_rejections = [
+                row
+                for row in effect_diagnostics
+                if is_uk_affecting_act_xml_source_observation(row)
+            ]
             n_ops = len(ops)
             _out(f"Compiled {n_ops} operations")
-            compile_rejection_count = (
-                len(effect_feed_parse_rejections)
-                + len(lowering_rejections)
-                + len(authority_rejections)
-            )
-            if compile_rejection_count:
-                _out(
-                    "Compile rejections: "
-                    f"feed_parse={len(effect_feed_parse_rejections)} "
-                    f"lowering={len(lowering_rejections)} "
-                    f"authority={len(authority_rejections)}"
-                )
+            for line in _uk_compile_rejection_text_lines(
+                effect_feed_parse_rejections=effect_feed_parse_rejections,
+                effect_source_pathology_observations=effect_source_pathology_observations,
+                manual_compile_frontier_observations=manual_compile_frontier_observations,
+                source_acquisition_rejections=source_acquisition_rejections,
+                lowering_rejections=lowering_rejections,
+                authority_rejections=authority_rejections,
+            ):
+                _out(line)
             if verbose:
                 for op in ops:
                     kind = op.payload.kind if op.payload is not None else "none"
@@ -212,9 +852,11 @@ def main(args: "argparse.Namespace") -> None:
                 ops,
                 eid_map=eid_map,
                 text_map=text_map,
+                allow_oracle_alignment=allow_oracle_alignment,
                 verbose=verbose,
                 lo_ops_out=lo_ops_out,
                 adjudications_out=replay_adjudications,
+                oracle_alignment_events_out=oracle_alignment_events,
             )
 
         # ── 4. EID similarity score ───────────────────────────────────────
@@ -231,17 +873,22 @@ def main(args: "argparse.Namespace") -> None:
             )
             common = replay_compare_eids & oracle_compare_eids
             similarity = len(common) / max(len(replay_compare_eids), len(oracle_compare_eids), 1)
+            replay_compare_eid_count = len(replay_compare_eids)
+            oracle_compare_eid_count = len(oracle_compare_eids)
+            common_eid_count = len(common)
             _out(f"Full EID Similarity: {similarity:.1%}")
             if comparison_class:
                 _out(f"Comparison class: {comparison_class}  core={'yes' if core_benchmark else 'no'}")
             only_in_replayed = replay_compare_eids - oracle_compare_eids
             only_in_oracle = oracle_compare_eids - replay_compare_eids
+            only_in_replayed_count = len(only_in_replayed)
+            only_in_oracle_count = len(only_in_oracle)
             if only_in_replayed:
-                sample = sorted(only_in_replayed)[:10]
-                _out(f"Only in replayed ({len(only_in_replayed)}): {sample}")
+                only_in_replayed_sample = sorted(only_in_replayed)[:10]
+                _out(f"Only in replayed ({only_in_replayed_count}): {only_in_replayed_sample}")
             if only_in_oracle:
-                sample = sorted(only_in_oracle)[:10]
-                _out(f"Only in oracle ({len(only_in_oracle)}): {sample}")
+                only_in_oracle_sample = sorted(only_in_oracle)[:10]
+                _out(f"Only in oracle ({only_in_oracle_count}): {only_in_oracle_sample}")
         else:
             _out(f"Note: no oracle XML in archive for {oracle_url}.")
 
@@ -318,6 +965,34 @@ def main(args: "argparse.Namespace") -> None:
     else:
         pit_eids = None
 
+    oracle_alignment_enabled = bool(not enacted_only and current_ir is not None and allow_oracle_alignment)
+    uk_replay_regime = _uk_replay_regime_payload(
+        enacted_only=enacted_only,
+        oracle_alignment_enabled=oracle_alignment_enabled,
+        metadata_backfill_op_count=_uk_metadata_backfill_op_count(ops if not enacted_only else ()),
+        allow_metadata_backfill=allow_metadata_backfill,
+        allow_metadata_only_effects=allow_metadata_only_effects,
+        applicability_mode=applicability_mode,
+        authority_mode=authority_mode,
+    )
+    unavailable_reason = ""
+    if enacted_only:
+        unavailable_reason = "enacted_only_baseline"
+    elif not allow_oracle_alignment:
+        unavailable_reason = "oracle_alignment_disabled_by_regime"
+    elif current_ir is None:
+        oracle_parse_failed = any(
+            str(row.get("side") or "") == "oracle"
+            for row in source_parse_rejections
+        )
+        unavailable_reason = "oracle_xml_parse_rejected" if oracle_parse_failed else "oracle_xml_unavailable"
+    uk_oracle_alignment_summary = _uk_replay_executor_oracle_alignment_summary(
+        enabled=oracle_alignment_enabled,
+        events=tuple(oracle_alignment_events),
+        oracle_eids=current_eids,
+        unavailable_reason=unavailable_reason,
+    )
+
     if as_json:
         payload = build_uk_replay_payload(
             statute_id=statute_id,
@@ -333,10 +1008,36 @@ def main(args: "argparse.Namespace") -> None:
             n_versions=n_versions if timelines else None,
             pit_materialized_eids=len(pit_eids) if pit_eids is not None else None,
             timeline_mode="ops_first" if use_timeline and not enacted_only else "states_first",
+            enacted_url=enacted_url,
+            oracle_url=oracle_url,
+            enacted_source_status=enacted_source_status,
+            oracle_source_status=oracle_source_status,
+            enacted_source_size=enacted_source_size,
+            oracle_source_size=oracle_source_size,
+            enacted_source_sha256=enacted_source_sha256,
+            oracle_source_sha256=oracle_source_sha256,
+            base_eid_count=len(base_eids),
+            replayed_eid_count=len(replayed_eids),
+            oracle_eid_count=len(current_eids) if current_ir is not None else None,
+            replay_compare_eid_count=replay_compare_eid_count,
+            oracle_compare_eid_count=oracle_compare_eid_count,
+            common_eid_count=common_eid_count,
+            only_in_replayed_count=only_in_replayed_count,
+            only_in_oracle_count=only_in_oracle_count,
+            only_in_replayed_sample=only_in_replayed_sample,
+            only_in_oracle_sample=only_in_oracle_sample,
+            core_benchmark=core_benchmark if comparison_class else None,
             adjudications=replay_adjudications,
+            source_parse_rejections=source_parse_rejections,
             effect_feed_parse_rejections=effect_feed_parse_rejections,
+            effect_source_pathology_observations=effect_source_pathology_observations,
+            manual_compile_frontier_observations=manual_compile_frontier_observations,
+            source_acquisition_rejections=source_acquisition_rejections,
             lowering_rejections=lowering_rejections,
             authority_rejections=authority_rejections,
+            uk_replay_regime=uk_replay_regime,
+            uk_oracle_alignment_summary=uk_oracle_alignment_summary,
+            uk_prefetch_report=uk_prefetch_report,
         )
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
@@ -351,4 +1052,50 @@ def main(args: "argparse.Namespace") -> None:
     if similarity is not None:
         print(f"EID score:  {similarity:.1%}")
     print(f"Timelines:  {n_provisions} provisions")
+    print(
+        "Source:     "
+        f"enacted={enacted_source_status} ({enacted_source_size} bytes) "
+        f"oracle={oracle_source_status} ({oracle_source_size} bytes)"
+    )
+    print(f"Enacted URL: {enacted_url}")
+    print(f"Oracle URL: {oracle_url}")
+    print(f"Enacted SHA-256: {enacted_source_sha256 or '(none)'}")
+    print(f"Oracle SHA-256: {oracle_source_sha256 or '(none)'}")
+    print(
+        "Regime:     "
+        f"metadata_backfill={allow_metadata_backfill} "
+        f"oracle_alignment={allow_oracle_alignment} "
+        f"metadata_only_effects={allow_metadata_only_effects} "
+        f"applicability={applicability_mode} "
+        f"authority={authority_mode}"
+    )
+    for line in _uk_prefetch_text_lines(uk_prefetch_report):
+        print(line)
+    for line in _uk_compile_rejection_text_lines(
+        source_parse_rejections=source_parse_rejections,
+        effect_feed_parse_rejections=effect_feed_parse_rejections,
+        effect_source_pathology_observations=effect_source_pathology_observations,
+        manual_compile_frontier_observations=manual_compile_frontier_observations,
+        source_acquisition_rejections=source_acquisition_rejections,
+        lowering_rejections=lowering_rejections,
+        authority_rejections=authority_rejections,
+    ):
+        print(line)
+    for line in _uk_replay_adjudication_text_lines(
+        replay_adjudications,
+        sample_kinds=replay_adjudication_sample_kinds,
+        sample_limit=replay_adjudication_sample_limit,
+    ):
+        print(line)
+    for line in _uk_oracle_alignment_text_lines(uk_oracle_alignment_summary):
+        print(line)
+    if replay_compare_eid_count is not None:
+        print(
+            "EID compare: "
+            f"replay={replay_compare_eid_count} "
+            f"oracle={oracle_compare_eid_count} "
+            f"common={common_eid_count} "
+            f"only_replay={only_in_replayed_count} "
+            f"only_oracle={only_in_oracle_count}"
+        )
     print(f"{'=' * 60}")

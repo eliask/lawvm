@@ -24,6 +24,7 @@ Current status:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import xml.etree.ElementTree as ET
@@ -64,6 +65,14 @@ from lawvm.uk_legislation.canonicalize import (
     uk_should_descend_transparently,
 )
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
+from lawvm.core.compile_records import is_blocking_compile_record
+from lawvm.uk_legislation.source_state import (
+    uk_affecting_act_current_shell_enacted_source_selected,
+    uk_affecting_act_xml_missing_rejection,
+    uk_affecting_act_xml_parse_rejection,
+    uk_affecting_act_xml_too_small_rejection,
+    uk_source_state_wire_tuple,
+)
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 
 if TYPE_CHECKING:
@@ -73,6 +82,20 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # LegalAddress / LegalOperation helpers
 # ---------------------------------------------------------------------------
+
+
+def _uk_kind_value(kind: IRNodeKind | str) -> str:
+    if isinstance(kind, IRNodeKind):
+        return kind.value
+    return str(kind or "")
+
+
+def _uk_eid_value(eid: Any) -> str | None:
+    if eid is None:
+        return None
+    if isinstance(eid, IRNodeKind):
+        return eid.value
+    return str(eid)
 
 
 def _make_address(
@@ -181,11 +204,24 @@ def _canonicalize_schedule_paragraph_eid_label(label: Optional[str]) -> str:
     return cleaned
 
 
+def _canonicalize_eid_tail_label(label: Optional[str]) -> str:
+    """Canonicalize descendant eId suffixes without Romanizing letter labels."""
+    raw = str(label or "").strip().replace("\u00a0", " ")
+    if not raw:
+        return ""
+    stripped = raw.strip("().").lower()
+    if re.fullmatch(r"[a-z]+", stripped):
+        return stripped
+    return _clean_num(raw)
+
+
 def _order_schedule_materialization_ops(ops: list[LegalOperation]) -> list[LegalOperation]:
     """Prioritize materializing structural ops before dependent text edits within a source."""
 
     def _rank(op: LegalOperation) -> int:
-        if _action_name(op.action) in {"insert", "replace", "repeal"}:
+        if op.target.special is FacetKind.HEADING and _action_name(op.action) in {"text_replace", "text_repeal"}:
+            return -1
+        if _action_name(op.action) in {"insert", "replace", "repeal", "renumber"}:
             return 0
         if _action_name(op.action) in {"text_replace", "text_repeal"}:
             return 1
@@ -217,6 +253,31 @@ def _action_name(action: StructuralAction | str) -> str:
     return str(action)
 
 
+def _uk_definition_term_lexical_variants(term: str) -> tuple[str, ...]:
+    """Return narrow UK definition-anchor lexical variants.
+
+    This is target-resolution recovery, not fuzzy matching.  Keep the family
+    deliberately small: UK sources can use the adjectival form "educational"
+    where the enacted definition label uses the noun "education".
+    """
+    cleaned = " ".join(str(term or "").split())
+    if not cleaned:
+        return ()
+    variants: list[str] = []
+    words = cleaned.split(" ")
+    for i, word in enumerate(words):
+        lower = word.lower()
+        if lower == "educational":
+            variant_words = list(words)
+            variant_words[i] = "education"
+            variants.append(" ".join(variant_words))
+        elif lower == "education":
+            variant_words = list(words)
+            variant_words[i] = "educational"
+            variants.append(" ".join(variant_words))
+    return tuple(dict.fromkeys(variant for variant in variants if variant != cleaned))
+
+
 def _direct_structural_num(el: ET.Element) -> str:
     """Return the node's own structural number, not a descendant's number."""
     num_el = el.find(f"./{{{_LEG_NS}}}Pnumber")
@@ -236,9 +297,67 @@ def _is_heading_only_ref(ref: str) -> bool:
     return ref_clean.endswith(" heading") or ref_clean.endswith(" title") or ref_clean.endswith(" sidenote")
 
 
+def _heading_facet_append_fragment(extracted_text: Optional[str]) -> Optional[dict[str, Any]]:
+    for fragment in parse_fragment_substitution(extracted_text or ""):
+        if str(fragment.get("original") or "") == "TEXT_FROM__TO_END":
+            replacement = str(fragment.get("replacement") or "")
+            if replacement:
+                return fragment
+    return None
+
+
+def _is_heading_facet_word_patch_supported(effect_type: str, extracted_text: Optional[str] = None) -> bool:
+    """Return whether a UK heading-facet effect can carry an explicit text patch."""
+    normalized = " ".join((effect_type or "").lower().split())
+    if normalized in {
+        "words substituted",
+        "word substituted",
+        "words omitted",
+        "word omitted",
+        "words repealed",
+        "word repealed",
+    }:
+        return True
+    if normalized in {"words inserted", "word inserted"}:
+        return _heading_facet_append_fragment(extracted_text) is not None
+    return False
+
+
+def _is_direct_section_paragraph_ref(ref: str) -> bool:
+    ref_clean = " ".join(str(ref or "").strip().lower().split())
+    return bool(re.search(r"\b(?:s|section)\.?\s+\d+[a-z]?\s*\(\s*[a-z]\s*\)", ref_clean))
+
+
 def _is_crossheading_ref(ref: str) -> bool:
     ref_clean = str(ref or "").strip().lower()
     return "cross-heading" in ref_clean or "cross heading" in ref_clean or "crossheading" in ref_clean
+
+
+def _is_schedule_note_ref(ref: str) -> bool:
+    ref_clean = " ".join(str(ref or "").strip().lower().split())
+    return bool(re.search(r"\bsch(?:edule)?\.?\s+[0-9a-z]+(?:\s+|\s+pt\.\s+[0-9a-z]+\s+)note(?:\s+\d+)?\b", ref_clean))
+
+
+_CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE = "uk_effect_crossheading_before_anchor_replacement_text_patch"
+
+
+def _crossheading_before_anchor_replacement_text(extracted_text: Optional[str]) -> Optional[str]:
+    """Return explicit replacement text for ``heading before paragraph X`` cross-heading claims."""
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    match = re.search(
+        r"\bfor\s+(?:the\s+)?(?:italic\s+)?(?:heading|cross-heading|cross heading)\s+"
+        r"before\s+(?:paragraph|section|article)\s+[0-9A-Za-z().]+\s+"
+        r"substitute\s*[—-]?\s+(.+?)\s*$",
+        text,
+        re.I,
+    )
+    if match is None:
+        return None
+    replacement = match.group(1).strip()
+    replacement = re.sub(r"\s+\.$", "", replacement).strip()
+    return replacement or None
 
 
 def _clone_element(el: ET.Element) -> ET.Element:
@@ -301,8 +420,99 @@ _NOTE_FRAGMENT_SUB = "fragment_substitution:"
 _NOTE_EFFECT_TYPE = "uk_effect_type:"
 _NOTE_ORIGINAL_REF = "original_ref:"
 _NOTE_RAW_TEXT = "raw_text:"
+_NOTE_REWRITE_WITNESS = "rewrite_witness:"
+_NOTE_TEXT_REWRITE_RULE = "text_rewrite_rule:"
 _NOTE_PRECEDING_EID = "preceding_eid:"
 _NOTE_METADATA_SOURCE_FALLBACK = "metadata_source_fallback:"
+_NOTE_TABLE_CELL_SELECTOR = "table_cell_selector:"
+_NOTE_SCHEDULE_LIST_ENTRY_SELECTOR = "schedule_list_entry_selector:"
+_NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR = "schedule_list_entry_repeal_selector:"
+
+_UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID = "uk_effect_table_entry_inline_text_insertion"
+_UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID = "uk_effect_table_entry_instruction_rejected"
+_UK_REPLAY_TABLE_ENTRY_INLINE_UNRESOLVED_RULE_ID = "uk_replay_table_entry_inline_text_insertion_unresolved"
+_UK_REPLAY_TABLE_ENTRY_INLINE_PREIMAGE_GAP_RULE_ID = "uk_replay_table_entry_inline_text_preimage_gap"
+_UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID = "uk_effect_schedule_list_entry_insert"
+_UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID = "uk_effect_schedule_list_entry_repeal"
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID = (
+    "uk_replay_schedule_list_entry_anchor_unresolved"
+)
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_UNRESOLVED_RULE_ID = (
+    "uk_replay_schedule_list_entry_repeal_unresolved"
+)
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_RESOLVED_RULE_ID = (
+    "uk_replay_schedule_list_entry_repeal_resolved"
+)
+_UK_REPLAY_SCHEDULE_ENTRY_REPEAL_GRANULARITY_BLOCKED_RULE_ID = (
+    "uk_replay_schedule_entry_repeal_granularity_blocked"
+)
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_PREFIX_NORMALIZED_RULE_ID = (
+    "uk_replay_schedule_list_entry_anchor_prefix_normalized"
+)
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_ARTICLE_NORMALIZED_RULE_ID = (
+    "uk_replay_schedule_list_entry_anchor_article_normalized"
+)
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_GROUP_ANCHOR_RULE_ID = (
+    "uk_replay_schedule_list_entry_group_anchor_resolved"
+)
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_ALPHABETICAL_POSITION_RULE_ID = (
+    "uk_replay_schedule_list_entry_alphabetical_position_resolved"
+)
+_UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
+    {
+        "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
+        "uk_effect_after_quoted_anchor_each_occasion_insert_text_patch",
+        "uk_effect_all_occurrences_substitution_text_patch",
+        "uk_effect_in_definition_after_anchor_all_occurrences_insert_text_patch",
+        "uk_effect_wherever_occurring_substitution_text_patch",
+    }
+)
+_UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID = "uk_effect_range_to_end_there_is_substituted_text_patch"
+
+UK_WHOLE_SCHEDULE_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID = (
+    "uk_whole_schedule_payload_descendant_eid_synthesis"
+)
+UK_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID = "uk_payload_descendant_eid_synthesis"
+
+
+@dataclass(frozen=True)
+class UKReplayPrepareResult:
+    accepted_ops: tuple[LegalOperation, ...]
+    rejected_adjudications: tuple[CompileAdjudication, ...]
+
+
+@dataclass(frozen=True)
+class UKMetadataRenumberTargets:
+    source_target: LegalAddress
+    destination: LegalAddress
+    rule_id: str
+    reason_code: str
+    reason: str
+
+
+def _build_uk_replay_adjudication(
+    *,
+    kind: str,
+    message: str,
+    op: LegalOperation,
+    detail: Optional[dict[str, Any]] = None,
+) -> CompileAdjudication:
+    """Build a typed UK replay adjudication without requiring an output sink."""
+    detail_payload: dict[str, Any] = dict(detail or {})
+    detail_payload.setdefault("rule_id", str(kind))
+    detail_payload.setdefault("phase", "replay")
+    if kind == "uk_replay_unsupported_action":
+        detail_payload.setdefault("family", "unsupported_or_unresolved_action")
+        detail_payload.setdefault("blocking", True)
+        detail_payload.setdefault("strict_disposition", "block")
+        detail_payload.setdefault("quirks_disposition", "record")
+    return CompileAdjudication(
+        kind=str(kind),
+        message=message,
+        source_statute=op.source.statute_id if op.source else "",
+        op_id=op.op_id,
+        detail=detail_payload,
+    )
 
 
 def _append_uk_replay_adjudication(
@@ -312,27 +522,17 @@ def _append_uk_replay_adjudication(
     message: str,
     op: LegalOperation,
     detail: Optional[dict[str, Any]] = None,
-) -> None:
+) -> CompileAdjudication:
     """Append a UK replay adjudication when a sink list is available."""
-    if adjudications_out is None:
-        return
-    detail_payload: dict[str, Any] = dict(detail or {})
-    detail_payload.setdefault("rule_id", str(kind))
-    detail_payload.setdefault("phase", "replay")
-    if kind == "uk_replay_unsupported_action":
-        detail_payload.setdefault("family", "unsupported_or_unresolved_action")
-        detail_payload.setdefault("blocking", True)
-        detail_payload.setdefault("strict_disposition", "block")
-        detail_payload.setdefault("quirks_disposition", "record")
-    adjudications_out.append(
-        CompileAdjudication(
-            kind=str(kind),
-            message=message,
-            source_statute=op.source.statute_id if op.source else "",
-            op_id=op.op_id,
-            detail=detail_payload,
-        )
+    adjudication = _build_uk_replay_adjudication(
+        kind=kind,
+        message=message,
+        op=op,
+        detail=detail,
     )
+    if adjudications_out is not None:
+        adjudications_out.append(adjudication)
+    return adjudication
 
 
 def _append_uk_effect_lowering_rejection(
@@ -374,6 +574,47 @@ def _append_uk_effect_lowering_rejection(
         payload["extracted_text_preview"] = " ".join(extracted_text.split())[:500]
     payload.update(detail or {})
     rejections_out.append(payload)
+
+
+def _append_uk_effect_lowering_observation(
+    observations_out: Optional[list[dict[str, Any]]],
+    *,
+    rule_id: str,
+    family: str,
+    reason_code: str,
+    reason: str,
+    effect: "UKEffectRecord",
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    detail: Optional[dict[str, Any]] = None,
+) -> None:
+    """Append a non-blocking phase-local UK effect lowering observation."""
+    if observations_out is None:
+        return
+    extracted_tag = ""
+    if extracted_el is not None:
+        extracted_tag = extracted_el.tag.rsplit("}", 1)[-1]
+    payload: dict[str, Any] = {
+        "rule_id": rule_id,
+        "family": family,
+        "phase": "lowering",
+        "effect_id": effect.effect_id,
+        "affecting_act_id": effect.affecting_act_id,
+        "affected_provisions": effect.affected_provisions,
+        "affecting_provisions": effect.affecting_provisions,
+        "effect_type": effect.effect_type,
+        "reason": reason,
+        "reason_code": reason_code,
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+        "extracted_tag": extracted_tag,
+        "has_extracted_source": extracted_el is not None,
+    }
+    if extracted_text:
+        payload["extracted_text_preview"] = " ".join(extracted_text.split())[:500]
+    payload.update(detail or {})
+    observations_out.append(payload)
 
 
 def _uk_adjudication_from_finding(finding: Finding) -> CompileAdjudication:
@@ -473,12 +714,14 @@ def _lowered_witness_to_payload_data(witness: UKLoweredOperationWitness) -> dict
             "primary_replacement": text_rewrite_witness.primary_replacement,
             "alternatives": [[original, replacement] for original, replacement in text_rewrite_witness.alternatives],
             "occurrence": text_rewrite_witness.occurrence,
+            "end_occurrence": text_rewrite_witness.end_occurrence,
             "rewrite_source": text_rewrite_witness.rewrite_source,
         },
         "insertion_anchor_witness": None
         if insertion_anchor_witness is None
         else {
             "preceding_eid": insertion_anchor_witness.preceding_eid,
+            "following_eid": insertion_anchor_witness.following_eid,
             "anchor_source": insertion_anchor_witness.anchor_source,
         },
     }
@@ -554,12 +797,14 @@ def _lowered_witness_from_payload_data(data: dict[str, Any]) -> UKLoweredOperati
                 for original, replacement in (text_rewrite_data.get("alternatives", []) or [])
             ),
             occurrence=int(text_rewrite_data.get("occurrence", 0) or 0),
+            end_occurrence=int(text_rewrite_data.get("end_occurrence", 0) or 0),
             rewrite_source=str(text_rewrite_data.get("rewrite_source", "") or ""),
         ),
         insertion_anchor_witness=None
         if anchor_data is None
         else UKInsertionAnchorWitness(
             preceding_eid=anchor_data.get("preceding_eid"),
+            following_eid=anchor_data.get("following_eid"),
             anchor_source=str(anchor_data.get("anchor_source", "") or ""),
         ),
     )
@@ -570,7 +815,8 @@ def _witness_for_op(op: LegalOperation) -> object | None:
 
     Prefer the typed payload-sidecar witness when present so sidecar-backed
     lanes can migrate away from the shared source witness carrier. Payload-
-    less legacy ops now return ``None`` here.
+    less text ops use a provenance-tag sidecar so authority filtering can still
+    inspect their source witness.
     """
     payload = getattr(op, "payload", None)
     payload_attrs = getattr(payload, "attrs", None)
@@ -580,6 +826,18 @@ def _witness_for_op(op: LegalOperation) -> object | None:
             return _lowered_witness_from_payload_data(witness)
         if witness is not None:
             return witness
+    for note in getattr(op, "provenance_tags", ()) or ():
+        if not str(note).startswith(_NOTE_REWRITE_WITNESS):
+            continue
+        try:
+            witness_payload = json.loads(str(note)[len(_NOTE_REWRITE_WITNESS) :])
+        except json.JSONDecodeError:
+            return None
+        if (
+            isinstance(witness_payload, dict)
+            and {"effect_witness", "extraction_witness", "target_expansion_witness"} <= set(witness_payload)
+        ):
+            return _lowered_witness_from_payload_data(witness_payload)
     return None
 
 
@@ -651,27 +909,141 @@ def _fragment_substitution(op: LegalOperation) -> Optional[list]:
     witness = _witness_for_op(op)
     text_rewrite_witness = getattr(witness, "text_rewrite_witness", None)
     if text_rewrite_witness is not None and getattr(text_rewrite_witness, "alternatives", None):
-        return [
-            {"original": original, "replacement": replacement}
-            for original, replacement in text_rewrite_witness.alternatives
-            if original
-        ]
+        fragments: list[dict[str, str]] = []
+        for original, replacement in text_rewrite_witness.alternatives:
+            if not original:
+                continue
+            fragment = {"original": original, "replacement": replacement}
+            if text_rewrite_witness.occurrence:
+                fragment["occurrence"] = str(text_rewrite_witness.occurrence)
+            if text_rewrite_witness.end_occurrence:
+                fragment["end_occurrence"] = str(text_rewrite_witness.end_occurrence)
+            fragments.append(fragment)
+        return fragments
     for note in getattr(op, "provenance_tags", ()) or ():
         if not str(note).startswith(_NOTE_FRAGMENT_SUB):
             continue
         try:
             payload = json.loads(str(note)[len(_NOTE_FRAGMENT_SUB) :])
-        except Exception:
+        except json.JSONDecodeError:
             return None
         if isinstance(payload, list):
-            return [
-                {
+            fragments: list[dict[str, str]] = []
+            for item in payload:
+                if not isinstance(item, dict) or not str(item.get("original") or ""):
+                    continue
+                fragment = {
                     "original": str(item.get("original") or ""),
                     "replacement": str(item.get("replacement") or ""),
                 }
-                for item in payload
-                if isinstance(item, dict) and str(item.get("original") or "")
-            ]
+                if item.get("occurrence"):
+                    fragment["occurrence"] = str(item.get("occurrence") or "")
+                if item.get("end_occurrence"):
+                    fragment["end_occurrence"] = str(item.get("end_occurrence") or "")
+                fragments.append(fragment)
+            return fragments
+    return None
+
+
+def _table_cell_selector(op: LegalOperation) -> dict[str, Any] | None:
+    """Return UK table-cell selector data carried on a lowered text op."""
+    for note in getattr(op, "provenance_tags", ()) or ():
+        if not str(note).startswith(_NOTE_TABLE_CELL_SELECTOR):
+            continue
+        try:
+            payload = json.loads(str(note)[len(_NOTE_TABLE_CELL_SELECTOR) :])
+        except json.JSONDecodeError:
+            return None
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _schedule_list_entry_selector(op: LegalOperation) -> dict[str, Any] | None:
+    """Return UK schedule-list-entry selector data carried on a lowered insert op."""
+    for note in getattr(op, "provenance_tags", ()) or ():
+        if not str(note).startswith(_NOTE_SCHEDULE_LIST_ENTRY_SELECTOR):
+            continue
+        try:
+            payload = json.loads(str(note)[len(_NOTE_SCHEDULE_LIST_ENTRY_SELECTOR) :])
+        except json.JSONDecodeError:
+            return None
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _schedule_list_entry_repeal_selector(op: LegalOperation) -> dict[str, Any] | None:
+    """Return UK schedule-list-entry selector data carried on a lowered repeal op."""
+    for note in getattr(op, "provenance_tags", ()) or ():
+        if not str(note).startswith(_NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR):
+            continue
+        try:
+            payload = json.loads(str(note)[len(_NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR) :])
+        except json.JSONDecodeError:
+            return None
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _looks_like_schedule_entry_repeal_text(text: str) -> bool:
+    normalized = " ".join(str(text or "").split()).lower()
+    if "repeal" not in normalized:
+        return False
+    return bool(re.search(r"\b(?:entry|entries)\s+(?:for|relating\s+to)\b", normalized))
+
+
+def _is_unsafe_schedule_entry_repeal_op(op: LegalOperation) -> bool:
+    if _action_name(op.action) != "repeal":
+        return False
+    if _schedule_list_entry_repeal_selector(op) is not None:
+        return False
+    if _addr_leaf_kind(op.target) != "schedule":
+        return False
+    payload = op.payload
+    raw_text = op.source.raw_text if op.source is not None else ""
+    payload_text = payload.text if payload is not None else ""
+    if not _looks_like_schedule_entry_repeal_text(f"{raw_text} {payload_text}"):
+        return False
+    return payload is None or _uk_kind_value(payload.kind) == "schedule"
+
+
+def _fragment_rule_ids(fragment_subs: Optional[list]) -> tuple[str, ...]:
+    if not fragment_subs:
+        return ()
+    rule_ids: list[str] = []
+    for item in fragment_subs:
+        if not isinstance(item, dict):
+            continue
+        rule_id = str(item.get("rule_id") or "")
+        if rule_id and rule_id not in rule_ids:
+            rule_ids.append(rule_id)
+    return tuple(rule_ids)
+
+
+def _fragment_target_suffix(fragment: object) -> tuple[str, str] | None:
+    if not isinstance(fragment, dict):
+        return None
+    kind = str(fragment.get("target_suffix_kind") or "").strip().lower().replace("-", "")
+    label = str(fragment.get("target_suffix_label") or "").strip()
+    if not kind or not label:
+        return None
+    return kind, label
+
+
+def _append_target_suffix_if_safe(target: LegalAddress, suffix: tuple[str, str]) -> LegalAddress | None:
+    """Return a target refined by explicit source-local child context, if safe."""
+    suffix_kind, suffix_label = suffix
+    if target.special is not None:
+        return None
+    leaf_kind = target.leaf_kind()
+    if leaf_kind == suffix_kind and _clean_num(target.leaf_label()) == _clean_num(suffix_label):
+        return target
+    if _addr_container(target) != "schedule" and leaf_kind == "subsection" and suffix_kind == "paragraph":
+        return LegalAddress(path=(*target.path, ("paragraph", suffix_label)))
+    if _addr_container(target) != "schedule" and leaf_kind == "paragraph" and suffix_kind == "subparagraph":
+        return LegalAddress(path=(*target.path, ("subparagraph", suffix_label)))
     return None
 
 
@@ -688,11 +1060,80 @@ def _uk_op_allowed_by_authority_mode(op: LegalOperation, authority_mode: str) ->
     return True, None
 
 
+def _uk_authority_filter_diagnostic(
+    *,
+    effect: "UKEffectRecord",
+    authority_mode: str,
+    compiled_op_count: int,
+    rejected_ops: Sequence[LegalOperation],
+    rejected_reason_counts: dict[str, int],
+    replay_applicable: bool,
+    structural_for_replay: bool,
+    rule_id: str = "uk_effect_authority_filter_rejected",
+    blocking: bool = True,
+    reason: str = "UK source-text-only authority mode rejected non-source-text replay operations",
+) -> dict[str, Any]:
+    return {
+        "rule_id": rule_id,
+        "family": "authority_filter",
+        "phase": "lowering",
+        "effect_id": effect.effect_id,
+        "affecting_act_id": effect.affecting_act_id,
+        "affected_provisions": effect.affected_provisions,
+        "affecting_provisions": effect.affecting_provisions,
+        "effect_type": effect.effect_type,
+        "authority_mode": authority_mode,
+        "replay_applicable": replay_applicable,
+        "structural_for_replay": structural_for_replay,
+        "applied": effect.applied,
+        "requires_applied": effect.requires_applied,
+        "metadata_only": bool(getattr(effect, "metadata_only", False)),
+        "rejected_op_count": len(rejected_ops),
+        "kept_op_count": compiled_op_count - len(rejected_ops),
+        "rejected_authority_layers": sorted(
+            {
+                str(
+                    getattr(
+                        getattr(_witness_for_op(op), "extraction_witness", None),
+                        "authority_layer",
+                        "",
+                    )
+                    or ""
+                )
+                for op in rejected_ops
+                if str(
+                    getattr(
+                        getattr(_witness_for_op(op), "extraction_witness", None),
+                        "authority_layer",
+                        "",
+                    )
+                    or ""
+                )
+            }
+        ),
+        "rejected_reasons": sorted(rejected_reason_counts),
+        "rejected_reason_counts": rejected_reason_counts,
+        "reason": reason,
+        "blocking": blocking,
+        "strict_disposition": "block" if blocking else "record",
+        "quirks_disposition": "record",
+    }
+
+
 def _preceding_eid(op: LegalOperation) -> Optional[str]:
     witness = _witness_for_op(op)
     insertion_anchor_witness = getattr(witness, "insertion_anchor_witness", None)
     if insertion_anchor_witness is not None and insertion_anchor_witness.preceding_eid:
         return insertion_anchor_witness.preceding_eid
+    return None
+
+
+def _following_eid(op: LegalOperation) -> Optional[str]:
+    witness = _witness_for_op(op)
+    insertion_anchor_witness = getattr(witness, "insertion_anchor_witness", None)
+    following = getattr(insertion_anchor_witness, "following_eid", None)
+    if following:
+        return str(following)
     return None
 
 
@@ -726,10 +1167,11 @@ def _uk_extraction_witness(
     extracted_el: Optional[ET.Element],
     extracted_text: Optional[str],
     metadata_fallback_used: bool,
+    source_authority_layer: str = "",
 ) -> UKProvisionExtractionWitness:
     extracted_source_present = extracted_el is not None
     if extracted_source_present:
-        authority_layer = "AFFECTING_ACT_TEXT"
+        authority_layer = source_authority_layer or "AFFECTING_ACT_TEXT"
         extraction_failure_kind = None
     elif metadata_fallback_used:
         authority_layer = "CURRENT_XML_METADATA_BACKFILL"
@@ -776,9 +1218,12 @@ def _uk_text_rewrite_spec(
     op_text_match: Optional[str],
     op_text_replacement: Optional[str],
     op_text_occurrence: int,
+    op_text_end_occurrence: int = 0,
 ) -> Optional[UKTextRewriteSpec]:
     if fragment_subs:
         primary = fragment_subs[0]
+        occurrence = int(str(primary.get("occurrence") or op_text_occurrence or "0"))
+        end_occurrence = int(str(primary.get("end_occurrence") or op_text_end_occurrence or "0"))
         alternatives = tuple(
             (str(item.get("original") or ""), str(item.get("replacement") or ""))
             for item in fragment_subs
@@ -788,13 +1233,14 @@ def _uk_text_rewrite_spec(
             primary_match=str(primary.get("original") or "") or None,
             primary_replacement=str(primary.get("replacement") or ""),
             alternatives=alternatives,
-            occurrence=op_text_occurrence,
-            rewrite_source="fragment_substitution",
+            occurrence=occurrence,
+            rewrite_source=str(primary.get("rule_id") or "fragment_substitution"),
+            end_occurrence=end_occurrence,
         )
     if text_patch is not None:
         primary_match = text_patch.selector.match_text
         primary_replacement = text_patch.replacement or ""
-        if text_patch.kind == "delete":
+        if text_patch.kind is TextPatchKindEnum.DELETE:
             primary_replacement = ""
         return UKTextRewriteSpec(
             primary_match=primary_match,
@@ -802,6 +1248,7 @@ def _uk_text_rewrite_spec(
             alternatives=((primary_match, primary_replacement),),
             occurrence=text_patch.selector.occurrence,
             rewrite_source="typed_text_patch",
+            end_occurrence=text_patch.selector.end_occurrence,
         )
     if op_text_match is not None:
         return UKTextRewriteSpec(
@@ -810,16 +1257,177 @@ def _uk_text_rewrite_spec(
             alternatives=((op_text_match, op_text_replacement or ""),),
             occurrence=op_text_occurrence,
             rewrite_source="regex_omission_fallback",
+            end_occurrence=op_text_end_occurrence,
         )
     return None
 
 
-def _uk_insertion_anchor_witness(preceding_eid: Optional[str]) -> Optional[UKInsertionAnchorWitness]:
-    if not preceding_eid:
+def _separate_definition_repeal_fragments(
+    fragment_subs: Optional[list],
+) -> tuple[dict[str, str], ...]:
+    if not fragment_subs or len(fragment_subs) <= 1:
+        return ()
+    fragments: list[dict[str, str]] = []
+    for item in fragment_subs:
+        original = str(item.get("original") or "")
+        replacement = str(item.get("replacement") or "")
+        rule_id = str(item.get("rule_id") or "")
+        if (
+            rule_id != "uk_effect_definition_entry_repeal_text_patch"
+            or replacement
+            or not original.startswith("TEXT_DEFINITION_ENTRY_")
+        ):
+            return ()
+        fragments.append(
+            {
+                "original": original,
+                "replacement": "",
+                "rule_id": rule_id,
+            }
+        )
+    return tuple(fragments)
+
+
+def _separate_occurrence_text_replace_fragments(
+    fragment_subs: Optional[list],
+) -> tuple[dict[str, str], ...]:
+    if not fragment_subs or len(fragment_subs) <= 1:
+        return ()
+    fragments: list[dict[str, str]] = []
+    for item in fragment_subs:
+        original = str(item.get("original") or "")
+        replacement = str(item.get("replacement") or "")
+        occurrence = str(item.get("occurrence") or "")
+        rule_id = str(item.get("rule_id") or "")
+        if (
+            rule_id != "uk_effect_first_second_occurrence_substitution_text_patch"
+            or not original
+            or not occurrence.isdigit()
+        ):
+            return ()
+        fragments.append(
+            {
+                "original": original,
+                "replacement": replacement,
+                "occurrence": occurrence,
+                "rule_id": rule_id,
+            }
+        )
+    return tuple(fragments)
+
+
+def _source_after_insertion_anchor(text: str) -> tuple[Optional[str], Optional[str]]:
+    lead = " ".join(str(text or "").split())
+    if not lead:
+        return None, None
+    match = re.search(
+        r"\bafter\s+(?P<kind>paragraph|section|ss\.|s\.)\s*\(?(?P<label>[0-9a-zA-Z]+)\)?\b",
+        lead,
+        flags=re.I,
+    )
+    if match is None:
+        return None, None
+    kind = str(match.group("kind") or "").lower()
+    label = str(match.group("label") or "")
+    if not label:
+        return None, None
+    prefix = "p1" if kind == "paragraph" else "section"
+    return f"{prefix}-{label}", "extracted_source_after_clause"
+
+
+def _fallback_target_eid(addr: LegalAddress) -> str:
+    """Return the UK local fallback eId shape for an address without oracle data."""
+    addr = canonicalize_uk_address(addr)
+    container = _addr_container(addr)
+    section = _addr_field(addr, "schedule") or _addr_field(addr, "section")
+    part = _addr_field(addr, "part")
+    chapter = _addr_field(addr, "chapter")
+    parts: list[str] = []
+    if container == "schedule":
+        parts.append(f"schedule-{_clean_num(section)}" if section else "schedule")
+        if part:
+            parts.append(f"part-{_clean_num(part)}")
+        if chapter:
+            parts.append(f"chapter-{_clean_num(chapter)}")
+        paragraph, subsection, item_labels = _schedule_target_levels(addr)
+        if paragraph:
+            parts.append(f"paragraph-{_canonicalize_schedule_paragraph_eid_label(paragraph)}")
+        if subsection:
+            parts.append(_clean_num(subsection))
+        for item_label in item_labels:
+            parts.append(_canonicalize_eid_tail_label(item_label))
+        return "-".join(part for part in parts if part)
+
+    if section:
+        parts.append(f"section-{_clean_num(section)}")
+    subsection = _addr_field(addr, "subsection")
+    if subsection:
+        parts.append(_clean_num(subsection))
+    paras = [label for kind, label in addr.path if kind == "paragraph"]
+    for item_label in paras[:1]:
+        parts.append(_canonicalize_eid_tail_label(item_label))
+    return "-".join(part for part in parts if part)
+
+
+def _source_before_insertion_anchor(
+    text: str,
+    target: LegalAddress,
+) -> tuple[Optional[str], Optional[str]]:
+    lead = " ".join(str(text or "").split())
+    if not lead:
+        return None, None
+    match = re.search(
+        r"\bbefore\s+(?P<kind>sub-?paragraph|paragraph|subsection|item)\s*"
+        r"\(?(?P<label>[0-9a-zA-Z]+)\)?\s+insert\b",
+        lead,
+        flags=re.I,
+    )
+    if match is None:
+        return None, None
+    if len(target.path) < 2:
+        return None, None
+    label = str(match.group("label") or "")
+    if not label:
+        return None, None
+    parent = target.parent()
+    if parent is None:
+        return None, None
+    sibling_kind = _addr_leaf_kind(target)
+    if not sibling_kind:
+        return None, None
+    sibling = LegalAddress(path=(*parent.path, (sibling_kind, label)))
+    return _fallback_target_eid(sibling), "extracted_source_before_clause"
+
+
+def _target_anchor_eid(target: LegalAddress) -> Optional[str]:
+    if not target.path:
+        return None
+    if len(target.path) != 1:
+        return None
+    kind, label = target.path[0]
+    clean_label = _clean_num(label)
+    if not clean_label:
+        return None
+    clean_kind = str(kind or "").lower()
+    if clean_kind == "section":
+        return f"section-{clean_label}"
+    if clean_kind == "paragraph":
+        return f"p1-{clean_label}"
+    return None
+
+
+def _uk_insertion_anchor_witness(
+    preceding_eid: Optional[str],
+    *,
+    following_eid: Optional[str] = None,
+    anchor_source: str = "effect_comments_after_clause",
+) -> Optional[UKInsertionAnchorWitness]:
+    if not preceding_eid and not following_eid:
         return None
     return UKInsertionAnchorWitness(
         preceding_eid=preceding_eid,
-        anchor_source="effect_comments_after_clause",
+        following_eid=following_eid,
+        anchor_source=anchor_source,
     )
 
 
@@ -833,13 +1441,23 @@ def _uk_lowered_op_provenance_tags(witness: UKLoweredOperationWitness) -> tuple[
     if witness.extraction_witness.extracted_text:
         provenance_tags.append(f"{_NOTE_RAW_TEXT}{witness.extraction_witness.extracted_text}")
     if witness.text_rewrite_witness is not None and witness.text_rewrite_witness.alternatives:
-        fragment_sub_payload = [
-            {"original": original, "replacement": replacement}
-            for original, replacement in witness.text_rewrite_witness.alternatives
-        ]
+        witness_payload = _lowered_witness_to_payload_data(dc_replace(witness, payload=None))
+        provenance_tags.append(f"{_NOTE_REWRITE_WITNESS}{_json.dumps(witness_payload, ensure_ascii=False)}")
+        fragment_sub_payload = []
+        for original, replacement in witness.text_rewrite_witness.alternatives:
+            fragment: dict[str, str] = {"original": original, "replacement": replacement}
+            if witness.text_rewrite_witness.occurrence:
+                fragment["occurrence"] = str(witness.text_rewrite_witness.occurrence)
+            if witness.text_rewrite_witness.end_occurrence:
+                fragment["end_occurrence"] = str(witness.text_rewrite_witness.end_occurrence)
+            fragment_sub_payload.append(fragment)
         provenance_tags.append(f"{_NOTE_FRAGMENT_SUB}{_json.dumps(fragment_sub_payload, ensure_ascii=False)}")
+        provenance_tags.append(f"{_NOTE_TEXT_REWRITE_RULE}{witness.text_rewrite_witness.rewrite_source}")
     if witness.insertion_anchor_witness is not None and witness.insertion_anchor_witness.preceding_eid:
         provenance_tags.append(f"{_NOTE_PRECEDING_EID}{witness.insertion_anchor_witness.preceding_eid}")
+    if witness.action is StructuralAction.RENUMBER and witness.payload is None:
+        witness_payload = _lowered_witness_to_payload_data(dc_replace(witness, payload=None))
+        provenance_tags.append(f"{_NOTE_REWRITE_WITNESS}{_json.dumps(witness_payload, ensure_ascii=False)}")
     if witness.extraction_witness.metadata_fallback_used:
         provenance_tags.append(f"{_NOTE_METADATA_SOURCE_FALLBACK}{witness.effect_witness.effect_id}")
     return tuple(provenance_tags)
@@ -861,7 +1479,7 @@ from lawvm.uk_legislation.uk_grafter import (
     _parse_schedule_single,
 )
 
-from lawvm.uk_legislation.nlp_parser import is_whole_node_replacement, parse_fragment_substitution
+from lawvm.uk_legislation.nlp_parser import US, is_whole_node_replacement, parse_fragment_substitution
 from lawvm.uk_legislation.witnesses import (
     UKApplicabilityWitness,
     UKEffectWitness,
@@ -883,6 +1501,7 @@ _USER_AGENT = "LawVM UK replay/0.1 (+https://github.com/lawvm)"
 STRUCTURAL_EFFECT_TYPES = frozenset(
     {
         "inserted",
+        "entry inserted",
         "words inserted",
         "word inserted",
         "words substituted",
@@ -892,12 +1511,18 @@ STRUCTURAL_EFFECT_TYPES = frozenset(
         "words repealed",
         "word repealed",
         "repealed",
+        "entry repealed",
         "repealed in part",
         "words omitted",
         "word omitted",
         "omitted",
+        "entry omitted",
     }
 )
+
+
+def _is_uk_renumber_effect_type(effect_type: str) -> bool:
+    return bool(re.search(r"\brenumbered\s+as\b", str(effect_type or ""), flags=re.I))
 
 
 def _label_sort_key(label: Optional[str]) -> tuple[Any, ...]:
@@ -918,6 +1543,261 @@ def _label_sort_key(label: Optional[str]) -> tuple[Any, ...]:
         else:
             key.append((1, part))
     return tuple(key)
+
+
+def _uk_source_provision_label_sort_key(label: str, *, previous_alpha: bool = False) -> tuple[Any, ...]:
+    """Return a natural sort key for one label in an affecting-provision citation.
+
+    This is intentionally separate from ``_clean_num`` because parenthesized
+    labels such as ``(d)`` are alphabetic legal labels, not Roman numerals.
+    """
+    token = re.sub(r"[^0-9A-Za-z]+", "", str(label or "")).lower()
+    if not token:
+        return (9, "")
+    match = re.fullmatch(r"(\d+)([a-z]*)", token)
+    if match is not None:
+        suffix = match.group(2)
+        suffix_key = tuple(ord(ch) - ord("a") + 1 for ch in suffix)
+        return (0, int(match.group(1)), suffix_key)
+    roman_value = _shared_roman_to_arabic(token)
+    if roman_value is not None and (len(token) > 1 or previous_alpha):
+        return (2, roman_value)
+    if token.isalpha():
+        return (1, tuple(ord(ch) - ord("a") + 1 for ch in token))
+    return (8, token)
+
+
+def _uk_source_provision_order_key(ref: str) -> tuple[Any, ...]:
+    """Return a stable legal-source-order key for an affecting provision ref.
+
+    The effects feed identifiers are opaque hashes; when multiple effects have
+    the same effective date and affecting act, source provision order is the
+    defensible execution order.
+    """
+    text = " ".join(str(ref or "").replace("\u00a0", " ").split()).lower()
+    token_re = re.compile(
+        r"\b(?:regs?|regulations?|rules?|articles?|arts?|sections?|ss?|s|"
+        r"schedules?|schs?|sch|paragraphs?|paras?|para)\.?\s*(?P<label>[0-9]+[A-Za-z]*)"
+        r"|\((?P<paren>[0-9A-Za-z]+)\)"
+    )
+    tokens: list[tuple[Any, ...]] = []
+    previous_alpha = False
+    for match in token_re.finditer(text):
+        raw_label = match.group("label") or match.group("paren") or ""
+        key = _uk_source_provision_label_sort_key(raw_label, previous_alpha=previous_alpha)
+        tokens.append(key)
+        previous_alpha = bool(key and key[0] == 1)
+    return (tuple(tokens), text)
+
+
+def _order_uk_effects_for_replay(
+    effects: Sequence[UKEffectRecord],
+    *,
+    diagnostics_out: Optional[list[dict[str, Any]]] = None,
+    lowering_observations_out: Optional[list[dict[str, Any]]] = None,
+) -> list[UKEffectRecord]:
+    """Order UK effects by legal time and affecting-source citation order."""
+
+    original = list(effects)
+
+    def _sort_key(e: UKEffectRecord) -> tuple[Any, ...]:
+        return (
+            e.effective_date or "9999-99-99",
+            str(e.modified or ""),
+            e.affecting_act_id,
+            _uk_source_provision_order_key(e.affecting_provisions),
+            e.effect_id,
+        )
+
+    ordered = sorted(original, key=_sort_key)
+    if diagnostics_out is None and lowering_observations_out is None:
+        return ordered
+
+    groups: dict[tuple[str, str, str], list[UKEffectRecord]] = {}
+    for effect in original:
+        group_key = (
+            effect.effective_date or "9999-99-99",
+            str(effect.modified or ""),
+            effect.affecting_act_id,
+        )
+        groups.setdefault(group_key, []).append(effect)
+
+    for group_key, group_effects in groups.items():
+        if len(group_effects) < 2:
+            continue
+        old_ids = [effect.effect_id for effect in group_effects]
+        group_object_ids = {id(effect) for effect in group_effects}
+        new_group = [effect for effect in ordered if id(effect) in group_object_ids]
+        new_ids = [effect.effect_id for effect in new_group]
+        if old_ids == new_ids:
+            continue
+        record = {
+            "rule_id": "uk_effect_source_provision_order_normalized",
+            "family": "temporal_recovery",
+            "phase": "lowering",
+            "effective_date": group_key[0],
+            "modified": group_key[1],
+            "affecting_act_id": group_key[2],
+            "reason_code": "same_date_same_affecting_act_source_citation_order",
+            "original_effect_ids": tuple(old_ids),
+            "ordered_effect_ids": tuple(new_ids),
+            "original_affecting_provisions": tuple(effect.affecting_provisions for effect in group_effects),
+            "ordered_affecting_provisions": tuple(effect.affecting_provisions for effect in new_group),
+            "reason": (
+                "UK effects with the same effective date and affecting act "
+                "were ordered by source provision citation rather than opaque effect id"
+            ),
+            "blocking": False,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+        }
+        if diagnostics_out is not None:
+            diagnostics_out.append(record)
+        if lowering_observations_out is not None:
+            lowering_observations_out.append(dict(record))
+    return ordered
+
+
+def _text_replace_preimage_chain_key(op: LegalOperation) -> Optional[tuple[str, str]]:
+    if _action_name(op.action) != "text_replace" or op.text_patch is None:
+        return None
+    if op.text_patch.kind is not TextPatchKindEnum.REPLACE:
+        return None
+    if op.text_patch.replacement is None:
+        return None
+    match_text = op.text_patch.selector.match_text
+    replacement = op.text_patch.replacement
+    if not match_text or not replacement:
+        return None
+    if match_text.startswith(("TEXT_", "FROM_")):
+        return None
+    source = op.source
+    return (str(op.target), source.effective if source else "")
+
+
+def _order_uk_text_patch_preimage_chains(
+    ops: Sequence[LegalOperation],
+    *,
+    lowering_observations_out: Optional[list[dict[str, Any]]] = None,
+) -> list[LegalOperation]:
+    """Order exact same-target text patches by their quoted preimage chain.
+
+    This is intentionally narrow: only exact `replacement == next.match_text`
+    dependencies inside the same target and same effective-date bucket are used.
+    No numeric matching, fuzzy matching, or cross-target inference is allowed.
+    """
+    ordered = list(ops)
+    groups: dict[tuple[str, str], list[int]] = {}
+    for idx, op in enumerate(ordered):
+        key = _text_replace_preimage_chain_key(op)
+        if key is not None:
+            groups.setdefault(key, []).append(idx)
+
+    for (target, effective_date), indices in groups.items():
+        if len(indices) < 2:
+            continue
+        group_ops = [ordered[idx] for idx in indices]
+        successors: dict[int, set[int]] = {i: set() for i in range(len(group_ops))}
+        predecessors: dict[int, set[int]] = {i: set() for i in range(len(group_ops))}
+        for left_idx, left in enumerate(group_ops):
+            if left.text_patch is None:
+                continue
+            replacement = left.text_patch.replacement or ""
+            if not replacement:
+                continue
+            for right_idx, right in enumerate(group_ops):
+                if left_idx == right_idx or right.text_patch is None:
+                    continue
+                if replacement == right.text_patch.selector.match_text:
+                    successors[left_idx].add(right_idx)
+                    predecessors[right_idx].add(left_idx)
+        if not any(successors.values()):
+            continue
+        ambiguous = any(len(items) > 1 for items in successors.values()) or any(
+            len(items) > 1 for items in predecessors.values()
+        )
+        if ambiguous:
+            if lowering_observations_out is not None:
+                lowering_observations_out.append(
+                    {
+                        "rule_id": "uk_effect_text_patch_preimage_chain_ambiguous",
+                        "family": "temporal_recovery",
+                        "phase": "lowering",
+                        "target": target,
+                        "effective_date": effective_date,
+                        "op_ids": tuple(op.op_id for op in group_ops),
+                        "reason_code": "same_target_text_patch_preimage_chain_not_unique",
+                        "reason": (
+                            "UK same-target text patches had exact preimage-chain "
+                            "links, but the chain was not unique; lowering left the "
+                            "original order intact rather than guessing precedence."
+                        ),
+                        "blocking": True,
+                        "strict_disposition": "block",
+                        "quirks_disposition": "record",
+                    }
+                )
+            continue
+        ready = [idx for idx in range(len(group_ops)) if not predecessors[idx]]
+        topo: list[int] = []
+        remaining_successors = {idx: set(items) for idx, items in successors.items()}
+        remaining_predecessors = {idx: set(items) for idx, items in predecessors.items()}
+        while ready:
+            node_idx = ready.pop(0)
+            topo.append(node_idx)
+            for succ_idx in sorted(remaining_successors[node_idx]):
+                remaining_predecessors[succ_idx].discard(node_idx)
+                if not remaining_predecessors[succ_idx]:
+                    ready.append(succ_idx)
+            ready.sort(key=lambda i: indices[i])
+        if len(topo) != len(group_ops):
+            if lowering_observations_out is not None:
+                lowering_observations_out.append(
+                    {
+                        "rule_id": "uk_effect_text_patch_preimage_chain_ambiguous",
+                        "family": "temporal_recovery",
+                        "phase": "lowering",
+                        "target": target,
+                        "effective_date": effective_date,
+                        "op_ids": tuple(op.op_id for op in group_ops),
+                        "reason_code": "same_target_text_patch_preimage_chain_cycle",
+                        "reason": (
+                            "UK same-target text patches had cyclic exact preimage-chain "
+                            "links; lowering left the original order intact."
+                        ),
+                        "blocking": True,
+                        "strict_disposition": "block",
+                        "quirks_disposition": "record",
+                    }
+                )
+            continue
+        reordered_group = [group_ops[idx] for idx in topo]
+        if [op.op_id for op in reordered_group] == [op.op_id for op in group_ops]:
+            continue
+        for target_slot, op in zip(indices, reordered_group):
+            ordered[target_slot] = op
+        if lowering_observations_out is not None:
+            lowering_observations_out.append(
+                {
+                    "rule_id": "uk_effect_text_patch_preimage_chain_ordered",
+                    "family": "temporal_recovery",
+                    "phase": "lowering",
+                    "target": target,
+                    "effective_date": effective_date,
+                    "original_op_ids": tuple(op.op_id for op in group_ops),
+                    "ordered_op_ids": tuple(op.op_id for op in reordered_group),
+                    "reason_code": "exact_same_target_text_patch_preimage_chain",
+                    "reason": (
+                        "UK same-target text patches were ordered by exact quoted "
+                        "preimage chain: one replacement text is the next patch's "
+                        "source preimage."
+                    ),
+                    "blocking": False,
+                    "strict_disposition": "record",
+                    "quirks_disposition": "record",
+                }
+            )
+    return ordered
 
 
 # ---------------------------------------------------------------------------
@@ -1027,7 +1907,9 @@ class UKEffectRecord:
         # If it's from metadata, we likely want it for the current PIT state reconstruction
         # even if the Atom feed hasn't 'applied' it yet.
         return (self.applied or self.metadata_only) and (
-            self.effect_type in STRUCTURAL_EFFECT_TYPES or self.effect_type == ""
+            self.effect_type in STRUCTURAL_EFFECT_TYPES
+            or self.effect_type == ""
+            or _is_uk_renumber_effect_type(self.effect_type)
         )
 
     def is_applicable_for_replay(
@@ -1047,7 +1929,11 @@ class UKEffectRecord:
         *,
         applicability_mode: str = "effective_date_plus_feed_applied",
     ) -> bool:
-        if self.effect_type not in STRUCTURAL_EFFECT_TYPES and self.effect_type != "":
+        if (
+            self.effect_type not in STRUCTURAL_EFFECT_TYPES
+            and self.effect_type != ""
+            and not _is_uk_renumber_effect_type(self.effect_type)
+        ):
             return False
         return self.is_applicable_for_replay(applicability_mode=applicability_mode)
 
@@ -1056,13 +1942,259 @@ class UKEffectRecord:
             "effect_id": self.effect_id,
             "effect_type": self.effect_type,
             "applied": self.applied,
+            "requires_applied": self.requires_applied,
+            "metadata_only": self.metadata_only,
+            "replay_applicable": self.is_applicable_for_replay(),
+            "structural": self.is_structural,
+            "structural_for_replay": self.is_structural_for_replay(),
             "affected_provisions": self.affected_provisions,
             "affecting_act_id": self.affecting_act_id,
             "affecting_provisions": self.affecting_provisions,
             "affecting_title": self.affecting_title,
             "modified": self.modified,
-            "in_force_date": self.in_force_dates[0]["date"] if self.in_force_dates else "",
+            "in_force_date": self.effective_date,
+            "in_force_dates": self.in_force_dates,
         }
+
+
+def append_structural_no_ops_lowering_rejection(
+    effect: UKEffectRecord,
+    *,
+    structural_for_replay: bool,
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+    compile_recorded_lowering_rejection: bool,
+) -> bool:
+    del compile_recorded_lowering_rejection
+    if not structural_for_replay or lowering_rejections_out is None:
+        return False
+    if any(
+        rejection.get("rule_id") == "uk_effect_lowering_no_ops_rejected"
+        and str(rejection.get("effect_id") or "") == str(effect.effect_id or "")
+        for rejection in lowering_rejections_out
+    ):
+        return False
+    lowering_rejections_out.append(
+        {
+            "rule_id": "uk_effect_lowering_no_ops_rejected",
+            "family": "lowering_filter",
+            "phase": "lowering",
+            "effect_id": effect.effect_id,
+            "affecting_act_id": effect.affecting_act_id,
+            "affected_provisions": effect.affected_provisions,
+            "affecting_provisions": effect.affecting_provisions,
+            "effect_type": effect.effect_type,
+            "reason": "UK structural effect lowered to no replay operations",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    )
+    return True
+
+
+def append_source_pathology_filter_lowering_rejections(
+    effect: UKEffectRecord,
+    *,
+    source_pathology: str,
+    structural_for_replay: bool,
+    compiled_ops: Sequence[LegalOperation],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> bool:
+    """Append blocking lowering records for source pathology filters.
+
+    These filters are shared by replay and effect-inspection tooling. They do
+    not repair the row; they make the rejected semantic lane visible.
+    """
+    if lowering_rejections_out is None:
+        return False
+    appended = False
+    if (
+        structural_for_replay
+        and source_pathology == "instruction_text_reused_as_payload"
+        and any(_action_name(op.action) in {"insert", "replace"} for op in compiled_ops)
+    ):
+        lowering_rejections_out.append(
+            {
+                "rule_id": "uk_effect_instruction_text_payload_rejected",
+                "family": "source_pathology_filter",
+                "phase": "lowering",
+                "effect_id": effect.effect_id,
+                "affecting_act_id": effect.affecting_act_id,
+                "affected_provisions": effect.affected_provisions,
+                "affecting_provisions": effect.affecting_provisions,
+                "effect_type": effect.effect_type,
+                "reason": "UK effect payload reused instruction text rather than source legal payload",
+                "blocking": True,
+                "strict_disposition": "block",
+                "quirks_disposition": "record",
+                "source_pathology": source_pathology,
+            }
+        )
+        appended = True
+    if source_pathology == "range_to_container_target_unsupported":
+        lowering_rejections_out.append(
+            {
+                "rule_id": "uk_effect_range_to_container_substitution_rejected",
+                "family": "source_pathology_filter",
+                "phase": "lowering",
+                "effect_id": effect.effect_id,
+                "affecting_act_id": effect.affecting_act_id,
+                "affected_provisions": effect.affected_provisions,
+                "affecting_provisions": effect.affecting_provisions,
+                "effect_type": effect.effect_type,
+                "reason": (
+                    "UK source substitutes a section range into a container payload; "
+                    "lowering must own range replacement and lineage before replay"
+                ),
+                "blocking": True,
+                "strict_disposition": "block",
+                "quirks_disposition": "record",
+                "source_pathology": source_pathology,
+            }
+        )
+        appended = True
+    return appended
+
+
+def uk_nonstructural_replay_candidate_family(
+    effect: UKEffectRecord,
+    *,
+    applicability_mode: str = "effective_date_plus_feed_applied",
+) -> str:
+    """Return the nonstructural effect row family that may still replay."""
+    if not effect.is_applicable_for_replay(applicability_mode=applicability_mode):
+        return ""
+    effect_type = (effect.effect_type or "").strip().lower()
+    if effect_type.startswith("substituted for"):
+        return "substituted_for_series"
+    if effect_type.startswith("revoked"):
+        return "revoked_repeal"
+    if effect_type.startswith("ceases to have effect"):
+        return "ceases_to_have_effect_repeal"
+    return ""
+
+
+def uk_effect_requires_affecting_source_for_replay(
+    effect: UKEffectRecord,
+    *,
+    applicability_mode: str = "effective_date_plus_feed_applied",
+) -> bool:
+    """Return True when replay can legitimately need the affecting source XML."""
+    return effect.is_structural_for_replay(
+        applicability_mode=applicability_mode
+    ) or bool(
+        uk_nonstructural_replay_candidate_family(
+            effect,
+            applicability_mode=applicability_mode,
+        )
+    )
+
+
+def append_no_ops_lowering_rejections(
+    effect: UKEffectRecord,
+    *,
+    structural_for_replay: bool,
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+    compile_recorded_lowering_rejection: bool,
+    applicability_mode: str = "effective_date_plus_feed_applied",
+) -> bool:
+    """Append owned lowering rejections for replay-relevant effect rows with no ops."""
+    appended = append_structural_no_ops_lowering_rejection(
+        effect,
+        structural_for_replay=structural_for_replay,
+        lowering_rejections_out=lowering_rejections_out,
+        compile_recorded_lowering_rejection=compile_recorded_lowering_rejection,
+    )
+    if structural_for_replay or lowering_rejections_out is None or compile_recorded_lowering_rejection:
+        return appended
+    nonstructural_candidate_family = uk_nonstructural_replay_candidate_family(
+        effect,
+        applicability_mode=applicability_mode,
+    )
+    if nonstructural_candidate_family:
+        lowering_rejections_out.append(
+            {
+                "rule_id": "uk_effect_nonstructural_lowering_no_ops_rejected",
+                "family": "lowering_filter",
+                "phase": "lowering",
+                "effect_id": effect.effect_id,
+                "affecting_act_id": effect.affecting_act_id,
+                "affected_provisions": effect.affected_provisions,
+                "affecting_provisions": effect.affecting_provisions,
+                "effect_type": effect.effect_type,
+                "reason": "UK nonstructural effect row may be replayable but lowered to no replay operations",
+                "blocking": True,
+                "strict_disposition": "block",
+                "quirks_disposition": "record",
+                "nonstructural_replay_candidate_family": nonstructural_candidate_family,
+            }
+        )
+        return True
+    if (
+        (effect.effect_type or "").strip().lower() not in _COMMENCEMENT_EFFECT_TYPES
+        and effect.is_applicable_for_replay(applicability_mode=applicability_mode)
+    ):
+        lowering_rejections_out.append(
+            {
+                "rule_id": "uk_effect_nonstructural_unsupported_no_ops_observed",
+                "family": "nonstructural_replay_observation",
+                "phase": "lowering",
+                "effect_id": effect.effect_id,
+                "affecting_act_id": effect.affecting_act_id,
+                "affected_provisions": effect.affected_provisions,
+                "affecting_provisions": effect.affecting_provisions,
+                "effect_type": effect.effect_type,
+                "reason": (
+                    "UK applicable nonstructural effect row is not replay-supported "
+                    "under the selected replay lens and lowered to no replay operations"
+                ),
+                "blocking": False,
+                "strict_disposition": "record",
+                "quirks_disposition": "record",
+            }
+        )
+        return True
+    return appended
+
+
+def mark_nonreplay_lowering_rejections_nonblocking(
+    effect: UKEffectRecord,
+    *,
+    structural_for_replay: bool,
+    applicability_mode: str,
+    lowering_rejections: list[dict[str, Any]],
+    start_index: int,
+) -> bool:
+    """Mark compile-time lowering diagnostics nonblocking when replay cannot use the row.
+
+    `compile_effect_to_ir_ops` is intentionally source-local and may emit a
+    blocking rejection before the caller has applied the replay lens. The caller
+    owns this phase-boundary reclassification so nonstructural, unsupported rows
+    remain visible without masquerading as replay blockers.
+    """
+    if structural_for_replay:
+        return False
+    if uk_nonstructural_replay_candidate_family(effect, applicability_mode=applicability_mode):
+        return False
+    if start_index >= len(lowering_rejections):
+        return False
+    changed = False
+    for rejection in lowering_rejections[start_index:]:
+        if not is_blocking_compile_record(rejection):
+            continue
+        rejection["blocking"] = False
+        rejection["strict_disposition"] = "record"
+        rejection["nonblocking_reclassification_rule_id"] = (
+            "uk_effect_nonreplay_lowering_observed"
+        )
+        rejection["replay_relevance"] = "nonstructural_unsupported"
+        rejection["reclassification_reason"] = (
+            "The selected replay lens does not support or admit this "
+            "nonstructural effect row; the lowering diagnostic is evidence, "
+            "not a replay blocker."
+        )
+        changed = True
+    return changed
 
 
 # ---------------------------------------------------------------------------
@@ -1070,8 +2202,39 @@ class UKEffectRecord:
 # ---------------------------------------------------------------------------
 
 
-def parse_effects_from_feeds(feed_files: list[Path]) -> list[UKEffectRecord]:
+def parse_effects_from_feeds(
+    feed_files: list[Path],
+    *,
+    parse_rejections_out: Optional[list[dict[str, Any]]] = None,
+) -> list[UKEffectRecord]:
     """Parse all effect feed pages into a list of UKEffectRecord."""
+    if parse_rejections_out is not None:
+        feed_bytes_list: list[bytes] = []
+        feed_locators: list[str] = []
+        for feed_index, ff in enumerate(feed_files):
+            if not ff.exists():
+                parse_rejections_out.append(
+                    {
+                        "rule_id": "uk_effect_feed_file_missing_rejected",
+                        "family": "source_pathology",
+                        "phase": "acquisition",
+                        "feed_index": feed_index,
+                        "feed_path": str(ff),
+                        "reason": "UK local effect feed file was listed but missing on disk.",
+                        "blocking": True,
+                        "strict_disposition": "block",
+                        "quirks_disposition": "record",
+                    }
+                )
+                continue
+            feed_bytes_list.append(ff.read_bytes())
+            feed_locators.append(str(ff))
+        return parse_effects_from_bytes(
+            feed_bytes_list,
+            parse_rejections_out=parse_rejections_out,
+            feed_locators=feed_locators,
+        )
+
     ns = {
         "atom": "http://www.w3.org/2005/Atom",
         "ukm": "http://www.legislation.gov.uk/namespaces/metadata",
@@ -1225,6 +2388,21 @@ def load_effects_for_statute_from_archive(
         (pattern,),
     ).fetchall()
 
+    if not rows and parse_rejections_out is not None:
+        parse_rejections_out.append(
+            {
+                "rule_id": "uk_effect_feed_pages_absent_recorded",
+                "family": "source_pathology",
+                "phase": "acquisition",
+                "statute_id": statute_id,
+                "feed_pattern": pattern,
+                "reason": "No UK effect feed page locators were present in the archive for this statute.",
+                "blocking": False,
+                "strict_disposition": "record",
+                "quirks_disposition": "record",
+            }
+        )
+
     feed_bytes_list: list[bytes] = []
     feed_locators: list[str] = []
     for (url,) in rows:
@@ -1265,6 +2443,15 @@ def get_affecting_act_xml_from_archive(
     Returns None if not in the archive.
     """
     url = f"{_LEG_BASE}/{act_id}/data.xml"
+    return archive.get(url)
+
+
+def get_affecting_act_enacted_xml_from_archive(
+    act_id: str,
+    archive: Any,
+) -> Optional[bytes]:
+    """Fetch enacted affecting act XML bytes from archive."""
+    url = f"{_LEG_BASE}/{act_id}/enacted/data.xml"
     return archive.get(url)
 
 
@@ -1406,7 +2593,10 @@ def load_effects_for_statute(
     if (stat_dir / "data.feed").exists():
         feed_files.append(stat_dir / "data.feed")
 
-    atom_effects = parse_effects_from_feeds(feed_files)
+    atom_effects = parse_effects_from_feeds(
+        feed_files,
+        parse_rejections_out=parse_rejections_out,
+    )
 
     meta_file = stat_dir / "metadata.xml"
     if not meta_file.exists():
@@ -1554,6 +2744,161 @@ def _text_content(el: ET.Element) -> str:
     return " ".join(" ".join(parts).split())
 
 
+@dataclass(frozen=True)
+class UKAffectingSourceContext:
+    xml_bytes: Optional[bytes]
+    root: Optional[ET.Element]
+    parent_map: Optional[dict[ET.Element, ET.Element]]
+    exact_id_map: dict[str, ET.Element]
+    sequence_map: dict[tuple[str, ...], ET.Element]
+    source_status: str
+    source_size: int
+    locator: str
+    authority_layer: str
+
+
+def _build_affecting_source_context(
+    *,
+    xml_bytes: Optional[bytes],
+    locator: str,
+    authority_layer: str,
+) -> tuple[UKAffectingSourceContext, Optional[ET.ParseError]]:
+    source_status, source_size = uk_source_state_wire_tuple(xml_bytes)
+    root = None
+    parent_map = None
+    exact_id_map: dict[str, ET.Element] = {}
+    sequence_map: dict[tuple[str, ...], ET.Element] = {}
+    parse_error = None
+    if xml_bytes and source_status == "available":
+        try:
+            root = ET.fromstring(xml_bytes)
+        except ET.ParseError as exc:
+            parse_error = exc
+        else:
+            parent_map, exact_id_map, sequence_map = _build_extraction_context(root)
+    return (
+        UKAffectingSourceContext(
+            xml_bytes=xml_bytes,
+            root=root,
+            parent_map=parent_map,
+            exact_id_map=exact_id_map,
+            sequence_map=sequence_map,
+            source_status=source_status,
+            source_size=source_size,
+            locator=locator,
+            authority_layer=authority_layer,
+        ),
+        parse_error,
+    )
+
+
+def _extract_from_affecting_source_context(
+    context: UKAffectingSourceContext,
+    provision_ref: str,
+) -> Optional[ET.Element]:
+    if context.xml_bytes is None or context.root is None:
+        return None
+    return extract_provision_element_from_bytes(
+        context.xml_bytes,
+        provision_ref,
+        root=context.root,
+        parent_map=context.parent_map,
+        exact_id_map=context.exact_id_map,
+        sequence_map=context.sequence_map,
+    )
+
+
+def _extracted_element_text(el: Optional[ET.Element]) -> str:
+    return _text_content(el) if el is not None else ""
+
+
+def _preview_source_text(text: str, *, limit: int = 160) -> str:
+    normalized = " ".join((text or "").split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 3] + "..."
+
+
+def _looks_like_non_substantive_shell_text(text: str) -> bool:
+    normalized = " ".join((text or "").split()).strip()
+    if not normalized:
+        return False
+    normalized = re.sub(r"^[0-9A-Za-z]+(?:\([0-9A-Za-z]+\))?\s+", "", normalized)
+    if re.search(r"[A-Za-z]", normalized):
+        return False
+    return normalized.count(".") >= 4
+
+
+def _select_enacted_source_for_current_shell(
+    *,
+    effect: UKEffectRecord,
+    archive: Any,
+    current_context: UKAffectingSourceContext,
+    current_el: Optional[ET.Element],
+    enacted_context_cache: dict[str, UKAffectingSourceContext],
+) -> tuple[UKAffectingSourceContext, Optional[ET.Element], tuple[dict[str, Any], ...]]:
+    if current_el is None or not _looks_like_non_substantive_shell_text(_extracted_element_text(current_el)):
+        return current_context, current_el, ()
+
+    act_id = str(effect.affecting_act_id or "")
+    if not act_id:
+        return current_context, current_el, ()
+    if act_id in enacted_context_cache:
+        enacted_context = enacted_context_cache[act_id]
+    else:
+        enacted_locator = f"{_LEG_BASE}/{act_id}/enacted/data.xml"
+        enacted_context, _parse_error = _build_affecting_source_context(
+            xml_bytes=get_affecting_act_enacted_xml_from_archive(act_id, archive),
+            locator=enacted_locator,
+            authority_layer="AFFECTING_ACT_ENACTED_TEXT",
+        )
+        enacted_context_cache[act_id] = enacted_context
+
+    enacted_el = _extract_from_affecting_source_context(enacted_context, effect.affecting_provisions)
+    enacted_text = _extracted_element_text(enacted_el)
+    if enacted_el is None or _looks_like_non_substantive_shell_text(enacted_text):
+        return current_context, current_el, ()
+
+    current_text = _extracted_element_text(current_el)
+    observation = uk_affecting_act_current_shell_enacted_source_selected(
+        effect_id=str(effect.effect_id or ""),
+        affecting_act_id=act_id,
+        affecting_provisions=str(effect.affecting_provisions or ""),
+        current_locator=current_context.locator,
+        enacted_locator=enacted_context.locator,
+        current_source_size=current_context.source_size,
+        enacted_source_size=enacted_context.source_size,
+        current_text_preview=_preview_source_text(current_text),
+        enacted_text_preview=_preview_source_text(enacted_text),
+    )
+    return enacted_context, enacted_el, (observation,)
+
+
+def _instruction_text_before_amendment_container(el: ET.Element) -> str:
+    """Collect lead-in text before the first amendment payload container."""
+    parts: list[str] = []
+    stopped = False
+
+    def _walk(node: ET.Element) -> None:
+        nonlocal stopped
+        if stopped:
+            return
+        if node is not el and _tag(node) in ("BlockAmendment", "InlineAmendment"):
+            stopped = True
+            return
+        if node.text:
+            parts.append(node.text)
+        for child in node:
+            _walk(child)
+            if stopped:
+                return
+            if child.tail:
+                parts.append(child.tail)
+
+    _walk(el)
+    return " ".join(" ".join(parts).split())
+
+
 def _direct_payload_text(el: ET.Element) -> str:
     """Collect direct/local text for extracted payload compilation only."""
     structural_tags = {
@@ -1603,11 +2948,137 @@ def _direct_payload_text(el: ET.Element) -> str:
     return " ".join(" ".join(_collect_local(el)).split())
 
 
+def _inserted_section_p1group_heading_text(
+    actual_el: ET.Element,
+    extracted_el: ET.Element,
+    target: LegalAddress,
+) -> Optional[str]:
+    """Return a source-owned P1group title for an inserted section payload.
+
+    UK affecting XML often encodes an inserted section as:
+
+        P1group/Title + P1/Pnumber
+
+    When the effect row targets only the inserted P1, lowering must not later
+    use the live parent P1group heading carrier because that parent may also
+    contain neighbouring sections. This helper only accepts the direct source
+    wrapper whose child is the exact section target.
+    """
+    if _tag(actual_el) not in {"P1", "Section", "Article", "Rule"}:
+        return None
+    if (_addr_leaf_kind(target) or "") != "section":
+        return None
+    target_label = _addr_leaf_label(target) or ""
+    actual_label = _direct_structural_num(actual_el)
+    if not target_label or _clean_num(actual_label) != _clean_num(target_label):
+        return None
+    parent_map = {child: parent for parent in extracted_el.iter() for child in parent}
+    parent = parent_map.get(actual_el)
+    if parent is None or _tag(parent) != "P1group":
+        return None
+    title_el = parent.find(f"./{{{_LEG_NS}}}Title")
+    if title_el is None:
+        return None
+    heading_text = _text_content(title_el)
+    return heading_text or None
+
+
+def _prepend_inserted_section_heading_carrier(
+    content_ir: dict[str, Any],
+    *,
+    heading_text: str,
+) -> bool:
+    """Prepend an explicit heading child to a section payload if absent."""
+    if str(content_ir.get("kind") or "") != IRNodeKind.SECTION.value:
+        return False
+    children = list(content_ir.get("children") or [])
+    if any(str(child.get("kind") or "") == IRNodeKind.HEADING.value for child in children):
+        return False
+    heading_child = {
+        "kind": IRNodeKind.HEADING.value,
+        "label": None,
+        "text": heading_text,
+        "attrs": {
+            "source_tag": "P1group",
+            "source_rule_id": "uk_inserted_section_p1group_heading_carrier",
+        },
+        "children": [],
+    }
+    content_ir["children"] = [heading_child, *children]
+    return True
+
+
 def _normalize_text(text: str) -> str:
     """Normalize text for fuzzy matching (squash whitespace)."""
     if not text:
         return ""
     return " ".join(text.replace("\u00a0", " ").split()).lower()
+
+
+def _text_patch_pattern(
+    match: str,
+    *,
+    allow_punctuation_spacing: bool = False,
+    allow_word_punctuation_elision: bool = False,
+) -> str:
+    """Build a conservative text-patch regex from an effect-feed match string."""
+    pattern = re.escape(match).replace(r"\ ", r"\s+")
+    if allow_punctuation_spacing:
+        # UK effects sometimes omit a space in citation forms like "c.14" while
+        # the source text has "c. 14". Keep this narrow: only allow space after
+        # an escaped full stop when a word character precedes and a digit follows.
+        pattern = re.sub(
+            r"(?<=[A-Za-z0-9_])\\\.(?:\\s\+)?(?=\d)",
+            lambda _match: r"\.\s*",
+            pattern,
+        )
+        # Effect-feed selectors can carry a trailing space before punctuation
+        # that belongs to the host provision, not the selected source phrase.
+        pattern = re.sub(
+            r"\\s\+$",
+            lambda _match: r"\s*(?=[\.,;:]|\s|$)",
+            pattern,
+        )
+        # Some UK XML text surfaces elide the space before an inline quoted
+        # term, e.g. "the“nominated..." while the effect source quotes
+        # "the “nominated...".
+        pattern = re.sub(
+            r"\\s\+(?=[“\"'‘])",
+            lambda _match: r"\s*",
+            pattern,
+        )
+        # Parsed UK XML can also surface compact subsection citations as
+        # "2 (1)" while the effect feed quotes "2(1)". Keep this bounded to
+        # word/digit citation tokens and only as an explicit replay recovery.
+        pattern = re.sub(
+            r"(?<=[A-Za-z0-9_])\\\((?=[A-Za-z0-9_])",
+            lambda _match: r"\s*\(",
+            pattern,
+        )
+    if allow_word_punctuation_elision:
+        # Some UK source/XML text surfaces lose word-internal punctuation while
+        # effect text retains it, e.g. "tenant's son-in-law" vs
+        # "tenants soninlaw". Keep this bounded to apostrophe/hyphen-like marks
+        # between word characters; it must not match whitespace or arbitrary
+        # punctuation differences.
+        pattern = re.sub(
+            r"(?<=[A-Za-z0-9_])(?:'|\\'|’|‘)(?=[A-Za-z0-9_])",
+            lambda _match: r"['’‘]?",
+            pattern,
+        )
+        pattern = re.sub(
+            r"(?<=[A-Za-z0-9_])(?:\\-|‐|‑|‒|–|—)(?=[A-Za-z0-9_])",
+            lambda _match: r"[-‐‑‒–—]?",
+            pattern,
+        )
+    return pattern
+
+
+def _text_match_has_word_punctuation_elision_candidate(match: str) -> bool:
+    """Return whether a match string contains recoverable word-internal punctuation."""
+    if not match:
+        return False
+    return bool(re.search(r"(?<=[A-Za-z0-9_])['’‘\-‐‑‒–—](?=[A-Za-z0-9_])", match))
 
 
 def _norm_prov_ref(ref: str) -> str:
@@ -1639,6 +3110,7 @@ def _sequence_tokens_cached(parts: tuple[str, ...]) -> tuple[str, ...]:
         "wrapper",
         "article",
         "rule",
+        "regulation",
     }
     roman_map = {
         "i": "1",
@@ -1727,8 +3199,8 @@ def _parse_ref(ref: str) -> tuple[tuple[Optional[str], str], ...]:
     r = re.sub(r"\bCh\.", "chapter", r, flags=re.I)
     r = re.sub(r"\barts\.", "article", r, flags=re.I)
     r = re.sub(r"\bart\.", "article", r, flags=re.I)
-    r = re.sub(r"\bregs\.", "section", r, flags=re.I)
-    r = re.sub(r"\breg\.", "section", r, flags=re.I)
+    r = re.sub(r"\bregs\.", "regulation", r, flags=re.I)
+    r = re.sub(r"\breg\.", "regulation", r, flags=re.I)
     r = re.sub(r"\bannex\b", "schedule", r, flags=re.I)
     r = re.sub(r"\bpoints?\b", "paragraph", r, flags=re.I)
 
@@ -1740,7 +3212,7 @@ def _parse_ref(ref: str) -> tuple[tuple[Optional[str], str], ...]:
     raw_tokens = _REF_SPLIT_RE.split(r)
     raw_tokens = [t.lower() for t in raw_tokens if t]
 
-    kinds = {"schedule", "paragraph", "section", "part", "chapter", "article", "rule"}
+    kinds = {"schedule", "paragraph", "section", "part", "chapter", "article", "rule", "regulation"}
     # Conjunctions and structural modifiers that are not provision identifiers.
     # "word" / "words" appear as qualifier suffixes in affected_provisions strings like
     # "sch. 6 para. 6(2)(a)(ii) and word" — they must not be parsed as provision labels.
@@ -1752,6 +3224,8 @@ def _parse_ref(ref: str) -> tuple[tuple[Optional[str], str], ...]:
         "heading",
         "crossheading",
         "cross-heading",
+        "title",
+        "sidenote",
         "word",
         "words",
     }
@@ -1785,6 +3259,7 @@ def _match_node(el: ET.Element, kind: Optional[str], num: str) -> bool:
             "schedule": ("schedule", "sched", "schedules"),
             "paragraph": ("p3", "p2", "p1", "paragraph", "para", "p", "listitem"),
             "section": ("section", "p1", "p1group"),
+            "regulation": ("regulation", "p1", "p1group"),
             "part": ("part",),
             "chapter": ("pblock", "chapter"),
         }.get(kind, (kind,))
@@ -1875,6 +3350,15 @@ def _select_extracted_match(
         parent = parent_map.get(el)
         if parent is not None:
             local_text = _text_content(el).strip().lower()
+            lead_in_text = _instruction_text_before_amendment_container(el).strip().lower()
+            if re.search(r"\bfor\b.+\bsubstitute\b", local_text):
+                for child in el.iter():
+                    if child is not el and _tag(child) == "BlockAmendment":
+                        return el
+            if re.search(r"\b(?:insert|substitute)\s*[—-]?\s*$", lead_in_text):
+                for child in el.iter():
+                    if child is not el and _tag(child) in ("BlockAmendment", "InlineAmendment"):
+                        return el
             if re.search(r"\b(?:insert|substitute)\s*[—-]?\s*$", local_text):
                 siblings = list(parent)
                 try:
@@ -1906,6 +3390,13 @@ def _select_extracted_match(
     for child in el.iter():
         if child is el:
             continue
+        if _tag(child) == "BlockAmendment":
+            lead_in_text = _instruction_text_before_amendment_container(el) or _instruction_text_before_amendment_container(child)
+            if (
+                re.search(r"\binsert\s+(?:before|after)\s+[“\"']", lead_in_text, re.I)
+                or re.search(r"\bat\s+the\s+appropriate\s+place,?\s+in\s+alphabetical\s+order", lead_in_text, re.I)
+            ):
+                return el
         if _tag(child) == "BlockAmendment":
             return child
 
@@ -2052,6 +3543,30 @@ def _parse_affected_target(ref: str) -> LegalAddress:
             return canonicalize_uk_address(LegalAddress(path=tuple(schedule_path)))
 
     body_descendant_tokens = [(kind, num) for kind, num in path if kind in ("paragraph", None)]
+    if _is_direct_section_paragraph_ref(ref):
+        body_path: list[tuple[str, str]] = []
+        body_depth = 0
+        for kind, num in path:
+            if kind == "part":
+                body_path.append(("part", num))
+            elif kind == "chapter":
+                body_path.append(("chapter", num))
+            elif kind in ("section", "article", "rule", "regulation"):
+                body_path.append(("section", num))
+            elif kind in ("paragraph", None):
+                if not body_path:
+                    body_path.append(("section", num))
+                    continue
+                if body_depth == 0:
+                    body_path.append(("paragraph", num))
+                elif body_depth == 1:
+                    body_path.append(("subparagraph", num))
+                else:
+                    body_path.append(("item", num))
+                body_depth += 1
+        if body_path:
+            return LegalAddress(path=tuple(body_path))
+
     if len(body_descendant_tokens) > 2:
         body_path: list[tuple[str, str]] = []
         body_depth = 0
@@ -2132,6 +3647,54 @@ def _parse_affected_target(ref: str) -> LegalAddress:
     )
 
 
+def _uk_metadata_renumber_targets(effect: UKEffectRecord) -> Optional[UKMetadataRenumberTargets]:
+    """Return source/destination targets for an explicit UK metadata renumber row.
+
+    This is deliberately narrow: supported shapes are a provision becoming its
+    own immediate descendant, for example ``Sch. 9 para. 132`` to
+    ``Sch. 9 para. 132(1)``, or a same-parent/same-kind sibling renumber such as
+    ``s. 16(9)`` to ``s. 16(8)``. Broader moves/renumbers stay unsupported until
+    they have their own lineage semantics.
+    """
+
+    effect_type = " ".join(str(effect.effect_type or "").replace("\u00a0", " ").split())
+    match = re.fullmatch(r"(?P<source>.+?)\s+renumbered\s+as\s+(?P<dest>.+)", effect_type, flags=re.I)
+    if match is None:
+        return None
+    source_target = canonicalize_uk_address(_parse_affected_target(match.group("source")))
+    destination = canonicalize_uk_address(_parse_affected_target(match.group("dest")))
+    if len(destination.path) == len(source_target.path) + 1 and destination.path[:-1] == source_target.path:
+        return UKMetadataRenumberTargets(
+            source_target=source_target,
+            destination=destination,
+            rule_id="uk_effect_metadata_renumber_lowered",
+            reason_code="explicit_effect_metadata_descendant_renumber",
+            reason=(
+                "UK effect metadata explicitly says the source provision is "
+                "renumbered as its own immediate descendant; lowering preserves "
+                "that typed renumber instead of treating the row as nonstructural"
+            ),
+        )
+    if (
+        len(destination.path) == len(source_target.path)
+        and destination.path[:-1] == source_target.path[:-1]
+        and _addr_leaf_kind(destination) == _addr_leaf_kind(source_target)
+        and _addr_leaf_label(destination) != _addr_leaf_label(source_target)
+    ):
+        return UKMetadataRenumberTargets(
+            source_target=source_target,
+            destination=destination,
+            rule_id="uk_effect_metadata_sibling_renumber_lowered",
+            reason_code="explicit_effect_metadata_same_parent_sibling_renumber",
+            reason=(
+                "UK effect metadata explicitly says a provision is renumbered "
+                "as a same-parent sibling; lowering preserves a typed renumber "
+                "instead of replaying the row as another repeal of the destination label"
+            ),
+        )
+    return None
+
+
 def _select_whole_schedule_element(
     extracted_el: Optional[ET.Element],
     target: LegalAddress,
@@ -2155,6 +3718,850 @@ def _select_whole_schedule_element(
         if _clean_num(c_num) == _clean_num(schedule_label):
             return child
     return None
+
+
+def _word_level_structural_subsection_omission(
+    *,
+    effect_type: str,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Identify word-level feed rows whose source explicitly repeals a subsection."""
+    effect_type_norm = (effect_type or "").strip().lower()
+    if effect_type_norm not in {"words omitted", "word omitted", "words repealed", "word repealed"}:
+        return None
+    if _addr_leaf_kind(target) != "subsection":
+        return None
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    match = re.search(
+        r"\bomit\s+(?:the\s+)?subsection\s*\(\s*(?P<label>[0-9A-Za-z]+)\s*\)(?=\W|$)",
+        text,
+        flags=re.I,
+    )
+    if match is None:
+        match = re.search(
+            r"\bsubsection\s*\(\s*(?P<label>[0-9A-Za-z]+)\s*\)\s+is\s+"
+            r"(?:omitted|repealed)\b",
+            text,
+            flags=re.I,
+        )
+    if match is None:
+        return None
+    source_label = _clean_num(str(match.group("label") or ""))
+    target_label = _clean_num(_addr_leaf_label(target) or "")
+    if not source_label or source_label != target_label:
+        return None
+    return {
+        "source_target_kind": "subsection",
+        "source_target_label": source_label,
+        "matched_instruction": match.group(0),
+    }
+
+
+@dataclass(frozen=True)
+class _UKTableDrivenWordSubstitution:
+    recognized: bool
+    original: Optional[str] = None
+    replacement: Optional[str] = None
+    reason_code: str = ""
+    match_count: int = 0
+    table_index: int = -1
+    row_text: str = ""
+
+
+def _strip_outer_uk_quotes(text: str) -> str:
+    stripped = " ".join(text.split()).strip()
+    quote_pairs = (("\u201c", "\u201d"), ("\u2018", "\u2019"), ('"', '"'), ("'", "'"))
+    for left, right in quote_pairs:
+        if stripped.startswith(left) and stripped.endswith(right) and len(stripped) >= 2:
+            return stripped[1:-1].strip()
+    return stripped
+
+
+def _uk_parenthetical_labels(text: str) -> list[str]:
+    return [match.group(1).strip().lower() for match in re.finditer(r"\(\s*([^)]+?)\s*\)", text)]
+
+
+def _uk_parenthetical_labels_contain_sequence(haystack: Sequence[str], needle: Sequence[str]) -> bool:
+    if not needle:
+        return True
+    if len(needle) > len(haystack):
+        return False
+    for idx in range(0, len(haystack) - len(needle) + 1):
+        if list(haystack[idx : idx + len(needle)]) == list(needle):
+            return True
+    return False
+
+
+def _uk_cell_has_section_descendant_scope(
+    text: str,
+    *,
+    section: str,
+    descendant_labels: Sequence[str],
+) -> bool:
+    """Return true when descendant labels belong to the requested section."""
+    section_pat = re.escape(section.lower())
+    wanted = [label.lower() for label in descendant_labels if label]
+    explicit_ref_re = re.compile(rf"\b{section_pat}\s*((?:\([^)]*\)\s*)+)", re.I)
+    for match in explicit_ref_re.finditer(text):
+        if _uk_parenthetical_labels_contain_sequence(
+            _uk_parenthetical_labels(match.group(1)),
+            wanted,
+        ):
+            return True
+
+    singular_prefix = re.search(rf"\bsection\s+{section_pat}\b", text, re.I) is not None
+    plural_prefix = re.search(r"\bsections\b", text, re.I) is not None
+    if singular_prefix and not plural_prefix:
+        before_act_title = re.split(r"\bof\b", text, maxsplit=1, flags=re.I)[0]
+        return _uk_parenthetical_labels_contain_sequence(
+            _uk_parenthetical_labels(before_act_title),
+            wanted,
+        )
+    return False
+
+
+def _uk_table_cell_mentions_target(
+    cell_text: str,
+    *,
+    target: LegalAddress,
+    affected_year: str,
+) -> bool:
+    """Conservatively match an effect target against a source-table provision cell."""
+    text = " ".join(cell_text.split()).lower()
+    if not text:
+        return False
+    years = set(re.findall(r"\b(?:1[6-9]|20)\d{2}\b", text))
+    if years and affected_year and affected_year not in years:
+        return False
+
+    labels = {kind: label for kind, label in target.path}
+    section = labels.get("section", "")
+    schedule = labels.get("schedule", "")
+    paragraph = labels.get("paragraph", "")
+    subsection = labels.get("subsection", "")
+    subparagraph = labels.get("subparagraph", "")
+
+    if section:
+        section_pat = re.escape(section.lower())
+        direct_section_match = re.search(
+            rf"\b(?:section|sections|s)\.?\s*{section_pat}\b",
+            text,
+        )
+        listed_section_match = (
+            re.search(r"\bsections\b", text) is not None
+            and re.search(rf"\b{section_pat}\s*\(", text) is not None
+        )
+        if not direct_section_match and not listed_section_match:
+            return False
+        descendant_labels = [label for label in (subsection, paragraph, subparagraph) if label]
+        if descendant_labels and not _uk_cell_has_section_descendant_scope(
+            text,
+            section=section,
+            descendant_labels=descendant_labels,
+        ):
+            return False
+        return True
+
+    if schedule:
+        schedule_pat = re.escape(schedule.lower())
+        if not re.search(rf"\b(?:schedule|sch)\.?\s*{schedule_pat}\b", text):
+            return False
+        if paragraph:
+            paragraph_pat = re.escape(paragraph.lower())
+            if not re.search(rf"\b(?:paragraph|paragraphs|para)\.?\s*{paragraph_pat}\b", text):
+                return False
+        for label in (subparagraph,):
+            if label and f"({label.lower()})" not in text:
+                return False
+        return True
+
+    return False
+
+
+def _uk_table_is_column_1_2_source_table(table: ET.Element) -> bool:
+    rows = _uk_table_rows_with_rowspans(table)
+    for row in rows[:3]:
+        header = " ".join(row).lower()
+        if "column 1" in header and "column 2" in header:
+            return True
+    return False
+
+
+def _uk_table_rows_with_rowspans(table: ET.Element) -> list[list[str]]:
+    rows: list[list[str]] = []
+    rowspans: dict[int, tuple[int, str]] = {}
+    for row in table.iter():
+        if _tag(row).lower() != "tr":
+            continue
+        cells: list[str] = []
+        col_idx = 0
+        explicit_cells = [child for child in row if _tag(child).lower() in {"td", "th", "entry"}]
+        for cell in explicit_cells:
+            while col_idx in rowspans:
+                remaining, carried_text = rowspans[col_idx]
+                cells.append(carried_text)
+                if remaining <= 1:
+                    del rowspans[col_idx]
+                else:
+                    rowspans[col_idx] = (remaining - 1, carried_text)
+                col_idx += 1
+            cell_text = " ".join(_text_content(cell).split())
+            cells.append(cell_text)
+            try:
+                span = int(cell.get("rowspan") or cell.get("morerows") or "1")
+            except ValueError:
+                span = 1
+            if _tag(cell).lower() == "entry" and cell.get("morerows"):
+                span += 1
+            if span > 1:
+                rowspans[col_idx] = (span - 1, cell_text)
+            col_idx += 1
+        while col_idx in rowspans:
+            remaining, carried_text = rowspans[col_idx]
+            cells.append(carried_text)
+            if remaining <= 1:
+                del rowspans[col_idx]
+            else:
+                rowspans[col_idx] = (remaining - 1, carried_text)
+            col_idx += 1
+        if any(cells):
+            rows.append(cells)
+    return rows
+
+
+def _uk_table_driven_corresponding_entry_word_substitution(
+    *,
+    effect: UKEffectRecord,
+    extracted_text: Optional[str],
+    source_root: Optional[ET.Element],
+    target: LegalAddress,
+) -> _UKTableDrivenWordSubstitution:
+    """Resolve "column 1 provision / corresponding column 2 words" source tables."""
+    text = " ".join((extracted_text or "").split())
+    replacement_match = re.search(
+        r"\bprovisions?\s+listed\s+in\s+column\s+1\b"
+        r".*?\bfor\s+the\s+words\s+in\s+the\s+corresponding\s+entry\s+in\s+column\s+2\b"
+        r".*?\bsubstitute\s+(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\"|'(?P<single>.*?)')",
+        text,
+        re.I,
+    )
+    if not replacement_match:
+        return _UKTableDrivenWordSubstitution(recognized=False)
+    if source_root is None:
+        return _UKTableDrivenWordSubstitution(
+            recognized=True,
+            reason_code="source_root_unavailable",
+        )
+
+    replacement = next(
+        group.strip()
+        for group in (
+            replacement_match.group("curly"),
+            replacement_match.group("double"),
+            replacement_match.group("single"),
+        )
+        if group is not None
+    )
+    matches: list[tuple[int, str, str]] = []
+    tables = [
+        el
+        for el in source_root.iter()
+        if _tag(el).lower() == "table" and _uk_table_is_column_1_2_source_table(el)
+    ]
+    for table_index, table in enumerate(tables):
+        for row in _uk_table_rows_with_rowspans(table):
+            if len(row) < 2:
+                continue
+            provision_cell = row[0]
+            words_cell = row[1]
+            if not _uk_table_cell_mentions_target(
+                provision_cell,
+                target=target,
+                affected_year=str(effect.affected_year or ""),
+            ):
+                continue
+            old_words = _strip_outer_uk_quotes(words_cell)
+            if not old_words:
+                continue
+            matches.append((table_index, old_words, " | ".join(row[:2])))
+
+    if len(matches) != 1:
+        return _UKTableDrivenWordSubstitution(
+            recognized=True,
+            replacement=replacement,
+            reason_code="no_unique_matching_table_row",
+            match_count=len(matches),
+        )
+
+    table_index, original, row_text = matches[0]
+    return _UKTableDrivenWordSubstitution(
+        recognized=True,
+        original=original,
+        replacement=replacement,
+        reason_code="",
+        match_count=1,
+        table_index=table_index,
+        row_text=row_text,
+    )
+
+
+_ORDINAL_WORDS = {
+    "first": 1,
+    "second": 2,
+    "third": 3,
+    "fourth": 4,
+    "fifth": 5,
+    "sixth": 6,
+    "seventh": 7,
+    "eighth": 8,
+    "ninth": 9,
+    "tenth": 10,
+}
+
+
+def _uk_ordinal_to_int(raw: str) -> int | None:
+    token = " ".join(str(raw or "").lower().split()).strip(" .")
+    if not token:
+        return None
+    if token in _ORDINAL_WORDS:
+        return _ORDINAL_WORDS[token]
+    match = re.fullmatch(r"(\d+)(?:st|nd|rd|th)?", token)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def _uk_table_entry_inline_text_selector(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: Optional[str],
+) -> dict[str, Any] | None:
+    """Extract a deterministic base-table cell selector from inline table-entry wording."""
+    text = " ".join((extracted_text or "").split())
+    if not text or "table" not in " ".join((target_ref, str(target))).lower():
+        return None
+    match = re.search(
+        r"\bin\s+the\s+(?P<column>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+column,\s+"
+        r"in\s+the\s+(?P<entry>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+entry\s+"
+        r"relating\s+to\s+(?:the\s+)?(?P<relating>.*?)(?:,\s+after\b|,\s+for\b|,\s+omit\b|,\s+insert\b|$)",
+        text,
+        re.I,
+    )
+    if match is None:
+        return None
+    column_index = _uk_ordinal_to_int(match.group("column"))
+    entry_index = _uk_ordinal_to_int(match.group("entry"))
+    relating_text = " ".join(match.group("relating").split()).strip(" ,;.")
+    if column_index is None or entry_index is None or column_index < 1 or entry_index < 1 or not relating_text:
+        return None
+    table_match = re.search(r"\btable\s+([0-9A-Za-z]+)\b", target_ref, re.I)
+    return {
+        "rule_id": _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID,
+        "column_index": column_index,
+        "entry_index": entry_index,
+        "relating_text": relating_text,
+        "table_label": table_match.group(1) if table_match is not None else "",
+        "original_target": str(target),
+        "target_ref": target_ref,
+    }
+
+
+def _strip_schedule_entry_phrase(raw: str) -> str:
+    text = " ".join(str(raw or "").split()).strip(" ,;.")
+    text = text.strip("“”\"'‘’")
+    text = " ".join(text.split()).strip(" ,;.")
+    return text
+
+
+def _strip_schedule_entry_payload(raw: str) -> str:
+    text = _strip_schedule_entry_phrase(raw)
+    text = re.sub(
+        r"^(?:the\s+following\s+entry\s*)[—–-]?\s*",
+        "",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(r"\s*;\s*(?:and)?\s*$", "", text, flags=re.I)
+    return _strip_schedule_entry_phrase(text)
+
+
+def _schedule_list_entry_selector_from_parts(
+    *,
+    direction: str,
+    anchor_text: str,
+    inserted_text: str,
+    target_ref: str,
+    target: LegalAddress,
+) -> dict[str, Any] | None:
+    direction = str(direction or "").lower()
+    anchor_text = _strip_schedule_entry_phrase(anchor_text)
+    inserted_text = _strip_schedule_entry_payload(inserted_text)
+    if direction not in {"before", "after", "alphabetical"} or not inserted_text:
+        return None
+    if direction != "alphabetical" and not anchor_text:
+        return None
+    return {
+        "rule_id": _UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
+        "direction": direction,
+        "anchor_text": anchor_text,
+        "inserted_text": inserted_text,
+        "target_ref": target_ref,
+        "target": str(target),
+    }
+
+
+def _uk_schedule_list_entry_insert_selector(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: Optional[str],
+) -> dict[str, Any] | None:
+    """Extract a deterministic schedule-list-entry sibling insertion selector."""
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    target_surface = f"{target_ref} {target}".lower()
+    if "table" in target_surface or "column" in text.lower():
+        return None
+    if _addr_leaf_kind(target) != "schedule":
+        return None
+
+    match = re.search(
+        r"\b(?P<direction>before|after)\s+(?:the\s+)?entry\s+"
+        r"(?:relating\s+to|for)\s+(?P<anchor>.+?)"
+        r"(?:,?\s+there\s+is\s+inserted|\s+insert\b)\s*[—–-]?\s*(?P<payload>.+)$",
+        text,
+        re.I,
+    )
+    if match is None:
+        match = re.search(
+            r"\binsertion,\s*(?P<direction>before|after)\s+(?:the\s+)?entry\s+"
+            r"(?:relating\s+to|for)\s+(?P<anchor>.+),?\s+of\s+(?P<payload>.+)$",
+            text,
+            re.I,
+        )
+    if match is None:
+        match = re.search(
+            r"\binsert\s+(?P<direction>before|after)\s+[“\"'](?P<anchor>.+?)[”\"']\s*[—–-]\s*(?P<payload>.+)$",
+            text,
+            re.I,
+        )
+    if match is None:
+        match = re.search(
+            r"\b(?P<direction>before|after)\s+[“\"'](?P<anchor>.+?)[”\"']\s+"
+            r"(?:,?\s+)?(?:there\s+is\s+)?insert(?:ed)?\s*[—–-]?\s*(?P<payload>.+)$",
+            text,
+            re.I,
+        )
+    if match is not None:
+        return _schedule_list_entry_selector_from_parts(
+            direction=str(match.group("direction") or "").lower(),
+            anchor_text=match.group("anchor"),
+            inserted_text=match.group("payload"),
+            target_ref=target_ref,
+            target=target,
+        )
+
+    match = re.search(
+        r"\bat\s+the\s+appropriate\s+place,?\s+in\s+alphabetical\s+order,?\s+"
+        r"insert\s*[—–-]?\s*(?P<payload>.+)$",
+        text,
+        re.I,
+    )
+    if match is None:
+        return None
+    return _schedule_list_entry_selector_from_parts(
+        direction="alphabetical",
+        anchor_text="",
+        inserted_text=match.group("payload"),
+        target_ref=target_ref,
+        target=target,
+    )
+
+
+def _strip_schedule_entry_repeal_anchor(raw: str) -> str:
+    text = _strip_schedule_entry_phrase(raw)
+    text = re.sub(r"^(?:and\s+)?(?:\(?[ivxlcdm]+\)?|[a-z])\.?\s+", "", text, flags=re.I)
+    text = re.sub(r"\s+(?:is|are)\s+(?:repealed|omitted)\b.*$", "", text, flags=re.I)
+    return _strip_schedule_entry_phrase(text)
+
+
+def _split_schedule_entry_repeal_anchors(raw: str) -> tuple[str, ...]:
+    text = _strip_schedule_entry_phrase(raw)
+    if not text:
+        return ()
+    if ";" in text:
+        coarse_parts = re.split(r"\s*;\s*(?:and\s+)?", text, flags=re.I)
+    elif "," in text:
+        coarse_parts = re.split(r"\s*,\s*(?:and\s+)?", text, flags=re.I)
+    else:
+        coarse_parts = [text]
+    parts: list[str] = []
+    for part in coarse_parts:
+        parts.extend(re.split(r"\s+and\s+(?=the\s+)", part, flags=re.I))
+    anchors: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        anchor = _strip_schedule_entry_repeal_anchor(part)
+        key = _compact_normalized_text(anchor)
+        if not anchor or key in seen:
+            continue
+        seen.add(key)
+        anchors.append(anchor)
+    return tuple(anchors)
+
+
+def _uk_schedule_list_entry_repeal_selector(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: Optional[str],
+) -> dict[str, Any] | None:
+    """Extract explicit schedule-list-entry repeal anchors.
+
+    The effect target remains the schedule carrier, but these anchors limit the
+    executable mutation to direct schedule-entry children. Missing or ambiguous
+    anchors block in replay rather than deleting the schedule root.
+    """
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    target_surface = f"{target_ref} {target}".lower()
+    if "table" in target_surface or _addr_leaf_kind(target) != "schedule":
+        return None
+
+    match = re.search(
+        r"\b(?:the\s+)?(?:entry|entries)\s+(?:relating\s+to|for)\s*[—–-]?\s+"
+        r"(?P<anchors>.+?)\s+(?:is|are)\s+(?:repealed|omitted)\b",
+        text,
+        re.I,
+    )
+    anchors: tuple[str, ...] = ()
+    if match is not None:
+        anchors = _split_schedule_entry_repeal_anchors(match.group("anchors"))
+    else:
+        match = re.search(r"\bomit(?:ted)?\s+[“\"'](?P<anchor>.+?)[”\"']", text, re.I)
+        if match is not None:
+            anchors = (_strip_schedule_entry_repeal_anchor(match.group("anchor")),)
+    if not anchors:
+        return None
+    return {
+        "rule_id": _UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
+        "anchors": list(anchors),
+        "target_ref": target_ref,
+        "target": str(target),
+    }
+
+
+def _uk_broad_table_entry_instruction(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: Optional[str],
+) -> dict[str, Any] | None:
+    """Detect table-entry instructions that are unsafe as broad host mutations."""
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    target_surface = f"{target_ref} {target}".lower()
+    if "table" in target_surface:
+        return None
+    norm = text.lower()
+    if "corresponding entry" in norm:
+        return None
+    if not re.search(r"\b(?:table|column|columns)\b", norm):
+        return None
+    has_entry_text = re.search(r"\b(?:entry|entries)\b", norm) is not None
+    has_column_instruction = re.search(r"\bin\s+column\s+\d+\b|\bin\s+the\s+\w+\s+column\b", norm) is not None
+    if not has_entry_text and not has_column_instruction:
+        return None
+    if not re.search(
+        r"\b(?:insert|inserted|substitute|substituted|omit|omitted|repeal|repealed|amend|amended|add|added)\b",
+        norm,
+    ):
+        return None
+    if re.search(r"\b(?:in|after|before)\s+(?:the\s+)?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+entry\b", norm):
+        entry_shape = "ordinal_entry"
+    elif re.search(r"\bentry\s+number\s+\d+\b", norm):
+        entry_shape = "numbered_entry"
+    elif re.search(r"\bentries?\s+specified\b", norm):
+        entry_shape = "specified_entries"
+    elif has_column_instruction:
+        entry_shape = "column_instruction"
+    else:
+        return None
+    return {
+        "target_ref": target_ref,
+        "target": str(target),
+        "entry_shape": entry_shape,
+    }
+
+
+def _uk_parent_target_before_table_marker(target: LegalAddress) -> LegalAddress | None:
+    path: list[tuple[str, str | None]] = []
+    for kind, label in target.path:
+        kind_norm = str(kind or "").lower()
+        label_norm = str(label or "").lower()
+        if kind_norm in {"table", "cell", "row"} or label_norm == "table":
+            break
+        path.append((kind, label))
+    if not path or len(path) == len(target.path):
+        return None
+    return LegalAddress(path=tuple(path), special=target.special)
+
+
+def _whole_schedule_target_root_eid(target: LegalAddress) -> str:
+    if _addr_container(target) != "schedule" or len(target.path) != 1:
+        return ""
+    schedule_label = _addr_field(target, "schedule")
+    if not schedule_label:
+        return ""
+    return f"schedule-{_clean_num(schedule_label)}"
+
+
+def _synthesize_whole_schedule_payload_descendant_eids(
+    payload_node: UKMutableNode,
+    *,
+    target: LegalAddress,
+    effect: "UKEffectRecord",
+    lowering_records_out: Optional[list[dict[str, Any]]],
+    allow_payload_identity_synthesis: bool,
+) -> UKMutableNode:
+    """Own local descendant IDs for whole-schedule payloads before replay.
+
+    This is source-local identity normalization, not oracle alignment: it only
+    runs for an explicit single-schedule target and derives descendants from
+    the target-owned root EID plus parsed labels.
+    """
+    if payload_node.kind != IRNodeKind.SCHEDULE and str(payload_node.kind) != "schedule":
+        return payload_node
+    root_eid = _whole_schedule_target_root_eid(target)
+    if not root_eid:
+        return payload_node
+    existing_root_eid = str(payload_node.attrs.get("eId") or payload_node.attrs.get("id") or "")
+    if not existing_root_eid:
+        payload_node.attrs["eId"] = root_eid
+    else:
+        root_eid = existing_root_eid
+
+    if not allow_payload_identity_synthesis:
+        if lowering_records_out is not None:
+            lowering_records_out.append(
+                {
+                    "rule_id": UK_WHOLE_SCHEDULE_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID,
+                    "family": "payload_identity_normalization",
+                    "phase": "payload_normalization",
+                    "effect_id": effect.effect_id,
+                    "affecting_act_id": effect.affecting_act_id,
+                    "affected_provisions": effect.affected_provisions,
+                    "affecting_provisions": effect.affecting_provisions,
+                    "effect_type": effect.effect_type,
+                    "target": str(target),
+                    "reason": (
+                        "Whole-schedule payload has descendants without source EIDs; "
+                        "strict lowering did not synthesize local descendant identity"
+                    ),
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                }
+            )
+        return payload_node
+
+    synthesized: list[dict[str, Any]] = []
+    used_eids: set[str] = {root_eid}
+    skipped_ambiguous = 0
+    skipped_duplicate = 0
+
+    def _local_suffix(parent_eid: str, child: UKMutableNode) -> str:
+        kind_name = str(child.kind or "").lower()
+        raw_label = str(child.label or "").strip()
+        clean_label = _clean_num(raw_label).strip("().")
+        if (
+            raw_label
+            and kind_name in {"subparagraph", "item", "point"}
+            and re.fullmatch(r"[ivxlcdm]+", raw_label, re.IGNORECASE)
+        ):
+            clean_label = raw_label.lower().strip(".")
+        if not clean_label:
+            return ""
+        if kind_name in {"paragraph", "subparagraph", "subsection", "item", "point", "p2", "p3"}:
+            if re.search(r"(?:^|-)paragraph-[^-]+(?:-|$)", parent_eid):
+                return clean_label
+            return f"paragraph-{clean_label}"
+        return f"{kind_name}-{clean_label}"
+
+    def _walk(parent_eid: str, current: UKMutableNode) -> None:
+        nonlocal skipped_ambiguous, skipped_duplicate
+        for child in current.children:
+            existing_eid = str(child.attrs.get("eId") or child.attrs.get("id") or "")
+            child_parent_eid = existing_eid or parent_eid
+            if existing_eid:
+                used_eids.add(existing_eid)
+            else:
+                suffix = _local_suffix(parent_eid, child)
+                if suffix:
+                    child_parent_eid = f"{parent_eid}{'' if parent_eid.endswith('-') else '-'}{suffix}"
+                    if child_parent_eid in used_eids:
+                        skipped_duplicate += 1
+                        child_parent_eid = parent_eid
+                        if child.children:
+                            skipped_ambiguous += 1
+                        _walk(child_parent_eid, child)
+                        continue
+                    used_eids.add(child_parent_eid)
+                    child.attrs["eId"] = child_parent_eid
+                    synthesized.append(
+                        {
+                            "kind": str(child.kind),
+                            "label": child.label,
+                            "parent_eid": parent_eid,
+                            "after_eid": child_parent_eid,
+                        }
+                    )
+                elif child.children:
+                    skipped_ambiguous += 1
+            _walk(child_parent_eid, child)
+
+    _walk(root_eid, payload_node)
+    if synthesized and lowering_records_out is not None:
+        lowering_records_out.append(
+            {
+                "rule_id": UK_WHOLE_SCHEDULE_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID,
+                "family": "payload_identity_normalization",
+                "phase": "payload_normalization",
+                "effect_id": effect.effect_id,
+                "affecting_act_id": effect.affecting_act_id,
+                "affected_provisions": effect.affected_provisions,
+                "affecting_provisions": effect.affecting_provisions,
+                "effect_type": effect.effect_type,
+                "target": str(target),
+                "root_eid": root_eid,
+                "synthesized_count": len(synthesized),
+                "skipped_ambiguous_count": skipped_ambiguous,
+                "skipped_duplicate_count": skipped_duplicate,
+                "sample": synthesized[:8],
+                "reason": (
+                    "Whole-schedule payload descendants lacked source EIDs; "
+                    "lowering synthesized deterministic local IDs from the explicit schedule target"
+                ),
+                "blocking": False,
+                "strict_disposition": "record",
+                "quirks_disposition": "record",
+            }
+        )
+    return payload_node
+
+
+def _synthesize_payload_descendant_eids(
+    payload_node: UKMutableNode,
+    *,
+    target: LegalAddress,
+    effect: "UKEffectRecord",
+    lowering_records_out: Optional[list[dict[str, Any]]],
+    allow_payload_identity_synthesis: bool,
+) -> UKMutableNode:
+    """Own local descendant IDs for non-schedule source-backed payload trees."""
+    if str(payload_node.kind).lower() == "schedule":
+        return payload_node
+    root_eid = str(payload_node.attrs.get("eId") or payload_node.attrs.get("id") or "")
+    if not root_eid:
+        root_eid = _fallback_target_eid(target)
+        if root_eid:
+            payload_node.attrs["eId"] = root_eid
+    if not root_eid or not payload_node.children:
+        return payload_node
+
+    if not allow_payload_identity_synthesis:
+        if lowering_records_out is not None:
+            lowering_records_out.append(
+                {
+                    "rule_id": UK_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID,
+                    "family": "payload_identity_normalization",
+                    "phase": "payload_normalization",
+                    "effect_id": effect.effect_id,
+                    "affecting_act_id": effect.affecting_act_id,
+                    "affected_provisions": effect.affected_provisions,
+                    "affecting_provisions": effect.affecting_provisions,
+                    "effect_type": effect.effect_type,
+                    "target": str(target),
+                    "reason": (
+                        "Source-backed payload has descendants without source EIDs; "
+                        "strict lowering did not synthesize local descendant identity"
+                    ),
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                }
+            )
+        return payload_node
+
+    synthesized: list[dict[str, Any]] = []
+    used_eids: set[str] = {root_eid}
+    skipped_duplicate = 0
+
+    def _suffix(child: UKMutableNode) -> str:
+        raw_label = str(child.label or "").strip()
+        return _canonicalize_eid_tail_label(raw_label)
+
+    def _walk(parent_eid: str, current: UKMutableNode) -> None:
+        nonlocal skipped_duplicate
+        for child in current.children:
+            child_eid = str(child.attrs.get("eId") or child.attrs.get("id") or "")
+            child_parent_eid = child_eid or parent_eid
+            if child_eid:
+                used_eids.add(child_eid)
+            else:
+                suffix = _suffix(child)
+                if suffix:
+                    child_parent_eid = f"{parent_eid}{'' if parent_eid.endswith('-') else '-'}{suffix}"
+                    if child_parent_eid in used_eids:
+                        skipped_duplicate += 1
+                        child_parent_eid = parent_eid
+                    else:
+                        used_eids.add(child_parent_eid)
+                        child.attrs["eId"] = child_parent_eid
+                        synthesized.append(
+                            {
+                                "kind": str(child.kind),
+                                "label": child.label,
+                                "parent_eid": parent_eid,
+                                "after_eid": child_parent_eid,
+                            }
+                        )
+            _walk(child_parent_eid, child)
+
+    _walk(root_eid, payload_node)
+    if synthesized and lowering_records_out is not None:
+        lowering_records_out.append(
+            {
+                "rule_id": UK_PAYLOAD_DESCENDANT_EID_SYNTHESIS_RULE_ID,
+                "family": "payload_identity_normalization",
+                "phase": "payload_normalization",
+                "effect_id": effect.effect_id,
+                "affecting_act_id": effect.affecting_act_id,
+                "affected_provisions": effect.affected_provisions,
+                "affecting_provisions": effect.affecting_provisions,
+                "effect_type": effect.effect_type,
+                "target": str(target),
+                "root_eid": root_eid,
+                "synthesized_count": len(synthesized),
+                "skipped_duplicate_count": skipped_duplicate,
+                "sample": synthesized[:8],
+                "reason": (
+                    "Source-backed payload descendants lacked source EIDs; "
+                    "lowering synthesized deterministic local IDs from the explicit target"
+                ),
+                "blocking": False,
+                "strict_disposition": "record",
+                "quirks_disposition": "record",
+            }
+        )
+    return payload_node
 
 
 def _normalize_affected_target_ref(ref: str) -> str:
@@ -2187,8 +4594,14 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
             return True
         if all(re.fullmatch(r"[A-Z]+", group, re.I) for group in groups):
             alpha_lengths = {len(group) for group in groups}
-            if alpha_lengths <= {1, 2}:
+            if alpha_lengths <= {1}:
                 return True
+            if alpha_lengths <= {1, 2}:
+                single_stems = {group.upper() for group in groups if len(group) == 1}
+                return bool(single_stems) and all(
+                    len(group) == 1 or any(group.upper().startswith(stem) for stem in single_stems)
+                    for group in groups
+                )
             return len(alpha_lengths) == 1
         alnum = [re.fullmatch(r"(\d+)([A-Z])", group, re.I) for group in groups]
         if (
@@ -2658,6 +5071,65 @@ def _repeal_tail_for_substituted_series_replacement(
     return anchor_refs[1:]
 
 
+def _substituted_series_new_sibling_insert_detail(
+    *,
+    effect_type: str,
+    original_target_refs: list[str],
+    target_index: int,
+    target_ref: str,
+    target: LegalAddress,
+    content_ir: Optional[dict[str, Any]],
+) -> Optional[dict[str, str]]:
+    """Return observation detail when a substituted-for row includes new sibling payloads."""
+    raw = (effect_type or "").strip()
+    if not raw.lower().startswith("substituted for ") or raw.lower() == "substituted for words":
+        return None
+    if target_index <= 0 or len(original_target_refs) < 2:
+        return None
+    anchor_refs = _split_metadata_provisions(raw[len("substituted for ") :].strip())
+    if len(anchor_refs) != 1:
+        return None
+    try:
+        anchor_target = _parse_affected_target(anchor_refs[0])
+        first_target = _parse_affected_target(original_target_refs[0])
+    except Exception:
+        return None
+    if tuple(anchor_target.path) != tuple(first_target.path):
+        return None
+    if tuple(anchor_target.path[:-1]) != tuple(target.path[:-1]):
+        return None
+    anchor_leaf_kind = _addr_leaf_kind(anchor_target)
+    target_leaf_kind = _addr_leaf_kind(target)
+    if not anchor_leaf_kind or anchor_leaf_kind != target_leaf_kind:
+        return None
+    anchor_leaf = re.sub(r"[^0-9a-z]+", "", str(_addr_leaf_label(anchor_target) or "").lower())
+    target_leaf = re.sub(r"[^0-9a-z]+", "", str(_addr_leaf_label(target) or "").lower())
+    if not anchor_leaf or not target_leaf or anchor_leaf == target_leaf:
+        return None
+    if not (
+        (anchor_leaf.isdigit() and target_leaf.isdigit())
+        or (
+            bool(re.fullmatch(r"\d+[a-z]*", anchor_leaf, re.I))
+            and bool(re.fullmatch(r"\d+[a-z]*", target_leaf, re.I))
+        )
+        or (
+            bool(re.fullmatch(r"[a-z]+", anchor_leaf, re.I))
+            and bool(re.fullmatch(r"[a-z]+", target_leaf, re.I))
+            and {len(anchor_leaf), len(target_leaf)} <= {1, 2}
+        )
+    ):
+        return None
+    if not _source_payload_matches_target_leaf(content_ir, target):
+        return None
+    return {
+        "original_target_ref": anchor_refs[0],
+        "target_ref": target_ref,
+        "target": str(target),
+        "source_payload_kind": str(content_ir.get("kind") or "") if content_ir else "",
+        "source_payload_label": str(content_ir.get("label") or "") if content_ir else "",
+    }
+
+
 def _expand_sibling_targets_from_text(
     prov_str: str,
     extracted_text: Optional[str],
@@ -2685,6 +5157,20 @@ def _expand_sibling_targets_from_text(
     sibling_parts = [part.strip() for part in re.split(r"\s*(?:,|and)\s*", sibling_text, flags=re.I) if part.strip()]
     if len(sibling_parts) < 2:
         return None
+    if any(re.search(r"\b(?:beginning|end)\b", part, flags=re.I) for part in sibling_parts):
+        return None
+    sibling_kind_base = re.sub(r"[^a-z]+", "", sibling_kind.lower())
+    if sibling_kind_base.endswith("s"):
+        sibling_kind_base = sibling_kind_base[:-1]
+    for part in sibling_parts[1:]:
+        kind_match = re.match(r"^(sub-?paragraph|paragraph|subsection|item|point)\b", part, flags=re.I)
+        if kind_match is None:
+            continue
+        part_kind_base = re.sub(r"[^a-z]+", "", kind_match.group(1).lower())
+        if part_kind_base.endswith("s"):
+            part_kind_base = part_kind_base[:-1]
+        if part_kind_base != sibling_kind_base:
+            return None
     if sibling_kind.startswith("subsection") and any(
         re.match(r"^(?:sub-?paragraph|paragraph|item|point)\b", part, flags=re.I) for part in sibling_parts
     ):
@@ -2811,12 +5297,297 @@ def _is_non_substantive_structural_payload(node: Optional[UKMutableNode]) -> boo
     return stripped == ""
 
 
+def _source_payload_matches_target_leaf(content_ir: Optional[dict[str, Any]], target: LegalAddress) -> bool:
+    if content_ir is None:
+        return False
+    target_kind = _addr_leaf_kind(target) or ""
+    target_label = _addr_leaf_label(target) or ""
+    payload_kind = str(content_ir.get("kind") or "")
+    payload_label = str(content_ir.get("label") or "")
+    if not target_kind or not target_label:
+        return False
+    return uk_kind_matches(
+        node_kind=payload_kind,
+        target_kind=target_kind,
+        node_label=_clean_num(payload_label),
+        target_label=_clean_num(target_label),
+    ) and _clean_num(payload_label) == _clean_num(target_label)
+
+
+def _is_broad_schedule_flat_replace_payload(
+    *,
+    target: LegalAddress,
+    payload_node: Optional[UKMutableNode],
+    actual_source_el: Optional[ET.Element],
+) -> bool:
+    """Return True when a broad schedule/part replace would erase descendants.
+
+    UK effects feeds can point at `Sch. N` while the extracted source node is a
+    naked table row or amount entry. Lowering that flat text as a whole-schedule
+    replacement is payload smuggling: it deletes all unclaimed parts/tables.
+    """
+    if payload_node is None:
+        return False
+    if _addr_container(target) != "schedule":
+        return False
+    target_leaf_kind = str(_addr_leaf_kind(target) or "").lower()
+    if target_leaf_kind not in {"schedule", "part"}:
+        return False
+    payload_kind = str(payload_node.kind or "").lower()
+    if payload_kind != target_leaf_kind:
+        return False
+    if payload_node.children:
+        return False
+    if actual_source_el is not None and _tag(actual_source_el) in {"Schedule", "Part"}:
+        return False
+    return bool((payload_node.text or "").strip())
+
+
+def _empty_effect_type_as_if_words_omitted(text: str) -> bool:
+    norm = " ".join(str(text or "").split()).lower()
+    if not norm:
+        return False
+    return (
+        "shall have effect" in norm
+        and "as if" in norm
+        and re.search(r"\bwords?\b", norm) is not None
+        and re.search(r"\b(?:were|was)\s+omitted\b", norm) is not None
+    )
+
+
+_DOUBLE_QUOTED_FRAGMENT_RE = re.compile(r'["\u201c]([^"\u201d]+)["\u201d]')
+
+
+def _quote_only_omission_payload_match(extracted_text: str) -> Optional[str]:
+    """Return a quoted deletion fragment when the payload contains no instruction text."""
+    normalized = " ".join((extracted_text or "").split())
+    if not normalized:
+        return None
+    matches = list(_DOUBLE_QUOTED_FRAGMENT_RE.finditer(normalized))
+    if len(matches) != 1:
+        return None
+    match = matches[0]
+    residue = (normalized[: match.start()] + normalized[match.end() :]).strip()
+    residue = re.sub(r"^(?:[ivxlcdm]+|[a-z]|\d+)[.)]?\s*", "", residue, flags=re.I)
+    residue = residue.strip(" \t\r\n,;.")
+    if residue.lower() not in {"", "and", "or"}:
+        return None
+    fragment = " ".join(match.group(1).split()).strip()
+    return fragment or None
+
+
+def _source_ancestor_chain(source_root: Optional[ET.Element], el: Optional[ET.Element]) -> tuple[ET.Element, ...]:
+    """Return closest-first source ancestors for an extracted source element."""
+    if source_root is None or el is None:
+        return ()
+    target_id = el.get("id")
+    path: list[ET.Element] = []
+
+    def _walk(node: ET.Element, ancestors: tuple[ET.Element, ...]) -> bool:
+        if node is el or (target_id and node.get("id") == target_id):
+            path.extend(reversed(ancestors))
+            return True
+        for child in node:
+            if _walk(child, (*ancestors, node)):
+                return True
+        return False
+
+    if _walk(source_root, ()):
+        return tuple(path)
+    return ()
+
+
+_AFTER_WORDS_INSERTED_BY_SIBLING_RE = re.compile(
+    r"\bafter\s+the\s+words\s+inserted\s+by\s+(?:sub-?paragraph|paragraph)\s+\((?P<label>[0-9A-Za-z]+)\)\s+"
+    r"insert(?:\s+[“\"'‘](?P<quoted>.*?)[”\"'’]|\s*[—-]\s*(?P<block>.+?)(?:\s+[.,;])?$)",
+    flags=re.I,
+)
+
+
+def _fragment_substitution_after_words_inserted_by_sibling(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve "after the words inserted by sub-paragraph (a)" from a source sibling."""
+    text = " ".join((extracted_text or "").split())
+    match = _AFTER_WORDS_INSERTED_BY_SIBLING_RE.search(text)
+    if not match:
+        return None
+    sibling_label = _clean_num(match.group("label"))
+    inserted_raw = match.group("quoted") if match.group("quoted") is not None else match.group("block")
+    inserted = " ".join((inserted_raw or "").split()).strip()
+    if not sibling_label or not inserted:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        return None
+    parent = ancestors[0]
+    for child in parent:
+        if child is extracted_el or (extracted_el is not None and child.get("id") == extracted_el.get("id")):
+            continue
+        if _clean_num(_direct_structural_num(child)) != sibling_label:
+            continue
+        sibling_fragments = parse_fragment_substitution(_text_content(child))
+        if len(sibling_fragments) != 1:
+            return None
+        sibling_fragment = sibling_fragments[0]
+        anchor = " ".join(str(sibling_fragment.get("replacement") or "").split()).strip()
+        if not anchor:
+            return None
+        joiner = "" if anchor.endswith((" ", "\t", "\n", "\r")) or inserted.startswith((" ", ",", ".", ";", ":", ")")) else " "
+        return {
+            "original": anchor,
+            "replacement": f"{anchor}{joiner}{inserted}",
+            "source_sibling_label": sibling_label,
+            "source_sibling_rule_id": str(sibling_fragment.get("rule_id") or "fragment_substitution"),
+            "rule_id": "uk_effect_after_words_inserted_by_sibling_text_patch",
+        }
+    return None
+
+
+_GROUPED_ANCHOR_OCCURRENCE_CHILD_RE = re.compile(
+    r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+the\s+"
+    r"(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
+    r"time\s+it\s+(?:appears|occurs),?\s+substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*;?\s*$",
+    flags=re.I,
+)
+
+_GROUPED_ANCHOR_OCCURRENCE_PARENT_RE = re.compile(
+    r"(?:^|\b)for\s+(?:the\s+words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’]\s*[—-]\s*$",
+    flags=re.I,
+)
+
+_SOURCE_SUBORDINATE_ROW_TAGS = frozenset({"P1", "P2", "P3", "P4", "P5", "P6"})
+
+
+def _source_lead_text_before_subordinate_rows(el: ET.Element) -> str:
+    parts: list[str] = []
+    if el.text:
+        parts.append(el.text)
+    for child in el:
+        if _tag(child) in _SOURCE_SUBORDINATE_ROW_TAGS:
+            break
+        parts.append(_text_content(child))
+        if child.tail:
+            parts.append(child.tail)
+    return " ".join(" ".join(parts).split())
+
+
+def _fragment_substitution_grouped_anchor_occurrence(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve child rows like "the first time it appears" from a carried parent anchor."""
+    child_match = _GROUPED_ANCHOR_OCCURRENCE_CHILD_RE.match(" ".join((extracted_text or "").split()))
+    if not child_match:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
+        if not candidate_text:
+            candidate_text = _instruction_text_before_amendment_container(ancestor)
+        parent_match = _GROUPED_ANCHOR_OCCURRENCE_PARENT_RE.search(candidate_text.strip())
+        if not parent_match:
+            continue
+        original = parent_match.group("original").strip()
+        replacement = child_match.group("replacement").strip()
+        if not original or not replacement:
+            return None
+        occurrence = _uk_ordinal_to_int(child_match.group("ordinal"))
+        if occurrence is None:
+            return None
+        return {
+            "original": original,
+            "replacement": replacement,
+            "occurrence": str(occurrence),
+            "source_parent_id": str(
+                ancestor.get("id")
+                or next((candidate.get("id") for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")), "")
+            ),
+            "rule_id": "uk_effect_grouped_anchor_occurrence_substitution_text_patch",
+        }
+    return None
+
+
+_DEFINITION_LIST_OMISSION_CONTEXT_RE = re.compile(
+    r"(?:^|\b)omit\s+(?:the\s+)?definitions?\s+of(?:\b|[\u2014-])",
+    flags=re.I,
+)
+
+
+def _quote_only_definition_list_omission_payload_match(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[tuple[str, str]]:
+    """Return a definition term inherited from a parent definition-list omission."""
+    fragment = _quote_only_omission_payload_match(extracted_text or "")
+    if not fragment:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        ancestor_text = _instruction_text_before_amendment_container(ancestor)
+        if _DEFINITION_LIST_OMISSION_CONTEXT_RE.search(ancestor_text):
+            source_parent_id = str(ancestor.get("id") or "")
+            if not source_parent_id:
+                source_parent_id = next(
+                    (str(candidate.get("id")) for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")),
+                    "",
+                )
+            return fragment, source_parent_id
+    return None
+
+
+_EXTERNAL_ACT_TARGET_RE = re.compile(
+    r"\bto\s+the\s+(?P<title>[A-Z][^.;]*?\bAct\s+(?:1[0-9]{3}|20[0-9]{2}))\b",
+    flags=re.I,
+)
+_PARTIAL_WHOLE_ACT_REPEAL_RE = re.compile(
+    r"\b(?:the\s+)?whole\s+Act\s+\(other\s+than\s+(?P<exceptions>[^)]+)\)\s+is\s+repealed\b",
+    flags=re.I,
+)
+
+
+def _external_act_target_from_source_text(extracted_text: Optional[str]) -> str:
+    """Return an external Act title named as the amendment target, if obvious."""
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return ""
+    match = _EXTERNAL_ACT_TARGET_RE.search(text)
+    if match is None:
+        return ""
+    title = " ".join(match.group("title").split()).strip(" ,")
+    if not title or title.lower().startswith("this act"):
+        return ""
+    return title
+
+
+def _partial_whole_act_repeal_exceptions(extracted_text: Optional[str]) -> str:
+    """Return exception text for unsupported whole-Act partial repeal, if explicit."""
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return ""
+    match = _PARTIAL_WHOLE_ACT_REPEAL_RE.search(text)
+    if match is None:
+        return ""
+    exceptions = " ".join(match.group("exceptions").split()).strip(" ,;")
+    return exceptions
+
+
 def compile_effect_to_ir_ops(
     effect: UKEffectRecord,
     extracted_el: Optional[ET.Element],
     sequence: int = 0,
     fallback_for_missing_extracted_source: bool = False,
     lowering_rejections_out: Optional[list[dict[str, Any]]] = None,
+    allow_payload_identity_synthesis: bool = True,
+    source_root: Optional[ET.Element] = None,
+    source_authority_layer: str = "",
 ) -> list[LegalOperation]:
     """Compile a UKEffectRecord + XML element into LawVM LegalOperations.
 
@@ -2833,6 +5604,7 @@ def compile_effect_to_ir_ops(
     """
     # Determine whether this is a word-level (intra-node text) effect.
     effect_type = (effect.effect_type or "").strip().lower()
+    metadata_renumber_targets = _uk_metadata_renumber_targets(effect)
 
     # Commencement rows affect in-force status, not structural text/state.
     if effect_type in _COMMENCEMENT_EFFECT_TYPES:
@@ -2859,7 +5631,9 @@ def compile_effect_to_ir_ops(
         "inserted": "insert",
         "word inserted": "insert",
         "words inserted": "insert",
+        "entry inserted": "insert",
         "repealed": "repeal",
+        "entry repealed": "repeal",
         "repealed in part": "replace",
         "words repealed": "replace",
         "word repealed": "replace",
@@ -2871,11 +5645,14 @@ def compile_effect_to_ir_ops(
         "words omitted": "replace",
         "word omitted": "replace",
         "omitted": "repeal",
+        "entry omitted": "repeal",
         "ceases to have effect": "repeal",
     }
     action = action_map.get(effect_type)
     if not action and effect_type.startswith("substituted for"):
         action = "replace"
+    if not action and metadata_renumber_targets is not None:
+        action = "renumber"
     extracted_text = _text_content(extracted_el) if extracted_el is not None else None
 
     # Infer missing action from text heuristics if metadata is empty.
@@ -2883,6 +5660,24 @@ def compile_effect_to_ir_ops(
     # we skip (return []) rather than guessing "modified" or a structural replace.
     if not action and extracted_el is not None:
         text_lower = (extracted_text or "").lower()
+        if _empty_effect_type_as_if_words_omitted(extracted_text or ""):
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id="uk_effect_empty_type_as_if_words_omitted_rejected",
+                family="temporal_recovery",
+                reason_code="empty_effect_type_temporary_as_if_word_omission",
+                reason=(
+                    "UK effect has no explicit effect type and the source uses "
+                    "temporary 'shall have effect as if words were omitted' "
+                    "language; lowering must not infer a structural repeal of "
+                    "the broad affected provision."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={"affected_provisions": effect.affected_provisions},
+            )
+            return []
         if "repeal" in text_lower or "omit" in text_lower:
             action = "repeal"
         elif "substitute" in text_lower or "replace" in text_lower:
@@ -2910,17 +5705,79 @@ def compile_effect_to_ir_ops(
         )
         return []
 
-    use_metadata_fallback = fallback_for_missing_extracted_source and extracted_el is None and action == "insert"
+    use_metadata_fallback = (
+        fallback_for_missing_extracted_source
+        and extracted_el is None
+        and action == "insert"
+        and effect_type not in {"entry inserted"}
+    )
     extraction_witness = _uk_extraction_witness(
         effect,
         extracted_el=extracted_el,
         extracted_text=extracted_text,
         metadata_fallback_used=use_metadata_fallback,
+        source_authority_layer=source_authority_layer,
     )
     effect_witness = _uk_effect_witness(
         effect,
         authority_layer=extraction_witness.authority_layer,
     )
+
+    if action == "renumber" and metadata_renumber_targets is not None:
+        source_target = metadata_renumber_targets.source_target
+        destination = metadata_renumber_targets.destination
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=metadata_renumber_targets.rule_id,
+            family="lineage_normalization",
+            reason_code=metadata_renumber_targets.reason_code,
+            reason=metadata_renumber_targets.reason,
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "source_target": str(source_target),
+                "destination": str(destination),
+                "affected_provisions": effect.affected_provisions,
+            },
+        )
+        src = OperationSource(
+            statute_id=effect.affecting_act_id,
+            title=effect.affecting_title,
+            effective=effect_witness.applicability.effective_date or "",
+            raw_text=extraction_witness.extracted_text,
+        )
+        target_expansion_witness = _uk_target_expansion_witness(
+            effect.affected_provisions,
+            [effect.affected_provisions],
+            original_targets_str=[effect.affected_provisions],
+        )
+        lowered_witness = UKLoweredOperationWitness(
+            op_id=effect.effect_id,
+            sequence=sequence,
+            action=StructuralAction.RENUMBER,
+            target=source_target,
+            payload=None,
+            source=src,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            target_expansion_witness=target_expansion_witness,
+            text_rewrite_witness=None,
+            insertion_anchor_witness=None,
+        )
+        return [
+            LegalOperation(
+                op_id=lowered_witness.op_id,
+                sequence=lowered_witness.sequence,
+                action=StructuralAction.RENUMBER,
+                target=source_target,
+                destination=destination,
+                source=src,
+                group_id=_uk_temporal_group_id(effect),
+                provenance_tags=_uk_lowered_op_provenance_tags(lowered_witness),
+                witness_rule_id=metadata_renumber_targets.rule_id,
+            )
+        ]
 
     # ALWAYS split metadata provisions to handle ranges and lists
     targets_str = _split_metadata_provisions(effect.affected_provisions)
@@ -2971,6 +5828,8 @@ def compile_effect_to_ir_ops(
     ops = []
     unlowered_overlap_substitution_targets: list[str] = []
     unlowered_overlap_substitution_reason = ""
+    chained_insert_preceding_eid: Optional[str] = None
+    chained_insert_preceding_eid_source = "effect_comments_after_clause"
     if action == "insert":
         crossheading_payload = _extract_crossheading_payload_from_extracted(
             effect.affected_provisions,
@@ -3012,8 +5871,25 @@ def compile_effect_to_ir_ops(
                     provenance_tags=_uk_lowered_op_provenance_tags(crossheading_lowered_witness),
                 )
             )
-    for t_str in targets_str:
-        if _is_heading_only_ref(t_str):
+    for target_index, t_str in enumerate(targets_str):
+        heading_facet_target = _is_heading_only_ref(t_str)
+        if _is_schedule_note_ref(t_str):
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id="uk_effect_schedule_note_target_rejected",
+                family="unsupported_target_facet",
+                reason_code="schedule_note_target_unsupported",
+                reason=(
+                    "UK effect target names a schedule note; lowering must "
+                    "not coerce that note into paragraph/subparagraph structure."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={"target_ref": t_str, "target_candidate_count": len(targets_str)},
+            )
+            continue
+        if heading_facet_target and not _is_heading_facet_word_patch_supported(effect.effect_type, extracted_text):
             _append_uk_effect_lowering_rejection(
                 lowering_rejections_out,
                 rule_id="uk_effect_heading_only_ref_rejected",
@@ -3029,20 +5905,20 @@ def compile_effect_to_ir_ops(
                 detail={"target_ref": t_str, "target_candidate_count": len(targets_str)},
             )
             continue
-        if action == "replace" and _is_crossheading_ref(t_str):
-            # Cross-heading replacements are not yet compiled onto an explicit
-            # crossheading target surface. Emitting them as structural replace
-            # ops against the numbered section target is destructive and can
-            # erase the real section subtree. Skip until the frontend has a
-            # proper crossheading replacement lane.
+        crossheading_replacement_text = (
+            _crossheading_before_anchor_replacement_text(extracted_text)
+            if action == "replace" and _is_crossheading_ref(t_str)
+            else None
+        )
+        if action == "replace" and _is_crossheading_ref(t_str) and crossheading_replacement_text is None:
             _append_uk_effect_lowering_rejection(
                 lowering_rejections_out,
                 rule_id="uk_effect_crossheading_replace_rejected",
                 family="unsupported_target_facet",
                 reason_code="crossheading_replace_unsupported",
                 reason=(
-                    "UK cross-heading replacement target is unsupported by the "
-                    "current lowering surface"
+                    "UK cross-heading replacement target lacks an explicit "
+                    "heading-before-anchor replacement shape"
                 ),
                 effect=effect,
                 extracted_el=extracted_el,
@@ -3051,9 +5927,357 @@ def compile_effect_to_ir_ops(
             )
             continue
 
-        target = canonicalize_uk_address(_parse_affected_target(t_str))
+        parsed_target = _parse_affected_target(t_str)
+        target = parsed_target if _is_direct_section_paragraph_ref(t_str) else canonicalize_uk_address(parsed_target)
+        if extracted_el is None and effect_type in {"entry inserted", "entry repealed", "entry omitted"}:
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id="uk_effect_schedule_entry_missing_source_rejected",
+                family="source_schedule_list_entry_elaboration",
+                reason_code="entry_effect_requires_source_text",
+                reason=(
+                    "UK schedule-entry effect row requires affecting source text; "
+                    "metadata alone does not identify the entry payload or entry "
+                    "anchor safely enough for replay."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={"target_ref": t_str, "target": str(target), "action": action},
+            )
+            continue
+        if _is_direct_section_paragraph_ref(t_str):
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_effect_direct_section_paragraph_target_normalized",
+                family="target_shape_normalization",
+                reason_code="explicit_section_paragraph_ref",
+                reason=(
+                    "UK affected-provision reference uses section-number plus "
+                    "an alphabetic bracket, which denotes a direct section "
+                    "paragraph rather than an alphabetic subsection."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={"target_ref": t_str, "target": str(target)},
+            )
+        schedule_list_entry_selector = (
+            _uk_schedule_list_entry_insert_selector(
+                target_ref=t_str,
+                target=target,
+                extracted_text=extracted_text,
+            )
+            if action == "insert"
+            else None
+        )
+        if schedule_list_entry_selector is not None:
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
+                family="source_schedule_list_entry_elaboration",
+                reason_code="explicit_schedule_list_entry_anchor",
+                reason=(
+                    "UK schedule-list-entry insertion lowered as a typed "
+                    "schedule-entry sibling insert; replay must resolve exactly "
+                    "one anchor entry before mutating schedule children."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail=dict(schedule_list_entry_selector),
+            )
+            payload_node = IRNode(
+                kind=IRNodeKind.SCHEDULE_ENTRY,
+                label=None,
+                text=str(schedule_list_entry_selector["inserted_text"]),
+                attrs={
+                    "source_rule_id": "uk_schedule_list_entry_insert_payload",
+                    "anchor_text": str(schedule_list_entry_selector["anchor_text"]),
+                    "anchor_direction": str(schedule_list_entry_selector["direction"]),
+                },
+            )
+            src = OperationSource(
+                statute_id=effect.affecting_act_id,
+                title=effect.affecting_title,
+                effective=effect_witness.applicability.effective_date or "",
+                raw_text=extraction_witness.extracted_text,
+            )
+            target_expansion_witness = _uk_target_expansion_witness(
+                t_str,
+                [t_str],
+                original_targets_str=original_targets_str,
+            )
+            lowered_witness = UKLoweredOperationWitness(
+                op_id=effect.effect_id,
+                sequence=sequence,
+                action=StructuralAction.INSERT,
+                target=target,
+                payload=payload_node,
+                source=src,
+                effect_witness=effect_witness,
+                extraction_witness=extraction_witness,
+                target_expansion_witness=target_expansion_witness,
+                text_rewrite_witness=None,
+                insertion_anchor_witness=None,
+            )
+            ops.append(
+                LegalOperation(
+                    op_id=lowered_witness.op_id,
+                    sequence=lowered_witness.sequence,
+                    action=StructuralAction.INSERT,
+                    target=target,
+                    payload=_payload_with_rewrite_witness(payload_node, lowered_witness),
+                    source=src,
+                    group_id=_uk_temporal_group_id(effect),
+                    provenance_tags=(
+                        *_uk_lowered_op_provenance_tags(lowered_witness),
+                        f"{_NOTE_SCHEDULE_LIST_ENTRY_SELECTOR}{json.dumps(schedule_list_entry_selector, ensure_ascii=False)}",
+                    ),
+                    witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
+                )
+            )
+            continue
+        schedule_list_entry_repeal_selector = (
+            _uk_schedule_list_entry_repeal_selector(
+                target_ref=t_str,
+                target=target,
+                extracted_text=extracted_text,
+            )
+            if action == "repeal"
+            else None
+        )
+        if schedule_list_entry_repeal_selector is not None:
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
+                family="source_schedule_list_entry_elaboration",
+                reason_code="explicit_schedule_list_entry_repeal_anchor",
+                reason=(
+                    "UK schedule-list-entry repeal lowered as a typed "
+                    "entry-level schedule mutation; replay must resolve every "
+                    "claimed entry anchor before deleting any schedule child."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail=dict(schedule_list_entry_repeal_selector),
+            )
+            src = OperationSource(
+                statute_id=effect.affecting_act_id,
+                title=effect.affecting_title,
+                effective=effect_witness.applicability.effective_date or "",
+                raw_text=extraction_witness.extracted_text,
+            )
+            target_expansion_witness = _uk_target_expansion_witness(
+                t_str,
+                [t_str],
+                original_targets_str=original_targets_str,
+            )
+            lowered_witness = UKLoweredOperationWitness(
+                op_id=effect.effect_id,
+                sequence=sequence,
+                action=StructuralAction.REPEAL,
+                target=target,
+                payload=None,
+                source=src,
+                effect_witness=effect_witness,
+                extraction_witness=extraction_witness,
+                target_expansion_witness=target_expansion_witness,
+                text_rewrite_witness=None,
+                insertion_anchor_witness=None,
+            )
+            ops.append(
+                LegalOperation(
+                    op_id=lowered_witness.op_id,
+                    sequence=lowered_witness.sequence,
+                    action=StructuralAction.REPEAL,
+                    target=target,
+                    payload=None,
+                    source=src,
+                    group_id=_uk_temporal_group_id(effect),
+                    provenance_tags=(
+                        *_uk_lowered_op_provenance_tags(lowered_witness),
+                        (
+                            f"{_NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR}"
+                            f"{json.dumps(schedule_list_entry_repeal_selector, ensure_ascii=False)}"
+                        ),
+                    ),
+                    witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
+                )
+            )
+            continue
+        table_cell_selector = _uk_table_entry_inline_text_selector(
+            target_ref=t_str,
+            target=target,
+            extracted_text=extracted_text,
+        )
+        if table_cell_selector is not None:
+            parent_target = _uk_parent_target_before_table_marker(target)
+            if parent_target is None:
+                _append_uk_effect_lowering_rejection(
+                    lowering_rejections_out,
+                    rule_id="uk_effect_table_entry_inline_text_target_unresolved",
+                    family="source_table_elaboration",
+                    reason_code="table_marker_parent_missing",
+                    reason=(
+                        "UK table-entry word effect named a table cell, but "
+                        "the affected target could not be reduced to a containing "
+                        "provision for table-cell replay."
+                    ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={"target_ref": t_str, "target": str(target), **table_cell_selector},
+                )
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID,
+                family="source_table_elaboration",
+                reason_code="explicit_table_entry_column_selector",
+                reason=(
+                    "UK table-entry word effect lowered as a typed table-cell "
+                    "text patch; replay must resolve the rowspanned table cell "
+                    "before mutating text."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "original_target": str(target),
+                    "containing_target": str(parent_target),
+                    **table_cell_selector,
+                },
+            )
+            target = parent_target
+        elif table_entry_instruction := _uk_broad_table_entry_instruction(
+            target_ref=t_str,
+            target=target,
+            extracted_text=extracted_text,
+        ):
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id=_UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID,
+                family="source_table_elaboration",
+                reason_code="table_entry_instruction_without_cell_target",
+                reason=(
+                    "UK source instruction targets a table entry or column, "
+                    "but effect metadata names only a broader provision; "
+                    "lowering must not replay it as a host repeal/replace."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail=table_entry_instruction,
+            )
+            continue
+        if crossheading_replacement_text is not None:
+            target = LegalAddress(path=target.path, special=FacetKind.HEADING)
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_effect_crossheading_before_anchor_replacement_lowered",
+                family="target_facet_lowering",
+                reason_code="explicit_crossheading_before_anchor_replacement",
+                reason=(
+                    "UK cross-heading replacement lowered as a typed heading "
+                    "facet text patch anchored by the named following provision"
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "target": str(target),
+                    "replacement_text_preview": crossheading_replacement_text[:200],
+                },
+            )
+        if heading_facet_target:
+            target = LegalAddress(path=target.path, special=FacetKind.HEADING)
+            heading_append_fragment = _heading_facet_append_fragment(extracted_text)
+            heading_observation_rule = (
+                "uk_effect_heading_facet_append_lowered"
+                if heading_append_fragment is not None
+                else "uk_effect_heading_facet_word_patch_lowered"
+            )
+            heading_reason_code = (
+                "explicit_heading_facet_append"
+                if heading_append_fragment is not None
+                else "explicit_heading_facet_word_patch"
+            )
+            heading_reason = (
+                "UK heading/title/sidenote target lowered as a typed facet "
+                "append; replay must mutate only the heading carrier."
+                if heading_append_fragment is not None
+                else (
+                    "UK heading/title/sidenote target lowered as a facet "
+                    "text patch; replay must mutate only the heading carrier."
+                )
+            )
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=heading_observation_rule,
+                family="target_facet_lowering",
+                reason_code=heading_reason_code,
+                reason=heading_reason,
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={"target_ref": t_str, "target": str(target)},
+            )
+        external_act_target = (
+            _external_act_target_from_source_text(extracted_text)
+            if str(target.special or "") == "whole_act"
+            else ""
+        )
+        if external_act_target:
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id="uk_effect_external_act_target_rejected",
+                family="target_resolution_recovery",
+                reason_code="external_act_target_in_source_text",
+                reason=(
+                    "UK effect metadata points at the current Act, but the "
+                    "affecting source text names a different Act as the target"
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "source_named_target": external_act_target,
+                },
+            )
+            continue
+        whole_act_partial_repeal_exceptions = (
+            _partial_whole_act_repeal_exceptions(extracted_text)
+            if str(target.special or "") == "whole_act" and effect_type == "repealed in part"
+            else ""
+        )
+        if whole_act_partial_repeal_exceptions:
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id="uk_effect_partial_whole_act_repeal_rejected",
+                family="unsupported_target_scope",
+                reason_code="partial_whole_act_repeal_unsupported",
+                reason=(
+                    "UK effect repeals the whole Act except named provisions; "
+                    "lowering cannot safely expand that broad negative scope"
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "exception_provisions": whole_act_partial_repeal_exceptions,
+                },
+            )
+            continue
         parse_context = "schedule" if _addr_container(target) == "schedule" else ""
         content_ir = None
+        actual_el: Optional[ET.Element] = None
+        source_structural_payload_matches_target = False
         if extracted_el is not None:
             actual_el = _select_whole_schedule_element(extracted_el, target)
             # Find any BlockAmendment or InlineAmendment in the subtree
@@ -3163,6 +6387,32 @@ def compile_effect_to_ir_ops(
                     direct_text = _direct_payload_text(actual_el)
                     if direct_text:
                         content_ir["text"] = direct_text
+                    inserted_heading_text = _inserted_section_p1group_heading_text(actual_el, extracted_el, target)
+                    if inserted_heading_text and _prepend_inserted_section_heading_carrier(
+                        content_ir,
+                        heading_text=inserted_heading_text,
+                    ):
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id="uk_effect_inserted_section_p1group_heading_carrier_lowered",
+                            family="payload_normalization",
+                            reason_code="inserted_section_wrapped_by_p1group_title",
+                            reason=(
+                                "UK inserted-section payload is wrapped by a P1group "
+                                "Title; lowering preserves that title as a target-owned "
+                                "heading carrier instead of relying on a shared live parent group"
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "source_tag": "P1group",
+                                "heading_text_preview": inserted_heading_text[:200],
+                            },
+                        )
+                    source_structural_payload_matches_target = _source_payload_matches_target_leaf(content_ir, target)
 
         if content_ir is None:
             # Infer kind and label from target if metadata points to a specific provision
@@ -3261,26 +6511,369 @@ def compile_effect_to_ir_ops(
         op_text_match: Optional[str] = None
         op_text_replacement: Optional[str] = None
         op_text_occurrence: int = 0
-        text_patch: Optional[TextPatchSpec] = None
+        op_text_end_occurrence: int = 0
+        if crossheading_replacement_text is not None:
+            curr_action = "text_replace"
+            content_ir = None
+            op_text_match = "TEXT_ALL"
+            op_text_replacement = crossheading_replacement_text
+            fragment_subs = [
+                {
+                    "original": "TEXT_ALL",
+                    "replacement": crossheading_replacement_text,
+                    "rule_id": _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
+                }
+            ]
+        substituted_series_insert_detail = _substituted_series_new_sibling_insert_detail(
+            effect_type=effect.effect_type,
+            original_target_refs=original_targets_str,
+            target_index=target_index,
+            target_ref=t_str,
+            target=target,
+            content_ir=content_ir,
+        )
+        if substituted_series_insert_detail is not None:
+            curr_action = "insert"
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_effect_substituted_series_new_sibling_insert_lowered",
+                family="lowering_normalization",
+                reason_code="substituted_for_single_old_target_with_new_sibling_payload",
+                reason=(
+                    "UK substituted-for row names one replaced target but the "
+                    "source-backed replacement series contains an additional "
+                    "sibling payload; lowering preserves the first target as "
+                    "replace and lowers later source-owned siblings as inserts"
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail=substituted_series_insert_detail,
+            )
 
         # Grounding 2.0: Fragment substitutions
-        if (curr_action == "replace" or is_word_level) and extracted_text:
-            if not is_whole_node_replacement(extracted_text, effect.effect_type):
-                subs = parse_fragment_substitution(extracted_text)
+        structural_omission_reclassification = _word_level_structural_subsection_omission(
+            effect_type=effect.effect_type,
+            extracted_text=extracted_text,
+            target=target,
+        )
+        if structural_omission_reclassification is not None:
+            curr_action = "repeal"
+            content_ir = None
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_effect_word_omission_structural_subsection_repeal_reclassified",
+                family="lowering_normalization",
+                reason_code="word_level_feed_row_explicitly_omits_target_subsection",
+                reason=(
+                    "UK effect feed labels the row as word-level omission, but "
+                    "the affecting source explicitly omits the exact affected subsection"
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "target": str(target),
+                    **structural_omission_reclassification,
+                },
+            )
+
+        word_level_text_patch_required = is_word_level and curr_action != "repeal"
+        if (curr_action == "replace" or word_level_text_patch_required) and extracted_text:
+            treat_as_source_structural_replace = (
+                curr_action == "replace"
+                and not is_word_level
+                and source_structural_payload_matches_target
+            )
+            if not treat_as_source_structural_replace and not is_whole_node_replacement(extracted_text, effect.effect_type):
+                table_substitution = _uk_table_driven_corresponding_entry_word_substitution(
+                    effect=effect,
+                    extracted_text=extracted_text,
+                    source_root=source_root,
+                    target=target,
+                )
+                if table_substitution.recognized and table_substitution.original and table_substitution.replacement is not None:
+                    fragment_subs = [
+                        {
+                            "original": table_substitution.original,
+                            "replacement": table_substitution.replacement,
+                            "rule_id": "uk_effect_corresponding_table_entry_word_substitution",
+                        }
+                    ]
+                    content_ir = None
+                    op_text_match = table_substitution.original
+                    op_text_replacement = table_substitution.replacement
+                    curr_action = "text_replace"
+                    _append_uk_effect_lowering_observation(
+                        lowering_rejections_out,
+                        rule_id="uk_effect_corresponding_table_entry_word_substitution",
+                        family="source_table_elaboration",
+                        reason_code="unique_column_1_target_column_2_words_match",
+                        reason=(
+                            "UK table-driven word substitution resolved by matching "
+                            "the affected provision to a unique source table row"
+                        ),
+                        effect=effect,
+                        extracted_el=extracted_el,
+                        extracted_text=extracted_text,
+                        detail={
+                            "target_ref": t_str,
+                            "target": str(target),
+                            "table_index": table_substitution.table_index,
+                            "row_text": table_substitution.row_text,
+                            "original": table_substitution.original,
+                            "replacement": table_substitution.replacement,
+                        },
+                    )
+                elif table_substitution.recognized:
+                    _append_uk_effect_lowering_rejection(
+                        lowering_rejections_out,
+                        rule_id="uk_effect_corresponding_table_entry_word_substitution_unresolved",
+                        family="source_table_elaboration",
+                        reason_code=table_substitution.reason_code,
+                        reason=(
+                            "UK table-driven word substitution could not be "
+                            "resolved to a unique source table row"
+                        ),
+                        effect=effect,
+                        extracted_el=extracted_el,
+                        extracted_text=extracted_text,
+                        detail={
+                            "target_ref": t_str,
+                            "target": str(target),
+                            "match_count": table_substitution.match_count,
+                            "replacement": table_substitution.replacement or "",
+                        },
+                    )
+                    curr_action = None
+                    continue
+                subs = (
+                    fragment_subs
+                    if table_substitution.recognized
+                    else parse_fragment_substitution(extracted_text)
+                )
+                if not subs:
+                    after_inserted_by_sibling = _fragment_substitution_after_words_inserted_by_sibling(
+                        extracted_el=extracted_el,
+                        source_root=source_root,
+                        extracted_text=extracted_text,
+                    )
+                    if after_inserted_by_sibling is not None:
+                        subs = [after_inserted_by_sibling]
+                if not subs:
+                    grouped_anchor_occurrence = _fragment_substitution_grouped_anchor_occurrence(
+                        extracted_el=extracted_el,
+                        source_root=source_root,
+                        extracted_text=extracted_text,
+                    )
+                    if grouped_anchor_occurrence is not None:
+                        subs = [grouped_anchor_occurrence]
                 if subs:
+                    if table_cell_selector is not None:
+                        subs = [
+                            {
+                                **dict(item),
+                                "rule_id": str(item.get("rule_id") or _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID),
+                            }
+                            for item in subs
+                        ]
                     fragment_subs = subs
                     content_ir = None
                     # Promote to text_replace / text_repeal with fields populated.
                     # Use the first pair as the primary; additional pairs stay in notes.
                     primary = subs[0]
+                    primary_target_suffix = _fragment_target_suffix(primary)
+                    if primary_target_suffix is not None:
+                        refined_target = _append_target_suffix_if_safe(target, primary_target_suffix)
+                        if refined_target is None:
+                            _append_uk_effect_lowering_rejection(
+                                lowering_rejections_out,
+                                rule_id="uk_effect_labeled_end_range_target_refinement_rejected",
+                                family="target_resolution_recovery",
+                                reason_code="unsupported_labeled_end_range_target_suffix",
+                                reason=(
+                                    "UK source text bounds a text range to a labelled child target, "
+                                    "but the affected provision target could not be safely refined "
+                                    "without widening or changing the source scope."
+                                ),
+                                effect=effect,
+                                extracted_el=extracted_el,
+                                extracted_text=extracted_text,
+                                detail={
+                                    "target_ref": t_str,
+                                    "target": str(target),
+                                    "target_suffix_kind": primary_target_suffix[0],
+                                    "target_suffix_label": primary_target_suffix[1],
+                                },
+                            )
+                            curr_action = None
+                            continue
+                        if refined_target != target:
+                            _append_uk_effect_lowering_observation(
+                                lowering_rejections_out,
+                                rule_id="uk_effect_labeled_end_range_target_refined",
+                                family="target_resolution_recovery",
+                                reason_code="source_bounded_text_range_names_child_target",
+                                reason=(
+                                    "UK source text bounds a text range to a labelled child of "
+                                    "the affected provision; lowering refines the text-patch target "
+                                    "to that explicit child instead of mutating the broader parent."
+                                ),
+                                effect=effect,
+                                extracted_el=extracted_el,
+                                extracted_text=extracted_text,
+                                detail={
+                                    "target_ref": t_str,
+                                    "original_target": str(target),
+                                    "refined_target": str(refined_target),
+                                    "target_suffix_kind": primary_target_suffix[0],
+                                    "target_suffix_label": primary_target_suffix[1],
+                                },
+                            )
+                            target = refined_target
                     op_text_match = primary["original"]
                     op_text_replacement = primary["replacement"]
+                    op_text_occurrence = int(primary.get("occurrence", "0") or "0")
+                    op_text_end_occurrence = int(primary.get("end_occurrence", "0") or "0")
                     # Word-level fragment edits are replayed as text_replace/text_repeal
                     # regardless of whether the metadata verb was "replace" or "insert".
                     if is_word_level and op_text_replacement == "":
                         curr_action = "text_repeal"
                     else:
                         curr_action = "text_replace"
+                    for rewrite_rule_id in _fragment_rule_ids(fragment_subs):
+                        if rewrite_rule_id not in _UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS:
+                            continue
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id=rewrite_rule_id,
+                            family="text_rewrite_lowering",
+                            reason_code="explicit_all_occurrences_text_patch",
+                            reason=(
+                                "UK effect source explicitly applies a word-level "
+                                "text rewrite wherever/in each place it occurs; "
+                                "lowering preserves that as an all-occurrences "
+                                "text patch scoped to the affected target."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "text_match": op_text_match,
+                                "replacement": op_text_replacement,
+                                "occurrence": op_text_occurrence,
+                            },
+                        )
+                    if _UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID in _fragment_rule_ids(fragment_subs):
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id=_UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID,
+                            family="text_rewrite_lowering",
+                            reason_code="explicit_range_to_end_there_is_substituted_text_patch",
+                            reason=(
+                                "UK source text uses the drafting form 'there is substituted' "
+                                "for a word-level range ending at the end of the target; lowering "
+                                "preserves that as a bounded TEXT_FROM_*_TO_END text patch."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "text_match": op_text_match,
+                                "replacement": op_text_replacement,
+                                "occurrence": op_text_occurrence,
+                            },
+                        )
+                    if op_text_end_occurrence:
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id="uk_effect_range_independent_end_occurrence_text_patch",
+                            family="text_rewrite_lowering",
+                            reason_code="explicit_independent_end_occurrence_text_range",
+                            reason=(
+                                "UK source text gives separate ordinal occurrences for "
+                                "the start and end anchors of a word-level range; lowering "
+                                "preserves both ordinals in a typed text selector rather than "
+                                "guessing the first end anchor after the start."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "text_match": op_text_match,
+                                "replacement": op_text_replacement,
+                                "occurrence": op_text_occurrence,
+                                "end_occurrence": op_text_end_occurrence,
+                            },
+                        )
+                    for sibling_context_fragment in fragment_subs:
+                        if (
+                            str(sibling_context_fragment.get("rule_id") or "")
+                            != "uk_effect_after_words_inserted_by_sibling_text_patch"
+                        ):
+                            continue
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id="uk_effect_after_words_inserted_by_sibling_text_patch",
+                            family="source_context_elaboration",
+                            reason_code="text_insert_anchor_resolved_from_named_source_sibling",
+                            reason=(
+                                "UK source inserts words after the words inserted by a named "
+                                "sibling sub-paragraph; lowering resolves that anchor from the "
+                                "cited sibling source instruction instead of guessing from live text."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "source_sibling_label": str(
+                                    sibling_context_fragment.get("source_sibling_label") or ""
+                                ),
+                                "source_sibling_rule_id": str(
+                                    sibling_context_fragment.get("source_sibling_rule_id") or ""
+                                ),
+                                "text_match": op_text_match,
+                                "replacement": op_text_replacement,
+                            },
+                        )
+                    for grouped_context_fragment in fragment_subs:
+                        if (
+                            str(grouped_context_fragment.get("rule_id") or "")
+                            != "uk_effect_grouped_anchor_occurrence_substitution_text_patch"
+                        ):
+                            continue
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id="uk_effect_grouped_anchor_occurrence_substitution_text_patch",
+                            family="source_context_elaboration",
+                            reason_code="text_substitution_anchor_resolved_from_group_parent",
+                            reason=(
+                                "UK source child gives only the ordinal occurrence to replace, "
+                                "while its parent instruction explicitly carries the quoted "
+                                "anchor. Lowering combines those source-local facts instead of "
+                                "guessing the anchor from live text."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "source_parent_id": str(grouped_context_fragment.get("source_parent_id") or ""),
+                                "text_match": op_text_match,
+                                "replacement": op_text_replacement,
+                                "occurrence": op_text_occurrence,
+                            },
+                        )
                 else:
                     # Fallback regex for simple omissions not caught by NLP
                     _OPEN_Q = "\"\u201c\u2018'"
@@ -3311,21 +6904,98 @@ def compile_effect_to_ir_ops(
                         # rather than silently dropping the effect.
                         curr_action = "replace"
                     elif is_word_level:
-                        # We couldn't extract the fragment for a word-level effect.
-                        # Do NOT replace the whole node text with the amendment instruction!
-                        unlowered_overlap_substitution_targets.append(t_str)
-                        unlowered_overlap_substitution_reason = (
-                            "overlap_substitution_arity_unsupported"
-                            if len(targets_str) > 1
-                            else "overlap_substitution_parse_failed"
-                        )
-                        curr_action = None
+                        quote_only_definition_omission: Optional[tuple[str, str]] = None
+                        quote_only_omission = None
+                        if (
+                            effect_type in {"words omitted", "word omitted", "words repealed", "word repealed"}
+                            and len(targets_str) == 1
+                        ):
+                            quote_only_definition_omission = _quote_only_definition_list_omission_payload_match(
+                                extracted_el=extracted_el,
+                                source_root=source_root,
+                                extracted_text=extracted_text,
+                            )
+                            quote_only_omission = _quote_only_omission_payload_match(extracted_text)
+                        if quote_only_definition_omission is not None:
+                            definition_term, source_parent_id = quote_only_definition_omission
+                            fragment_subs = [
+                                {
+                                    "original": f"TEXT_DEFINITION_ENTRY_{definition_term}",
+                                    "replacement": "",
+                                    "rule_id": "uk_effect_quote_only_definition_list_omission_text_patch",
+                                }
+                            ]
+                            content_ir = None
+                            op_text_match = f"TEXT_DEFINITION_ENTRY_{definition_term}"
+                            op_text_replacement = ""
+                            curr_action = "text_repeal"
+                            _append_uk_effect_lowering_observation(
+                                lowering_rejections_out,
+                                rule_id="uk_effect_quote_only_definition_list_omission_text_patch",
+                                family="text_rewrite_lowering",
+                                reason_code="quote_only_payload_in_parent_definition_omission_list",
+                                reason=(
+                                    "UK word-level omission source row contains only a quoted "
+                                    "definition term, and its parent source instruction explicitly "
+                                    "omits definitions; lowering preserves a bounded definition-entry "
+                                    "selector instead of deleting every phrase occurrence."
+                                ),
+                                effect=effect,
+                                extracted_el=extracted_el,
+                                extracted_text=extracted_text,
+                                detail={
+                                    "target_ref": t_str,
+                                    "target": str(target),
+                                    "definition_term": definition_term,
+                                    "source_parent_id": source_parent_id,
+                                },
+                            )
+                        elif quote_only_omission:
+                            fragment_subs = [
+                                {
+                                    "original": quote_only_omission,
+                                    "replacement": "",
+                                    "rule_id": "uk_effect_quote_only_omission_payload_text_patch",
+                                }
+                            ]
+                            content_ir = None
+                            op_text_match = quote_only_omission
+                            op_text_replacement = ""
+                            curr_action = "text_repeal"
+                        else:
+                            # We couldn't extract the fragment for a word-level effect.
+                            # Do NOT replace the whole node text with the amendment instruction!
+                            unlowered_overlap_substitution_targets.append(t_str)
+                            unlowered_overlap_substitution_reason = (
+                                "overlap_substitution_arity_unsupported"
+                                if len(targets_str) > 1
+                                else "overlap_substitution_parse_failed"
+                            )
+                            curr_action = None
 
         if curr_action:
             preceding_eid = None
+            preceding_eid_source = "effect_comments_after_clause"
+            if chained_insert_preceding_eid:
+                preceding_eid = chained_insert_preceding_eid
+                preceding_eid_source = chained_insert_preceding_eid_source
+            source_anchor_text = ""
+            if extracted_el is not None:
+                source_anchor_text = _instruction_text_before_amendment_container(extracted_el) or (extracted_text or "")
+            source_preceding_eid, source_preceding_eid_source = _source_after_insertion_anchor(source_anchor_text)
+            if source_preceding_eid and not preceding_eid:
+                preceding_eid = source_preceding_eid
+                preceding_eid_source = source_preceding_eid_source or preceding_eid_source
+            following_eid = None
+            following_eid_source = None
+            if curr_action == "insert":
+                following_eid, following_eid_source = _source_before_insertion_anchor(
+                    source_anchor_text,
+                    target,
+                )
             if "after " in effect.comments.lower():
                 rel_m = re.search(r"after (?:paragraph|section|ss\.|s\.)\s?\(?([0-9a-zA-Z]+)\)?", effect.comments, re.I)
-                if rel_m:
+                if rel_m and not preceding_eid:
                     num = rel_m.group(1)
                     preceding_eid = f"p1-{num}" if "paragraph" in effect.comments.lower() else f"section-{num}"
 
@@ -3356,6 +7026,21 @@ def compile_effect_to_ir_ops(
                     and _clean_num(payload_node_mut.label or "") == _clean_num(leaf_label)
                 ):
                     payload_node_mut.kind = cast(IRNodeKind, leaf_kind)
+            if payload_node_mut is not None and curr_action in ("insert", "replace"):
+                payload_node_mut = _synthesize_whole_schedule_payload_descendant_eids(
+                    payload_node_mut,
+                    target=target,
+                    effect=effect,
+                    lowering_records_out=lowering_rejections_out,
+                    allow_payload_identity_synthesis=allow_payload_identity_synthesis,
+                )
+                payload_node_mut = _synthesize_payload_descendant_eids(
+                    payload_node_mut,
+                    target=target,
+                    effect=effect,
+                    lowering_records_out=lowering_rejections_out,
+                    allow_payload_identity_synthesis=allow_payload_identity_synthesis,
+                )
 
             if curr_action in ("insert", "replace") and _is_non_substantive_structural_payload(payload_node_mut):
                 _append_uk_effect_lowering_rejection(
@@ -3378,24 +7063,118 @@ def compile_effect_to_ir_ops(
                     },
                 )
                 continue
-            payload_node = payload_node_mut.to_irnode() if payload_node_mut is not None else None
-            if curr_action == "text_repeal" and op_text_match:
-                text_patch = TextPatchSpec(
-                    kind=TextPatchKindEnum.DELETE,
-                    selector=TextSelector(
-                        match_text=op_text_match,
-                        occurrence=op_text_occurrence,
+            if (
+                curr_action == "replace"
+                and _is_broad_schedule_flat_replace_payload(
+                    target=target,
+                    payload_node=payload_node_mut,
+                    actual_source_el=actual_el,
+                )
+            ):
+                _append_uk_effect_lowering_rejection(
+                    lowering_rejections_out,
+                    rule_id="uk_effect_broad_schedule_flat_payload_rejected",
+                    family="payload_coverage_filter",
+                    reason_code="broad_schedule_or_part_replace_payload_undercovered",
+                    reason=(
+                        "UK structural replace targets a whole schedule or schedule part, "
+                        "but the extracted source payload is only flat text and does not "
+                        "claim the target's descendant structure."
                     ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        "target_ref": t_str,
+                        "target": str(target),
+                        "payload_kind": str(payload_node_mut.kind),
+                        "payload_label": str(payload_node_mut.label or ""),
+                        "payload_text_preview": " ".join((payload_node_mut.text or "").split())[:240],
+                    },
+                )
+                continue
+            payload_node = payload_node_mut.to_irnode() if payload_node_mut is not None else None
+            text_patch_items: list[tuple[Optional[TextPatchSpec], Optional[list]]] = []
+            separate_definition_repeals = _separate_definition_repeal_fragments(fragment_subs)
+            separate_occurrence_replacements = _separate_occurrence_text_replace_fragments(fragment_subs)
+            if curr_action == "text_repeal" and separate_definition_repeals:
+                for fragment in separate_definition_repeals:
+                    text_patch_items.append(
+                        (
+                            TextPatchSpec(
+                                kind=TextPatchKindEnum.DELETE,
+                                selector=TextSelector(
+                                    match_text=fragment["original"],
+                                    occurrence=0,
+                                ),
+                            ),
+                            [fragment],
+                        )
+                    )
+            elif curr_action == "text_replace" and separate_occurrence_replacements:
+                for fragment in separate_occurrence_replacements:
+                    text_patch_items.append(
+                        (
+                            TextPatchSpec(
+                                kind=TextPatchKindEnum.REPLACE,
+                                selector=TextSelector(
+                                    match_text=fragment["original"],
+                                    occurrence=int(fragment["occurrence"]),
+                                ),
+                                replacement=fragment["replacement"],
+                            ),
+                            [fragment],
+                        )
+                    )
+            elif curr_action == "text_repeal" and op_text_match:
+                text_patch_items.append(
+                    (
+                        TextPatchSpec(
+                            kind=TextPatchKindEnum.DELETE,
+                            selector=TextSelector(
+                                match_text=op_text_match,
+                                occurrence=op_text_occurrence,
+                                end_occurrence=op_text_end_occurrence,
+                            ),
+                        ),
+                        fragment_subs,
+                    )
+                )
+            elif (
+                curr_action == "text_replace"
+                and op_text_match == "TEXT_FROM__TO_END"
+                and op_text_replacement is not None
+            ):
+                text_patch_items.append(
+                    (
+                        TextPatchSpec(
+                            kind=TextPatchKindEnum.APPEND,
+                            selector=TextSelector(
+                                match_text="TEXT_END",
+                                occurrence=0,
+                            ),
+                            replacement=op_text_replacement,
+                        ),
+                        fragment_subs,
+                    )
                 )
             elif curr_action == "text_replace" and op_text_match and op_text_replacement is not None:
-                text_patch = TextPatchSpec(
-                    kind=TextPatchKindEnum.REPLACE,
-                    selector=TextSelector(
-                        match_text=op_text_match,
-                        occurrence=op_text_occurrence,
-                    ),
-                    replacement=op_text_replacement,
+                text_patch_items.append(
+                    (
+                        TextPatchSpec(
+                            kind=TextPatchKindEnum.REPLACE,
+                            selector=TextSelector(
+                                match_text=op_text_match,
+                                occurrence=op_text_occurrence,
+                                end_occurrence=op_text_end_occurrence,
+                            ),
+                            replacement=op_text_replacement,
+                        ),
+                        fragment_subs,
+                    )
                 )
+            else:
+                text_patch_items.append((None, fragment_subs))
 
             # Build source
             src = OperationSource(
@@ -3410,29 +7189,44 @@ def compile_effect_to_ir_ops(
                 [t_str],
                 original_targets_str=original_targets_str,
             )
-            text_rewrite_witness = _uk_text_rewrite_spec(
-                fragment_subs=fragment_subs,
-                text_patch=text_patch,
-                op_text_match=op_text_match,
-                op_text_replacement=op_text_replacement,
-                op_text_occurrence=op_text_occurrence,
+            insertion_anchor_witness = _uk_insertion_anchor_witness(
+                preceding_eid,
+                following_eid=following_eid,
+                anchor_source=following_eid_source or preceding_eid_source,
             )
-            insertion_anchor_witness = _uk_insertion_anchor_witness(preceding_eid)
-            lowered_witness = UKLoweredOperationWitness(
-                op_id=f"{effect.effect_id}_{len(ops)}" if len(targets_str) > 1 else effect.effect_id,
-                sequence=sequence,
-                action=_to_structural_action(curr_action),
-                target=target,
-                payload=payload_node,
-                source=src,
-                effect_witness=effect_witness,
-                extraction_witness=extraction_witness,
-                target_expansion_witness=target_expansion_witness,
-                text_rewrite_witness=text_rewrite_witness,
-                insertion_anchor_witness=insertion_anchor_witness,
-            )
-            ops.append(
-                LegalOperation(
+            for text_patch_item, fragment_subs_for_witness in text_patch_items:
+                text_rewrite_witness = _uk_text_rewrite_spec(
+                    fragment_subs=fragment_subs_for_witness,
+                    text_patch=text_patch_item,
+                    op_text_match=op_text_match,
+                    op_text_replacement=op_text_replacement,
+                    op_text_occurrence=op_text_occurrence,
+                    op_text_end_occurrence=op_text_end_occurrence,
+                )
+                lowered_witness = UKLoweredOperationWitness(
+                    op_id=(
+                        f"{effect.effect_id}_{len(ops)}"
+                        if len(targets_str) > 1 or len(text_patch_items) > 1
+                        else effect.effect_id
+                    ),
+                    sequence=sequence,
+                    action=_to_structural_action(curr_action),
+                    target=target,
+                    payload=payload_node,
+                    source=src,
+                    effect_witness=effect_witness,
+                    extraction_witness=extraction_witness,
+                    target_expansion_witness=target_expansion_witness,
+                    text_rewrite_witness=text_rewrite_witness,
+                    insertion_anchor_witness=insertion_anchor_witness,
+                )
+                provenance_tags = _uk_lowered_op_provenance_tags(lowered_witness)
+                if table_cell_selector is not None:
+                    provenance_tags = (
+                        *provenance_tags,
+                        f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(table_cell_selector, ensure_ascii=False)}",
+                    )
+                op = LegalOperation(
                     op_id=lowered_witness.op_id,
                     sequence=lowered_witness.sequence,
                     action=lowered_witness.action,
@@ -3440,10 +7234,18 @@ def compile_effect_to_ir_ops(
                     payload=_payload_with_rewrite_witness(lowered_witness.payload, lowered_witness),
                     source=lowered_witness.source,
                     group_id=_uk_temporal_group_id(effect),
-                    provenance_tags=_uk_lowered_op_provenance_tags(lowered_witness),
-                    text_patch=text_patch,
+                    provenance_tags=provenance_tags,
+                    text_patch=text_patch_item,
                 )
-            )
+                ops.append(op)
+            if curr_action == "insert" and preceding_eid:
+                target_anchor_eid = _target_anchor_eid(target)
+                if target_anchor_eid:
+                    chained_insert_preceding_eid = target_anchor_eid
+                    chained_insert_preceding_eid_source = "prior_insert_in_same_effect"
+            else:
+                chained_insert_preceding_eid = None
+                chained_insert_preceding_eid_source = "effect_comments_after_clause"
     if not ops and unlowered_overlap_substitution_targets:
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
@@ -3562,16 +7364,10 @@ class UKReplayPipeline:
         applicability_mode: str = "effective_date_plus_feed_applied",
     ) -> str:
         """Return the nonstructural effect row family that may still replay."""
-        if not effect.is_applicable_for_replay(applicability_mode=applicability_mode):
-            return ""
-        effect_type = (effect.effect_type or "").strip().lower()
-        if effect_type.startswith("substituted for"):
-            return "substituted_for_series"
-        if effect_type.startswith("revoked"):
-            return "revoked_repeal"
-        if effect_type.startswith("ceases to have effect"):
-            return "ceases_to_have_effect_repeal"
-        return ""
+        return uk_nonstructural_replay_candidate_family(
+            effect,
+            applicability_mode=applicability_mode,
+        )
 
     def compile_ops_for_statute(
         self,
@@ -3581,9 +7377,11 @@ class UKReplayPipeline:
         allow_metadata_backfill: bool = True,
         applicability_mode: str = "effective_date_plus_feed_applied",
         authority_mode: str = "current_mixed",
+        allow_metadata_only_effects: bool = True,
         authority_rejections_out: Optional[list[dict[str, Any]]] = None,
         lowering_rejections_out: Optional[list[dict[str, Any]]] = None,
         effect_feed_parse_rejections_out: Optional[list[dict[str, Any]]] = None,
+        effect_diagnostics_out: Optional[list[dict[str, Any]]] = None,
     ) -> list[LegalOperation]:
         """Compile IR ops for *affected_act_id*.
 
@@ -3609,61 +7407,128 @@ class UKReplayPipeline:
 
         replayable = list(effects)
         if pit_date:
-            replayable = [e for e in replayable if (e.effective_date or "9999-99-99") <= pit_date]
+            pit_replayable: list[UKEffectRecord] = []
+            for e in replayable:
+                effective_date = e.effective_date or "9999-99-99"
+                if effective_date <= pit_date:
+                    pit_replayable.append(e)
+                    continue
+                if effect_diagnostics_out is not None:
+                    effect_diagnostics_out.append(
+                        {
+                            "rule_id": "uk_effect_pit_date_filter_rejected",
+                            "family": "temporal_filter",
+                            "phase": "lowering",
+                            "effect_id": e.effect_id,
+                            "affecting_act_id": str(e.affecting_act_id or ""),
+                            "affected_provisions": e.affected_provisions,
+                            "affecting_provisions": e.affecting_provisions,
+                            "effect_type": e.effect_type,
+                            "effective_date": effective_date,
+                            "pit_date": pit_date,
+                            "reason": "UK effect effective date is later than requested point-in-time date",
+                            "blocking": False,
+                            "strict_disposition": "record",
+                            "quirks_disposition": "record",
+                        }
+                    )
+            replayable = pit_replayable
 
-        def _sort_key(e: UKEffectRecord) -> tuple:
-            return (
-                e.effective_date or "9999-99-99",
-                e.modified,
-                e.effect_id,
-            )
+        replayable = _order_uk_effects_for_replay(
+            replayable,
+            diagnostics_out=effect_diagnostics_out,
+            lowering_observations_out=lowering_rejections_out,
+        )
 
-        replayable.sort(key=_sort_key)
+        from lawvm.uk_legislation.source_adjudication import (
+            classify_uk_effect_source_pathology,
+            classify_uk_manual_compile_frontier,
+        )
 
         ops = []
-        extraction_cache: dict[
-            str,
-            tuple[
-                Optional[bytes],
-                Optional[ET.Element],
-                Optional[dict[ET.Element, ET.Element]],
-                dict[str, ET.Element],
-                dict[tuple[str, ...], ET.Element],
-            ],
-        ] = {}
+        extraction_cache: dict[str, UKAffectingSourceContext] = {}
+        enacted_extraction_cache: dict[str, UKAffectingSourceContext] = {}
         for i, e in enumerate(replayable):
-            el: Optional[ET.Element] = None
-            xml_bytes: Optional[bytes]
-            root: Optional[ET.Element]
-            parent_map: Optional[dict[ET.Element, ET.Element]]
-            exact_id_map: dict[str, ET.Element]
-            sequence_map: dict[tuple[str, ...], ET.Element]
+            if bool(e.metadata_only) and not allow_metadata_only_effects:
+                if lowering_rejections_out is not None:
+                    lowering_rejections_out.append(
+                        {
+                            "rule_id": "uk_effect_metadata_only_selection_rejected",
+                            "family": "applicability_filter",
+                            "phase": "lowering",
+                            "effect_id": e.effect_id,
+                            "affecting_act_id": e.affecting_act_id,
+                            "affected_provisions": e.affected_provisions,
+                            "affecting_provisions": e.affecting_provisions,
+                            "effect_type": e.effect_type,
+                            "metadata_only": True,
+                            "reason": "UK replay regime excludes metadata-only effect rows",
+                            "blocking": True,
+                            "strict_disposition": "block",
+                            "quirks_disposition": "record",
+                        }
+                    )
+                continue
+            source_required_for_replay = uk_effect_requires_affecting_source_for_replay(
+                e,
+                applicability_mode=applicability_mode,
+            )
 
-            if e.affecting_act_id in extraction_cache:
-                xml_bytes, root, parent_map, exact_id_map, sequence_map = extraction_cache[e.affecting_act_id]
-            else:
-                xml_bytes = get_affecting_act_xml_from_archive(e.affecting_act_id, archive)
-                root = None
-                parent_map = None
-                exact_id_map = {}
-                sequence_map = {}
-                if xml_bytes:
-                    try:
-                        root = ET.fromstring(xml_bytes)
-                    except ET.ParseError:
-                        root = None
-                    if root is not None:
-                        parent_map, exact_id_map, sequence_map = _build_extraction_context(root)
-                extraction_cache[e.affecting_act_id] = (xml_bytes, root, parent_map, exact_id_map, sequence_map)
-            if xml_bytes and root is not None:
-                el = extract_provision_element_from_bytes(
-                    xml_bytes,
-                    e.affecting_provisions,
-                    root=root,
-                    parent_map=parent_map,
-                    exact_id_map=exact_id_map,
-                    sequence_map=sequence_map,
+            if not source_required_for_replay:
+                source_context, _parse_error = _build_affecting_source_context(
+                    xml_bytes=None,
+                    locator="",
+                    authority_layer="EFFECT_FEED_INDEX",
                 )
+            elif e.affecting_act_id in extraction_cache:
+                source_context = extraction_cache[e.affecting_act_id]
+            else:
+                current_locator = f"https://www.legislation.gov.uk/{e.affecting_act_id}/data.xml"
+                source_context, parse_error = _build_affecting_source_context(
+                    xml_bytes=get_affecting_act_xml_from_archive(e.affecting_act_id, archive),
+                    locator=current_locator,
+                    authority_layer="AFFECTING_ACT_TEXT",
+                )
+                if effect_diagnostics_out is not None and e.affecting_act_id:
+                    if source_context.source_status == "absent":
+                        effect_diagnostics_out.append(
+                            uk_affecting_act_xml_missing_rejection(
+                                effect_id=str(e.effect_id or ""),
+                                affecting_act_id=str(e.affecting_act_id or ""),
+                                locator=current_locator,
+                            )
+                        )
+                    elif source_context.source_status == "too_small":
+                        effect_diagnostics_out.append(
+                            uk_affecting_act_xml_too_small_rejection(
+                                effect_id=str(e.effect_id or ""),
+                                affecting_act_id=str(e.affecting_act_id or ""),
+                                locator=current_locator,
+                                source_size=source_context.source_size,
+                            )
+                        )
+                    elif parse_error is not None:
+                        effect_diagnostics_out.append(
+                            uk_affecting_act_xml_parse_rejection(
+                                effect_id=str(e.effect_id or ""),
+                                affecting_act_id=str(e.affecting_act_id or ""),
+                                locator=current_locator,
+                                exc=parse_error,
+                            )
+                        )
+                extraction_cache[e.affecting_act_id] = source_context
+            el = _extract_from_affecting_source_context(source_context, e.affecting_provisions)
+            source_context, el, source_lane_observations = _select_enacted_source_for_current_shell(
+                effect=e,
+                archive=archive,
+                current_context=source_context,
+                current_el=el,
+                enacted_context_cache=enacted_extraction_cache,
+            )
+            if effect_diagnostics_out is not None:
+                effect_diagnostics_out.extend(source_lane_observations)
+            xml_bytes = source_context.xml_bytes
+            root = source_context.root
 
             structural_for_replay = e.is_structural_for_replay(applicability_mode=applicability_mode)
             lowering_rejection_count_before = (
@@ -3673,81 +7538,191 @@ class UKReplayPipeline:
                 e,
                 el,
                 sequence=i,
-                fallback_for_missing_extracted_source=(xml_bytes is None and allow_metadata_backfill),
+                fallback_for_missing_extracted_source=(
+                    source_required_for_replay
+                    and xml_bytes is None
+                    and allow_metadata_backfill
+                ),
                 lowering_rejections_out=lowering_rejections_out,
+                source_root=root,
+                source_authority_layer=source_context.authority_layer,
             )
             compile_recorded_lowering_rejection = (
                 lowering_rejections_out is not None
                 and len(lowering_rejections_out) > lowering_rejection_count_before
             )
+            if lowering_rejections_out is not None:
+                mark_nonreplay_lowering_rejections_nonblocking(
+                    e,
+                    structural_for_replay=structural_for_replay,
+                    applicability_mode=applicability_mode,
+                    lowering_rejections=lowering_rejections_out,
+                    start_index=lowering_rejection_count_before,
+                )
+            extracted_tag = el.tag.rsplit("}", 1)[-1] if el is not None else None
+            extracted_text = " ".join(t.strip() for t in el.itertext() if t and t.strip()) if el is not None else ""
+            source_pathology = classify_uk_effect_source_pathology(
+                extracted_tag=extracted_tag,
+                extracted_text=extracted_text,
+                op_actions=[_action_name(op.action) for op in compiled],
+                payload_kinds=[str(op.payload.kind) for op in compiled if op.payload is not None],
+                payload_texts=[op.payload.text or "" for op in compiled if op.payload is not None],
+                target_paths=["/".join(f"{kind}:{label}" for kind, label in op.target.path) for op in compiled],
+                lowering_rule_ids=[] if lowering_rejections_out is None else [
+                    str(row.get("rule_id") or "")
+                    for row in lowering_rejections_out[lowering_rejection_count_before:]
+                ],
+                effect_type=e.effect_type,
+                is_structural=structural_for_replay,
+            )
+            if effect_diagnostics_out is not None:
+                effect_diagnostics_out.append(
+                    {
+                        "rule_id": "uk_effect_source_pathology_classified",
+                        "family": "source_pathology",
+                        "phase": "lowering",
+                        "effect_id": str(e.effect_id or ""),
+                        "affecting_act_id": str(e.affecting_act_id or ""),
+                        "affected_provisions": str(e.affected_provisions or ""),
+                        "affecting_provisions": str(e.affecting_provisions or ""),
+                        "effect_type": str(e.effect_type or ""),
+                        "source_pathology": source_pathology or "",
+                        "structural_for_replay": structural_for_replay,
+                        "replay_applicable": e.is_applicable_for_replay(applicability_mode=applicability_mode),
+                        "compiled_op_count": len(compiled),
+                        "blocking": False,
+                        "strict_disposition": "record",
+                        "quirks_disposition": "record",
+                    }
+                )
+
+            def _append_manual_frontier_diagnostic(*, compiled_op_count: int) -> None:
+                if effect_diagnostics_out is None:
+                    return
+                current_lowering_rejections = (
+                    tuple(lowering_rejections_out[lowering_rejection_count_before:])
+                    if lowering_rejections_out is not None
+                    else ()
+                )
+                manual_frontier = classify_uk_manual_compile_frontier(
+                    effect_type=e.effect_type or "",
+                    source_pathology=source_pathology,
+                    extracted_tag=extracted_tag or "",
+                    extracted_text=extracted_text,
+                    lowering_rejections=current_lowering_rejections,
+                    compiled_op_count=compiled_op_count,
+                    replay_applicable=e.is_applicable_for_replay(
+                        applicability_mode=applicability_mode
+                    ),
+                    structural_for_replay=structural_for_replay,
+                )
+                effect_diagnostics_out.append(
+                    {
+                        "rule_id": "uk_manual_compile_frontier_classified",
+                        "family": "manual_compile_frontier",
+                        "phase": "lowering",
+                        "effect_id": str(e.effect_id or ""),
+                        "affecting_act_id": str(e.affecting_act_id or ""),
+                        "affected_provisions": str(e.affected_provisions or ""),
+                        "affecting_provisions": str(e.affecting_provisions or ""),
+                        "effect_type": str(e.effect_type or ""),
+                        "manual_compile_status": manual_frontier["status"],
+                        "manual_compile_rule_id": manual_frontier["rule_id"],
+                        "manual_compile_reason": manual_frontier["reason"],
+                        "source_pathology": source_pathology or "",
+                        "structural_for_replay": structural_for_replay,
+                        "replay_applicable": e.is_applicable_for_replay(
+                            applicability_mode=applicability_mode
+                        ),
+                        "compiled_op_count": compiled_op_count,
+                        "blocking": False,
+                        "strict_disposition": "record",
+                        "quirks_disposition": "record",
+                    }
+                )
+
             if not compiled:
-                if (
-                    structural_for_replay
-                    and lowering_rejections_out is not None
-                    and not compile_recorded_lowering_rejection
-                ):
-                    lowering_rejections_out.append(
+                append_no_ops_lowering_rejections(
+                    e,
+                    structural_for_replay=structural_for_replay,
+                    lowering_rejections_out=lowering_rejections_out,
+                    compile_recorded_lowering_rejection=compile_recorded_lowering_rejection,
+                    applicability_mode=applicability_mode,
+                )
+                _append_manual_frontier_diagnostic(compiled_op_count=0)
+                continue
+            source_pathology_filter_rejected = append_source_pathology_filter_lowering_rejections(
+                e,
+                source_pathology=source_pathology,
+                structural_for_replay=structural_for_replay,
+                compiled_ops=compiled,
+                lowering_rejections_out=lowering_rejections_out,
+            )
+            _append_manual_frontier_diagnostic(compiled_op_count=len(compiled))
+            if source_pathology_filter_rejected:
+                continue
+            replay_applicable = e.is_applicable_for_replay(applicability_mode=applicability_mode)
+            should_replay_compiled = structural_for_replay or self._should_replay_nonstructural_ops(
+                e,
+                compiled,
+                applicability_mode=applicability_mode,
+            )
+            if not should_replay_compiled:
+                if effect_diagnostics_out is not None:
+                    effect_diagnostics_out.append(
                         {
-                            "rule_id": "uk_effect_lowering_no_ops_rejected",
-                            "family": "lowering_filter",
+                            "rule_id": "uk_effect_replay_applicability_filter_rejected",
+                            "family": "applicability_filter",
                             "phase": "lowering",
-                            "effect_id": e.effect_id,
-                            "affecting_act_id": e.affecting_act_id,
-                            "affected_provisions": e.affected_provisions,
-                            "affecting_provisions": e.affecting_provisions,
-                            "effect_type": e.effect_type,
-                            "reason": "UK structural effect lowered to no replay operations",
-                            "blocking": True,
-                            "strict_disposition": "block",
+                            "effect_id": str(e.effect_id or ""),
+                            "affecting_act_id": str(e.affecting_act_id or ""),
+                            "affected_provisions": str(e.affected_provisions or ""),
+                            "affecting_provisions": str(e.affecting_provisions or ""),
+                            "effect_type": str(e.effect_type or ""),
+                            "compiled_op_count": len(compiled),
+                            "compiled_op_ids": [str(op.op_id or "") for op in compiled],
+                            "compiled_op_actions": [_action_name(op.action) for op in compiled],
+                            "structural_for_replay": structural_for_replay,
+                            "replay_applicable": replay_applicable,
+                            "nonstructural_replay_family": uk_nonstructural_replay_candidate_family(
+                                e,
+                                applicability_mode=applicability_mode,
+                            ),
+                            "reason": "UK effect compiled to operations but replay applicability excludes the effect",
+                            "blocking": False,
+                            "strict_disposition": "record",
                             "quirks_disposition": "record",
                         }
                     )
-                if (
-                    not structural_for_replay
-                    and lowering_rejections_out is not None
-                    and not compile_recorded_lowering_rejection
-                ):
-                    nonstructural_candidate_family = self._nonstructural_replay_candidate_family(
-                        e,
-                        applicability_mode=applicability_mode,
-                    )
-                    if nonstructural_candidate_family:
-                        lowering_rejections_out.append(
-                            {
-                                "rule_id": "uk_effect_nonstructural_lowering_no_ops_rejected",
-                                "family": "lowering_filter",
-                                "phase": "lowering",
-                                "effect_id": e.effect_id,
-                                "affecting_act_id": e.affecting_act_id,
-                                "affected_provisions": e.affected_provisions,
-                                "affecting_provisions": e.affecting_provisions,
-                                "effect_type": e.effect_type,
-                                "reason": "UK nonstructural effect row may be replayable but lowered to no replay operations",
-                                "blocking": True,
-                                "strict_disposition": "block",
-                                "quirks_disposition": "record",
-                                "nonstructural_replay_candidate_family": nonstructural_candidate_family,
-                            }
-                        )
-                    elif (
-                        (e.effect_type or "").strip().lower() not in _COMMENCEMENT_EFFECT_TYPES
-                        and e.is_applicable_for_replay(applicability_mode=applicability_mode)
-                    ):
-                        lowering_rejections_out.append(
-                            {
-                                "rule_id": "uk_effect_nonstructural_unsupported_no_ops_rejected",
-                                "family": "lowering_filter",
-                                "phase": "lowering",
-                                "effect_id": e.effect_id,
-                                "affecting_act_id": e.affecting_act_id,
-                                "affected_provisions": e.affected_provisions,
-                                "affecting_provisions": e.affecting_provisions,
-                                "effect_type": e.effect_type,
-                                "reason": "UK applicable nonstructural effect row is not replay-supported and lowered to no replay operations",
-                                "blocking": True,
-                                "strict_disposition": "block",
-                                "quirks_disposition": "record",
-                            }
+                if authority_mode == "source_text_only" and authority_rejections_out is not None:
+                    rejected_ops: list[LegalOperation] = []
+                    rejected_reason_counts: dict[str, int] = {}
+                    for op in compiled:
+                        allowed, rejection_reason = _uk_op_allowed_by_authority_mode(op, authority_mode)
+                        if allowed:
+                            continue
+                        rejected_ops.append(op)
+                        if rejection_reason:
+                            rejected_reason_counts[rejection_reason] = (
+                                rejected_reason_counts.get(rejection_reason, 0) + 1
+                            )
+                    if rejected_ops:
+                        authority_rejections_out.append(
+                            _uk_authority_filter_diagnostic(
+                                effect=e,
+                                authority_mode=authority_mode,
+                                compiled_op_count=len(compiled),
+                                rejected_ops=rejected_ops,
+                                rejected_reason_counts=rejected_reason_counts,
+                                replay_applicable=replay_applicable,
+                                structural_for_replay=structural_for_replay,
+                                rule_id="uk_effect_authority_filter_non_applicable_observed",
+                                blocking=False,
+                                reason=(
+                                    "UK source-text-only authority mode observed "
+                                    "non-source-text operations on a non-replay-applicable effect"
+                                ),
+                            )
                         )
                 continue
             if authority_mode == "source_text_only":
@@ -3762,96 +7737,27 @@ class UKReplayPipeline:
                         rejected_reason_counts[rejection_reason] = rejected_reason_counts.get(rejection_reason, 0) + 1
                 if rejected_ops and authority_rejections_out is not None:
                     authority_rejections_out.append(
-                        {
-                            "rule_id": "uk_effect_authority_filter_rejected",
-                            "family": "authority_filter",
-                            "phase": "lowering",
-                            "effect_id": e.effect_id,
-                            "affecting_act_id": e.affecting_act_id,
-                            "affected_provisions": e.affected_provisions,
-                            "affecting_provisions": e.affecting_provisions,
-                            "authority_mode": authority_mode,
-                            "rejected_op_count": len(rejected_ops),
-                            "kept_op_count": len(compiled) - len(rejected_ops),
-                            "rejected_authority_layers": sorted(
-                                {
-                                    str(
-                                        getattr(
-                                            getattr(_witness_for_op(op), "extraction_witness", None),
-                                            "authority_layer",
-                                            "",
-                                        )
-                                        or ""
-                                    )
-                                    for op in rejected_ops
-                                    if str(
-                                        getattr(
-                                            getattr(_witness_for_op(op), "extraction_witness", None),
-                                            "authority_layer",
-                                            "",
-                                        )
-                                        or ""
-                                    )
-                                }
-                            ),
-                            "rejected_reasons": sorted(rejected_reason_counts),
-                            "rejected_reason_counts": rejected_reason_counts,
-                            "reason": "UK source-text-only authority mode rejected non-source-text replay operations",
-                            "blocking": True,
-                            "strict_disposition": "block",
-                            "quirks_disposition": "record",
-                        }
+                        _uk_authority_filter_diagnostic(
+                            effect=e,
+                            authority_mode=authority_mode,
+                            compiled_op_count=len(compiled),
+                            rejected_ops=rejected_ops,
+                            rejected_reason_counts=rejected_reason_counts,
+                            replay_applicable=replay_applicable,
+                            structural_for_replay=structural_for_replay,
+                        )
                     )
                 compiled = [op for op in compiled if _uk_op_allowed_by_authority_mode(op, authority_mode)[0]]
                 if not compiled:
                     continue
-            if structural_for_replay:
-                from lawvm.uk_legislation.source_adjudication import (
-                    classify_uk_effect_source_pathology,
-                )
-
-                extracted_tag = el.tag.rsplit("}", 1)[-1] if el is not None else None
-                extracted_text = " ".join(t.strip() for t in el.itertext() if t and t.strip()) if el is not None else ""
-                source_pathology = classify_uk_effect_source_pathology(
-                    extracted_tag=extracted_tag,
-                    extracted_text=extracted_text,
-                    op_actions=[_action_name(op.action) for op in compiled],
-                    payload_kinds=[str(op.payload.kind) for op in compiled if op.payload is not None],
-                    payload_texts=[op.payload.text or "" for op in compiled if op.payload is not None],
-                    target_paths=["/".join(f"{kind}:{label}" for kind, label in op.target.path) for op in compiled],
-                    effect_type=e.effect_type,
-                    is_structural=structural_for_replay,
-                )
-                if source_pathology == "instruction_text_reused_as_payload" and any(
-                    _action_name(op.action) in {"insert", "replace"} for op in compiled
-                ):
-                    if lowering_rejections_out is not None:
-                        lowering_rejections_out.append(
-                            {
-                                "rule_id": "uk_effect_instruction_text_payload_rejected",
-                                "family": "source_pathology_filter",
-                                "phase": "lowering",
-                                "effect_id": e.effect_id,
-                                "affecting_act_id": e.affecting_act_id,
-                                "affected_provisions": e.affected_provisions,
-                                "affecting_provisions": e.affecting_provisions,
-                                "effect_type": e.effect_type,
-                                "reason": "UK effect payload reused instruction text rather than source legal payload",
-                                "blocking": True,
-                                "strict_disposition": "block",
-                                "quirks_disposition": "record",
-                                "source_pathology": source_pathology,
-                            }
-                        )
-                    continue
-            if structural_for_replay or self._should_replay_nonstructural_ops(
-                e,
-                compiled,
-                applicability_mode=applicability_mode,
-            ):
+            if should_replay_compiled:
                 ops.extend(compiled)
 
-        return _order_schedule_materialization_ops(ops)
+        ops = _order_schedule_materialization_ops(ops)
+        return _order_uk_text_patch_preimage_chains(
+            ops,
+            lowering_observations_out=lowering_rejections_out,
+        )
 
     def apply_ops(
         self,
@@ -3863,6 +7769,7 @@ class UKReplayPipeline:
         verbose: bool = False,
         lo_ops_out: Optional[List[LegalOperation]] = None,
         adjudications_out: Optional[List[CompileAdjudication]] = None,
+        oracle_alignment_events_out: Optional[list[dict[str, Any]]] = None,
     ) -> IRStatute:
         executor = UKReplayExecutor(
             base_ir,
@@ -3872,12 +7779,15 @@ class UKReplayPipeline:
             lo_ops_out=lo_ops_out,
             adjudications_out=adjudications_out,
         )
-        for op in _prepare_replay_uk_ops(
+        prepared_ops = _prepare_replay_uk_ops(
             ops,
             verbose=verbose,
             adjudications_out=adjudications_out,
-        ):
+        )
+        for op in prepared_ops.accepted_ops:
             executor.apply_op(op)
+        if oracle_alignment_events_out is not None:
+            oracle_alignment_events_out.extend(dict(event) for event in executor.oracle_alignment_events)
         return executor.statute.to_irstatute()
 
 
@@ -3891,6 +7801,136 @@ def _normalize_text_for_grounding(text: str) -> str:
     # Strip punctuation and normalize whitespace
     text = re.sub(r"[^\w\s]", "", text.lower())
     return " ".join(text.split())
+
+
+def _normalized_replay_subtree_text(node: IRNode | UKMutableNode) -> str:
+    parts: list[str] = []
+    if node.text:
+        parts.append(str(node.text).strip())
+    for child in node.children:
+        child_text = _normalized_replay_subtree_text(child)
+        if child_text:
+            parts.append(child_text)
+    return _normalize_text_for_grounding(" ".join(parts))
+
+
+def _compact_normalized_text(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
+
+
+def _compact_schedule_entry_anchor_without_article(text: str) -> str:
+    stripped = re.sub(
+        r"^(?:the|a|an)\s+",
+        "",
+        " ".join(str(text or "").split()),
+        flags=re.I,
+    )
+    return _compact_normalized_text(stripped)
+
+
+def _text_patch_replacement_preserves_anchor(match_text: str, replacement: str | None) -> bool:
+    match_norm = _compact_normalized_text(match_text)
+    replacement_norm = _compact_normalized_text(replacement or "")
+    if len(match_norm) < 3 or not replacement_norm:
+        return False
+    return replacement_norm.startswith(match_norm) or replacement_norm.endswith(match_norm)
+
+
+def _monetary_amount_text_selector(text: str) -> bool:
+    return bool(re.search(r"(?:\u00a3\s*\d|\b\d[\d,]*(?:\.\d+)?\s*(?:pounds?|sterling)\b)", text or "", re.I))
+
+
+def _parenthetical_omission_text_selector(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not (stripped.startswith("(") and stripped.endswith(")")):
+        return False
+    return bool(re.search(r"[A-Za-z]{3,}", stripped))
+
+
+def _citation_connector_elided_text_match_present(match_text: str, node: IRNode | UKMutableNode) -> bool:
+    text = match_text or ""
+    if not re.search(r"\bor\b", text, re.I):
+        return False
+    citation_refs = re.findall(r"\b\d+[A-Za-z]?\s*\(", text)
+    if len(citation_refs) < 2:
+        return False
+    without_connectors = re.sub(r"\bor\b", "", text, flags=re.I)
+    selector_norm = _compact_normalized_text(without_connectors)
+    if len(selector_norm) < 6 or selector_norm == _compact_normalized_text(text):
+        return False
+    target_norm = _compact_normalized_text(_normalized_replay_subtree_text(node))
+    return bool(target_norm) and selector_norm in target_norm
+
+
+def _article_phrase_content_word_present(match_text: str, node: IRNode | UKMutableNode) -> bool:
+    stripped = (match_text or "").strip()
+    article_match = re.fullmatch(r"(?:a|an|the)\s+([A-Za-z][A-Za-z-]{3,})", stripped, re.I)
+    if article_match is None:
+        return False
+    content_norm = _compact_normalized_text(article_match.group(1))
+    target_norm = _compact_normalized_text(_normalized_replay_subtree_text(node))
+    return bool(content_norm) and content_norm in target_norm
+
+
+def _normalized_text_match_present(match_text: str, node: IRNode | UKMutableNode) -> bool:
+    match_norm = _compact_normalized_text(match_text)
+    if len(match_norm) < 3:
+        return False
+    target_norm = _compact_normalized_text(_normalized_replay_subtree_text(node))
+    return bool(target_norm) and match_norm in target_norm
+
+
+def _citation_stripped_text_match_present(match_text: str, node: IRNode | UKMutableNode) -> bool:
+    text = match_text or ""
+    if not re.search(r"\b(?:Act|Measure|Order|Regulations)\s+\d{4}\b|\(\s*c\.\s*\d+", text, re.I):
+        return False
+    stripped = re.sub(r"\(\s*c\.\s*\d+[a-z]?\s*\)", "", text, flags=re.I)
+    stripped = re.sub(r"\b(Act|Measure|Order|Regulations)\s+\d{4}\b", r"\1", stripped, flags=re.I)
+    stripped_norm = _compact_normalized_text(stripped)
+    if len(stripped_norm) < 12 or stripped_norm == _compact_normalized_text(text):
+        return False
+    target_norm = _compact_normalized_text(_normalized_replay_subtree_text(node))
+    return bool(target_norm) and stripped_norm in target_norm
+
+
+def _non_substantive_text_selector(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped:
+        return False
+    if re.fullmatch(r"[\W_]+", stripped):
+        return True
+    compact = _compact_normalized_text(stripped)
+    return compact in {"", "none", "nil"}
+
+
+def _multi_fragment_text_selector(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped:
+        return False
+    quote = r"[\"'“”‘’]"
+    return bool(
+        re.search(rf"{quote}\s*,\s*{quote}", stripped)
+        or re.search(rf"{quote}\s+(?:and|or)\s+{quote}", stripped, re.I)
+        or re.search(rf",\s*{quote}", stripped)
+    )
+
+
+def _synthetic_text_selector(text: str) -> bool:
+    stripped = (text or "").strip()
+    return stripped.startswith("TEXT_") or bool(re.match(r"^FROM_.+_TO_", stripped))
+
+
+def _replay_subtree_text_preview(node: IRNode | UKMutableNode, *, limit: int = 240) -> str:
+    parts: list[str] = []
+    if node.text:
+        parts.append(str(node.text).strip())
+    for child in node.children:
+        child_text = _replay_subtree_text_preview(child, limit=limit)
+        if child_text:
+            parts.append(child_text)
+        if sum(len(part) for part in parts) >= limit:
+            break
+    return " ".join(" ".join(parts).split())[:limit]
 
 
 class UKReplayExecutor:
@@ -3911,6 +7951,8 @@ class UKReplayExecutor:
         self.adjudications_out = adjudications_out
         self._seen_invariant_violations = self._collect_invariant_violations()
         self._repealed_target_prefixes: set[str] = set()
+        self._applied_text_patch_targets: dict[str, list[str]] = {}
+        self.oracle_alignment_events: list[dict[str, Any]] = []
 
     def _log(self, message: str) -> None:
         if self.verbose:
@@ -3998,6 +8040,394 @@ class UKReplayExecutor:
         node.attrs = dict(attrs)
         return True
 
+    @staticmethod
+    def _table_cell_span(cell: UKMutableNode) -> tuple[int, int]:
+        try:
+            rowspan = int(str(cell.attrs.get("rowspan") or "1"))
+        except ValueError:
+            rowspan = 1
+        try:
+            morerows = int(str(cell.attrs.get("morerows") or "0"))
+        except ValueError:
+            morerows = 0
+        if morerows:
+            rowspan = max(rowspan, morerows + 1)
+        try:
+            colspan = int(str(cell.attrs.get("colspan") or "1"))
+        except ValueError:
+            colspan = 1
+        return max(rowspan, 1), max(colspan, 1)
+
+    def _expanded_table_rows(self, table: UKMutableNode) -> list[dict[int, UKMutableNode]]:
+        rows: list[dict[int, UKMutableNode]] = []
+        active_rowspans: dict[int, tuple[int, UKMutableNode]] = {}
+        for row in table.children:
+            if _uk_kind_value(row.kind).lower() != "row":
+                continue
+            row_cells: dict[int, UKMutableNode] = {
+                col: cell for col, (_, cell) in active_rowspans.items()
+            }
+            next_rowspans: dict[int, tuple[int, UKMutableNode]] = {
+                col: (remaining - 1, cell)
+                for col, (remaining, cell) in active_rowspans.items()
+                if remaining > 1
+            }
+            col = 1
+            for cell in row.children:
+                cell_kind = _uk_kind_value(cell.kind).lower()
+                if cell_kind not in {"cell", "header_cell"}:
+                    continue
+                while col in row_cells:
+                    col += 1
+                rowspan, colspan = self._table_cell_span(cell)
+                for offset in range(colspan):
+                    current_col = col + offset
+                    row_cells[current_col] = cell
+                    if rowspan > 1:
+                        next_rowspans[current_col] = (rowspan - 1, cell)
+                col += colspan
+            if row_cells:
+                rows.append(row_cells)
+            active_rowspans = next_rowspans
+        return rows
+
+    def _resolve_table_entry_inline_cell(
+        self,
+        node: UKMutableNode,
+        selector: dict[str, Any],
+    ) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
+        """Resolve a source-owned "nth entry in column N relating to X" table cell."""
+        try:
+            column_index = int(selector.get("column_index") or 0)
+            entry_index = int(selector.get("entry_index") or 0)
+        except (TypeError, ValueError):
+            return None, "invalid_selector", {}
+        relating_norm = _compact_normalized_text(str(selector.get("relating_text") or ""))
+        if column_index < 1 or entry_index < 1 or not relating_norm:
+            return None, "invalid_selector", {}
+
+        tables = [
+            child
+            for child in node.children
+            if _uk_kind_value(child.kind).lower() == "table"
+        ]
+        if len(tables) != 1:
+            return None, "table_not_unique", {"table_count": len(tables)}
+
+        matching_cells: list[UKMutableNode] = []
+        matching_rows: list[str] = []
+        for row_cells in self._expanded_table_rows(tables[0]):
+            target_cell = row_cells.get(column_index)
+            if target_cell is None:
+                continue
+            relation_cells = [
+                cell
+                for col, cell in sorted(row_cells.items())
+                if col < column_index and _compact_normalized_text(cell.text or "").find(relating_norm) >= 0
+            ]
+            if not relation_cells:
+                continue
+            if not matching_cells or matching_cells[-1] is not target_cell:
+                matching_cells.append(target_cell)
+                matching_rows.append(
+                    " | ".join(
+                        str(row_cells[col].text or "")
+                        for col in sorted(row_cells)
+                        if str(row_cells[col].text or "")
+                    )[:240]
+                )
+        if len(matching_cells) < entry_index:
+            return None, "entry_not_found", {
+                "matching_entry_count": len(matching_cells),
+                "matching_rows": tuple(matching_rows[:5]),
+            }
+        return matching_cells[entry_index - 1], "", {
+            "matching_entry_count": len(matching_cells),
+            "matched_row": matching_rows[entry_index - 1] if entry_index - 1 < len(matching_rows) else "",
+        }
+
+    def _heading_facet_carrier_for_target(
+        self,
+        target: LegalAddress,
+        node: UKMutableNode,
+        parent: Optional[UKMutableNode],
+        *,
+        allow_crossheading_parent: bool = False,
+    ) -> Optional[UKMutableNode]:
+        """Return the replay node whose text owns a UK heading facet target."""
+        if target.special is not FacetKind.HEADING:
+            return None
+        node_kind = _uk_kind_value(node.kind).lower()
+        if node_kind in {"part", "chapter", "schedule", "p1group", "pblock", "crossheading"} and node.text:
+            return node
+        direct_heading_children = [
+            child for child in node.children if _uk_kind_value(child.kind).lower() == "heading" and child.text
+        ]
+        if len(direct_heading_children) == 1:
+            return direct_heading_children[0]
+        if parent is None or not parent.text:
+            return None
+        parent_kind = _uk_kind_value(parent.kind).lower()
+        if parent_kind not in {"p1group", "pgroup", "crossheading"}:
+            return None
+        structural_children = [
+            child
+            for child in parent.children
+            if _uk_kind_value(child.kind).lower()
+            in {"section", "article", "rule", "regulation", "subsection", "paragraph", "subparagraph", "item"}
+        ]
+        if parent_kind in {"p1group", "pgroup"} and len(structural_children) == 1 and structural_children[0] is node:
+            return parent
+        if (
+            parent_kind == "pgroup"
+            and structural_children
+            and structural_children[0] is node
+            and str(parent.attrs.get("source_rule_id") or "")
+            == "uk_parse_subordinate_pgroup_heading_carrier"
+        ):
+            return parent
+        if allow_crossheading_parent and parent_kind == "crossheading":
+            # Cross-heading refs say "heading before paragraph X". The carrier
+            # is the crossheading parent only when X is the first structural
+            # child under that heading; otherwise placement would be ambiguous.
+            if structural_children and structural_children[0] is node:
+                return parent
+        return None
+
+    def _apply_text_replace_on_node_text_only(
+        self,
+        node: UKMutableNode,
+        match: str,
+        replacement: str,
+        occurrence: int,
+        end_occurrence: int = 0,
+        *,
+        allow_punctuation_spacing: bool = False,
+        allow_word_punctuation_elision: bool = False,
+    ) -> tuple[UKMutableNode, bool]:
+        """Apply a text patch only to one node's text, never to descendants."""
+        text = node.text or ""
+        if not text:
+            return node, False
+        if match == "TEXT_ALL":
+            rebuilt = dc_replace(node, text=replacement)
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+        if match.startswith("TEXT_AFTER_") and match.endswith("_TO_END"):
+            anchor = match[len("TEXT_AFTER_") : -len("_TO_END")]
+            if not anchor:
+                return node, False
+            ordinal = occurrence if occurrence > 0 else 1
+            literal_matches = list(re.finditer(re.escape(anchor), text))
+            if len(literal_matches) >= ordinal:
+                anchor_match = literal_matches[ordinal - 1]
+            else:
+                pattern = _text_patch_pattern(
+                    anchor,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                matches = list(re.finditer(pattern, text, flags=re.I | re.S))
+                if len(matches) < ordinal:
+                    return node, False
+                anchor_match = matches[ordinal - 1]
+            joiner = (
+                ""
+                if text[: anchor_match.end()].endswith((" ", "\t", "\n", "\r"))
+                or replacement.startswith((" ", ",", ".", ";", ":", ")"))
+                else " "
+            )
+            rebuilt = dc_replace(node, text=f"{text[: anchor_match.end()]}{joiner}{replacement}")
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+        if match.startswith("TEXT_FROM_") and match.endswith("_TO_END"):
+            start_text = match[len("TEXT_FROM_") : -len("_TO_END")]
+            if not start_text:
+                return node, False
+            ordinal = occurrence if occurrence > 0 else 1
+            literal_matches = list(re.finditer(re.escape(start_text), text))
+            if len(literal_matches) >= ordinal:
+                start_match = literal_matches[ordinal - 1]
+            else:
+                pattern = _text_patch_pattern(
+                    start_text,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                matches = list(re.finditer(pattern, text, flags=re.I | re.S))
+                if len(matches) < ordinal:
+                    return node, False
+                start_match = matches[ordinal - 1]
+            rebuilt = dc_replace(node, text=f"{text[: start_match.start()]}{replacement}")
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+        if match.startswith("TEXT_FROM_") and "_TO_" in match:
+            start_text, end_text = match.replace("TEXT_FROM_", "", 1).split("_TO_", 1)
+            if not start_text or not end_text:
+                return node, False
+            start_ordinal = occurrence if occurrence > 0 else 1
+            end_ordinal = end_occurrence if end_occurrence > 0 else 0
+            literal_start_matches = list(re.finditer(re.escape(start_text), text))
+            if len(literal_start_matches) >= start_ordinal:
+                start_match = literal_start_matches[start_ordinal - 1]
+            else:
+                start_pattern = _text_patch_pattern(
+                    start_text,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                start_matches = list(re.finditer(start_pattern, text, flags=re.I | re.S))
+                if len(start_matches) < start_ordinal:
+                    return node, False
+                start_match = start_matches[start_ordinal - 1]
+            if end_ordinal:
+                literal_end_matches = list(re.finditer(re.escape(end_text), text))
+                if len(literal_end_matches) >= end_ordinal:
+                    end_match = literal_end_matches[end_ordinal - 1]
+                    if end_match.start() < start_match.end():
+                        return node, False
+                    end_end = end_match.end()
+                else:
+                    end_pattern = _text_patch_pattern(
+                        end_text,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    end_matches = list(re.finditer(end_pattern, text, flags=re.I | re.S))
+                    if len(end_matches) < end_ordinal:
+                        return node, False
+                    end_match = end_matches[end_ordinal - 1]
+                    if end_match.start() < start_match.end():
+                        return node, False
+                    end_end = end_match.end()
+            else:
+                end_idx = text.find(end_text, start_match.end())
+                if end_idx == -1:
+                    return node, False
+                end_end = end_idx + len(end_text)
+            rebuilt = dc_replace(node, text=f"{text[: start_match.start()]}{replacement}{text[end_end:]}")
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+        if occurrence == -1:
+            pos = text.rfind(match)
+            if pos != -1:
+                rebuilt = dc_replace(node, text=text[:pos] + replacement + text[pos + len(match) :])
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+            pattern = _text_patch_pattern(
+                match,
+                allow_punctuation_spacing=allow_punctuation_spacing,
+                allow_word_punctuation_elision=allow_word_punctuation_elision,
+            )
+            matches = list(re.finditer(pattern, text, flags=re.I))
+            if not matches:
+                return node, False
+            last = matches[-1]
+            rebuilt = dc_replace(node, text=text[: last.start()] + replacement + text[last.end() :])
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+        if occurrence == 0:
+            if match in text:
+                rebuilt = dc_replace(node, text=text.replace(match, replacement))
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+            pattern = _text_patch_pattern(
+                match,
+                allow_punctuation_spacing=allow_punctuation_spacing,
+                allow_word_punctuation_elision=allow_word_punctuation_elision,
+            )
+            new_text, count = re.subn(pattern, replacement, text, flags=re.I)
+            if count == 0:
+                return node, False
+            rebuilt = dc_replace(node, text=new_text)
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+        start = 0
+        seen = 0
+        while True:
+            pos = text.find(match, start)
+            if pos == -1:
+                break
+            seen += 1
+            if seen == occurrence:
+                rebuilt = dc_replace(node, text=text[:pos] + replacement + text[pos + len(match) :])
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+            start = pos + len(match)
+        pattern = _text_patch_pattern(
+            match,
+            allow_punctuation_spacing=allow_punctuation_spacing,
+            allow_word_punctuation_elision=allow_word_punctuation_elision,
+        )
+        for idx, normalized_match in enumerate(re.finditer(pattern, text, flags=re.I), start=1):
+            if idx == occurrence:
+                rebuilt = dc_replace(
+                    node,
+                    text=text[: normalized_match.start()] + replacement + text[normalized_match.end() :],
+                )
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+        return node, False
+
+    def _apply_text_append_on_node_text_only(
+        self,
+        node: UKMutableNode,
+        insertion: str,
+    ) -> tuple[UKMutableNode, bool]:
+        """Append text only to one node's text, never to descendants."""
+        text = node.text or ""
+        if not insertion:
+            return node, False
+        joiner = (
+            ""
+            if not text
+            or text.endswith((" ", "\t", "\n", "\r"))
+            or insertion.startswith((" ", ",", ".", ";", ":", ")"))
+            else " "
+        )
+        rebuilt = dc_replace(node, text=f"{text}{joiner}{insertion}")
+        self._replace_node_in_statute(node, rebuilt)
+        return rebuilt, True
+
+    def _apply_text_append_on_subtree_text_end(
+        self,
+        node: UKMutableNode,
+        insertion: str,
+    ) -> tuple[UKMutableNode, bool]:
+        """Append text at the target subtree end without flattening children."""
+        if not insertion:
+            return node, False
+        if node.text or not node.children:
+            return self._apply_text_append_on_node_text_only(node, insertion)
+
+        text_nodes: list[tuple[tuple[int, ...], UKMutableNode]] = []
+
+        def _collect(n: UKMutableNode, path: tuple[int, ...] = ()) -> None:
+            if n.text:
+                text_nodes.append((path, n))
+            for i, child in enumerate(n.children):
+                _collect(child, path + (i,))
+
+        _collect(node)
+        if not text_nodes:
+            return node, False
+        text_path, text_node = text_nodes[-1]
+        text = text_node.text or ""
+        joiner = (
+            ""
+            if not text
+            or text.endswith((" ", "\t", "\n", "\r"))
+            or insertion.startswith((" ", ",", ".", ";", ":", ")"))
+            else " "
+        )
+        replacement_node = dc_replace(text_node, text=f"{text}{joiner}{insertion}")
+        if not text_path:
+            self._replace_node_in_statute(text_node, replacement_node)
+            return replacement_node, True
+        rebuilt = self._replace_descendant_at_path(node, text_path, replacement_node)
+        self._replace_node_in_statute(node, rebuilt)
+        return rebuilt, True
+
     def _remove_node(self, node: UKMutableNode, parent: Optional[UKMutableNode], idx: Optional[int]) -> bool:
         if parent is not None and idx is not None:
             parent.children.pop(idx)
@@ -4062,6 +8492,23 @@ class UKReplayExecutor:
         payload_kind = str(getattr(payload, "kind", "") or "").lower()
         payload_label = _clean_num(str(getattr(payload, "label", "") or ""))
         return payload_kind == "part" and payload_label in {"", "part"}
+
+    def _repeated_form_label_payload_shape_gap(self, op: LegalOperation, payload_violations: list[str]) -> bool:
+        payload = getattr(op, "payload", None)
+        if payload is None or _action_name(op.action) != "insert":
+            return False
+        target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+        if len(target_path) != 1 or str(target_path[0][0] or "").lower() != "schedule":
+            return False
+        if str(getattr(payload, "kind", "") or "").lower() != "schedule":
+            return False
+        if not payload_violations:
+            return False
+        allowed = (
+            "duplicate item:",
+            "item out of order:",
+        )
+        return all(any(token in violation.lower() for token in allowed) for violation in payload_violations)
 
     def _part_order_shape_gap(self, op: LegalOperation, scoped_violation: str) -> bool:
         if "part out of order:" not in scoped_violation.lower():
@@ -4163,6 +8610,31 @@ class UKReplayExecutor:
             return bool(re.fullmatch(r"\d+", text))
 
         return (numeric(left) and mixed(right)) or (mixed(left) and numeric(right)) or (mixed(left) and mixed(right))
+
+    def _source_anchored_order_observation(self, op: LegalOperation, scoped_violation: str) -> bool:
+        if _action_name(op.action) != "insert":
+            return False
+        if " out of order:" not in str(scoped_violation or "").lower():
+            return False
+        witness = _witness_for_op(op)
+        insertion_anchor_witness = getattr(witness, "insertion_anchor_witness", None)
+        if insertion_anchor_witness is None:
+            return False
+        if not (
+            getattr(insertion_anchor_witness, "preceding_eid", None)
+            or getattr(insertion_anchor_witness, "following_eid", None)
+        ):
+            return False
+        target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+        if not target_path:
+            return False
+        target_kind = str(target_path[-1][0] or "").lower()
+        target_label = _clean_num(str(target_path[-1][1] or ""))
+        if not target_kind or not target_label:
+            return False
+        if f"{target_kind} out of order:" not in str(scoped_violation or "").lower():
+            return False
+        return target_label in _clean_num(scoped_violation)
 
     def _paragraph_order_shape_gap(self, op: LegalOperation, scoped_violation: str) -> bool:
         if "paragraph out of order:" not in scoped_violation.lower():
@@ -4338,7 +8810,25 @@ class UKReplayExecutor:
         current_violations = self._collect_invariant_violations()
         payload_shape_violations = self._payload_shape_invariant_violations(op)
         for scoped_violation in sorted(current_violations - self._seen_invariant_violations):
-            if payload_shape_violations or self._payload_container_shape_gap(op, scoped_violation):
+            if payload_shape_violations and self._repeated_form_label_payload_shape_gap(
+                op, payload_shape_violations
+            ):
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind="uk_replay_repeated_form_label_payload_shape_gap",
+                    message=(
+                        "UK replay applied an inserted schedule payload whose form-like source "
+                        "structure repeats local item labels under the same paragraph."
+                    ),
+                    op=op,
+                    detail={
+                        "action": _action_name(op.action),
+                        "target": str(op.target),
+                        "violation": scoped_violation,
+                        "payload_violations": "; ".join(payload_shape_violations),
+                    },
+                )
+            elif payload_shape_violations or self._payload_container_shape_gap(op, scoped_violation):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_payload_shape_gap",
@@ -4354,7 +8844,7 @@ class UKReplayExecutor:
             elif self._replace_payload_kind_mismatch_gap(op, scoped_violation):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
-                    kind="uk_replay_malformed_target_gap",
+                    kind="uk_replay_replace_payload_target_leaf_mismatch_gap",
                     message="UK replay hit an invariant because the replace payload kind does not match the lowered target leaf.",
                     op=op,
                     detail={
@@ -4386,6 +8876,24 @@ class UKReplayExecutor:
                         "action": _action_name(op.action),
                         "target": str(op.target),
                         "violation": scoped_violation,
+                    },
+                )
+            elif self._source_anchored_order_observation(op, scoped_violation):
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind="uk_replay_source_anchored_order_observed",
+                    message=(
+                        "UK replay retained explicit source insertion order even though the "
+                        "generic label-order invariant would sort the inserted label elsewhere."
+                    ),
+                    op=op,
+                    detail={
+                        "action": _action_name(op.action),
+                        "target": str(op.target),
+                        "violation": scoped_violation,
+                        "blocking": False,
+                        "strict_disposition": "record",
+                        "quirks_disposition": "record",
                     },
                 )
             elif self._section_order_shape_gap(op, scoped_violation):
@@ -4470,6 +8978,28 @@ class UKReplayExecutor:
             return False
         return any(_clean_num(label or "") == "table" for _, label in path)
 
+    def _broad_schedule_table_shape_gap(self, target: LegalAddress, node: UKMutableNode) -> bool:
+        path = tuple(getattr(target, "path", ()) or ())
+        if _addr_container(target) != "schedule" or not path:
+            return False
+        leaf_kind = str(path[-1][0] or "").lower()
+        if leaf_kind not in {"schedule", "part"}:
+            return False
+        node_kind = str(getattr(node, "kind", "") or "").lower()
+        if node_kind not in {"schedule", "part"}:
+            return False
+        descendant_kinds: set[str] = set()
+        stack = list(getattr(node, "children", []) or [])
+        while stack:
+            curr = stack.pop()
+            curr_kind = str(getattr(curr, "kind", "") or "").lower()
+            descendant_kinds.add(curr_kind)
+            stack.extend(list(getattr(curr, "children", []) or []))
+        if descendant_kinds & {"table", "row", "cell", "header_cell"}:
+            return False
+        provision_kinds = {"paragraph", "subparagraph", "item", "point", "p1group", "section"}
+        return not bool(descendant_kinds & provision_kinds)
+
     def _schedule_unlabeled_paragraph_target_gap(self, target: LegalAddress) -> bool:
         path = tuple(getattr(target, "path", ()) or ())
         if _addr_container(target) != "schedule" or len(path) < 3:
@@ -4547,19 +9077,8 @@ class UKReplayExecutor:
             for _, label in path
         ):
             return True
-        if (
-            len(path) == 1
-            and str(path[0][0] or "").lower() in {"section", "article", "rule", "regulation"}
-            and not re.fullmatch(r"\d+[a-z]?", str(path[0][1] or "").strip().lower())
-        ):
+        if self._malformed_target_sectionlike_label_gap(target):
             return True
-        if len(path) == 1 and str(path[0][0] or "").lower() in {"section", "article", "rule", "regulation"}:
-            body_child_kinds = {
-                str(getattr(child, "kind", "") or "").lower()
-                for child in getattr(self.statute.body, "children", []) or []
-            }
-            if body_child_kinds and body_child_kinds <= {"part", "chapter", "division", "crossheading", "pblock"}:
-                return True
         if _addr_container(target) == "schedule":
             first_kind, first_label = path[0]
             if first_kind == "schedule" and not _clean_num(first_label or ""):
@@ -4820,6 +9339,13 @@ class UKReplayExecutor:
                 ]
                 if child_kinds and "subsection" not in child_kinds and "paragraph" in child_kinds:
                     return True
+                child_labels = [
+                    re.sub(r"[^0-9a-z]+", "", str(getattr(child, "label", "") or "").lower())
+                    for child in getattr(parent_node, "children", []) or []
+                    if str(getattr(child, "kind", "") or "").lower() == "subsection"
+                ]
+                if child_labels and all(re.fullmatch(r"\d+[a-z]?", label) for label in child_labels if label):
+                    return True
             if (
                 parent_node is not None
                 and str(leaf_kind or "").lower() == "subsection"
@@ -4847,6 +9373,86 @@ class UKReplayExecutor:
                     return True
         return any(_clean_num(label or "") == "and" for _, label in path)
 
+    def _malformed_target_placeholder_label_gap(self, target: LegalAddress) -> bool:
+        path = tuple(getattr(target, "path", ()) or ())
+        return any(
+            str(kind or "").lower() in {"item", "point", "paragraph", "subparagraph"}
+            and bool(re.fullmatch(r"\[[^\]]+\]", str(label or "").strip()))
+            for kind, label in path
+        )
+
+    def _malformed_target_note_or_crossheading_gap(self, target: LegalAddress) -> bool:
+        path = tuple(getattr(target, "path", ()) or ())
+        if any(_clean_num(label or "").lower() == "note" for _, label in path):
+            return True
+        return any(
+            re.sub(r"[^0-9a-z]+", "", _clean_num(label or "").lower()) in {"crossheading", "crossheadings"}
+            for _, label in path
+        )
+
+    def _malformed_target_sectionlike_label_gap(self, target: LegalAddress) -> bool:
+        path = tuple(getattr(target, "path", ()) or ())
+        if not path:
+            return False
+        root_kind, root_label = path[0]
+        if str(root_kind or "").lower() not in {"section", "article", "rule", "regulation"}:
+            return False
+        normalized = re.sub(r"[^0-9a-z]+", "", str(root_label or "").strip().lower())
+        if not normalized:
+            return True
+        if any(ch.isdigit() for ch in normalized):
+            return False
+        return True
+
+    def _malformed_target_schedule_root_label_gap(self, target: LegalAddress) -> bool:
+        path = tuple(getattr(target, "path", ()) or ())
+        if _addr_container(target) != "schedule" or not path:
+            return False
+        first_kind, first_label = path[0]
+        return str(first_kind or "").lower() == "schedule" and not _clean_num(first_label or "")
+
+    def _schedule_partition_target_gap(self, target: LegalAddress) -> bool:
+        return bool(self._schedule_partition_target_gap_kind(target))
+
+    def _schedule_partition_target_gap_kind(self, target: LegalAddress) -> str | None:
+        path = tuple(getattr(target, "path", ()) or ())
+        if _addr_container(target) != "schedule" or len(path) != 2:
+            return None
+        leaf_kind, _ = path[-1]
+        if str(leaf_kind or "").lower() != "paragraph":
+            return None
+        parent_target = LegalAddress(path=path[:-1], special=None)
+        parent_node, _, _ = self._find_node_by_target(parent_target)
+        if parent_node is None or str(getattr(parent_node, "kind", "") or "").lower() != "schedule":
+            return None
+        child_kinds = {
+            str(getattr(child, "kind", "") or "").lower()
+            for child in getattr(parent_node, "children", []) or []
+        }
+        if "part" in child_kinds:
+            return "uk_replay_schedule_partition_part_target_gap"
+        if child_kinds & {"chapter", "division"}:
+            return "uk_replay_schedule_partition_target_gap"
+        return None
+
+    def _malformed_target_gap_kind(self, target: LegalAddress) -> str:
+        if self._malformed_target_placeholder_label_gap(target):
+            return "uk_replay_malformed_target_placeholder_label_gap"
+        if self._malformed_target_note_or_crossheading_gap(target):
+            return "uk_replay_malformed_target_note_or_crossheading_gap"
+        if self._schedule_unlabeled_paragraph_target_gap(target):
+            return "uk_replay_schedule_unlabeled_paragraph_target_gap"
+        partition_kind = self._schedule_partition_target_gap_kind(target)
+        if partition_kind is not None:
+            return partition_kind
+        if self._malformed_target_sectionlike_label_gap(target):
+            return "uk_replay_malformed_target_sectionlike_label_gap"
+        if self._malformed_target_schedule_root_label_gap(target):
+            return "uk_replay_malformed_target_schedule_root_label_gap"
+        if self._malformed_target_gap(target):
+            return "uk_replay_malformed_target_granularity_collapse_gap"
+        return "uk_replay_malformed_target_gap"
+
     def _missing_source_target_gap(self, op: LegalOperation) -> bool:
         witness = _witness_for_op(op)
         extraction = getattr(witness, "extraction_witness", None)
@@ -4868,6 +9474,62 @@ class UKReplayExecutor:
         if parent_node is None:
             return False
         return not bool(getattr(parent_node, "children", []) or [])
+
+    def _recover_text_patch_on_empty_descendant_parent(
+        self,
+        op: LegalOperation,
+        target: LegalAddress,
+        text_patch: TextPatchSpec,
+        replacement: str,
+    ) -> bool:
+        if not self._empty_descendant_shape_gap(target):
+            return False
+        path = tuple(getattr(target, "path", ()) or ())
+        if len(path) < 2:
+            return False
+        leaf_kind = str(path[-1][0] or "").lower()
+        if leaf_kind not in {"paragraph", "subparagraph", "item", "point"}:
+            return False
+        parent_target = LegalAddress(path=path[:-1], special=None)
+        parent_node, _, _ = self._find_node_by_target(parent_target)
+        if parent_node is None or getattr(parent_node, "children", None):
+            return False
+        match_text = text_patch.selector.match_text
+        if not self._node_text_contains_text(parent_node, match_text):
+            return False
+        rebuilt, applied = self._apply_text_replace_on_node_text_only(
+            parent_node,
+            match_text,
+            replacement,
+            text_patch.selector.occurrence,
+            text_patch.selector.end_occurrence,
+        )
+        if not applied:
+            return False
+        self._log(
+            f"  EXECUTOR: text_replace empty-descendant parent recovery in {rebuilt.kind} {rebuilt.label}: {match_text!r} -> {replacement!r}"
+        )
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind="uk_replay_empty_descendant_parent_text_recovered",
+            message=(
+                "UK replay applied a text patch to an empty parent because the "
+                "source-targeted descendant is not represented as a structural carrier."
+            ),
+            op=op,
+            detail={
+                "action": _action_name(op.action),
+                "target": str(target),
+                "recovery_target": str(parent_target),
+                "text_match": match_text,
+                "replacement_text": replacement,
+                "family": "target_resolution_recovery",
+                "blocking": False,
+                "strict_disposition": "block",
+                "quirks_disposition": "apply",
+            },
+        )
+        return True
 
     def _annex_schedule_mismatch_gap(self, op: LegalOperation) -> bool:
         target = getattr(op, "target", None)
@@ -4893,9 +9555,29 @@ class UKReplayExecutor:
         path = tuple(getattr(target, "path", ()) or ())
         if len(path) < 2:
             return False
+        if self._schedule_paragraph_carrier_gap(target):
+            return False
         parent_target = LegalAddress(path=path[:-1], special=None)
         parent_node, _, _ = self._find_node_by_target(parent_target)
         return parent_node is None
+
+    def _missing_parent_grandparent_present_gap(self, target: LegalAddress) -> bool:
+        path = tuple(getattr(target, "path", ()) or ())
+        if len(path) < 3:
+            return False
+        if not self._missing_parent_shape_gap(target):
+            return False
+        grandparent_target = LegalAddress(path=path[:-2], special=None)
+        grandparent_node, _, _ = self._find_node_by_target(grandparent_target)
+        return grandparent_node is not None
+
+    def _missing_parent_shape_gap_kind(self, target: LegalAddress) -> str:
+        if self._missing_parent_grandparent_present_gap(target):
+            return "uk_replay_missing_parent_grandparent_present_gap"
+        path = tuple(getattr(target, "path", ()) or ())
+        if len(path) == 2:
+            return "uk_replay_missing_root_parent_shape_gap"
+        return "uk_replay_missing_parent_shape_gap"
 
     def _schedule_paragraph_carrier_gap(self, target: LegalAddress) -> bool:
         path = tuple(getattr(target, "path", ()) or ())
@@ -4913,6 +9595,38 @@ class UKReplayExecutor:
         grandparent_target = LegalAddress(path=path[:-2], special=None)
         grandparent_node, _, _ = self._find_node_by_target(grandparent_target)
         return grandparent_node is not None and parent_node is None
+
+    def _schedule_paragraph_carrier_gap_kind(self, target: LegalAddress) -> str:
+        path = tuple(getattr(target, "path", ()) or ())
+        if len(path) >= 2:
+            parent_target = LegalAddress(path=path[:-1], special=None)
+            parent_node, _, _ = self._find_node_by_target(parent_target)
+            if parent_node is not None and str(getattr(parent_node, "kind", "") or "").lower() == "p1group":
+                return "uk_replay_schedule_p1group_wrapper_carrier_gap"
+        return "uk_replay_schedule_paragraph_carrier_gap"
+
+    def _direct_section_paragraph_carrier_gap(self, target: LegalAddress) -> bool:
+        path = tuple(getattr(target, "path", ()) or ())
+        if len(path) != 2:
+            return False
+        if str(path[0][0] or "").lower() != "section" or str(path[1][0] or "").lower() != "paragraph":
+            return False
+        label = re.sub(r"[^0-9a-z]+", "", str(path[1][1] or "").lower())
+        if not re.fullmatch(r"[a-z]", label):
+            return False
+        parent_node, _, _ = self._find_node_by_target(LegalAddress(path=path[:1], special=None))
+        if parent_node is None or str(getattr(parent_node, "kind", "") or "").lower() not in {
+            "section",
+            "article",
+            "rule",
+            "regulation",
+        }:
+            return False
+        child_kinds = {
+            str(getattr(child, "kind", "") or "").lower()
+            for child in getattr(parent_node, "children", []) or []
+        }
+        return bool(child_kinds and "paragraph" not in child_kinds)
 
     def _leading_blank_subparagraph_gap(self, target: LegalAddress) -> bool:
         def _local_alnum_suffix_key(text: str) -> tuple[int, int] | None:
@@ -4981,10 +9695,30 @@ class UKReplayExecutor:
         want = str(target)
         prior = getattr(self, "adjudications_out", None) or []
         preferred = {
+            "uk_replay_annex_schedule_reference_gap",
             "uk_replay_empty_descendant_shape_gap",
             "uk_replay_missing_parent_shape_gap",
+            "uk_replay_missing_parent_grandparent_present_gap",
+            "uk_replay_missing_root_parent_shape_gap",
+            "uk_replay_missing_schedule_branch_gap",
+            "uk_replay_missing_schedule_range_gap",
+            "uk_replay_missing_sectionlike_range_gap",
+            "uk_replay_malformed_target_granularity_collapse_gap",
             "uk_replay_malformed_target_gap",
+            "uk_replay_malformed_target_note_or_crossheading_gap",
+            "uk_replay_malformed_target_placeholder_label_gap",
+            "uk_replay_malformed_target_schedule_root_label_gap",
+            "uk_replay_malformed_target_sectionlike_label_gap",
+            "uk_replay_replace_payload_target_leaf_mismatch_gap",
             "uk_replay_repealed_target_gap",
+            "uk_replay_absent_sibling_range_gap",
+            "uk_replay_schedule_container_text_target_gap",
+            "uk_replay_schedule_paragraph_carrier_gap",
+            "uk_replay_schedule_p1group_wrapper_carrier_gap",
+            "uk_replay_schedule_partition_target_gap",
+            "uk_replay_schedule_partition_part_target_gap",
+            "uk_replay_schedule_unlabeled_paragraph_target_gap",
+            "uk_replay_subsection_descendant_target_collapse_gap",
             "uk_replay_table_shape_gap",
             "uk_replay_missing_source_target_gap",
         }
@@ -5547,6 +10281,49 @@ class UKReplayExecutor:
             target_label=_clean_num(target_label),
         ) and _clean_num(str(getattr(node, "label", "") or "")) == _clean_num(target_label)
 
+    def _existing_target_insert_already_materialized(
+        self,
+        node: Optional[UKMutableNode],
+        op: LegalOperation,
+    ) -> bool:
+        payload = getattr(op, "payload", None)
+        if node is None or payload is None:
+            return False
+        existing_text = _normalized_replay_subtree_text(node)
+        payload_text = _normalized_replay_subtree_text(payload)
+        return bool(existing_text and payload_text and existing_text == payload_text)
+
+    def _existing_target_insert_conflict_detail(
+        self,
+        node: Optional[UKMutableNode],
+        op: LegalOperation,
+    ) -> Optional[dict[str, str]]:
+        payload = getattr(op, "payload", None)
+        if node is None or payload is None:
+            return None
+        existing_text = _normalized_replay_subtree_text(node)
+        payload_text = _normalized_replay_subtree_text(payload)
+        if not existing_text or not payload_text or existing_text == payload_text:
+            return None
+        return {
+            "existing_text_preview": existing_text[:240],
+            "payload_text_preview": payload_text[:240],
+        }
+
+    def _crossheading_insert_target_gap(
+        self,
+        target: LegalAddress,
+        op: LegalOperation,
+    ) -> bool:
+        payload = getattr(op, "payload", None)
+        return (
+            _action_name(op.action) == "insert"
+            and _addr_leaf_kind(target) == "crossheading"
+            and not _clean_num(_addr_leaf_label(target) or "")
+            and payload is not None
+            and str(getattr(payload, "kind", "") or "").lower() == "crossheading"
+        )
+
     def _match_kind_label(self, node: Any, kind: str, label: Optional[str]) -> bool:
         """Shared matching logic for UK IR nodes."""
         nk = str(node.kind)
@@ -5564,6 +10341,13 @@ class UKReplayExecutor:
 
         if not label:
             return True
+        if tk == "schedule" and want_label:
+            schedule_labels = {want_label}
+            if want_label.startswith("schedule "):
+                schedule_labels.add(want_label.removeprefix("schedule ").strip())
+            else:
+                schedule_labels.add(f"schedule {want_label}")
+            return node_label in schedule_labels
         return node_label == want_label
 
     def _find_compound_subsection_candidate(
@@ -5737,6 +10521,93 @@ class UKReplayExecutor:
                 )
             )
 
+    def _renumbered_descendant_text(
+        self,
+        text: str,
+        *,
+        source_label: Optional[str],
+        destination_label: Optional[str],
+    ) -> str:
+        source_clean = _clean_num(source_label or "")
+        destination_clean = _clean_num(destination_label or "")
+        if not text or not source_clean or not destination_clean:
+            return text
+        pattern = re.compile(rf"^\s*{re.escape(source_clean)}(?![0-9A-Za-z])[\s\u00a0]*")
+        if pattern.search(text):
+            return pattern.sub(destination_clean, text, count=1)
+        return text
+
+    def _apply_same_provision_descendant_renumber(self, op: LegalOperation) -> bool:
+        source_target = canonicalize_uk_address(op.target)
+        destination = canonicalize_uk_address(op.destination) if op.destination is not None else None
+        if destination is None:
+            return False
+        if len(destination.path) != len(source_target.path) + 1 or destination.path[:-1] != source_target.path:
+            return False
+
+        source_node, _source_parent, _source_idx = self._find_node_by_target(source_target)
+        if source_node is None:
+            return False
+        destination_node, _destination_parent, _destination_idx = self._find_node_by_target(destination)
+        if destination_node is not None:
+            return False
+
+        destination_kind = _addr_leaf_kind(destination) or ""
+        destination_label = _addr_leaf_label(destination)
+        child = UKMutableNode(
+            kind=IRNodeKind(destination_kind),
+            label=destination_label,
+            text=self._renumbered_descendant_text(
+                source_node.text or "",
+                source_label=source_node.label,
+                destination_label=destination_label,
+            ),
+            attrs={"eId": self._derive_target_eid(destination)},
+            children=list(source_node.children),
+        )
+        replacement = UKMutableNode(
+            kind=source_node.kind,
+            label=source_node.label,
+            text="",
+            attrs=dict(source_node.attrs),
+            children=[child],
+        )
+        return self._replace_node_in_statute(source_node, replacement)
+
+    def _apply_same_parent_sibling_renumber(self, op: LegalOperation) -> bool:
+        source_target = canonicalize_uk_address(op.target)
+        destination = canonicalize_uk_address(op.destination) if op.destination is not None else None
+        if destination is None:
+            return False
+        if (
+            len(destination.path) != len(source_target.path)
+            or destination.path[:-1] != source_target.path[:-1]
+            or _addr_leaf_kind(destination) != _addr_leaf_kind(source_target)
+        ):
+            return False
+
+        source_node, source_parent, source_idx = self._find_node_by_target(source_target)
+        if source_node is None or source_parent is None or source_idx is None:
+            return False
+        destination_node, _destination_parent, _destination_idx = self._find_node_by_target(destination)
+        if destination_node is not None:
+            return False
+
+        destination_label = _addr_leaf_label(destination)
+        moved = dc_replace(
+            source_node,
+            label=destination_label,
+            text=self._renumbered_descendant_text(
+                source_node.text or "",
+                source_label=source_node.label,
+                destination_label=destination_label,
+            ),
+            attrs={**dict(source_node.attrs), "eId": self._derive_target_eid(destination)},
+        )
+        source_parent.children.pop(source_idx)
+        self._insert_child_sorted(source_parent, moved)
+        return True
+
     def apply_op(self, op: LegalOperation):
         target = op.target
         # Keep legacy warnings visible during replay runs while also recording
@@ -5761,17 +10632,22 @@ class UKReplayExecutor:
                 )
             return
 
-        allow_compound_subsection_alias = _action_name(op.action) in ("text_replace", "text_repeal")
-        node, parent, idx = self._find_node_by_target(
-            target,
-            allow_compound_subsection_alias=allow_compound_subsection_alias,
-        )
-
-        if not node:
-            target_eid = self._derive_target_eid(target)
+        target_eid = self._derive_target_eid(target)
+        node: Optional[UKMutableNode]
+        parent: Optional[UKMutableNode]
+        idx: Optional[int]
+        node, parent, idx = None, None, None
+        if target_eid:
             node, parent, idx = self._find_node_and_parent_statute(
                 target_eid,
                 allow_sequence_match=False,
+            )
+
+        if not node:
+            allow_compound_subsection_alias = _action_name(op.action) in ("text_replace", "text_repeal")
+            node, parent, idx = self._find_node_by_target(
+                target,
+                allow_compound_subsection_alias=allow_compound_subsection_alias,
             )
         target_found = node is not None
         if not target_found and self._empty_schedule_root_shape_gap(target):
@@ -5789,6 +10665,12 @@ class UKReplayExecutor:
             return
 
         if _action_name(op.action) == "repeal":
+            schedule_list_entry_repeal_selector = _schedule_list_entry_repeal_selector(op)
+            if schedule_list_entry_repeal_selector is not None:
+                if self._repeal_schedule_list_entries(target, op, schedule_list_entry_repeal_selector):
+                    self._record_invariant_violations(op)
+                    self._emit_top_section_snapshot(op)
+                return
             if node is None:
                 if self._target_under_repealed_prefix(target):
                     _append_uk_replay_adjudication(
@@ -5801,15 +10683,15 @@ class UKReplayExecutor:
                 elif self._doubled_alpha_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_repealed_target_gap",
-                        message="UK replay skipped repeal: target falls inside an already absent doubled-alpha sibling range under the parent path.",
+                        kind="uk_replay_absent_sibling_range_gap",
+                        message="UK replay skipped repeal: target falls inside an absent doubled-alpha sibling range under the parent path.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
                     )
                 elif self._malformed_target_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_malformed_target_gap",
+                        kind=self._malformed_target_gap_kind(target),
                         message="UK replay skipped repeal: lowered target path is malformed.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
@@ -5825,8 +10707,8 @@ class UKReplayExecutor:
                 elif self._missing_sibling_range_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_repealed_target_gap",
-                        message="UK replay skipped repeal: target falls inside an already absent sibling range under the parent path.",
+                        kind="uk_replay_absent_sibling_range_gap",
+                        message="UK replay skipped repeal: target falls inside an absent sibling range under the parent path.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
                     )
@@ -5841,39 +10723,39 @@ class UKReplayExecutor:
                 elif self._missing_sectionlike_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_repealed_target_gap",
-                        message="UK replay skipped repeal: target falls inside an already absent sectionlike gap.",
+                        kind="uk_replay_missing_sectionlike_range_gap",
+                        message="UK replay skipped repeal: target falls inside an absent sectionlike range gap.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
                     )
                 elif self._missing_schedule_branch_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_repealed_target_gap",
-                        message="UK replay skipped repeal: schedule root branch is already absent.",
+                        kind="uk_replay_missing_schedule_branch_gap",
+                        message="UK replay skipped repeal: schedule root branch is absent.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
                     )
                 elif self._missing_schedule_root_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_repealed_target_gap",
-                        message="UK replay skipped repeal: target falls inside an already absent alphanumeric schedule gap.",
+                        kind="uk_replay_missing_schedule_range_gap",
+                        message="UK replay skipped repeal: target falls inside an absent alphanumeric schedule range gap.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
                     )
                 elif self._missing_schedule_branch_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_repealed_target_gap",
-                        message="UK replay skipped repeal: schedule root branch is already absent.",
+                        kind="uk_replay_missing_schedule_branch_gap",
+                        message="UK replay skipped repeal: schedule root branch is absent.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
                     )
                 elif self._missing_parent_shape_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_missing_parent_shape_gap",
+                        kind=self._missing_parent_shape_gap_kind(target),
                         message="UK replay skipped repeal: immediate parent target path is structurally absent.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
@@ -5881,7 +10763,7 @@ class UKReplayExecutor:
                 elif self._schedule_paragraph_carrier_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_missing_parent_shape_gap",
+                        kind=self._schedule_paragraph_carrier_gap_kind(target),
                         message="UK replay skipped repeal: schedule paragraph carrier is structurally absent or wrapped.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
@@ -5889,8 +10771,8 @@ class UKReplayExecutor:
                 elif self._leading_blank_subparagraph_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_repealed_target_gap",
-                        message="UK replay skipped repeal: target falls inside an already absent leading numeric subparagraph gap under blank schedule placeholders.",
+                        kind="uk_replay_absent_sibling_range_gap",
+                        message="UK replay skipped repeal: target falls inside an absent leading numeric subparagraph gap under blank schedule placeholders.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
                     )
@@ -5922,14 +10804,14 @@ class UKReplayExecutor:
                     self._record_invariant_violations(op)
                 else:
                     if self._malformed_target_gap(target):
-                        kind = "uk_replay_malformed_target_gap"
+                        kind = self._malformed_target_gap_kind(target)
                         message = "UK replay skipped replace: lowered target path is malformed."
                     elif self._missing_parent_shape_gap(target):
-                        kind = "uk_replay_missing_parent_shape_gap"
+                        kind = self._missing_parent_shape_gap_kind(target)
                         message = "UK replay skipped replace: immediate parent target path is structurally absent."
                     elif self._missing_sectionlike_gap(target):
-                        kind = "uk_replay_repealed_target_gap"
-                        message = "UK replay skipped replace: target falls inside an already absent sectionlike gap."
+                        kind = "uk_replay_missing_sectionlike_range_gap"
+                        message = "UK replay skipped replace: target falls inside an absent sectionlike range gap."
                     else:
                         kind = "uk_replay_target_not_found"
                         message = "UK replay skipped replace: target not found."
@@ -5973,7 +10855,7 @@ class UKReplayExecutor:
                     node_kind = str(node.kind).lower()
                     new_kind = str(new_node.kind).lower()
                     if node_kind != "content" and new_kind != "content":
-                        existing_eid = str(node.attrs.get("eId") or "")
+                        existing_eid = str(node.attrs.get("eId") or node.attrs.get("id") or "")
                         if existing_eid:
                             new_node.attrs["eId"] = existing_eid
                         if parent and idx is not None:
@@ -5985,7 +10867,7 @@ class UKReplayExecutor:
                     elif node_kind != "content" and new_kind == "content":
                         self._replace_text(node, new_node.text)
                     else:
-                        existing_eid = str(node.attrs.get("eId") or "")
+                        existing_eid = str(node.attrs.get("eId") or node.attrs.get("id") or "")
                         if existing_eid:
                             new_node.attrs["eId"] = existing_eid
                         if parent and idx is not None:
@@ -6016,7 +10898,7 @@ class UKReplayExecutor:
                         if self._malformed_target_gap(target):
                             _append_uk_replay_adjudication(
                                 self.adjudications_out,
-                                kind="uk_replay_malformed_target_gap",
+                                kind=self._malformed_target_gap_kind(target),
                                 message="UK replay skipped replace: lowered target path is malformed.",
                                 op=op,
                                 detail={
@@ -6030,7 +10912,7 @@ class UKReplayExecutor:
                         if self._missing_parent_shape_gap(target):
                             _append_uk_replay_adjudication(
                                 self.adjudications_out,
-                                kind="uk_replay_missing_parent_shape_gap",
+                                kind=self._missing_parent_shape_gap_kind(target),
                                 message="UK replay skipped replace: immediate parent target path is structurally absent.",
                                 op=op,
                                 detail={
@@ -6044,7 +10926,7 @@ class UKReplayExecutor:
                         if self._schedule_paragraph_carrier_gap(target):
                             _append_uk_replay_adjudication(
                                 self.adjudications_out,
-                                kind="uk_replay_missing_parent_shape_gap",
+                                kind=self._schedule_paragraph_carrier_gap_kind(target),
                                 message="UK replay skipped replace: schedule paragraph carrier is structurally absent or wrapped.",
                                 op=op,
                                 detail={
@@ -6058,8 +10940,8 @@ class UKReplayExecutor:
                         if self._leading_blank_subparagraph_gap(target):
                             _append_uk_replay_adjudication(
                                 self.adjudications_out,
-                                kind="uk_replay_repealed_target_gap",
-                                message="UK replay skipped replace: target falls inside an already absent leading numeric subparagraph gap under blank schedule placeholders.",
+                                kind="uk_replay_absent_sibling_range_gap",
+                                message="UK replay skipped replace: target falls inside an absent leading numeric subparagraph gap under blank schedule placeholders.",
                                 op=op,
                                 detail={
                                     "action": _action_name(op.action),
@@ -6072,8 +10954,8 @@ class UKReplayExecutor:
                         if self._missing_sibling_range_gap(target):
                             _append_uk_replay_adjudication(
                                 self.adjudications_out,
-                                kind="uk_replay_repealed_target_gap",
-                                message="UK replay skipped replace: target falls inside an already absent sibling range under the parent path.",
+                                kind="uk_replay_absent_sibling_range_gap",
+                                message="UK replay skipped replace: target falls inside an absent sibling range under the parent path.",
                                 op=op,
                                 detail={
                                     "action": _action_name(op.action),
@@ -6114,17 +10996,17 @@ class UKReplayExecutor:
                         str(new_node.kind or "").lower() != str(_addr_leaf_kind(op.target) or "").lower()
                         or _clean_num(new_node.label or "") != _clean_num(_addr_leaf_label(op.target) or "")
                     ):
-                        kind = "uk_replay_malformed_target_gap"
+                        kind = "uk_replay_replace_payload_target_leaf_mismatch_gap"
                         message = "UK replay skipped replace: payload does not match lowered target leaf."
                     elif self._malformed_target_gap(target):
-                        kind = "uk_replay_malformed_target_gap"
+                        kind = self._malformed_target_gap_kind(target)
                         message = "UK replay skipped replace: lowered target path is malformed."
                     elif self._missing_parent_shape_gap(target):
-                        kind = "uk_replay_missing_parent_shape_gap"
+                        kind = self._missing_parent_shape_gap_kind(target)
                         message = "UK replay skipped replace: immediate parent target path is structurally absent."
                     elif self._missing_sectionlike_gap(target):
-                        kind = "uk_replay_repealed_target_gap"
-                        message = "UK replay skipped replace: target falls inside an already absent sectionlike gap."
+                        kind = "uk_replay_missing_sectionlike_range_gap"
+                        message = "UK replay skipped replace: target falls inside an absent sectionlike range gap."
                     else:
                         kind = "uk_replay_target_not_found"
                         message = "UK replay skipped replace: target not found."
@@ -6162,20 +11044,262 @@ class UKReplayExecutor:
                     },
                 )
                 return
+            replacement = (
+                text_patch.replacement
+                if text_patch.kind in {TextPatchKindEnum.REPLACE, TextPatchKindEnum.APPEND}
+                and text_patch.replacement is not None
+                else ""
+            )
             if node:
-                replacement = (
-                    text_patch.replacement
-                    if text_patch.kind is TextPatchKindEnum.REPLACE and text_patch.replacement is not None
-                    else ""
+                recovery_rule_ids: list[str] = []
+                allow_crossheading_parent = any(
+                    str(note) == f"{_NOTE_TEXT_REWRITE_RULE}{_CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE}"
+                    for note in (op.provenance_tags or ())
                 )
-                node, applied = self._apply_text_replace_on_subtree(
+                heading_carrier = self._heading_facet_carrier_for_target(
+                    target,
                     node,
-                    text_patch.selector.match_text,
-                    replacement,
-                    text_patch.selector.occurrence,
+                    parent,
+                    allow_crossheading_parent=allow_crossheading_parent,
                 )
+                if target.special is FacetKind.HEADING and heading_carrier is None:
+                    _append_uk_replay_adjudication(
+                        self.adjudications_out,
+                        kind="uk_replay_heading_facet_target_gap",
+                        message=(
+                            "UK replay skipped heading-facet text op: target "
+                            "has no unique replay heading carrier."
+                        ),
+                        op=op,
+                        detail={
+                            "action": _action_name(op.action),
+                            "target": str(target),
+                            "text_match": text_patch.selector.match_text,
+                            "replacement_text": replacement,
+                            "blocking": True,
+                            "strict_disposition": "block",
+                            "quirks_disposition": "record",
+                        },
+                    )
+                    return
+                table_cell_selector = _table_cell_selector(op)
+                if table_cell_selector is not None:
+                    table_cell, table_cell_reason, table_cell_detail = self._resolve_table_entry_inline_cell(
+                        node,
+                        table_cell_selector,
+                    )
+                    if table_cell is None:
+                        _append_uk_replay_adjudication(
+                            self.adjudications_out,
+                            kind=_UK_REPLAY_TABLE_ENTRY_INLINE_UNRESOLVED_RULE_ID,
+                            message=(
+                                "UK replay skipped table-entry text op: the source-owned "
+                                "table cell selector did not resolve to a replay cell."
+                            ),
+                            op=op,
+                            detail={
+                                "action": _action_name(op.action),
+                                "target": str(target),
+                                "text_match": text_patch.selector.match_text,
+                                "replacement_text": replacement,
+                                "selector": dict(table_cell_selector),
+                                "reason_code": table_cell_reason,
+                                **table_cell_detail,
+                                "family": "source_table_elaboration",
+                                "blocking": True,
+                                "strict_disposition": "block",
+                                "quirks_disposition": "record",
+                            },
+                        )
+                        return
+                    table_cell, applied = self._apply_text_replace_on_node_text_only(
+                        table_cell,
+                        text_patch.selector.match_text,
+                        replacement,
+                        text_patch.selector.occurrence,
+                        text_patch.selector.end_occurrence,
+                    )
+                    if applied:
+                        node = node
+                    else:
+                        _append_uk_replay_adjudication(
+                            self.adjudications_out,
+                            kind=_UK_REPLAY_TABLE_ENTRY_INLINE_PREIMAGE_GAP_RULE_ID,
+                            message=(
+                                "UK replay skipped table-entry text op: the selected "
+                                "table cell lacked the source text preimage."
+                            ),
+                            op=op,
+                            detail={
+                                "action": _action_name(op.action),
+                                "target": str(target),
+                                "text_match": text_patch.selector.match_text,
+                                "replacement_text": replacement,
+                                "selector": dict(table_cell_selector),
+                                **table_cell_detail,
+                                "family": "source_table_elaboration",
+                                "blocking": True,
+                                "strict_disposition": "block",
+                                "quirks_disposition": "record",
+                            },
+                        )
+                        return
+                elif heading_carrier is not None and text_patch.kind is TextPatchKindEnum.APPEND:
+                    node, applied = self._apply_text_append_on_node_text_only(
+                        heading_carrier,
+                        replacement,
+                    )
+                elif (
+                    text_patch.kind is TextPatchKindEnum.APPEND
+                    and text_patch.selector.match_text == "TEXT_END"
+                ):
+                    node, applied = self._apply_text_append_on_subtree_text_end(
+                        node,
+                        replacement,
+                    )
+                elif heading_carrier is not None:
+                    node, applied = self._apply_text_replace_on_node_text_only(
+                        heading_carrier,
+                        text_patch.selector.match_text,
+                        replacement,
+                        text_patch.selector.occurrence,
+                        text_patch.selector.end_occurrence,
+                    )
+                else:
+                    node, applied = self._apply_text_replace_on_subtree(
+                        node,
+                        text_patch.selector.match_text,
+                        replacement,
+                        text_patch.selector.occurrence,
+                        text_patch.selector.end_occurrence,
+                        recovery_rule_ids_out=recovery_rule_ids,
+                    )
                 applied_match = text_patch.selector.match_text
                 applied_replacement = replacement
+                applied_rule_id = ""
+                for recovery_rule_id in recovery_rule_ids:
+                    if recovery_rule_id == "uk_replay_definition_predicate_shall_construed_normalized":
+                        message = (
+                            "UK replay applied definition-entry text op after recognizing "
+                            "the definition predicate variant 'shall be construed'."
+                        )
+                        family = "definition_entry_predicate_recovery"
+                        strict_disposition = "record"
+                    elif recovery_rule_id == "uk_replay_definition_anchor_lexical_variant_recovered":
+                        message = (
+                            "UK replay applied definition-anchor text op after resolving "
+                            "a narrow education/educational lexical variant in the source anchor."
+                        )
+                        family = "target_resolution_recovery"
+                        strict_disposition = "block"
+                    else:
+                        message = (
+                            "UK replay applied text-based op after normalizing "
+                            "a contextual selector anchor kind."
+                        )
+                        family = "text_match_recovery"
+                        strict_disposition = "record"
+                    _append_uk_replay_adjudication(
+                        self.adjudications_out,
+                        kind=recovery_rule_id,
+                        message=message,
+                        op=op,
+                        detail={
+                            "action": _action_name(op.action),
+                            "target": str(target),
+                            "text_match": text_patch.selector.match_text,
+                            "replacement_text": replacement,
+                            "family": family,
+                            "blocking": False,
+                            "strict_disposition": strict_disposition,
+                            "quirks_disposition": "record",
+                        },
+                    )
+                if not applied:
+                    if heading_carrier is not None:
+                        heading_carrier, punctuation_applied = self._apply_text_replace_on_node_text_only(
+                            heading_carrier,
+                            text_patch.selector.match_text,
+                            replacement,
+                            text_patch.selector.occurrence,
+                            text_patch.selector.end_occurrence,
+                            allow_punctuation_spacing=True,
+                        )
+                    else:
+                        node, punctuation_applied = self._apply_text_replace_on_subtree(
+                            node,
+                            text_patch.selector.match_text,
+                            replacement,
+                            text_patch.selector.occurrence,
+                            text_patch.selector.end_occurrence,
+                            allow_punctuation_spacing=True,
+                        )
+                    if punctuation_applied:
+                        applied = True
+                        applied_rule_id = "uk_replay_text_match_punctuation_space_normalized"
+                        _append_uk_replay_adjudication(
+                            self.adjudications_out,
+                            kind=applied_rule_id,
+                            message=(
+                                "UK replay applied text-based op after normalizing "
+                                "citation punctuation spacing in text_match."
+                            ),
+                            op=op,
+                            detail={
+                                "action": _action_name(op.action),
+                                "target": str(target),
+                                "text_match": text_patch.selector.match_text,
+                                "replacement_text": replacement,
+                                "family": "text_match_recovery",
+                                "blocking": False,
+                                "strict_disposition": "record",
+                                "quirks_disposition": "record",
+                            },
+                        )
+                if (
+                    not applied
+                    and _text_match_has_word_punctuation_elision_candidate(text_patch.selector.match_text)
+                ):
+                    if heading_carrier is not None:
+                        heading_carrier, word_punctuation_applied = self._apply_text_replace_on_node_text_only(
+                            heading_carrier,
+                            text_patch.selector.match_text,
+                            replacement,
+                            text_patch.selector.occurrence,
+                            text_patch.selector.end_occurrence,
+                            allow_word_punctuation_elision=True,
+                        )
+                    else:
+                        node, word_punctuation_applied = self._apply_text_replace_on_subtree(
+                            node,
+                            text_patch.selector.match_text,
+                            replacement,
+                            text_patch.selector.occurrence,
+                            text_patch.selector.end_occurrence,
+                            allow_word_punctuation_elision=True,
+                        )
+                    if word_punctuation_applied:
+                        applied = True
+                        applied_rule_id = "uk_replay_text_match_word_punctuation_elided"
+                        _append_uk_replay_adjudication(
+                            self.adjudications_out,
+                            kind=applied_rule_id,
+                            message=(
+                                "UK replay applied text-based op after normalizing "
+                                "word-internal apostrophe/hyphen elision in text_match."
+                            ),
+                            op=op,
+                            detail={
+                                "action": _action_name(op.action),
+                                "target": str(target),
+                                "text_match": text_patch.selector.match_text,
+                                "replacement_text": replacement,
+                                "family": "text_match_recovery",
+                                "blocking": False,
+                                "strict_disposition": "record",
+                                "quirks_disposition": "record",
+                            },
+                        )
                 if not applied:
                     for frag_sub in _fragment_substitution(op) or []:
                         alt_match = str(frag_sub.get("original") or "").strip()
@@ -6184,12 +11308,22 @@ class UKReplayExecutor:
                             alt_match == text_patch.selector.match_text and alt_replacement == replacement
                         ):
                             continue
-                        node, alt_applied = self._apply_text_replace_on_subtree(
-                            node,
-                            alt_match,
-                            alt_replacement,
-                            text_patch.selector.occurrence,
-                        )
+                        if heading_carrier is not None:
+                            node, alt_applied = self._apply_text_replace_on_node_text_only(
+                                node,
+                                alt_match,
+                                alt_replacement,
+                                text_patch.selector.occurrence,
+                                text_patch.selector.end_occurrence,
+                            )
+                        else:
+                            node, alt_applied = self._apply_text_replace_on_subtree(
+                                node,
+                                alt_match,
+                                alt_replacement,
+                                text_patch.selector.occurrence,
+                                text_patch.selector.end_occurrence,
+                            )
                         if alt_applied:
                             applied = True
                             applied_match = alt_match
@@ -6202,26 +11336,255 @@ class UKReplayExecutor:
                     self._log(
                         f"  EXECUTOR: text_replace in {node.kind} {node.label}: {applied_match!r} -> {applied_replacement!r}"
                     )
+                    if applied_rule_id:
+                        self._log(f"  EXECUTOR: text_replace recovery rule: {applied_rule_id}")
+                    target_key = str(target)
+                    if target_key:
+                        self._applied_text_patch_targets.setdefault(target_key, []).append(op.op_id)
                     self._record_invariant_violations(op)
                     self._emit_top_section_snapshot(op)
                 else:
+                    already_rewritten = (
+                        text_patch.kind is TextPatchKindEnum.REPLACE
+                        and bool(replacement)
+                        and (
+                            self._node_text_contains_text(node, replacement)
+                            if heading_carrier is not None
+                            else self._subtree_contains_text(node, replacement)
+                        )
+                    )
+                    if already_rewritten:
+                        kind = "uk_replay_text_match_already_rewritten"
+                        message = (
+                            "UK replay skipped text-based op: text_match missing but "
+                            "replacement text is already present in target subtree."
+                        )
+                    elif text_patch.selector.match_text.startswith("TEXT_DEFINITION_ENTRY_"):
+                        kind = "uk_replay_definition_entry_shape_gap"
+                        message = (
+                            "UK replay skipped definition-entry text op: definition entry "
+                            "could not be uniquely bounded in the target subtree."
+                        )
+                    elif text_patch.selector.match_text.startswith("TEXT_DEFINITION_CHILD_"):
+                        kind = "uk_replay_definition_child_shape_gap"
+                        message = (
+                            "UK replay skipped definition-child text op: definition child "
+                            "could not be uniquely bounded in the target subtree."
+                        )
+                    elif target.special is FacetKind.HEADING and heading_carrier is not None:
+                        kind = "uk_replay_heading_text_preimage_gap"
+                        message = (
+                            "UK replay skipped heading-facet text op: heading carrier exists "
+                            "but lacks the source text preimage."
+                        )
+                    elif str(target) in self._applied_text_patch_targets:
+                        prior_count = len(self._applied_text_patch_targets.get(str(target), ()))
+                        if prior_count > 1:
+                            kind = "uk_replay_text_patch_preimage_drift_multi_prior_same_target"
+                        else:
+                            kind = "uk_replay_text_patch_preimage_drift"
+                        message = (
+                            "UK replay skipped text-based op: text_match missing after "
+                            "an earlier same-target text patch changed the replay preimage."
+                        )
+                    elif self._broad_schedule_table_shape_gap(target, node):
+                        if str(_addr_leaf_kind(target) or "").lower() == "part":
+                            kind = "uk_replay_broad_schedule_part_table_shape_gap"
+                        else:
+                            kind = "uk_replay_broad_schedule_table_shape_gap"
+                        message = (
+                            "UK replay skipped text-based op: broad schedule target has no "
+                            "table or provision structure carrying the text patch preimage."
+                        )
+                    elif not _normalized_replay_subtree_text(node):
+                        kind = "uk_replay_text_target_empty_surface_gap"
+                        message = (
+                            "UK replay skipped text-based op: target subtree has no "
+                            "replay-visible text carrying the text patch preimage."
+                        )
+                    elif _synthetic_text_selector(text_patch.selector.match_text):
+                        kind = "uk_replay_text_match_synthetic_selector_gap"
+                        message = (
+                            "UK replay skipped text-based op: synthetic text selector "
+                            "could not be resolved in the target subtree."
+                        )
+                    elif _non_substantive_text_selector(text_patch.selector.match_text):
+                        kind = "uk_replay_text_match_non_substantive_selector_gap"
+                        message = (
+                            "UK replay skipped text-based op: non-substantive selector "
+                            "could not be resolved in the target subtree."
+                        )
+                    elif _multi_fragment_text_selector(text_patch.selector.match_text):
+                        kind = "uk_replay_text_match_multi_fragment_selector_gap"
+                        message = (
+                            "UK replay skipped text-based op: text_match appears to "
+                            "combine multiple separated source fragments into one selector."
+                        )
+                    elif _normalized_text_match_present(text_patch.selector.match_text, node):
+                        kind = "uk_replay_text_match_normalized_preimage_present_gap"
+                        message = (
+                            "UK replay skipped text-based op: exact text_match was missing "
+                            "but an alphanumeric-normalized preimage is present in the target subtree."
+                        )
+                    elif _citation_stripped_text_match_present(text_patch.selector.match_text, node):
+                        kind = "uk_replay_text_match_citation_tail_surface_gap"
+                        message = (
+                            "UK replay skipped text-based op: exact text_match was missing "
+                            "but the target subtree appears to omit citation year/chapter tail text."
+                        )
+                    elif _citation_connector_elided_text_match_present(text_patch.selector.match_text, node):
+                        kind = "uk_replay_text_match_citation_connector_surface_gap"
+                        message = (
+                            "UK replay skipped citation-list text op: exact text_match was missing "
+                            "but the target subtree appears to elide connector words between citations."
+                        )
+                    elif _article_phrase_content_word_present(text_patch.selector.match_text, node):
+                        kind = "uk_replay_text_match_article_phrase_surface_gap"
+                        message = (
+                            "UK replay skipped article-prefixed text op: exact text_match was missing "
+                            "but the target subtree contains the selector's content word in a different phrase shape."
+                        )
+                    elif _monetary_amount_text_selector(text_patch.selector.match_text):
+                        kind = "uk_replay_text_monetary_amount_preimage_gap"
+                        message = (
+                            "UK replay skipped monetary-amount text op: quoted amount preimage "
+                            "is absent from the target subtree."
+                        )
+                    elif (
+                        text_patch.kind is TextPatchKindEnum.DELETE
+                        and _parenthetical_omission_text_selector(text_patch.selector.match_text)
+                    ):
+                        kind = "uk_replay_text_parenthetical_omission_preimage_gap"
+                        message = (
+                            "UK replay skipped parenthetical omission text op: quoted parenthetical "
+                            "preimage is absent from the target subtree."
+                        )
+                    elif (
+                        text_patch.kind is TextPatchKindEnum.REPLACE
+                        and _text_patch_replacement_preserves_anchor(text_patch.selector.match_text, replacement)
+                    ):
+                        kind = "uk_replay_text_insert_anchor_preimage_gap"
+                        message = (
+                            "UK replay skipped insertion-style text op: the replacement preserves "
+                            "the source anchor, but that anchor is absent from the target subtree."
+                        )
+                    else:
+                        kind = "uk_replay_text_match_missing"
+                        message = (
+                            "UK replay skipped text-based op: text_match not found in target subtree."
+                        )
                     self._log(
                         f"  EXECUTOR: WARN text_replace target found but text_match not in subtree: {text_patch.selector.match_text!r} in {node.kind} {node.label}"
                     )
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_text_match_missing",
-                        message="UK replay skipped text-based op: text_match not found in target subtree.",
+                        kind=kind,
+                        message=message,
                         op=op,
                         detail={
                             "action": _action_name(op.action),
                             "target": str(target),
                             "text_match": text_patch.selector.match_text,
+                            "replacement_text": replacement,
+                            "blocking": kind
+                            in {
+                                "uk_replay_broad_schedule_table_shape_gap",
+                                "uk_replay_broad_schedule_part_table_shape_gap",
+                                "uk_replay_table_shape_gap",
+                                "uk_replay_definition_entry_shape_gap",
+                                "uk_replay_heading_text_preimage_gap",
+                                "uk_replay_text_target_empty_surface_gap",
+                                "uk_replay_text_match_missing",
+                                "uk_replay_text_insert_anchor_preimage_gap",
+                                "uk_replay_text_monetary_amount_preimage_gap",
+                                "uk_replay_text_parenthetical_omission_preimage_gap",
+                                "uk_replay_text_match_article_phrase_surface_gap",
+                                "uk_replay_text_patch_preimage_drift",
+                                "uk_replay_text_patch_preimage_drift_multi_prior_same_target",
+                                "uk_replay_text_match_synthetic_selector_gap",
+                                "uk_replay_text_match_normalized_preimage_present_gap",
+                                "uk_replay_text_match_non_substantive_selector_gap",
+                                "uk_replay_text_match_multi_fragment_selector_gap",
+                                "uk_replay_text_match_citation_tail_surface_gap",
+                                "uk_replay_text_match_citation_connector_surface_gap",
+                            },
+                            "strict_disposition": (
+                                "block"
+                                if kind
+                                in {
+                                    "uk_replay_broad_schedule_table_shape_gap",
+                                    "uk_replay_broad_schedule_part_table_shape_gap",
+                                    "uk_replay_table_shape_gap",
+                                    "uk_replay_definition_entry_shape_gap",
+                                    "uk_replay_heading_text_preimage_gap",
+                                    "uk_replay_text_target_empty_surface_gap",
+                                    "uk_replay_text_match_missing",
+                                    "uk_replay_text_insert_anchor_preimage_gap",
+                                    "uk_replay_text_monetary_amount_preimage_gap",
+                                    "uk_replay_text_parenthetical_omission_preimage_gap",
+                                    "uk_replay_text_match_article_phrase_surface_gap",
+                                    "uk_replay_text_patch_preimage_drift",
+                                    "uk_replay_text_patch_preimage_drift_multi_prior_same_target",
+                                    "uk_replay_text_match_synthetic_selector_gap",
+                                    "uk_replay_text_match_normalized_preimage_present_gap",
+                                    "uk_replay_text_match_non_substantive_selector_gap",
+                                    "uk_replay_text_match_multi_fragment_selector_gap",
+                                    "uk_replay_text_match_citation_tail_surface_gap",
+                                    "uk_replay_text_match_citation_connector_surface_gap",
+                                }
+                                else "record"
+                            ),
+                            "quirks_disposition": "record",
+                            "prior_same_target_text_patch_op_ids": tuple(
+                                self._applied_text_patch_targets.get(str(target), ())
+                            ),
+                            "prior_same_target_text_patch_count": len(
+                                self._applied_text_patch_targets.get(str(target), ())
+                            ),
+                            "target_container": _addr_container(target),
+                            "target_granularity": _addr_leaf_kind(target) or "",
+                            "source_shape": (
+                                "broad_schedule_without_table_or_provision_structure"
+                                if kind
+                                in {
+                                    "uk_replay_broad_schedule_table_shape_gap",
+                                    "uk_replay_broad_schedule_part_table_shape_gap",
+                                }
+                                else "target_subtree_without_text_surface"
+                                if kind == "uk_replay_text_target_empty_surface_gap"
+                                else "heading_preimage_absent"
+                                if kind == "uk_replay_heading_text_preimage_gap"
+                                else "insert_anchor_preimage_absent"
+                                if kind == "uk_replay_text_insert_anchor_preimage_gap"
+                                else "monetary_amount_preimage_absent"
+                                if kind == "uk_replay_text_monetary_amount_preimage_gap"
+                                else "parenthetical_omission_preimage_absent"
+                                if kind == "uk_replay_text_parenthetical_omission_preimage_gap"
+                                else "article_phrase_content_word_surface_gap"
+                                if kind == "uk_replay_text_match_article_phrase_surface_gap"
+                                else "normalized_preimage_present"
+                                if kind == "uk_replay_text_match_normalized_preimage_present_gap"
+                                else "multi_fragment_text_selector"
+                                if kind == "uk_replay_text_match_multi_fragment_selector_gap"
+                                else "citation_tail_surface_gap"
+                                if kind == "uk_replay_text_match_citation_tail_surface_gap"
+                                else "citation_connector_surface_gap"
+                                if kind == "uk_replay_text_match_citation_connector_surface_gap"
+                                else ""
+                            ),
+                            "target_text_preview": _replay_subtree_text_preview(node),
+                            "target_text_normalized_preview": _normalized_replay_subtree_text(node)[:240],
                         },
                     )
             else:
                 self._log(f"  EXECUTOR: WARN text_replace target not found: {op.target}")
-                if self._table_target_shape_gap(target):
+                if self._recover_text_patch_on_empty_descendant_parent(op, target, text_patch, replacement):
+                    target_key = str(target)
+                    if target_key:
+                        self._applied_text_patch_targets.setdefault(target_key, []).append(op.op_id)
+                    self._record_invariant_violations(op)
+                    self._emit_top_section_snapshot(op)
+                elif self._table_target_shape_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
                         kind="uk_replay_table_shape_gap",
@@ -6248,23 +11611,23 @@ class UKReplayExecutor:
                 elif self._doubled_alpha_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_repealed_target_gap",
-                        message="UK replay skipped text-based op: target falls inside an already absent doubled-alpha sibling range under the parent path.",
+                        kind="uk_replay_absent_sibling_range_gap",
+                        message="UK replay skipped text-based op: target falls inside an absent doubled-alpha sibling range under the parent path.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
                     )
                 elif self._missing_sibling_range_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_repealed_target_gap",
-                        message="UK replay skipped text-based op: target falls inside an already absent sibling range under the parent path.",
+                        kind="uk_replay_absent_sibling_range_gap",
+                        message="UK replay skipped text-based op: target falls inside an absent sibling range under the parent path.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
                     )
                 elif self._annex_schedule_mismatch_gap(op):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_malformed_target_gap",
+                        kind="uk_replay_annex_schedule_reference_gap",
                         message="UK replay skipped text-based op: Annex reference was lowered to a missing schedule root target.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
@@ -6272,7 +11635,7 @@ class UKReplayExecutor:
                 elif self._container_text_target_gap(op):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_malformed_target_gap",
+                        kind="uk_replay_schedule_container_text_target_gap",
                         message="UK replay skipped text-based op: lowered target points at a missing schedule container instead of the textual descendant.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
@@ -6280,7 +11643,7 @@ class UKReplayExecutor:
                 elif self._subsection_alpha_text_target_gap(op):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_malformed_target_gap",
+                        kind="uk_replay_subsection_descendant_target_collapse_gap",
                         message="UK replay skipped text-based op: lowered target collapsed a numeric subsection and alphabetic descendant into one subsection label.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
@@ -6288,7 +11651,7 @@ class UKReplayExecutor:
                 elif self._malformed_target_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_malformed_target_gap",
+                        kind=self._malformed_target_gap_kind(target),
                         message="UK replay skipped text-based op: lowered target path is malformed.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
@@ -6296,15 +11659,15 @@ class UKReplayExecutor:
                 elif self._missing_schedule_branch_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_repealed_target_gap",
-                        message="UK replay skipped text-based op: schedule root branch is already absent.",
+                        kind="uk_replay_missing_schedule_branch_gap",
+                        message="UK replay skipped text-based op: schedule root branch is absent.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
                     )
                 elif self._missing_parent_shape_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_missing_parent_shape_gap",
+                        kind=self._missing_parent_shape_gap_kind(target),
                         message="UK replay skipped text-based op: immediate parent target path is structurally absent.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
@@ -6312,24 +11675,41 @@ class UKReplayExecutor:
                 elif self._schedule_paragraph_carrier_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_missing_parent_shape_gap",
+                        kind=self._schedule_paragraph_carrier_gap_kind(target),
                         message="UK replay skipped text-based op: schedule paragraph carrier is structurally absent or wrapped.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
                     )
+                elif self._direct_section_paragraph_carrier_gap(target):
+                    _append_uk_replay_adjudication(
+                        self.adjudications_out,
+                        kind="uk_replay_direct_section_paragraph_carrier_gap",
+                        message=(
+                            "UK replay skipped text-based op: direct section paragraph "
+                            "target is not represented as an addressable carrier in source XML."
+                        ),
+                        op=op,
+                        detail={
+                            "action": _action_name(op.action),
+                            "target": str(target),
+                            "blocking": True,
+                            "strict_disposition": "block",
+                            "quirks_disposition": "record",
+                        },
+                    )
                 elif self._leading_blank_subparagraph_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_repealed_target_gap",
-                        message="UK replay skipped text-based op: target falls inside an already absent leading numeric subparagraph gap under blank schedule placeholders.",
+                        kind="uk_replay_absent_sibling_range_gap",
+                        message="UK replay skipped text-based op: target falls inside an absent leading numeric subparagraph gap under blank schedule placeholders.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
                     )
                 elif self._missing_sectionlike_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_repealed_target_gap",
-                        message="UK replay skipped text-based op: target falls inside an already absent sectionlike gap.",
+                        kind="uk_replay_missing_sectionlike_range_gap",
+                        message="UK replay skipped text-based op: target falls inside an absent sectionlike range gap.",
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
                     )
@@ -6351,7 +11731,62 @@ class UKReplayExecutor:
                     )
         elif _action_name(op.action) == "insert":
             if op.payload is not None:
+                if self._crossheading_insert_target_gap(target, op):
+                    _append_uk_replay_adjudication(
+                        self.adjudications_out,
+                        kind="uk_replay_crossheading_target_gap",
+                        message=(
+                            "UK replay skipped crossheading insert: target has no explicit "
+                            "crossheading identity or placement anchor."
+                        ),
+                        op=op,
+                        detail={
+                            "action": _action_name(op.action),
+                            "target": str(target),
+                            "payload_kind": str(op.payload.kind),
+                            "payload_text": (op.payload.text or "")[:200],
+                        },
+                    )
+                    return
                 if self._existing_target_insert_gap(target, node, op):
+                    if self._existing_target_insert_already_materialized(node, op):
+                        _append_uk_replay_adjudication(
+                            self.adjudications_out,
+                            kind="uk_replay_existing_target_already_materialized",
+                            message=(
+                                "UK replay skipped insert: target already exists with the same "
+                                "normalized payload text."
+                            ),
+                            op=op,
+                            detail={
+                                "action": _action_name(op.action),
+                                "target": str(target),
+                                "payload_kind": str(op.payload.kind),
+                                "payload_label": op.payload.label or "",
+                                "blocking": False,
+                                "strict_disposition": "record",
+                                "quirks_disposition": "record",
+                            },
+                        )
+                        return
+                    if conflict_detail := self._existing_target_insert_conflict_detail(node, op):
+                        _append_uk_replay_adjudication(
+                            self.adjudications_out,
+                            kind="uk_replay_existing_target_conflict_gap",
+                            message=(
+                                "UK replay skipped insert: target path already exists with "
+                                "different normalized payload text."
+                            ),
+                            op=op,
+                            detail={
+                                "action": _action_name(op.action),
+                                "target": str(target),
+                                "payload_kind": str(op.payload.kind),
+                                "payload_label": op.payload.label or "",
+                                **conflict_detail,
+                            },
+                        )
+                        return
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
                         kind="uk_replay_existing_target_gap",
@@ -6375,10 +11810,12 @@ class UKReplayExecutor:
                     self._record_invariant_violations(op)
                     self._emit_top_section_snapshot(op)
                 else:
+                    if _schedule_list_entry_selector(op) is not None:
+                        return
                     if self._malformed_target_gap(target):
                         _append_uk_replay_adjudication(
                             self.adjudications_out,
-                            kind="uk_replay_malformed_target_gap",
+                            kind=self._malformed_target_gap_kind(target),
                             message="UK replay skipped insert: lowered target path is malformed.",
                             op=op,
                             detail={
@@ -6392,7 +11829,7 @@ class UKReplayExecutor:
                     if self._missing_parent_shape_gap(target):
                         _append_uk_replay_adjudication(
                             self.adjudications_out,
-                            kind="uk_replay_missing_parent_shape_gap",
+                            kind=self._missing_parent_shape_gap_kind(target),
                             message="UK replay skipped insert: immediate parent target path is structurally absent.",
                             op=op,
                             detail={
@@ -6406,7 +11843,7 @@ class UKReplayExecutor:
                     if self._schedule_paragraph_carrier_gap(target):
                         _append_uk_replay_adjudication(
                             self.adjudications_out,
-                            kind="uk_replay_missing_parent_shape_gap",
+                            kind=self._schedule_paragraph_carrier_gap_kind(target),
                             message="UK replay skipped insert: schedule target expects a paragraph carrier that is absent or wrapped by legacy p1group structure.",
                             op=op,
                             detail={
@@ -6420,8 +11857,8 @@ class UKReplayExecutor:
                     if self._leading_blank_subparagraph_gap(target):
                         _append_uk_replay_adjudication(
                             self.adjudications_out,
-                            kind="uk_replay_repealed_target_gap",
-                            message="UK replay skipped insert: target falls inside an already absent leading numeric subparagraph gap under blank schedule placeholders.",
+                            kind="uk_replay_absent_sibling_range_gap",
+                            message="UK replay skipped insert: target falls inside an absent leading numeric subparagraph gap under blank schedule placeholders.",
                             op=op,
                             detail={
                                 "action": _action_name(op.action),
@@ -6434,8 +11871,8 @@ class UKReplayExecutor:
                     if self._missing_sibling_range_gap(target):
                         _append_uk_replay_adjudication(
                             self.adjudications_out,
-                            kind="uk_replay_repealed_target_gap",
-                            message="UK replay skipped insert: target falls inside an already absent sibling range under the parent path.",
+                            kind="uk_replay_absent_sibling_range_gap",
+                            message="UK replay skipped insert: target falls inside an absent sibling range under the parent path.",
                             op=op,
                             detail={
                                 "action": _action_name(op.action),
@@ -6480,13 +11917,25 @@ class UKReplayExecutor:
                     detail={"action": _action_name(op.action), "target": str(target)},
                 )
         elif _action_name(op.action) == "renumber":
-            self._log(f"  EXECUTOR: renumber op not yet implemented — skipping {op.op_id}")
+            if self._apply_same_provision_descendant_renumber(op):
+                self._record_invariant_violations(op)
+                self._emit_top_section_snapshot(op)
+                return
+            if self._apply_same_parent_sibling_renumber(op):
+                self._record_invariant_violations(op)
+                self._emit_top_section_snapshot(op)
+                return
+            self._log(f"  EXECUTOR: unsupported renumber shape — skipping {op.op_id}")
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind="uk_replay_unsupported_action",
                 message="UK replay skipped unsupported action.",
                 op=op,
-                detail={"action": _action_name(op.action), "target": str(target)},
+                detail={
+                    "action": _action_name(op.action),
+                    "target": str(target),
+                    "destination": str(op.destination) if op.destination is not None else "",
+                },
             )
         elif _action_name(op.action) == "unknown":
             self._log(f"  EXECUTOR: unknown action — skipping {op.op_id}")
@@ -6510,6 +11959,11 @@ class UKReplayExecutor:
         match: str,
         replacement: str,
         occurrence: int,
+        end_occurrence: int = 0,
+        *,
+        allow_punctuation_spacing: bool = False,
+        allow_word_punctuation_elision: bool = False,
+        recovery_rule_ids_out: Optional[list[str]] = None,
     ) -> tuple[UKMutableNode, bool]:
         """Walk the subtree rooted at *node*, find *match* in text fields, and substitute.
 
@@ -6520,6 +11974,7 @@ class UKReplayExecutor:
             replacement: String to substitute in place of *match*.
             occurrence:  0 = replace all occurrences across the subtree.
                          N > 0 = replace only the Nth occurrence (1-based, document order).
+                         -1 = replace only the last occurrence in document order.
 
         Returns:
             True if at least one substitution was made; False otherwise.
@@ -6535,22 +11990,925 @@ class UKReplayExecutor:
 
         _collect(node)
 
+        if match == "TEXT_OPENING_WORDS":
+            if not node.text:
+                return node, False
+            rebuilt = dc_replace(node, text=replacement)
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match == "TEXT_BEGINNING":
+            if not node.text:
+                return node, False
+            joiner = "" if replacement.endswith((" ", "(", "/", "-")) else " "
+            rebuilt = dc_replace(node, text=f"{replacement}{joiner}{node.text}")
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_BEFORE_CHILD_"):
+            child_match = re.fullmatch(
+                r"TEXT_BEFORE_CHILD_([A-Za-z]+)_([0-9A-Za-z]+)",
+                match,
+            )
+            if child_match is None:
+                return node, False
+            child_kind = child_match.group(1)
+            child_label = child_match.group(2)
+            if not node.text:
+                return node, False
+
+            direct_child_matches = [
+                child
+                for child in node.children
+                if (child.kind.value if isinstance(child.kind, IRNodeKind) else str(child.kind))
+                == child_kind
+                and _clean_num(child.label or "") == _clean_num(child_label)
+            ]
+            if len(direct_child_matches) != 1:
+                return node, False
+            rebuilt = dc_replace(node, text=replacement)
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_AFTER_CHILD_"):
+            child_match = re.fullmatch(
+                r"TEXT_AFTER_CHILD_([A-Za-z]+)_([0-9A-Za-z]+)",
+                match,
+            )
+            if child_match is None:
+                return node, False
+            child_kind = child_match.group(1)
+            child_label = child_match.group(2)
+            anchor_path: Optional[tuple[int, ...]] = None
+            recovered_anchor_kind = False
+
+            def _find_child_anchor(n: UKMutableNode, path: tuple[int, ...] = ()) -> None:
+                nonlocal anchor_path
+                if anchor_path is not None:
+                    return
+                kind_value = n.kind.value if isinstance(n.kind, IRNodeKind) else str(n.kind)
+                if kind_value == child_kind and _clean_num(n.label or "") == _clean_num(child_label):
+                    anchor_path = path
+                    return
+                for i, child in enumerate(n.children):
+                    _find_child_anchor(child, path + (i,))
+
+            def _node_at_child_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
+                current = n
+                for idx in path:
+                    current = current.children[idx]
+                return current
+
+            _find_child_anchor(node)
+            if anchor_path is None:
+                return node, False
+            target_node = _node_at_child_path(node, anchor_path)
+            joiner = "" if replacement.startswith((" ", ",", ".", ";", ":", ")")) else " "
+            new_text = f"{(target_node.text or '').rstrip()}{joiner}{replacement}".rstrip()
+            rebuilt = self._replace_descendant_at_path(
+                node,
+                anchor_path,
+                dc_replace(target_node, text=new_text),
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_BEFORE_DEFINITION_"):
+            term = match[len("TEXT_BEFORE_DEFINITION_") :].strip()
+            if not term:
+                return node, False
+            full_text = " ".join(tn.text.strip() for _, tn in text_nodes if tn.text).strip()
+            if not full_text:
+                return node, False
+            term_pattern = _text_patch_pattern(
+                term,
+                allow_punctuation_spacing=allow_punctuation_spacing,
+                allow_word_punctuation_elision=allow_word_punctuation_elision,
+            )
+            definition_pattern = re.compile(
+                rf"(?P<prefix>^|[;\.]\s*)(?P<body>[“\"'‘]?\s*{term_pattern}\s*[”\"'’]?\s+)",
+                re.I | re.S,
+            )
+            definition_match = definition_pattern.search(full_text)
+            if definition_match is None:
+                return node, False
+            insert_at = definition_match.start("body")
+            joiner = "" if replacement.endswith(" ") else " "
+            new_text = f"{full_text[:insert_at]}{replacement}{joiner}{full_text[insert_at:]}"
+            rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip(), children=[])
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_IN_DEFINITION_"):
+            parts = match[len("TEXT_IN_DEFINITION_") :].split(US)
+            if len(parts) == 4 and parts[1] == "FROM" and parts[3] == "TO_END":
+                term = parts[0].strip()
+                start_anchor = parts[2].strip()
+                if not term or not start_anchor:
+                    return node, False
+
+                def _rewrite_range_to_end_in_definition(text: str) -> tuple[str, bool]:
+                    term_pattern = _text_patch_pattern(
+                        term,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    definition_pattern = re.compile(
+                        rf"""
+                        (?P<prefix>(?:^|[;\.]\s*))
+                        [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                        \s+
+                        (?:
+                            means
+                            |has\s+the\s+same\s+meaning\s+as
+                            |has\s+the\s+meaning
+                            |is\s+to\s+be\s+construed
+                            |shall\s+be\s+construed
+                            |includes
+                        )\b
+                        .*?
+                        (?P<terminator>;|$)
+                        """,
+                        flags=re.I | re.S | re.X,
+                    )
+                    definition_matches = list(definition_pattern.finditer(text))
+                    if len(definition_matches) != 1:
+                        return text, False
+                    definition_match = definition_matches[0]
+                    entry_text = definition_match.group(0)
+                    start_pattern = _text_patch_pattern(
+                        start_anchor,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    start_matches = list(re.finditer(start_pattern, entry_text, flags=re.I | re.S))
+                    if len(start_matches) != 1:
+                        return text, False
+                    start_match = start_matches[0]
+                    terminator = str(definition_match.group("terminator") or "")
+                    replacement_text = replacement.strip()
+                    if terminator and not replacement_text.endswith(terminator):
+                        replacement_text = f"{replacement_text}{terminator}"
+                    rewritten_entry = entry_text[: start_match.start()].rstrip()
+                    joiner = (
+                        ""
+                        if not rewritten_entry
+                        or rewritten_entry.endswith((" ", "\t", "\n", "\r"))
+                        or replacement_text.startswith((" ", ",", ".", ";", ":", ")"))
+                        else " "
+                    )
+                    rewritten_entry = f"{rewritten_entry}{joiner}{replacement_text}"
+                    new_text = (
+                        text[: definition_match.start()]
+                        + rewritten_entry
+                        + text[definition_match.end() :]
+                    )
+                    return " ".join(new_text.split()).strip(), True
+
+                if node.text:
+                    new_text, changed = _rewrite_range_to_end_in_definition(node.text)
+                    if changed:
+                        rebuilt = dc_replace(node, text=new_text)
+                        self._replace_node_in_statute(node, rebuilt)
+                        return rebuilt, True
+
+                candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+                for path, text_node in text_nodes:
+                    if not text_node.text:
+                        continue
+                    new_text, changed = _rewrite_range_to_end_in_definition(text_node.text)
+                    if changed:
+                        candidate_paths.append((path, text_node, new_text))
+                if len(candidate_paths) != 1:
+                    return node, False
+                path, text_node, new_text = candidate_paths[0]
+                rebuilt = self._replace_descendant_at_path(
+                    node,
+                    path,
+                    dc_replace(text_node, text=new_text),
+                )
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+            if len(parts) == 3 and parts[1] == "AFTER_EACH":
+                term = parts[0].strip()
+                anchor = parts[2].strip()
+                if not term or not anchor:
+                    return node, False
+
+                def _rewrite_each_anchor_in_definition_entry(text: str) -> tuple[str, bool]:
+                    term_pattern = _text_patch_pattern(
+                        term,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    definition_pattern = re.compile(
+                        rf"""
+                        (?P<prefix>(?:^|[;\.]\s*))
+                        [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                        \s+
+                        (?:
+                            means
+                            |has\s+the\s+same\s+meaning\s+as
+                            |has\s+the\s+meaning
+                            |is\s+to\s+be\s+construed
+                            |includes
+                        )\b
+                        .*?
+                        (?P<terminator>;|$)
+                        """,
+                        flags=re.I | re.S | re.X,
+                    )
+                    definition_matches = list(definition_pattern.finditer(text))
+                    if len(definition_matches) != 1:
+                        return text, False
+                    definition_match = definition_matches[0]
+                    entry_text = definition_match.group(0)
+                    anchor_pattern = _text_patch_pattern(
+                        anchor,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    anchor_matches = list(re.finditer(anchor_pattern, entry_text, flags=re.I | re.S))
+                    if not anchor_matches:
+                        return text, False
+                    rewritten_entry = re.sub(anchor_pattern, replacement, entry_text, flags=re.I | re.S)
+                    new_text = f"{text[:definition_match.start()]}{rewritten_entry}{text[definition_match.end():]}"
+                    return " ".join(new_text.split()).strip(), True
+
+                if node.text:
+                    new_text, changed = _rewrite_each_anchor_in_definition_entry(node.text)
+                    if changed:
+                        rebuilt = dc_replace(node, text=new_text)
+                        self._replace_node_in_statute(node, rebuilt)
+                        return rebuilt, True
+
+                candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+                for path, text_node in text_nodes:
+                    if not text_node.text:
+                        continue
+                    new_text, changed = _rewrite_each_anchor_in_definition_entry(text_node.text)
+                    if changed:
+                        candidate_paths.append((path, text_node, new_text))
+                if len(candidate_paths) != 1:
+                    return node, False
+                path, text_node, new_text = candidate_paths[0]
+                rebuilt = self._replace_descendant_at_path(
+                    node,
+                    path,
+                    dc_replace(text_node, text=new_text),
+                )
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+            if len(parts) != 3 or parts[1] != "AFTER":
+                return node, False
+            term = parts[0].strip()
+            anchor = parts[2].strip()
+            if not term or not anchor:
+                return node, False
+
+            def _rewrite_anchor_in_definition_entry(text: str) -> tuple[str, bool]:
+                term_pattern = _text_patch_pattern(
+                    term,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                definition_pattern = re.compile(
+                    rf"""
+                    (?P<prefix>(?:^|[;\.]\s*))
+                    [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                    \s+
+                    (?:
+                        means
+                        |has\s+the\s+same\s+meaning\s+as
+                        |has\s+the\s+meaning
+                        |is\s+to\s+be\s+construed
+                        |includes
+                    )\b
+                    .*?
+                    (?P<terminator>;|$)
+                    """,
+                    flags=re.I | re.S | re.X,
+                )
+                definition_matches = list(definition_pattern.finditer(text))
+                if len(definition_matches) != 1:
+                    return text, False
+                definition_match = definition_matches[0]
+                entry_text = definition_match.group(0)
+                anchor_pattern = _text_patch_pattern(
+                    anchor,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                anchor_matches = list(re.finditer(anchor_pattern, entry_text, flags=re.I | re.S))
+                if len(anchor_matches) != 1:
+                    return text, False
+                anchor_match = anchor_matches[0]
+                rewritten_entry = (
+                    entry_text[: anchor_match.start()]
+                    + replacement
+                    + entry_text[anchor_match.end() :]
+                )
+                new_text = f"{text[:definition_match.start()]}{rewritten_entry}{text[definition_match.end():]}"
+                return " ".join(new_text.split()).strip(), True
+
+            if node.text:
+                new_text, changed = _rewrite_anchor_in_definition_entry(node.text)
+                if changed:
+                    rebuilt = dc_replace(node, text=new_text)
+                    self._replace_node_in_statute(node, rebuilt)
+                    return rebuilt, True
+
+            candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+            for path, text_node in text_nodes:
+                if not text_node.text:
+                    continue
+                new_text, changed = _rewrite_anchor_in_definition_entry(text_node.text)
+                if changed:
+                    candidate_paths.append((path, text_node, new_text))
+            if len(candidate_paths) != 1:
+                return node, False
+            path, text_node, new_text = candidate_paths[0]
+            rebuilt = self._replace_descendant_at_path(
+                node,
+                path,
+                dc_replace(text_node, text=new_text),
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_DEFINITION_CHILD_"):
+            child_selector = match[len("TEXT_DEFINITION_CHILD_") :]
+            child_parts = child_selector.split(US)
+            if len(child_parts) != 2:
+                return node, False
+            kind_and_term, child_label = child_parts
+            child_match = re.fullmatch(r"([A-Z]+)_(.+)", kind_and_term)
+            if child_match is None:
+                return node, False
+            child_kind = child_match.group(1).lower()
+            term = child_match.group(2).strip()
+            child_label = child_label.strip()
+            if child_kind != "paragraph" or not term or not child_label:
+                return node, False
+
+            def _definition_child_nodes(
+                n: UKMutableNode,
+                path: tuple[int, ...] = (),
+            ) -> list[tuple[tuple[int, ...], UKMutableNode]]:
+                matches: list[tuple[tuple[int, ...], UKMutableNode]] = []
+                for index, child in enumerate(n.children):
+                    child_path = path + (index,)
+                    if (
+                        child.kind is IRNodeKind.ITEM
+                        and str(child.attrs.get("definition_child_label") or "").lower() == child_label.lower()
+                        and child.attrs.get("source_rule_id") == "uk_definition_ordered_list_child_preserved"
+                        and _normalize_text(str(child.attrs.get("definition_term") or "")) == _normalize_text(term)
+                    ):
+                        matches.append((child_path, child))
+                    matches.extend(_definition_child_nodes(child, child_path))
+                return matches
+
+            structured_child_matches = _definition_child_nodes(node)
+            if len(structured_child_matches) == 1:
+                child_path, child_node = structured_child_matches[0]
+
+                def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
+                    current = n
+                    for index in path:
+                        current = current.children[index]
+                    return current
+
+                if replacement:
+                    rebuilt_child = dc_replace(child_node, text=replacement.strip())
+                    rebuilt = self._replace_descendant_at_path(node, child_path, rebuilt_child)
+                    self._replace_node_in_statute(node, rebuilt)
+                    return rebuilt, True
+                parent_path = child_path[:-1]
+                child_index = child_path[-1]
+                parent_node = _node_at_path(node, parent_path)
+                new_children = list(parent_node.children)
+                new_children.pop(child_index)
+                rebuilt_parent = dc_replace(parent_node, children=new_children)
+                rebuilt = (
+                    rebuilt_parent
+                    if not parent_path
+                    else self._replace_descendant_at_path(node, parent_path, rebuilt_parent)
+                )
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+            if len(text_nodes) != 1:
+                return node, False
+
+            def _child_ordinal(label: str) -> Optional[int]:
+                if len(label) == 1 and label.isalpha():
+                    return ord(label.lower()) - ord("a") + 1
+                if label.isdigit():
+                    return int(label)
+                return None
+
+            def _rewrite_definition_child(text: str) -> tuple[str, bool]:
+                ordinal = _child_ordinal(child_label)
+                if ordinal is None or ordinal < 1:
+                    return text, False
+                term_pattern = _text_patch_pattern(
+                    term,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                definition_start_pattern = re.compile(
+                    rf"""
+                    (?P<prefix>(?:^|[;\.]\s*))
+                    [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                    \s+
+                    (?:
+                        means
+                        |has\s+the\s+same\s+meaning\s+as
+                        |has\s+the\s+meaning
+                        |is\s+to\s+be\s+construed
+                        |includes
+                    )\b
+                    """,
+                    flags=re.I | re.S | re.X,
+                )
+                definition_starts = list(definition_start_pattern.finditer(text))
+                if len(definition_starts) != 1:
+                    return text, False
+                definition_start = definition_starts[0]
+                next_definition_pattern = re.compile(
+                    r"""
+                    [;\.]\s*
+                    [“"'\u2018][^”"'\u2019;]{1,160}[”"'\u2019]
+                    \s+
+                    (?:
+                        means
+                        |has\s+the\s+same\s+meaning\s+as
+                        |has\s+the\s+meaning
+                        |is\s+to\s+be\s+construed
+                        |includes
+                    )\b
+                    """,
+                    flags=re.I | re.S | re.X,
+                )
+                next_definition = next_definition_pattern.search(text, definition_start.end())
+                entry_end = next_definition.start() + 1 if next_definition is not None else len(text)
+                body_start = definition_start.end()
+                entry_body = text[body_start:entry_end]
+                semicolons = list(re.finditer(r";", entry_body))
+                if len(semicolons) < ordinal:
+                    return text, False
+                segment_start = body_start
+                if ordinal > 1:
+                    segment_start = body_start + semicolons[ordinal - 2].end()
+                segment_end = body_start + semicolons[ordinal - 1].end()
+                before = text[:segment_start].rstrip()
+                after = text[segment_end:].lstrip()
+                if replacement:
+                    old_segment = text[segment_start:segment_end]
+                    terminator = (
+                        ";"
+                        if old_segment.rstrip().endswith(";")
+                        and not replacement.rstrip().endswith(";")
+                        else ""
+                    )
+                    new_segment = f"{replacement.strip()}{terminator}"
+                    new_text = f"{before} {new_segment} {after}".strip()
+                else:
+                    new_text = f"{before} {after}".strip()
+                return " ".join(new_text.split()).strip(), True
+
+            text_path, text_node = text_nodes[0]
+            new_text, changed = _rewrite_definition_child(text_node.text or "")
+            if not changed:
+                return node, False
+            replacement_node = dc_replace(text_node, text=new_text)
+            if not text_path:
+                self._replace_node_in_statute(text_node, replacement_node)
+                return replacement_node, True
+            rebuilt = self._replace_descendant_at_path(node, text_path, replacement_node)
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_AFTER_DEFINITION_"):
+            definition_child_match = re.fullmatch(
+                r"TEXT_AFTER_DEFINITION_([A-Z]+)_(.*)_AFTER_([0-9A-Za-z]+)",
+                match,
+            )
+            if definition_child_match is not None:
+                child_kind = definition_child_match.group(1).lower()
+                term = definition_child_match.group(2).strip()
+                child_label = definition_child_match.group(3).strip()
+                if child_kind != "paragraph" or not term or not child_label:
+                    return node, False
+                full_text = " ".join(tn.text.strip() for _, tn in text_nodes if tn.text).strip()
+                if not full_text:
+                    return node, False
+                term_pattern = re.escape(term).replace(r"\ ", r"\s+")
+                definition_match = re.search(
+                    rf"[“\"'‘]?\s*{term_pattern}\s*[”\"'’]?.*?\bmeans\b",
+                    full_text,
+                    flags=re.I | re.S,
+                )
+                if definition_match is None:
+                    return node, False
+                if len(child_label) == 1 and child_label.isalpha():
+                    semicolon_ordinal = ord(child_label.lower()) - ord("a") + 1
+                elif child_label.isdigit():
+                    semicolon_ordinal = int(child_label)
+                else:
+                    return node, False
+                tail = full_text[definition_match.end() :]
+                semicolons = list(re.finditer(r";", tail))
+                if len(semicolons) < semicolon_ordinal:
+                    return node, False
+                insert_at = definition_match.end() + semicolons[semicolon_ordinal - 1].end()
+                joiner = "" if replacement.startswith((" ", ",", ".", ";", ":", ")")) else " "
+                new_text = f"{full_text[:insert_at]}{joiner}{replacement}{full_text[insert_at:]}"
+                rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip(), children=[])
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+            term = match[len("TEXT_AFTER_DEFINITION_") :].strip()
+            if not term:
+                return node, False
+
+            def _insert_after_definition_in_text(text: str) -> tuple[str, bool]:
+                definition_start: Optional[re.Match[str]] = None
+                recovered_anchor = False
+                for candidate_term in (term, *_uk_definition_term_lexical_variants(term)):
+                    term_pattern = _text_patch_pattern(
+                        candidate_term,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    definition_start_pattern = re.compile(
+                        rf"""
+                        (?P<prefix>(?:^|[;\.]\s*))
+                        [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                        \s+
+                        (?:
+                            means
+                            |has\s+the\s+same\s+meaning\s+as
+                            |has\s+the\s+meaning
+                            |is\s+to\s+be\s+construed
+                            |shall\s+be\s+construed
+                            |includes
+                        )\b
+                        """,
+                        flags=re.I | re.S | re.X,
+                    )
+                    definition_starts = list(definition_start_pattern.finditer(text))
+                    if len(definition_starts) != 1:
+                        continue
+                    definition_start = definition_starts[0]
+                    recovered_anchor = candidate_term != term
+                    break
+                if definition_start is None:
+                    return text, False
+                next_definition_pattern = re.compile(
+                    r"""
+                    [;\.]\s*
+                    [“"'\u2018][^”"'\u2019;]{1,160}[”"'\u2019]
+                    \s+
+                    (?:
+                        means
+                        |has\s+the\s+same\s+meaning\s+as
+                        |has\s+the\s+meaning
+                        |is\s+to\s+be\s+construed
+                        |shall\s+be\s+construed
+                        |includes
+                    )\b
+                    """,
+                    flags=re.I | re.S | re.X,
+                )
+                next_definition = next_definition_pattern.search(text, definition_start.end())
+                if next_definition is not None:
+                    insert_at = next_definition.start() + 1
+                else:
+                    insert_at = len(text)
+                joiner = "" if replacement.startswith((" ", ",", ".", ";", ":", ")")) else " "
+                new_text = f"{text[:insert_at]}{joiner}{replacement}{text[insert_at:]}"
+                if recovered_anchor and recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_definition_anchor_lexical_variant_recovered"
+                    )
+                return " ".join(new_text.split()).strip(), True
+
+            if node.text:
+                new_text, changed = _insert_after_definition_in_text(node.text)
+                if changed:
+                    rebuilt = dc_replace(node, text=new_text)
+                    self._replace_node_in_statute(node, rebuilt)
+                    return rebuilt, True
+
+            candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+            for path, text_node in text_nodes:
+                if not text_node.text:
+                    continue
+                new_text, changed = _insert_after_definition_in_text(text_node.text)
+                if changed:
+                    candidate_paths.append((path, text_node, new_text))
+            if len(candidate_paths) != 1:
+                return node, False
+            path, text_node, new_text = candidate_paths[0]
+            rebuilt = self._replace_descendant_at_path(
+                node,
+                path,
+                dc_replace(text_node, text=new_text),
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_DEFINITION_ENTRY_"):
+            term = match[len("TEXT_DEFINITION_ENTRY_") :].strip()
+            if not term:
+                return node, False
+
+            def _rewrite_definition_entry(text: str) -> tuple[str, bool, bool]:
+                term_pattern = _text_patch_pattern(
+                    term,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                definition_pattern = re.compile(
+                    rf"""
+                    (?P<prefix>(?:^|[;\.:\u2014]\s*))
+                    \s*
+                    [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                    (?:\s*\([^;]*?\))*
+                    \s+
+                    (?P<predicate>
+                        means
+                        |has\s+the\s+same\s+meaning\s+as
+                        |has\s+the\s+meaning
+                        |is\s+to\s+be\s+construed
+                        |shall\s+be\s+construed
+                        |includes
+                    )\b
+                    .*?
+                    (?P<terminator>;|$)
+                    """,
+                    flags=re.I | re.S | re.X,
+                )
+                matches = list(definition_pattern.finditer(text))
+                if len(matches) != 1:
+                    return text, False, False
+                m = matches[0]
+                predicate = " ".join(str(m.group("predicate") or "").lower().split())
+                used_shall_construed = predicate == "shall be construed"
+                prefix = m.group("prefix")
+                if replacement:
+                    replacement_prefix = "" if m.start() == 0 else prefix
+                    joiner = "" if not replacement_prefix or replacement.startswith((" ", ",", ".", ";", ":", ")")) else " "
+                    new_text = f"{text[:m.start()]}{replacement_prefix}{joiner}{replacement}{text[m.end():]}"
+                else:
+                    replacement_prefix = "" if m.start() == 0 or prefix.strip() == "." else prefix
+                    new_text = f"{text[:m.start()]}{replacement_prefix}{text[m.end():]}"
+                return " ".join(new_text.split()).strip(), True, used_shall_construed
+
+            if node.text:
+                new_text, changed, used_shall_construed = _rewrite_definition_entry(node.text)
+                if changed:
+                    if used_shall_construed and recovery_rule_ids_out is not None:
+                        recovery_rule_ids_out.append(
+                            "uk_replay_definition_predicate_shall_construed_normalized"
+                        )
+                    rebuilt = dc_replace(node, text=new_text)
+                    self._replace_node_in_statute(node, rebuilt)
+                    return rebuilt, True
+
+            candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str, bool]] = []
+            for path, text_node in text_nodes:
+                if not text_node.text:
+                    continue
+                new_text, changed, used_shall_construed = _rewrite_definition_entry(text_node.text)
+                if changed:
+                    candidate_paths.append((path, text_node, new_text, used_shall_construed))
+            if len(candidate_paths) != 1:
+                return node, False
+            path, text_node, new_text, used_shall_construed = candidate_paths[0]
+            if used_shall_construed and recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append(
+                    "uk_replay_definition_predicate_shall_construed_normalized"
+                )
+            rebuilt = self._replace_descendant_at_path(
+                node,
+                path,
+                dc_replace(text_node, text=new_text),
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_WORD_"):
+            target_contextual_match = re.fullmatch(
+                r"TEXT_WORD_(.*?)_IMMEDIATELY_FOLLOWING_TARGET",
+                match,
+            )
+            if target_contextual_match is not None:
+                word = target_contextual_match.group(1)
+
+                def _remove_trailing_target_word(text: str, needle: str) -> tuple[str, bool]:
+                    pattern = re.compile(
+                        rf"(?P<prefix>.*?)(?P<sep>\s*,?\s*){re.escape(needle)}(?P<suffix>\s*[,;:]?\s*)$",
+                        re.I | re.S,
+                    )
+                    m = pattern.fullmatch(text)
+                    if not m:
+                        return text, False
+                    return (m.group("prefix").rstrip() + m.group("suffix").rstrip()).rstrip(), True
+
+                new_text, changed = _remove_trailing_target_word(node.text or "", word)
+                if not changed:
+                    return node, False
+                rebuilt = dc_replace(node, text=new_text)
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+            contextual_match = re.fullmatch(
+                r"TEXT_WORD_(.*?)_IMMEDIATELY_(PRECEDING|FOLLOWING)_([A-Za-z]+)_([0-9A-Za-z]+)",
+                match,
+            )
+            if contextual_match is None:
+                return node, False
+            word = contextual_match.group(1)
+            relation = contextual_match.group(2)
+            anchor_kind = contextual_match.group(3)
+            anchor_label = contextual_match.group(4)
+            anchor_path: Optional[tuple[int, ...]] = None
+            recovered_anchor_kind = False
+
+            def _find_anchor(n: UKMutableNode, path: tuple[int, ...] = ()) -> None:
+                nonlocal anchor_path
+                if anchor_path is not None:
+                    return
+                kind_value = n.kind.value if isinstance(n.kind, IRNodeKind) else str(n.kind)
+                if kind_value == anchor_kind and _clean_num(n.label or "") == _clean_num(anchor_label):
+                    anchor_path = path
+                    return
+                for i, child in enumerate(n.children):
+                    _find_anchor(child, path + (i,))
+
+            def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
+                current = n
+                for idx in path:
+                    current = current.children[idx]
+                return current
+
+            def _remove_trailing_word(text: str, needle: str) -> tuple[str, bool]:
+                pattern = re.compile(
+                    rf"(?P<prefix>.*?)(?P<sep>\s*,?\s*){re.escape(needle)}(?P<suffix>\s*[,;:]?\s*)$",
+                    re.I | re.S,
+                )
+                m = pattern.fullmatch(text)
+                if not m:
+                    return text, False
+                return (m.group("prefix").rstrip() + m.group("suffix").rstrip()).rstrip(), True
+
+            _find_anchor(node)
+            if anchor_path is None:
+                allowed_anchor_kinds = {
+                    "paragraph",
+                    "subparagraph",
+                    "item",
+                    "point",
+                }
+                if anchor_kind.lower() not in allowed_anchor_kinds:
+                    return node, False
+
+                candidate_paths: list[tuple[int, ...]] = []
+
+                def _collect_label_anchors(n: UKMutableNode, path: tuple[int, ...] = ()) -> None:
+                    kind_value = n.kind.value if isinstance(n.kind, IRNodeKind) else str(n.kind)
+                    if kind_value in allowed_anchor_kinds and _clean_num(n.label or "") == _clean_num(anchor_label):
+                        candidate_paths.append(path)
+                    for i, child in enumerate(n.children):
+                        _collect_label_anchors(child, path + (i,))
+
+                _collect_label_anchors(node)
+                if len(candidate_paths) != 1:
+                    return node, False
+                anchor_path = candidate_paths[0]
+                recovered_anchor_kind = True
+            target_path = anchor_path
+            if relation == "PRECEDING":
+                if not anchor_path:
+                    return node, False
+                sibling_idx = anchor_path[-1] - 1
+                if sibling_idx < 0:
+                    return node, False
+                target_path = anchor_path[:-1] + (sibling_idx,)
+            target_node = _node_at_path(node, target_path)
+            new_text, changed = _remove_trailing_word(target_node.text or "", word)
+            if not changed:
+                return node, False
+            if recovered_anchor_kind and recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_contextual_word_anchor_kind_normalized")
+            rebuilt = self._replace_descendant_at_path(
+                node,
+                target_path,
+                dc_replace(target_node, text=new_text),
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_AFTER_") and match.endswith("_TO_END"):
+            anchor = match[len("TEXT_AFTER_") : -len("_TO_END")]
+            if not anchor:
+                return node, False
+
+            def _rewrite_after_anchor(text: str) -> tuple[str, bool]:
+                ordinal = occurrence if occurrence > 0 else 1
+                start = 0
+                for _ in range(ordinal):
+                    idx = text.find(anchor, start)
+                    if idx == -1:
+                        break
+                    start = idx + len(anchor)
+                else:
+                    anchor_end = idx + len(anchor)
+                    joiner = (
+                        ""
+                        if text[:anchor_end].endswith((" ", "\t", "\n", "\r"))
+                        or replacement.startswith((" ", ",", ".", ";", ":", ")"))
+                        else " "
+                    )
+                    return f"{text[:anchor_end]}{joiner}{replacement}", True
+
+                pattern = _text_patch_pattern(
+                    anchor,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                matches = list(re.finditer(pattern, text, flags=re.I | re.S))
+                if len(matches) < ordinal:
+                    return text, False
+                anchor_match = matches[ordinal - 1]
+                joiner = (
+                    ""
+                    if text[: anchor_match.end()].endswith((" ", "\t", "\n", "\r"))
+                    or replacement.startswith((" ", ",", ".", ";", ":", ")"))
+                    else " "
+                )
+                return f"{text[: anchor_match.end()]}{joiner}{replacement}", True
+
+            if node.text:
+                new_text, changed = _rewrite_after_anchor(node.text)
+                if changed:
+                    rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip())
+                    self._replace_node_in_statute(node, rebuilt)
+                    return rebuilt, True
+
+            candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+            for path, text_node in text_nodes:
+                if not text_node.text:
+                    continue
+                new_text, changed = _rewrite_after_anchor(text_node.text)
+                if changed:
+                    candidate_paths.append((path, text_node, new_text))
+            if len(candidate_paths) != 1:
+                return node, False
+            path, text_node, new_text = candidate_paths[0]
+            rebuilt = self._replace_descendant_at_path(
+                node,
+                path,
+                dc_replace(text_node, text=" ".join(new_text.split()).strip()),
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
         if match.startswith("TEXT_FROM_"):
             full_text = " ".join(tn.text.strip() for _, tn in text_nodes if tn.text).strip()
             if not full_text:
                 return node, False
 
+            def _find_start_index(start_text: str) -> int:
+                ordinal = occurrence if occurrence > 0 else 1
+                start = 0
+                for _ in range(ordinal):
+                    start_idx = full_text.find(start_text, start)
+                    if start_idx == -1:
+                        break
+                    start = start_idx + len(start_text)
+                else:
+                    return start_idx
+                pattern = _text_patch_pattern(
+                    start_text,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                matches = list(re.finditer(pattern, full_text, flags=re.I | re.S))
+                if len(matches) < ordinal:
+                    return -1
+                return matches[ordinal - 1].start()
+
             if match.endswith("_TO_END"):
                 start_text = match[len("TEXT_FROM_") : -len("_TO_END")]
-                start_idx = full_text.find(start_text)
+                start_idx = _find_start_index(start_text)
                 if start_idx == -1:
-                    pattern = re.escape(start_text).replace(r"\ ", r"\s+") + r".*$"
-                    m = re.search(pattern, full_text, flags=re.I | re.S)
-                    if not m:
-                        return node, False
-                    new_text = full_text[: m.start()] + replacement
-                else:
-                    new_text = full_text[:start_idx] + replacement
+                    return node, False
+                new_text = full_text[:start_idx] + replacement
                 rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip(), children=[])
                 self._replace_node_in_statute(node, rebuilt)
                 return rebuilt, True
@@ -6559,25 +12917,102 @@ class UKReplayExecutor:
                 parts = match.replace("TEXT_FROM_", "", 1).split("_TO_", 1)
                 if len(parts) == 2:
                     start_text, end_text = parts[0], parts[1]
-                    start_idx = full_text.find(start_text)
+                    start_idx = _find_start_index(start_text)
                     end_idx = -1
                     if start_idx != -1:
-                        end_idx = full_text.find(end_text, start_idx + len(start_text))
+                        if end_occurrence > 0:
+                            end_matches = list(re.finditer(re.escape(end_text), full_text))
+                            if len(end_matches) >= end_occurrence:
+                                end_match = end_matches[end_occurrence - 1]
+                                if end_match.start() >= start_idx + len(start_text):
+                                    end_idx = end_match.start()
+                                    end_end = end_match.end()
+                        else:
+                            end_idx = full_text.find(end_text, start_idx + len(start_text))
+                            end_end = end_idx + len(end_text)
                     if start_idx == -1 or end_idx == -1:
-                        pattern = (
-                            re.escape(start_text).replace(r"\ ", r"\s+")
-                            + r".*?"
-                            + re.escape(end_text).replace(r"\ ", r"\s+")
+                        start_pattern = _text_patch_pattern(
+                            start_text,
+                            allow_punctuation_spacing=allow_punctuation_spacing,
+                            allow_word_punctuation_elision=allow_word_punctuation_elision,
                         )
-                        m = re.search(pattern, full_text, flags=re.I | re.S)
-                        if not m:
+                        start_matches = list(re.finditer(start_pattern, full_text, flags=re.I | re.S))
+                        ordinal = occurrence if occurrence > 0 else 1
+                        if len(start_matches) < ordinal:
                             return node, False
-                        new_text = full_text[: m.start()] + replacement + full_text[m.end() :]
+                        start_match = start_matches[ordinal - 1]
+                        if end_occurrence > 0:
+                            end_pattern = _text_patch_pattern(
+                                end_text,
+                                allow_punctuation_spacing=allow_punctuation_spacing,
+                                allow_word_punctuation_elision=allow_word_punctuation_elision,
+                            )
+                            end_matches = list(re.finditer(end_pattern, full_text, flags=re.I | re.S))
+                            if len(end_matches) < end_occurrence:
+                                return node, False
+                            end_match = end_matches[end_occurrence - 1]
+                            if end_match.start() < start_match.end():
+                                return node, False
+                            new_text = full_text[: start_match.start()] + replacement + full_text[end_match.end() :]
+                        else:
+                            pattern = (
+                                start_pattern
+                                + r".*?"
+                                + _text_patch_pattern(
+                                    end_text,
+                                    allow_punctuation_spacing=allow_punctuation_spacing,
+                                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                                )
+                            )
+                            m = re.search(pattern, full_text, flags=re.I | re.S)
+                            if not m:
+                                return node, False
+                            new_text = full_text[: m.start()] + replacement + full_text[m.end() :]
                     else:
-                        new_text = full_text[:start_idx] + replacement + full_text[end_idx + len(end_text) :]
+                        new_text = full_text[:start_idx] + replacement + full_text[end_end:]
                     rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip(), children=[])
                     self._replace_node_in_statute(node, rebuilt)
                     return rebuilt, True
+
+        if occurrence == -1:
+            last_exact_match: Optional[tuple[tuple[int, ...], UKMutableNode, int]] = None
+            for path, tn in text_nodes:
+                start = 0
+                while True:
+                    pos = tn.text.find(match, start)
+                    if pos == -1:
+                        break
+                    last_exact_match = (path, tn, pos)
+                    start = pos + len(match)
+            if last_exact_match is not None:
+                path, tn, pos = last_exact_match
+                rebuilt = self._replace_descendant_at_path(
+                    node,
+                    path,
+                    dc_replace(tn, text=tn.text[:pos] + replacement + tn.text[pos + len(match) :]),
+                )
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+            pattern = _text_patch_pattern(
+                match,
+                allow_punctuation_spacing=allow_punctuation_spacing,
+                allow_word_punctuation_elision=allow_word_punctuation_elision,
+            )
+            last_normalized_match: Optional[tuple[tuple[int, ...], UKMutableNode, re.Match[str]]] = None
+            for path, tn in text_nodes:
+                for m in re.finditer(pattern, tn.text, flags=re.I):
+                    last_normalized_match = (path, tn, m)
+            if last_normalized_match is not None:
+                path, tn, m = last_normalized_match
+                rebuilt = self._replace_descendant_at_path(
+                    node,
+                    path,
+                    dc_replace(tn, text=tn.text[: m.start()] + replacement + tn.text[m.end() :]),
+                )
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+            return node, False
 
         if occurrence == 0:
             # Replace all occurrences across all text nodes
@@ -6594,7 +13029,11 @@ class UKReplayExecutor:
                     made_any = True
                 else:
                     # Whitespace-normalized fallback (same as _apply_text_substitution_on_node)
-                    pattern = re.escape(match).replace(r"\ ", r"\s+")
+                    pattern = _text_patch_pattern(
+                        match,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
                     new_text, count = re.subn(pattern, replacement, text, flags=re.I)
                     if count > 0:
                         rebuilt = self._replace_descendant_at_path(
@@ -6629,7 +13068,11 @@ class UKReplayExecutor:
                     start = pos + len(match)
             # Whitespace-normalized fallback if exact search found nothing
             if global_count == 0:
-                pattern = re.escape(match).replace(r"\ ", r"\s+")
+                pattern = _text_patch_pattern(
+                    match,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
                 nth_seen = 0
                 for path, tn in text_nodes:
                     for m in re.finditer(pattern, tn.text, flags=re.I):
@@ -6643,6 +13086,30 @@ class UKReplayExecutor:
                             self._replace_node_in_statute(node, rebuilt)
                             return rebuilt, True
             return node, False
+
+    def _subtree_contains_text(self, node: UKMutableNode, needle: str) -> bool:
+        """Return whether *needle* is already present in the target subtree text."""
+        normalized_needle = " ".join((needle or "").split())
+        if not normalized_needle:
+            return False
+        pattern = re.escape(normalized_needle).replace(r"\ ", r"\s+")
+        stack = [node]
+        while stack:
+            current = stack.pop()
+            text = current.text or ""
+            if normalized_needle in text or re.search(pattern, text, flags=re.I):
+                return True
+            stack.extend(reversed(current.children))
+        return False
+
+    def _node_text_contains_text(self, node: UKMutableNode, needle: str) -> bool:
+        """Return whether *needle* is present in one node text field only."""
+        normalized_needle = " ".join((needle or "").split())
+        if not normalized_needle:
+            return False
+        text = node.text or ""
+        pattern = re.escape(normalized_needle).replace(r"\ ", r"\s+")
+        return normalized_needle in text or bool(re.search(pattern, text, flags=re.I))
 
     def _apply_text_substitution_on_node(self, node: UKMutableNode, subs: list[dict]) -> UKMutableNode:
         text = node.text or ""
@@ -6677,6 +13144,487 @@ class UKReplayExecutor:
         self._replace_node_in_statute(node, rebuilt)
         return rebuilt
 
+    def _insert_schedule_list_entry(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+        selector: dict[str, Any],
+    ) -> bool:
+        if _uk_kind_value(new_node.kind) != "schedule_entry":
+            return False
+        schedule_node, _, _ = self._find_node_by_target(target)
+        if schedule_node is None or _uk_kind_value(schedule_node.kind) != "schedule":
+            if self._target_under_repealed_prefix(target):
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind="uk_replay_repealed_target_gap",
+                    message=(
+                        "UK replay skipped schedule-list-entry insert: schedule "
+                        "target was already repealed earlier in the chain."
+                    ),
+                    op=op,
+                    detail={
+                        "action": _action_name(op.action),
+                        "target": str(target),
+                        "selector": dict(selector),
+                        "reason_code": "schedule_target_previously_repealed",
+                        "family": "source_schedule_list_entry_elaboration",
+                        "blocking": True,
+                        "strict_disposition": "block",
+                        "quirks_disposition": "record",
+                    },
+                )
+                return False
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID,
+                message=(
+                    "UK replay skipped schedule-list-entry insert: target did "
+                    "not resolve to a schedule carrier."
+                ),
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "schedule_target_unresolved",
+                    "family": "source_schedule_list_entry_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+        anchor_norm = _compact_normalized_text(str(selector.get("anchor_text") or ""))
+        direction = str(selector.get("direction") or "")
+        if (not anchor_norm and direction != "alphabetical") or direction not in {"before", "after", "alphabetical"}:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID,
+                message=(
+                    "UK replay skipped schedule-list-entry insert: selector was "
+                    "missing a valid anchor or direction."
+                ),
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "invalid_selector",
+                    "family": "source_schedule_list_entry_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+
+        entry_rows: list[tuple[int, UKMutableNode]] = [
+            (idx, child)
+            for idx, child in enumerate(schedule_node.children)
+            if _uk_kind_value(child.kind) == "schedule_entry"
+        ]
+        if direction == "alphabetical":
+            inserted_sort_key = _compact_schedule_entry_anchor_without_article(new_node.text)
+            duplicate_matches = [
+                (idx, child)
+                for idx, child in entry_rows
+                if _compact_schedule_entry_anchor_without_article(child.text) == inserted_sort_key
+            ]
+            if not inserted_sort_key or duplicate_matches:
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID,
+                    message=(
+                        "UK replay skipped alphabetical schedule-list-entry insert: "
+                        "inserted entry text was missing or already present."
+                    ),
+                    op=op,
+                    detail={
+                        "target": str(target),
+                        "selector": dict(selector),
+                        "reason_code": "alphabetical_position_duplicate_or_empty",
+                        "entry_count": len(entry_rows),
+                        "duplicate_match_count": len(duplicate_matches),
+                        "family": "source_schedule_list_entry_elaboration",
+                        "blocking": True,
+                        "strict_disposition": "block",
+                        "quirks_disposition": "record",
+                    },
+                )
+                return False
+            insert_index = len(schedule_node.children)
+            for idx, child in entry_rows:
+                child_sort_key = _compact_schedule_entry_anchor_without_article(child.text)
+                if child_sort_key > inserted_sort_key:
+                    insert_index = idx
+                    break
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ALPHABETICAL_POSITION_RULE_ID,
+                message=(
+                    "UK replay placed a schedule-list-entry insert using the "
+                    "source's explicit alphabetical-order instruction."
+                ),
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "explicit_alphabetical_order",
+                    "entry_count": len(entry_rows),
+                    "insert_index": insert_index,
+                    "family": "source_schedule_list_entry_elaboration",
+                    "blocking": False,
+                    "strict_disposition": "record",
+                    "quirks_disposition": "record",
+                },
+            )
+            for key in ("eId", "id"):
+                new_node.attrs.pop(key, None)
+            children = list(schedule_node.children)
+            children.insert(insert_index, new_node)
+            self._replace_children(schedule_node, children)
+            return True
+
+        matches = [
+            (idx, child)
+            for idx, child in entry_rows
+            if _compact_normalized_text(child.text) == anchor_norm
+        ]
+        prefix_normalized = False
+        article_normalized = False
+        if not matches:
+            matches = [
+                (idx, child)
+                for idx, child in entry_rows
+                if _compact_normalized_text(child.text).startswith(anchor_norm)
+            ]
+            prefix_normalized = len(matches) == 1
+        if not matches:
+            article_anchor_norm = _compact_schedule_entry_anchor_without_article(
+                str(selector.get("anchor_text") or "")
+            )
+            matches = [
+                (idx, child)
+                for idx, child in entry_rows
+                if article_anchor_norm
+                and (
+                    _compact_schedule_entry_anchor_without_article(child.text) == article_anchor_norm
+                    or _compact_schedule_entry_anchor_without_article(child.text).startswith(article_anchor_norm)
+                )
+            ]
+            article_normalized = len(matches) == 1
+        if not matches:
+            grouped_entry_rows: list[tuple[int, UKMutableNode, int, UKMutableNode]] = [
+                (group_idx, group, child_idx, child)
+                for group_idx, group in enumerate(schedule_node.children)
+                if _uk_kind_value(group.kind) == "p1group"
+                for child_idx, child in enumerate(group.children)
+                if _uk_kind_value(child.kind) == "schedule_entry"
+            ]
+
+            def _matches_in_group(mode: str) -> list[tuple[int, UKMutableNode, int, UKMutableNode]]:
+                if mode == "exact":
+                    return [
+                        row for row in grouped_entry_rows if _compact_normalized_text(row[3].text) == anchor_norm
+                    ]
+                if mode == "prefix":
+                    return [
+                        row
+                        for row in grouped_entry_rows
+                        if _compact_normalized_text(row[3].text).startswith(anchor_norm)
+                    ]
+                article_anchor_norm = _compact_schedule_entry_anchor_without_article(
+                    str(selector.get("anchor_text") or "")
+                )
+                return [
+                    row
+                    for row in grouped_entry_rows
+                    if article_anchor_norm
+                    and (
+                        _compact_schedule_entry_anchor_without_article(row[3].text) == article_anchor_norm
+                        or _compact_schedule_entry_anchor_without_article(row[3].text).startswith(article_anchor_norm)
+                    )
+                ]
+
+            grouped_matches: list[tuple[int, UKMutableNode, int, UKMutableNode]] = []
+            grouped_match_mode = ""
+            for mode in ("exact", "prefix", "article"):
+                grouped_matches = _matches_in_group(mode)
+                if grouped_matches:
+                    grouped_match_mode = mode
+                    break
+            if len(grouped_matches) == 1:
+                group_idx, group_node, child_idx, _child = grouped_matches[0]
+                insert_index = child_idx if direction == "before" else child_idx + 1
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_GROUP_ANCHOR_RULE_ID,
+                    message=(
+                        "UK replay resolved a schedule-list-entry anchor inside "
+                        "a schedule child group and inserted into that same group."
+                    ),
+                    op=op,
+                    detail={
+                        "target": str(target),
+                        "selector": dict(selector),
+                        "reason_code": "anchor_unique_in_schedule_child_group",
+                        "group_index": group_idx,
+                        "group_kind": _uk_kind_value(group_node.kind),
+                        "group_label": group_node.label or "",
+                        "group_text": (group_node.text or "")[:200],
+                        "group_entry_index": child_idx,
+                        "group_insert_index": insert_index,
+                        "grouped_entry_count": len(grouped_entry_rows),
+                        "match_mode": grouped_match_mode,
+                        "family": "source_schedule_list_entry_elaboration",
+                        "blocking": False,
+                        "strict_disposition": "record",
+                        "quirks_disposition": "record",
+                    },
+                )
+                for key in ("eId", "id"):
+                    new_node.attrs.pop(key, None)
+                group_children = list(group_node.children)
+                group_children.insert(insert_index, new_node)
+                group_node.children = group_children
+                return True
+            matches = [(idx, child) for idx, child in enumerate(grouped_matches)]
+        if len(matches) != 1:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID,
+                message=(
+                    "UK replay skipped schedule-list-entry insert: anchor entry "
+                    "did not resolve uniquely."
+                ),
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "anchor_not_unique",
+                    "anchor_match_count": len(matches),
+                    "entry_count": len(entry_rows),
+                    "grouped_entry_count": len(grouped_entry_rows) if "grouped_entry_rows" in locals() else 0,
+                    "family": "source_schedule_list_entry_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+        if article_normalized:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_ARTICLE_NORMALIZED_RULE_ID,
+                message=(
+                    "UK replay resolved a schedule-list-entry anchor after "
+                    "normalizing a leading article."
+                ),
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "anchor_leading_article_unique",
+                    "anchor_match_count": len(matches),
+                    "entry_count": len(entry_rows),
+                    "family": "source_schedule_list_entry_elaboration",
+                    "blocking": False,
+                    "strict_disposition": "record",
+                    "quirks_disposition": "record",
+                },
+            )
+        if prefix_normalized:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_PREFIX_NORMALIZED_RULE_ID,
+                message=(
+                    "UK replay resolved a schedule-list-entry anchor as the "
+                    "unique prefix of a longer source entry."
+                ),
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "anchor_prefix_unique",
+                    "anchor_match_count": len(matches),
+                    "entry_count": len(entry_rows),
+                    "family": "source_schedule_list_entry_elaboration",
+                    "blocking": False,
+                    "strict_disposition": "record",
+                    "quirks_disposition": "record",
+                },
+            )
+
+        anchor_index = matches[0][0]
+        insert_index = anchor_index if direction == "before" else anchor_index + 1
+        for key in ("eId", "id"):
+            new_node.attrs.pop(key, None)
+        children = list(schedule_node.children)
+        children.insert(insert_index, new_node)
+        self._replace_children(schedule_node, children)
+        return True
+
+    def _repeal_schedule_list_entries(
+        self,
+        target: LegalAddress,
+        op: LegalOperation,
+        selector: dict[str, Any],
+    ) -> bool:
+        schedule_node, _, _ = self._find_node_by_target(target)
+        if schedule_node is None or _uk_kind_value(schedule_node.kind) != "schedule":
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_UNRESOLVED_RULE_ID,
+                message=(
+                    "UK replay skipped schedule-list-entry repeal: target did "
+                    "not resolve to a schedule carrier."
+                ),
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "schedule_target_unresolved",
+                    "family": "source_schedule_list_entry_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+        raw_anchors = selector.get("anchors")
+        anchors = tuple(str(anchor or "") for anchor in raw_anchors) if isinstance(raw_anchors, list) else ()
+        anchors = tuple(anchor for anchor in anchors if _compact_normalized_text(anchor))
+        if not anchors:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_UNRESOLVED_RULE_ID,
+                message="UK replay skipped schedule-list-entry repeal: selector had no entry anchors.",
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "invalid_selector",
+                    "family": "source_schedule_list_entry_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+        entry_rows: list[tuple[int, UKMutableNode]] = [
+            (idx, child)
+            for idx, child in enumerate(schedule_node.children)
+            if _uk_kind_value(child.kind) == "schedule_entry"
+        ]
+
+        def _matches_for_anchor(anchor: str) -> tuple[list[tuple[int, UKMutableNode]], str]:
+            anchor_norm = _compact_normalized_text(anchor)
+            matches = [
+                (idx, child)
+                for idx, child in entry_rows
+                if _compact_normalized_text(child.text) == anchor_norm
+            ]
+            if matches:
+                return matches, "exact"
+            matches = [
+                (idx, child)
+                for idx, child in entry_rows
+                if _compact_normalized_text(child.text).startswith(anchor_norm)
+            ]
+            if matches:
+                return matches, "prefix"
+            article_anchor_norm = _compact_schedule_entry_anchor_without_article(anchor)
+            matches = [
+                (idx, child)
+                for idx, child in entry_rows
+                if article_anchor_norm
+                and (
+                    _compact_schedule_entry_anchor_without_article(child.text) == article_anchor_norm
+                    or _compact_schedule_entry_anchor_without_article(child.text).startswith(article_anchor_norm)
+                )
+            ]
+            if matches:
+                return matches, "article"
+            return [], "none"
+
+        matched_indices: list[int] = []
+        match_modes: dict[str, str] = {}
+        for anchor in anchors:
+            matches, mode = _matches_for_anchor(anchor)
+            if len(matches) != 1:
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_UNRESOLVED_RULE_ID,
+                    message=(
+                        "UK replay skipped schedule-list-entry repeal: entry "
+                        "anchor did not resolve uniquely."
+                    ),
+                    op=op,
+                    detail={
+                        "target": str(target),
+                        "selector": dict(selector),
+                        "anchor": anchor,
+                        "reason_code": "anchor_not_unique",
+                        "anchor_match_count": len(matches),
+                        "entry_count": len(entry_rows),
+                        "family": "source_schedule_list_entry_elaboration",
+                        "blocking": True,
+                        "strict_disposition": "block",
+                        "quirks_disposition": "record",
+                    },
+                )
+                return False
+            matched_indices.append(matches[0][0])
+            match_modes[anchor] = mode
+        if len(set(matched_indices)) != len(matched_indices):
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_UNRESOLVED_RULE_ID,
+                message=(
+                    "UK replay skipped schedule-list-entry repeal: multiple "
+                    "anchors resolved to the same entry child."
+                ),
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "anchor_collision",
+                    "matched_indices": matched_indices,
+                    "family": "source_schedule_list_entry_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+        children = list(schedule_node.children)
+        for idx in sorted(matched_indices, reverse=True):
+            children.pop(idx)
+        self._replace_children(schedule_node, children)
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_RESOLVED_RULE_ID,
+            message=(
+                "UK replay applied a schedule-list-entry repeal after every "
+                "source entry anchor resolved to exactly one direct schedule child."
+            ),
+            op=op,
+            detail={
+                "target": str(target),
+                "selector": dict(selector),
+                "reason_code": "explicit_entry_anchors_unique",
+                "matched_indices": matched_indices,
+                "match_modes": match_modes,
+                "entry_count": len(entry_rows),
+                "deleted_count": len(matched_indices),
+                "family": "source_schedule_list_entry_elaboration",
+                "blocking": False,
+                "strict_disposition": "record",
+                "quirks_disposition": "record",
+            },
+        )
+        return True
+
     def _insert_node_v2(
         self,
         target: LegalAddress,
@@ -6688,13 +13636,19 @@ class UKReplayExecutor:
             uk_resolve_insertion_parent,
         )
 
+        schedule_list_entry_selector = _schedule_list_entry_selector(op)
+        if schedule_list_entry_selector is not None:
+            return self._insert_schedule_list_entry(target, new_node, op, schedule_list_entry_selector)
+
         prec_eid = _preceding_eid(op)
+        following_eid = _following_eid(op)
         parent_node, insert_idx = uk_resolve_insertion_parent(
             target=target,
             body_root=cast(IRNode, self.statute.body),
             node_kind=str(new_node.kind),
             node_label=new_node.label,
             preceding_eid=prec_eid,
+            following_eid=following_eid,
             find_node_by_target=self._find_node_by_target,
             find_node_and_parent_statute=self._find_node_and_parent_statute,
             label_sort_key=_label_sort_key,
@@ -6885,7 +13839,7 @@ class UKReplayExecutor:
                     if subsection:
                         eu_parts.append(_clean_num(subsection))
                     for item_label in item_labels:
-                        eu_parts.append(_clean_num(item_label))
+                        eu_parts.append(_canonicalize_eid_tail_label(item_label))
                     yield "-".join(eu_parts)
                     # Reset parts for hierarchical try
                     parts = [f"{sch_prefix}-{_clean_num(section)}"] if section else [sch_prefix]
@@ -6902,7 +13856,7 @@ class UKReplayExecutor:
                 if subsection:
                     parts.append(_clean_num(subsection))
                 for item_label in item_labels:
-                    parts.append(_clean_num(item_label))
+                    parts.append(_canonicalize_eid_tail_label(item_label))
                 yield "-".join(parts)
             else:
                 # Try section and article prefixes
@@ -6913,7 +13867,7 @@ class UKReplayExecutor:
                         if subsection:
                             parts.append(_clean_num(subsection))
                         if item:
-                            parts.append(_clean_num(item))
+                            parts.append(_canonicalize_eid_tail_label(item))
                     yield "-".join(parts)
 
         for full_key in _get_candidates():
@@ -6938,9 +13892,9 @@ class UKReplayExecutor:
         )
         if node:
             return node, parent, idx
-        for sched in self.statute.supplements:
+        for sched_idx, sched in enumerate(self.statute.supplements):
             if sched.attrs.get("eId") == eid:
-                return sched, None, None
+                return sched, None, sched_idx
             node, parent, idx = self._find_node_and_parent(
                 sched,
                 eid,
@@ -6993,7 +13947,7 @@ class UKReplayExecutor:
 
         def _get_eid(node: UKMutableNode) -> Optional[str]:
             """Return the EID/id from a node's attrs (handles both 'eId' and 'id' keys)."""
-            return node.attrs.get("eId") or node.attrs.get("id")
+            return _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
 
         def _set_eid(node: UKMutableNode, eid: str) -> None:
             """Set an EID on a node, using whichever key the node already uses."""
@@ -7039,12 +13993,16 @@ class UKReplayExecutor:
         # 'eId' or 'id' key) — those were preserved by _clear_eids and must
         # not be overwritten with a generic local label.
         def _ensure_local_eid(node: UKMutableNode) -> None:
-            if "eId" not in node.attrs and "id" not in node.attrs and node.kind != "body":
+            kind_value = _uk_kind_value(node.kind)
+            if kind_value == "schedule_entry":
+                for key in ("eId", "id"):
+                    node.attrs.pop(key, None)
+            elif "eId" not in node.attrs and "id" not in node.attrs and kind_value != "body":
                 clean_label = _clean_num(node.label) if node.label else ""
                 if clean_label:
-                    node.attrs["eId"] = f"{node.kind}-{clean_label}"
+                    node.attrs["eId"] = f"{kind_value}-{clean_label}"
                 else:
-                    node.attrs["eId"] = node.kind
+                    node.attrs["eId"] = kind_value
             for c in node.children:
                 _ensure_local_eid(c)
 
@@ -7072,14 +14030,19 @@ class UKReplayExecutor:
 
         def _ground_node(node: UKMutableNode, parent_path_key, parent_eid=None, ordinal=1, context="body"):
             nonlocal seen_oracle_ids
+            parent_eid = _uk_eid_value(parent_eid)
+            if _uk_kind_value(node.kind) == "schedule_entry":
+                for key in ("eId", "id"):
+                    node.attrs.pop(key, None)
+                return
             # Fast path: if this node already has a correct oracle EID (preserved
             # from the pre-seed pass), skip the multi-pass matching for this node
             # and recurse into children with updated context.  The EID is already
             # registered in seen_oracle_ids from the pre-seed pass.
-            existing_eid = node.attrs.get("eId") or node.attrs.get("id")
+            existing_eid = _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
             if existing_eid and existing_eid in oracle_id_values and existing_eid in seen_oracle_ids:
                 kind = node.kind
-                kind_name = str(kind).lower()
+                kind_name = _uk_kind_value(kind).lower()
                 clean_label = _clean_num(node.label) if node.label else ""
                 next_path_key = uk_semantic_path_key(
                     parent_path_key,
@@ -7093,15 +14056,16 @@ class UKReplayExecutor:
                     new_context = "body"
                 kind_counts: dict = {}
                 for child in node.children:
-                    kind_counts[child.kind] = kind_counts.get(child.kind, 0) + 1
+                    child_kind = _uk_kind_value(child.kind)
+                    kind_counts[child_kind] = kind_counts.get(child_kind, 0) + 1
                     _ground_node(
-                        child, next_path_key, existing_eid, ordinal=kind_counts[child.kind], context=new_context
+                        child, next_path_key, existing_eid, ordinal=kind_counts[child_kind], context=new_context
                     )
                 return
 
             clean_label = _clean_num(node.label) if node.label else ""
             kind = node.kind
-            kind_name = str(kind).lower()
+            kind_name = _uk_kind_value(kind).lower()
             raw_label = str(node.label or "").strip()
             heading = node.attrs.get("heading") or ""
             if (
@@ -7334,7 +14298,7 @@ class UKReplayExecutor:
             _ORDINAL_LEN_RATIO_MAX = 3.0
             _ORDINAL_TEXT_THRESHOLD = 0.50
             if not oracle_id:
-                ord_key = f"{parent_path_key}:{kind}[{ordinal}]".lower()
+                ord_key = f"{parent_path_key}:{kind_name}[{ordinal}]".lower()
                 if ord_key in self.eid_map:
                     candidate_id = self.eid_map[ord_key]
                     if candidate_id not in seen_oracle_ids:
@@ -7358,15 +14322,44 @@ class UKReplayExecutor:
                             matched_cand = f"ordinal:{ord_key}"
 
             if oracle_id:
+                before_eid = _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
                 node.attrs["eId"] = oracle_id
                 seen_oracle_ids.add(oracle_id)
+                self.oracle_alignment_events.append(
+                    {
+                        "rule_id": "uk_oracle_eid_alignment_adapter",
+                        "phase": "oracle_alignment",
+                        "family": "oracle_alignment_adapter",
+                        "kind": str(node.kind),
+                        "label": node.label,
+                        "before_eid": before_eid,
+                        "after_eid": oracle_id,
+                        "match_method": str(matched_cand).split(":", 1)[0] if matched_cand else "oracle_preserved",
+                        "match_key": matched_cand,
+                    }
+                )
                 if matched_cand:
                     self._log(f"  Matched {node.kind} {node.label or ''} to {oracle_id} via {matched_cand}")
             else:
                 if uk_is_transparent_wrapper_kind(kind_name):
                     if "eId" in node.attrs:
+                        before_eid = _uk_eid_value(node.attrs.get("eId"))
                         del node.attrs["eId"]
+                        self.oracle_alignment_events.append(
+                            {
+                                "rule_id": "uk_oracle_eid_alignment_adapter",
+                                "phase": "oracle_alignment",
+                                "family": "oracle_alignment_adapter",
+                                "kind": str(node.kind),
+                                "label": node.label,
+                                "before_eid": before_eid,
+                                "after_eid": None,
+                                "match_method": "transparent_wrapper_cleared",
+                                "match_key": None,
+                            }
+                        )
                 elif parent_eid:
+                    before_eid = _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
                     local_label = clean_label
                     if (
                         raw_label
@@ -7389,7 +14382,21 @@ class UKReplayExecutor:
                                 part = f"paragraph-{local_label}"
                         else:
                             part = f"{kind_name}-{clean_label}"
-                    node.attrs["eId"] = f"{parent_eid}{'' if parent_eid.endswith('-') else '-'}{part}"
+                    fallback_eid = f"{parent_eid}{'' if parent_eid.endswith('-') else '-'}{part}"
+                    node.attrs["eId"] = fallback_eid
+                    self.oracle_alignment_events.append(
+                        {
+                            "rule_id": "uk_oracle_eid_alignment_adapter",
+                            "phase": "oracle_alignment",
+                            "family": "oracle_alignment_adapter",
+                            "kind": str(node.kind),
+                            "label": node.label,
+                            "before_eid": before_eid,
+                            "after_eid": fallback_eid,
+                            "match_method": "local_fallback",
+                            "match_key": None,
+                        }
+                    )
 
             kind_counts = {}
             new_context = context
@@ -7398,10 +14405,11 @@ class UKReplayExecutor:
             elif kind_name == "body":
                 new_context = "body"
 
-            actual_eid = node.attrs.get("eId", parent_eid)
+            actual_eid = _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id") or parent_eid)
             for child in node.children:
-                kind_counts[child.kind] = kind_counts.get(child.kind, 0) + 1
-                _ground_node(child, next_path_key, actual_eid, ordinal=kind_counts[child.kind], context=new_context)
+                child_kind = _uk_kind_value(child.kind)
+                kind_counts[child_kind] = kind_counts.get(child_kind, 0) + 1
+                _ground_node(child, next_path_key, actual_eid, ordinal=kind_counts[child_kind], context=new_context)
 
         grounded_count = 0
 
@@ -7417,8 +14425,9 @@ class UKReplayExecutor:
         if body_node:
             kind_counts = {}
             for node in body_node.children:
-                kind_counts[node.kind] = kind_counts.get(node.kind, 0) + 1
-                _ground_node(node, "body", None, ordinal=kind_counts[node.kind], context="body")
+                node_kind = _uk_kind_value(node.kind)
+                kind_counts[node_kind] = kind_counts.get(node_kind, 0) + 1
+                _ground_node(node, "body", None, ordinal=kind_counts[node_kind], context="body")
             _visit_count(body_node)
 
         for i, sch in enumerate(self.statute.supplements):
@@ -7622,17 +14631,104 @@ def _prepare_replay_uk_ops(
     *,
     verbose: bool = False,
     adjudications_out: Optional[list[CompileAdjudication]] = None,
-) -> list[LegalOperation]:
+) -> UKReplayPrepareResult:
     """Normalize replay ops so every entry point applies the same semantics."""
-    filtered_ops: list[LegalOperation] = []
+    overlapping_text_patch_op_ids: set[str] = set()
+    grouped_text_ops: dict[tuple[str, str, str, tuple[tuple[str, str], ...]], list[LegalOperation]] = {}
     for op in ops:
+        if _action_name(op.action) != "text_replace" or op.text_patch is None:
+            continue
+        match_text = op.text_patch.selector.match_text
+        if match_text.startswith(("TEXT_", "FROM_")):
+            continue
+        source = op.source
+        group_key = (
+            source.statute_id if source else "",
+            source.effective if source else "",
+            str(op.target.special or ""),
+            op.target.path,
+        )
+        grouped_text_ops.setdefault(group_key, []).append(op)
+
+    for group_ops in grouped_text_ops.values():
+        if len(group_ops) < 2:
+            continue
+        for op in group_ops:
+            if op.text_patch is None or op.text_patch.selector.occurrence == 0:
+                continue
+            match_text = op.text_patch.selector.match_text
+            if len(match_text.strip()) < 3:
+                continue
+            for other in group_ops:
+                if other is op or other.text_patch is None:
+                    continue
+                other_match = other.text_patch.selector.match_text
+                if other_match.startswith(("TEXT_", "FROM_")):
+                    continue
+                if len(other_match) <= len(match_text):
+                    continue
+                if match_text.strip() in other_match:
+                    overlapping_text_patch_op_ids.add(op.op_id)
+                    break
+
+    filtered_ops: list[LegalOperation] = []
+    rejected_adjudications: list[CompileAdjudication] = []
+    for op in ops:
+        if _is_unsafe_schedule_entry_repeal_op(op):
+            if verbose:
+                print("  replay_uk_ops: skipping unsafe schedule-entry repeal widened to schedule")
+            rejected_adjudications.append(_append_uk_replay_adjudication(
+                adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_ENTRY_REPEAL_GRANULARITY_BLOCKED_RULE_ID,
+                message=(
+                    "UK replay prepare step skipped a schedule-root repeal "
+                    "whose source text only claims entry-level repeal."
+                ),
+                op=op,
+                detail={
+                    "action": _action_name(op.action),
+                    "target": str(op.target),
+                    "reason": "schedule_entry_repeal_widened_to_schedule",
+                    "family": "source_schedule_list_entry_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            ))
+            continue
+        if op.op_id in overlapping_text_patch_op_ids:
+            if verbose:
+                print("  replay_uk_ops: skipping overlapping same-source ordinal text patch")
+            match_text = op.text_patch.selector.match_text if op.text_patch is not None else ""
+            occurrence = op.text_patch.selector.occurrence if op.text_patch is not None else 0
+            rejected_adjudications.append(_append_uk_replay_adjudication(
+                adjudications_out,
+                kind="uk_replay_same_source_text_patch_overlap_blocked",
+                message=(
+                    "UK replay prepare step skipped an ordinal text patch whose selector overlaps "
+                    "a broader same-source text patch on the same target."
+                ),
+                op=op,
+                detail={
+                    "action": _action_name(op.action),
+                    "target": str(op.target),
+                    "match_text": match_text,
+                    "occurrence": occurrence,
+                    "reason": "same_source_same_target_overlapping_text_patch",
+                    "family": "text_patch_overlap_resolution",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            ))
+            continue
         if str(op.target.special or "") == "whole_act":
             if _action_name(op.action) == "repeal":
                 filtered_ops.append(op)
                 continue
             if verbose:
                 print("  replay_uk_ops: skipping unsupported whole_act op")
-            _append_uk_replay_adjudication(
+            rejected_adjudications.append(_append_uk_replay_adjudication(
                 adjudications_out,
                 kind="uk_replay_unsupported_action",
                 message="UK replay prepare step skipped unsupported whole-act target before replay apply.",
@@ -7642,10 +14738,13 @@ def _prepare_replay_uk_ops(
                     "target": str(op.target),
                     "reason": "whole_act_prepare_filter",
                 },
-            )
+            ))
             continue
         filtered_ops.append(op)
-    return filtered_ops
+    return UKReplayPrepareResult(
+        accepted_ops=tuple(filtered_ops),
+        rejected_adjudications=tuple(rejected_adjudications),
+    )
 
 
 def replay_uk_ops(
@@ -7693,7 +14792,7 @@ def replay_uk_ops(
     """
     if verbose:
         print(f"  replay_uk_ops: applying {len(ops)} ops to {base.statute_id}")
-    _filtered_ops = _prepare_replay_uk_ops(
+    prepared_ops = _prepare_replay_uk_ops(
         ops,
         verbose=verbose,
         adjudications_out=adjudications_out,
@@ -7707,7 +14806,7 @@ def replay_uk_ops(
         lo_ops_out=lo_ops_out,
         adjudications_out=adjudications_out,
     )
-    for op in _filtered_ops:
+    for op in prepared_ops.accepted_ops:
         executor.apply_op(op)
 
     if adjudications_out is not None:
@@ -7770,8 +14869,15 @@ def fetch_affecting_act(act_id: str, out_path: Path, dry_run: bool = False) -> b
         with urlopen(req, timeout=30) as resp:
             data = resp.read()
         out_path.write_bytes(data)
-        meta = {"url": url, "bytes": len(data)}
-        out_path.with_suffix(".xml.meta.json").write_text(json.dumps(meta, indent=2) + "\n")
+        meta = {
+            "url": url,
+            "bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+        }
+        out_path.with_suffix(".xml.meta.json").write_text(
+            json.dumps(meta, indent=2) + "\n",
+            encoding="utf-8",
+        )
         return True
     except (HTTPError, URLError, OSError) as exc:
         print(f"  ERROR fetching {url}: {exc}")

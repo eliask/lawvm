@@ -24,6 +24,18 @@ Current practical rule:
 - executor fixes are preferred when a correct op mutates the wrong structural slot
 - compare/source classes are preferred when the replayed state is coherent but the oracle or extracted source is not
 
+UK source-only replay and UK manual-claim replay are separate regimes.
+
+The default UK replay intent is still source-text-only: compile executable
+operations from archived public source text, effect metadata, and deterministic
+frontend rules. A manual or LLM-assisted claim may be useful for hard rows, but
+it must enter through an explicit claim ledger and validator. It must not be
+folded into parser fallbacks or executor heuristics just to raise replay score.
+
+If a benchmark uses manual claims, the report must say so. Source-only scores
+remain the measure of what LawVM can prove from public machine-readable
+surfaces without additional editorial compilation.
+
 ## 2. Grounding Invariants
 
 `ground_ids()` is allowed to align replayed nodes to oracle EIDs.
@@ -49,6 +61,69 @@ Current UK-specific invariants:
 - deep roman descendant labels preserve roman suffixes in fallback IDs
   - `section-88-3c-b-ii` and `schedule-7a-paragraph-9-2-b-ii` are correct local fallback shapes
   - replay must not emit numeric fake tails like `...-1` / `...-2` where oracle uses `...-i` / `...-ii`
+- structural replacement preserves existing target identity from either source
+  `eId` or source `id`
+  - replacing a found node may not drop its identity because the base parser
+    carried the identifier as `id` instead of `eId`
+  - current witness: `asc/2021/1` / `wsi/2021/1349 reg. 42(3)(b)`, replacing
+    `Sch. 5 para. 9(c)`
+- exact replay target identity wins before fuzzy schedule traversal
+  - if a target address derives a concrete EID and that EID exists in the live
+    tree, replay must bind that node before trying schedule ordinal `p1group`
+    recovery
+  - ordinal wrapper recovery is only for absent exact identity; it may not steal
+    an explicit schedule paragraph/subparagraph/item target from another branch
+  - current witness: `asp/2001/10` / `asp/2014/14`, Schedule 3 paragraph 2(2)
+    and related text replacements
+- broad schedule/part text patches require a replay-visible text-bearing shape
+  - if a broad schedule or schedule part target has no table nodes and no
+    provision descendants carrying the preimage, replay should classify the row
+    as `uk_replay_broad_schedule_table_shape_gap` rather than a generic
+    text-match miss or explicit table-target gap
+  - schedule parts use the narrower
+    `uk_replay_broad_schedule_part_table_shape_gap`, because the missing
+    carrier is a table/provision shape under a known part rather than the whole
+    schedule root
+  - current witness family: Appropriation Act schedule amendments such as
+    `asp/2002/7` / `ssi/2003/157`
+- broad schedule/part structural replacements require source-owned descendant
+  coverage
+  - if the effect target is a whole schedule or schedule part but the extracted
+    payload is only flat `BlockAmendment` text, lowering must reject the row as
+    `uk_effect_broad_schedule_flat_payload_rejected` instead of replacing the
+    target root
+  - this is payload-smuggling prevention: a naked table row or amount entry does
+    not authorize deletion of unclaimed parts, tables, rows, or entries under
+    the schedule root
+  - strict mode blocks; quirks mode records and leaves the live target intact
+  - current witness: `asp/2000/2` / `ssi/2000/307 art. 2`, where a row-like
+    `BlockAmendment` payload was previously replayed as `replace schedule:2`
+- structural parsing preserves local lead text even when the provision has
+  child provisions
+  - a subsection with `(a)` / `(b)` children may still have operative lead text
+    before those children
+  - replay text patches must be able to target that lead text without flattening
+    or absorbing child provisions
+  - current witness: `asc/2021/1` / `asc/2024/5 Sch. 1 para. 15`, replacing
+    lead text in `s. 142(1)` and related provisions
+- a source-backed structural replacement payload that already matches the
+  explicit target leaf stays a structural replacement even if its own text
+  contains nested `for ... substitute ...` instructions
+  - nested amendment language inside the replacement payload is legal text to
+    preserve, not permission to reclassify the parent action as a text patch
+  - current witness: `asc/2023/3` / `wsi/2024/1061 reg. 8`, replacing
+    `Sch. 13 para. 117`
+- whole-schedule inserted payloads may synthesize descendant EIDs only at payload normalization time
+  - rule: `uk_whole_schedule_payload_descendant_eid_synthesis`
+  - this is allowed only when the effect target is an explicit single schedule address and the root schedule EID is derived from that target
+  - descendant IDs are derived from the target-owned root plus parsed source labels; oracle text/hash/fuzzy matching must not participate
+  - source-provided descendant EIDs are preserved
+  - if repeated local labels would create the same synthetic descendant EID
+    under the same schedule payload, synthesis must skip the repeated identity
+    and record `skipped_duplicate_count`; duplicate identity is not repaired by
+    suffixing or guessing a new legal address
+  - strict lowering can disable the synthesis and emits a blocking record rather than silently inventing descendant identity
+  - current witness: `asc/2021/1` / `wsi/2022/797 reg. 5`, inserting `Sch. 10A`
 - schedule paragraph flattening is narrow
   - flattening to bare suffixes is only for the established paragraph/item family
   - it must not strip `part-` or other structural prefixes
@@ -91,9 +166,56 @@ The main non-replay residue classes now include:
   - `legacy_labeled_oracle_shape`
   - `oracle_missing_live_branch`
   - `retained_repeal_oracle_branch`
+  - `text_patch_preimage_absent_from_target_surfaces`
   - `territorial_extension_oracle_gap`
 
 UK work should continue to add typed classes only when a deterministic archive-backed pattern repeats.
+
+Replay adjudication ownership:
+
+- every `uk_replay_*` adjudication emitted by the UK replay executor must belong
+  to an explicit classifier bucket in `source_adjudication.py`
+- direct executor failures that prove replay could not execute its typed
+  operation belong in `UK_REPLAY_BUG_ADJUDICATION_KINDS` and may promote a
+  replay-vs-oracle residual to `PROVED_REPLAY_BUG`
+- source/live shape gaps belong in `UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS`
+  and remain `UNRESOLVED` unless a later source witness proves the oracle or
+  replay side wrong
+- text-selector surface problems belong in
+  `UK_REPLAY_TEXT_SURFACE_ADJUDICATION_KINDS`; these explain why a text patch
+  could not be applied, but do not by themselves prove a LawVM replay bug
+- successful narrow recoveries and already-materialized no-op observations
+  belong in `UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS`; these are evidence
+  records only and must not promote a residual to a replay bug
+- shared replay lint observations such as `text_duplication_warning` are also
+  nonblocking UK replay observations when emitted by the UK executor. They may
+  reveal suspicious replay text, but their own detail already records
+  `blocking=false` / `strict_disposition=record`, so they must not sit in the
+  unknown bucket or promote a residual by themselves.
+- new replay adjudication kinds require both a classifier bucket and a
+  regression test so unsupported source lanes cannot disappear silently
+- replay adjudication bucket counts must be visible in the operator surfaces
+  used for triage: `uk-replay`, `uk-bench`, `uk-candidates`, and UK evidence
+  bundles/reviews. A no-replay/source-unavailable bundle should still carry an
+  explicit zero-count adjudication summary so the lane is not absent by
+  accident.
+- UK evidence bundles should also expose the residual claim decision that those
+  adjudications drive: selected tier/kind, residual side counts, comparison
+  class, and whether a replay-bug section claim was emitted. The adjudications
+  explain the inputs; the residual summary explains the proof promotion or
+  non-promotion.
+- Saved UK bench rows and `uk-candidates` rows/summaries must carry the same
+  residual claim decision. Candidate triage that starts from a saved bench run
+  must not infer "clean" from missing residual fields; legacy rows without this
+  lane are `UNRESOLVED/unknown_legacy_missing`.
+- UK benchmark history should aggregate residual claim tiers/kinds and emitted
+  section-claim counts alongside replay adjudication totals, so long-running
+  benchmark trends separate "replay adjudication observed" from "proved replay
+  bug claim emitted".
+- source-unavailable UK evidence bundles must expose an explicit
+  `not_run_source_unavailable` residual claim summary rather than omitting the
+  residual lane. Absence of enacted/oracle XML is acquisition evidence, not a
+  clean replay residual.
 
 Concrete compare invariant:
 
@@ -110,6 +232,177 @@ Current applied-row invariant:
   - after the explicit commencement no-op rule, the live `s. 63` row types `nonstructural_root_gap`
     with `Compiled ops: 0` and `candidate=no`
 
+### Manual Compilation Frontier
+
+Manual compilation is appropriate for UK only after deterministic extraction has
+made the blocker phase-local and visible. It should not be used as a generic
+escape hatch for parser gaps.
+
+#### Rows that should stay deterministic
+
+These should be handled by ordinary parser/lowering/executor work, not manual
+claims:
+
+  - source text contains explicit old text, new text, action verb, and target
+    surface
+- target facet is already represented by a canonical operation family
+- payload is structurally owned by the affected target
+- extent and effective-date metadata are already available or explicitly
+  nonblocking
+
+Examples:
+
+- `for "X" substitute "Y"`
+- `after paragraph (a) insert "Y"`
+- `for the opening words substitute "Y"`
+- `from "X" to the end substitute "Y"` when the span is uniquely bounded
+
+#### Rows that are good manual-compile candidates
+
+These can become manual work items because the public source likely contains
+enough evidence for a human or LLM to propose closed operations, but the current
+frontend cannot yet lower them safely:
+
+- heading/title/sidenote targets that are not explicit word substitutions,
+  omissions, or `at the end insert ...` appends. Explicit word-level heading
+  patches can lower to `section:.../heading`; append lowers as a typed
+  `TextPatchKindEnum.APPEND` patch. Other heading inserts still need a typed
+  placement/compiler lane rather than a whole-body or synthetic text
+  replacement.
+- cross-heading replacements lower only when the source gives an explicit
+  `heading before paragraph/section/article X substitute ...` shape. The
+  current owned lane is `uk_effect_crossheading_before_anchor_replacement_lowered`:
+  it targets `X/heading`, uses the named text rewrite rule
+  `uk_effect_crossheading_before_anchor_replacement_text_patch`, and replay may
+  mutate the crossheading parent only when `X` is the first structural child
+  under that parent. Other cross-heading replacements remain blocked by
+  `uk_effect_crossheading_replace_rejected`.
+- repeal schedules and table rows where the table columns identify enactment
+  and extent of repeal
+- definition insertions where the source context supplies the anchor and the
+  extracted payload alone is insufficient
+- `at the appropriate place` insertions, until a placement compiler can prove
+  the target anchor without guessing from live text
+- grouped title/heading substitutions such as `In the titles to sections 10
+  and 11, for "X" substitute "Y"`
+
+Deterministic substituted-series lowering:
+
+- source rows shaped as `substituted for <old sibling>` with affected metadata
+  expanding to `<old sibling>, <new sibling...>` may lower later source-owned
+  sibling payloads as inserts under
+  `uk_effect_substituted_series_new_sibling_insert_lowered`
+- this is not a generic action-family rewrite: the old target must be the first
+  expanded target, every inserted sibling must share the same parent and leaf
+  kind, and each inserted payload must carry the same label as its target
+- label-family checks must preserve alphabetic item labels (`d`, `e`, etc.)
+  rather than Roman-normalizing them
+- if the source payload does not uniquely identify the later sibling, the row
+  remains a blocked or manual frontier case rather than relabelling one payload
+  onto another target
+
+The work item should carry:
+
+- effect row metadata
+- affecting source XML fragment and nearby context
+- affected base target subtree
+- oracle target subtree where available
+- current lowering rejection and source-pathology records
+- candidate target addresses/facets
+
+`uk-effects --evidence-jsonl PATH` exports the selected effect rows as
+`lawvm.uk_manual_compile_frontier.v1` JSONL work items. This is an evidence
+surface, not a replay shortcut: each row must keep the stable workqueue
+`rule_id`, manual frontier status/rule/reason, source witness URLs/status,
+bounded source preview, source-pathology class, lowering rejection counts, and
+`strict_disposition=record`. Each row gets a deterministic `work_item_id`
+derived from the statute/effect/source-preview/manual-frontier identity so
+manual work can be deduplicated outside the original report. Rows explicitly
+declare `claim_kind=semantic_compile`,
+`claim_status=unresolved_work_item`, `validator_status=not_validated`, and a
+SHA-256 hash of the bounded source preview. Rows also carry an
+`affecting_source_witness` block with the affecting act/provision, source
+status, byte size, and SHA-256 hash when the affecting XML is available. The
+base/oracle `source_witness` block also preserves source SHA-256 hashes when
+the archived source bytes are present.
+The export must be paired with `--manual-compile-status` or
+`--manual-compile-rule`; otherwise deterministic or source-insufficient rows
+could be silently packaged as manual work.
+Rows also preserve full lowering/source-acquisition rejection records and a
+bounded target context (`affected_provisions`, resolver EIDs if known, and the
+compare shape) so a copied work item remains auditable without reopening the
+full effect report.
+
+The claim output should be typed, for example:
+
+```text
+claim kind: semantic_compile
+action: heading text_replace
+target: section:10/heading
+old: Public Standards Commissioner
+new: Commissioner for Ethical Standards in Public Life in Scotland
+source witness: ssi/2013/197 Sch. 2 para. 3
+```
+
+#### Rows that are not replayable without better source
+
+These should remain blocked or classified until acquisition/extraction improves:
+
+- missing extracted source payload where the public archive lane gives no
+  instruction text or payload
+- naked payload fragments such as a single body phrase with no action verb or
+  anchor
+- broad source fragments reused as payload where unrelated sibling content
+  cannot be separated
+- dot-leader or non-substantive shell payloads
+- effect rows whose legal state change is not a text/tree mutation, such as
+  transfer of functions or applied-with-modifications, unless LawVM adds a
+  separate non-textual legal-state model
+
+Manual claims may classify these as non-replayable from available public
+surfaces, but they should not invent closed operations.
+
+#### Validator obligations for UK claims
+
+A UK manual claim validator should check at least:
+
+- the cited source phrase exists in the archived affecting source or accepted
+  reconstructed source
+- the claimed action family matches the source verb/effect family
+- the target address and target facet exist or the claim records a typed target
+  gap
+- old text exists in the claimed target text/heading/table cell when replacing
+  or deleting
+- inserted structural payload does not smuggle sibling or carried context
+- table/repeal schedule claims identify the table row and column basis
+- extent, commencement, and applied/unapplied status are preserved
+- changed paths are limited to claimed target facets or declared migration /
+  editorial projection paths
+
+Accepted manual UK claims should emit operation provenance containing the claim
+id, validator version, and source witness locator. Rejected claims should emit
+typed `manual_compilation` observations, not disappear.
+
+#### Replay Prepare Filter Contract
+
+UK replay has a small pre-executor prepare phase for operations that should not
+reach ordinary tree apply. That phase is still a compiler filter, so it must
+preserve rejected operations as evidence.
+
+Current rule:
+
+- non-`repeal` `/whole_act` operations are not applied by the ordinary executor
+- the prepare result must include the accepted operations and a typed
+  `uk_replay_unsupported_action` adjudication for each rejected operation
+- public replay paths should still append those adjudications to
+  `adjudications_out` when a caller supplies one
+- direct prepare-level tests should assert both the accepted-op list and the
+  rejected adjudication payload so the filter cannot regress to accepted-only
+  output
+
+The strict disposition for this filter is `block`; quirks mode may continue
+only with the rejected operation recorded.
+
 Current schedule-reference invariant:
 
 - bare schedule references like `Sch 4 para. 2` must normalize exactly like `Sch. 4 para. 2`
@@ -122,6 +415,9 @@ Current text-span invariant:
 
 - `for the words from the beginning to "X" substitute "Y"` is a valid text-span
   replacement form and compiles to `TEXT_FROM__TO_X`
+  - UK source also has the doubled formula `from the words from the beginning
+    to "X" substitute "Y"`; this is the same bounded text-span family, not a
+    permission to rewrite the whole subsection.
   - current example: `ukpga/2002/21` `s. 63(13)`
   - once parsed, it applies as a subtree text replacement on `section:63/subsection:13`
     and removes the last replay-only `section-63-13-a/b` tail
@@ -135,6 +431,657 @@ Current tooling-consistency invariant:
   - current example: `ukpga/2002/21` `s. 28(1)`
   - without this, `uk-candidates --fast --residual-only` can resurrect fake residual
     frontier rows that the row-level inspector already classifies away
+- `uk-effect`, `uk-effects`, and `uk-candidates` expose machine-readable
+  frontier reports
+  - report rows are diagnostic/evidence surfaces, not replay semantics
+  - structural effects that lower to no replay operations must surface the same
+    blocking `uk_effect_lowering_no_ops_rejected` record in both pipeline and
+    inspection tooling, even when a more specific lowering rejection is also
+    present
+  - applicable nonstructural no-op rows also use the same no-op finalization
+    path in pipeline and inspection tooling; narrow replay-candidate families
+    such as `revoked` / `ceases to have effect` get
+    `uk_effect_nonstructural_lowering_no_ops_rejected`, while other applicable
+    non-commencement rows get
+    nonblocking `uk_effect_nonstructural_unsupported_no_ops_observed`
+  - `candidate: true` excludes rows with blocking lowering rejections; rejected
+    lowering lanes remain visible as evidence rather than being counted as clean
+    replay candidates
+  - `uk-candidates` carries lowering-rejection counts separately from source and
+    compare counts so blocked lowering lanes are not misread as generic
+    classification-heavy residue
+  - `uk-candidates` also partitions source/compare counts into candidate and
+    non-candidate lanes; aggregate `source_counts` / `compare_counts` remain
+    all-row inventory, not a claim that the residual-driving candidates have
+    those pathologies
+  - `uk-candidates` distinguishes saved bench `effect_count` from
+    archive-backed `inspected_effect_count` because saved frontier rows can be
+    stale relative to the local archive
+  - `uk-candidates` also carries saved bench `effect_feed_page_count` alongside
+    the legacy `effect_count` so frontier rows preserve the benchmark
+    feed-page-vs-effect-row distinction
+  - `uk-candidates` carries saved bench `effect_row_count` when present; core
+    frontier classification should prefer parsed effect rows over archived
+    feed-page counts because a malformed or empty feed page is source evidence,
+    not an actionable replay effect
+  - top-level `uk-candidates` summaries aggregate inspected effect counts,
+    candidate/residual candidate counts, source/compare classification counts,
+    lowering rejection counts, and residual-root category counts across emitted
+    rows so agents do not need to infer the frontier shape by scanning every
+    row first
+  - top-level `uk-candidates` summaries must also expose saved benchmark
+    `comparison_class` and core/non-core counts. Candidate triage is filtered
+    through the core frontier, but summary-only reports should still prove which
+    comparison classes survived that filter.
+  - top-level `uk-candidates` summaries distinguish
+    `matched_frontier_count` from `inspected_frontier_count`; `--top` is a
+    diagnostic budget, and `frontier_truncated` must make that budget visible
+  - each JSON row also carries the `score_mode` that produced its
+    `frontier_score`, so row-level exports remain interpretable when copied out
+    of the top-level report context
+  - `uk-candidates --json --summary-only` emits only that aggregate surface,
+    which is useful for batch dashboards and agent triage loops that do not need
+    every per-statute row
+  - text `uk-candidates` output must print a compact aggregate summary sourced
+    from the same summary fields as JSON, so interactive runs do not require
+    manual row-scanning to see truncation, budget skips, candidate counts, and
+    residual-root totals
+  - text `uk-candidates` summaries must also print feed-parse,
+    source-acquisition, lowering, and blocking-lowering rejection rule counts
+    when present; row totals alone hide which source/replay family remains
+    actionable
+  - text `uk-candidates` budget summaries must distinguish rows with rejection
+    evidence from total rejection records for feed-parse, residual-compile, and
+    saved benchmark authority lanes; copied triage output must not require JSON
+    reopening to see whether one row carries many source/replay failures
+  - archive-backed `uk-candidates` rows and summaries must expose effect-feed
+    parse/acquisition rejection counts separately from effect lowering/source
+    classification counts; malformed feed pages are source-lane evidence, not
+    absence of replay candidates
+  - nonblocking effect-feed parse/acquisition rows are observations, not
+    rejections. `uk-candidates` must preserve total feed observations and rule
+    counts separately from blocking feed-parse rejection counts/rules.
+  - archive-backed `uk-candidates` rows and summaries must also expose source
+    acquisition rejection counts, such as missing affecting-act XML, separately
+    from source-pathology classifications; derived classifications are not a
+    substitute for the acquisition fact
+  - saved-run `uk-candidates --fast` rows must preserve benchmark-level effect
+    source-pathology counts and benchmark-level source-acquisition rejection
+    counts/rules too. Fast mode is a prefilter; it must not imply the saved
+    bench run had no missing affecting-act XML merely because effect inspection
+    was skipped.
+  - archive-backed `uk-candidates` rows expose a bounded
+    `residual_candidate_samples` list for candidate effects that overlap
+    replay/oracle residual roots; samples identify the source effect row and
+    resolver/root overlap, but do not affect candidate counts or replay
+    semantics
+  - `uk-candidates --summary-only` is rejected without `--json` so the flag
+    cannot silently degrade into ordinary text output
+  - `uk-candidates --fast` prefilter rows must still preserve saved bench
+    source status, byte size, source URLs, and replay regime. Fast mode skips
+    effect inspection; it is not permission to drop benchmark provenance.
+  - `uk-candidates --fast` prefilter rows must also preserve saved benchmark
+    effect-feed, authority-filter, and lowering rejection counts/rules. The
+    archive-backed inspector may refine those lanes later, but fast mode should
+    not rewrite saved-run evidence to zero.
+  - `uk-candidates --fast` prefilter rows must preserve saved benchmark
+    source-parse observation/rejection counts/rules as well. A malformed
+    available source XML blocker is benchmark provenance even when candidate
+    analysis is intentionally skipped.
+  - text `uk-candidates --fast` rows must print saved benchmark feed-parse,
+    feed-observation, source-parse, authority-filter, lowering, and
+    blocking-lowering rejection/observation rules when present; `(skipped
+    --fast)` means no archive inspection, not no saved evidence.
+  - text `uk-candidates` rows must label saved parsed effect-row counts
+    separately from feed-page counts. The legacy saved `n_effects` field is a
+    compatibility surface and must not be printed as if it were parsed replay
+    effect inventory.
+  - `uk-candidates --json --summary-only` must also aggregate saved benchmark
+    effect inventory (`saved_legacy_effect_count`, `saved_effect_row_count`,
+    `saved_effect_feed_page_count`) because row omission otherwise hides
+    whether a fast frontier summary saw parsed effect rows or only feed pages.
+  - `uk-bench --show` should keep aggregate count lines and aggregate score
+    lines distinct; repeated labels such as two separate `Core benchmark rows`
+    lines make copied benchmark reports harder to parse.
+  - `uk-effects` text summaries should expose the same aggregate source
+    pathology, compare-shape, resolver-hit, and lowering-row evidence as JSON
+    summaries. Otherwise copied text summaries hide whether a candidate set is
+    replay-ready, source-blocked, or merely unclassified.
+- `uk-replay` text output should keep source URL labels mechanically
+  copyable and consistent (`Enacted URL: ...`, `Oracle URL: ...`).
+- `uk-effect` JSON source surfaces follow the same provenance contract as
+  `uk-effects`: enacted/oracle source status, byte size, parse-failure flags,
+  URLs, and SHA-256 hashes must travel together when archive bytes are present.
+  - residual roots are split into replay-only and oracle-only root lists so a
+    backed oracle-only omission is not confused with a replay-only surplus
+  - malformed residual roots that preserve publisher residue, for example
+    `section-1.`, are deferred under a named triage rule instead of being
+    counted as normal defeated branches
+  - `uk-effect` and `uk-effects` summary/JSON surfaces expose lowering
+    diagnostics first as `lowering_observations`, with `lowering_rejection_*`
+    retained as a compatibility alias for the same full diagnostic set.
+    Blocking-lowering fields are the strict replay-blocking subset.
+  - `uk-effects` summary separates all lowering observation counts from
+    blocking lowering rejection counts
+  - text `uk-effects` summaries must print blocking lowering rejection rules as
+    their own block, matching the JSON distinction; otherwise a blocking
+    lowering lane can be mistaken for ordinary unsupported residue
+  - text `uk-effects` summaries must print the number of rows with blocking
+    lowering rejections, not only the blocking rule histogram
+  - text `uk-effects` summaries must also expose truncation, and text rows must
+    expose the same replay applicability lanes as JSON (`requires_applied`,
+    `metadata_only`, `replay_applicable`, and `structural_for_replay`)
+  - `uk-effects` also separates matched effects before `--limit` from emitted
+    rows after `--limit`; row-level classification counts remain scoped to the
+    emitted rows
+  - `uk-effects` JSON summaries expose `diagnostic_count_scope=emitted_rows`,
+    and truncated text summaries print that scope, so a limited diagnostic
+    sample is not mistaken for all matched effect coverage
+  - `uk-effects --limit 0 --json --summary-only` is a valid empty diagnostic
+    budget: matched counts survive, emitted rows and row-scoped classification
+    lanes are zero, and `truncated` is true when matches existed
+  - ordinary `uk-effects --limit` listings may pre-limit before expensive
+    effect summarization, but `--candidate-only` / `--non-candidate-only` must
+    classify the full matched set before applying `--limit`
+  - `uk-candidates --fast --residual-only` must preserve rows skipped by
+    `--residual-budget`, even when no candidate effects were found. A diagnostic
+    budget skip is evidence about incomplete residual analysis, not proof that
+    the row has no residual frontier.
+  - `uk-candidates` residual compile reports follow the same split as replay:
+    `residual_compile_observation_*` carries all residual feed/lowering/authority
+    rows, while `residual_compile_rejection_*` is blocking-only. Rows without an
+    explicit `blocking` key remain blocking for legacy safety.
+  - diagnostic row/corpus limits must reject negative values rather than
+    treating Python negative slicing as a hidden evidence filter
+  - `uk-candidates --top` is a diagnostic row budget and must also reject
+    negative values before loading a saved run; `--top 0` is the explicit empty
+    frontier
+  - diagnostic tools that limit emitted rows must preserve pre-limit match
+    counts and expose truncation instead of relabeling emitted rows as matches
+  - `uk-eids` JSON and text output must carry side-level source URLs, source
+    SHA-256 identity, and the archive path so base/oracle missing-lane
+    diagnosis is self-contained and reproducible
+  - `uk-eids` source surfaces must distinguish absent archive entries from
+    suspiciously small cached blobs. Both remain `missing=true` for
+    compatibility, but `source_status` / `source_size` are the evidence fields
+    used for acquisition diagnosis.
+  - `uk-eids` must also classify available-but-unparseable source XML with the
+    same `uk_enacted_xml_parse_rejected` / `uk_oracle_xml_parse_rejected`
+    source-pathology records used by replay/evidence/bench. It may keep
+    `missing=true` because no EID rows can be emitted, but parse failure must
+    be typed evidence in JSON and text output.
+  - `uk-eids` source-parse evidence follows the shared UK observation/rejection
+    split: `source_parse_observation_*` carries all parse records, while
+    `source_parse_rejection_*` is blocking-only under the shared compile-record
+    classifier. A `strict_disposition=record` source-parse row is visible
+    evidence, not a source-unavailable failure.
+  - `uk-replay --json` must carry the enacted/oracle source URLs and normalized
+    EID comparison counts/samples (`replay_compare_eid_count`,
+    `oracle_compare_eid_count`, `only_in_*`) so benchmark triage does not depend
+    on scraping human text output
+  - `uk-replay --json` source payloads must also include SHA-256 hashes for
+    archived enacted/oracle XML bytes when the archive entry exists, even if the
+    blob is too small or later parse-rejected. Absent archive entries carry no
+    hash.
+  - `uk-replay --enacted-only --json` still loads the archive effect feed for
+    effect counts, so it must thread effect-feed parse/acquisition rejections
+    into the JSON compile-rejection lane rather than treating baseline mode as
+    evidence-free
+  - `uk-replay --json` must emit a machine-readable source payload before
+    failing on missing or too-small enacted XML. The command may still exit
+    nonzero, but source status, source URLs, archive path, replay regime, and
+    oracle source status must not be stderr-only evidence.
+  - `uk-replay --fetch-missing --json` must include the
+    `UKPrefetchReport.to_dict()` payload under `uk_prefetch_report`. Prefetch
+    acquisition failures are source-lane evidence and must not remain stderr-only
+    when replay continues.
+  - UK affecting-act prefetch also depends on the effect feed before it can know
+    which affecting acts are missing; feed parse/acquisition rejections must be
+    threaded into `UKPrefetchReport.events` and blocking feed failures must
+    contribute to `error_count` instead of being reported as simply no
+    structural effects
+  - `UKPrefetchReport.to_dict()` must expose event counts and rule counts for
+    all acquisition events and blocking acquisition events. Legacy feed rows
+    without an explicit `blocking` key count as blocking; explicit
+    `blocking=false` remains a nonblocking observation.
+  - UK affecting-act prefetch success is also source-lane evidence. Cached and
+    newly fetched affecting-act XML must emit nonblocking source-witness events
+    with locator, byte length, and SHA-256, so successful acquisition is no less
+    auditable than permanent-missing or network-failure paths.
+  - UK affecting-act prefetch can also fetch the enacted affecting-source lane
+    with `--include-enacted-affecting`. This stores
+    `/{affecting_act_id}/enacted/data.xml` for cached or newly fetched current
+    affecting acts so source-lane selection rules such as
+    `uk_affecting_act_current_shell_enacted_source_selected` are reproducible
+    from ordinary prefetch workflows, not only from a full corpus acquisition.
+  - UK affecting-act prefetch must use the same source-state availability
+    classifier as replay/effect/bench surfaces. The too-small threshold belongs
+    in `source_state`, not a local prefetch byte-count heuristic.
+  - UK affecting-act prefetch dry-runs are also acquisition evidence. Missing
+    affecting-act XML that would be fetched must emit nonblocking
+    `uk_prefetch_affecting_act_would_fetch` source-witness events with statute
+    id, affecting act id, URL, and locator; dry-run summaries without row
+    events are not sufficient source evidence.
+  - Batch and CLI prefetch text output must print acquisition event rule counts
+    and blocking event rule counts when present. Event JSON/JSONL is not enough
+    for interactive source-acquisition triage.
+  - If an effect compiles to operations but the replay applicability regime
+    excludes that effect before replay apply, the compile diagnostics must emit
+    `uk_effect_replay_applicability_filter_rejected` with effect id, compiled op
+    ids/actions, structural/replay-applicable flags, and strict/quirks
+    disposition. Compiled-then-filtered operations are rejected source/effect
+    lanes, not invisible absence.
+  - PIT-date effect selection must also be visible. Effects whose selected
+    effective date is later than the requested point-in-time date must emit
+    nonblocking `uk_effect_pit_date_filter_rejected` diagnostics with effect id,
+    effective date, PIT date, target/source provision strings, and
+    strict/quirks disposition. Future effects are expected to be excluded, but
+    they are still source lanes that must not disappear silently.
+  - Source-pathology filters that block already-compiled operations must run
+    before manual-frontier classification for that row. In particular,
+    `instruction_text_reused_as_payload` plus a blocking
+    `uk_effect_instruction_text_payload_rejected` row is source-insufficient
+    evidence, not a deterministic supported/manual-claim candidate.
+  - `uk-effect`/`uk-effects` source-pathology summaries must use the same
+    replay-regime-aware structural flag as compile/replay
+    (`is_structural_for_replay(applicability_mode=...)`), not the raw feed
+    `is_structural` property. Tooling summaries must not disagree with replay
+    when an alternate applicability mode admits or excludes an effect row.
+  - UK candidate effect inspection must not be an accepted-only filter. Rows
+    excluded before effect summarization because of metadata-only policy, replay
+    applicability, or effect-budget truncation must be available as
+    `effect_selection_observations` on candidate rows with stable rule ids.
+    These observations do not change candidate counts or residual row inclusion;
+    they explain why an effect was not inspected.
+  - `uk-candidates` text summaries must also aggregate and print
+    effect-selection observation/rejection rule counts. JSON-only visibility is
+    not enough for copied triage summaries.
+  - UK bootstrap `.meta.json` files written for manifest artifacts and effect
+    feed pages must include `sha256` beside requested URL, final URL, and byte
+    length. Fetch metadata is a source witness, not just a download log.
+  - `uk-bench --compare` must print the primary score mode used for each saved
+    run (`raw`, `commencement`, or `mixed`) and the number of statutes present
+    only on each side, because saved CSVs may use commencement score as the
+    primary `score` column while retaining raw EID score as `raw_score`
+  - UK bench commencement scoring is available only when the commencement lane
+    produces at least one commenced EID for the statute. An empty commenced
+    set is "not computed", not a zero-score primary headline; otherwise small
+    samples with no commencement evidence hide the raw replay/oracle signal.
+  - `uk-bench --compare` must also summarize saved enacted/oracle and
+    replay/oracle text-score fields over common statutes when present. EID
+    agreement and text agreement are different evidence lanes.
+  - `uk-bench --compare` top regression/improvement rows must include compact
+    row evidence: status, comparison class, source statuses, replay regime,
+    ops, rejection counts, and replay adjudication count. Score deltas copied
+    without evidence context are not actionable triage records.
+  - That compact row evidence must include replay-time effect source-pathology
+    counts, not just blocking source-acquisition counts. A copied top-row line
+    should distinguish missing extracted source, nonstructural root gaps, and
+    clean/no-pathology rows without reopening the CSV.
+  - `uk-bench --show` top replay regression/improvement rows must include the
+    same compact row evidence. Immediate run output is also a copied triage
+    surface, not just a score summary.
+  - compact `uk-bench` row evidence must include source byte sizes and URLs in
+    addition to source statuses. `available` vs `too_small` vs missing source
+    diagnosis should not require reopening the saved CSV.
+  - compact `uk-bench` row evidence must include observation counts as well as
+    rejection counts for source-parse and effect-feed lanes. Observation-only
+    source evidence should remain visible in top regression/improvement rows.
+  - `_score_statute` broad row-level failures must emit
+    `uk_bench_unclassified_exception` benchmark-execution observations when the
+    exception was not already classified by a narrower source-parse lane. Batch
+    isolation is allowed; untyped `ERR` rows are not.
+  - Replay errors inside `_score_statute` must not erase phase-local diagnostics
+    already emitted by UK compile. If compile/replay fails after appending
+    authority observations, lowering rejections, effect source-pathology rows,
+    manual-frontier rows, or affecting-act source-acquisition rows, the returned
+    benchmark row must still aggregate those counts/rules alongside
+    `replay_error`. Failure to materialize replay state is not permission to
+    discard earlier source/effect evidence.
+  - saved UK bench CSVs, history output, and run comparisons must persist
+    `uk_bench_unclassified_exception` counts, rule IDs, and row observations.
+    A typed batch-isolation failure is still evidence; it must survive save/load
+    rather than being visible only in the immediate run.
+  - `uk-candidates` must also preserve saved `uk_bench_unclassified_exception`
+    counts, rule IDs, and observation rows in JSON rows, aggregate summaries,
+    and text rule blocks. Candidate triage often starts from saved bench rows;
+    a benchmark-execution failure must not disappear just because effect
+    inspection is skipped.
+  - `uk-candidates` saved-run rows must preserve rehydrated
+    `<label>.diagnostics.jsonl` records as `saved_bench_diagnostics`, with
+    aggregate rule and lane counts in row JSON and report summaries. Fast
+    prefilter mode may skip archive inspection, but it must not discard the
+    saved benchmark sidecar evidence. Fast text rows must also print the saved
+    diagnostic rule and lane counts; copy-paste triage should not require JSON
+    just to see which phase-local sidecar records were preserved.
+  - saved UK bench runs may write a bounded `<label>.score_witnesses.csv`
+    sidecar. The main CSV remains the compatibility score table; the sidecar
+    preserves deterministic sampled EID mismatches by score scope (`raw`,
+    `replay`, `commencement`, `replay_commencement`) with source status, source
+    URLs, replay regime, category totals, sample limits, truncation flags,
+    side labels, schema, and the explicit score formula. Do not put legal text
+    excerpts in this sidecar.
+  - saved UK bench runs may also write a `<label>.diagnostics.jsonl` sidecar for
+    row-level diagnostic records that are too structured for the compatibility
+    CSV. The sidecar uses `uk_bench_diagnostic.v1` rows keyed by label, statute
+    id, diagnostic lane, row index, rule id, blocking flag, and the original
+    typed diagnostic record. At minimum it preserves source-parse observations,
+    effect-feed parse/acquisition observations, source-acquisition diagnostics,
+    effect-source-pathology diagnostics, manual-compile-frontier diagnostics,
+    fallback effect diagnostics, authority observations/rejections, lowering
+    rejections, replay adjudications, and benchmark-execution observations when
+    those records are available on `_BenchResult`. `_load_run()` must read this
+    sidecar back into `_BenchResult`; a saved run that rehydrates only CSV
+    counts but drops row-level records has not preserved the evidence.
+  - `uk-bench --show`, `uk-bench --compare`, and save output should make this
+    sidecar discoverable by printing its path and row count when relevant. A
+    hidden sidecar is not useful interactive audit evidence.
+  - saved UK bench CSVs must persist replay and commencement error lanes
+    (`replay_error`, `commencement_error`) even when every replay/commencement
+    attempt fails; stderr-only errors are not sufficient evidence
+  - saved UK bench CSVs must persist parsed effect-row counts and effect-feed
+    parse/acquisition observation counts alongside the legacy feed-page
+    `n_effects` column; benchmark triage classifications use parsed effect rows,
+    while feed-page counts remain a compatibility/source-inventory surface
+  - saved UK bench and candidate reports must preserve `effect_feed_count_error`
+    as human-readable source-acquisition evidence. Rule counts identify the
+    family; the error string explains the failing witness lane when copied into
+    triage.
+  - Commencement scoring reloads the effect feed under a different downstream
+    use, but feed parse/acquisition observations emitted before a commencement
+    failure remain effect-feed evidence. If commencement loading fails after
+    appending parse observations, `_score_statute` must merge those observations
+    into the saved effect-feed observation/rejection counters alongside the
+    `commencement_error` lane.
+  - saved UK bench CSVs, history rows, show output, and run comparisons must
+    preserve nonblocking effect-feed observation rule counts separately from
+    blocking feed-parse rejection rules. Observation totals without rule IDs are
+    insufficient source-lane evidence.
+  - saved UK bench CSVs, history rows, show output, and run comparisons must
+    also preserve available-but-unparseable enacted/oracle source XML as a
+    `source_parse` evidence lane. The row may remain `ERR` for CSV compatibility,
+    but it must carry `uk_enacted_xml_parse_rejected` /
+    `uk_oracle_xml_parse_rejected` observation and blocking-rejection counts so
+    malformed cached source is not confused with a programming exception or with
+    absent/too-small acquisition.
+  - `uk-bench --show` must print source-parse observation totals/rules as well
+    as blocking source-parse rejection totals/rules. Some source-parse evidence
+    may be nonblocking in future; observation lanes must not be inferred from
+    rejection lanes.
+  - saved UK bench CSVs, history rows, show output, and run comparisons must
+    also preserve replay-time effect source-pathology classifications and
+    blocking source-acquisition rejections such as missing affecting-act XML.
+    `missing_extracted_source` is a derived pathology; it must not erase the
+    separate `uk_affecting_act_xml_missing_rejected` acquisition fact.
+  - `uk-bench --show` must print effect-feed observation/rejection totals across
+    all rows before the no-OK early return. Source-unavailable and error rows
+    can still carry feed evidence.
+  - `uk-bench --show` must print authority, lowering, blocking-lowering, and
+    replay-adjudication evidence across all rows before the no-OK early return.
+    Replay evidence on `ERR` rows must not depend on having replay-scored OK
+    rows in the same run.
+  - UK bench history must aggregate replay regime counts across all rows, not
+    only OK rows. A source-failed or error-only run still has configuration
+    evidence.
+  - `uk-candidates` replay-regime summaries must include every saved bench
+    replay axis, including `metadata_only_effects`. Candidate triage must not
+    collapse source-backed and metadata-only effect-selection regimes into the
+    same summary key.
+  - `uk-candidates` residual analysis must also execute under every saved bench
+    replay axis. A row saved with `metadata_only_effects=0` must filter
+    metadata-only effect rows and pass `allow_metadata_only_effects=False` when
+    recompiling residual operations.
+  - `source_first_candidate` and `source_semantics_clean` require
+    `metadata_only_effects=0`. A run with metadata backfill disabled,
+    oracle alignment disabled, and `authority_mode=source_text_only` is still
+    not source-first if metadata-only effect rows are admitted into replay
+    selection.
+  - `uk-bench` effect-feed parse/acquisition rows without an explicit
+    `blocking` key are legacy blocking rejections. Only explicit
+    `blocking=false` feed rows are nonblocking observations.
+  - saved UK bench history rows must also preserve authority rejection rules,
+    lowering rejection rules, blocking-lowering rejection rules, and replay
+    adjudication kinds. `uk-bench --history` should render those lanes in a
+    compact human-readable form while retaining legacy history compatibility.
+  - saved UK bench history rows must preserve row-status and enacted/oracle
+    source-status histograms across all rows, not only OK/core score rows.
+    `n_total` without these distributions hides whether a run was replay-poor
+    or source-acquisition poor.
+  - UK bench history must still append a row when there are zero OK statutes.
+    All-source-failed runs are benchmark evidence; they should carry blank
+    score averages, `score_mode=none`, and source/row-status histograms.
+  - when appending current-schema history rows to an existing legacy history
+    file, `uk-bench` writes one current header segment and then appends current
+    rows under that segment. Repeating the current header for every save hides
+    whether rows belong to one benchmark era or many.
+  - UK replay benchmark scoring may run the post-replay oracle EID alignment
+    adapter. That adapter must expose `uk_oracle_eid_alignment_adapter` counts
+    for changed EIDs, oracle-assigned EIDs, and local fallback EIDs so replay
+    scores are not mistaken for source-pure EID output
+  - UK bench saved-run reports and run comparisons must surface the oracle
+    alignment adapter's before/after node counts, not only changed-EID method
+    counts. A label adapter that changes identity but preserves tree
+    cardinality is a different diagnostic fact from one that masks a node-count
+    mismatch.
+  - oracle EID alignment reports should also carry match-method provenance
+    (`hash`, `fuzzy`, `flat`, `ordinal`, `local_fallback`, and
+    `transparent_wrapper_cleared` where available); count-only reporting is not
+    enough to distinguish source-pure matches from oracle-assisted scoring
+- `uk-bench --show` / saved-run reporting must print persisted source-status,
+  row-status, comparison-class, core-benchmark, replay-regime, effect-feed
+  rejection, lowering rejection, oracle-alignment, and replay/commencement error
+  lanes for otherwise-OK rows. These are diagnostic lanes and should not be
+  hidden behind the top-level statute parse/acquisition `Errors` block or lost
+  during CSV save/load.
+- Effect-feed count failures in `uk-bench` must persist both the
+  `uk_effect_feed_count_error` rule counts and the exception summary. A saved
+  row that only records a synthetic count cannot explain whether the blocker was
+  parse, acquisition, or a programming exception.
+- UK bench history diagnostic rule aggregates must include non-OK rows, not only
+  rows with scored oracle EIDs. A failed replay/acquisition row may still carry
+  effect-feed, lowering, authority, or replay-adjudication evidence that belongs
+  in the run-level ledger.
+- `uk-bench --show` worst core/non-core row blocks must include row-level
+  source status, byte size, and source URLs. These rows are commonly copied into
+  follow-up triage, so aggregate source counts are not enough evidence.
+- `uk-bench --show` replay-error and commencement-error blocks must also include
+  row-level source status, byte size, and source URLs. Runtime failures against
+  missing/suspicious source are a different diagnosis from failures against
+  available source.
+- UK bench text reports must list `NO_ENACTED` / `NO_ORACLE` rows with
+  enacted/oracle source status and byte size. Source-acquisition failures are
+  benchmark evidence, not just rows removed from the OK score denominator. When
+  source URLs are present, those row-level diagnostics must print them too.
+- UK bench text reports must also list `ERR` rows before the no-OK early return,
+  with enacted/oracle source status and byte size. A parser/replay exception
+  with cached source present is a different diagnosis from a source-acquisition
+  failure. When source URLs are present, those row-level diagnostics must print
+  them too.
+- UK bench parse exceptions against source that already passed availability
+  classification must emit source-pathology observations/rejections before
+  falling into the row-level `ERR` lane. The exception summary remains useful,
+  but the stable rule ID is the evidence used by history, show, compare, and
+  downstream triage.
+- Saved UK bench rows must persist enacted/oracle source URLs, not only source
+  status and byte size. Downstream `uk-candidates` rows should be copyable as
+  source-identifying evidence without re-deriving URLs from statute IDs.
+- Saved UK bench rows and score-witness sidecars must also persist
+  enacted/oracle source SHA-256 hashes when archive entries exist. Status, byte
+  size, URL, and hash are the minimum source-identity tuple for later audit.
+- Human-readable UK bench row evidence, source-unavailable rows, and error rows
+  must print those source hashes when present. Text reports are copied into
+  triage notes, so source identity cannot be JSON/CSV-only.
+- UK bench corpus CSVs must also persist the exact enacted/current archive
+  locators from corpus indexing. Reconstructing canonical URLs during corpus
+  load can erase the actual fetched source lane before the benchmark row is
+  even produced.
+- UK bench corpus CSVs must likewise persist enacted/oracle source SHA-256
+  hashes so a corpus manifest identifies the exact archive bytes used to seed
+  later benchmark rows.
+- saved UK bench CSVs must distinguish `n_effect_feed_pages` from the legacy
+  compatibility field `n_effects`; until parsed effect-row counts are added
+    to the corpus index, both values may be equal, but reports must label the
+    count as effect-feed pages rather than parsed replay effects
+  - CLI integration tests should pin helper-level diagnostic-budget contracts
+    where ordering matters, especially `uk-effects --candidate-only --limit N`,
+    `uk-effects --limit 0 --json --summary-only`, `uk-candidates --top 0`, and
+    `uk-eids --limit 0 --json`
+  - `uk-candidates --fast --residual-only` requires an archive DB because the
+    residual-only claim needs archive-backed replay/oracle residual analysis
+  - `uk-candidates --effect-budget N` is an explicit diagnostic budget for
+    archive-backed triage over replay-applicable effects, including
+    metadata-only rows that replay can consume; rows and summaries must
+    expose `effect_inspection_truncated` / `rows_with_effect_inspection_truncated`
+    so partial inspections are not mistaken for complete evidence
+  - `uk-candidates` keeps `available_applied_effect_count` for compatibility,
+    but budget truncation is governed by `available_replay_applicable_effect_count`
+    because feed-applied status is narrower than replay applicability
+  - `uk-effect` and `uk-effects` rows expose `metadata_only`,
+    `replay_applicable`, and `structural_for_replay` so single-row/list
+    inspection uses the same applicability lane as replay and candidate triage
+  - `uk-effect --json` missing-effect failures must emit a typed JSON error
+    bundle before exiting non-zero, including loaded effect count and feed
+    parse/acquisition observation and blocking-rejection lanes. Missing effect
+    IDs are diagnostics, not stderr-only failures.
+  - `uk-effect` and `uk-effects` must treat available-but-unparseable enacted
+    or oracle XML as source-lane parse rejections, not command-level crashes.
+    The shared rule IDs are `uk_enacted_xml_parse_rejected` and
+    `uk_oracle_xml_parse_rejected`; rows carry source URL, side, exception
+    type/message, `blocking=true`, `strict_disposition=block`, and
+    `quirks_disposition=record`.
+  - `uk-replay` and UK evidence bundles use the same source-parse lane. A
+    malformed enacted source blocks replay/evidence with a typed bundle; a
+    malformed oracle source degrades replay to no-oracle comparison evidence
+    with `oracle_xml_parse_rejected` as the oracle-alignment unavailable reason.
+  - `uk-effects` JSON summaries expose source-surface provenance (`archive_path`,
+    enacted/oracle URLs, and missing booleans) before compare-shape conclusions,
+    because missing enacted/oracle lanes are source facts rather than replay
+    outcomes
+  - `uk-effects` text summaries must print the archive path and enacted/oracle
+    source URLs alongside source status/size, so copied human triage preserves
+    the same source surface as JSON.
+  - `uk-effects` source summaries use the same `source_status` vocabulary as
+    `uk-eids`: absent, too-small, or available. A too-small cached XML witness
+    is not the same source state as an unfetched archive entry.
+  - `uk-effects` JSON and text summaries expose archive-backed effect-feed
+    parse/acquisition rejections separately from lowered effect rows; malformed
+    feeds and indexed-but-missing payloads are source-lane evidence, not empty
+    effect sets
+  - `uk-effects` must split nonblocking effect-feed observations from blocking
+    effect-feed parse/acquisition rejections. A feed observation such as an
+    absent optional page is still source evidence, but it must not be reported
+    as a replay-blocking rejection.
+  - `uk-effects` text summaries must also print source-acquisition rejection
+    rule counts from inspected rows, such as missing affecting-act XML. JSON-only
+    visibility is not enough for interactive source-lane triage.
+  - `uk-effects` text rows must also print per-row source-acquisition rejection
+    rule counts. Aggregate summaries prove the family exists, but copied
+    individual rows need to preserve which acquisition fact blocked that effect.
+  - `uk-effects` text rows must split blocking lowering rejection rule counts
+    from total lowering rejection rule counts. Row snippets copied from a
+    listing must preserve the candidate-blocking fact without requiring JSON.
+  - `uk-effect` single-row inspection must thread the same archive-backed
+    effect-feed parse/acquisition rejection lane into JSON and text output so a
+    chosen effect is not inspected against an invisible partial feed load
+  - `uk-effect` single-row inspection must also split nonblocking feed
+    observations from blocking feed rejections, matching `uk-effects` and
+    `uk-candidates`
+  - `uk-effect` text output must split blocking lowering rejection counts from
+    ordinary lowering rejection counts, matching JSON and the multi-row
+    `uk-effects` summary. Blocking no-op lanes decide replay-candidate status;
+    hiding them inside total lowering counts makes row triage ambiguous.
+  - `uk-effect` single-row inspection must also expose the archive path and
+    enacted/oracle source URLs because its compare/source classifications depend
+    on those surfaces, not only on the extracted affecting-act fragment
+  - `uk-effect` source summaries use the same absent / too-small / available
+    source-status vocabulary as `uk-eids` and `uk-effects`, and too-small XML
+    blobs must not be parsed as valid enacted/oracle witnesses.
+  - missing affecting-act XML must be emitted as
+    `uk_affecting_act_xml_missing_rejected` in single-effect and list-effect
+    source acquisition lanes; `missing_extracted_source` is a derived source
+    pathology, not a substitute for the acquisition fact
+  - local on-disk effect feed parsing uses the same parse/acquisition rejection
+    families when a rejection sink is supplied; legacy no-sink parsing keeps its
+    old behavior, but replay/evidence paths should thread the sink
+  - archive-backed effect loading must record absent effect-feed page locators
+    as `uk_effect_feed_pages_absent_recorded` in the same evidence lane; an
+    absent feed and an empty parsed feed are different source states
+  - UK evidence bundles expose `uk_oracle_alignment_summary` under compiler
+    observations when oracle alignment is allowed; source-first/strict-style
+    interpretation should treat this as an adapter lane, not as source-derived
+    replay truth
+  - UK evidence bundles expose `uk_compile_rejection_summary` under compiler
+    observations, including blocking effect-feed parse/acquisition rejections
+    and blocking lowering rejections with rule counts; authority rejection
+    evidence alone is not a complete compile ledger
+  - UK evidence bundles also expose `uk_compile_observation_summary` under
+    compiler observations. This is the full effect-feed/lowering ledger;
+    `uk_compile_rejection_summary` is blocking-only, with missing `blocking`
+    treated as blocking for legacy safety.
+  - `uk-replay` JSON and text summaries must also expose blocking compile
+    rejection counts/rules separately from total feed-parse/lowering/authority
+    rejections. Blocking controls replay-candidate status; total unsupported
+    evidence is only the broader ledger.
+  - `uk-replay` payload compatibility `compile_rejection_*` fields are
+    blocking-only; `compile_observation_*` and `compile_observations` carry the
+    full feed-parse/lowering/authority ledger. Rows without an explicit
+    `blocking` key are treated as blocking for legacy safety; explicit
+    `blocking=false` remains an observation.
+  - blocking compile rejection evidence must remain lane-separated
+    (`effect_feed_parse`, `lowering`, `authority`) in JSON and text output; a
+    total blocking count alone hides which compiler phase blocked replay.
+  - `uk-replay` must also expose total compile observations and observation
+    rule/lane counts beside the compatibility `compile_rejection_*` fields.
+    Nonblocking source observations are part of the ledger even when they do not
+    block replay.
+  - Human-readable evidence bundle output must also print the UK compiler
+    observation lanes: authority summary, compile rejection counts/rules,
+    witness-migration counters, oracle-alignment adapter summary, and
+    applicability counters. JSON-only visibility is not enough for copied
+    proof notes.
+  - oracle alignment reports include before/after node counts and
+    `node_count_mismatch`; EID grounding is supposed to be an adapter over
+    identity labels, not a structure-changing replay phase
+  - raw `UKEffectRecord.to_dict()` output used in acquisition manifests must
+    expose `requires_applied`, `metadata_only`, `replay_applicable`, `structural`,
+    and `structural_for_replay`; manifests are evidence surfaces, not just fetch
+    convenience records
+  - raw effect serialization must use the model's resolved effective date, not
+    the first raw `InForce` entry, because UK effects can carry a prospective
+    blank entry before the real commencement date; the raw `in_force_dates`
+    witness list should remain visible alongside the resolved date
+  - human-readable `uk-effect` output must print enacted/oracle source SHA-256
+    identities alongside source status and byte size. JSON-only source identity
+    is insufficient for copied diagnostic notes.
+  - when effect inspection is truncated and no residual candidate is found in
+    the inspected prefix, residual-only output must keep the row visible under
+    `uk_effect_inspection_budget_truncated` instead of treating it as clean or
+    dropping it
+  - `uk-candidates --residual-budget N` separately bounds expensive replay/oracle
+    residual analysis; skipped rows must expose `residual_analysis_skipped` /
+    `rows_with_residual_analysis_skipped` rather than carrying residual-overlap
+    claims
+  - if residual analysis cannot run because enacted or oracle source surfaces
+    are unavailable, `uk-candidates` must classify the row as
+    `residual comparison source unavailable`, emit
+    `uk_residual_analysis_source_unavailable`, and keep the row visible under
+    `--residual-only`; empty residual sets are not evidence of a clean replay
+    when the comparison source is missing
+  - this source-unavailable residual-only rule applies even when the inspected
+    effect prefix has no candidate effects. Missing comparison source is an
+    acquisition fact, not proof that no residual frontier exists.
+  - `uk-candidates` human-readable row output must preserve saved benchmark
+    rejection rule IDs as a distinct `saved_bench_rejection_rules` lane when
+    the saved row carries source-parse, effect-feed, authority, lowering, or
+    blocking-lowering rule counts. Full candidate analysis may add live
+    residual-compile evidence, but it must not hide the benchmark regime's
+    already-observed source/evidence failures.
+- residual-backed candidate overlap is branch-symmetric
+  - candidate target `section-3` backs residual `section-3-1`
+  - candidate target `section-3-1` also backs residual `section-3`
+  - sibling branches such as `section-3-1` vs `section-30` remain unrelated
+  - same-root siblings such as candidate `section-3-2` and residual `section-3-1`
+    do not count as backed residuals just because they share root `section-3`
 
 Current body-crossheading compare invariant:
 
@@ -301,6 +1248,510 @@ Current lead-in sibling amendment invariant:
   - oracle-only `section-7-9-b-i/ii/iii`
   - oracle-only `section-8-2-b`
 
+Current block-substitution context invariant:
+
+- a matched provision that contains both explicit substitution wording and a
+  descendant `BlockAmendment` owns the instruction context; extraction must not
+  return the naked `BlockAmendment` payload alone
+  - current example: `asc/2023/1` affected `s. 25(2)` via
+    `wsi/2024/782 reg. 46(2)`
+  - the source provision says `for "with" to the end substitute-` and the
+    block carries the replacement text
+  - returning only the block loses the action and anchor, producing
+    `fragment_context_missing` / `uk_effect_overlap_substitution_unlowered`
+  - preserving the exact `P2 id="regulation-46-2"` provision lets lowering
+    emit a bounded `text_replace` at `section:25/subsection:2`
+- secondary legislation references like `reg.` / `regs.` must preserve
+  `regulation` identity during affecting-source extraction; normalizing them to
+  `section` is a target-kind mutation, not a harmless parser shortcut
+- the parser may lower `for "X" to the end substitute- <block text>` to a
+  `TEXT_FROM_X_TO_END` patch using the named rule
+  `uk_effect_quoted_anchor_to_end_block_substitution_text_patch`
+- the parser may lower `after the definition of "X" insert- <block text>` and
+  `after the definition of "X", insert- <block text>` to a
+  `TEXT_AFTER_DEFINITION_X` patch using the named rule
+  `uk_effect_after_definition_text_insertion_patch`; replay applies it only
+  when the target text has a semicolon-terminated definition entry for `X`
+- the parser may lower `after the definitions of "X" and "Y" insert- <block
+  text>` to a `TEXT_AFTER_DEFINITION_Y` patch using the named rule
+  `uk_effect_after_definitions_text_insertion_patch`; the anchor is the final
+  quoted definition because the source inserts after the listed definition
+  group. Current witness: `asp/2000/11` affected `s. 31(1)` by `asp/2010/13`
+  `s. 106(8)`.
+- the parser may lower `at the beginning of subsection (N) insert "X"` to a
+  `TEXT_BEGINNING` patch using the named rule
+  `uk_effect_beginning_text_insertion_patch`; the feed already supplies the
+  affected subsection, so the phrase is target confirmation, not a reason to
+  widen scope. Current witness: `asp/2001/2` affected `s. 49(1)` by
+  `asp/2008/1` `sch. 1 para. 2(a)`.
+- the same beginning-insertion family accepts older `there shall be inserted`
+  wording, including an optional `the word(s)` carrier. It still lowers to
+  `TEXT_BEGINNING` only against the effect-feed target; it must not use the
+  carried subsection/paragraph words to widen scope. Current witness:
+  `asp/2000/5` affected `s. 18(6)` by `asp/2003/9`
+  `Sch. 13 para. 3(b)`.
+- the parser may lower `after "X" there shall be inserted "Y"` and `after the
+  word "X" there shall be inserted the words "Y"` through
+  `uk_effect_after_quoted_anchor_insert_text_patch`. This is an explicit
+  quoted-anchor text rewrite, not a structural child insertion. Current
+  witnesses: `asp/2000/4` affected `s. 24(4)` by `asp/2006/2 s. 36(b)` and
+  `asp/2000/5` affected `s. 25` by `asp/2003/9 Sch. 13 para. 5(b)`.
+- the parser may lower `after "X" where it first/second occurs insert "Y"` to
+  an occurrence-qualified anchor patch using the named rule
+  `uk_effect_after_quoted_anchor_where_ordinal_insert_text_patch`. Current
+  witness: `asp/2001/2` affected `s. 79(2)` by `asp/2019/17`
+  `sch. para. 3(7)(b)`.
+- the parser may lower inverted wording `the word "Y" is inserted after the
+  word "X" where it second appears` to the same text-patch shape, using
+  `uk_effect_word_inserted_after_word_where_ordinal_text_patch`. The inserted
+  word is not treated as a structural payload; the quoted preimage and ordinal
+  remain source-owned. Current witness: `asp/2000/1` affected `Sch. 2 para. 2`
+  by `asp/2010/8 s. 118(8)(a)(i)`.
+- the parser may lower imperative `repeal the words "X"` to a text-removal
+  patch using the named rule `uk_effect_repeal_quoted_words_text_patch`.
+  Current witness: `asp/2000/11` affected `s. 24(2)(b)` by `asp/2012/8`
+  `sch. 7 para. 15(12)(c)`.
+- the parser may lower `the word "X" at the end of paragraph (...) is
+  repealed` to a final-occurrence text deletion using
+  `uk_effect_final_quoted_word_repeal_text_patch`. It records occurrence `-1`
+  rather than deleting every occurrence of the word in the target. Current
+  witness: `asp/2000/4` affected `s. 16(6)(a)` by `asp/2006/4 s. 57(2)(a)`.
+- the parser may lower `for the words from "X", where second occurring, to
+  "Y" substitute "Z"` to an occurrence-qualified `TEXT_FROM_X_TO_Y` patch using
+  `uk_effect_range_occurrence_substitution_text_patch`. Current witness:
+  `asp/2000/11` affected `s. 16(1)(a)` by `asp/2012/8`
+  `sch. 7 para. 15(8)(b)`.
+- the parser may lower `for the words from "X", where it first occurs, to "X",
+  where it second occurs, substitute "Z"` to a bounded same-anchor range patch
+  using
+  `uk_effect_same_anchor_adjacent_occurrence_range_substitution_text_patch`.
+  This is deliberately limited to the same quoted anchor and adjacent
+  occurrence numbers. Current witness: `asp/2000/6` affected `s. 6(1)(a)` by
+  `asp/2016/8` `s. 3(4)(a)(ii)`.
+- the parser may lower `for the words from "X", where first occurring, to "Y",
+  where second occurring, substitute "Z"` to a `TEXT_FROM_X_TO_Y` patch whose
+  typed selector records both start `occurrence` and independent
+  `end_occurrence`. Lowering emits
+  `uk_effect_range_independent_end_occurrence_text_patch` as a nonblocking
+  text-rewrite observation. Replay must use the named end-anchor ordinal
+  rather than silently selecting the first `Y` after `X`; if the named end
+  occurrence is absent or precedes the start anchor, the text patch fails with
+  ordinary preimage diagnostics. Current witness: `asp/2000/4` affected
+  `s. 55` by `asp/2007/10` `s. 59(2)`.
+- source-context elaboration may lower `after the words inserted by
+  sub-paragraph/paragraph (A) insert "Y"` or `insert- Y` only when the cited
+  sibling source provision is present under the same source parent and parses
+  to exactly one deterministic text fragment. The anchor is the cited sibling's
+  replacement text; lowering emits
+  `uk_effect_after_words_inserted_by_sibling_text_patch` as a nonblocking
+  `source_context_elaboration` observation. If the sibling is absent,
+  ambiguous, or unparseable, the row remains blocked. Current witnesses:
+  `asp/2000/11` affected `s. 24(2)(b)` by `asp/2012/8`
+  `sch. 7 para. 15(12)(b)` and affected `s. 11(4)(a)` by `sch. 7 para.
+  15(5)(d)(i)(B)`.
+- the parser may lower `for the words from "X" to "Y" substitute Z` where `Z`
+  is unquoted block text to `TEXT_FROM_X_TO_Y` using
+  `uk_effect_range_unquoted_substitution_text_patch`. Current witness:
+  `asp/2000/11` affected `s. 14(5)(a)` by `asp/2012/8`
+  `sch. 7 para. 15(7)`.
+- the parser may lower `omit the words "X"` to a text-removal patch using
+  `uk_effect_direct_quoted_word_omission_text_patch`. Current witness:
+  `asp/2000/1` affected `s. 13(5)(c)` by `uksi/2007/825` `reg. 4(2)(b)`.
+- the parser may lower `immediately before the word "X" insert "Y"` to a
+  before-anchor text patch using
+  `uk_effect_immediately_before_word_insert_text_patch`; if the source says
+  `where it occurs for the second time`, the patch carries occurrence `2` and
+  uses `uk_effect_immediately_before_word_ordinal_insert_text_patch`. Current
+  witnesses: `asp/2000/1` affected `s. 12(2)(a)` and `sch. 3 para. 1` by
+  `asp/2010/8` `s. 118(3)` and `s. 118(9)(a)`.
+- the parser may lower `after "X" insert- Y` where `Y` is unquoted block text
+  to an after-anchor text patch using
+  `uk_effect_after_quoted_anchor_block_insert_text_patch`. Current witness:
+  `ukpga/2022/32` affected `Sch. 3 Pt. 1` by `uksi/2023/575` `reg. 2(2)`.
+- the parser may lower `for "X" substitute- Y` where `Y` is unquoted block text
+  to a quoted-anchor text patch using
+  `uk_effect_quoted_anchor_block_substitution_text_patch`. Current witness:
+  `ukpga/2022/32` affected `Sch. 3 Pt. 3` by `uksi/2023/424`
+  `Sch. para. 22`.
+- the same unquoted block substitution rule also covers `for the words "X"
+  substitute Y` when `Y` is unquoted block text and the target is explicit.
+  Current witness: `asp/2000/4` affected `s. 47(6)(b)` by `asp/2005/13`
+  `s. 35(2)(f)(ii)`.
+- the parser may lower `leave out "X" and insert "Y"` to an ordinary
+  replacement patch using `uk_effect_leave_out_and_insert_text_patch`. This is
+  a text replacement, not a repeal followed by an unrelated insertion. Current
+  witness: `asp/2000/4` affected `s. 15(3)(c)` by `asp/2007/10`
+  `s. 57(1)(b)(i)`.
+- the parser may lower `after "X", where last occurring, insert "Y"` to an
+  after-anchor patch with occurrence `-1` using
+  `uk_effect_after_quoted_anchor_last_occurrence_insert_text_patch`. Current
+  witness: `asp/2000/4` affected `s. 58(6)` by `asp/2007/10`
+  `s. 60(2)(a)(ii)`.
+- post-quoted ordinal substitutions do not require an explicit pronoun after
+  `where`: `for "X", where first occurring, substitute "Y"` lowers through
+  `uk_effect_post_quoted_where_ordinal_substitution_text_patch` with occurrence
+  `1`. Current witness: `asp/2000/4` affected `s. 64(1)` by `asp/2007/10`
+  `s. 60(4)(b)`.
+- the parser may lower `for the words from "X" where it first appears to the
+  end substitute- Y` where `Y` is unquoted block text to `TEXT_FROM_X_TO_END`
+  with the recorded start occurrence using
+  `uk_effect_range_to_end_ordinal_block_substitution_text_patch`. Current
+  witness: `asp/2000/4` affected `s. 58(6)` by `asp/2010/8`
+  `sch. 1 para. 11(2)(b)`.
+- the parser may lower `for the words from "X" to the end, substitute "- Y`
+  where the replacement has an opening quote before a block dash but no closing
+  quote in the flattened source text to `TEXT_FROM_X_TO_END` using
+  `uk_effect_range_to_end_open_quote_block_substitution_text_patch`. The rule is
+  limited to an explicit `from "X" to the end` text span and does not infer
+  structural boundaries such as `after paragraph (b)`. Current witness:
+  `ukpga/2021/12` affected `Sch. 9 para. 1(3)` by `uksi/2025/1284`
+  `sch. 4 para. 3`.
+- unquoted `from "X" to the end ... substitute - Y` may include whitespace
+  between `substitute` and the dash; this remains the same
+  `uk_effect_anchor_to_end_block_substitution_text_patch` family, not a new
+  action. Current witness: `asp/2000/4` affected `s. 41(2)(a)(iii)` by
+  `asp/2010/8` `sch. 2 para. 5(2)(a)`.
+- grouped occurrence substitutions may carry the quoted anchor in a parent
+  instruction and the ordinal/replacement in child rows, e.g. parent `for
+  "X"-` and child `the first time it appears, substitute "Y"`. Lowering may
+  combine those source-local facts into an occurrence-qualified text patch
+  using `uk_effect_grouped_anchor_occurrence_substitution_text_patch`, with a
+  `source_context_elaboration` observation. Current witnesses: `asp/2000/4`
+  affected `Sch. 1 para. 1` by `ssi/2011/211` `Sch. 1 para. 8(4)(a)(i)-(ii)`.
+- `after "X", on each occasion where it appears, insert "Y"` is an explicit
+  all-occurrences insertion and lowers to the same target-scoped all-occurrences
+  text-patch semantics as `in each place it occurs`, using
+  `uk_effect_after_quoted_anchor_each_occasion_insert_text_patch`. Current
+  witness: `asp/2007/3` affected `s. 218` by `ssi/2019/51` `reg. 6(6)`.
+- `after "X", in both places where it appears, insert "Y"` is the same
+  source-owned all-occurrences insertion family as `in both places insert`.
+  Lowering uses `uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch`
+  and records `explicit_all_occurrences_text_patch`; it must remain scoped to
+  the effect-feed target. Current witnesses: `asp/2007/3` affected `s. 216(4)`
+  by `ssi/2019/51` `reg. 6(4)(b)` and `s. 214(2)` by `reg. 6(2)(b)`.
+- `after each occurrence of "X" insert "Y"` also lowers through
+  `uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch`. It is a
+  quoted-anchor text rewrite over every target occurrence, not a structural
+  child insert. Current witness: `asp/2001/11` affected `s. 1(2)(b)` by
+  `ssi/2005/623 art. 21(2)(i)`.
+- `after "X", where it first occurs, insert "Y"` may contain nested quoted
+  terms inside the inserted payload. The parser uses an end-anchored payload
+  scan only for that nested-quote case, lowering to
+  `uk_effect_after_quoted_anchor_where_ordinal_nested_quote_insert_text_patch`;
+  the ordinal target remains explicit and replay applies only that occurrence.
+  Current witness: `asp/2007/3` affected `s. 63(1)(a)` by `asp/2010/8`
+  `sch. 4 para. 15(1)(a)(i)`.
+- `after "X" insert- "<term>" means ...` is a bounded interpretation-section
+  definition insertion when the quoted block payload starts with a definition
+  predicate such as `means`. It lowers to
+  `uk_effect_after_quoted_anchor_definition_entry_block_insert_text_patch` as a
+  text patch after the explicit quoted anchor; generic quoted block payloads
+  remain unsupported. Current witness: `asp/2007/3` affected `s. 47` by
+  `ukpga/2009/1` `s. 253(7)`.
+- `before/after the entry relating to "X" insert- "Y"` is not a text-patch
+  family. It lowers to `uk_effect_schedule_list_entry_insert` only when the
+  affected target is a schedule and source parsing has a typed
+  `schedule_entry` carrier. Replay then requires exactly one direct
+  schedule-entry anchor and inserts an unlabeled `schedule_entry` sibling
+  before/after that anchor. Missing or ambiguous anchors block with
+  `uk_replay_schedule_list_entry_anchor_unresolved`, classified as source
+  shape, not replay bug. If the cited anchor is the unique prefix of a longer
+  descriptive entry, replay may proceed with nonblocking
+  `uk_replay_schedule_list_entry_anchor_prefix_normalized`; it may not choose
+  among multiple prefix matches. If the only mismatch is a leading article
+  (`the`/`a`/`an`) on either the source anchor or preserved entry text, replay
+  may proceed with nonblocking
+  `uk_replay_schedule_list_entry_anchor_article_normalized`. Source forms such
+  as `there is inserted the following entry- ...`, `the insertion, after the
+  entry for X, of Y`, and quoted schedule-list anchors like `insert before
+  "X"- Y` are part of this family. Explicit `at the appropriate place in
+  alphabetical order insert- Y` forms lower to the same typed entry-insert
+  family with an alphabetical placement selector; replay records
+  `uk_replay_schedule_list_entry_alphabetical_position_resolved` and blocks if
+  the inserted entry is empty or already present. Rows that look like
+  schedule-list-entry amendments but
+  lack enough carrier/target information remain in
+  `schedule_list_entry_target_unsupported` /
+  `uk_manual_frontier_schedule_list_entry_candidate`. Current witnesses:
+  `asp/2000/7` affected `sch. 3` by `asp/2005/6` `Sch. 3 para. 9(a)`,
+  `ssi/2009/286` `art. 2(2)(c)`, `asp/2010/8` `sch. 14 para. 1(b)`,
+  `asp/2005/10` `sch. 4 para. 12`, and `asp/2007/5` `Sch. 5 para. 4`.
+  The source classifier also treats `for the entry relating to X substitute Y`
+  and the source typo `after the entry relation to X insert Y` as this same
+  bounded list-entry frontier rather than a free text replacement.
+- Some UK schedule-list carriers bucket entries under immediate schedule child
+  groups such as `p1group` headings rather than as direct schedule children.
+  When an explicit `before`/`after` entry-insert selector cannot resolve a
+  direct schedule-entry anchor, replay may search only immediate schedule child
+  groups and proceed only if exactly one descendant `schedule_entry` anchor
+  matches. The new entry is inserted into that same group next to the anchor
+  and replay records `uk_replay_schedule_list_entry_group_anchor_resolved`.
+  Duplicate grouped anchors still block with
+  `uk_replay_schedule_list_entry_anchor_unresolved`; this rule does not guess a
+  group for alphabetical placement or tolerate lexical changes such as
+  `Highland`/`Highlands` or `Crofting`/`Crofters`. Current witnesses:
+  `asp/2010/8` affected `sch. 5` by `asp/2012/8` and `ssi/2013/192`.
+- If a schedule-list-entry insert selector targets a schedule that replay has
+  already repealed, replay classifies the row as
+  `uk_replay_repealed_target_gap` with reason
+  `schedule_target_previously_repealed` rather than reporting an anchor lookup
+  failure. Current witness: later `asp/2010/8` Schedule 5/6 insert rows after
+  the schedule expiry/repeal.
+- schedule-root repeals whose source text only claims `entry`/`entries` repeal
+  must not delete the whole schedule. Replay prepare blocks this granularity
+  escalation with `uk_replay_schedule_entry_repeal_granularity_blocked`.
+  Explicit source forms such as `the entry relating to X is repealed` and
+  `the entries for X, Y and Z are repealed` lower instead to
+  `uk_effect_schedule_list_entry_repeal`: the target remains the schedule
+  carrier, but a provenance selector lists the claimed direct entry anchors.
+  Replay must resolve every anchor to exactly one direct `schedule_entry` child
+  before deleting any child. Missing, duplicate, or colliding anchors block
+  atomically with `uk_replay_schedule_list_entry_repeal_unresolved`; successful
+  entry-level deletion records `uk_replay_schedule_list_entry_repeal_resolved`.
+  Current witnesses: `asp/2000/7` affected `sch. 3` by `asp/2002/3`,
+  `asp/2005/6`, and `asp/2010/8`.
+- definition-anchor text patches may include the article before the quoted
+  term, e.g. `after the definition of the "2002 Act" insert- ...`; the article
+  is drafting syntax, not part of the definition key, so the selector remains
+  `TEXT_AFTER_DEFINITION_2002 Act`. Current witness: `asp/2007/3` affected
+  `s. 221` by `ssi/2012/301` `Sch. para. 3(2)(a)`.
+- `after paragraph/sub-paragraph/subsection (X) insert- <new sibling block>` is
+  a structural sibling-insertion family, not a child-text append. While LawVM
+  lacks a compiler that splits the new sibling block into owned child payloads,
+  such rows are classified as `structural_sibling_insert_unsupported` and
+  `uk_manual_frontier_structural_sibling_insert_candidate`. The existing
+  `TEXT_AFTER_CHILD_*` text patch remains valid only for inline insertions into
+  the named child, not for creating siblings. Current witness: `asp/2007/3`
+  affected `s. 221` by `ssi/2012/301` `Sch. para. 3(2)(b)(ii)`.
+- Deictic and mixed block forms such as `after that paragraph, insert- <new
+  sibling block>` and `at the end of paragraph (b), insert- <punctuation plus
+  new sibling>` are the same unsupported structural-sibling family until a
+  source-context compiler owns the antecedent, inserted child payloads, and any
+  punctuation-only mutation separately. They must not fall through as generic
+  parser gaps or become text appends to the enclosing subsection. Current
+  witness: `asp/2001/2` affected `s. 82(1)` by `ssi/2024/161 art. 6(2)(b)-(c)`.
+- definition-scoped all-occurrence insertions such as `in the definition of
+  "X" after "Y", in both places where it appears, insert "Z"` lower to
+  `TEXT_IN_DEFINITION_X/AFTER_EACH/Y` using
+  `uk_effect_in_definition_after_anchor_all_occurrences_insert_text_patch`.
+  Replay rewrites all matching anchors inside the unique matching definition
+  entry only; it must not broaden to the whole affected section. Current
+  witness: `asp/2007/3` affected `s. 214(1)` by `ssi/2019/51`
+  `reg. 6(2)(a)(ii)`.
+- `from "X" to the end of paragraph (b) substitute "Y"` must not be broadened
+  into a target-subtree `TEXT_FROM_X_TO_END` patch when the effect feed target
+  names only the enclosing subsection. The narrow owned lane is
+  `uk_effect_labeled_end_range_substitution_text_patch` plus
+  `uk_effect_labeled_end_range_target_refined`: the parser preserves the
+  labelled child suffix and lowering appends that child target only when the
+  feed target is a compatible parent. Current witnesses: `asp/2000/4` affected
+  `s. 58(6)`, `s. 63(5)`, `s. 71(2)`, and `s. 74(2)` by `asp/2007/10`
+  `s. 60`.
+- named table substitutions such as `for the Table A mentioned there
+  substitute-` must not be smuggled through generic text replacement. They
+  remain a table-compiler frontier until the table target and replacement
+  surface are explicitly represented.
+- manual-frontier classification treats dash-punctuated verbs such as
+  `insert-` / `substitute-` as explicit instruction text. A row with such text
+  and a blocking overlap-lowering record should remain a deterministic frontend
+  candidate until the parser/executor family is either implemented or ruled out
+  with a narrower source-pathology finding.
+- source text like `for the inserted text substitute-` is not an ordinary
+  replacement against the current base statute. It targets text introduced by a
+  prior amendment instruction, so UK classifies it as
+  `amendment_text_target_unsupported` and
+  `uk_manual_frontier_amendment_program_target_candidate` until LawVM has an
+  explicit amendment-program compilation lane.
+- source text that targets a table entry or table column, for example
+  `after entry 4 in the table insert-` or `after the third entry in the
+  second column ... insert-`, is classified as
+  `table_entry_target_unsupported` and
+  `uk_manual_frontier_table_entry_candidate`. The claim/compiler must identify
+  the table row and cell; replay must not flatten the amendment into the host
+  provision body just to remove a benchmark residual.
+- if such wording appears while metadata names only a broad schedule, part, or
+  provision target, lowering emits
+  `uk_effect_table_entry_instruction_rejected` instead of coercing the row into
+  a host `repeal` / `replace`. Current corpus witness:
+  `asp/2000/2` affected `Sch. 2 Pt. 2` via `ssi/2001/68 art. 2(4)` says
+  `in column 1 of the table, in entry number 1 ... is omitted` and separately
+  substitutes an amount; neither instruction authorizes repealing the whole
+  schedule part.
+- source targets such as `Sch. 8 Note 1` are schedule-note/facet claims, not
+  schedule paragraph claims. Lowering emits
+  `uk_effect_schedule_note_target_rejected` until a note compiler or manual
+  claim can target the note surface directly. Current corpus witness:
+  `asp/2000/5` affected `Sch. 8 Note 1` via `asp/2003/9 Sch. 13 para. 17`;
+  the old parser shape `schedule:8/paragraph:note/subparagraph:1` is rejected
+  because it invents legal structure not present in the source target.
+- reference-only extracted fragments such as `paragraph 1(1);` or
+  `section 15(2)(b) (...)` are source-insufficient when paired with blocking
+  word-level lowering. They must not remain unclassified manual frontier rows,
+  because the public witness does not contain an executable amendment program.
+- source text that uses a table as an amendment program, for example
+  `provisions listed in column 1 ... for the words in the corresponding entry
+  in column 2 ... substitute "X"`, may lower under
+  `uk_effect_corresponding_table_entry_word_substitution` only when the
+  affecting XML source root contains a unique table row whose column 1 mentions
+  the affected provision and whose column 2 supplies the old words. Row-span
+  carried cells are part of the source-table elaboration. Only source tables
+  whose header exposes `Column 1` and `Column 2` participate; explanatory
+  chronology tables such as `Provision / Date of commencement` are not valid
+  sources for this family. Descendant labels must belong to the same section
+  expression in the column-1 row, so `s. 39(3)` may not be satisfied by a row
+  that names `s. 39(5)` and separately names `s. 43(3)`. If the table context
+  is unavailable or the row match is not unique, lowering emits
+  `uk_effect_corresponding_table_entry_word_substitution_unresolved` and
+  blocks in strict mode rather than guessing a text patch.
+- source text that targets an existing base-table cell by ordinal column,
+  ordinal entry, and a rowspanned relation cell, for example `in the second
+  column, in the second entry relating to the Welsh Ministers, after "X" insert
+  "Y"`, may lower under `uk_effect_table_entry_inline_text_insertion`. The
+  lowered op is targeted at the containing provision and carries a structured
+  table-cell selector in operation provenance; replay must resolve exactly one
+  table under that provision, expand rowspans, count only entries whose earlier
+  columns match the `relating to ...` witness, and mutate only the selected
+  cell text. If the table selector is invalid, ambiguous, or the selected cell
+  lacks the quoted preimage, replay emits a blocking
+  `uk_replay_table_entry_inline_text_insertion_unresolved` or
+  `uk_replay_table_entry_inline_text_preimage_gap` adjudication. This is a
+  deterministic table compiler, not a fallback from a missing target path.
+- UK source/oracle XML table structure is preserved by the grafter under the
+  named family `uk_table_xml_structure_preserved`: `<Table>` / `<Tgroup>` /
+  `<Thead>` / `<Tbody>` / `<Row>` / `<Entry>` become `table` / `row` /
+  `header_cell` / `cell` IR nodes, and row cell text is not smuggled into the
+  host provision's body text. This is only a source-shape preservation rule;
+  it does not by itself authorize table row/cell amendments.
+- UK replay-vs-oracle EID comparison drops replay-only table fallback nodes
+  under `uk_replay_compare_table_fallback_identity_noise` when the oracle EID
+  surface has no table EIDs. Table wording still participates through ancestor
+  text; row/cell fallback identity is not a comparable benchmark surface until
+  both sides expose stable table EIDs.
+- source text that says `at the appropriate place, insert-` or `at an
+  appropriate place, in alphabetical order, insert-` is classified as source
+  pathology `appropriate_place_insert_unsupported` and manual frontier
+  `uk_manual_frontier_appropriate_place_candidate` while UK lacks a safe
+  placement model for that source shape. It is not a generic parser miss
+  because replay must not pick an insertion point by alphabetical coincidence
+  or live-tree uniqueness.
+- repeal schedules, table parts, or grouped repeal source fragments that expose
+  an `Enactment / Extent of repeal` surface but do not yet identify the specific
+  target row/cell for the affected provision are classified as
+  `repeal_schedule_table_source_unsupported` and
+  `uk_manual_frontier_repeal_table_candidate`. This keeps the table witness
+  visible without smuggling the whole repeal schedule into a single target.
+- table-entry source that says a named entry/column is `added` or `amended`
+  remains in `table_entry_target_unsupported` until a table compiler owns the
+  row/cell and any referenced amount schedule. It is not a generic parser miss.
+- source text shaped as `shall have effect as if ...` is classified as
+  `as_if_application_modification_unsupported` and manual frontier
+  `uk_manual_frontier_as_if_application_modification_out_of_scope`. That family
+  is an applied/as-if modification lane, not a direct mutation of the base
+  statute text/tree under the current UK replay model.
+- `BlockAmendment` fragments that expose only payload text while the feed says
+  `words substituted` or another word-level effect are classified as
+  `payload_fragment_without_action_formula` and
+  `uk_manual_frontier_source_pathology_insufficient`. This is source
+  insufficient: the fragment may be legally relevant payload, but it does not
+  contain the operative formula needed to prove the preimage/replacement pair.
+  Current witness: `asp/2000/5` affected `s. 73(1)` by `asp/2003/9`
+  `Sch. 13 para. 13(a)(iii)`.
+- Source text such as `the words "X", where they occur in subsections (1) and
+  (2), are repealed` is classified as
+  `source_carried_multi_subunit_text_rewrite_unsupported` and
+  `uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate`
+  until the compiler can split the parent feed target into child-target text
+  patches. Replaying it as a section-wide deletion would violate the target
+  boundary invariant. Current witness: `asp/2000/4` affected `s. 22` by
+  `asp/2007/10 s. 57(6)`.
+- Source text such as `the words following paragraph (b) are repealed` is
+  classified as `source_carried_child_tail_text_rewrite_unsupported` and
+  `uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate` until a
+  bounded child-tail selector is owned. It must not become deletion of the
+  parent body after an approximate text anchor. Current witness: `asp/2000/1`
+  affected `s. 21(5)` by `ssi/2013/177 Sch. para. 4(a)`.
+- `BlockAmendment` payload fragments with structured list payload such as
+  `the Parliamentary corporation- a after ...; and b with ...` are also
+  classified as `payload_fragment_without_action_formula` when the operative
+  formula is absent from the extracted source. Current witness: `asp/2000/7`
+  affected `s. 8(3)` by `asp/2010/11 Sch. 2 para. 1(a)`.
+- source text that targets `heading`, `title`, or `sidenote` facets lowers
+  when it is an explicit word substitution/omission with a concrete old text
+  selector, or an explicit `at the end insert ...` append. Replay then mutates
+  only the heading carrier: direct heading text on title-bearing nodes, an
+  explicit `heading` child under the target section, a unique `P1group`
+  heading that wraps the target section, or a subordinate source `P2group` /
+  `P3group` / `P4group` preserved as `pgroup` under
+  `uk_parse_subordinate_pgroup_heading_carrier`. Inserted sections wrapped in
+  source `P1group/Title + P1` payloads use the named payload-normalization
+  observation `uk_effect_inserted_section_p1group_heading_carrier_lowered` to
+  preserve the wrapper title as a target-owned `heading` child. This rule is
+  deliberately narrower than using a live parent `P1group`: shared parent
+  headings for neighbouring sections remain ambiguous. A multi-child `pgroup`
+  heading may be used only for its first structural child, matching source
+  wording such as "italic heading before subsection (3)"; later children must
+  not hijack that carrier. Ambiguous shared wrappers emit
+  `uk_replay_heading_facet_target_gap`. Other heading insertions and
+  selector-less facet edits remain `heading_facet_target_unsupported` /
+  `uk_manual_frontier_heading_facet_candidate` until LawVM has a typed
+  placement compiler for them.
+- source text that says `for "X", wherever occurring, substitute "Y"` lowers
+  under `uk_effect_wherever_occurring_substitution_text_patch`. This is a
+  deterministic text-patch family, not manual compilation, because the source
+  provides the exact old text, replacement text, and target row; when the effect
+  feed has already split the row by target provision, each target receives the
+  same all-occurrences patch. Lowering also emits a nonblocking
+  `text_rewrite_lowering` observation for explicit all-occurrences rules so the
+  executable rewrite is visible in reports, not only encoded in operation
+  provenance.
+- source text that says `from "X" to the end substitute-` followed by an
+  unquoted block lowers under
+  `uk_effect_anchor_to_end_block_substitution_text_patch`. The rule is limited
+  to unquoted block payloads so it does not duplicate existing quoted
+  `TEXT_FROM_X_TO_END` substitution rules. The replay selector remains a
+  bounded text-span operation; it may not become a structural replacement or
+  consume sibling provisions.
+- source text that targets `cross-heading` facets is classified as
+  `crossheading_target_unsupported` while UK lacks a safe facet replay lane for
+  those surfaces. These remain manual/future-compiler candidates, not section
+  body replacements.
+- alphabetic suffix labels such as `aa`, `ba`, or `ga` are part of the same
+  local letter sequence as their base label. Replay insertion order must place
+  `ga` after `g` and before later single-letter siblings such as `h` or `i`;
+  it must not bucket every single-letter paragraph before all multi-letter
+  labels, and a pure lettered paragraph set must not interpret `c` as Roman
+  `100`. Current real witnesses: `asc/2021/1` / `wsi/2021/1349` `reg. 33`,
+  inserting `s. 122(1)(ga)`, and `asc/2021/1` / `wsi/2022/797` `reg. 7(b)`,
+  inserting `s. 159(4)(ba)`.
+- whole inserted schedule payloads may arrive from amendment XML without
+  descendant `eId` attributes. The owned phase is payload normalization:
+  `uk_whole_schedule_payload_descendant_eid_synthesis` may assign descendants
+  from the explicit schedule target root plus parsed source labels. Replay does
+  not infer this identity later, and oracle alignment is not part of the rule.
+  Repeated form labels that would duplicate an already synthesized local ID are
+  left unaddressed and counted by the same observation; LawVM must not invent
+  hidden suffixes to make a form-like payload satisfy tree uniqueness. Current
+  real witnesses: `asc/2021/1` / `wsi/2022/797` `reg. 5`, inserting `Sch.
+  10A`, and `asp/2000/5` / `asp/2003/9` `Sch. 13 para. 16`, inserting `Sch.
+  5A-5C`.
+- if such a whole-schedule form payload still violates the generic tree
+  duplicate-label or label-order invariant after replay, classify it as
+  `uk_replay_repeated_form_label_payload_shape_gap` rather than a generic
+  payload-shape gap. This is an unresolved source-shape frontier: repeated form
+  field labels are source text to preserve, but they are not yet a canonical
+  legal-address lineage model.
+- a text patch aimed at a missing descendant may recover to the immediate
+  parent only when the parent exists, has no child carriers, and its own text
+  contains the exact preimage
+  - rule: `uk_replay_empty_descendant_parent_text_recovered`
+  - family: `target_resolution_recovery`
+  - strict disposition is `block`; quirks disposition is `apply`
+  - current real witnesses: `asp/2000/11` / `asp/2012/8` `Sch. 7 para.
+    15(8)(c)`, targeting `s. 16(1)(b)`, and `asp/2000/11` / `ukpga/2016/25`,
+    targeting `s. 16(1)(a)`, where replay has a flat subsection parent carrying
+    the exact preimage but no addressable paragraph child at that point in the
+    amendment chain
+
 Current subordinate-sibling payload invariant:
 
 - when a selected replacement payload is a `P3` inside a `BlockAmendment`,
@@ -363,3 +1814,1079 @@ Current missing-live-branch oracle invariant:
   then this is compare-side `oracle_missing_live_branch`, not a replay bug
 - after typing that class, `ukpga/2009/24` leaves the active replay frontier
   even though the raw replay residual still contains `schedule-5`
+
+Current bench replay-regime invariant:
+
+- UK bench replay rows must disclose and persist the replay regime that produced
+  each score:
+  - metadata backfill enabled/disabled
+  - oracle EID alignment enabled/disabled
+  - applicability mode
+  - authority mode
+  - authority rejection count
+- `--no-oracle-alignment` disables both:
+  - replay-time oracle inputs in `replay_uk_ops`
+  - post-replay `align_uk_replay_to_oracle_with_report`
+- `--source-first-candidate` is a named candidate regime, not a hidden
+  benchmark tweak:
+  - metadata backfill disabled
+  - oracle alignment disabled
+  - applicability remains feed-applied aware
+  - authority mode is `source_text_only`
+- source-first conflicts with explicit opposite flags must fail at CLI argument
+  normalization time, rather than producing a mixed ambiguous score.
+- `uk-bench` and `uk-replay` share the same replay-regime normalization so a
+  one-statute JSON replay can be compared directly with a corpus benchmark row.
+  The replay JSON payload carries the normalized regime and compile rejection
+  counts, including source-text authority rejections in source-first mode.
+- `uk-replay` text output must expose replay adjudication totals and kind
+  counts when replay skipped/no-oped operations. JSON-only visibility is not
+  sufficient for interactive diagnosis because unsupported replay actions are
+  part of the coverage surface.
+- UK bench rows must also persist replay lowering rejection totals, including
+  the blocking subset. A replay score without its unsupported/no-op lowering
+  surface is not a coverage metric; it hides which source effects were parsed
+  but not executable.
+- UK bench rows must preserve lowering rejection rule counts, including the
+  blocking subset. Totals alone are not enough for a saved run because
+  `payload_missing`, `no_ops`, and nonstructural unsupported families imply
+  different next actions.
+- Human-readable UK bench reports must print those lowering rejection families
+  when present; saved CSV visibility alone is not enough during interactive
+  frontier triage.
+- UK bench rows must preserve effect-feed rejection rule counts, not only total
+  counts. A saved benchmark is an evidence artifact; dropping rule IDs makes
+  source acquisition/parse failures indistinguishable after the run.
+- UK bench rows must preserve authority rejection rule counts, not only total
+  counts. Source-text authority filtering is a compile-time evidence lane; a
+  saved replay benchmark must retain which authority rule rejected each effect
+  family.
+- UK bench replay rows must preserve replay adjudication totals and kind
+  counts. Unsupported actions, missing targets, and replay-time no-op/skip
+  findings are part of the replay coverage surface; a benchmark score without
+  those counts can hide non-applied operations.
+- UK bench rows must preserve oracle-alignment method and node-safety
+  provenance: match-method counts, transparent wrapper clears, before/after
+  node counts, and node-count mismatch. Count-only alignment reporting hides
+  whether benchmark improvement came from safe identifier grounding or a
+  structurally suspect adapter pass.
+- Candidate/residual triage from a saved UK bench run must replay residuals
+  under the replay regime persisted on each bench row. Using default replay
+  settings during `uk-candidates` would classify a source-first benchmark
+  frontier under a different authority lane.
+- `uk-candidates` must also inspect replay-applicable effects and summarize
+  effect rows under the saved bench row's applicability mode. It is not enough
+  for only the residual replay step to use the saved regime; otherwise the
+  candidate inventory and the replay residuals are produced under different
+  semantic lenses.
+- `uk-replay --json` must not emit placeholder oracle-alignment counts. It is
+  a replay-executor-inputs lane, not the post-replay bench/evidence adapter
+  lane, but the executor's alignment events are still evidence and must be
+  surfaced as event counts, match-method counts, and typed unavailable reasons
+  when the lane is disabled.
+- `uk-replay --json` must include bounded oracle-alignment event samples in
+  addition to aggregate counts. Samples are diagnostic evidence, not a replay
+  authority surface; they let a residual reviewer see which adapter match keys
+  fired without rerunning a one-off debugger.
+- `uk-replay` text mode must print the same high-level evidence lanes as JSON:
+  source status/size, replay regime, compile rejection lane counts,
+  compile rejection rule counts by lane, oracle-alignment availability/counts,
+  executor-input match-method counts, and normalized EID compare counts when an
+  oracle comparison exists. Terminal output is often copied into notes, so it
+  cannot hide these lanes behind `--json`.
+- `uk-replay --json` must report enacted/oracle source status with the same
+  `absent` / `too_small` / `available` vocabulary used by `uk-effect`,
+  `uk-effects`, and `uk-eids`. Boolean oracle availability is not enough:
+  missing source and suspicious cached source imply different acquisition
+  failures, and too-small oracle blobs must not be parsed as oracle witnesses.
+  JSON also carries `*_source_sha256` so a replay report identifies the exact
+  archived source bytes behind each witness.
+- Human-readable `uk-replay` output must include the enacted/oracle source URLs
+  and SHA-256 identities alongside source status and byte size. Interactive
+  replay triage should not require switching to JSON to identify the compared
+  source surfaces.
+- When `uk-replay --fetch-missing` is used, human-readable output must also
+  include prefetch event counts and rule counts, including blocking-only rule
+  counts. Acquisition repair evidence must not exist only in stderr or JSON.
+- UK evidence bundles must use that same source-status vocabulary for enacted
+  and oracle source surfaces. A proof bundle must not parse a too-small cached
+  XML blob or collapse it into ordinary absence.
+- UK evidence bundles must also carry enacted/oracle source SHA-256 hashes when
+  archive bytes exist, including too-small and parse-rejected blobs. Proof
+  bundles are source witnesses, not only derived legal-state reports.
+- UK evidence bundles that stop early on unavailable source must still emit the
+  benchmark comparison class (`no_enacted_eids` / `no_oracle_eids`) with
+  `core_comparison=false`; the EID/effect counts stay unknown because the source
+  was deliberately not parsed.
+- Those early UK evidence bundles must also carry the shared UK replay regime,
+  applicability regime, source-availability summary, and empty compile
+  observation/rejection summaries. A source-unavailable row is a typed evidence
+  row, not a reduced stderr-only failure.
+- The evidence CLI error path for those unavailable UK source bundles must print
+  enacted/oracle source status, byte size, URLs, hashes when present, and
+  comparison class before exiting. `ERROR: NO_ORACLE` alone is not enough
+  acquisition evidence.
+- With `--json`, that same evidence CLI error path must emit the typed bundle to
+  stdout before exiting non-zero. Source-unavailable failures are still evidence
+  artifacts; JSON callers must not be forced to scrape stderr.
+- UK evidence text rendering must distinguish feed observations, blocking
+  feed-parse/acquisition rejections, lowering observations, and blocking
+  lowering rejections. A generic `feed rules` line is not enough when JSON has
+  a dedicated `blocking_effect_feed_parse_rejection_rule_counts` lane.
+- UK evidence bundles must route the initial effect-count load through the same
+  feed observation/rejection lane as replay compilation. If that preliminary
+  load fails, the bundle records `uk_effect_feed_count_error` with exception
+  detail, `blocking=true`, `strict_disposition=block`, and
+  `quirks_disposition=record`; the proof bundle must remain a typed evidence
+  artifact rather than becoming a generic Python exception.
+- UK evidence-review summaries must count UK comparison classes and core/non-core
+  comparison status alongside source status. Review output is a benchmark
+  evidence surface, not only a proof-tier inventory.
+- UK evidence-review top rows must include row-level enacted/oracle source
+  status, byte size, URLs, SHA-256 hashes, comparison class, and core/non-core
+  status. A copied review row should identify the exact source surfaces and
+  comparison stratum without reopening the JSON bundle.
+- Chunked/live UK evidence-review merging must preserve the same UK comparison
+  class and core/non-core count fields as single-bundle review. Review parallelism
+  must not change the evidence surface.
+- UK evidence-review rows must distinguish review input/materialization lanes
+  from legal proof lanes. Artifact review rows are `artifact_bundle`; live
+  review rows identify `live_statute_id` or `live_oracle_corpus` plus whether
+  the reviewed bundle came from a cache hit, cache miss, or uncached live build.
+  These fields explain the review surface only; they must not alter proof
+  claims, replay adjudications, or source authority classification.
+- Evidence-review merge fields must stay aligned with `_review_bundles` count
+  outputs. Display-tier and sparse-blocker counts are also merge-sensitive
+  evidence lanes, not purely local rendering details. A regression test should
+  fail whenever a new `by_*` review count output is not merge-registered.
+- The UK source-status vocabulary and byte threshold are frontend-owned in
+  `lawvm.uk_legislation.source_state`; diagnostic tools may expose legacy string
+  tuples, but they must not define their own source-size threshold locally.
+- UK bench rows must persist enacted/oracle source status and source byte size
+  with that same vocabulary. A saved benchmark row that only says `NO_ORACLE`
+  loses whether the acquisition problem was absent source or a cached
+  too-small/invalid-looking source body.
+- `uk-bench` must classify both enacted and oracle source states before
+  returning `NO_ENACTED` or `NO_ORACLE`. Early failure on one side must not hide
+  the acquisition state of the other comparison surface.
+- UK bench corpus CSV generation must record enacted/oracle source status and
+  byte size, not only locator presence. Locator coverage and usable XML coverage
+  are distinct acquisition facts.
+- `uk-bench --compare` must print enacted/oracle source-status counts for both
+  runs. Score movement is not interpretable until acquisition-state changes are
+  visible.
+- `uk-bench --compare` must also print row-status, comparison-class, and
+  core-benchmark distributions for both runs. A score delta is not sufficient
+  evidence if rows moved from core comparison to source/oracle pathology classes
+  or from OK into acquisition/replay error states.
+- Loading legacy UK bench CSVs must derive `core_benchmark` from
+  `comparison_class` when the explicit column is absent. Treating every legacy
+  classed row as core hides source/oracle pathology rows in compare and
+  candidate-triage summaries.
+- `uk-bench --compare` must also print replay-regime distributions,
+  source-parse observation/rejection totals/rules, effect-feed rejection
+  totals/rules, authority/lowering rejection deltas, replay adjudication deltas,
+  and oracle-alignment count/method deltas. Benchmark comparison is an evidence
+  comparison, not only a score comparison.
+- `uk-candidates` rows must preserve those saved bench source-status fields.
+  Candidate triage may re-run archive-backed residual analysis, but the saved
+  benchmark source state remains part of the evidence surface and should survive
+  copy/paste or JSON export.
+- `uk-candidates` rows and summaries must also preserve saved bench authority
+  rejection totals/rules. Candidate triage may inspect effects again, but it
+  must not drop the compile-time authority lane that produced the benchmark
+  frontier.
+- `uk-candidates` residual replay analysis must collect and preserve compile
+  rejection totals/rules from the residual replay compile pass. It is not enough
+  to show effect-inventory rejections when the residual replay itself may have
+  skipped feed-parse, lowering, or authority-filter lanes under the saved
+  benchmark regime.
+- `uk-candidates` text summaries must print inspected/available effect counts
+  plus source/compare evidence families and candidate/non-candidate splits.
+  JSON-only visibility hides whether frontier rows are real replay candidates,
+  source-pathology buckets, or compare-shape artifacts.
+- `uk-candidates --fast` summaries must explicitly count candidate-analysis
+  skipped rows. Status text alone is not enough because zero candidate/rejection
+  counts in fast mode mean "not inspected", not "clean".
+- Human-readable `uk-candidates` row output must print the saved enacted/oracle
+  source status, byte size, URL, and SHA-256 hash, not only aggregate summary
+  counts. A single copied candidate row should preserve whether its source
+  surfaces were available, absent, or too-small and which archive bytes were
+  used.
+- `uk-candidates` aggregate JSON/text summaries must count saved enacted/oracle
+  source statuses. Row-level preservation alone is insufficient for dashboard
+  triage because source-unavailable frontier shape should be visible without
+  scanning every row.
+- `uk-candidates` rows and aggregate summaries must disclose the saved UK replay
+  regime (`metadata_backfill`, `oracle_alignment`, `applicability_mode`, and
+  `authority_mode`). Candidate/residual triage uses these settings for replay;
+  omitting them from JSON/text output makes copied evidence ambiguous.
+- `uk-candidates` summary objects must duplicate configured diagnostic budgets
+  (`top`, `score_mode`, `effect_budget`, and `residual_budget`) from the filters
+  block. Summary-only consumers should not need to read two JSON branches to
+  understand whether truncation/skips came from the configured diagnostic
+  budget.
+- `uk-effect` and `uk-effects` must make the replay applicability lens explicit
+  in JSON and text reports. Their default remains
+  `effective_date_plus_feed_applied`, but `effective_date_only` inspection must
+  not silently report under a stricter policy than the saved benchmark or replay
+  regime being investigated.
+  - `uk-candidates --fast --residual-only` must keep source-unavailable residual
+    analysis rows visible. Missing enacted/oracle comparison surfaces are not
+    clean residual sets; they are triage rows with
+    `uk_residual_analysis_source_unavailable`.
+  - residual-analysis compile/apply exceptions in `uk-candidates` are row-local
+    execution failures, not command-level aborts. The row status is
+    `residual comparison execution unavailable`, the triage rule is
+    `uk_residual_analysis_execution_unavailable`, and the execution lane carries
+    `uk_residual_compile_exception_recorded` or
+    `uk_residual_apply_exception_recorded` with exception type/message and
+    `blocking=true`.
+- `evidence`, `prove-oracle`, and live `evidence-review` also use that shared
+  normalization for UK runs; otherwise proof bundles and benchmark/replay rows
+  could disagree about what `--source-first-candidate` means.
+- `--allow-metadata-only-effects` / `--no-metadata-only-effects` is wired into
+  the shared UK replay regime. When metadata-only effects are excluded, the
+  compiler must emit `uk_effect_metadata_only_selection_rejected` rows instead
+  of silently filtering those source-lane effects.
+- UK replay-regime argparse wiring is also shared. Adding a new UK replay
+  regime flag in one diagnostic entrypoint but not another creates hidden
+  benchmark/proof drift, so the parser definition belongs beside the shared
+  normalization in `uk_replay_regime.py`.
+- The CLI jurisdiction flag must survive both positions, `lawvm -j uk <cmd>` and
+  `lawvm <cmd> -j uk`; subcommand parsers must not overwrite a global UK
+  selection with their own default when UK replay-regime flags are present.
+- Human-readable `evidence-review` output must print the UK replay regime when
+  present; JSON-only visibility is not enough for interactive benchmark/proof
+  triage.
+- `evidence-review` summaries must also aggregate enacted/oracle source-status
+  counts. Otherwise `NO_ORACLE` and weak proof batches hide whether the blocker
+  was absent source, too-small cached XML, or a replay/proof limitation.
+- The generic `lawvm replay -j uk` entrypoint is a UK frontend surface too. It
+  must expose the same replay-regime flags as `uk-replay` and map its generic
+  `--archive` argument to the UK farchive `db` input before dispatch.
+- UK replay-regime flags exposed on shared entrypoints must reject when the
+  selected jurisdiction is not UK. Silently ignoring `--source-first-candidate`
+  or `--no-oracle-alignment` on a non-UK run creates false evidence about the
+  regime that produced the output. The same rejection rule applies to adjacent
+  UK diagnostic flags such as `--no-metadata-only-effects`.
+- `uk-bench --show` must print source-parse, bench-exception, effect-feed,
+  authority, lowering, and replay-adjudication evidence over all attempted rows
+  before the no-valid-results return. `ERR`, `NO_ORACLE`, and `NO_ENACTED` rows
+  are evidence lanes, not invisible non-results.
+- When those all-attempted-row replay evidence totals differ from the ordinary
+  replay-scored block, text output must label them as `All-row ...` so copied
+  reports do not confuse failed-row evidence with the replay-scored subset.
+- `uk-bench` history `replay_regimes` must count all attempted rows, not only
+  `OK` rows. The replay regime is run-configuration evidence even when the row
+  failed before producing a scored replay.
+- `lawvm bench -j uk --no-save` is the clean smoke-test path for benchmark
+  coverage checks. It may print the full report, but it must not write run CSV,
+  score-witness sidecar, or benchmark-history artifacts.
+- `lawvm bench -j uk --statute <ID>` must filter the UK bench corpus to exactly
+  the requested statute before applying diagnostic limits. If the statute is not
+  present in the corpus, the command fails visibly rather than saving an empty
+  run.
+- UK bench filters that leave no rows must fail before running or saving,
+  except for the explicit `--limit 0` diagnostic budget. Empty saved runs from
+  accidental year/type/statute filters are false benchmark evidence.
+- `lawvm bench -j uk --parallel N` requires `N >= 1`. Nonpositive worker counts
+  are invalid command input, not a hidden request for sequential fallback.
+- `lawvm bench -j uk --min-year A --max-year B` rejects `A > B` before archive
+  access. Inverted year ranges are invalid command input, not an empty benchmark
+  corpus.
+- UK bench parallel execution failures are row evidence. Worker archive-open
+  failures and parent-side future failures must produce `ERR` rows with
+  `uk_bench_unclassified_exception` observations instead of aborting the whole
+  benchmark.
+- UK bench submit-time failures and sequential scorer failures follow the same
+  rule: batch isolation is allowed only when the failed statute is represented
+  as a typed `ERR` row with replay regime and source-state context preserved.
+- `uk-replay` must surface replay-time effect source diagnostics with the same
+  lane vocabulary as `uk-bench`: nonblocking `effect_source_pathology`
+  observations such as `uk_effect_source_pathology_classified` stay separate
+  from `source_acquisition` observations such as cached, missing, too-small, or
+  parse-failed affecting-act XML records. Blocking source-acquisition rejection
+  counts are derived from that observation lane with the shared compile-record
+  classifier, not by filtering the observation lane out first. JSON payloads
+  and text summaries must preserve both lanes so interactive replay can explain
+  why a replay had no operations instead of relying on batch-only benchmark
+  reports.
+- `uk-replay` must also preserve manual compile frontier observations as their
+  own `manual_compile_frontier` compile lane in JSON payloads and text
+  summaries. Manual-frontier rows are evidence about deterministic replay
+  limits; interactive replay must not drop them while bench/candidates/evidence
+  bundles preserve them. The replay payload/text surface must include both the
+  generic diagnostic `rule_id` count and the manual frontier status/rule-id
+  counts, so copied output distinguishes deterministic rows from manual-candidate
+  and source-insufficient rows.
+- A manual-frontier row with `strict_disposition=record` is an observation even
+  if it omits the legacy `blocking=false` flag. Replay JSON/text may still
+  treat rows with neither `blocking` nor `strict_disposition=record` as blocking
+  for legacy safety, but the manual compile frontier must not become a compiler
+  failure by serializer accident.
+- `uk-bench` may refine manual-frontier rows after replay when replay emits
+  exact preimage-gap adjudications for the same effect/op ID. This does not
+  change lowering or replay. It corrects evidence summaries that were compiled
+  before live replay state was available; affected rows become
+  `uk_manual_frontier_text_patch_preimage_chain_gap` / `source_insufficient`.
+- `uk-candidates` residual replay analysis is also a compiler surface. Its
+  `residual_compile_observations` and `residual_compile_rejections` must carry
+  the same `effect_source_pathology` and `source_acquisition` lanes as
+  `uk-replay`, not just feed/lowering/authority lanes, because residual triage
+  often recompiles under a saved replay regime.
+- `uk-candidates` saved-bench row evidence must preserve manual compile
+  frontier counts from `uk-bench` (`manual_compile_status_counts` and
+  `manual_compile_rule_counts`) in the same row-level rejection/evidence line as
+  source-pathology and lowering counts. Otherwise a fast candidate report can
+  hide whether residual work is deterministic parser work, manual work, or
+  source-insufficient.
+- Archive-backed `uk-candidates --manual-compile-evidence-jsonl PATH` writes
+  all inspected `manual_compile_candidate` effect rows as
+  `lawvm.uk_manual_compile_frontier.v1` work items. It must reject `--fast`
+  because saved-bench counts are not enough source witness for manual work, and
+  it must still write an empty JSONL plus JSON/text metadata when the selected
+  frontier has zero rows. Each row must preserve the replay/authority regime
+  used for classification, so a copied work queue does not lose whether it came
+  from source-first, current-mixed, or a narrower applicability lens.
+- UK evidence/proof bundles are also replay evidence surfaces. Their
+  `compiler_observations.uk_compile_observation_summary` and
+  `uk_compile_rejection_summary` must preserve effect source pathology and
+  source acquisition lanes with the same blocking split used by `uk-replay`,
+  so a copied proof bundle does not lose why source-first replay produced few
+  or no executable operations. The blocking classifier is the same as replay:
+  explicit `blocking` wins, `strict_disposition=record` is nonblocking, and
+  rows with neither marker remain blocking for legacy safety.
+- Nonblocking source-acquisition observations are valid evidence. For example,
+  `uk_affecting_act_xml_cached_recorded` records acquisition state without
+  raising a compile rejection. Bench diagnostics, replay payloads, candidate
+  residual payloads, single-effect reports, text inspection reports, and proof
+  bundles must keep such rows in the `source_acquisition` observation lane
+  while excluding them from blocking source-acquisition rejection counts.
+  `uk-bench` saved rows and history output must also persist source-acquisition
+  observation counts/rules, not just blocking acquisition rejection counts.
+  Human-readable `uk-effect` and `uk-effects` output should use the same split:
+  print source-acquisition observations first, then blocking source-acquisition
+  rejections only when the shared compile-record classifier says they block.
+- Available-but-malformed affecting-act XML is a source pathology, not a
+  generic no-op or missing-source artifact. UK compile, `uk-replay`,
+  `uk-effects`, `uk-effect`, `uk-bench`, candidates, and evidence/proof bundles
+  must preserve it as blocking `uk_affecting_act_xml_parse_rejected` with
+  `phase=parse`, while absent affecting-act XML remains
+  `uk_affecting_act_xml_missing_rejected` with `phase=acquisition`.
+- Present-but-too-small affecting-act XML is acquisition evidence, not parse
+  evidence. UK compile/replay and inspection tools must emit blocking
+  `uk_affecting_act_xml_too_small_rejected` with `phase=acquisition` and the
+  observed source size instead of attempting XML parse and losing the truncated
+  source witness.
+- Missing affecting-act XML is blocking source-acquisition evidence only for
+  effect rows that can legitimately require affecting source for replay:
+  structural replay rows and the narrow supported nonstructural replay families.
+  Commencement and other unsupported nonstructural rows must not inflate
+  source-acquisition blocker counts merely because their affecting instrument is
+  not cached; they are classified in the nonstructural/source-shape lane instead.
+- `uk-effects` must support direct post-summary filtering by typed diagnostic
+  family (`--source-pathology`, `--lowering-rule`,
+  `--source-acquisition-rule`, `--manual-compile-status`, and
+  `--manual-compile-rule`). Benchmark triage should not require exporting every
+  effect row and post-processing JSON just to inspect one blocker family; these
+  filters run before `--limit` so bounded reports remain representative of the
+  selected diagnostic family. `--evidence-jsonl` requires a manual-frontier
+  status or rule filter and writes the selected rows as a compact work queue
+  with source witness, not as executable replay input. A rule-only manual
+  frontier export is valid because rule IDs are the stable work-queue partition.
+- `uk-effect`, `uk-effects`, `uk-candidates`, UK bench, and UK prefetch reports
+  use the same blocking classifier as `uk-replay`/proof bundles for
+  feed/source/residual compiler rows. This prevents
+  `strict_disposition=record` observations from becoming parse, compile, or
+  acquisition rejections when copied between tooling surfaces.
+- Payloadless UK text-level operations must still carry a recoverable lowered
+  witness. Source-first authority filtering is allowed to reject metadata-only
+  text patches, but it must not reject a `text_replace` / `text_repeal` merely
+  because the operation has no structural payload node to host the witness.
+- A single-target `words omitted` / `word omitted` / `words repealed` /
+  `word repealed` effect whose affecting XML payload is only one quoted fragment
+  may lower to a typed `text_repeal` with rewrite rule
+  `uk_effect_quote_only_omission_payload_text_patch`. The effect feed owns the
+  action and target; the affecting XML owns the exact deleted fragment. This
+  rule must not fire when surrounding residue contains substantive instruction
+  text or when the effect expands to multiple targets.
+- UK fragment substitution parsing accepts ordinary drafting variants such as
+  `for "X" in both places where it occurs, substitute "Y"`,
+  `for "X" in both places where it occurs, there is substituted "Y"`, and
+  source quote defects where a closing curly quote is used as the opening quote
+  before the replacement. These are parse-lane recoveries for explicit
+  instruction text, not authority-mode or replay-time guesses.
+- UK fragment insertion parsing must preserve insert semantics. A word-level
+  instruction such as `for "6" insert "12"` compiles to a text patch whose
+  preimage is `6` and whose replacement is `6 12`, with rule
+  `uk_effect_for_insert_text_insertion_patch`; it must not silently turn the
+  insertion into a replacement of `6` by `12`.
+- UK range substitution parsing preserves ordinal anchors in text spans. An
+  instruction such as `for the words from "the" where it second occurs to the
+  end substitute "..."` lowers to `TEXT_FROM_the_TO_END` with occurrence `2`,
+  not an unbounded first-match patch. Witness: `asp/2000/11`, affected by
+  `asp/2010/13 s. 106(2)(a)`.
+- UK range-to-end substitution also accepts the drafting form `there is
+  substituted`, not only imperative `substitute`. An instruction such as `for
+  the words from "member" to the end there is substituted "..."` lowers to
+  `TEXT_FROM_member_TO_END` with rule
+  `uk_effect_range_to_end_there_is_substituted_text_patch`. Witness:
+  `asp/2000/11`, affected by `asp/2006/10 Sch. 6 para. 9(7)`.
+- UK range repeal parsing preserves parenthesized ordinal start anchors. An
+  instruction such as `the words from "in" (where first occurring) to "Act" are
+  repealed` lowers to `TEXT_FROM_in_TO_Act` with occurrence `1`, not a
+  structural delete and not an unbounded first-match text patch. Witness:
+  `asp/2001/2`, affected by `asp/2005/12 s. 51(8)(a)`.
+- Effect inspection classifies text-patch rows whose explicit target exists
+  but whose non-synthetic selector preimage is absent from both base and oracle
+  target text surfaces as
+  `text_patch_preimage_absent_from_target_surfaces`. This is compare/frontier
+  evidence, not replay recovery; synthetic selectors such as `TEXT_FROM__TO_END`
+  are excluded because they describe contextual spans rather than literal
+  preimages. Manual-frontier triage must not label these rows deterministic
+  frontend support merely because they lower to a text patch; it classifies
+  them as `uk_manual_frontier_text_patch_preimage_chain_gap` /
+  `source_insufficient` until the missing intermediate source chain is acquired
+  or otherwise proved.
+- Effect inspection must not demote a chained replay rewrite merely because
+  the enacted target was absent and the current oracle already contains the
+  replacement. If an explicit text-rewrite lowering rule such as
+  `uk_effect_wherever_occurring_substitution_text_patch` targets a provision
+  introduced after enactment, the preimage can be consumed between enactment
+  and current oracle. When the base target is absent, the oracle target exists,
+  the literal preimage is absent, and the literal replacement is present in the
+  oracle target, classify the compare shape as
+  `uk_compare_text_patch_preimage_consumed_by_replay_chain`. This remains a
+  core candidate and is compare/frontier evidence only; it does not change
+  replay semantics or authorize same-target absent-preimage rewrites.
+- Source-pathology target-depth checks are path-aware. A reference like
+  `in paragraph 3` may validly lower to `schedule:3/paragraph:3`; it is not
+  automatically a `misselected_target_context` merely because section-local
+  paragraph targets usually sit below a subsection. Under-depth claims remain
+  valid when source text names a subsection or section-local paragraph but the
+  lowered target only names the section.
+- Replay distinguishes generic missing text selectors from idempotent-looking
+  text rewrites. If a `text_replace` selector is absent but its replacement text
+  is already present in the target subtree, replay emits
+  `uk_replay_text_match_already_rewritten` and still makes no mutation. This is
+  evidence classification only; it does not authorize assuming the skipped
+  operation was legally redundant.
+- Replay may recover a text selector when the only mismatch is effect-feed
+  citation punctuation spacing, for example `c.14` versus source text `c. 14`.
+  The same bounded rule covers the reverse spacing direction, such as
+  `c. 29` versus source text `c.29`, and trailing selector whitespace before
+  punctuation that belongs to the host provision rather than the selected
+  source phrase.
+  The recovery is intentionally narrow and must emit
+  `uk_replay_text_match_punctuation_space_normalized` with
+  `family=text_match_recovery`, `blocking=false`, and
+  `strict_disposition=record`. This is a replay-time source typography
+  normalization, not fuzzy text matching. Current witnesses include
+  `asp/2000/1` effects `key-cf1e14a783fa6f41144915ac658e4046` and
+  `key-8be5a6cdf965a46ea436730a21e7f1db`, plus `asp/2000/7` effect
+  `key-baf5fe3bb0e52c712c284bec5648920c`.
+- Replay may recover a text selector when the only mismatch is word-internal
+  apostrophe/hyphen elision between the effect-feed selector and source/XML
+  text, for example `tenant's son-in-law` versus `tenants soninlaw`. The rule
+  `uk_replay_text_match_word_punctuation_elided` is limited to apostrophe-like
+  and hyphen-like marks between word characters; it must not match whitespace,
+  arbitrary punctuation, or reordered words. This is replay evidence with
+  `family=text_match_recovery`, `blocking=false`, and
+  `strict_disposition=record`.
+- Replay may recover a contextual word selector anchor kind when the explicit
+  target subtree has no exact source kind but has exactly one same-label child
+  among provision-like child kinds. This covers UK schedule wording such as
+  `paragraph (c)` where the parsed target children are `item c`. The recovery
+  must emit `uk_replay_contextual_word_anchor_kind_normalized` with
+  `family=text_match_recovery`, `blocking=false`, and
+  `strict_disposition=record`; if there is not exactly one same-label anchor,
+  replay must leave the operation unresolved.
+- Parser lowering must preserve nested contextual word anchors when the source
+  says a word immediately follows a local child such as `subsection (4)(a)`,
+  `paragraph (c)(ii)`, or `sub-paragraph (a)(i)`. These lower to explicit
+  contextual selectors like
+  `TEXT_WORD_and_IMMEDIATELY_FOLLOWING_subparagraph_ii`, not the old generic
+  `..._TARGET` placeholder. If replay cannot find a unique child anchor under
+  the explicit target subtree, the row remains a blocking text-match miss rather
+  than widening the target.
+- The contextual word-repeal family also accepts `which appears immediately
+  after paragraph (a)`. It lowers to
+  `TEXT_WORD_<word>_IMMEDIATELY_FOLLOWING_paragraph_<label>` under
+  `uk_effect_contextual_adjacent_word_repeal_text_patch`, preserving the
+  source-owned local anchor. Current witness: `asp/2000/4` affected
+  `s. 19(5)` by `asp/2007/10 s. 57(4)(b)(i)`.
+- Parser lowering must not compile `the definition of "X" is repealed`,
+  declarative plural wording such as `the definitions of "X" and "Y" are
+  repealed`, or imperative wording such as `omit the definition(s) of "X" [and
+  "Y"]` as a bare deletion of the words `X`. It lowers each quoted definition
+  term to `TEXT_DEFINITION_ENTRY_X`, and replay may delete only a uniquely
+  bounded definition entry for that term. This prevents a definition repeal
+  from removing the same words inside another definition or phrase needed by a
+  later same-target operation. Current declarative plural witness:
+  `asp/2001/13` effect `key-0d4201398b6c7a4a16f85850e264338a`.
+  - if the target subtree does not contain exactly one bounded definition entry,
+    replay emits blocking `uk_replay_definition_entry_shape_gap`; it must not
+    fall back to deleting the bare term
+- Parser lowering may also compile `for the definition of "X", substitute- ...`
+  as `TEXT_DEFINITION_ENTRY_X` using
+  `uk_effect_definition_entry_substitution_text_patch`; the comma after the
+  quoted anchor is punctuation in the source formula, not a different target
+  family. Current corpus witness: `asp/2001/10`
+  `key-3c8a483c35fb24fd68e1677ad672502a`.
+- Parser lowering may inherit definition-list context for child rows that only
+  contain a quoted term. If the parent source instruction explicitly says
+  `omit the definitions of-` and each child row is just `"X",`, the child row
+  lowers to `TEXT_DEFINITION_ENTRY_X` under
+  `uk_effect_quote_only_definition_list_omission_text_patch`. Standalone
+  quote-only omissions remain bare text deletions; the parent definition-list
+  source witness is required.
+- Replay definition-entry matching treats immediately following parenthetical
+  alias text as part of the same bounded entry. This covers Welsh/translated
+  definition aliases such as `"X" ("Y") means ...` without deleting a bare
+  occurrence of `X` elsewhere in the target subsection.
+- Replay definition-entry matching treats `shall be construed` as a bounded
+  definition predicate variant when and only when the named term resolves to
+  exactly one definition entry in the target subtree. Successful application
+  emits nonblocking
+  `uk_replay_definition_predicate_shall_construed_normalized` with
+  `family=definition_entry_predicate_recovery`,
+  `strict_disposition=record`, and `quirks_disposition=record`. Current corpus
+  witnesses include `asp/2001/2` effects
+  `key-ebf6b73b896bab897c15ae554c0db64c`,
+  `key-02150edb4f24177b310a05305b2617c8`, and
+  `key-570e7790f9e34114d99beba23be1565a` from `asp/2019/17`.
+  The rule does not authorize inserting an absent definition entry or treating
+  `substitute` as `insert`; absent terms remain
+  `uk_replay_definition_entry_shape_gap`.
+- Parser lowering may compile `in the definition of "X", omit paragraph (d)` or
+  `in the definition of "X", for paragraph (c) substitute ...` to
+  `TEXT_DEFINITION_CHILD_PARAGRAPH_X<US>label`. Replay may rewrite only a
+  uniquely bounded child segment inside the named definition entry.
+  - preferred source-tree shape: UK XML `OrderedList Type="alpha"` under a
+    definition entry is preserved as target-owned `item` children under
+    `uk_definition_ordered_list_child_preserved`, carrying the source
+    `definition_term` and `definition_child_label` in attrs rather than a
+    synthetic public IR label. Replay may delete or replace that explicit child
+    only when term and label identify exactly one preserved child.
+    The parser emits a nonblocking source-parse observation with the same rule
+    ID, including count and sample attrs, so the structure-preserving repair is
+    visible in replay, EID, effects, and bench evidence instead of being a
+    hidden grafter heuristic.
+  - bilingual definition headings such as `“private sector employer”
+    (“cyflogwr sector preifat”) means...` preserve the first/source-language
+    quoted term as `definition_term`; the parenthesized translation is source
+    context, not the replay address.
+  - visible inline XML tags such as `Citation`, `CitationSubRef`, and `Term`
+    are not standalone legal units for UK replay addressing, but their text is
+    legal text of the host provision. The parser must preserve that visible
+    inline text in the host provision while continuing to exclude those inline
+    tags from EID identity. When such inline text is present, it emits
+    nonblocking source-parse observation `uk_visible_inline_text_preserved`
+    with count and samples. This prevents definition-anchor rewrites from
+    operating on a source surface where citation titles have silently vanished,
+    for example `“2013 Act” means the <Citation>Local Government (Democracy)
+    (Wales) Act 2013</Citation>;`.
+  - fallback source-tree shape: for older flattened surfaces, replay may still
+    use the existing semicolon-delimited paragraph ordinal path, but only when
+    exactly one text carrier and one bounded definition entry exist.
+  - if the target subtree does not have exactly one replay-visible text carrier
+    or the named definition/child ordinal cannot be bounded, replay emits
+    blocking `uk_replay_definition_child_shape_gap`; it must not delete the
+    bare child label or rewrite the whole definition entry
+- Effect metadata that points at `Act` / `/whole_act` must not override source
+  text that names a different Act as the actual amendment target. Lowering must
+  emit blocking `uk_effect_external_act_target_rejected` with the source-named
+  Act title and skip the row rather than sending a destructive `/whole_act`
+  text operation to replay.
+  - current witness: `asp/2002/11` Schedule 6 paragraphs amending schedules to
+    the Town and Country Planning (Scotland) Act 1997 and related external Acts
+- A partial whole-Act repeal such as `The whole Act (other than sections 13 and
+  16) is repealed` is a broad negative target scope. Lowering must emit
+  blocking `uk_effect_partial_whole_act_repeal_rejected` with the exception
+  provisions rather than compiling `/whole_act` replace/repeal or expanding all
+  live children except the exceptions.
+  - current witness: `asp/2003/5` / `asp/2007/14 Sch. 4 para. 42`
+- UK insertion ordering must distinguish ordinary alphabetic item suffixes
+  from Roman numerals by sibling scheme. A schedule item batch such as
+  `2(da)-(dk)` belongs after item `d` and before item `e`; labels like `dc`,
+  `di`, and `dl` must not be romanized into numeric order when the peer set is
+  an alphabetic item family.
+  - current witness: `asp/2003/5` / `asp/2009/9 Sch. 5 para. 4(3)` and
+    `ssi/2010/421 Sch. para. 2(3)`
+- The same insertion ordering helper must also preserve Roman-suffix labels
+  when the peer scheme is Roman. Labels such as `iia` and `iiia` sort after
+  `ii` and `iii` respectively, before the next Roman numeral. This is still
+  deterministic ordering, not target recovery.
+  - current witnesses: `asp/2002/17`, `asp/2003/1`, `asp/2003/11`, and
+    `asp/2004/11`
+- Explicit source insertion anchors override generic label-order placement.
+  If extracted source says `After section 97 ... insert` and the effect target
+  is `section 97ZA`, lowering must carry `preceding_eid=section-97` from the
+  extracted source, not only from effect comments. For grouped inserts under
+  one anchor, later siblings chain to the prior inserted target so `20A`,
+  `20B`, `20C` remain in source order rather than repeatedly inserting after
+  `20`.
+  - replay may emit nonblocking `uk_replay_source_anchored_order_observed`
+    when this explicit source order conflicts with the generic label-order
+    invariant; this is an invariant-model limitation, not a replay failure
+  - current witness: `asp/2003/2` / `asp/2015/6`, where the oracle places
+    `97ZA` immediately after `97` and before `97A`
+- If an insert target already exists and the existing target subtree has the
+  same normalized text as the payload subtree, replay records nonblocking
+  `uk_replay_existing_target_already_materialized` and performs no mutation.
+  Conflicting same-target inserts record blocking
+  `uk_replay_existing_target_conflict_gap` with existing/payload text previews;
+  the idempotent rule is not permission to overwrite or ignore divergent
+  payloads. Generic `uk_replay_existing_target_gap` remains only for
+  existing-target inserts where replay cannot safely compare payload surface.
+  - current witness: `asp/2002/17` / `ssi/2011/141`, where paragraph `h` had
+    already materialized before a later same-target insertion row
+  - conflict witnesses include `asp/2000/4` / `ssi/2011/211` schedule item
+    `1(e)` and `asp/2002/17` / `asp/2007/3` section `11(3)`
+- An inserted crossheading compiled to bare `crossheading:` has no explicit
+  identity or placement anchor. Replay records blocking
+  `uk_replay_crossheading_target_gap` instead of misclassifying it as an
+  ordinary duplicate target. A future fix should lower crossheading inserts to
+  a typed facet/node with source-backed placement, usually paired with the
+  adjacent inserted section.
+  - current witness: `asp/2003/13` / `asp/2015/9`, inserted crossheadings
+    paired with sections `257A`, `271A`, and `291A`
+- When a text selector misses after replay has already applied a text patch to
+  the same target path, replay must classify the miss as
+  `uk_replay_text_patch_preimage_drift` and include the prior same-target text
+  patch op IDs. This is still blocking for the skipped operation; it only
+  separates composition/preimage drift from generic missing text so later
+  source-order or manual-compile work has a precise queue.
+  - if more than one prior same-target text patch has already applied, replay
+    records `uk_replay_text_patch_preimage_drift_multi_prior_same_target`
+    because the unresolved composition problem is no longer a single-patch
+    preimage drift
+  - do not treat this class as permission to reorder same-date operations or
+    apply fuzzy matching in replay
+  - current witnesses show different causes: `asp/2001/8` has a repealed phrase
+    absent from the base/oracle target surfaces after a same-source insertion,
+    while `asp/2001/2` points toward definition-target lowering that is too
+    coarse for the enclosing subsection
+  - a future fix belongs in phase-local lowering/source extraction only if it
+    proves the narrower target or legal ordering from source evidence
+- Synthetic text selectors such as `TEXT_FROM_*` or `TEXT_AFTER_*` are internal
+  compiler placeholders, not literal statutory text. If such a selector reaches
+  replay and misses outside the definition-entry special case, replay records
+  `uk_replay_text_match_synthetic_selector_gap` rather than a generic
+  `uk_replay_text_match_missing`.
+- If the exact text selector misses but an alphanumeric-normalized selector is
+  present in the target subtree, replay records
+  `uk_replay_text_match_normalized_preimage_present_gap`. This proves a
+  presentation/source-surface mismatch such as punctuation or citation styling,
+  not authority to perform a fuzzy replacement.
+- If the exact selector includes citation year/chapter tail text but the target
+  subtree only contains the same selector with that citation tail missing,
+  replay records `uk_replay_text_match_citation_tail_surface_gap`. This is a
+  text-surface/source-shape diagnosis; replay must not silently omit citation
+  tail text to make a mutation executable.
+- If the selector itself is non-substantive shell text, such as dot leaders,
+  replay records `uk_replay_text_match_non_substantive_selector_gap`. Replay
+  must not treat punctuation-only source shells as executable legal text.
+- If a selector surface combines multiple quoted or otherwise separated source
+  fragments into one contiguous text patch, replay records
+  `uk_replay_text_match_multi_fragment_selector_gap`. Replay must not delete or
+  substitute separated spans from a collapsed selector; lowering must emit
+  separately owned operations or a manual compile claim.
+- When a text operation reaches a live target but the target subtree has no
+  replay-visible text at all, replay records
+  `uk_replay_text_target_empty_surface_gap`. This is distinct from ordinary
+  `uk_replay_text_match_missing`: the executor found the structural target, but
+  there is no text surface on which the text patch could operate. Replay must
+  not infer a parent/sibling target or inject the source phrase.
+- A valid single-segment section/article/rule/regulation target is not
+  malformed merely because the body tree is organized under part/chapter
+  wrappers. If the target is absent but bracketed by existing section-like
+  labels, replay records `uk_replay_missing_sectionlike_range_gap` rather than
+  `uk_replay_malformed_target_gap` or generic `uk_replay_repealed_target_gap`.
+  This keeps valid UK alphanumeric labels such as `6A`/`6B`/`6C` out of the
+  malformed-target bucket while still refusing to search beyond the explicit
+  target or assert legal repeal without source proof.
+- Malformed UK targets are split by the surface reason when replay can prove it
+  without target fallback: bracket placeholder labels
+  (`uk_replay_malformed_target_placeholder_label_gap`), note/crossheading labels
+  lowered as numbered descendants
+  (`uk_replay_malformed_target_note_or_crossheading_gap`), invalid root
+  sectionlike labels (`uk_replay_malformed_target_sectionlike_label_gap`),
+  unlabeled schedule roots
+  (`uk_replay_malformed_target_schedule_root_label_gap`), and address
+  granularity collapses where a descendant label was compiled into the wrong
+  level (`uk_replay_malformed_target_granularity_collapse_gap`). All remain
+  blocking source/lowering gaps; replay must not reinterpret the target as a
+  sibling, parent, crossheading facet, or textual descendant.
+  - invalid sectionlike root labels are recognized even when the malformed
+    label has descendants, for example a parser lowering phrase fragments into
+    `section:appt/subsection:day`; this must not be hidden as an ordinary
+    missing-parent shape gap
+- If a replace payload leaf does not match the lowered target leaf, replay
+  records `uk_replay_replace_payload_target_leaf_mismatch_gap` and performs no
+  mutation. This is distinct from a malformed address: the target path can be
+  syntactically meaningful, but source extraction/lowering produced a payload
+  whose legal-unit kind or label is not owned by that target.
+- If the grandparent target exists but the immediate parent target is absent,
+  replay records `uk_replay_missing_parent_grandparent_present_gap` rather than
+  generic `uk_replay_missing_parent_shape_gap`. This preserves the narrower
+  source/lowering problem: the operation is anchored inside a live branch, but
+  a required intermediate provision is missing and replay must not synthesize
+  it silently.
+- If a root-level parent such as `section:9` is absent for a descendant target
+  such as `section:9/subsection:1`, replay records
+  `uk_replay_missing_root_parent_shape_gap`. This is a different source/live
+  shape problem from an absent intermediate child under an existing branch.
+- If the parent exists and the target leaf is absent but bracketed by sibling
+  labels or blank placeholder structure, replay records
+  `uk_replay_absent_sibling_range_gap`, not generic
+  `uk_replay_repealed_target_gap`. This proves only an interstitial
+  target/source-shape gap, not legal repeal, and replay must perform no
+  fallback insertion/replacement/deletion.
+- If a schedule root or descendant branch is absent without a prior
+  repealed-prefix witness, replay records `uk_replay_missing_schedule_range_gap`
+  or `uk_replay_missing_schedule_branch_gap`. These classes preserve that the
+  source/lowering/live-tree surface only proves an absent schedule shape; they
+  must not be used to assert legal repeal or to search another schedule.
+- A direct schedule paragraph target under a schedule that is actually
+  partitioned into parts/chapters/divisions is a source/lowering context gap,
+  not permission to search every partition for the paragraph. Replay records
+  `uk_replay_schedule_partition_target_gap` and performs no mutation until the
+  source supplies or lowering proves the missing partition context.
+  - schedules partitioned specifically by `part` record the narrower
+    `uk_replay_schedule_partition_part_target_gap`
+  - current witness family: `asp/2002/11`, where later schedule repeals lower
+    to paths such as `schedule:2/paragraph:80` although the live schedule is
+    partitioned
+- A schedule paragraph descendant target whose paragraph carrier is absent or
+  represented by a legacy wrapper records
+  `uk_replay_schedule_paragraph_carrier_gap`, not a generic missing-parent
+  finding. Replay still performs no mutation; the fix belongs in source
+  extraction/lowering or a named wrapper-normalization rule, not in parent
+  fallback.
+  - current witness family: `asp/2002/11` / `asp/2010/11`, e.g. schedule
+    paragraph replacements lowered to `schedule:1/paragraph:1/subparagraph:3A`
+- If the missing schedule paragraph carrier exists only as a `p1group` wrapper,
+  replay records the narrower
+  `uk_replay_schedule_p1group_wrapper_carrier_gap`. This identifies a legacy
+  XML wrapper/ontology problem without silently rebinding the operation through
+  that wrapper.
+- A schedule paragraph descendant target under an unlabeled paragraph carrier is
+  a source/XML ontology gap, not a malformed legal label. Replay records
+  `uk_replay_schedule_unlabeled_paragraph_target_gap` and performs no mutation
+  until lowering proves the intended carrier or a wrapper-normalization rule
+  explicitly owns the unlabeled paragraph shape.
+  - this is narrower than `uk_replay_schedule_paragraph_carrier_gap`: the
+    schedule has paragraph descendants, but the paragraph carrier label needed
+    by the legal address is absent in the source tree
+- An Annex reference lowered as a Schedule target is a source-vocabulary
+  mismatch. Replay records `uk_replay_annex_schedule_reference_gap` rather than
+  treating the missing schedule as an ordinary malformed target. A fix belongs
+  in UK target normalization with an explicit Annex/Schedule source witness.
+- A text operation lowered to a missing schedule Part/Chapter while the source
+  witness mentions paragraph/subparagraph/item text records
+  `uk_replay_schedule_container_text_target_gap`. Replay must not search under
+  the schedule for a matching descendant; lowering must prove the descendant
+  target or emit a manual compile candidate.
+- If source text names a descendant such as subsection `(1)(a)` but lowering
+  collapses the path to `section:X/subsection:a`, replay records
+  `uk_replay_subsection_descendant_target_collapse_gap`. This preserves the
+  original target-resolution defect without treating the alphabetic descendant
+  as a valid standalone subsection or broadening the search to a live unique
+  child.
+- Source-first authority diagnostics are applicability-aware. A compiled row
+  that is not replay-applicable may still emit nonblocking
+  `uk_effect_authority_filter_non_applicable_observed`, but it must not become
+  blocking `uk_effect_authority_filter_rejected`, because no operation from
+  that row would be admitted into replay under the selected applicability lens.
+- UK bench evidence must preserve the same split in every surface. Nonblocking
+  authority diagnostics are `authority_observations`; blocking authority
+  filter failures are `authority_rejections` / blocking authority rejections.
+  Reports, history rows, compare output, and compact row evidence must not
+  label non-applicable observations as replay blockers.
+- UK candidate reports are part of that same saved-bench evidence surface.
+  `uk-candidates` rows, summaries, and fast text output must preserve saved
+  benchmark authority observations separately from saved blocking authority
+  rejections. The diagnostics sidecar can carry row records, but aggregate
+  observation counts/rules must also survive in copied candidate reports.
+- UK lowering diagnostics also distinguish replay blockers from unsupported
+  nonstructural observations. Source-local compilation may emit
+  `uk_effect_lowering_no_supported_action_rejected`, but replay-oriented
+  callers must reclassify it as nonblocking with
+  `uk_effect_nonreplay_lowering_observed` when the selected replay lens does
+  not support or admit that nonstructural effect family. Renumbering,
+  savings/transitional, excluded, and applied-with-modifications rows remain
+  visible evidence; they are not counted as current replay blockers unless a
+  supported nonstructural replay family claims them. New UK tooling should read
+  `lowering_observation_*` for the full diagnostic lane and
+  `blocking_lowering_rejection_*` for replay blockers; bare
+  `lowering_rejection_*` is legacy naming. `uk-candidates` follows the same
+  split in row JSON, summary JSON, and text summaries so candidate frontier
+  triage cannot confuse nonblocking unsupported-effect evidence with a replay
+  blocker.
+- `uk-replay` text diagnostics should label the all-row lowering histogram as
+  `lowering observation rules`; `blocking lowering rules` is the replay-blocking
+  subset.
+- UK benchmark comparison classes must not count nonstructural-only current
+  projection rows as core structural replay failures. If every parsed effect
+  row for a statute is classified as `nonstructural_root_gap`, the row class is
+  `nonstructural_current_projection` and `core_benchmark=false`. The row remains
+  in the saved CSV/diagnostics/history evidence surfaces; it is removed only
+  from structural replay averages. Mixed rows with `__none__`,
+  instruction-text payloads, manual compile candidates, or any supported
+  structural lane remain core unless another non-core comparison class applies.
+- UK word-level feed labels are not authoritative when the affecting source
+  text explicitly names a structural repeal of the exact affected unit. A
+  `words omitted` / `word omitted` / `words repealed` row whose source says
+  `omit subsection (N)` and whose metadata target is exactly that subsection
+  lowers as `REPEAL` with
+  `uk_effect_word_omission_structural_subsection_repeal_reclassified`; mismatch
+  cases remain blocked text-patch failures rather than target hijacks.
+- UK fragment parsing owns common instruction-text text-patch forms before any
+  manual compile claim: quoted anchor-to-end substitutions without the word
+  `words`, direct quoted word omissions such as `omit the "or" at the end`, and
+  bounded definition-entry substitutions lower to typed text patches with rule
+  IDs. Definition-entry substitution replaces the uniquely bounded definition
+  entry; it must not delete a bare phrase occurrence or rewrite an ambiguous
+  definition list.
+- Explicit definition-list anchors are deterministic text-patch surfaces, not
+  manual placement guesses. `before the definition of "X" insert ...` lowers to
+  `TEXT_BEFORE_DEFINITION_X`; `in the definition of "D", after "A" insert "B"`
+  lowers to `TEXT_IN_DEFINITION_D_AFTER_A` using an internal selector separator
+  so the replay executor rewrites only the uniquely bounded definition entry.
+  `after "A", in both places insert "B"` remains an all-occurrences text patch
+  over the explicit target subtree. Ambiguous definition entries, missing
+  anchors, and source text saying only `at the appropriate place(s)` are not
+  covered by these rules and must remain candidate/manual-compile evidence.
+- UK quoted text-patch lowering also owns the common bounded occurrence
+  variants when the source names an explicit affected target. `for "X", in
+  each/both place(s) it occurs, substitute "Y"` and parenthesized variants such
+  as `for "X" (in each place it appears) substitute "Y"` lower to
+  all-occurrences text replacement; `for the first/second/... "X" substitute
+  "Y"`, `for "X" in the first/second/... place it occurs substitute "Y"`, and
+  `before "X", in the first/second/... place it occurs, insert "Y"`, and
+  `after "X", in the first/second/... place it occurs, insert "Y"` lower with
+  an explicit occurrence index. The equivalent prefixed form `after the
+  first/second/... "X" insert "Y"` is the same bounded text-patch family.
+  `omit the final "X"` lowers with the final-occurrence selector
+  `occurrence=-1`, not all-occurrences deletion, so earlier conjunctions or
+  repeated words remain intact.
+  `for "X" (in the first and second places it appears) substitute "Y"` lowers
+  to two explicit occurrence-indexed text patches, applied in descending
+  occurrence order, so a third occurrence is preserved and the source does not
+  silently become an all-occurrences substitution. A narrow parenthesized
+  nested-quote source form such as
+  `for "('X')" substitute "(a 'X')"` lowers as the exact punctuation/quote
+  text patch named by the source. If the selected occurrence or quoted
+  punctuation preimage is absent from the target surfaces,
+  replay must emit the existing text-preimage drift/missing classification
+  rather than inventing an anchor. A non-operative parenthetical source aside
+  between a quoted `after "X"` anchor and `insert "Y"` is ignored for this
+  lowering; it is evidence about the prior insertion, not part of the target
+  preimage. `at the beginning insert "Y"` lowers to `TEXT_BEGINNING`, which may
+  prepend only to the target node's own text and must not escalate into child or
+  parent structure. `for the words after "X" substitute "Y"` lowers to
+  `TEXT_AFTER_X_TO_END`: replay retains the explicit anchor and rewrites only
+  the target node's own tail, or a uniquely matching descendant text node. It
+  must not flatten a target subtree just to make the tail replacement apply.
+  `for the words before paragraph (a) substitute "Y"` lowers to
+  `TEXT_BEFORE_CHILD_paragraph_a` and may replace only the explicit target
+  node's own lead text when that target has exactly one direct child matching
+  the cited child label.
+  `at the end insert "Y"` and `insert at the end "Y"` lower with
+  `uk_effect_at_end_text_insertion_patch` to an append patch (`TEXT_END`), not
+  to a synthetic replace-from-empty-to-end selector. Replay appends to the
+  target node's own text when present, or to the last text-bearing descendant
+  when the target is a container, preserving existing text and children. It
+  must not flatten the target subtree or replace the whole target with only
+  the inserted tail.
+  `omit the words from "X" to "Y"` lowers to `TEXT_FROM_X_TO_Y` deletion. These
+  rules do not cover table or cell targets, heading or cross-heading facets,
+  definition-child deletion, or `appropriate place(s)` placement.
+
+## UK Effect Ordering
+
+- UK replay effect order is legal time plus affecting-source citation order:
+  effective date, editorial modified date, affecting act id, natural
+  `affecting_provisions`, then effect id as a final stable tie-breaker. Opaque
+  effect ids are not legal order.
+- When a same-date/same-affecting-act group is reordered by source citation,
+  the pipeline emits nonblocking
+  `uk_effect_source_provision_order_normalized` evidence with the original and
+  ordered effect ids/provisions. Strict mode records this normalization because
+  it is a deterministic source-order rule, not a target recovery.
+- Parenthesized single-letter source labels such as `(c)` and `(d)` are
+  alphabetic legal labels for ordering. They must not be Roman-normalized to
+  100/500. Roman ordering is used for multi-letter Roman numerals and for
+  nested `(i)` style labels after alphabetic parents.
+- Same-target text patches may be reordered only by an exact quoted preimage
+  chain inside the same effective-date bucket. If operation A replaces `old`
+  with `middle` and operation B replaces `middle` with `new`, B depends on A
+  even when opaque feed ids or modified-date ties put B first.
+  - lowering emits `uk_effect_text_patch_preimage_chain_ordered` when it applies
+    this deterministic order
+  - if the chain is cyclic or non-unique, lowering emits blocking
+    `uk_effect_text_patch_preimage_chain_ambiguous` and leaves source order
+    intact
+  - this rule does not do fuzzy numeric matching or cross-target inference
+  - current witness: `asp/2000/2` section 4(1), where `ssi/2001/7` changes
+    `£589,278,000` to `£626,571,000` before `ssi/2001/68` changes
+    `£626,571,000` to `£626,568,000`
+- Empty-effect-type rows must not infer structural repeal from temporary
+  `shall have effect as if ... words were omitted` language.
+  - this wording is an applicability/temporary modification surface, not a
+    claim that the broad affected provision is repealed
+  - lowering emits blocking
+    `uk_effect_empty_type_as_if_words_omitted_rejected` rather than converting
+    the broad affected provision to `REPEAL`
+  - current witness: `asp/2000/1` / `ssi/2000/11 reg. 2`, which names
+    `s. 11` but only states temporary treatment of words in `s. 11(9)`
+- Source-backed inserted/replaced payload descendants need deterministic local
+  identity when the source payload lacks descendant `eId`s.
+  - lowering emits `uk_payload_descendant_eid_synthesis` for non-schedule
+    payload descendants derived from the explicit target root
+  - this is identity normalization only; it must not create or delete legal
+    text and strict mode can block the synthesis when disabled
+  - current witness: `asp/2000/1` / `asp/2010/13 s. 97(2)(b)`, where inserted
+    `s. 11(5A)` owns child paragraphs `(a)` and `(b)` but the affecting source
+    payload does not provide child EIDs
+- Generic UK source container labels may be inferred from unambiguous source
+  URI/id ordinals, but only in source statute parsing, not amendment payload
+  parsing.
+  - `part` means `part-1`; `part-n2` means `part-2`; likewise `schedule` and
+    `schedule-n2`
+  - source parsing emits `uk_container_number_inferred_from_source_uri`
+  - replay/oracle EID comparison normalizes this source URI ordinal spelling
+    drift without mutating replay state
+  - current witness: `asp/2001/2`, where enacted XML uses generic visible
+    `Part`/`SCHEDULE` labels with ids such as `part-n2` and `schedule-n2`,
+    while the current oracle exposes numbered containers
+
+## UK Target Shape Normalization
+
+- A non-schedule affected-provision reference of the form `s. N(a)` names a
+  direct section paragraph, not an alphabetic subsection. Lowering records
+  `uk_effect_direct_section_paragraph_target_normalized` and emits
+  `section:N/paragraph:a`; deeper references such as `s. N(a)(ii)` emit
+  `section:N/paragraph:a/subparagraph:ii`. Witness:
+  `asp/2001/2`, affected by `asp/2005/12 s. 51(2)(a)-(b)`.
+  If that paragraph is not represented as an addressable XML carrier under the
+  section, replay emits `uk_replay_direct_section_paragraph_carrier_gap`
+  rather than falling back to a subsection or whole-section text patch.
+- Source wording such as `in sub-paragraph (2), paragraph (b) is repealed`
+  is nested context, not a sibling list. Sibling expansion must not split it
+  into `.../subparagraph:2` plus `.../item:b`; it must preserve the metadata
+  target `.../subparagraph:2/item:b`. Witness: `asp/2000/1`, affected by
+  `asp/2010/8 s. 118(8)(e)(i)`.
+- Source wording such as `in subsection (5), at the beginning of paragraph (b)
+  insert ...` is placement context, not a sibling target list. Text expansion
+  must not synthesize bogus targets such as `section:22at/subsection:the/...`;
+  the source-owned target remains the feed target. Witness: `asp/2000/1`,
+  affected by `asp/2010/8 s. 118(5)`.
+- Source wording such as `For sections 3 to 12 ... substitute— CHAPTER 1 ...`
+  is a range-to-container substitution, not proof that an existing
+  `part:2/chapter:1` node may be replaced or inserted blindly.
+  - source pathology emits `range_to_container_target_unsupported`
+  - lowering emits blocking `uk_effect_range_to_container_substitution_rejected`
+    and does not replay the unsafe container replacement
+  - manual-frontier classification emits
+    `uk_manual_frontier_range_to_container_candidate`
+  - a future replay implementation must own the replaced section range, the new
+    container payload, and lineage/migration evidence before mutating the tree
+  - current witness: `asp/2001/2`, affected by `asp/2019/17 s. 35(2)` and
+    `s. 38(2)`
+- Heading/title/sidenote suffixes are target facets, not child labels. The
+  supported heading-facet word-patch rule records
+  `uk_effect_heading_facet_word_patch_lowered` and emits a heading facet target
+  such as `section:6/heading`, never `section:6/subsection:title/heading`.
+  Witness: `asp/2000/6`, affected by `asp/2016/8 s. 3(3)`.
+- When a heading-facet target resolves to a real heading carrier but the quoted
+  source preimage is absent from that heading text, replay emits
+  `uk_replay_heading_text_preimage_gap` and leaves the heading unchanged. This
+  is a text-surface gap, not permission to rewrite the body, widen to a sibling,
+  or substitute by semantic synonym. Witness cluster: `asp/2000/7`, affected by
+  `ssi/2013/197`, heading ops against sections 9 to 11.
+- Insert-after/insert-before effects that lower as a text replacement preserve
+  the anchor text inside the replacement. If the target resolves but that anchor
+  is absent from the target subtree, replay emits
+  `uk_replay_text_insert_anchor_preimage_gap` and does not insert by guessing a
+  nearby location. Witnesses include `asp/2000/11`, affected by `asp/2010/13`
+  `s. 106(6)(a)`, and `asp/2000/4`, affected by `ssi/2005/610 reg. 2`.
+- Monetary amount substitutions are exact text-surface operations. If a target
+  resolves but the quoted amount is absent, replay emits
+  `uk_replay_text_monetary_amount_preimage_gap`; it does not substitute a nearby
+  amount by numeric similarity or fiscal context. Witnesses include
+  `asp/2000/2`, affected by `ssi/2001/68 art. 2(2)`, and `asp/2001/4`,
+  affected by `asp/2003/6 s. 8(a)`. Row-level effect inspection classifies both
+  as `uk_manual_frontier_text_patch_preimage_chain_gap`, because the source
+  preimage is absent from the available enacted/current target surfaces.
+- Parenthetical omission effects are exact text-surface operations. If the
+  quoted parenthetical is absent from the resolved target, replay emits
+  `uk_replay_text_parenthetical_omission_preimage_gap`; it does not delete a
+  larger host phrase or infer an editorially equivalent omission. Witness:
+  `asp/2000/1`, affected by `ukpga/2012/11 Sch. 3 para. 32`.
+- Citation-list substitutions sometimes encounter replay/oracle surfaces where
+  connector words between citation fragments are elided even though the
+  alphanumeric citation sequence is visible. Replay emits
+  `uk_replay_text_match_citation_connector_surface_gap` and blocks the fuzzy
+  replacement rather than treating the connector-elided surface as an exact
+  preimage. Witness: `asp/2001/2`, affected by `asp/2019/17 sch. para. 3(4)(a)`.
+- Article-prefixed phrase substitutions are not lowered by matching only the
+  post-article content word. If the selector is shaped like `an approved` and
+  the target contains `approved` only in a different phrase shape, replay emits
+  `uk_replay_text_match_article_phrase_surface_gap` and blocks. Witness:
+  `asp/2000/4`, affected by `asp/2007/10 s. 60(1)(a)`.
+- A section-body title substitution can expose a prior-source timeline gap
+  rather than a text-surface family. Witness: `asp/2000/7`, affected by
+  `ssi/2013/197 Sch. 2 para. 2(a)`, expects the prior `Public Standards
+  Commissioner for Scotland` surface introduced by `asp/2010/11 Sch. 1 para. 1`.
+  When the archived current affecting-source XML for that prior amendment
+  extracts only a dot-leader/repealed shell, but the official enacted
+  `/{affecting_act_id}/enacted/data.xml` extracts substantive text for the same
+  affecting provision reference, the UK frontend may select the enacted source
+  lane. This emits
+  `uk_affecting_act_current_shell_enacted_source_selected` with current/enacted
+  locators and text previews, and lowers the operation with authority layer
+  `AFFECTING_ACT_ENACTED_TEXT`. Fallback is same-provision only; enacted text
+  elsewhere in the affecting act is not enough.
+
+## UK Metadata Renumbering
+
+- Explicit UK effect metadata of the form `X renumbered as X(1)` lowers to a
+  typed `RENUMBER` operation only when the destination is the source provision's
+  own immediate descendant. The lowering emits
+  `uk_effect_metadata_renumber_lowered` with source and destination targets.
+- Explicit UK effect metadata of the form `X(n) renumbered as X(m)` also lowers
+  to typed `RENUMBER` when source and destination are same-parent, same-kind
+  siblings and the labels differ. The lowering emits
+  `uk_effect_metadata_sibling_renumber_lowered`.
+- Replay materializes this narrow shape by preserving the source provision's
+  identity as the parent, moving its current text and children into the new
+  descendant, and assigning the descendant eId derived from the destination
+  address. This supports later same-source text patches against the new
+  descendant without treating the text patch as a target-resolution fallback.
+- Same-parent sibling renumbering materializes only when the source exists and
+  the destination is absent. Replay relabels the source node to the destination
+  label, derives the destination eId, and reorders it under the same parent; it
+  does not insert, replace, or repeal by text coincidence.
+- Broader renumbers, moves, or destination collisions remain unsupported replay
+  actions until LawVM owns their lineage semantics explicitly. They must not be
+  coerced into inserts, replaces, or parent rewrites.
+
+## UK Nested Target Splitting and Insert Anchors
+
+- Adjacent parenthesized alphabetic labels are expanded as same-parent siblings
+  only when they are a coherent sibling family. One-letter labels paired with
+  two-letter labels must share the one-letter stem, so `(d)(da)` may expand as
+  siblings but `(a)(zi)` remains a nested target. This prevents target
+  smuggling from `...128(6)(a)(zi)` into sibling targets `...128(6)(a)` and
+  `...128(6)(zi)`.
+- Source text of the form `before sub-paragraph (i) insert ...` on a structural
+  insert lowers with an insertion-anchor witness naming the following sibling
+  eId. Replay inserts before that sibling when present. This is an explicit
+  source anchor, not a label-sort fallback.
+- If the following sibling cannot be found, replay falls back to the existing
+  insertion-parent resolution and sorted insertion paths; the unresolved anchor
+  shape should remain visible through the replay result or a later adjudication
+  family rather than rewriting a parent or sibling.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -155,6 +156,15 @@ def _load_xml_root(path: Path) -> ET.Element:
     return ET.parse(path).getroot()
 
 
+def _download_metadata(*, requested_url: str, final_url: str, data: bytes) -> dict[str, Any]:
+    return {
+        "requested_url": requested_url,
+        "final_url": final_url,
+        "bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
+
+
 def fetch_manifest(manifest_path: Path, dry_run: bool = False) -> int:
     repo = _repo_root()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -182,11 +192,7 @@ def fetch_manifest(manifest_path: Path, dry_run: bool = False) -> int:
                 print(f"    ERROR: {exc}", file=sys.stderr)
                 continue
             dest.write_bytes(data)
-            meta = {
-                "requested_url": url,
-                "final_url": final_url,
-                "bytes": len(data),
-            }
+            meta = _download_metadata(requested_url=url, final_url=final_url, data=data)
             meta_path = dest.with_suffix(dest.suffix + ".meta.json")
             meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
     return failures
@@ -258,7 +264,11 @@ def fetch_effects_pages(seed_feed: Path, out_dir: Path, dry_run: bool = False) -
             continue
         dest.write_bytes(data)
         dest.with_suffix(dest.suffix + ".meta.json").write_text(
-            json.dumps({"requested_url": url, "final_url": final_url, "bytes": len(data)}, indent=2) + "\n",
+            json.dumps(
+                _download_metadata(requested_url=url, final_url=final_url, data=data),
+                indent=2,
+            )
+            + "\n",
             encoding="utf-8",
         )
     return failures

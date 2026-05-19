@@ -1,5 +1,6 @@
 """UK replay adjudication emission tests."""
 from __future__ import annotations
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from lawvm.core.adjudication_evidence import adjudication_finding_evidence_rows
@@ -8,7 +9,15 @@ from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSour
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.uk_legislation.uk_amendment_replay import UKReplayExecutor, UKReplayPipeline, replay_uk_ops
+from lawvm.uk_legislation.source_adjudication import classify_uk_replay_adjudication_bucket
+from lawvm.uk_legislation.uk_amendment_replay import (
+    UKReplayExecutor,
+    UKReplayPipeline,
+    UKEffectRecord,
+    compile_effect_to_ir_ops,
+    _prepare_replay_uk_ops,
+    replay_uk_ops,
+)
 
 
 def _base_statute() -> IRStatute:
@@ -48,6 +57,97 @@ def _duplicate_text_statute() -> IRStatute:
     )
 
 
+def _uk_table_effect() -> UKEffectRecord:
+    return UKEffectRecord(
+        effect_id="key-uk-table-inline",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2022-07-15",
+        affected_uri="",
+        affected_class="WelshParliamentAct",
+        affected_year="2021",
+        affected_number="1",
+        affected_provisions="s. 159(5) Table 2",
+        affecting_uri="",
+        affecting_class="WelshStatutoryInstrument",
+        affecting_year="2022",
+        affecting_number="797",
+        affecting_provisions="reg. 7(c)(ii)",
+        affecting_title="Corporate Joint Committees Regulations",
+        in_force_dates=[{"date": "2022-07-15", "prospective": "false"}],
+    )
+
+
+def _table_cell_statute(*, duplicate_table: bool = False) -> IRStatute:
+    table = IRNode(
+        kind=IRNodeKind.TABLE,
+        label=None,
+        text="",
+        children=(
+            IRNode(
+                kind=IRNodeKind.ROW,
+                label=None,
+                text="",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CELL,
+                        label=None,
+                        text="The Welsh Ministers",
+                        attrs={"rowspan": "2"},
+                    ),
+                    IRNode(
+                        kind=IRNodeKind.CELL,
+                        label=None,
+                        text="Functions under Chapter 1 of Part 6.",
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.ROW,
+                label=None,
+                text="",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.CELL,
+                        label=None,
+                        text=(
+                            "Functions under Chapter 1 of Part 6 "
+                            "(performance of principal councils)."
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    tables = (table, table) if duplicate_table else (table,)
+    return IRStatute(
+        statute_id="asc/2021/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="159",
+                    text="",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            text="The following table has effect.",
+                            children=tables,
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+
+
 def test_executor_records_replay_target_not_found() -> None:
     adjudications: list[CompileAdjudication] = []
     executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
@@ -64,9 +164,135 @@ def test_executor_records_replay_target_not_found() -> None:
     )
 
     assert len(adjudications) == 1
-    assert adjudications[0].kind == "uk_replay_malformed_target_gap"
+    assert adjudications[0].kind == "uk_replay_replace_payload_target_leaf_mismatch_gap"
     assert adjudications[0].detail["target"] == "section:9"
     assert adjudications[0].source_statute == "ukpga/2026/1"
+
+
+def test_executor_classifies_direct_section_paragraph_missing_carrier_as_source_shape() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="48",
+                    attrs={"eId": "section-48"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="authority text authority text",
+                            attrs={"eId": "section-48-1"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_direct_section_paragraph_missing_carrier",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "48"), ("paragraph", "a"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="authority", occurrence=2),
+                replacement="authority (i) ",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_direct_section_paragraph_carrier_gap"
+    assert classify_uk_replay_adjudication_bucket(adjudications[0].kind) == "source_shape"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+
+
+def test_uk_table_entry_inline_text_insertion_lowers_to_owned_table_cell_selector() -> None:
+    lowering_records: list[dict[str, object]] = []
+    extracted = ET.fromstring(
+        "<P4>ii in the second column, in the second entry relating to the Welsh "
+        "Ministers, after \u201c(performance of principal councils)\u201d insert "
+        "\u201c, Chapter 1A of Part 6 (performance of corporate joint committees).\u201d</P4>"
+    )
+
+    ops = compile_effect_to_ir_ops(
+        _uk_table_effect(),
+        extracted,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPLACE
+    assert op.target == LegalAddress(path=(("section", "159"), ("subsection", "5")))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "(performance of principal councils)"
+    assert op.text_patch.replacement == (
+        "(performance of principal councils), Chapter 1A of Part 6 "
+        "(performance of corporate joint committees)."
+    )
+    assert any(
+        str(tag).startswith("table_cell_selector:")
+        and '"column_index": 2' in str(tag)
+        and '"entry_index": 2' in str(tag)
+        for tag in op.provenance_tags
+    )
+    assert any(
+        row.get("rule_id") == "uk_effect_table_entry_inline_text_insertion"
+        and row.get("blocking") is False
+        and row.get("strict_disposition") == "record"
+        for row in lowering_records
+    )
+
+
+def test_executor_applies_table_entry_inline_text_insertion_to_rowspanned_cell_only() -> None:
+    extracted = ET.fromstring(
+        "<P4>ii in the second column, in the second entry relating to the Welsh "
+        "Ministers, after \u201c(performance of principal councils)\u201d insert "
+        "\u201c, Chapter 1A of Part 6 (performance of corporate joint committees).\u201d</P4>"
+    )
+    ops = compile_effect_to_ir_ops(_uk_table_effect(), extracted)
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(_table_cell_statute(), ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    table = subsection.children[0]
+    first_entry = table.children[0].children[1]
+    second_entry = table.children[1].children[0]
+    assert "corporate joint committees" not in first_entry.text
+    assert "corporate joint committees" in second_entry.text
+    assert adjudications == []
+
+
+def test_executor_blocks_table_entry_inline_text_insertion_when_table_not_unique() -> None:
+    op = compile_effect_to_ir_ops(
+        _uk_table_effect(),
+        ET.fromstring(
+            "<P4>ii in the second column, in the second entry relating to the Welsh "
+            "Ministers, after \u201c(performance of principal councils)\u201d insert "
+            "\u201c, Chapter 1A of Part 6 (performance of corporate joint committees).\u201d</P4>"
+        ),
+    )[0]
+    adjudications: list[CompileAdjudication] = []
+
+    replay_uk_ops(_table_cell_statute(duplicate_table=True), [op], adjudications_out=adjudications)
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_table_entry_inline_text_insertion_unresolved"
+    assert adjudications[0].detail["reason_code"] == "table_not_unique"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
 
 
 def test_executor_records_text_match_missing() -> None:
@@ -92,6 +318,324 @@ def test_executor_records_text_match_missing() -> None:
     assert adjudications[0].kind == "uk_replay_text_match_missing"
     assert adjudications[0].detail["action"] == "text_replace"
     assert adjudications[0].detail["text_match"] == "does-not-exist"
+
+
+def test_executor_records_punctuation_spacing_text_match_recovery() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="Reference to the Fatal Accidents and Sudden Deaths Inquiry (Scotland) Act 1976 (c. 14).",
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_replace_citation_spacing",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="Fatal Accidents and Sudden Deaths Inquiry (Scotland) Act 1976 (c.14)",
+                    occurrence=0,
+                ),
+                replacement="Inquiries into Fatal Accidents and Sudden Deaths etc. (Scotland) Act 2016",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].text == (
+        "Reference to the Inquiries into Fatal Accidents and Sudden Deaths etc. (Scotland) Act 2016."
+    )
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_text_match_punctuation_space_normalized"
+    ]
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["family"] == "text_match_recovery"
+
+
+def test_executor_records_punctuation_spacing_text_match_recovery_when_feed_has_citation_space() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="26B",
+                    text="which contravenes the Data Protection Act 1998 (c.29),",
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_replace_citation_feed_spacing",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "26B"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="the Data Protection Act 1998 (c. 29)",
+                    occurrence=0,
+                ),
+                replacement="the data protection legislation",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].text == (
+        "which contravenes the data protection legislation,"
+    )
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_text_match_punctuation_space_normalized"
+    ]
+
+
+def test_executor_records_punctuation_spacing_text_match_recovery_with_trailing_feed_space() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/7",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="22",
+                    text=(
+                        "final for the purposes of section 28 (appeals) "
+                        "of the Sheriff Courts (Scotland) Act 1907 (c. 51)."
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_replace_trailing_feed_space",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "22"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text=(
+                        "section 28 (appeals) of the Sheriff Courts "
+                        "(Scotland) Act 1907 (c.51) "
+                    ),
+                    occurrence=0,
+                ),
+                replacement="section 114(1) of the Courts Reform (Scotland) Act 2014",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].text == (
+        "final for the purposes of section 114(1) of the Courts Reform (Scotland) Act 2014."
+    )
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_text_match_punctuation_space_normalized"
+    ]
+
+
+def test_executor_records_punctuation_spacing_text_from_to_recovery() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="old words from a reference to the Fire Services Act 1947 (c. 41) and more",
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_from_to_citation_spacing",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="TEXT_FROM_a_TO_(c.41)", occurrence=0),
+                replacement="an employee of a relevant authority",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].text == (
+        "old words from an employee of a relevant authority and more"
+    )
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_text_match_punctuation_space_normalized"
+    ]
+
+
+def test_executor_records_word_punctuation_elision_text_match_recovery() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2003/11",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="21",
+                    text="The tenants soninlaw may apply.",
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_replace_word_punctuation_elision",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "21"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="tenant's son-in-law", occurrence=0),
+                replacement="eligible family member",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].text == "The eligible family member may apply."
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_text_match_word_punctuation_elided"
+    ]
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["family"] == "text_match_recovery"
+
+
+def test_executor_does_not_word_punctuation_recover_across_whitespace() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2003/11",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="21",
+                    text="The tenant s son in law may apply.",
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_replace_word_punctuation_elision_negative",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "21"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="tenant's son-in-law", occurrence=0),
+                replacement="eligible family member",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].text == "The tenant s son in law may apply."
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_text_match_normalized_preimage_present_gap"
+    ]
+
+
+def test_executor_classifies_text_match_already_rewritten() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Alpha new Beta"),),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_replace_already_rewritten",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="old", occurrence=0),
+                replacement="new",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_match_already_rewritten"
+    assert adjudications[0].detail["text_match"] == "old"
+    assert adjudications[0].detail["replacement_text"] == "new"
+    assert executor.statute.body.children[0].text == "Alpha new Beta"
 
 
 def test_executor_uses_typed_text_patch_without_legacy_text_fields() -> None:
@@ -128,6 +672,573 @@ def test_executor_uses_typed_text_patch_without_legacy_text_fields() -> None:
     assert executor.statute.body.children[0].text == "Alpha new Beta"
 
 
+def test_executor_classifies_same_target_text_patch_preimage_drift() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Alpha old Beta"),),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_replace_first",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="old", occurrence=0),
+                replacement="new",
+            ),
+            source=_source(),
+        )
+    )
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_replace_preimage_drift",
+            sequence=2,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="old", occurrence=0),
+                replacement="other",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_patch_preimage_drift"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
+    assert adjudications[0].detail["prior_same_target_text_patch_op_ids"] == ("uk_test_text_replace_first",)
+    assert adjudications[0].detail["prior_same_target_text_patch_count"] == 1
+    assert adjudications[0].detail["target_container"] == "section"
+    assert adjudications[0].detail["target_granularity"] == "section"
+    assert executor.statute.body.children[0].text == "Alpha new Beta"
+
+
+def test_executor_classifies_multi_prior_same_target_text_patch_preimage_drift() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Alpha old one two"),),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    for sequence, op_id, match_text, replacement in (
+        (1, "uk_test_text_replace_first", "old", "new"),
+        (2, "uk_test_text_replace_second", "one", "uno"),
+        (3, "uk_test_text_replace_multi_drift", "old", "other"),
+    ):
+        executor.apply_op(
+            LegalOperation(
+                op_id=op_id,
+                sequence=sequence,
+                action=StructuralAction.TEXT_REPLACE,
+                target=LegalAddress(path=(("section", "1"),)),
+                text_patch=TextPatchSpec(
+                    kind=TextPatchKindEnum.REPLACE,
+                    selector=TextSelector(match_text=match_text, occurrence=0),
+                    replacement=replacement,
+                ),
+                source=_source(),
+            )
+        )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_patch_preimage_drift_multi_prior_same_target"
+    assert adjudications[0].detail["prior_same_target_text_patch_op_ids"] == (
+        "uk_test_text_replace_first",
+        "uk_test_text_replace_second",
+    )
+    assert adjudications[0].detail["prior_same_target_text_patch_count"] == 2
+    assert executor.statute.body.children[0].text == "Alpha new uno two"
+
+
+def test_executor_classifies_synthetic_text_selector_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_synthetic_text_selector_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="TEXT_FROM_opening_TO_END", occurrence=0),
+                replacement="replacement",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_match_synthetic_selector_gap"
+    assert adjudications[0].detail["blocking"] is True
+    assert executor.statute.body.children[0].text == "Section one."
+
+
+def test_executor_classifies_range_synthetic_text_selector_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_range_synthetic_text_selector_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="FROM_informed_TO_practicable and", occurrence=0),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_match_synthetic_selector_gap"
+    assert adjudications[0].detail["blocking"] is True
+    assert executor.statute.body.children[0].text == "Section one."
+
+
+def test_executor_applies_after_anchor_to_end_text_patch_without_flattening_children() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="224",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            text="imprisonment for a term of not more than 1 year",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text="child text preserved",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_after_anchor_to_end",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "224"), ("subsection", "2"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="TEXT_AFTER_more than_TO_END", occurrence=0),
+                replacement="6 months or 12 months",
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "imprisonment for a term of not more than 6 months or 12 months"
+    assert subsection.children[0].text == "child text preserved"
+    assert adjudications == []
+
+
+def test_executor_applies_before_child_text_patch_without_flattening_children() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="323",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            text="The old opening words, taking into account",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text="first factor",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_before_child_text_replace",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "323"), ("subsection", "2"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="TEXT_BEFORE_CHILD_paragraph_a",
+                    occurrence=0,
+                ),
+                replacement="The minimum term must be adjusted, taking into account-",
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "The minimum term must be adjusted, taking into account-"
+    assert subsection.children[0].text == "first factor"
+    assert adjudications == []
+
+
+def test_executor_classifies_normalized_preimage_present_text_match_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="The Data Protection Act 1998 c29 applies.",
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_normalized_preimage_present",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="Data Protection Act 1998 (c. 29)", occurrence=0),
+                replacement="UK GDPR",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_match_normalized_preimage_present_gap"
+    assert adjudications[0].detail["source_shape"] == "normalized_preimage_present"
+    assert adjudications[0].detail["blocking"] is True
+    assert executor.statute.body.children[0].text == "The Data Protection Act 1998 c29 applies."
+
+
+def test_executor_classifies_non_substantive_text_selector_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_non_substantive_text_selector_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text=".....", occurrence=0),
+                replacement="replacement",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_match_non_substantive_selector_gap"
+    assert adjudications[0].detail["blocking"] is True
+    assert executor.statute.body.children[0].text == "Section one."
+
+
+def test_executor_classifies_multi_fragment_text_selector_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="The first phrase remains, and the second phrase remains too.",
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_multi_fragment_text_selector_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(
+                    match_text="first phrase”, “second phrase",
+                    occurrence=0,
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_match_multi_fragment_selector_gap"
+    assert adjudications[0].detail["source_shape"] == "multi_fragment_text_selector"
+    assert adjudications[0].detail["blocking"] is True
+    assert executor.statute.body.children[0].text == (
+        "The first phrase remains, and the second phrase remains too."
+    )
+
+
+def test_executor_classifies_citation_tail_surface_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text=(
+                        "This is construed in accordance with section 2(28) of "
+                        "the Regulation of Care (Scotland) Act, of a person who cares."
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_citation_tail_surface_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="section 2(28) of the Regulation of Care (Scotland) Act 2001",
+                    occurrence=0,
+                ),
+                replacement="paragraph 20 of schedule 12",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_match_citation_tail_surface_gap"
+    assert adjudications[0].detail["source_shape"] == "citation_tail_surface_gap"
+    assert adjudications[0].detail["blocking"] is True
+    assert "Act," in executor.statute.body.children[0].text
+
+
+def test_executor_classifies_valid_alphanumeric_section_gap_under_body_wrappers() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2002/3",
+        title="Containerized Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="1",
+                    text="",
+                    children=(
+                        IRNode(kind=IRNodeKind.SECTION, label="6B", text="Previous alpha section."),
+                        IRNode(kind=IRNodeKind.SECTION, label="7", text="Next section."),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_repeal_absent_6c",
+            sequence=1,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "6C"),)),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_missing_sectionlike_range_gap"
+    assert adjudications[0].detail["target"] == "section:6C"
+
+
+def test_executor_classifies_absent_sibling_range_gap_separately_from_repeal() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2002/3",
+        title="Sibling Range Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="10",
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="First."),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="Third."),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_absent_sibling_range_gap",
+            sequence=1,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "10"), ("subsection", "2"))),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_absent_sibling_range_gap"
+    assert adjudications[0].detail["target"] == "section:10/subsection:2"
+    assert [child.label for child in statute.body.children[0].children] == ["1", "3"]
+
+
+def test_executor_classifies_missing_schedule_range_gap_separately_from_repeal() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2002/3",
+        title="Schedule Range Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(kind=IRNodeKind.SCHEDULE, label="1", text="Schedule 1."),
+            IRNode(kind=IRNodeKind.SCHEDULE, label="3", text="Schedule 3."),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_missing_schedule_range_gap",
+            sequence=1,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("schedule", "2"),)),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_missing_schedule_range_gap"
+    assert adjudications[0].detail["target"] == "schedule:2"
+    assert [schedule.label for schedule in statute.supplements] == ["1", "3"]
+
+
+def test_executor_classifies_missing_schedule_branch_gap_separately_from_repeal() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2002/3",
+        title="Schedule Branch Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(IRNode(kind=IRNodeKind.SCHEDULE, label="1", text="Schedule 1."),),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_missing_schedule_branch_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("schedule", "2"), ("paragraph", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="old", occurrence=0),
+                replacement="new",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_missing_schedule_branch_gap"
+    assert adjudications[0].detail["target"] == "schedule:2/paragraph:1"
+    assert [schedule.label for schedule in statute.supplements] == ["1"]
+
+
 def test_executor_records_unsupported_action() -> None:
     adjudications: list[CompileAdjudication] = []
     executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
@@ -154,6 +1265,135 @@ def test_executor_records_unsupported_action() -> None:
     assert adjudications[0].op_id == "uk_test_renumber_unsupported"
 
 
+def test_executor_applies_same_provision_descendant_renumber_then_text_patch() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2024/3",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="9",
+                text="",
+                attrs={"eId": "schedule-9"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="132",
+                        text="132\n\nA rule relating to a member's entitlement to benefits.",
+                        attrs={"eId": "schedule-9-paragraph-132"},
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_renumber_132",
+            sequence=1,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("schedule", "9"), ("paragraph", "132"))),
+            destination=LegalAddress(
+                path=(("schedule", "9"), ("paragraph", "132"), ("subparagraph", "1"))
+            ),
+            source=_source(),
+            witness_rule_id="uk_effect_metadata_renumber_lowered",
+        )
+    )
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_patch_132_1",
+            sequence=2,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(
+                path=(("schedule", "9"), ("paragraph", "132"), ("subparagraph", "1"))
+            ),
+            source=_source(),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="member's entitlement to", occurrence=0),
+                replacement="member's entitlement to, or to the payment of,",
+            ),
+        )
+    )
+
+    paragraph = executor.statute.supplements[0].children[0]
+    assert paragraph.kind is IRNodeKind.PARAGRAPH
+    assert paragraph.label == "132"
+    assert paragraph.text == ""
+    assert len(paragraph.children) == 1
+    subparagraph = paragraph.children[0]
+    assert subparagraph.kind is IRNodeKind.SUBPARAGRAPH
+    assert subparagraph.label == "1"
+    assert subparagraph.attrs["eId"] == "schedule-9-paragraph-132-1"
+    assert subparagraph.text == "1A rule relating to a member's entitlement to, or to the payment of, benefits."
+    assert adjudications == []
+
+
+def test_executor_applies_same_parent_sibling_renumber_after_repeal() -> None:
+    statute = IRStatute(
+        statute_id="asc/2024/6",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="16",
+                    attrs={"eId": "section-16"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="8",
+                            text="8 Old subsection.",
+                            attrs={"eId": "section-16-8"},
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="9",
+                            text="9 Later subsection.",
+                            attrs={"eId": "section-16-9"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_repeal_16_8",
+            sequence=1,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "16"), ("subsection", "8"))),
+            source=_source(),
+        )
+    )
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_renumber_16_9_to_16_8",
+            sequence=2,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("section", "16"), ("subsection", "9"))),
+            destination=LegalAddress(path=(("section", "16"), ("subsection", "8"))),
+            source=_source(),
+            witness_rule_id="uk_effect_metadata_sibling_renumber_lowered",
+        )
+    )
+
+    section = executor.statute.body.children[0]
+    assert [(child.label, child.text, child.attrs["eId"]) for child in section.children] == [
+        ("8", "8Later subsection.", "section-16-8")
+    ]
+    assert adjudications == []
+
+
 def test_executor_records_payload_mismatch() -> None:
     adjudications: list[CompileAdjudication] = []
     executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
@@ -170,8 +1410,29 @@ def test_executor_records_payload_mismatch() -> None:
     )
 
     assert len(adjudications) == 1
-    assert adjudications[0].kind == "uk_replay_missing_parent_shape_gap"
+    assert adjudications[0].kind == "uk_replay_missing_root_parent_shape_gap"
     assert adjudications[0].detail["target"] == "section:9/subsection:1"
+
+
+def test_executor_records_missing_parent_grandparent_present_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_missing_parent_grandparent_present",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "1"), ("subsection", "9"), ("paragraph", "a"))),
+            payload=IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="Inserted paragraph."),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_missing_parent_grandparent_present_gap"
+    assert adjudications[0].detail["target"] == "section:1/subsection:9/paragraph:a"
+    assert executor.statute.body.children[0].text == "Section one."
 
 
 def test_executor_records_payload_missing() -> None:
@@ -214,7 +1475,7 @@ def test_executor_records_replace_payload_missing() -> None:
     assert adjudications[0].detail["target"] == "section:1"
 
 
-def test_executor_records_tree_invariant_violation_after_successful_insert() -> None:
+def test_executor_records_existing_target_conflict_gap() -> None:
     adjudications: list[CompileAdjudication] = []
     executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
 
@@ -230,8 +1491,62 @@ def test_executor_records_tree_invariant_violation_after_successful_insert() -> 
     )
 
     assert len(adjudications) == 1
-    assert adjudications[0].kind == "uk_replay_existing_target_gap"
+    assert adjudications[0].kind == "uk_replay_existing_target_conflict_gap"
     assert adjudications[0].detail["target"] == "section:1"
+    assert adjudications[0].detail["existing_text_preview"] == "section one"
+    assert adjudications[0].detail["payload_text_preview"] == "duplicate section"
+
+
+def test_executor_records_existing_target_already_materialized() -> None:
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_insert_already_materialized_section",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "1"),)),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="Section one."),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_existing_target_already_materialized"
+    assert adjudications[0].detail["target"] == "section:1"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+
+
+def test_executor_records_crossheading_insert_target_gap() -> None:
+    statute = IRStatute(
+        statute_id="asp/2003/13",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(IRNode(kind=IRNodeKind.CROSSHEADING, label=None, text="Existing crossheading"),),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_insert_unanchored_crossheading",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("crossheading", ""),)),
+            payload=IRNode(kind=IRNodeKind.CROSSHEADING, label=None, text="New crossheading"),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_crossheading_target_gap"
+    assert adjudications[0].detail["target"] == "crossheading:"
 
 
 def test_replay_uk_ops_collects_adjudications() -> None:
@@ -248,8 +1563,2180 @@ def test_replay_uk_ops_collects_adjudications() -> None:
     replay_uk_ops(_base_statute(), [op], adjudications_out=adjudications)
 
     assert len(adjudications) == 1
-    assert adjudications[0].kind == "uk_replay_malformed_target_gap"
+    assert adjudications[0].kind == "uk_replay_replace_payload_target_leaf_mismatch_gap"
     assert adjudications[0].op_id == "uk_test_replay_api_collects"
+
+
+def test_executor_records_alpha_subsection_under_numeric_subsections_as_malformed() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="48",
+                    text="",
+                    attrs={"eId": "section-48"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="local transport authority means the authority",
+                            attrs={"eId": "section-48-1"},
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            text="Other definitions",
+                            attrs={"eId": "section-48-2"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_replace_alpha_subsection_malformed",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "48"), ("subsection", "a"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="authority", occurrence=0),
+                replacement="authority (i)",
+            ),
+            source=_source(),
+            provenance_tags=("original_ref: subsection (1)(a)",),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_subsection_descendant_target_collapse_gap"
+    assert adjudications[0].detail["target"] == "section:48/subsection:a"
+    assert statute.body.children[0].children[0].text == "local transport authority means the authority"
+
+
+def test_executor_records_placeholder_label_malformed_target_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="Existing paragraph."),),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_placeholder_label_malformed",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"), ("subsection", "1"), ("paragraph", "[inserted]"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="Section", occurrence=0),
+                replacement="Updated",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_malformed_target_placeholder_label_gap"
+    assert adjudications[0].detail["target"] == "section:1/subsection:1/paragraph:[inserted]"
+    assert statute.body.children[0].children[0].children[0].text == "Existing paragraph."
+
+
+def test_executor_records_note_or_crossheading_malformed_target_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="Existing paragraph."),),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_note_label_malformed",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"), ("subsection", "1"), ("paragraph", "note"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="Section", occurrence=0),
+                replacement="Updated",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_malformed_target_note_or_crossheading_gap"
+    assert adjudications[0].detail["target"] == "section:1/subsection:1/paragraph:note"
+
+
+def test_executor_records_granularity_collapse_malformed_target_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="48",
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Numeric subsection."),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="Second subsection."),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_granularity_collapse_malformed",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "48"), ("subsection", "a"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="Numeric", occurrence=0),
+                replacement="Updated",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_malformed_target_granularity_collapse_gap"
+    assert adjudications[0].detail["target"] == "section:48/subsection:a"
+    assert statute.body.children[0].children[0].text == "Numeric subsection."
+
+
+def test_executor_records_sectionlike_label_malformed_target_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_sectionlike_label_malformed",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "and"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="Section", occurrence=0),
+                replacement="Updated",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_malformed_target_sectionlike_label_gap"
+    assert adjudications[0].detail["target"] == "section:and"
+
+
+def test_executor_records_nested_sectionlike_label_malformed_before_missing_parent() -> None:
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_nested_sectionlike_label_malformed",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "appt"), ("subsection", "day"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="appointed day", occurrence=0),
+                replacement="replacement",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_malformed_target_sectionlike_label_gap"
+    assert adjudications[0].detail["target"] == "section:appt/subsection:day"
+
+
+def test_executor_records_schedule_root_label_malformed_target_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_schedule_root_label_malformed",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("schedule", ""),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="Schedule", occurrence=0),
+                replacement="Updated",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_malformed_target_schedule_root_label_gap"
+    assert adjudications[0].detail["target"] == "schedule:"
+
+
+def test_executor_records_schedule_partition_target_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="2",
+                attrs={"eId": "schedule-2"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PART,
+                        label="2",
+                        attrs={"eId": "schedule-2-part-2"},
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.PARAGRAPH,
+                                label="79",
+                                text="Partitioned paragraph.",
+                                attrs={"eId": "schedule-2-part-2-paragraph-79"},
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_schedule_partition_target_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("schedule", "2"), ("paragraph", "80"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="Partitioned", occurrence=0),
+                replacement="Changed",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_schedule_partition_part_target_gap"
+    assert adjudications[0].detail["target"] == "schedule:2/paragraph:80"
+    assert statute.supplements[0].children[0].children[0].text == "Partitioned paragraph."
+
+
+def test_executor_records_schedule_paragraph_carrier_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2010/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                attrs={"eId": "schedule-1"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.P1GROUP,
+                        label="1",
+                        attrs={"eId": "schedule-1-paragraph-1"},
+                        children=(),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_schedule_paragraph_carrier_gap",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("schedule", "1"), ("paragraph", "1"), ("subparagraph", "3A"))),
+            payload=IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="3A", text="New subparagraph."),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_schedule_p1group_wrapper_carrier_gap"
+    assert adjudications[0].detail["target"] == "schedule:1/paragraph:1/subparagraph:3A"
+
+
+def test_executor_records_schedule_paragraph_absent_carrier_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2010/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                attrs={"eId": "schedule-1"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="2",
+                        attrs={"eId": "schedule-1-paragraph-2"},
+                        text="Existing paragraph.",
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_schedule_paragraph_absent_carrier_gap",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("schedule", "1"), ("paragraph", "1"), ("subparagraph", "3A"))),
+            payload=IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="3A", text="New subparagraph."),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_schedule_paragraph_carrier_gap"
+    assert adjudications[0].detail["target"] == "schedule:1/paragraph:1/subparagraph:3A"
+
+
+def test_executor_recovers_empty_descendant_text_patch_on_parent_text() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/4",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                attrs={"eId": "schedule-1"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        attrs={"eId": "schedule-1-paragraph-1"},
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.ITEM,
+                                label="d",
+                                attrs={"eId": "schedule-1-paragraph-1-d"},
+                                text="Flat parent text mentions section 7(2)(b).",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_empty_descendant_parent_text_recovery",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("schedule", "1"), ("paragraph", "1"), ("item", "d"), ("item", "i"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="section 7(2)(b)", occurrence=0),
+                replacement="section 59(2)(b)",
+            ),
+            source=_source(),
+        )
+    )
+
+    item = executor.statute.supplements[0].children[0].children[0]
+    assert item.text == "Flat parent text mentions section 59(2)(b)."
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_empty_descendant_parent_text_recovered"
+    assert adjudications[0].detail["target"] == "schedule:1/paragraph:1/item:d/item:i"
+    assert adjudications[0].detail["recovery_target"] == "schedule:1/paragraph:1/item:d"
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "apply"
+
+
+def test_executor_classifies_repeated_form_label_payload_shape_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    payload = IRNode(
+        kind=IRNodeKind.SCHEDULE,
+        label="5A",
+        attrs={"eId": "schedule-5a"},
+        children=(
+            IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label="4",
+                attrs={"eId": "schedule-5a-paragraph-4"},
+                children=(
+                    IRNode(kind=IRNodeKind.ITEM, label="a", text="First field."),
+                    IRNode(kind=IRNodeKind.ITEM, label="b", text="Second field."),
+                    IRNode(kind=IRNodeKind.ITEM, label="a", text="Repeated first field."),
+                ),
+            ),
+        ),
+    )
+    op = LegalOperation(
+        op_id="uk_test_repeated_form_label_payload",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("schedule", "5A"),)),
+        payload=payload,
+        source=_source(),
+    )
+
+    replay_uk_ops(_base_statute(), [op], adjudications_out=adjudications)
+
+    assert {adjudication.kind for adjudication in adjudications} == {
+        "uk_replay_repeated_form_label_payload_shape_gap"
+    }
+    assert len(adjudications) == 2
+    assert adjudications[0].detail["target"] == "schedule:5A"
+    assert "duplicate item:a" in adjudications[0].detail["payload_violations"]
+
+
+def test_executor_records_schedule_unlabeled_paragraph_target_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                attrs={"eId": "schedule-1"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="",
+                        attrs={"eId": "schedule-1-paragraph"},
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBPARAGRAPH,
+                                label="1",
+                                text="Unlabeled paragraph descendant.",
+                                attrs={"eId": "schedule-1-paragraph-1"},
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_schedule_unlabeled_paragraph_target_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("schedule", "1"), ("paragraph", "1"), ("subparagraph", "2"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="Unlabeled", occurrence=0),
+                replacement="Changed",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_schedule_unlabeled_paragraph_target_gap"
+    assert adjudications[0].detail["target"] == "schedule:1/paragraph:1/subparagraph:2"
+    assert statute.supplements[0].children[0].children[0].text == "Unlabeled paragraph descendant."
+
+
+def test_executor_records_annex_schedule_reference_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_annex_schedule_reference_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("schedule", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="old", occurrence=0),
+                replacement="new",
+            ),
+            source=_source(),
+            provenance_tags=("original_ref: Annex 1",),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_annex_schedule_reference_gap"
+    assert adjudications[0].detail["target"] == "schedule:1"
+
+
+def test_executor_records_schedule_container_text_target_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                attrs={"eId": "schedule-1"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="2",
+                        text="Existing paragraph.",
+                        attrs={"eId": "schedule-1-paragraph-2"},
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_schedule_container_text_target_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("schedule", "1"), ("part", "2"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="Existing", occurrence=0),
+                replacement="Changed",
+            ),
+            source=_source(),
+            provenance_tags=("original_ref: paragraph 2 of schedule 1",),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_schedule_container_text_target_gap"
+    assert adjudications[0].detail["target"] == "schedule:1/part:2"
+    assert statute.supplements[0].children[0].text == "Existing paragraph."
+
+
+def test_executor_records_heading_text_preimage_gap_without_mutating_heading_carrier() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/7",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.P1GROUP,
+                    label=None,
+                    text="Appointment of Chief Investigating Officer and staff",
+                    attrs={"eId": "section-9-p1group"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="9",
+                            text="The Commission may appoint staff.",
+                            attrs={"eId": "section-9"},
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_heading_text_preimage_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "9"),), special=FacetKind.HEADING),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="Public Standards Commissioner for Scotland", occurrence=0),
+                replacement="Commissioner for Ethical Standards in Public Life in Scotland",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_heading_text_preimage_gap"
+    assert adjudications[0].detail["target"] == "section:9/heading"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "heading_preimage_absent"
+    assert statute.body.children[0].text == "Appointment of Chief Investigating Officer and staff"
+
+
+def test_executor_records_text_insert_anchor_preimage_gap_without_inserting_by_guess() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/11",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="14",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="b",
+                                    text=(
+                                        "in relation to an authorisation granted on the application "
+                                        "of a member of the Scottish Crime Squad"
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_insert_anchor_preimage_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "14"), ("subsection", "5"), ("paragraph", "b"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="General", occurrence=0),
+                replacement="General or the Deputy Director General ",
+            ),
+            source=_source(),
+        )
+    )
+
+    paragraph = statute.body.children[0].children[0].children[0]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_insert_anchor_preimage_gap"
+    assert adjudications[0].detail["target"] == "section:14/subsection:5/paragraph:b"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["source_shape"] == "insert_anchor_preimage_absent"
+    assert paragraph.text == (
+        "in relation to an authorisation granted on the application "
+        "of a member of the Scottish Crime Squad"
+    )
+
+
+def test_executor_records_monetary_amount_preimage_gap_without_substituting_amount() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="4",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="The maximum amount is not yet represented in this replay surface.",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_monetary_amount_preimage_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "4"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="\u00a3626,571,000", occurrence=0),
+                replacement="\u00a3626,568,000",
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = statute.body.children[0].children[0]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_monetary_amount_preimage_gap"
+    assert adjudications[0].detail["target"] == "section:4/subsection:1"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["source_shape"] == "monetary_amount_preimage_absent"
+    assert subsection.text == "The maximum amount is not yet represented in this replay surface."
+
+
+def test_executor_records_parenthetical_omission_preimage_gap_without_deleting_parent() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="9",
+                    text="",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="Keeper receipts are paid into the Scottish Consolidated Fund.",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_parenthetical_omission_preimage_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "9"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="(other than payments of stamp duty land tax)", occurrence=0),
+                replacement=None,
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = statute.body.children[0].children[0]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_parenthetical_omission_preimage_gap"
+    assert adjudications[0].detail["target"] == "section:9/subsection:1"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["source_shape"] == "parenthetical_omission_preimage_absent"
+    assert subsection.text == "Keeper receipts are paid into the Scottish Consolidated Fund."
+
+
+def test_executor_records_citation_connector_surface_gap_without_fuzzy_replace() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="39",
+                    text="",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="b",
+                                    text=(
+                                        "operated a local service in contravention of that "
+                                        "section section 8(4) 22(1)(b) (2) of this Act;"
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_citation_connector_surface_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "39"), ("subsection", "1"), ("paragraph", "b"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="8(4) or 22(1)(b) or (2)", occurrence=0),
+                replacement="3F(1) or 13B(1)(b) or (3)",
+            ),
+            source=_source(),
+        )
+    )
+
+    paragraph = statute.body.children[0].children[0].children[0]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_match_citation_connector_surface_gap"
+    assert adjudications[0].detail["target"] == "section:39/subsection:1/paragraph:b"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["source_shape"] == "citation_connector_surface_gap"
+    assert "3F(1)" not in paragraph.text
+
+
+def test_executor_records_article_phrase_surface_gap_without_fuzzy_replace() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/4",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="57",
+                    text="",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            text="",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text=(
+                                        "a medical practitioner approved for the purposes "
+                                        "of section 20 of the 1984 Act"
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_article_phrase_surface_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "57"), ("subsection", "3"), ("paragraph", "a"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="an approved", occurrence=0),
+                replacement="a relevant",
+            ),
+            source=_source(),
+        )
+    )
+
+    paragraph = statute.body.children[0].children[0].children[0]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_match_article_phrase_surface_gap"
+    assert adjudications[0].detail["target"] == "section:57/subsection:3/paragraph:a"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["source_shape"] == "article_phrase_content_word_surface_gap"
+    assert "a relevant" not in paragraph.text
+
+
+def test_executor_applies_definition_entry_repeal_without_phrase_deletion() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="48",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "\u201cquality contract\u201d means a contract scheme; "
+                                "\u201cquality partnership scheme\u201d means a quality partnership scheme "
+                                "or a quality contract scheme;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_entry_repeal",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "48"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="TEXT_DEFINITION_ENTRY_quality contract", occurrence=0),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "\u201cquality partnership scheme\u201d means a quality partnership scheme "
+        "or a quality contract scheme;"
+    )
+    assert adjudications == []
+
+
+def test_executor_applies_bilingual_definition_entry_repeal_without_phrase_deletion() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asc/2023/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="45",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "\n  In this Part\u2014\n  \u201cthe Public Contracts Regulations\u201d "
+                                "(\u201cy Rheoliadau Contractau Cyhoeddus\u201d) "
+                                "means the Public Contracts Regulations 2015 (S.I. 2015/102); "
+                                "\u201cworks\u201d means paragraph 2 of regulation 2(1) "
+                                "of the Public Contracts Regulations;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_bilingual_definition_entry_repeal",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "45"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(
+                    match_text="TEXT_DEFINITION_ENTRY_the Public Contracts Regulations",
+                    occurrence=0,
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "In this Part\u2014 \u201cworks\u201d means paragraph 2 of regulation 2(1) "
+        "of the Public Contracts Regulations;"
+    )
+    assert adjudications == []
+
+
+def test_executor_applies_definition_entry_substitution_without_phrase_deletion() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2021/3",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="42",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            text=(
+                                "\u201cmedical devices provision\u201d means an old meaning; "
+                                "\u201crelevant provision\u201d means another meaning;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_entry_substitution",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "42"), ("subsection", "2"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="TEXT_DEFINITION_ENTRY_medical devices provision", occurrence=0),
+                replacement=(
+                    "\u201cmedical devices provision\u201d, in Chapter 1, "
+                    "has the meaning given by section 17(2);"
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "\u201cmedical devices provision\u201d, in Chapter 1, "
+        "has the meaning given by section 17(2); "
+        "\u201crelevant provision\u201d means another meaning;"
+    )
+    assert adjudications == []
+
+
+def test_executor_applies_definition_entry_repeal_with_shall_be_construed_predicate() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="48",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "\u201coperational date\u201d shall be construed in accordance "
+                                "with section 14(1) of this Act; "
+                                "\u201ctraffic commissioner\u201d means the commissioner for Scotland;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_entry_repeal_shall_construed",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "48"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="TEXT_DEFINITION_ENTRY_operational date", occurrence=0),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "\u201ctraffic commissioner\u201d means the commissioner for Scotland;"
+    )
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_definition_predicate_shall_construed_normalized"
+    ]
+    assert adjudications[0].detail["family"] == "definition_entry_predicate_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+
+
+def test_executor_applies_in_definition_after_anchor_insert_without_global_rewrite() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2024/21",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="17",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="6",
+                            text=(
+                                "\u201centitled to practise\u201d means entitled under a 2007 scheme; "
+                                "\u201cqualified lawyer\u201d means a person authorised by the 2007 Act;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_in_definition_after_anchor_insert",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "17"), ("subsection", "6"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="TEXT_IN_DEFINITION_qualified lawyer\x1fAFTER\x1f2007",
+                    occurrence=0,
+                ),
+                replacement="2007 or a person who is a registered foreign lawyer",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "\u201centitled to practise\u201d means entitled under a 2007 scheme; "
+        "\u201cqualified lawyer\u201d means a person authorised by the 2007 "
+        "or a person who is a registered foreign lawyer Act;"
+    )
+    assert adjudications == []
+
+
+def test_executor_applies_in_definition_range_to_end_without_global_rewrite() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/4",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="87",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "\u201cadult\u201d means a person who has attained the age of 16 years; "
+                                "\u201cmental disorder\u201d means mental illness, personality disorder "
+                                "or learning disability; "
+                                "\u201cnearest relative\u201d means the nearest relative within the meaning "
+                                "of section 1;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_range_to_end_substitution",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "87"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="TEXT_IN_DEFINITION_mental disorder\x1fFROM\x1fmeans\x1fTO_END",
+                    occurrence=0,
+                ),
+                replacement="has the meaning given by section 328 of the 2003 Act",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "\u201cadult\u201d means a person who has attained the age of 16 years; "
+        "\u201cmental disorder\u201d has the meaning given by section 328 of the 2003 Act; "
+        "\u201cnearest relative\u201d means the nearest relative within the meaning of section 1;"
+    )
+    assert adjudications == []
+
+
+def test_executor_applies_after_definition_insert_to_unique_definition_text_child() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/4",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="87",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="In this Act, unless the context otherwise requires-",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label=None,
+                                    text="\u201cadult\u201d means a person who has attained the age of 16 years",
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label=None,
+                                    text=(
+                                        "\u201cmental disorder\u201d has the meaning given by "
+                                        "section 328 of the 2003 Act; but an adult is not "
+                                        "treated as suffering from mental disorder by reason only "
+                                        "of conduct"
+                                    ),
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label=None,
+                                    text="\u201cnearest relative\u201d means a relative",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_after_definition_child_insert",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "87"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="TEXT_AFTER_DEFINITION_mental disorder", occurrence=0),
+                replacement=(
+                    "\u201cmental health officer\u201d has the meaning given by "
+                    "section 329 of the 2003 Act;"
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "In this Act, unless the context otherwise requires-"
+    assert len(subsection.children) == 3
+    assert subsection.children[1].text == (
+        "\u201cmental disorder\u201d has the meaning given by section 328 of the 2003 Act; "
+        "but an adult is not treated as suffering from mental disorder by reason only of conduct "
+        "\u201cmental health officer\u201d has the meaning given by section 329 of the 2003 Act;"
+    )
+    assert subsection.children[2].text == "\u201cnearest relative\u201d means a relative"
+    assert adjudications == []
+
+
+def test_executor_records_definition_anchor_education_lexical_variant_recovery() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/6",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="58",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "\u201cannual statement of education improvement objectives\u201d "
+                                "has the meaning given by section 5(2); "
+                                "\u201cland\u201d includes buildings."
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_anchor_education_variant",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "58"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text=(
+                        "TEXT_AFTER_DEFINITION_annual statement of educational "
+                        "improvement objectives"
+                    ),
+                    occurrence=0,
+                ),
+                replacement=(
+                    "\u201cenforcement direction\u201d means a direction under "
+                    "section 10C(1);"
+                ),
+            ),
+            source=OperationSource(statute_id="asp/2004/12"),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "\u201cannual statement of education improvement objectives\u201d "
+        "has the meaning given by section 5(2); "
+        "\u201cenforcement direction\u201d means a direction under section 10C(1); "
+        "\u201cland\u201d includes buildings."
+    )
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_definition_anchor_lexical_variant_recovered"
+    ]
+    assert adjudications[0].detail["family"] == "target_resolution_recovery"
+    assert adjudications[0].detail["strict_disposition"] == "block"
+
+
+def test_executor_normalizes_space_before_nested_quote_in_text_match() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/4",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="50",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="4",
+                            text=(
+                                "The Commission shall nominate a medical practitioner "
+                                "(the\u201cnominated medical practitioner\u201d) from the list."
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_nested_quote_spacing_text_match",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "50"), ("subsection", "4"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text=(
+                        "a medical practitioner (the \u201cnominated medical practitioner\u201d)"
+                    ),
+                    occurrence=0,
+                ),
+                replacement="a practitioner (the \u201cnominated practitioner\u201d)",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "The Commission shall nominate a practitioner (the \u201cnominated practitioner\u201d) "
+        "from the list."
+    )
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_text_match_punctuation_space_normalized"
+    ]
+    assert adjudications[0].detail["strict_disposition"] == "record"
+
+
+def test_replay_prepare_blocks_same_source_ordinal_patch_overlapping_broader_selector() -> None:
+    statute = IRStatute(
+        statute_id="asp/2000/4",
+        title="Adults with Incapacity (Scotland) Act 2000",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="50",
+                    text="",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="4",
+                            text=(
+                                "Where the medical practitioner primarily responsible for the "
+                                "medical treatment of the adult has nominated a medical "
+                                "practitioner (the \u201cnominated medical practitioner\u201d) from the list."
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    target = LegalAddress(path=(("section", "50"), ("subsection", "4")))
+    source = OperationSource(statute_id="asp/2005/13", effective="2005-12-19")
+    ops = [
+        LegalOperation(
+            op_id="uk_test_overlap_broad_first",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=target,
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text=(
+                        "medical practitioner primarily responsible for the medical treatment "
+                        "of the adult"
+                    ),
+                    occurrence=0,
+                ),
+                replacement="person who issued the certificate",
+            ),
+            source=source,
+        ),
+        LegalOperation(
+            op_id="uk_test_overlap_short_ordinal",
+            sequence=2,
+            action=StructuralAction.TEXT_REPLACE,
+            target=target,
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="medical practitioner", occurrence=2),
+                replacement="person who issued the certificate",
+            ),
+            source=source,
+        ),
+        LegalOperation(
+            op_id="uk_test_overlap_broader_nested",
+            sequence=3,
+            action=StructuralAction.TEXT_REPLACE,
+            target=target,
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="a medical practitioner (the \u201cnominated medical practitioner\u201d)",
+                    occurrence=0,
+                ),
+                replacement="a practitioner (the \u201cnominated practitioner\u201d)",
+            ),
+            source=source,
+        ),
+    ]
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(statute, ops, adjudications_out=adjudications)
+
+    text = replayed.body.children[0].children[0].text
+    assert "person who issued the certificate" in text
+    assert "a practitioner (the \u201cnominated practitioner\u201d)" in text
+    assert "nominated medical practitioner" not in text
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_same_source_text_patch_overlap_blocked"
+    ]
+    assert adjudications[0].detail["strict_disposition"] == "block"
+
+
+def test_executor_applies_before_definition_insert_at_explicit_definition_anchor() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2024/21",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="17",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="6",
+                            text=(
+                                "\u201centitled to practise\u201d means authorised; "
+                                "\u201cqualified lawyer\u201d means a lawyer;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_before_definition_insert",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "17"), ("subsection", "6"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="TEXT_BEFORE_DEFINITION_entitled to practise",
+                    occurrence=0,
+                ),
+                replacement=(
+                    "\u201cCriminal Injuries Compensation Scheme\u201d means a scheme;"
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "\u201cCriminal Injuries Compensation Scheme\u201d means a scheme; "
+        "\u201centitled to practise\u201d means authorised; "
+        "\u201cqualified lawyer\u201d means a lawyer;"
+    )
+    assert adjudications == []
+
+
+def test_executor_applies_definition_child_repeal_without_bare_term_deletion() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/12",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="42",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            text=(
+                                "\u201crelevant provision\u201d means section 39(1); "
+                                "section 40(1); section 41(1); section 42(1); "
+                                "\u201cother provision\u201d means paragraph (d);"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_child_repeal",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "42"), ("subsection", "2"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(
+                    match_text="TEXT_DEFINITION_CHILD_PARAGRAPH_relevant provision\x1fd",
+                    occurrence=0,
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "\u201crelevant provision\u201d means section 39(1); "
+        "section 40(1); section 41(1); "
+        "\u201cother provision\u201d means paragraph (d);"
+    )
+    assert adjudications == []
+
+
+def test_executor_applies_definition_child_repeal_to_preserved_ordered_list_child() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/12",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="42",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            text="\u201crelevant provision\u201d means-",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label=None,
+                                    text="section 13(2),",
+                                    attrs={
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                        "definition_term": "relevant provision",
+                                        "definition_child_label": "a",
+                                    },
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label=None,
+                                    text="paragraph 1(3) or 18(1) of Schedule 11.",
+                                    attrs={
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                        "definition_term": "relevant provision",
+                                        "definition_child_label": "d",
+                                    },
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_child_repeal_preserved_ordered_list",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "42"), ("subsection", "2"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(
+                    match_text="TEXT_DEFINITION_CHILD_PARAGRAPH_relevant provision\x1fd",
+                    occurrence=0,
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert [child.attrs["definition_child_label"] for child in subsection.children] == ["a"]
+    assert subsection.text == "\u201crelevant provision\u201d means-"
+    assert adjudications == []
+
+
+def test_executor_applies_definition_child_substitution_inside_definition_entry() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2022/32",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="36",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "\u201creview partner\u201d means a local authority; "
+                                "a clinical commissioning group; "
+                                "a Health Authority; a person; "
+                                "\u201cother\u201d means another value;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_child_substitution",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "36"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="TEXT_DEFINITION_CHILD_PARAGRAPH_review partner\x1fc",
+                    occurrence=0,
+                ),
+                replacement="an integrated care board, or",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "\u201creview partner\u201d means a local authority; "
+        "a clinical commissioning group; an integrated care board, or; "
+        "a person; \u201cother\u201d means another value;"
+    )
+    assert adjudications == []
+
+
+def test_executor_occurrence_text_replacements_preserve_later_occurrences() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="2",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="6",
+                            text="retained status, retained law and retained references",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+    target = LegalAddress(path=(("section", "2"), ("subsection", "6")))
+
+    for sequence, occurrence in ((1, 2), (2, 1)):
+        executor.apply_op(
+            LegalOperation(
+                op_id=f"uk_test_first_second_occurrence_{occurrence}",
+                sequence=sequence,
+                action=StructuralAction.TEXT_REPLACE,
+                target=target,
+                text_patch=TextPatchSpec(
+                    kind=TextPatchKindEnum.REPLACE,
+                    selector=TextSelector(match_text="retained", occurrence=occurrence),
+                    replacement="assimilated",
+                ),
+                source=_source(),
+            )
+        )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "assimilated status, assimilated law and retained references"
+    )
+    assert adjudications == []
+
+
+def test_executor_final_occurrence_text_repeal_preserves_earlier_occurrences() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="and first and second and",
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_final_and_omission",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="and", occurrence=-1),
+                replacement="",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].text == "and first and second "
+    assert adjudications == []
+
+
+def test_executor_does_not_definition_entry_repeal_bare_phrase_occurrence() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="48",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "\u201cquality partnership scheme\u201d means a quality partnership scheme "
+                                "or a quality contract scheme;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_entry_repeal_negative",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "48"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="TEXT_DEFINITION_ENTRY_quality contract", occurrence=0),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "\u201cquality partnership scheme\u201d means a quality partnership scheme "
+        "or a quality contract scheme;"
+    )
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_definition_entry_shape_gap"
+    ]
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+
+
+def test_executor_classifies_broad_schedule_text_miss_without_table_shape() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2002/7",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                text="Budget table collapsed to schedule title only",
+                attrs={"eId": "schedule-1"},
+                children=(),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_broad_schedule_table_shape_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("schedule", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="£12,100,000", occurrence=0),
+                replacement="£127,870,000",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_broad_schedule_table_shape_gap"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["source_shape"] == "broad_schedule_without_table_or_provision_structure"
+
+
+def test_executor_classifies_broad_schedule_part_text_miss_without_table_shape() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/4",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="2",
+                attrs={"eId": "schedule-2"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PART,
+                        label="3",
+                        text="Scottish Executive Education Department",
+                        attrs={"eId": "schedule-2-part-3"},
+                        children=(),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_broad_schedule_part_table_shape_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("schedule", "2"), ("part", "3"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="unparsed table amount", occurrence=0),
+                replacement="replacement amount",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_broad_schedule_part_table_shape_gap"
+    assert adjudications[0].detail["target_granularity"] == "part"
+    assert adjudications[0].detail["source_shape"] == "broad_schedule_without_table_or_provision_structure"
+
+
+def test_executor_records_paragraph_schedule_monetary_amount_preimage_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2002/7",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                text="",
+                attrs={"eId": "schedule-1"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        text="A real paragraph body without the requested amount",
+                        attrs={"eId": "schedule-1-paragraph-1"},
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_broad_schedule_paragraph_text_miss",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("schedule", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="£12,100,000", occurrence=0),
+                replacement="£127,870,000",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_monetary_amount_preimage_gap"
+    assert adjudications[0].detail["target_text_preview"] == "A real paragraph body without the requested amount"
+    assert adjudications[0].detail["source_shape"] == "monetary_amount_preimage_absent"
+    assert adjudications[0].detail["prior_same_target_text_patch_count"] == 0
+    assert adjudications[0].detail["target_container"] == "schedule"
+    assert adjudications[0].detail["target_granularity"] == "schedule"
+
+
+def test_executor_records_text_target_empty_surface_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="",
+                    children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text=""),),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_target_empty_surface_gap",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="missing text", occurrence=0),
+                replacement="new text",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_target_empty_surface_gap"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["source_shape"] == "target_subtree_without_text_surface"
+    assert adjudications[0].detail["target_text_preview"] == ""
+    assert adjudications[0].detail["target_text_normalized_preview"] == ""
 
 
 def test_replay_uk_ops_applies_whole_act_repeal() -> None:
@@ -297,6 +3784,52 @@ def test_replay_uk_ops_records_prepare_filtered_unsupported_whole_act_target() -
         "target": "/whole_act",
     }
     assert tuple(child.label for child in replayed.body.children) == ("1",)
+
+
+def test_prepare_replay_uk_ops_preserves_rejected_whole_act_adjudication_without_sink() -> None:
+    whole_act_replace = LegalOperation(
+        op_id="uk_test_prepare_filter_rejected",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(), special=FacetKind.WHOLE_ACT),
+        payload=IRNode(kind=IRNodeKind.BODY),
+        source=_source(),
+    )
+    whole_act_repeal = LegalOperation(
+        op_id="uk_test_prepare_filter_repeal",
+        sequence=2,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(), special=FacetKind.WHOLE_ACT),
+        payload=None,
+        source=_source(),
+    )
+    section_replace = LegalOperation(
+        op_id="uk_test_prepare_filter_normal",
+        sequence=3,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "1"),)),
+        payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="new"),
+        source=_source(),
+    )
+
+    prepared = _prepare_replay_uk_ops([whole_act_replace, whole_act_repeal, section_replace])
+
+    assert prepared.accepted_ops == (whole_act_repeal, section_replace)
+    assert len(prepared.rejected_adjudications) == 1
+    rejection = prepared.rejected_adjudications[0]
+    assert rejection.kind == "uk_replay_unsupported_action"
+    assert rejection.op_id == "uk_test_prepare_filter_rejected"
+    assert rejection.detail == {
+        "action": "replace",
+        "blocking": True,
+        "family": "unsupported_or_unresolved_action",
+        "phase": "replay",
+        "quirks_disposition": "record",
+        "reason": "whole_act_prepare_filter",
+        "rule_id": "uk_replay_unsupported_action",
+        "strict_disposition": "block",
+        "target": "/whole_act",
+    }
 
 
 def test_pipeline_apply_ops_records_prepare_filtered_unsupported_whole_act_target() -> None:
