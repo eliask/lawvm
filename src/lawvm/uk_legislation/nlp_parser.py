@@ -640,6 +640,7 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
 
     matches_bare_quoted_anchor_insert = re.finditer(
         r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+        r"(?:the\s+words?\s+)?"
         r"[“\"'‘](?P<original>.*?)[”\"'’]\s+"
         r"(?:there is inserted|there are inserted|there shall be inserted)"
         r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]"

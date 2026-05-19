@@ -2177,6 +2177,16 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "uk_effect_bare_quoted_anchor_insert_text_patch",
         ),
         (
+            "ii the word “28” there shall be inserted “ , 28A ”.",
+            "word inserted",
+            "s. 43(3)(a)",
+            "28",
+            "28 , 28A ",
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_bare_quoted_anchor_insert_text_patch",
+        ),
+        (
             "a the word “or” at the end of paragraph (a) is repealed;",
             "word repealed",
             "s. 16(6)(a)",
