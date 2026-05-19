@@ -14661,6 +14661,293 @@ def test_pipeline_compile_ops_selects_enacted_source_when_current_source_is_shel
     )
 
 
+def test_pipeline_compile_ops_selects_enacted_source_when_current_extract_missing(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_enacted_source_current_missing",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="s. 57",
+        affecting_uri="/id/ukpga/2024/13",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="13",
+        affecting_provisions="Sch. 1 para. 219(2)",
+        affecting_title="Current Missing Source Act",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+    current_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <Schedule id="schedule-1">
+          <P1 id="schedule-1-paragraph-218"><Pnumber>218</Pnumber><Text>218 Current source neighbour.</Text></P1>
+        </Schedule>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    enacted_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <Schedule id="schedule-1">
+          <P1 id="schedule-1-paragraph-219">
+            <Pnumber>219</Pnumber>
+            <P2 id="schedule-1-paragraph-219-2">
+              <Pnumber>(2)</Pnumber>
+              <Text>(2) In paragraph 6(4)(c), for “old” substitute “new”.</Text>
+            </P2>
+          </P1>
+        </Schedule>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    compile_calls: list[dict[str, str]] = []
+
+    def fake_compile(effect_arg, extracted_el, sequence=0, **kwargs):
+        compile_calls.append(
+            {
+                "tag": uk_replay_mod._tag(extracted_el) if extracted_el is not None else "",
+                "text": " ".join(" ".join(extracted_el.itertext()).split())
+                if extracted_el is not None
+                else "",
+                "authority": kwargs.get("source_authority_layer", ""),
+            }
+        )
+        return [
+            LegalOperation(
+                op_id=effect_arg.effect_id,
+                sequence=sequence,
+                action=StructuralAction.REPLACE,
+                target=LegalAddress(path=(("section", "57"),)),
+                payload=IRNode(kind=IRNodeKind.SECTION, label="57"),
+                source=OperationSource(statute_id=effect_arg.affecting_act_id),
+            )
+        ]
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: current_xml,
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_enacted_xml_from_archive",
+        lambda _aid, _archive: enacted_xml,
+    )
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", fake_compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    compiled = UKReplayPipeline(Path(".")).compile_ops_for_statute(
+        "ukpga/2000/10",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    )
+
+    assert len(compiled) == 1
+    assert compile_calls == [
+        {
+            "tag": "P2",
+            "text": "(2) (2) In paragraph 6(4)(c), for “old” substitute “new”.",
+            "authority": "AFFECTING_ACT_ENACTED_TEXT",
+        }
+    ]
+    assert any(
+        row.get("rule_id") == "uk_affecting_act_missing_current_enacted_source_selected"
+        and row.get("affecting_provisions") == "Sch. 1 para. 219(2)"
+        and "old" in str(row.get("enacted_text_preview", ""))
+        for row in diagnostics
+    )
+
+
+def test_pipeline_compile_ops_records_nonaddressable_schedule_part_context(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_part_context",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="s. 57",
+        affecting_uri="/id/uksi/2024/13",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2024",
+        affecting_number="13",
+        affecting_provisions="Sch. 10 Pt. 1 para. 21(a)",
+        affecting_title="Part Context Source Instrument",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+    current_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <Schedule id="schedule-10">
+          <ScheduleBody>
+            <Part id="schedule-10-part-1">
+              <Number>Part 1</Number>
+              <P1 id="schedule-10-paragraph-21">
+                <Pnumber>21</Pnumber>
+                <P1para>
+                  <P3 id="schedule-10-paragraph-21-a">
+                    <Pnumber>a</Pnumber>
+                    <Text>a in subsection (2), at the beginning of paragraph (b) insert “Subject to subsection (3A),”;</Text>
+                  </P3>
+                </P1para>
+              </P1>
+            </Part>
+          </ScheduleBody>
+        </Schedule>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    compile_calls: list[dict[str, str]] = []
+
+    def fake_compile(effect_arg, extracted_el, sequence=0, **kwargs):
+        compile_calls.append(
+            {
+                "tag": uk_replay_mod._tag(extracted_el) if extracted_el is not None else "",
+                "id": extracted_el.get("id") if extracted_el is not None else "",
+                "authority": kwargs.get("source_authority_layer", ""),
+            }
+        )
+        return [
+            LegalOperation(
+                op_id=effect_arg.effect_id,
+                sequence=sequence,
+                action=StructuralAction.REPLACE,
+                target=LegalAddress(path=(("section", "57"),)),
+                payload=IRNode(kind=IRNodeKind.SECTION, label="57"),
+                source=OperationSource(statute_id=effect_arg.affecting_act_id),
+            )
+        ]
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: current_xml,
+    )
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", fake_compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    compiled = UKReplayPipeline(Path(".")).compile_ops_for_statute(
+        "ukpga/2000/10",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    )
+
+    assert len(compiled) == 1
+    assert compile_calls == [
+        {
+            "tag": "P3",
+            "id": "schedule-10-paragraph-21-a",
+            "authority": "AFFECTING_ACT_TEXT",
+        }
+    ]
+    assert any(
+        row.get("rule_id") == "uk_affecting_act_nonaddressable_schedule_part_context_ignored"
+        and row.get("affecting_provisions") == "Sch. 10 Pt. 1 para. 21(a)"
+        and row.get("normalized_affecting_provisions") == "Sch. 10 para. 21(a)"
+        and row.get("requested_part_label") == "1"
+        for row in diagnostics
+    )
+
+
+def test_pipeline_compile_ops_blocks_schedule_part_context_when_ancestor_differs(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_part_context_wrong_part",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="s. 57",
+        affecting_uri="/id/uksi/2024/13",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2024",
+        affecting_number="13",
+        affecting_provisions="Sch. 10 Pt. 1 para. 21(a)",
+        affecting_title="Part Context Source Instrument",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+    current_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <Schedule id="schedule-10">
+          <ScheduleBody>
+            <Part id="schedule-10-part-2">
+              <Number>Part 2</Number>
+              <P1 id="schedule-10-paragraph-21">
+                <Pnumber>21</Pnumber>
+                <P1para>
+                  <P3 id="schedule-10-paragraph-21-a">
+                    <Pnumber>a</Pnumber>
+                    <Text>a wrong part text.</Text>
+                  </P3>
+                </P1para>
+              </P1>
+            </Part>
+          </ScheduleBody>
+        </Schedule>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    compile_calls: list[str] = []
+
+    def fake_compile(_effect_arg, extracted_el, sequence=0, **_kwargs):
+        compile_calls.append(uk_replay_mod._tag(extracted_el) if extracted_el is not None else "")
+        return []
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: current_xml,
+    )
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", fake_compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    compiled = UKReplayPipeline(Path(".")).compile_ops_for_statute(
+        "ukpga/2000/10",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    )
+
+    assert compiled == []
+    assert compile_calls == [""]
+    assert all(
+        row.get("rule_id") != "uk_affecting_act_nonaddressable_schedule_part_context_ignored"
+        for row in diagnostics
+    )
+
+
 def test_pipeline_compile_ops_keeps_current_shell_when_enacted_same_ref_missing(
     monkeypatch,
 ) -> None:

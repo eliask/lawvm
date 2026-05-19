@@ -13,6 +13,8 @@ UK_AFFECTING_ACT_XML_SOURCE_RULE_IDS = frozenset(
         "uk_affecting_act_xml_parse_rejected",
         "uk_affecting_act_xml_cached_recorded",
         "uk_affecting_act_current_shell_enacted_source_selected",
+        "uk_affecting_act_missing_current_enacted_source_selected",
+        "uk_affecting_act_nonaddressable_schedule_part_context_ignored",
     }
 )
 
@@ -184,6 +186,75 @@ def uk_affecting_act_current_shell_enacted_source_selected(
             "UK current affecting-act XML extracted only a non-substantive dot-leader "
             "shell, while the official enacted XML contained substantive text for the "
             "same affecting provision."
+        ),
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+
+
+def uk_affecting_act_missing_current_enacted_source_selected(
+    *,
+    effect_id: str,
+    affecting_act_id: str,
+    affecting_provisions: str,
+    current_locator: str,
+    enacted_locator: str,
+    current_source_size: int,
+    enacted_source_size: int,
+    enacted_text_preview: str,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "uk_affecting_act_missing_current_enacted_source_selected",
+        "family": "source_lane_selection",
+        "phase": "acquisition",
+        "effect_id": effect_id,
+        "affecting_act_id": affecting_act_id,
+        "affecting_provisions": affecting_provisions,
+        "current_locator": current_locator,
+        "enacted_locator": enacted_locator,
+        "current_source_size": int(current_source_size),
+        "enacted_source_size": int(enacted_source_size),
+        "enacted_text_preview": enacted_text_preview,
+        "reason": (
+            "UK current affecting-act XML did not expose an extractable same-provision "
+            "source node, while the official enacted XML contained substantive text for "
+            "that exact affecting provision."
+        ),
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+
+
+def uk_affecting_act_nonaddressable_schedule_part_context_ignored(
+    *,
+    effect_id: str,
+    affecting_act_id: str,
+    affecting_provisions: str,
+    locator: str,
+    authority_layer: str,
+    requested_part_label: str,
+    normalized_affecting_provisions: str,
+    extracted_element_id: str,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "uk_affecting_act_nonaddressable_schedule_part_context_ignored",
+        "family": "target_resolution_recovery",
+        "phase": "extraction",
+        "effect_id": effect_id,
+        "affecting_act_id": affecting_act_id,
+        "affecting_provisions": affecting_provisions,
+        "normalized_affecting_provisions": normalized_affecting_provisions,
+        "locator": locator,
+        "authority_layer": authority_layer,
+        "requested_part_label": requested_part_label,
+        "extracted_element_id": extracted_element_id,
+        "reason": (
+            "UK effects metadata named a schedule Part context that is represented as an "
+            "ancestor container in source XML rather than in descendant paragraph IDs; "
+            "the normalized paragraph reference was accepted only because the extracted "
+            "node has a matching Part ancestor."
         ),
         "blocking": False,
         "strict_disposition": "record",
