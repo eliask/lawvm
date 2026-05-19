@@ -67,8 +67,15 @@ UK_EFFECT_COMPARE_SHAPE_CLASSES = frozenset(
         "oracle_missing_live_branch",
         "range_to_container_target_absent",
         "retained_repeal_oracle_branch",
+        "table_cell_text_patch_requires_table_surface",
         "text_patch_preimage_absent_from_target_surfaces",
         "territorial_extension_oracle_gap",
+    }
+)
+UK_COMPARE_TABLE_CELL_TEXT_PATCH_RULE_IDS = frozenset(
+    {
+        "uk_effect_table_column_text_patch",
+        "uk_effect_table_entry_inline_text_insertion",
     }
 )
 UK_COMPARE_CHAINED_TEXT_REWRITE_RULE_IDS = frozenset(
@@ -1305,6 +1312,8 @@ def classify_uk_effect_compare_shape(
         )
     ):
         return "uk_compare_text_patch_preimage_consumed_by_replay_chain"
+    if text_patch_preimage_absent and lowering_rules & UK_COMPARE_TABLE_CELL_TEXT_PATCH_RULE_IDS:
+        return "table_cell_text_patch_requires_table_surface"
     if text_patch_preimage_absent:
         return "text_patch_preimage_absent_from_target_surfaces"
     if (

@@ -1316,6 +1316,46 @@ def test_classify_uk_manual_compile_frontier_marks_text_patch_preimage_chain_gap
     assert result["rule_id"] == "uk_manual_frontier_text_patch_preimage_chain_gap"
 
 
+def test_classify_uk_effect_compare_shape_marks_table_cell_surface_gap() -> None:
+    result = classify_uk_effect_compare_shape(
+        effect_type="word substituted",
+        op_actions=("text_replace",),
+        resolver_eids=("schedule-1",),
+        base_target_hits=(True,),
+        oracle_target_hits=(True,),
+        base_target_texts=("SCHEDULE 1 Budget amounts",),
+        oracle_target_texts=("SCHEDULE 1 Budget amounts",),
+        text_patch_matches=("£56,340,000",),
+        text_patch_replacements=("£76,340,000",),
+        lowering_rule_ids=("uk_effect_table_column_text_patch",),
+    )
+
+    assert result == "table_cell_text_patch_requires_table_surface"
+    assert not is_core_uk_effect_compare_candidate(result)
+
+
+def test_manual_frontier_keeps_owned_table_cell_surface_gap_deterministic() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="word substituted",
+        source_pathology="",
+        extracted_tag="P4",
+        extracted_text='in column 4, for "£56,340,000" there is substituted "£76,340,000"',
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_table_column_text_patch",
+                "blocking": False,
+            },
+        ),
+        compiled_op_count=1,
+        replay_applicable=True,
+        structural_for_replay=True,
+        compare_shape="table_cell_text_patch_requires_table_surface",
+    )
+
+    assert result["status"] == "deterministic_frontend_supported"
+    assert result["rule_id"] == "uk_manual_frontier_deterministic_supported"
+
+
 def test_classify_uk_manual_compile_frontier_marks_range_to_container_target_absent() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="substituted for ss. 3-12 and cross-heading",
