@@ -2386,6 +2386,17 @@ Current bench replay-regime invariant:
     amendment patterns such as inserted definition paragraphs `(aa)` and `(ab)`;
     silently relabelling them to `(b)` and `(c)` destroys the source identity
     needed by later text patches and replay/oracle comparison.
+  - Source-carried child insertions such as `after that paragraph, insert—`
+    and `at the end of paragraph (b), insert—` may lower to
+    `TEXT_AFTER_DEFINITION_PARAGRAPH_<term>_AFTER_<label>` only when the
+    affecting-source parent proves the definition term and anchor child. The
+    lowering rule is
+    `uk_effect_source_carried_definition_child_insert_text_patch`. Replay may
+    insert preserved definition children under the matched parent and, for
+    `; or`/`; and` payload prefixes, append that connector to the explicit
+    anchor child before inserting the new child. Without this parent source
+    context, the row remains a deterministic frontend/manual frontier item
+    rather than being guessed from the extracted child text alone.
   - bilingual definition headings such as `“private sector employer”
     (“cyflogwr sector preifat”) means...` preserve the first/source-language
     quoted term as `definition_term`; the parenthesized translation is source

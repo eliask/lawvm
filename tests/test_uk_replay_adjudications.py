@@ -3413,6 +3413,161 @@ def test_executor_applies_definition_child_substitution_inside_definition_entry(
     assert adjudications == []
 
 
+def test_executor_inserts_source_carried_definition_children_after_anchor() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="82",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="“local transport authority” means-",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label=None,
+                                    text="a local authority; or",
+                                    attrs={
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                        "definition_term": "local transport authority",
+                                        "definition_child_label": "a",
+                                    },
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label=None,
+                                    text="the Strathclyde Passenger Transport Authority;",
+                                    attrs={
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                        "definition_term": "local transport authority",
+                                        "definition_child_label": "b",
+                                    },
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_carried_definition_child_insert",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "82"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="TEXT_AFTER_DEFINITION_PARAGRAPH_local transport authority_AFTER_a",
+                    occurrence=0,
+                ),
+                replacement=(
+                    "aa the Shetland Transport Partnership; "
+                    "ab the South-West of Scotland Transport Partnership; ,"
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert [child.attrs["definition_child_label"] for child in subsection.children] == [
+        "a",
+        "aa",
+        "ab",
+        "b",
+    ]
+    assert [child.text for child in subsection.children] == [
+        "a local authority; or",
+        "the Shetland Transport Partnership;",
+        "the South-West of Scotland Transport Partnership;",
+        "the Strathclyde Passenger Transport Authority;",
+    ]
+    assert adjudications == []
+
+
+def test_executor_inserts_definition_child_and_appends_anchor_connector() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="82",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="“local transport authority” means-",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label=None,
+                                    text="the Strathclyde Passenger Transport Authority",
+                                    attrs={
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                        "definition_term": "local transport authority",
+                                        "definition_child_label": "b",
+                                    },
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_carried_definition_child_insert_suffix",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "82"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="TEXT_AFTER_DEFINITION_PARAGRAPH_local transport authority_AFTER_b",
+                    occurrence=0,
+                ),
+                replacement="; or c the West of Scotland Transport Partnership; .",
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert [child.attrs["definition_child_label"] for child in subsection.children] == [
+        "b",
+        "c",
+    ]
+    assert [child.text for child in subsection.children] == [
+        "the Strathclyde Passenger Transport Authority ; or",
+        "the West of Scotland Transport Partnership;",
+    ]
+    assert adjudications == []
+
+
 def test_executor_occurrence_text_replacements_preserve_later_occurrences() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(
