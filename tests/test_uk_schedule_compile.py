@@ -31,6 +31,7 @@ from lawvm.uk_legislation.uk_amendment_replay import (
     _fragment_substitution,
     _NOTE_METADATA_SOURCE_FALLBACK,
     _NOTE_FRAGMENT_SUB,
+    _NOTE_TABLE_CELL_SELECTOR,
     _NOTE_REWRITE_WITNESS,
     _NOTE_TEXT_REWRITE_RULE,
     _NOTE_PRECEDING_EID,
@@ -4064,6 +4065,186 @@ def test_compile_corresponding_table_entry_word_substitution_with_rowspan_source
     )
 
 
+def test_compile_broad_schedule_table_column_text_patch_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" id="section-8-b-iii">
+          <Pnumber>iii</Pnumber>
+          <Text>iii in column 4, for “£56,340,000” there is substituted “ £76,340,000 ” .</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_broad_table_column_patch",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2003-04-01",
+        affected_uri="/id/asp/2001/4",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="4",
+        affected_provisions="Sch. 1",
+        affecting_uri="/id/asp/2003/6",
+        affecting_class="ScottishAct",
+        affecting_year="2003",
+        affecting_number="6",
+        affecting_provisions="s. 8(b)(iii)",
+        affecting_title="Test Budget Act",
+        in_force_dates=[{"date": "2003-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("schedule", "1"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "£56,340,000"
+    assert ops[0].text_patch.replacement == " £76,340,000 "
+    selector_tag = next(
+        tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR)
+    )
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector == {
+        "rule_id": "uk_effect_table_column_text_patch",
+        "selector_mode": "unique_column_text",
+        "column_index": 4,
+        "match_text": "£56,340,000",
+        "target_ref": "Sch. 1",
+        "original_target": "schedule:1",
+    }
+    assert any(
+        record["rule_id"] == "uk_effect_table_column_text_patch"
+        and record["reason_code"] == "explicit_table_column_preimage_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_replay_broad_schedule_table_column_text_patch_mutates_unique_cell() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_column_text_patch",
+        "selector_mode": "unique_column_text",
+        "column_index": 4,
+        "match_text": "£56,340,000",
+        "target_ref": "Sch. 1",
+        "original_target": "schedule:1",
+    }
+    op = LegalOperation(
+        op_id="uk_test_broad_table_column_patch",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("schedule", "1"),)),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="£56,340,000", occurrence=0),
+            replacement="£76,340,000",
+        ),
+    )
+    base = IRStatute(
+        statute_id="asp/2001/4",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                attrs={"eId": "schedule-1"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.TABLE,
+                        label=None,
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.ROW,
+                                label=None,
+                                children=(
+                                    IRNode(kind=IRNodeKind.CELL, label=None, text="Scotland"),
+                                    IRNode(kind=IRNodeKind.CELL, label=None, text="£2,149,014,000"),
+                                    IRNode(kind=IRNodeKind.CELL, label=None, text="Other amount"),
+                                    IRNode(kind=IRNodeKind.CELL, label=None, text="£56,340,000"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+
+    table = replayed.supplements[0].children[0]
+    assert table.children[0].children[3].text == "£76,340,000"
+    assert table.children[0].children[1].text == "£2,149,014,000"
+
+
+def test_replay_broad_schedule_table_column_text_patch_blocks_ambiguous_cell() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_column_text_patch",
+        "selector_mode": "unique_column_text",
+        "column_index": 2,
+        "match_text": "old amount",
+        "target_ref": "Sch. 1",
+        "original_target": "schedule:1",
+    }
+    op = LegalOperation(
+        op_id="uk_test_broad_table_column_patch_ambiguous",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("schedule", "1"),)),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="old amount", occurrence=0),
+            replacement="new amount",
+        ),
+    )
+    rows = tuple(
+        IRNode(
+            kind=IRNodeKind.ROW,
+            label=None,
+            children=(
+                IRNode(kind=IRNodeKind.CELL, label=None, text=f"row {index}"),
+                IRNode(kind=IRNodeKind.CELL, label=None, text="old amount"),
+            ),
+        )
+        for index in (1, 2)
+    )
+    base = IRStatute(
+        statute_id="asp/2001/4",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                attrs={"eId": "schedule-1"},
+                children=(IRNode(kind=IRNodeKind.TABLE, label=None, children=rows),),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    assert replayed.supplements[0].children[0].children[0].children[1].text == "old amount"
+    assert replayed.supplements[0].children[0].children[1].children[1].text == "old amount"
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_table_entry_inline_text_insertion_unresolved"
+    ]
+    assert adjudications[0].detail["reason_code"] == "cell_text_ambiguous"
+    assert adjudications[0].detail["blocking"] is True
+
+
 def test_compile_repeal_table_quoted_words_text_repeal() -> None:
     source_root = ET.fromstring(
         """
@@ -7492,7 +7673,7 @@ def test_compile_broad_table_entry_instruction_rejects_host_repeal() -> None:
     assert rejection["quirks_disposition"] == "record"
 
 
-def test_compile_broad_schedule_column_instruction_rejects_host_text_patch() -> None:
+def test_compile_broad_schedule_column_instruction_lowers_to_table_cell_patch() -> None:
     extracted_el = ET.fromstring(
         f"""
         <P4 xmlns="{_LEG_NS}">
@@ -7522,26 +7703,25 @@ def test_compile_broad_schedule_column_instruction_rejects_host_text_patch() -> 
     )
     lowering_rejections: list[dict[str, Any]] = []
 
-    assert (
-        compile_effect_to_ir_ops(
-            effect,
-            extracted_el,
-            sequence=0,
-            lowering_rejections_out=lowering_rejections,
-        )
-        == []
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
     )
 
-    assert len(lowering_rejections) == 1
-    table_rejection = lowering_rejections[0]
-    assert table_rejection["rule_id"] == "uk_effect_table_entry_instruction_rejected"
-    assert table_rejection["family"] == "source_table_elaboration"
-    assert table_rejection["reason_code"] == "table_entry_instruction_without_cell_target"
-    assert table_rejection["affected_provisions"] == "sch. 1"
-    assert table_rejection["target_ref"] == "sch. 1"
-    assert table_rejection["entry_shape"] == "column_instruction"
-    assert table_rejection["blocking"] is True
-    assert table_rejection["strict_disposition"] == "block"
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("schedule", "1"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "£2,149,014,000"
+    assert ops[0].text_patch.replacement == " £2,398,612,000 "
+    assert any(
+        row["rule_id"] == "uk_effect_table_column_text_patch"
+        and row["reason_code"] == "explicit_table_column_preimage_selector"
+        and row["blocking"] is False
+        for row in lowering_rejections
+    )
 
 
 def test_compile_structural_schedule_part_repeal_not_table_entry_rejected() -> None:
