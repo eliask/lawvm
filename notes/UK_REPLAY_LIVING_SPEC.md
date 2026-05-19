@@ -289,7 +289,11 @@ frontend cannot yet lower them safely:
 - repeal schedules and table rows where the table columns identify enactment
   and extent of repeal
 - definition insertions where the source context supplies the anchor and the
-  extracted payload alone is insufficient
+  extracted payload alone is insufficient. A carried definition-entry payload
+  may lower via `uk_effect_source_carried_definition_entry_insert_text_patch`
+  when the parent source instruction explicitly says `after the definition of
+  "X" insert...` and the extracted payload is itself a definition entry;
+  otherwise the row remains blocked rather than guessed into the target section.
 - `at the appropriate place` insertions, until a placement compiler can prove
   the target anchor without guessing from live text
 - grouped title/heading substitutions such as `In the titles to sections 10
