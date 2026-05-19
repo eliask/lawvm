@@ -5927,6 +5927,11 @@ _SOURCE_CARRIED_AT_END_DEFINITION_CHILD_INSERT_RE = re.compile(
     r"\((?P<label>[0-9A-Za-z]+)\),?\s+insert\s*[—-]\s*(?P<inserted>.+?)\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_AFTER_DEFINITION_INSERT_RE = re.compile(
+    r"\bafter\s+the\s+definition\s+of\s+(?:the\s+)?[“\"'‘](?P<term>.*?)[”\"'’],?\s+"
+    r"(?:there\s+is\s+inserted|there\s+are\s+inserted|there\s+shall\s+be\s+inserted|insert)",
+    flags=re.I | re.S,
+)
 _SOURCE_DEFINITION_TERM_RE = re.compile(
     r"\bin\s+the\s+definition\s+of\s+[“\"'‘](?P<term>.*?)[”\"'’]",
     flags=re.I | re.S,
@@ -6026,6 +6031,48 @@ def _fragment_substitution_source_carried_definition_child_insert(
         "source_anchor_child_label": anchor_label,
         "rule_id": "uk_effect_source_carried_definition_child_insert_text_patch",
     }
+
+
+def _fragment_substitution_source_carried_definition_entry_insert(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve definition-entry insertions whose payload omits the parent anchor."""
+    inserted = " ".join((extracted_text or "").split()).strip()
+    if not inserted or not re.search(
+        r"[“\"'‘].+?[”\"'’](?:\s*\([^;]*?\))*[^;]{0,240}?"
+        r"\b(?:means|has\s+the\s+same\s+meaning|is\s+to\s+be\s+construed|shall\s+be\s+construed)\b",
+        inserted,
+        re.I | re.S,
+    ):
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        candidate_text = _instruction_text_before_amendment_container(ancestor)
+        if not candidate_text:
+            candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
+        match = _SOURCE_AFTER_DEFINITION_INSERT_RE.search(candidate_text)
+        if match is None:
+            continue
+        anchor_term = " ".join(match.group("term").split()).strip()
+        if not anchor_term:
+            return None
+        source_parent_id = str(ancestor.get("id") or "")
+        if not source_parent_id:
+            source_parent_id = next(
+                (str(candidate.get("id")) for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")),
+                "",
+            )
+        return {
+            "original": f"TEXT_AFTER_DEFINITION_{anchor_term}",
+            "replacement": inserted,
+            "source_parent_id": source_parent_id,
+            "source_anchor_definition_term": anchor_term,
+            "rule_id": "uk_effect_source_carried_definition_entry_insert_text_patch",
+        }
+    return None
 
 
 def _fragment_substitution_source_carried_child_tail_repeal(
@@ -7639,6 +7686,16 @@ def compile_effect_to_ir_ops(
                     if source_carried_definition_child_insert is not None:
                         subs = [source_carried_definition_child_insert]
                 if not subs:
+                    source_carried_definition_entry_insert = (
+                        _fragment_substitution_source_carried_definition_entry_insert(
+                            extracted_el=extracted_el,
+                            source_root=source_root,
+                            extracted_text=extracted_text,
+                        )
+                    )
+                    if source_carried_definition_entry_insert is not None:
+                        subs = [source_carried_definition_entry_insert]
+                if not subs:
                     source_carried_child_tail_repeal = (
                         _fragment_substitution_source_carried_child_tail_repeal(
                             extracted_text=extracted_text,
@@ -7937,6 +7994,39 @@ def compile_effect_to_ir_ops(
                                 "text_match": op_text_match,
                                 "replacement": op_text_replacement,
                                 "occurrence": op_text_occurrence,
+                            },
+                        )
+                    for definition_entry_context_fragment in fragment_subs:
+                        if (
+                            str(definition_entry_context_fragment.get("rule_id") or "")
+                            != "uk_effect_source_carried_definition_entry_insert_text_patch"
+                        ):
+                            continue
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id="uk_effect_source_carried_definition_entry_insert_text_patch",
+                            family="source_context_elaboration",
+                            reason_code="definition_insert_anchor_resolved_from_parent_source",
+                            reason=(
+                                "UK source payload contains only the inserted definition entry, "
+                                "while the parent source instruction names the definition anchor; "
+                                "lowering combines those source-local facts instead of guessing "
+                                "definition placement from live text."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "source_parent_id": str(
+                                    definition_entry_context_fragment.get("source_parent_id") or ""
+                                ),
+                                "source_anchor_definition_term": str(
+                                    definition_entry_context_fragment.get("source_anchor_definition_term") or ""
+                                ),
+                                "text_match": op_text_match,
+                                "replacement": op_text_replacement,
                             },
                         )
                 else:
