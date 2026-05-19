@@ -58,6 +58,11 @@ Current UK-specific invariants:
   - a `crossheading` or `part` inside `schedule-3` must not ground via a global bare key like `crossheading-foo`
 - schedule-local `part` fallback IDs keep their kind prefix
   - `Sch. 3 Part II` falls back to `schedule-3-part-2`, not `schedule-3-2`
+- schedule-local `part`/`chapter` grounding strips a duplicated source kind
+  prefix from the local label before hierarchical oracle lookup
+  - a source label like `PART 9A` under `schedule-2` must ground through
+    `schedule-2:part-9a` to `schedule-2-part-9a`, not to
+    `schedule-2-part-part-9a` or a space-bearing fallback
 - deep roman descendant labels preserve roman suffixes in fallback IDs
   - `section-88-3c-b-ii` and `schedule-7a-paragraph-9-2-b-ii` are correct local fallback shapes
   - replay must not emit numeric fake tails like `...-1` / `...-2` where oracle uses `...-i` / `...-ii`

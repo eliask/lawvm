@@ -16350,6 +16350,42 @@ def test_ground_ids_schedule_part_uses_kind_prefix_in_local_fallback() -> None:
     assert part.attrs["eId"] == "schedule-3-part-2"
 
 
+def test_ground_ids_schedule_part_strips_source_kind_from_alphanumeric_label() -> None:
+    statute = IRStatute(
+        statute_id="asp/2001/4",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="2",
+                text="Schedule 2",
+                attrs={"eId": "schedule-2"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PART,
+                        label="PART 9A",
+                        text="Scottish Executive Finance and Central Services Department",
+                        children=(),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor: Any = UKReplayExecutor(
+        statute,
+        eid_map={
+            "keep_schedule": "schedule-2",
+            "schedule-2:part-9a": "schedule-2-part-9a",
+        },
+        text_map={},
+    )
+    executor.ground_ids()
+
+    part = executor.statute.supplements[0].children[0]
+    assert part.attrs["eId"] == "schedule-2-part-9a"
+
+
 def test_ground_ids_schedule_crossheading_does_not_steal_unrelated_bare_flat_id() -> None:
     statute = IRStatute(
         statute_id="ukpga/2000/41",

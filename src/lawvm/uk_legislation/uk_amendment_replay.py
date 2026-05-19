@@ -15826,7 +15826,13 @@ class UKReplayExecutor:
             label = str(candidate.label or _addr_leaf_label(target) or "").strip()
             if not parent_eid or not label:
                 return candidate
-            if current_eid and current_eid in self.eid_map.values():
+            if current_eid and (
+                (current_eid == target_eid and _addr_container(target) == "schedule")
+                or current_eid in self.eid_map.values()
+            ):
+                return candidate
+            if target_eid and _addr_container(target) == "schedule":
+                candidate.attrs["eId"] = target_eid
                 return candidate
             candidate.attrs["eId"] = f"{parent_eid}-{label}"
             return candidate
@@ -16120,6 +16126,17 @@ class UKReplayExecutor:
                 # Use 'eId' as the canonical key going forward.
                 node.attrs["eId"] = eid
 
+        def _grounding_clean_label(kind_name: str, label: Optional[str]) -> str:
+            clean_label = _clean_num(label) if label else ""
+            if not clean_label:
+                return ""
+            kind_prefix = str(kind_name or "").lower()
+            if kind_prefix in {"part", "chapter"}:
+                stripped = re.sub(rf"^{re.escape(kind_prefix)}\s+", "", clean_label).strip()
+                if stripped:
+                    return stripped
+            return clean_label
+
         def _preseed_correct_eids(node: UKMutableNode) -> None:
             eid = _get_eid(node)
             if eid and eid in oracle_id_values:
@@ -16160,7 +16177,7 @@ class UKReplayExecutor:
                 for key in ("eId", "id"):
                     node.attrs.pop(key, None)
             elif "eId" not in node.attrs and "id" not in node.attrs and kind_value != "body":
-                clean_label = _clean_num(node.label) if node.label else ""
+                clean_label = _grounding_clean_label(kind_value, node.label)
                 if clean_label:
                     node.attrs["eId"] = f"{kind_value}-{clean_label}"
                 else:
@@ -16205,7 +16222,7 @@ class UKReplayExecutor:
             if existing_eid and existing_eid in oracle_id_values and existing_eid in seen_oracle_ids:
                 kind = node.kind
                 kind_name = _uk_kind_value(kind).lower()
-                clean_label = _clean_num(node.label) if node.label else ""
+                clean_label = _grounding_clean_label(kind_name, node.label)
                 next_path_key = uk_semantic_path_key(
                     parent_path_key,
                     kind=kind_name,
@@ -16225,9 +16242,9 @@ class UKReplayExecutor:
                     )
                 return
 
-            clean_label = _clean_num(node.label) if node.label else ""
             kind = node.kind
             kind_name = _uk_kind_value(kind).lower()
+            clean_label = _grounding_clean_label(kind_name, node.label)
             raw_label = str(node.label or "").strip()
             heading = node.attrs.get("heading") or ""
             if (
