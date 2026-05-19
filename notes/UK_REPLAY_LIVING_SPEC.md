@@ -1305,8 +1305,9 @@ Current block-substitution context invariant:
   `uk_effect_bare_quoted_anchor_insert_text_patch`. This is distinct from the
   explicit `after "X"` family: it is only accepted when the source row consists
   of an optional `the word(s)` carrier, a quoted anchor, `there
-  is/are/shall be inserted`, and a quoted insertion, and the effect metadata
-  already supplies the target provision.
+  is/are/shall be inserted`, a quoted insertion, and only terminal comma,
+  semicolon, or full stop punctuation; the effect metadata must already supply
+  the target provision.
   Current witnesses include `asp/2000/5` affected `s. 43(2)(a)` by
   `asp/2003/9 Sch. 13 para. 8(a)(i)` and affected `s. 17(1)` by
   `asp/2003/9 Sch. 13 para. 2(a)(i)`, plus affected `s. 43(3)(a)` by

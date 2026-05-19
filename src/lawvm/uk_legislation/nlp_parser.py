@@ -644,7 +644,7 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
         r"[“\"'‘](?P<original>.*?)[”\"'’]\s+"
         r"(?:there is inserted|there are inserted|there shall be inserted)"
         r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]"
-        r"\s*;?\s*(?:and)?\s*\.?\s*$",
+        r"\s*[;,]?\s*(?:and)?\s*\.?\s*$",
         text,
         re.I,
     )

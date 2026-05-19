@@ -63,6 +63,20 @@ def test_parse_fragment_substitution_handles_bare_word_quoted_anchor_insert() ->
     ]
 
 
+def test_parse_fragment_substitution_handles_bare_anchor_insert_with_trailing_comma() -> None:
+    subs = parse_fragment_substitution(
+        "iv \u201cAct\u201d there shall be inserted \u201c and to sections 52 to 56 \u201d,"
+    )
+
+    assert subs == [
+        {
+            "original": "Act",
+            "replacement": "Act and to sections 52 to 56 ",
+            "rule_id": "uk_effect_bare_quoted_anchor_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_after_anchor_in_both_places_insert() -> None:
     subs = parse_fragment_substitution(
         "b in that sub-paragraph, after \u201cmember\u2019s entitlement to\u201d, "

@@ -2187,6 +2187,16 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "uk_effect_bare_quoted_anchor_insert_text_patch",
         ),
         (
+            "iv “Act” there shall be inserted “ and to sections 52 to 56 ”,",
+            "words inserted",
+            "s. 17(1)",
+            "Act",
+            "Act and to sections 52 to 56 ",
+            0,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_bare_quoted_anchor_insert_text_patch",
+        ),
+        (
             "a the word “or” at the end of paragraph (a) is repealed;",
             "word repealed",
             "s. 16(6)(a)",
