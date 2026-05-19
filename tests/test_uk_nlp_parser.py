@@ -1329,6 +1329,20 @@ def test_parse_fragment_substitution_handles_contextual_following_word_repeal() 
     ]
 
 
+def test_parse_fragment_substitution_handles_immediate_follows_word_repeal() -> None:
+    subs = parse_fragment_substitution(
+        "ii the word \u201cor\u201d which immediately follows paragraph (b) is repealed; and"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_WORD_or_IMMEDIATELY_FOLLOWING_paragraph_b",
+            "replacement": "",
+            "rule_id": "uk_effect_contextual_adjacent_word_repeal_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_contextual_target_word_repeal() -> None:
     subs = parse_fragment_substitution(
         "ii the word \u201cand\u201d immediately following subsection (4)(a) is repealed, and"

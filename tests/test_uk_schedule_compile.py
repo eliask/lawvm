@@ -2187,6 +2187,16 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "uk_effect_contextual_adjacent_word_repeal_text_patch",
         ),
         (
+            "ii the word “or” which immediately follows paragraph (b) is repealed; and",
+            "word repealed",
+            "s. 73(1)",
+            "TEXT_WORD_or_IMMEDIATELY_FOLLOWING_paragraph_b",
+            "",
+            0,
+            StructuralAction.TEXT_REPEAL,
+            "uk_effect_contextual_adjacent_word_repeal_text_patch",
+        ),
+        (
             "i the word “not” is inserted after the word “is” where it second appears,",
             "word inserted",
             "sch. 2 para. 2",

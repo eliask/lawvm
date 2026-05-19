@@ -1370,7 +1370,7 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
 
     matches_contextual_word_repeal = re.finditer(
         r"(?:the )?word [“\"'‘](.*?)[”\"'’]\s+"
-        r"(?:(immediately preceding|immediately following)|which follows|which appears immediately after)\s+"
+        r"(?:(immediately preceding|immediately following)|which (?:immediately )?follows|which appears immediately after)\s+"
         r"(paragraph|sub-paragraph|subsection)\s+\(([0-9A-Za-z]+)\)\s+"
         r"(?:is|are)\s+(?:omitted|repealed)",
         text,

@@ -2357,11 +2357,13 @@ Current bench replay-regime invariant:
   the explicit target subtree, the row remains a blocking text-match miss rather
   than widening the target.
 - The contextual word-repeal family also accepts `which appears immediately
-  after paragraph (a)`. It lowers to
+  after paragraph (a)` and `which immediately follows paragraph (b)`. Both
+  lower to
   `TEXT_WORD_<word>_IMMEDIATELY_FOLLOWING_paragraph_<label>` under
   `uk_effect_contextual_adjacent_word_repeal_text_patch`, preserving the
-  source-owned local anchor. Current witness: `asp/2000/4` affected
-  `s. 19(5)` by `asp/2007/10 s. 57(4)(b)(i)`.
+  source-owned local anchor. Current witnesses: `asp/2000/4` affected
+  `s. 19(5)` by `asp/2007/10 s. 57(4)(b)(i)` and `asp/2000/5` affected
+  `s. 73(1)` by `asp/2003/9 Sch. 13 para. 13(a)(ii)`.
 - Parser lowering must not compile `the definition of "X" is repealed`,
   declarative plural wording such as `the definitions of "X" and "Y" are
   repealed`, or imperative wording such as `omit the definition(s) of "X" [and
