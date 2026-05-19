@@ -1481,8 +1481,11 @@ Current block-substitution context invariant:
   `ssi/2009/286` `art. 2(2)(c)`, `asp/2010/8` `sch. 14 para. 1(b)`,
   `asp/2005/10` `sch. 4 para. 12`, and `asp/2007/5` `Sch. 5 para. 4`.
   The source classifier also treats `for the entry relating to X substitute Y`
-  and the source typo `after the entry relation to X insert Y` as this same
-  bounded list-entry frontier rather than a free text replacement.
+  as this same bounded list-entry frontier rather than a free text replacement.
+  The source typo `after the entry relation to X insert Y` lowers through the
+  same typed entry-insert family only when the rest of the instruction supplies
+  an explicit before/after anchor and payload; the selector records
+  `source_anchor_form=entry_relation_to_typo`.
 - Some UK schedule-list carriers bucket entries under immediate schedule child
   groups such as `p1group` headings rather than as direct schedule children.
   When an explicit `before`/`after` entry-insert selector cannot resolve a
@@ -1504,8 +1507,8 @@ Current block-substitution context invariant:
 - schedule-root repeals whose source text only claims `entry`/`entries` repeal
   must not delete the whole schedule. Replay prepare blocks this granularity
   escalation with `uk_replay_schedule_entry_repeal_granularity_blocked`.
-  Explicit source forms such as `the entry relating to X is repealed` and
-  `the entries for X, Y and Z are repealed` lower instead to
+  Explicit source forms such as `the entry relating to X is repealed`,
+  `omit the entry for X`, and `the entries for X, Y and Z are repealed` lower instead to
   `uk_effect_schedule_list_entry_repeal`: the target remains the schedule
   carrier, but a provenance selector lists the claimed direct entry anchors.
   Replay must resolve every anchor to exactly one direct `schedule_entry` child
