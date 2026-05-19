@@ -11095,6 +11095,53 @@ def test_compile_schedule_list_entry_insert_handles_entry_inserted_feed_type() -
     assert ops[0].payload.text == "The Scottish Further and Higher Education Funding Council"
 
 
+def test_compile_schedule_list_entry_insert_records_relation_to_typo() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>after the entry relation to the Scottish Fiscal Commission
+          insert— “ The Scottish Food Commission ”.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_list_entry_relation_typo",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-05-01",
+        affected_uri="/id/asp/2000/7/schedule/3",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="7",
+        affected_provisions="Sch. 3",
+        affecting_uri="/id/asp/2022/5",
+        affecting_class="ScottishAct",
+        affecting_year="2022",
+        affecting_number="5",
+        affecting_provisions="Sch. para. 21(1)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2022-05-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.SCHEDULE_ENTRY
+    assert ops[0].payload.text == "The Scottish Food Commission"
+    selector_note = next(
+        note for note in ops[0].provenance_tags if note.startswith("schedule_list_entry_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_selector:"))
+    assert selector["anchor_text"] == "the Scottish Fiscal Commission"
+    assert selector["source_anchor_form"] == "entry_relation_to_typo"
+    assert observations[0]["rule_id"] == "uk_effect_schedule_list_entry_insert"
+    assert observations[0]["source_anchor_form"] == "entry_relation_to_typo"
+    assert observations[0]["blocking"] is False
+
+
 def test_replay_schedule_list_entry_insert_places_unlabeled_entry_before_anchor() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -11613,6 +11660,50 @@ def test_compile_schedule_list_entry_repeal_lowers_to_selector() -> None:
     )
     selector = json.loads(selector_note.removeprefix("schedule_list_entry_repeal_selector:"))
     assert selector["anchors"] == ["the Scottish Arts Council"]
+    assert observations[0]["rule_id"] == "uk_effect_schedule_list_entry_repeal"
+    assert observations[0]["blocking"] is False
+
+
+def test_compile_schedule_list_entry_repeal_handles_omit_entry_for_form() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>a omit the entry for “NHS Health Scotland”, and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_list_entry_omit_for",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2019-11-01",
+        affected_uri="/id/asp/2000/7/schedule/3",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="7",
+        affected_provisions="Sch. 3",
+        affecting_uri="/id/ssi/2019/336",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2019",
+        affecting_number="336",
+        affecting_provisions="sch. 2 para. 1(2)(a)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2019-11-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPEAL
+    assert op.target == LegalAddress(path=(("schedule", "3"),))
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("schedule_list_entry_repeal_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_repeal_selector:"))
+    assert selector["anchors"] == ["NHS Health Scotland"]
     assert observations[0]["rule_id"] == "uk_effect_schedule_list_entry_repeal"
     assert observations[0]["blocking"] is False
 

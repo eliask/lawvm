@@ -4188,7 +4188,7 @@ def _uk_schedule_list_entry_insert_selector(
 
     match = re.search(
         r"\b(?P<direction>before|after)\s+(?:the\s+)?entry\s+"
-        r"(?:relating\s+to|for)\s+(?P<anchor>.+?)"
+        r"(?:relating\s+to|relation\s+to|for)\s+(?P<anchor>.+?)"
         r"(?:,?\s+there\s+is\s+inserted|\s+insert\b)\s*[—–-]?\s*(?P<payload>.+)$",
         text,
         re.I,
@@ -4214,13 +4214,16 @@ def _uk_schedule_list_entry_insert_selector(
             re.I,
         )
     if match is not None:
-        return _schedule_list_entry_selector_from_parts(
+        selector = _schedule_list_entry_selector_from_parts(
             direction=str(match.group("direction") or "").lower(),
             anchor_text=match.group("anchor"),
             inserted_text=match.group("payload"),
             target_ref=target_ref,
             target=target,
         )
+        if selector is not None and re.search(r"\bentry\s+relation\s+to\b", text, re.I):
+            selector["source_anchor_form"] = "entry_relation_to_typo"
+        return selector
 
     match = re.search(
         r"\bat\s+the\s+appropriate\s+place,?\s+in\s+alphabetical\s+order,?\s+"
@@ -4300,9 +4303,18 @@ def _uk_schedule_list_entry_repeal_selector(
     if match is not None:
         anchors = _split_schedule_entry_repeal_anchors(match.group("anchors"))
     else:
-        match = re.search(r"\bomit(?:ted)?\s+[“\"'](?P<anchor>.+?)[”\"']", text, re.I)
+        match = re.search(
+            r"\bomit(?:ted)?\s+(?:the\s+)?entry\s+(?:relating\s+to|for)\s+"
+            r"[“\"']?(?P<anchor>.+?)[”\"']?(?:,?\s+and\b|[.;,]|$)",
+            text,
+            re.I,
+        )
         if match is not None:
             anchors = (_strip_schedule_entry_repeal_anchor(match.group("anchor")),)
+        else:
+            match = re.search(r"\bomit(?:ted)?\s+[“\"'](?P<anchor>.+?)[”\"']", text, re.I)
+            if match is not None:
+                anchors = (_strip_schedule_entry_repeal_anchor(match.group("anchor")),)
     if not anchors:
         return None
     return {
@@ -6321,6 +6333,7 @@ def compile_effect_to_ir_ops(
                 extracted_text=extracted_text,
             )
             if action == "repeal"
+            or effect_type in {"words omitted", "word omitted", "words repealed", "word repealed"}
             else None
         )
         if schedule_list_entry_repeal_selector is not None:
