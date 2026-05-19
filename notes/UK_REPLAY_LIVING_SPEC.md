@@ -1755,10 +1755,12 @@ Current block-substitution context invariant:
   it must not delete sibling provisions or pick a parent body by approximate
   text anchoring. Current witness: `asp/2000/1` affected `s. 21(5)` by
   `ssi/2013/177 Sch. para. 4(a)`.
-- The related form `for the words after paragraph (b) substitute "..."` is
-  classified as the same child-tail rewrite frontier, but remains unsupported
-  until replay can replace, not just delete, the collapsed parent tail with a
-  bounded selector. It must not be treated as a whole-subsection text patch.
+- The related form `for the words after paragraph (b) substitute "..."` lowers
+  through `uk_effect_source_carried_child_tail_substitution_text_patch` when
+  the source subsection matches the feed target. Replay uses the same bounded
+  `TEXT_AFTER_CHILD_TAIL_paragraph_<label>` selector and may replace only the
+  collapsed parent tail after the last direct child; it blocks instead of
+  treating the row as a whole-subsection text patch.
 - `BlockAmendment` payload fragments with structured list payload such as
   `the Parliamentary corporation- a after ...; and b with ...` are also
   classified as `payload_fragment_without_action_formula` when the operative

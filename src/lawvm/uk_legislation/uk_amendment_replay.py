@@ -6231,6 +6231,13 @@ _SOURCE_CARRIED_CHILD_TAIL_REPEAL_RE = re.compile(
     r"are\s+repealed\s*;?\s*(?:and)?\s*\.?\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_CARRIED_CHILD_TAIL_SUBSTITUTION_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"in\s+subsection\s+\((?P<subsection>[0-9A-Za-z]+)\),?\s+"
+    r"for\s+the\s+words\s+after\s+paragraph\s+\((?P<label>[0-9A-Za-z]+)\)\s+"
+    r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*;?\s*(?:and)?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
 _SOURCE_CARRIED_MULTI_SUBUNIT_REPEAL_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"in\s+section\s+(?P<section>[0-9A-Za-z]+)\b.*?,\s+"
@@ -6393,6 +6400,35 @@ def _fragment_substitution_source_carried_child_tail_repeal(
         "source_subsection_label": source_subsection,
         "source_anchor_child_label": anchor_label,
         "rule_id": "uk_effect_source_carried_child_tail_repeal_text_patch",
+    }
+
+
+def _fragment_substitution_source_carried_child_tail_substitution(
+    *,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Resolve explicit "words after paragraph (x) substitute" tail rewrites."""
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return None
+    match = _SOURCE_CARRIED_CHILD_TAIL_SUBSTITUTION_RE.match(text)
+    if match is None:
+        return None
+    source_subsection = _clean_num(match.group("subsection"))
+    target_subsection = _clean_num(_addr_field(target, "subsection") or "")
+    if not source_subsection or source_subsection != target_subsection:
+        return None
+    anchor_label = _clean_num(match.group("label"))
+    replacement = " ".join(match.group("replacement").split()).strip()
+    if not anchor_label or not replacement:
+        return None
+    return {
+        "original": f"TEXT_AFTER_CHILD_TAIL_paragraph_{anchor_label}",
+        "replacement": replacement,
+        "source_subsection_label": source_subsection,
+        "source_anchor_child_label": anchor_label,
+        "rule_id": "uk_effect_source_carried_child_tail_substitution_text_patch",
     }
 
 
@@ -8079,6 +8115,15 @@ def compile_effect_to_ir_ops(
                     if source_carried_child_tail_repeal is not None:
                         subs = [source_carried_child_tail_repeal]
                 if not subs:
+                    source_carried_child_tail_substitution = (
+                        _fragment_substitution_source_carried_child_tail_substitution(
+                            extracted_text=extracted_text,
+                            target=target,
+                        )
+                    )
+                    if source_carried_child_tail_substitution is not None:
+                        subs = [source_carried_child_tail_substitution]
+                if not subs:
                     source_carried_multi_subunit_repeal = (
                         _fragment_substitution_source_carried_multi_subunit_repeal(
                             extracted_text=extracted_text,
@@ -8235,6 +8280,32 @@ def compile_effect_to_ir_ops(
                                 "target_ref": t_str,
                                 "target": str(target),
                                 "text_match": op_text_match,
+                                "source_anchor_child_label": str(primary.get("source_anchor_child_label") or ""),
+                                "source_subsection_label": str(primary.get("source_subsection_label") or ""),
+                            },
+                        )
+                    if "uk_effect_source_carried_child_tail_substitution_text_patch" in _fragment_rule_ids(
+                        fragment_subs
+                    ):
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id="uk_effect_source_carried_child_tail_substitution_text_patch",
+                            family="text_rewrite_lowering",
+                            reason_code="source_carried_child_tail_substitution_lowered",
+                            reason=(
+                                "UK source text explicitly substitutes the words after "
+                                "a named paragraph inside the affected subsection; lowering "
+                                "preserves that as a bounded child-tail text selector instead "
+                                "of replacing the whole parent."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "text_match": op_text_match,
+                                "replacement": op_text_replacement,
                                 "source_anchor_child_label": str(primary.get("source_anchor_child_label") or ""),
                                 "source_subsection_label": str(primary.get("source_subsection_label") or ""),
                             },
@@ -13716,7 +13787,7 @@ class UKReplayExecutor:
                 r"TEXT_AFTER_CHILD_TAIL_([A-Za-z]+)_([0-9A-Za-z]+)",
                 match,
             )
-            if child_match is None or replacement:
+            if child_match is None:
                 return node, False
             child_kind = child_match.group(1)
             child_label = child_match.group(2)
@@ -13742,7 +13813,13 @@ class UKReplayExecutor:
             tail = text[separator.end() :].strip()
             if not tail or not re.match(r"(?:,?\s*)?(?:and|or)\b|[“\"'‘]", tail, flags=re.I):
                 return node, False
-            rebuilt = dc_replace(node, text=text[: separator.end()].rstrip())
+            replacement_text = str(replacement or "").strip()
+            if replacement_text:
+                joiner = "" if replacement_text.startswith((" ", ",", ".", ";", ":", ")")) else " "
+                rebuilt_text = f"{text[: separator.end()].rstrip()}{joiner}{replacement_text}".rstrip()
+            else:
+                rebuilt_text = text[: separator.end()].rstrip()
+            rebuilt = dc_replace(node, text=rebuilt_text)
             self._replace_node_in_statute(node, rebuilt)
             return rebuilt, True
 
