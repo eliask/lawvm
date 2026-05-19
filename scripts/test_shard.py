@@ -14,7 +14,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -29,9 +29,28 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
     "boundary": (
         "test_conformance.py",
     ),
-    "estonia": (
-        "test_ee_*.py",
+    "estonia_sources": (
         "test_clause_ast_ee_validation.py",
+        "test_ee_act_identity_registry.py",
+        "test_ee_bench.py",
+        "test_ee_compare_normalization.py",
+        "test_ee_fetch.py",
+        "test_ee_frontier.py",
+        "test_ee_inspect_source.py",
+        "test_ee_new_tools.py",
+        "test_ee_pair_planning.py",
+        "test_ee_reporting_tools.py",
+        "test_ee_residual_inventory.py",
+        "test_ee_source_adjudication.py",
+        "test_ee_tool_promotions.py",
+    ),
+    "estonia_replay_semantics": (
+        "test_ee_apply_semantics.py",
+        "test_ee_instruction_waist.py",
+        "test_ee_parser_normalization.py",
+    ),
+    "estonia_replay_logic": (
+        "test_ee_replay_logic.py",
     ),
     "norway": (
         "test_no_*.py",
@@ -58,8 +77,12 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_new_zealand_operation_surface.py",
         "test_new_zealand_payload_surface.py",
     ),
-    "sweden": (
-        "test_sweden_*.py",
+    "sweden_fetch": (
+        "test_sweden_fetch.py",
+    ),
+    "sweden_misc": (
+        "test_sweden_grafter.py",
+        "test_sweden_tools.py",
     ),
     "uk": (
         "test_uk_*.py",
@@ -73,21 +96,28 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_open_law_frontend.py",
         "test_scaffold_tool.py",
     ),
-    "finland": (
+    "finland_sources": (
         "test_amendment_index.py",
         "test_audit_verified_finlex_yaml.py",
         "test_backfill_finlex_consolidated_versions.py",
-        "test_body_*.py",
         "test_build_publication_db.py",
+        "test_finlex_*.py",
+        "test_scan_absent_ajantasa.py",
+        "test_scan_annotations.py",
+        "test_source_dump.py",
+        "test_transparent_store.py",
+        "test_vts.py",
+    ),
+    "finland_parse_payload": (
+        "test_body_*.py",
         "test_clause_ast_curated.py",
         "test_clause_patterns.py",
         "test_clause_surface.py",
-        "test_corrigendum_*.py",
-        "test_fi_*.py",
-        "test_finland_*.py",
-        "test_finlex_*.py",
+        "test_fi_num_in_intro_recovery.py",
+        "test_fi_profile_normalize.py",
+        "test_fi_source_pathology_observations.py",
+        "test_fi_xml_ir.py",
         "test_frontend_observations.py",
-        "test_grafter_fallback.py",
         "test_johtolause_api.py",
         "test_lower_*.py",
         "test_normalize_fi.py",
@@ -95,30 +125,57 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_payload_normalize.py",
         "test_payload_surface.py",
         "test_qualified_jolloin_renumber.py",
-        "test_replay_pipeline.py",
+    ),
+    "finland_replay_compile": (
+        "test_fi_compile.py",
+    ),
+    "finland_replay_grafter": (
+        "test_grafter_fallback.py",
+    ),
+    "finland_replay_products_core": (
         "test_replay_products.py",
+    ),
+    "finland_replay_products_support": (
+        "test_replay_pipeline.py",
         "test_replay_revision.py",
-        "test_scan_absent_ajantasa.py",
-        "test_scan_annotations.py",
         "test_session_regressions_2026_04.py",
-        "test_source_dump.py",
-        "test_transparent_store.py",
-        "test_vts.py",
+    ),
+    "finland_replay_rules": (
+        "test_corrigendum_*.py",
+        "test_fi_editorial_adjudication.py",
+        "test_fi_item_number_display.py",
+        "test_fi_tail_prose_absorb.py",
+        "test_fi_unnumbered_peer_reparent.py",
+        "test_finland_cross_refs.py",
+        "test_finland_delegation.py",
+        "test_finland_ontology.py",
+        "test_finland_profile.py",
+        "test_finland_rulebook.py",
+        "test_finland_rulebook_cli.py",
+        "test_finland_rulebook_export.py",
+        "test_finland_rulebook_registries.py",
         "test_wrapup_preservation.py",
     ),
-    "evidence": (
+    "evidence_claims": (
+        "test_evidence.py",
+    ),
+    "evidence_core": (
         "test_capture.py",
         "test_chain_completeness.py",
-        "test_evidence.py",
-        "test_explain_facade.py",
         "test_proof_algebra.py",
         "test_section_evidence_context.py",
         "test_section_invariant_evidence.py",
         "test_section_strict_lineage.py",
         "test_statute_proof_algebra.py",
         "test_strict_payload_confidence.py",
-        "test_strict_report.py",
         "test_version_drift.py",
+    ),
+    "evidence_reports": (
+        "test_explain_facade.py",
+        "test_strict_report.py",
+    ),
+    "properties_timeline": (
+        "test_timeline_properties.py",
     ),
     "properties": (
         "test_apply_properties.py",
@@ -131,119 +188,173 @@ SHARD_PATTERNS: dict[str, tuple[str, ...]] = {
         "test_payload_normalize_properties.py",
         "test_replay_stateful_properties.py",
         "test_stateful_properties.py",
-        "test_timeline_properties.py",
         "test_tree_ops_properties.py",
         "test_z3_proofs.py",
     ),
-    "core": (
+    "core_ir_contracts": (
         "test_address_parse.py",
         "test_admissible_binding.py",
-        "test_annotations_views.py",
-        "test_apply.py",
         "test_canonical_intent_kinds.py",
-        "test_chapter_seed.py",
         "test_clause_ast.py",
-        "test_compile_facade.py",
-        "test_compile_result.py",
-        "test_compile_views.py",
-        "test_composite_interaction_reference_model.py",
-        "test_constraints.py",
         "test_coordination_parser.py",
-        "test_core_*.py",
-        "test_destructive_repair_ledger.py",
+        "test_core_unit_registry_contracts.py",
         "test_effect_lowering.py",
-        "test_elaboration_context_contracts.py",
-        "test_graph_build_contract.py",
         "test_intent_compat.py",
         "test_ir_*.py",
-        "test_law_level_text_patch.py",
-        "test_legal_operation_text_patch.py",
-        "test_materialization_invariants.py",
-        "test_merge.py",
         "test_meta_parse.py",
         "test_metadata.py",
+        "test_roman.py",
+        "test_scope.py",
+        "test_section_keys.py",
+        "test_shared_contracts.py",
+        "test_span_anchor.py",
+        "test_statute_facets.py",
+        "test_target_scope.py",
+        "test_unit_registry.py",
+    ),
+    "core_tree_apply": (
+        "test_annotations_views.py",
+        "test_apply.py",
+        "test_chapter_seed.py",
+        "test_constraints.py",
+        "test_destructive_repair_ledger.py",
+        "test_law_level_text_patch.py",
+        "test_legal_operation_text_patch.py",
+        "test_merge.py",
         "test_migration_ledger.py",
         "test_mutation_gaps.py",
         "test_normalize_structure.py",
         "test_occupancy.py",
         "test_opaque_marker_boundary.py",
-        "test_parse_witness.py",
-        "test_phase_result_*.py",
+        "test_text_amend.py",
+        "test_tree_ops_ambiguity.py",
+    ),
+    "core_compile_projection": (
+        "test_compile_facade.py",
+        "test_compile_result.py",
+        "test_compile_views.py",
+        "test_graph_build_contract.py",
         "test_pipeline_capture.py",
         "test_projection_completeness.py",
+        "test_verify_chain.py",
+    ),
+    "core_materialization_invariants": (
+        "test_materialization_invariants.py",
+    ),
+    "core_replay_timeline": (
         "test_replay_lints.py",
         "test_replay_metamorphic.py",
         "test_replay_small_model.py",
-        "test_roman.py",
-        "test_scope.py",
-        "test_section_keys.py",
-        "test_semantic_*.py",
-        "test_shared_contracts.py",
-        "test_solver_slot_assignment.py",
-        "test_span_anchor.py",
-        "test_statute_facets.py",
-        "test_surface_*.py",
-        "test_table_*.py",
-        "test_target_scope.py",
-        "test_temporal*.py",
-        "test_text_amend.py",
         "test_timeline.py",
         "test_timeline_invariants.py",
-        "test_token*.py",
-        "test_tree_ops_ambiguity.py",
-        "test_unit_registry.py",
-        "test_verify_chain.py",
     ),
-    "tools": (
-        "test_acquisition.py",
-        "test_audit.py",
-        "test_audit_scripts.py",
-        "test_bench.py",
-        "test_bench_comparable.py",
-        "test_bench_curate.py",
-        "test_blame.py",
-        "test_check_consistency.py",
-        "test_ci_shards.py",
+    "core_surface_semantic": (
+        "test_composite_interaction_reference_model.py",
+        "test_core_graph.py",
+        "test_elaboration_context_contracts.py",
+        "test_parse_witness.py",
+        "test_phase_result_*.py",
+        "test_semantic_*.py",
+        "test_solver_slot_assignment.py",
+        "test_surface_*.py",
+        "test_table_*.py",
+        "test_temporal*.py",
+        "test_token*.py",
+    ),
+    "tools_cli_debug_hotspot": (
         "test_cli_debug_tools.py",
-        "test_consolidated_artifacts.py",
-        "test_corpus.py",
+    ),
+    "tools_cli_oracle": (
+        "test_oracle_check.py",
+    ),
+    "tools_cli_debug": (
+        "test_check_consistency.py",
         "test_diagnose_phase.py",
         "test_diff.py",
-        "test_divergence_heuristics.py",
         "test_dump.py",
+        "test_freshness_tool.py",
+        "test_replay_cli_contract.py",
+        "test_verify_facade_execution.py",
+        "test_verify_observations.py",
+    ),
+    "tools_runtime_io": (
+        "test_acquisition.py",
+        "test_consolidated_artifacts.py",
         "test_export_sql.py",
+        "test_import_zip.py",
+        "test_worker_pool.py",
+    ),
+    "tools_audit_restructure": (
+        "test_restructure_plan.py",
+    ),
+    "tools_audit_blame": (
+        "test_blame.py",
+    ),
+    "tools_audit_release": (
+        "test_audit.py",
+        "test_audit_scripts.py",
+        "test_ci_shards.py",
         "test_failures.py",
         "test_finding_registry.py",
-        "test_freshness_tool.py",
-        "test_frontier.py",
-        "test_gold_tool.py",
         "test_helpers.py",
-        "test_import_zip.py",
-        "test_metadata_fi.py",
-        "test_oracle_check.py",
-        "test_parser_smell_inventory.py",
-        "test_peg_*.py",
         "test_publication_guarantees.py",
         "test_release_docs.py",
-        "test_replay_adjudication_inventory.py",
-        "test_replay_cli_contract.py",
-        "test_replay_debt_inventory.py",
-        "test_report_query.py",
-        "test_residual_ledger.py",
-        "test_restructure_plan.py",
         "test_source_normalize.py",
         "test_step_attribution.py",
         "test_structural_*.py",
-        "test_verify_facade_execution.py",
-        "test_verify_observations.py",
-        "test_worker_pool.py",
+    ),
+    "tools_bench_inventory": (
+        "test_bench.py",
+        "test_bench_comparable.py",
+        "test_bench_curate.py",
+        "test_corpus.py",
+        "test_divergence_heuristics.py",
+        "test_frontier.py",
+        "test_gold_tool.py",
+        "test_metadata_fi.py",
+        "test_parser_smell_inventory.py",
+        "test_peg_*.py",
+        "test_replay_adjudication_inventory.py",
+        "test_replay_debt_inventory.py",
+        "test_report_query.py",
+        "test_residual_ledger.py",
     ),
 }
 
 SHARD_GROUPS: dict[str, tuple[str, ...]] = {
     "frontends": ("estonia", "eu", "finland", "new_zealand", "norway", "starter", "sweden", "uk"),
-    "modules": ("core", "evidence", "properties", "tools"),
+    "modules": ("core", "evidence", "properties", "properties_timeline", "tools"),
+    "evidence": ("evidence_claims", "evidence_core", "evidence_reports"),
+    "core": (
+        "core_ir_contracts",
+        "core_tree_apply",
+        "core_compile_projection",
+        "core_materialization_invariants",
+        "core_replay_timeline",
+        "core_surface_semantic",
+    ),
+    "tools": (
+        "tools_cli_debug_hotspot",
+        "tools_cli_oracle",
+        "tools_cli_debug",
+        "tools_runtime_io",
+        "tools_audit_restructure",
+        "tools_audit_blame",
+        "tools_audit_release",
+        "tools_bench_inventory",
+    ),
+    "estonia": ("estonia_sources", "estonia_replay_semantics", "estonia_replay_logic"),
+    "finland": (
+        "finland_sources",
+        "finland_parse_payload",
+        "finland_replay_compile",
+        "finland_replay_grafter",
+        "finland_replay_products_core",
+        "finland_replay_products_support",
+        "finland_replay_rules",
+    ),
     "new_zealand": ("new_zealand_sources", "new_zealand_effects", "new_zealand_reports"),
+    "sweden": ("sweden_fetch", "sweden_misc"),
 }
 
 SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -272,6 +383,7 @@ SOURCE_SHARD_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("src/lawvm/tools/evidence", ("evidence", "tools")),
     ("src/lawvm/tools/strict_report.py", ("evidence", "tools")),
     ("src/lawvm/tools/", ("tools",)),
+    ("notes/UK_", ("uk", "tools_cli_debug")),
     ("src/lawvm/core/", ("all",)),
     ("src/lawvm/jurisdiction_starter/", ("starter",)),
 )
@@ -395,8 +507,9 @@ def shard_timing_record(
     file_count: int,
     elapsed_seconds: float,
     exit_code: int,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    record: dict[str, Any] = {
         "kind": "lawvm_pytest_shard_timing",
         "shard": shard,
         "file_count": file_count,
@@ -404,6 +517,9 @@ def shard_timing_record(
         "exit_code": exit_code,
         "status": "passed" if exit_code == 0 else "failed",
     }
+    if run_id:
+        record["run_id"] = run_id
+    return record
 
 
 def append_shard_timing_record(path: Path, record: dict[str, Any]) -> None:
@@ -444,9 +560,11 @@ def shard_timing_balance_report(
     path: Path,
     *,
     imbalance_threshold: float = 2.0,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Summarize latest shard timings without changing shard membership."""
 
+    assignments = shard_assignments()
     raw_records = load_shard_timing_records(path)
     invalid_records = [
         record for record in raw_records if record.get("kind") == "lawvm_pytest_shard_timing_invalid"
@@ -459,6 +577,7 @@ def shard_timing_balance_report(
         shard = record.get("shard")
         elapsed = record.get("elapsed_seconds")
         file_count = record.get("file_count")
+        record_run_id = record.get("run_id")
         if not isinstance(shard, str) or not shard:
             invalid_records.append({
                 "kind": "lawvm_pytest_shard_timing_invalid",
@@ -480,8 +599,22 @@ def shard_timing_balance_report(
                 "record": record,
             })
             continue
+        if record_run_id is not None and not isinstance(record_run_id, str):
+            invalid_records.append({
+                "kind": "lawvm_pytest_shard_timing_invalid",
+                "error": "timing record run_id is not a string",
+                "record": record,
+            })
+            continue
+        if run_id is not None and record_run_id != run_id:
+            continue
         valid_record_count += 1
         latest_by_shard[shard] = record
+    latest_run_ids = sorted({
+        run_id
+        for record in latest_by_shard.values()
+        if isinstance((run_id := record.get("run_id")), str) and run_id
+    })
     shard_rows = [
         {
             "shard": shard,
@@ -516,13 +649,35 @@ def shard_timing_balance_report(
         and isinstance(row["elapsed_seconds"], float)
         and row["elapsed_seconds"] >= average_elapsed * imbalance_threshold
     ]
+    single_file_hotspots = [
+        str(row["shard"])
+        for row in shard_rows
+        if row["shard"] in overweight_shards and cast(int, row["file_count"]) == 1
+    ]
+    single_file_hotspot_profiles = [
+        {
+            "shard": shard,
+            "file": f"tests/{filenames[0]}" if len(filenames := assignments.get(shard, [])) == 1 else None,
+            "command": (
+                f"LAWVM_PYTEST_WORKERS=0 ./scripts/test_shard.sh run {shard} -- --durations=25"
+            ),
+        }
+        for shard in single_file_hotspots
+    ]
+    splittable_hotspots = [
+        str(row["shard"])
+        for row in shard_rows
+        if row["shard"] in overweight_shards and cast(int, row["file_count"]) > 1
+    ]
     return {
         "kind": "lawvm_pytest_shard_balance_report",
         "source": str(path),
+        "run_id_filter": run_id,
         "record_count": len(raw_records),
         "valid_record_count": valid_record_count,
         "invalid_record_count": len(invalid_records),
         "latest_shard_count": len(shard_rows),
+        "latest_run_ids": latest_run_ids,
         "imbalance_threshold": imbalance_threshold,
         "total_elapsed_seconds": total_elapsed,
         "average_elapsed_seconds": average_elapsed,
@@ -530,6 +685,9 @@ def shard_timing_balance_report(
         "min_nonzero_elapsed_seconds": round(min_nonzero_elapsed, 3),
         "imbalance_ratio": imbalance_ratio,
         "overweight_shards": overweight_shards,
+        "single_file_hotspots": single_file_hotspots,
+        "single_file_hotspot_profiles": single_file_hotspot_profiles,
+        "splittable_hotspots": splittable_hotspots,
         "shards": shard_rows,
         "invalid_records": invalid_records,
     }
@@ -619,6 +777,7 @@ def run_shard(shard: str, *, pytest_args: list[str], timing_jsonl: str | None = 
         file_count=len(filenames),
         elapsed_seconds=elapsed,
         exit_code=exit_code,
+        run_id=os.environ.get("LAWVM_SHARD_TIMING_RUN_ID"),
     )
     print(
         f"=== shard {shard} {record['status']}: {record['elapsed_seconds']:.3f}s ===",
@@ -689,63 +848,49 @@ def shard_plan(shard: str = "all") -> dict[str, Any]:
 def affected_path_plan(raw_path: str) -> dict[str, Any]:
     path = raw_path.strip()
     normalized = path.replace("\\", "/")
-    filename = Path(normalized).name
+    selector_path = normalized.split("::", 1)[0]
+    filename = Path(selector_path).name
+
+    def plan(shards: list[str], reason: str) -> dict[str, Any]:
+        return {
+            "path": raw_path,
+            "shards": shards,
+            "expanded_shards": _affected_shards_from_path_plans([{"shards": shards}]),
+            "reason": reason,
+        }
+
     if not path:
-        return {
-            "path": raw_path,
-            "shards": list(ALL_SHARDS),
-            "reason": "empty input path is not mapped to a bounded shard; run all affected shards",
-        }
+        return plan(
+            list(ALL_SHARDS),
+            "empty input path is not mapped to a bounded shard; run all affected shards",
+        )
     if normalized in GLOBAL_CHANGE_PATHS:
-        return {
-            "path": raw_path,
-            "shards": list(ALL_SHARDS),
-            "reason": "global dependency change forces all affected shards",
-        }
-    if normalized.startswith("tests/") and filename.startswith("test_") and filename.endswith(".py"):
+        return plan(list(ALL_SHARDS), "global dependency change forces all affected shards")
+    if selector_path.startswith("tests/") and filename.startswith("test_") and filename.endswith(".py"):
         if filename in EXCLUDED_TESTS:
-            return {
-                "path": raw_path,
-                "shards": list(ALL_SHARDS),
-                "reason": f"excluded test: {EXCLUDED_TESTS[filename]}; run all affected shards",
-            }
+            return plan(
+                list(ALL_SHARDS),
+                f"excluded test: {EXCLUDED_TESTS[filename]}; run all affected shards",
+            )
         matches = explicit_matches(filename)
         if matches:
-            return {
-                "path": raw_path,
-                "shards": sorted(matches),
-                "reason": "test file matches explicit shard pattern",
-            }
-        return {
-            "path": raw_path,
-            "shards": ["misc"],
-            "reason": "test file has no explicit shard pattern and maps to misc",
-        }
+            return plan(sorted(matches), "test file matches explicit shard pattern")
+        return plan(["misc"], "test file has no explicit shard pattern and maps to misc")
     for prefix, shards in SOURCE_SHARD_PREFIXES:
         if normalized.startswith(prefix):
             if shards == ALL_SHARDS:
-                return {
-                    "path": raw_path,
-                    "shards": list(ALL_SHARDS),
-                    "reason": f"core/dependency prefix {prefix} forces all affected shards",
-                }
-            return {
-                "path": raw_path,
-                "shards": list(shards),
-                "reason": f"known frontend prefix {prefix} maps to {', '.join(shards)}",
-            }
+                return plan(
+                    list(ALL_SHARDS),
+                    f"core/dependency prefix {prefix} forces all affected shards",
+                )
+            return plan(list(shards), f"known frontend prefix {prefix} maps to {', '.join(shards)}")
     if normalized.startswith(TOOLING_SHARD_PREFIXES):
         prefixes = ", ".join(TOOLING_SHARD_PREFIXES)
-        return {
-            "path": raw_path,
-            "shards": ["tools"],
-            "reason": f"tools prefix {prefixes} maps to tools",
-        }
-    return {
-        "path": raw_path,
-        "shards": list(ALL_SHARDS),
-        "reason": "unknown path is not mapped to a bounded shard; run all affected shards",
-    }
+        return plan(["tools"], f"tools prefix {prefixes} maps to tools")
+    return plan(
+        list(ALL_SHARDS),
+        "unknown path is not mapped to a bounded shard; run all affected shards",
+    )
 
 
 def affected_path_plans(paths: list[str]) -> list[dict[str, Any]]:
@@ -758,7 +903,7 @@ def _affected_shards_from_path_plans(path_plans: list[dict[str, Any]]) -> list[s
         affected.update(item["shards"])
     if not affected or "all" in affected:
         return ["all"]
-    return sorted(affected)
+    return sorted(expand_shard_names(sorted(affected)))
 
 
 def affected_shards(paths: list[str]) -> list[str]:
@@ -790,6 +935,12 @@ def print_affected(paths: list[str], *, json_output: bool = False) -> int:
     return 0
 
 
+def print_expanded(shards: list[str]) -> int:
+    for shard in expand_shard_names(shards):
+        print(shard)
+    return 0
+
+
 def print_plan(shard: str, *, json_output: bool = False) -> int:
     try:
         plan = shard_plan(shard)
@@ -810,18 +961,42 @@ def print_plan(shard: str, *, json_output: bool = False) -> int:
     return 0
 
 
-def print_timing_balance(path: str, *, json_output: bool = False, imbalance_threshold: float = 2.0) -> int:
-    report = shard_timing_balance_report(Path(path), imbalance_threshold=imbalance_threshold)
+def print_timing_balance(
+    path: str,
+    *,
+    json_output: bool = False,
+    imbalance_threshold: float = 2.0,
+    run_id: str | None = None,
+) -> int:
+    report = shard_timing_balance_report(
+        Path(path),
+        imbalance_threshold=imbalance_threshold,
+        run_id=run_id,
+    )
     if json_output:
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if report["invalid_record_count"] == 0 else 1
     print(f"timing records: {report['valid_record_count']} valid, {report['invalid_record_count']} invalid")
+    if report["run_id_filter"]:
+        print(f"run id filter: {report['run_id_filter']}")
     print(f"latest shards: {report['latest_shard_count']}")
+    if report["latest_run_ids"]:
+        print("latest run ids:", ", ".join(report["latest_run_ids"]))
     print(f"total elapsed: {report['total_elapsed_seconds']:.3f}s")
     print(f"average shard: {report['average_elapsed_seconds']:.3f}s")
     print(f"imbalance ratio: {report['imbalance_ratio']:.3f}")
     if report["overweight_shards"]:
         print("overweight shards:", ", ".join(report["overweight_shards"]))
+    if report["single_file_hotspots"]:
+        print("single-file hotspots:", ", ".join(report["single_file_hotspots"]))
+    if report["single_file_hotspot_profiles"]:
+        print("single-file hotspot profiling commands:")
+        for profile in report["single_file_hotspot_profiles"]:
+            file_label = profile["file"] or "(file unknown for shard)"
+            print(f"  {profile['shard']}: {file_label}")
+            print(f"    {profile['command']}")
+    if report["splittable_hotspots"]:
+        print("multi-file split candidates:", ", ".join(report["splittable_hotspots"]))
     for row in report["shards"]:
         seconds_per_file = row["seconds_per_file"]
         per_file = "n/a" if seconds_per_file is None else f"{seconds_per_file:.3f}s/file"
@@ -845,6 +1020,8 @@ def main(argv: list[str] | None = None) -> int:
     affected_parser = subparsers.add_parser("affected")
     affected_parser.add_argument("--json", action="store_true", dest="json_output")
     affected_parser.add_argument("paths", nargs="*")
+    expand_parser = subparsers.add_parser("expand")
+    expand_parser.add_argument("shards", nargs="+")
     timings_parser = subparsers.add_parser("timings")
     timings_parser.add_argument("path")
     timings_parser.add_argument("--json", action="store_true", dest="json_output")
@@ -853,6 +1030,11 @@ def main(argv: list[str] | None = None) -> int:
         type=float,
         default=2.0,
         help="flag shards at or above average elapsed seconds multiplied by this value",
+    )
+    timings_parser.add_argument(
+        "--run-id",
+        default=None,
+        help="summarize only timing records with this run_id",
     )
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument(
@@ -874,11 +1056,14 @@ def main(argv: list[str] | None = None) -> int:
         return print_plan(args.shard, json_output=args.json_output)
     if args.command == "affected":
         return print_affected(args.paths, json_output=args.json_output)
+    if args.command == "expand":
+        return print_expanded(args.shards)
     if args.command == "timings":
         return print_timing_balance(
             args.path,
             json_output=args.json_output,
             imbalance_threshold=args.imbalance_threshold,
+            run_id=args.run_id,
         )
     if args.command == "run":
         return run_shard(args.shard, pytest_args=args.pytest_args, timing_jsonl=args.timing_jsonl)

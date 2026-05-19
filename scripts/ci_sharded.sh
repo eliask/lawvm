@@ -15,12 +15,24 @@
 #   LAWVM_CI_AFFECTED_PATHS="src/lawvm/norway/replay.py tests/test_norway_replay.py" ./scripts/ci_sharded.sh
 #   LAWVM_CI_TIMING_JSONL=.tmp/ci-shard-timings.jsonl ./scripts/ci_sharded.sh
 #   LAWVM_CI_TIMING_JSONL=0 ./scripts/ci_sharded.sh   # disable timing capture
+#   LAWVM_CI_TIMING_HISTORY_JSONL=.tmp/ci-shard-timings/history.jsonl ./scripts/ci_sharded.sh
+#   LAWVM_CI_TIMING_RUN_ID=local-full-1 ./scripts/ci_sharded.sh
 
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-ALL_BOUNDED_SHARDS="core estonia eu evidence finland new_zealand_effects new_zealand_reports new_zealand_sources norway properties starter sweden tools uk"
+DEFAULT_SHARD_GROUPS="frontends modules"
+STATIC_CHECK_PATHS=(
+    src/lawvm/
+    tests/
+    scripts/test_shard.py
+    scripts/acquire_uk_corpus.py
+    scripts/fetch_uk_affecting_acts.py
+    scripts/uk_fetch_affecting_acts.py
+    scripts/uk_fetch_effects.py
+    scripts/uk_inspect_metadata_effects.py
+)
 
 AFFECTED_PATHS=()
 REQUESTED_SHARDS=()
@@ -55,7 +67,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --help|-h)
-            sed -n '1,17p' "$0"
+            sed -n '1,19p' "$0"
             exit 0
             ;;
         *)
@@ -76,6 +88,8 @@ if [[ ${#AFFECTED_PATHS[@]} -eq 0 && -n "${LAWVM_CI_AFFECTED_PATHS:-}" ]]; then
     AFFECTED_PATHS=(${LAWVM_CI_AFFECTED_PATHS})
 fi
 
+ALL_BOUNDED_SHARDS="$(./scripts/test_shard.sh expand $DEFAULT_SHARD_GROUPS | tr '\n' ' ')"
+
 if [[ ${#AFFECTED_PATHS[@]} -gt 0 ]]; then
     mapfile -t AFFECTED_SHARDS < <(./scripts/test_shard.sh affected "${AFFECTED_PATHS[@]}")
     if [[ "${AFFECTED_SHARDS[*]}" == "all" ]]; then
@@ -91,6 +105,8 @@ else
     SHARDS="$ALL_BOUNDED_SHARDS"
 fi
 SHARDS="${SHARDS//,/ }"
+mapfile -t EXPANDED_SHARDS < <(./scripts/test_shard.sh expand $SHARDS)
+SHARDS="${EXPANDED_SHARDS[*]}"
 PYTEST_SELECTORS=()
 if [[ ${#AFFECTED_PATHS[@]} -gt 0 ]]; then
     only_test_paths=1
@@ -110,14 +126,19 @@ TIMING_JSONL="${LAWVM_CI_TIMING_JSONL:-.tmp/ci-shard-timings/latest.jsonl}"
 if [[ "$TIMING_JSONL" == "0" || "$TIMING_JSONL" == "none" ]]; then
     TIMING_JSONL=""
 fi
+TIMING_HISTORY_JSONL="${LAWVM_CI_TIMING_HISTORY_JSONL:-.tmp/ci-shard-timings/history.jsonl}"
+if [[ "$TIMING_HISTORY_JSONL" == "0" || "$TIMING_HISTORY_JSONL" == "none" ]]; then
+    TIMING_HISTORY_JSONL=""
+fi
 if [[ -n "$TIMING_JSONL" ]]; then
     mkdir -p "$(dirname "$TIMING_JSONL")"
     : > "$TIMING_JSONL"
     export LAWVM_SHARD_TIMING_JSONL="$TIMING_JSONL"
+    export LAWVM_SHARD_TIMING_RUN_ID="${LAWVM_CI_TIMING_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 fi
 
 echo "=== [1/6] ruff check ==="
-uv run ruff check src/lawvm/ tests/ scripts/test_shard.py --no-fix 2>&1 || {
+uv run ruff check "${STATIC_CHECK_PATHS[@]}" --no-fix 2>&1 || {
     echo "FAIL: ruff found issues. Fix before finishing."
     exit 1
 }
@@ -125,7 +146,7 @@ echo "PASS: ruff"
 
 echo ""
 echo "=== [2/6] ty check ==="
-uv run ty check src/lawvm/ tests/ scripts/test_shard.py 2>&1 || {
+uv run ty check "${STATIC_CHECK_PATHS[@]}" 2>&1 || {
     echo "FAIL: ty found type errors."
     exit 1
 }
@@ -184,4 +205,9 @@ if [[ -n "$TIMING_JSONL" ]]; then
         echo "FAIL: shard timing report is invalid."
         exit 1
     }
+    if [[ -n "$TIMING_HISTORY_JSONL" && "$TIMING_HISTORY_JSONL" != "$TIMING_JSONL" ]]; then
+        mkdir -p "$(dirname "$TIMING_HISTORY_JSONL")"
+        cat "$TIMING_JSONL" >> "$TIMING_HISTORY_JSONL"
+        echo "Timing history JSONL: $TIMING_HISTORY_JSONL"
+    fi
 fi
