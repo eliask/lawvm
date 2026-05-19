@@ -545,6 +545,61 @@ def test_parse_uk_statute_ir_bytes_preserves_definition_ordered_list_children() 
     )
 
 
+def test_parse_uk_statute_ir_bytes_preserves_definition_number_override_labels() -> None:
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+             DocumentMainType="ScottishAct" Year="2001" Number="2">
+  <Body>
+    <P1 id="section-82">
+      <Pnumber>82</Pnumber>
+      <P1para>
+        <P2 id="section-82-1">
+          <Pnumber>1</Pnumber>
+          <P2para>
+            <Text>In this Act— “local transport authority” means—</Text>
+            <OrderedList Type="alpha" Decoration="parens">
+              <ListItem NumberOverride="a"><Para><Text>a local authority;</Text></Para></ListItem>
+              <ListItem NumberOverride="aa"><Para><Text>the Shetland Transport Partnership;</Text></Para></ListItem>
+              <ListItem NumberOverride="ab">
+                <Para><Text>the South-West of Scotland Transport Partnership;</Text></Para>
+              </ListItem>
+              <ListItem NumberOverride="b">
+                <Para><Text>the Strathclyde Passenger Transport Authority ; or</Text></Para>
+              </ListItem>
+              <ListItem NumberOverride="c">
+                <Para><Text>the West of Scotland Transport Partnership;</Text></Para>
+              </ListItem>
+            </OrderedList>
+          </P2para>
+        </P2>
+      </P1para>
+    </P1>
+  </Body>
+</Legislation>
+""".encode()
+
+    ir = parse_uk_statute_ir_bytes(
+        xml,
+        statute_id="asp/2001/2",
+        version_label="current",
+        source_path="https://www.legislation.gov.uk/asp/2001/2/data.xml",
+    )
+
+    subsection = ir.body.children[0].children[0]
+    assert [child.attrs["definition_child_label"] for child in subsection.children] == [
+        "a",
+        "aa",
+        "ab",
+        "b",
+        "c",
+    ]
+    assert subsection.children[1].text == "the Shetland Transport Partnership;"
+    assert subsection.children[3].text == "the Strathclyde Passenger Transport Authority ; or"
+    assert ir.metadata["source_parse_observations"][0]["samples"][1][
+        "definition_child_label"
+    ] == "aa"
+
+
 def test_parse_uk_statute_ir_bytes_preserves_schedule_unordered_list_entries() -> None:
     xml = """<?xml version="1.0" encoding="UTF-8"?>
 <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"

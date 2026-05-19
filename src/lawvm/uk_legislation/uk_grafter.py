@@ -254,7 +254,7 @@ def _parse_definition_ordered_list(el: ET.Element, parent_el: ET.Element) -> lis
     for child in el:
         if _tag(child) != "ListItem":
             continue
-        label = _alpha_label(item_index)
+        label = (child.get("NumberOverride") or "").strip() or _alpha_label(item_index)
         item_index += 1
         text = _text_content(child)
         if not label or not text:

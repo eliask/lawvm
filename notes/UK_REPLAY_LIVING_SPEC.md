@@ -2380,6 +2380,12 @@ Current bench replay-regime invariant:
     ID, including count and sample attrs, so the structure-preserving repair is
     visible in replay, EID, effects, and bench evidence instead of being a
     hidden grafter heuristic.
+  - `definition_child_label` must use the official `ListItem@NumberOverride`
+    when present. The parser may synthesize sequential alphabetic labels only
+    when the source list item does not carry an override. This matters for UK
+    amendment patterns such as inserted definition paragraphs `(aa)` and `(ab)`;
+    silently relabelling them to `(b)` and `(c)` destroys the source identity
+    needed by later text patches and replay/oracle comparison.
   - bilingual definition headings such as `“private sector employer”
     (“cyflogwr sector preifat”) means...` preserve the first/source-language
     quoted term as `definition_term`; the parenthesized translation is source
