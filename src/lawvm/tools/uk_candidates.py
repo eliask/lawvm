@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
 _RESIDUAL_CANDIDATE_SAMPLE_LIMIT = 5
+_DEFAULT_MANUAL_COMPILE_EVIDENCE_STATUSES = ("manual_compile_candidate",)
 
 
 def _primary_frontier_score(result, *, score_mode: str = "auto") -> float:  # noqa: ANN001
@@ -741,6 +742,7 @@ def _uk_candidates_filters_jsonable(
     types: set[str] | None,
     replay_adjudication_kinds: set[str] | None = None,
     replay_adjudication_sample_limit: int = 5,
+    manual_compile_evidence_statuses: set[str] | None = None,
 ) -> dict[str, Any]:
     return {
         "top": top,
@@ -756,7 +758,27 @@ def _uk_candidates_filters_jsonable(
             sorted(replay_adjudication_kinds) if replay_adjudication_kinds else []
         ),
         "replay_adjudication_sample_limit": replay_adjudication_sample_limit,
+        "manual_compile_evidence_statuses": (
+            sorted(manual_compile_evidence_statuses)
+            if manual_compile_evidence_statuses is not None
+            else list(_DEFAULT_MANUAL_COMPILE_EVIDENCE_STATUSES)
+        ),
     }
+
+
+def _manual_compile_evidence_statuses_from_args(value: object) -> set[str]:
+    if value is None:
+        return set(_DEFAULT_MANUAL_COMPILE_EVIDENCE_STATUSES)
+    if isinstance(value, str):
+        raw_items = (value,)
+    elif isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
+        raw_items = tuple(str(item) for item in value)
+    else:
+        raw_items = (str(value),)
+    statuses = {item.strip() for item in raw_items if item.strip()}
+    if not statuses:
+        return set(_DEFAULT_MANUAL_COMPILE_EVIDENCE_STATUSES)
+    return statuses
 
 
 def _uk_candidate_row_jsonable(  # noqa: PLR0913
@@ -2318,6 +2340,9 @@ def main(args: "argparse.Namespace") -> None:
         if manual_compile_evidence_jsonl_arg
         else None
     )
+    manual_compile_evidence_statuses = _manual_compile_evidence_statuses_from_args(
+        getattr(args, "manual_compile_evidence_status", None)
+    )
 
     if summary_only and not json_output:
         print("error: --summary-only requires --json for uk-candidates", file=sys.stderr)
@@ -2384,6 +2409,11 @@ def main(args: "argparse.Namespace") -> None:
         types=types,
         replay_adjudication_kinds=replay_adjudication_kinds,
         replay_adjudication_sample_limit=replay_adjudication_sample_limit,
+        manual_compile_evidence_statuses=(
+            manual_compile_evidence_statuses
+            if manual_compile_evidence_jsonl_path is not None
+            else None
+        ),
     )
 
     if not json_output:
@@ -2434,6 +2464,7 @@ def main(args: "argparse.Namespace") -> None:
                 report["manual_compile_evidence_jsonl"] = {
                     "path": str(manual_compile_evidence_jsonl_path),
                     "rows": manual_compile_evidence_jsonl_count,
+                    "statuses": sorted(manual_compile_evidence_statuses),
                 }
             print(json.dumps(
                 report,
@@ -2445,7 +2476,8 @@ def main(args: "argparse.Namespace") -> None:
             print(
                 "Manual compile evidence JSONL: "
                 f"{manual_compile_evidence_jsonl_path} "
-                f"rows={manual_compile_evidence_jsonl_count}"
+                f"rows={manual_compile_evidence_jsonl_count} "
+                f"statuses={','.join(sorted(manual_compile_evidence_statuses))}"
             )
         return
     if not json_output:
@@ -3115,7 +3147,7 @@ def main(args: "argparse.Namespace") -> None:
                     )
                     for effect_report_row in effect_report_rows
                     if effect_report_row.summary.manual_compile_status
-                    == "manual_compile_candidate"
+                    in manual_compile_evidence_statuses
                 )
             inventory = _summarize_effect_inventory(effect_summaries)
             replay_only: set[str] = set()
@@ -3427,6 +3459,7 @@ def main(args: "argparse.Namespace") -> None:
             report["manual_compile_evidence_jsonl"] = {
                 "path": str(manual_compile_evidence_jsonl_path),
                 "rows": manual_compile_evidence_jsonl_count,
+                "statuses": sorted(manual_compile_evidence_statuses),
             }
         print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     else:
@@ -3435,7 +3468,8 @@ def main(args: "argparse.Namespace") -> None:
             print(
                 "Manual compile evidence JSONL: "
                 f"{manual_compile_evidence_jsonl_path} "
-                f"rows={manual_compile_evidence_jsonl_count}"
+                f"rows={manual_compile_evidence_jsonl_count} "
+                f"statuses={','.join(sorted(manual_compile_evidence_statuses))}"
             )
         _print_uk_candidates_text_summary(
             _uk_candidates_report_jsonable(

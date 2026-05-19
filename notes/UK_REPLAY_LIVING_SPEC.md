@@ -2149,6 +2149,13 @@ Current bench replay-regime invariant:
   frontier has zero rows. Each row must preserve the replay/authority regime
   used for classification, so a copied work queue does not lose whether it came
   from source-first, current-mixed, or a narrower applicability lens.
+- `uk-candidates --manual-compile-evidence-status STATUS` is a repeatable,
+  explicit exporter filter for that same source-witnessed work queue. The
+  default remains `manual_compile_candidate`, but deterministic frontend
+  candidates such as `deterministic_frontend_candidate` may be exported when
+  the caller intentionally wants parser/lowering work items rather than human
+  semantic compilation. The JSON/text metadata must disclose the status filter
+  used so mixed work queues are not mistaken for manual-only review queues.
 - UK evidence/proof bundles are also replay evidence surfaces. Their
   `compiler_observations.uk_compile_observation_summary` and
   `uk_compile_rejection_summary` must preserve effect source pathology and

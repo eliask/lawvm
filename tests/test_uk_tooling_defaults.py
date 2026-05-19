@@ -538,6 +538,30 @@ def test_uk_candidates_parser_accepts_manual_compile_evidence_jsonl() -> None:
     )
 
     assert args.manual_compile_evidence_jsonl == ".tmp/uk-candidates-manual.jsonl"
+    assert args.manual_compile_evidence_status is None
+
+
+def test_uk_candidates_parser_accepts_manual_compile_evidence_statuses() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(
+        [
+            "uk-candidates",
+            "--label",
+            "demo",
+            "--manual-compile-evidence-jsonl",
+            ".tmp/uk-candidates-frontier.jsonl",
+            "--manual-compile-evidence-status",
+            "manual_compile_candidate",
+            "--manual-compile-evidence-status",
+            "deterministic_frontend_candidate",
+        ]
+    )
+
+    assert args.manual_compile_evidence_status == [
+        "manual_compile_candidate",
+        "deterministic_frontend_candidate",
+    ]
 
 
 def test_uk_replay_payload_preserves_effect_source_diagnostic_lanes() -> None:
