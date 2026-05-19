@@ -1300,6 +1300,15 @@ Current block-substitution context invariant:
   quoted-anchor text rewrite, not a structural child insertion. Current
   witnesses: `asp/2000/4` affected `s. 24(4)` by `asp/2006/2 s. 36(b)` and
   `asp/2000/5` affected `s. 25` by `asp/2003/9 Sch. 13 para. 5(b)`.
+- the parser may lower older bare quoted-anchor insertion shorthand such as
+  `"18," there shall be inserted "18A, 18B, 18C,"` through
+  `uk_effect_bare_quoted_anchor_insert_text_patch`. This is distinct from the
+  explicit `after "X"` family: it is only accepted when the source row consists
+  of a quoted anchor followed by `there is/are/shall be inserted` and a quoted
+  insertion, and the effect metadata already supplies the target provision.
+  Current witnesses include `asp/2000/5` affected `s. 43(2)(a)` by
+  `asp/2003/9 Sch. 13 para. 8(a)(i)` and affected `s. 17(1)` by
+  `asp/2003/9 Sch. 13 para. 2(a)(i)`.
 - the parser may lower `after "X" where it first/second occurs insert "Y"` to
   an occurrence-qualified anchor patch using the named rule
   `uk_effect_after_quoted_anchor_where_ordinal_insert_text_patch`. Current
