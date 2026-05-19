@@ -10905,6 +10905,123 @@ def test_compile_crossheading_before_paragraph_replace_lowers_to_heading_patch()
     assert observations[0]["blocking"] is False
 
 
+def test_compile_crossheading_and_paragraph_replace_splits_titled_payload() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>for paragraph 6 substitute—</Text>
+            <BlockAmendment>
+              <P1group>
+                <Title><Emphasis>Accommodation for person in receipt of housing support</Emphasis></Title>
+                <P1>
+                  <Pnumber PuncAfter="">6</Pnumber>
+                  <P1para>
+                    <Text>The house is to be let expressly on a temporary basis to a person—</Text>
+                    <P3><Pnumber>a</Pnumber><P3para><Text>to whom no other paragraph applies, and</Text></P3para></P3>
+                    <P3><Pnumber>b</Pnumber><P3para><Text>who is in receipt of a housing support service.</Text></P3para></P3>
+                  </P1para>
+                </P1>
+              </P1group>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_crossheading_and_para_replace",
+        effect_type="substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2019-05-01",
+        affected_uri="/id/asp/2001/10/schedule/6/paragraph/6",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="10",
+        affected_provisions="Sch. 6 para. 6 and cross-heading",
+        affecting_uri="/id/asp/2014/14",
+        affecting_class="ScottishAct",
+        affecting_year="2014",
+        affecting_number="14",
+        affecting_provisions="s. 7(4)(b)",
+        affecting_title="Housing (Scotland) Act 2014",
+        in_force_dates=[{"date": "2019-05-01", "prospective": "false"}],
+    )
+
+    observations: list[dict[str, object]] = []
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 2
+    heading_op, paragraph_op = ops
+    assert heading_op.action is StructuralAction.TEXT_REPLACE
+    assert heading_op.target == LegalAddress(path=(("schedule", "6"), ("paragraph", "6")), special=FacetKind.HEADING)
+    assert heading_op.text_patch == _replace_patch(
+        "TEXT_ALL",
+        "Accommodation for person in receipt of housing support",
+    )
+    assert heading_op.witness_rule_id == "uk_effect_crossheading_and_structural_replacement_split_lowered"
+    assert paragraph_op.action is StructuralAction.REPLACE
+    assert paragraph_op.target == LegalAddress(path=(("schedule", "6"), ("paragraph", "6")))
+    assert paragraph_op.payload is not None
+    assert paragraph_op.payload.kind is IRNodeKind.PARAGRAPH
+    assert paragraph_op.payload.label == "6"
+    assert any(
+        record["rule_id"] == "uk_effect_crossheading_and_structural_replacement_split_lowered"
+        and record["blocking"] is False
+        for record in observations
+    )
+    assert not any(record.get("rule_id") == "uk_effect_crossheading_replace_rejected" for record in observations)
+
+
+def test_compile_crossheading_and_paragraph_replace_does_not_split_mismatched_payload() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>for paragraph 6 substitute—</Text>
+            <BlockAmendment>
+              <P1group>
+                <Title>Accommodation for person in receipt of housing support</Title>
+                <P1>
+                  <Pnumber PuncAfter="">7</Pnumber>
+                  <P1para><Text>The wrong paragraph must not be smuggled into paragraph 6.</Text></P1para>
+                </P1>
+              </P1group>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_crossheading_and_para_replace_mismatch",
+        effect_type="substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2019-05-01",
+        affected_uri="/id/asp/2001/10/schedule/6/paragraph/6",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="10",
+        affected_provisions="Sch. 6 para. 6 and cross-heading",
+        affecting_uri="/id/asp/2014/14",
+        affecting_class="ScottishAct",
+        affecting_year="2014",
+        affecting_number="14",
+        affecting_provisions="s. 7(4)(b)",
+        affecting_title="Housing (Scotland) Act 2014",
+        in_force_dates=[{"date": "2019-05-01", "prospective": "false"}],
+    )
+
+    observations: list[dict[str, object]] = []
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert ops == []
+    assert [record["rule_id"] for record in observations] == ["uk_effect_crossheading_replace_rejected"]
+    assert observations[0]["blocking"] is True
+
+
 def test_compile_crossheading_before_section_word_substitution_lowers_to_heading_patch() -> None:
     extracted_el = ET.fromstring(
         f"""
