@@ -23,6 +23,7 @@ _LEG_BASE = "http://www.legislation.gov.uk"
 #   CitationSubRef — sub-references within Citations (nested inside Commentaries)
 #   Term        — markup for defined terms; carries eId="term-<name>" inline
 _EDITORIAL_TAGS: frozenset[str] = frozenset({"Commentary", "Citation", "CitationSubRef", "Term"})
+_VISIBLE_INLINE_TEXT_TAGS: frozenset[str] = frozenset({"Citation", "CitationSubRef", "Term"})
 
 # ---------------------------------------------------------------------------
 # Parsing helpers
@@ -42,6 +43,55 @@ def _text_content(el: Optional[ET.Element]) -> str:
     if el is None:
         return ""
     return "".join(str(_t) for _t in el.itertext()).strip()
+
+
+def _local_structural_text(el: ET.Element) -> str:
+    """Collect local provision text without absorbing child provisions."""
+    structural = {
+        "part",
+        "chapter",
+        "euchapter",
+        "p1group",
+        "p2group",
+        "p3group",
+        "p4group",
+        "section",
+        "p1",
+        "article",
+        "eusection",
+        "conventionrights",
+        "pblock",
+        "p2",
+        "p3",
+        "p4",
+        "subsection",
+        "paragraph",
+        "schedule",
+        "table",
+    }
+    transparent_skip = {"pnumber", "number", "title", "commentaryref"}
+    structural_text_skip = {tag.lower() for tag in _EDITORIAL_TAGS - _VISIBLE_INLINE_TEXT_TAGS}
+
+    def _collect(node: ET.Element) -> list[str]:
+        parts: list[str] = []
+        if node.text:
+            parts.append(node.text)
+        for child in node:
+            tag = _tag(child).lower()
+            if (
+                tag in structural
+                or tag in transparent_skip
+                or tag in structural_text_skip
+                or _definition_ordered_list_term(node, child)
+            ):
+                pass
+            else:
+                parts.extend(_collect(child))
+            if child.tail:
+                parts.append(child.tail)
+        return parts
+
+    return " ".join(" ".join(_collect(el)).split())
 
 
 def _extract_num(el: Optional[ET.Element]) -> str:
@@ -80,6 +130,302 @@ def _clean_num(raw: str) -> str:
     return s.lower().strip(".")
 
 
+def _infer_container_number_from_source_uri(el: ET.Element, *, prefix: str) -> str:
+    """Infer a missing/generic UK container number from an unambiguous source id/eId."""
+    for attr_name in ("eId", "id"):
+        raw = str(el.get(attr_name) or "").strip()
+        if not raw:
+            continue
+        tail = raw.rsplit("/", 1)[-1].lower()
+        if tail == prefix:
+            return "1"
+        match = re.search(rf"(?:^|-){re.escape(prefix)}-(?:n)?(?P<label>[0-9]+[a-z]?)\b", tail)
+        if match is not None:
+            return match.group("label")
+    return ""
+
+
+def _maybe_infer_container_number(
+    node: UKMutableNode,
+    el: ET.Element,
+    *,
+    prefix: str,
+    original_label: str,
+) -> None:
+    if _clean_num(original_label) not in {"", prefix}:
+        return
+    inferred = _infer_container_number_from_source_uri(el, prefix=prefix)
+    if not inferred:
+        return
+    node.label = inferred
+    node.attrs["source_rule_id"] = _UK_CONTAINER_NUMBER_INFERRED_RULE_ID
+    node.attrs["source_original_label"] = original_label
+    node.attrs["source_inferred_label"] = inferred
+    node.attrs["source_identifier"] = str(el.get("eId") or el.get("id") or "")
+
+
+_UK_TABLE_ROW_TAGS = frozenset({"row", "tr"})
+_UK_TABLE_CELL_TAGS = frozenset({"entry", "td", "th"})
+_UK_TABLE_HEADER_CONTAINERS = frozenset({"thead"})
+_UK_TABLE_TRANSPARENT_CONTAINERS = frozenset({"tgroup", "tbody", "tfoot"})
+_UK_SCHEDULE_LIST_ENTRY_RULE_ID = "uk_schedule_list_entry_preserved"
+_UK_CONTAINER_NUMBER_INFERRED_RULE_ID = "uk_container_number_inferred_from_source_uri"
+_UK_SCHEDULE_ENTRY_TRANSPARENT_TAGS = frozenset(
+    {
+        "addition",
+        "commentaryref",
+        "emphasis",
+        "repeal",
+        "substitution",
+        "text",
+    }
+)
+_UK_SCHEDULE_ENTRY_BLOCKING_TAGS = frozenset(
+    {
+        "chapter",
+        "part",
+        "p1",
+        "p1group",
+        "p2",
+        "p2group",
+        "p3",
+        "p3group",
+        "p4",
+        "p4group",
+        "pblock",
+        "section",
+        "table",
+    }
+)
+
+
+def _definition_ordered_list_term(parent_el: ET.Element, list_el: ET.Element) -> str:
+    """Return the defined term for a definition-local ordered list, if any."""
+    if _tag(list_el) != "OrderedList" or list_el.get("Type", "").lower() != "alpha":
+        return ""
+    before_parts: list[str] = []
+    for child in parent_el:
+        if child is list_el:
+            break
+        before_parts.append(_text_content(child))
+        if child.tail:
+            before_parts.append(child.tail)
+    before_text = " ".join(" ".join(before_parts).split())
+    if not before_text:
+        return ""
+    quoted_match = re.search(
+        r"[“\"'\u2018]\s*(?P<term>[^”\"'\u2019;]{1,160}?)\s*[”\"'\u2019]\s*"
+        r"(?:\([^)]{1,200}\)\s*)?"
+        r"(?:means|includes|has\s+the\s+same\s+meaning\s+as|has\s+the\s+meaning|is\s+to\s+be\s+construed)\b",
+        before_text,
+        flags=re.I,
+    )
+    if quoted_match is not None:
+        return " ".join(quoted_match.group("term").split())
+    match = re.search(
+        r"[“\"'\u2018]?\s*(?P<term>[^”\"'\u2019;]{1,160}?)\s*[”\"'\u2019]?\s+"
+        r"(?:means|includes|has\s+the\s+same\s+meaning\s+as|has\s+the\s+meaning|is\s+to\s+be\s+construed)\b",
+        before_text,
+        flags=re.I,
+    )
+    return " ".join(match.group("term").split()) if match is not None else ""
+
+
+def _alpha_label(index: int) -> str:
+    if index < 0:
+        return ""
+    chars: list[str] = []
+    value = index
+    while True:
+        value, rem = divmod(value, 26)
+        chars.append(chr(ord("a") + rem))
+        if value == 0:
+            break
+        value -= 1
+    return "".join(reversed(chars))
+
+
+def _parse_definition_ordered_list(el: ET.Element, parent_el: ET.Element) -> list[UKMutableNode]:
+    term = _definition_ordered_list_term(parent_el, el)
+    if not term:
+        return []
+    nodes: list[UKMutableNode] = []
+    item_index = 0
+    for child in el:
+        if _tag(child) != "ListItem":
+            continue
+        label = _alpha_label(item_index)
+        item_index += 1
+        text = _text_content(child)
+        if not label or not text:
+            continue
+        nodes.append(
+            UKMutableNode(
+                kind=IRNodeKind.ITEM,
+                label=None,
+                text=text,
+                attrs={
+                    "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                    "definition_term": term,
+                    "definition_child_label": label,
+                    "source_tag": _tag(el),
+                    "source_list_type": el.get("Type", ""),
+                },
+            )
+        )
+    return nodes
+
+
+def _schedule_list_entry_node(
+    el: ET.Element,
+    *,
+    source_ordinal: int,
+    source_tag: str,
+    source_list_type: str = "",
+    source_decoration: str = "",
+) -> UKMutableNode | None:
+    text = _text_content(el)
+    if not text:
+        return None
+    attrs: dict[str, Any] = {
+        "source_rule_id": _UK_SCHEDULE_LIST_ENTRY_RULE_ID,
+        "source_tag": source_tag,
+        "source_ordinal": str(source_ordinal),
+        "source_context": "schedule_body",
+    }
+    if source_list_type:
+        attrs["source_list_type"] = source_list_type
+    if source_decoration:
+        attrs["source_decoration"] = source_decoration
+    return UKMutableNode(
+        kind=IRNodeKind.SCHEDULE_ENTRY,
+        label=None,
+        text=text,
+        attrs=attrs,
+    )
+
+
+def _parse_schedule_body_list_entries(el: ET.Element, *, start_ordinal: int) -> list[UKMutableNode]:
+    tag = _tag(el)
+    if tag != "UnorderedList":
+        return []
+    nodes: list[UKMutableNode] = []
+    for child in el:
+        if _tag(child) != "ListItem":
+            continue
+        node = _schedule_list_entry_node(
+            child,
+            source_ordinal=start_ordinal + len(nodes),
+            source_tag="ListItem",
+            source_list_type=el.get("Type", ""),
+            source_decoration=el.get("Decoration", ""),
+        )
+        if node is not None:
+            nodes.append(node)
+    return nodes
+
+
+def _parse_schedule_body_p_entries(el: ET.Element, *, start_ordinal: int) -> list[UKMutableNode]:
+    if _tag(el) != "P":
+        return []
+    nodes: list[UKMutableNode] = []
+    for child in el:
+        if _tag(child) == "UnorderedList":
+            nodes.extend(_parse_schedule_body_list_entries(child, start_ordinal=start_ordinal + len(nodes)))
+    if nodes:
+        return nodes
+    child_tags = {_tag(child).lower() for child in el}
+    if child_tags & _UK_SCHEDULE_ENTRY_BLOCKING_TAGS:
+        return []
+    if child_tags and not child_tags <= _UK_SCHEDULE_ENTRY_TRANSPARENT_TAGS:
+        return []
+    node = _schedule_list_entry_node(el, source_ordinal=start_ordinal, source_tag="P")
+    return [node] if node is not None else []
+
+
+def _table_attrs(el: ET.Element, names: tuple[str, ...]) -> dict[str, Any]:
+    attrs: dict[str, Any] = {}
+    for name in names:
+        value = el.get(name)
+        if value:
+            attrs[name] = value
+    return attrs
+
+
+def _parse_table_row(el: ET.Element, *, header_context: bool) -> UKMutableNode | None:
+    cells: list[UKMutableNode] = []
+    for child in el:
+        tag = _tag(child).lower()
+        if tag not in _UK_TABLE_CELL_TAGS:
+            continue
+        cell_kind = IRNodeKind.HEADER_CELL if header_context or tag == "th" else IRNodeKind.CELL
+        attrs = _table_attrs(
+            child,
+            ("eId", "id", "rowspan", "colspan", "morerows", "namest", "nameend"),
+        )
+        cells.append(
+            UKMutableNode(
+                kind=cell_kind,
+                text=_text_content(child),
+                attrs=attrs,
+            )
+        )
+    if not cells:
+        return None
+    return UKMutableNode(
+        kind=IRNodeKind.ROW,
+        attrs=_table_attrs(el, ("eId", "id")),
+        children=cells,
+    )
+
+
+def _parse_table_rows(el: ET.Element, *, header_context: bool = False) -> list[UKMutableNode]:
+    rows: list[UKMutableNode] = []
+    for child in el:
+        tag = _tag(child).lower()
+        if tag in _UK_TABLE_ROW_TAGS:
+            row = _parse_table_row(child, header_context=header_context)
+            if row is not None:
+                rows.append(row)
+            continue
+        if tag in _UK_TABLE_HEADER_CONTAINERS:
+            rows.extend(_parse_table_rows(child, header_context=True))
+            continue
+        if tag in _UK_TABLE_TRANSPARENT_CONTAINERS:
+            rows.extend(_parse_table_rows(child, header_context=header_context))
+    return rows
+
+
+def _local_table_text(el: ET.Element) -> str:
+    """Collect table-local caption/text without duplicating row cell content."""
+    skipped = _UK_TABLE_ROW_TAGS | _UK_TABLE_TRANSPARENT_CONTAINERS | _UK_TABLE_HEADER_CONTAINERS
+
+    def _collect(node: ET.Element) -> list[str]:
+        parts: list[str] = []
+        if node.text:
+            parts.append(node.text)
+        for child in node:
+            if _tag(child).lower() not in skipped:
+                parts.extend(_collect(child))
+            if child.tail:
+                parts.append(child.tail)
+        return parts
+
+    return " ".join(" ".join(_collect(el)).split())
+
+
+def _parse_table(el: ET.Element, context, force_active=False, pit_date=None, is_eur=False) -> UKMutableNode | None:
+    del context, is_eur
+    if _is_zombie(el, force_active, pit_date):
+        return None
+    return UKMutableNode(
+        kind=IRNodeKind.TABLE,
+        text=_local_table_text(el),
+        attrs=_table_attrs(el, ("eId", "id")),
+        children=_parse_table_rows(el),
+    )
+
+
 def _get_kind(tag: str, context: str = "body", is_eur: bool = False) -> str:
     t = tag.lower()
     if is_eur and t in ("p1", "section", "article", "eusection"):
@@ -101,6 +447,8 @@ def _get_kind(tag: str, context: str = "body", is_eur: bool = False) -> str:
         return "subparagraph"
     if t == "p1group":
         return "p1group"
+    if t in ("p2group", "p3group", "p4group"):
+        return "pgroup"
     if t in ("pblock", "eusection"):
         return "crossheading"
     if t in ("chapter", "euchapter"):
@@ -182,11 +530,15 @@ def _is_zombie(el: ET.Element, force_active: bool = False, pit_date: Optional[st
 
 def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eur=False):
     children = []
+    schedule_entry_ordinal = 1
     structural_tags = (
         "Part",
         "Chapter",
         "EUChapter",
         "P1group",
+        "P2group",
+        "P3group",
+        "P4group",
         "P1",
         "Section",
         "Article",
@@ -198,6 +550,8 @@ def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eu
         "P3",
         "P4",
         "Schedule",
+        "Table",
+        "table",
     )
 
     for child in parent_el:
@@ -209,6 +563,8 @@ def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eu
             node = _parse_chapter(child, context, force_active, pit_date, is_eur)
         elif ct == "P1group":
             node = _parse_p1group(child, context, force_active, pit_date, is_eur)
+        elif ct in ("P2group", "P3group", "P4group"):
+            node = _parse_pgroup(child, context, force_active, pit_date, is_eur)
         elif ct in ("P1", "Section", "Article", "Rule", "EUSection", "ConventionRights"):
             node = _parse_section(child, context, force_active, pit_date, is_eur)
         elif ct == "Pblock":
@@ -221,6 +577,25 @@ def _parse_children(parent_el, context, force_active=False, pit_date=None, is_eu
             node = _parse_p4(child, context, force_active, pit_date, is_eur)
         elif ct == "Schedule":
             node = _parse_schedule_single(child, context, force_active, pit_date, is_eur)
+        elif ct in ("Table", "table"):
+            node = _parse_table(child, context, force_active, pit_date, is_eur)
+        elif ct == "OrderedList":
+            definition_children = _parse_definition_ordered_list(child, parent_el)
+            if definition_children:
+                children.extend(definition_children)
+                continue
+        elif context == "schedule" and ct == "UnorderedList":
+            schedule_entries = _parse_schedule_body_list_entries(child, start_ordinal=schedule_entry_ordinal)
+            if schedule_entries:
+                schedule_entry_ordinal += len(schedule_entries)
+                children.extend(schedule_entries)
+                continue
+        elif context == "schedule" and ct == "P":
+            schedule_entries = _parse_schedule_body_p_entries(child, start_ordinal=schedule_entry_ordinal)
+            if schedule_entries:
+                schedule_entry_ordinal += len(schedule_entries)
+                children.extend(schedule_entries)
+                continue
 
         if ct in structural_tags:
             # If it's structural, we either add the node or skip it (if it's a zombie)
@@ -242,6 +617,8 @@ def _parse_part(el, context, force_active=False, pit_date=None, is_eur=False):
     title = _text_content(el.find(f"./{{{_LEG_NS}}}Title"))
     node = UKMutableNode(kind=IRNodeKind.PART, label=num, text=title)
     _add_attrs(node, el)
+    if not force_active:
+        _maybe_infer_container_number(node, el, prefix="part", original_label=num)
     node.children = _parse_children(el, context, force_active, pit_date, is_eur)
     return node
 
@@ -268,6 +645,26 @@ def _parse_p1group(el, context, force_active=False, pit_date=None, is_eur=False)
     return node
 
 
+def _parse_pgroup(el, context, force_active=False, pit_date=None, is_eur=False):
+    """Preserve subordinate UK PnGroup titles as explicit heading carriers."""
+    if _is_zombie(el, force_active, pit_date):
+        return None
+    title_el = el.find(f"./{{{_LEG_NS}}}Title")
+    title = _text_content(title_el)
+    node = UKMutableNode(
+        kind=IRNodeKind.PGROUP,
+        label=None,
+        text=title,
+        attrs={
+            "source_tag": _tag(el),
+            "source_rule_id": "uk_parse_subordinate_pgroup_heading_carrier",
+        },
+    )
+    _add_attrs(node, el)
+    node.children = _parse_children(el, context, force_active, pit_date, is_eur)
+    return node
+
+
 def _parse_section(el, context, force_active=False, pit_date=None, is_eur=False):
     if _is_zombie(el, force_active, pit_date):
         return None
@@ -278,6 +675,8 @@ def _parse_section(el, context, force_active=False, pit_date=None, is_eur=False)
     node.children = _parse_children(el, context, force_active, pit_date, is_eur)
     if not node.children:
         node.text = _text_content(el)
+    else:
+        node.text = _local_structural_text(el)
     return node
 
 
@@ -291,6 +690,8 @@ def _parse_p2(el, context, force_active=False, pit_date=None, is_eur=False):
     node.children = _parse_children(el, context, force_active, pit_date, is_eur)
     if not node.children:
         node.text = _text_content(el)
+    else:
+        node.text = _local_structural_text(el)
     return node
 
 
@@ -304,6 +705,8 @@ def _parse_p3(el, context, force_active=False, pit_date=None, is_eur=False):
     node.children = _parse_children(el, context, force_active, pit_date, is_eur)
     if not node.children:
         node.text = _text_content(el)
+    else:
+        node.text = _local_structural_text(el)
     return node
 
 
@@ -317,6 +720,8 @@ def _parse_p4(el, context, force_active=False, pit_date=None, is_eur=False):
     node.children = _parse_children(el, context, force_active, pit_date, is_eur)
     if not node.children:
         node.text = _text_content(el)
+    else:
+        node.text = _local_structural_text(el)
     return node
 
 
@@ -333,7 +738,8 @@ def _parse_pblock(el, context, force_active=False, pit_date=None, is_eur=False):
 def _parse_schedule_single(el, context, force_active=False, pit_date=None, is_eur=False):
     if _is_zombie(el, force_active, pit_date):
         return None
-    num = _extract_num(el.find(f".//{{{_LEG_NS}}}Number"))
+    raw_num = _extract_num(el.find(f".//{{{_LEG_NS}}}Number"))
+    num = raw_num
     if _clean_num(num) == "schedule":
         num = ""
     title_el = el.find(f".//{{{_LEG_NS}}}Title")
@@ -342,6 +748,8 @@ def _parse_schedule_single(el, context, force_active=False, pit_date=None, is_eu
     title = _text_content(title_el)
     node = UKMutableNode(kind=IRNodeKind.SCHEDULE, label=num, text=title)
     _add_attrs(node, el)
+    if not force_active:
+        _maybe_infer_container_number(node, el, prefix="schedule", original_label=raw_num)
     body = el.find(f".//{{{_LEG_NS}}}ScheduleBody")
     if body is not None:
         node.children = _parse_children(body, "schedule", force_active, pit_date, is_eur)
@@ -359,6 +767,127 @@ def _parse_schedules(root_el, force_active=False, pit_date=None, is_eur=False):
             if node:
                 res.append(node)
     return res
+
+
+_SOURCE_PARSE_OBSERVATION_RULE_IDS = frozenset(
+    {
+        "uk_definition_ordered_list_child_preserved",
+        _UK_CONTAINER_NUMBER_INFERRED_RULE_ID,
+        _UK_SCHEDULE_LIST_ENTRY_RULE_ID,
+    }
+)
+
+
+def _visible_inline_text_preservation_observation(
+    root: ET.Element,
+    *,
+    statute_id: str,
+    version_label: str,
+    source_path: str,
+) -> dict[str, Any] | None:
+    count = 0
+    samples: list[dict[str, str]] = []
+    for el in root.iter():
+        tag = _tag(el)
+        if tag not in _VISIBLE_INLINE_TEXT_TAGS:
+            continue
+        text = _text_content(el)
+        if not text:
+            continue
+        count += 1
+        if len(samples) < 5:
+            samples.append({
+                "tag": tag,
+                "text": " ".join(text.split())[:160],
+            })
+    if not count:
+        return None
+    return {
+        "rule_id": "uk_visible_inline_text_preserved",
+        "family": "source_shape_preservation",
+        "phase": "source_parse",
+        "statute_id": statute_id,
+        "side": version_label,
+        "source_url": source_path,
+        "count": count,
+        "samples": tuple(samples),
+        "reason": (
+            "UK visible inline source tags such as Citation, CitationSubRef, and Term "
+            "were preserved as host provision text while remaining non-addressable as "
+            "standalone legal units."
+        ),
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+
+
+def _source_parse_observations(
+    root_body: UKMutableNode,
+    supplements: list[UKMutableNode],
+    *,
+    statute_id: str,
+    version_label: str,
+    source_path: str,
+) -> list[dict[str, Any]]:
+    counts: dict[str, int] = {}
+    samples: dict[str, list[dict[str, str]]] = {}
+
+    def _walk(node: UKMutableNode) -> None:
+        rule_id = str(node.attrs.get("source_rule_id") or "")
+        if rule_id in _SOURCE_PARSE_OBSERVATION_RULE_IDS:
+            counts[rule_id] = counts.get(rule_id, 0) + 1
+            bucket = samples.setdefault(rule_id, [])
+            if len(bucket) < 5:
+                sample = {"kind": node.kind.value}
+                if rule_id == "uk_definition_ordered_list_child_preserved":
+                    sample.update(
+                        {
+                            "definition_term": str(node.attrs.get("definition_term") or ""),
+                            "definition_child_label": str(node.attrs.get("definition_child_label") or ""),
+                        }
+                    )
+                elif rule_id == _UK_SCHEDULE_LIST_ENTRY_RULE_ID:
+                    sample.update(
+                        {
+                            "source_tag": str(node.attrs.get("source_tag") or ""),
+                            "source_ordinal": str(node.attrs.get("source_ordinal") or ""),
+                            "text": " ".join(node.text.split())[:160],
+                        }
+                    )
+                elif rule_id == _UK_CONTAINER_NUMBER_INFERRED_RULE_ID:
+                    sample.update(
+                        {
+                            "source_identifier": str(node.attrs.get("source_identifier") or ""),
+                            "original_label": str(node.attrs.get("source_original_label") or ""),
+                            "inferred_label": str(node.attrs.get("source_inferred_label") or ""),
+                        }
+                    )
+                bucket.append(sample)
+        for child in node.children:
+            _walk(child)
+
+    _walk(root_body)
+    for supplement in supplements:
+        _walk(supplement)
+
+    return [
+        {
+            "rule_id": rule_id,
+            "family": "source_shape_preservation",
+            "phase": "source_parse",
+            "statute_id": statute_id,
+            "side": version_label,
+            "source_url": source_path,
+            "count": count,
+            "samples": samples.get(rule_id, []),
+            "reason": "UK source XML structure was preserved as replay-addressable IR rather than flattened into host text.",
+            "blocking": False,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+        }
+        for rule_id, count in sorted(counts.items())
+    ]
 
 
 @dataclass
@@ -448,13 +977,33 @@ def _build_ir_from_root(
 
     root_body = UKMutableNode(kind=IRNodeKind.BODY, label=None, text="", children=body_nodes)
     schedule_nodes = _parse_schedules(root, False, pit_date, is_eur)
+    parse_observations = _source_parse_observations(
+        root_body,
+        schedule_nodes,
+        statute_id=sid,
+        version_label=vlabel,
+        source_path=source_path,
+    )
+    visible_inline_observation = _visible_inline_text_preservation_observation(
+        root,
+        statute_id=sid,
+        version_label=vlabel,
+        source_path=source_path,
+    )
+    if visible_inline_observation is not None:
+        parse_observations.append(visible_inline_observation)
 
     return IRStatute(
         statute_id=sid,
         title=title,
         body=root_body.to_irnode(),
         supplements=[schedule.to_irnode() for schedule in schedule_nodes],
-        metadata={"source_path": source_path, "is_eur": is_eur, "version_label": vlabel},
+        metadata={
+            "source_path": source_path,
+            "is_eur": is_eur,
+            "version_label": vlabel,
+            "source_parse_observations": parse_observations,
+        },
     )
 
 

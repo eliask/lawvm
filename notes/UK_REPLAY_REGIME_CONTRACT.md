@@ -33,6 +33,7 @@ Possible values:
 - `source_first_enacted_base`
 - `effects_assisted_replay`
 - `metadata_backfilled_replay`
+- `not_run_source_unavailable`
 
 ### 2.2 Oracle alignment lane
 
@@ -40,6 +41,7 @@ Possible values:
 
 - `none`
 - `oracle_alignment_adapter`
+- `not_run_source_unavailable`
 
 ### 2.3 Comparison lane
 
@@ -57,6 +59,7 @@ Possible values for the current migration tranche:
 - `source_backed_with_oracle_adapter`
 - `metadata_backfilled_source_semantics`
 - `metadata_backfilled_with_oracle_adapter`
+- `not_run_source_unavailable`
 
 ## 3. Current Reality
 
@@ -139,9 +142,12 @@ The current UK runtime can honestly mark a run as a `source_first_candidate`
 only when all of these hold:
 
 - no metadata-backfilled ops were used
+- metadata-only effects were excluded from replay selection
 - no replay-time oracle-alignment adapter behavior was active
 - applicability selection stayed in the explicit current lane
   `effective_date_plus_feed_applied`
+- authority mode stayed in the public source-text lane
+  `source_text_only`
 
 This is still not the final ideal UK frontend.
 It is the cleanest currently expressible candidate lane inside the present
@@ -154,6 +160,7 @@ The runtime now also exposes this as an explicit preset:
 That preset currently means:
 
 - no metadata backfill
+- no metadata-only effects
 - no replay-time oracle alignment
 - feed-applied gate enabled
 - `authority_mode = source_text_only`

@@ -51,12 +51,14 @@ class UKTextRewriteSpec:
     alternatives: tuple[tuple[str, str], ...]
     occurrence: int
     rewrite_source: str
+    end_occurrence: int = 0
 
 
 @dataclass(frozen=True)
 class UKInsertionAnchorWitness:
     preceding_eid: Optional[str]
     anchor_source: str
+    following_eid: Optional[str] = None
 
 
 @dataclass(frozen=True)

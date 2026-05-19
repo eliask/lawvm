@@ -25,6 +25,7 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
+from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.replay_adjudication import SourceAdjudication
 
 
@@ -35,11 +36,27 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "unhandled_instruction_text",
         "reference_only_source_fragment",
         "fragment_context_missing",
+        "payload_fragment_without_action_formula",
+        "source_carried_multi_subunit_text_rewrite_unsupported",
+        "source_carried_child_tail_text_rewrite_unsupported",
         "instruction_text_reused_as_payload",
         "broad_source_reused_as_payload",
+        "appropriate_place_insert_unsupported",
+        "repeal_schedule_table_source_unsupported",
+        "as_if_application_modification_unsupported",
+        "broad_schedule_flat_payload_unsupported",
+        "amendment_text_target_unsupported",
+        "table_entry_target_unsupported",
+        "schedule_list_entry_target_unsupported",
+        "structural_sibling_insert_unsupported",
+        "heading_facet_target_unsupported",
+        "crossheading_target_unsupported",
+        "schedule_note_target_unsupported",
         "misselected_target_context",
         "nonstructural_root_gap",
         "non_substantive_shell_payload",
+        "range_to_container_target_unsupported",
+        "temporary_as_if_word_omission_unsupported",
     }
 )
 UK_EFFECT_COMPARE_SHAPE_CLASSES = frozenset(
@@ -48,10 +65,23 @@ UK_EFFECT_COMPARE_SHAPE_CLASSES = frozenset(
         "descendant_only_oracle_wrapper",
         "legacy_labeled_oracle_shape",
         "oracle_missing_live_branch",
+        "range_to_container_target_absent",
         "retained_repeal_oracle_branch",
+        "text_patch_preimage_absent_from_target_surfaces",
         "territorial_extension_oracle_gap",
     }
 )
+UK_COMPARE_CHAINED_TEXT_REWRITE_RULE_IDS = frozenset(
+    {
+        "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
+        "uk_effect_all_occurrences_substitution_text_patch",
+        "uk_effect_wherever_occurring_substitution_text_patch",
+    }
+)
+_UK_SOURCE_CONTAINER_EID_CHILD_STARTS = {
+    "part": frozenset({"chapter", "crossheading", "section"}),
+    "schedule": frozenset({"crossheading", "paragraph", "part"}),
+}
 UK_REPLAY_BUG_ADJUDICATION_KINDS = frozenset(
     {
         "uk_replay_tree_invariant_violation",
@@ -64,21 +94,96 @@ UK_REPLAY_BUG_ADJUDICATION_KINDS = frozenset(
 
 UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS = frozenset(
     {
+        "uk_replay_absent_sibling_range_gap",
+        "uk_replay_broad_schedule_part_table_shape_gap",
+        "uk_replay_broad_schedule_table_shape_gap",
+        "uk_replay_annex_schedule_reference_gap",
+        "uk_replay_definition_child_shape_gap",
+        "uk_replay_definition_anchor_lexical_variant_recovered",
+        "uk_replay_definition_entry_shape_gap",
+        "uk_replay_direct_section_paragraph_carrier_gap",
         "uk_replay_empty_descendant_shape_gap",
         "uk_replay_empty_schedule_shape_gap",
+        "uk_replay_existing_target_conflict_gap",
         "uk_replay_existing_target_gap",
+        "uk_replay_heading_facet_target_gap",
         "uk_replay_malformed_target_gap",
+        "uk_replay_malformed_target_granularity_collapse_gap",
+        "uk_replay_malformed_target_note_or_crossheading_gap",
+        "uk_replay_malformed_target_placeholder_label_gap",
+        "uk_replay_malformed_target_schedule_root_label_gap",
+        "uk_replay_malformed_target_sectionlike_label_gap",
         "uk_replay_missing_source_target_gap",
+        "uk_replay_missing_parent_grandparent_present_gap",
         "uk_replay_missing_parent_shape_gap",
+        "uk_replay_missing_root_parent_shape_gap",
+        "uk_replay_missing_schedule_branch_gap",
+        "uk_replay_missing_schedule_range_gap",
+        "uk_replay_missing_sectionlike_range_gap",
         "uk_replay_part_order_shape_gap",
         "uk_replay_chapter_order_shape_gap",
+        "uk_replay_crossheading_target_gap",
         "uk_replay_paragraph_order_shape_gap",
         "uk_replay_subparagraph_order_shape_gap",
         "uk_replay_item_order_shape_gap",
         "uk_replay_section_order_shape_gap",
         "uk_replay_payload_shape_gap",
+        "uk_replay_repeated_form_label_payload_shape_gap",
         "uk_replay_repealed_target_gap",
+        "uk_replay_replace_payload_target_leaf_mismatch_gap",
+        "uk_replay_schedule_entry_repeal_granularity_blocked",
+        "uk_replay_schedule_list_entry_repeal_unresolved",
+        "uk_replay_schedule_paragraph_carrier_gap",
+        "uk_replay_schedule_list_entry_anchor_unresolved",
+        "uk_replay_schedule_p1group_wrapper_carrier_gap",
+        "uk_replay_schedule_container_text_target_gap",
+        "uk_replay_schedule_partition_target_gap",
+        "uk_replay_schedule_partition_part_target_gap",
+        "uk_replay_schedule_unlabeled_paragraph_target_gap",
+        "uk_replay_subsection_descendant_target_collapse_gap",
         "uk_replay_table_shape_gap",
+        "uk_replay_table_entry_inline_text_insertion_unresolved",
+        "uk_replay_table_entry_inline_text_preimage_gap",
+        "uk_replay_text_target_empty_surface_gap",
+        "uk_replay_text_match_citation_tail_surface_gap",
+        "uk_replay_text_match_normalized_preimage_present_gap",
+        "uk_replay_text_match_non_substantive_selector_gap",
+        "uk_replay_text_match_multi_fragment_selector_gap",
+        "uk_replay_text_match_synthetic_selector_gap",
+        "uk_replay_text_patch_preimage_drift_multi_prior_same_target",
+        "uk_replay_same_source_text_patch_overlap_blocked",
+    }
+)
+
+UK_REPLAY_TEXT_SURFACE_ADJUDICATION_KINDS = frozenset(
+    {
+        "uk_replay_heading_text_preimage_gap",
+        "uk_replay_text_insert_anchor_preimage_gap",
+        "uk_replay_text_match_already_rewritten",
+        "uk_replay_text_match_article_phrase_surface_gap",
+        "uk_replay_text_match_citation_connector_surface_gap",
+        "uk_replay_text_match_missing",
+        "uk_replay_text_monetary_amount_preimage_gap",
+        "uk_replay_text_parenthetical_omission_preimage_gap",
+        "uk_replay_text_patch_preimage_drift",
+    }
+)
+
+UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
+    {
+        "text_duplication_warning",
+        "uk_replay_contextual_word_anchor_kind_normalized",
+        "uk_replay_definition_predicate_shall_construed_normalized",
+        "uk_replay_empty_descendant_parent_text_recovered",
+        "uk_replay_existing_target_already_materialized",
+        "uk_replay_schedule_list_entry_alphabetical_position_resolved",
+        "uk_replay_schedule_list_entry_anchor_article_normalized",
+        "uk_replay_schedule_list_entry_anchor_prefix_normalized",
+        "uk_replay_schedule_list_entry_group_anchor_resolved",
+        "uk_replay_schedule_list_entry_repeal_resolved",
+        "uk_replay_source_anchored_order_observed",
+        "uk_replay_text_match_punctuation_space_normalized",
+        "uk_replay_text_match_word_punctuation_elided",
     }
 )
 
@@ -99,12 +204,27 @@ UK_REPLAY_BUG_PROOF_KIND_PRIORITY = (
 )
 
 
+def classify_uk_replay_adjudication_bucket(kind: str) -> str:
+    """Classify an emitted UK replay adjudication into an evidence bucket."""
+    normalized = str(kind or "").strip()
+    if normalized in UK_REPLAY_BUG_ADJUDICATION_KINDS:
+        return "replay_bug"
+    if normalized in UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS:
+        return "source_shape"
+    if normalized in UK_REPLAY_TEXT_SURFACE_ADJUDICATION_KINDS:
+        return "text_surface"
+    if normalized in UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS:
+        return "nonblocking_observation"
+    return "unknown"
+
+
 def classify_uk_bench_comparison(
     *,
     n_enacted_eids: int,
     n_oracle_eids: int,
     n_effects: int,
     raw_score: float,
+    effect_source_pathology_counts: dict[str, int] | None = None,
 ) -> str:
     """Classify whether a UK bench row is commensurable for replay work.
 
@@ -115,6 +235,13 @@ def classify_uk_bench_comparison(
         return "no_oracle_eids"
     if n_enacted_eids <= 0:
         return "no_enacted_eids"
+    if (
+        n_effects > 0
+        and effect_source_pathology_counts
+        and sum(effect_source_pathology_counts.values()) >= n_effects
+        and set(effect_source_pathology_counts) <= {"nonstructural_root_gap"}
+    ):
+        return "nonstructural_current_projection"
     if n_enacted_eids >= max(3 * n_oracle_eids, 30) and raw_score < 0.5:
         return "oracle_collapsed_structure"
     if n_oracle_eids >= max(2 * n_enacted_eids, 30):
@@ -134,18 +261,24 @@ def normalize_uk_replay_compare_eids(
     mutation semantics. It currently handles:
 
     - case-only EID drift (`2a` vs `2A`)
+    - source URI ordinal drift for generic UK containers (`part-n2` vs
+      `part-2`, `schedule-paragraph-1` vs `schedule-1-paragraph-1`)
     - replay-only descendant nodes under a `section` / `article` root when
       oracle exposes only the collapsed root text and no child EIDs
     - replay-only wrapper paragraph nodes under `part` / `crossheading` parents
       where oracle collapses the paragraph into the parent node
     - replay-only wrapper nodes whose descendants exist in oracle but the
       wrapper itself does not (`paragraph 2A` vs oracle-only `2A-1..4`)
+    - replay-only table fallback nodes when the oracle EID surface has no table
+      EIDs; table wording remains compared through ancestor text, but row/cell
+      fallback identity is not yet a common benchmark surface
     """
-    replay_norm = {eid.lower() for eid in replayed_eids if eid}
-    oracle_norm = {eid.lower() for eid in oracle_eids if eid}
+    replay_norm = {_normalize_uk_source_container_eid(eid) for eid in replayed_eids if eid}
+    oracle_norm = {_normalize_uk_source_container_eid(eid) for eid in oracle_eids if eid}
     dropped_prefixes: set[str] = set()
     kept: set[str] = set()
     collapsed_roots: set[str] = set()
+    oracle_has_table_eids = any(_uk_compare_eid_has_table_segment(eid) for eid in oracle_norm)
 
     for root in oracle_norm:
         if not root.startswith(("section-", "article-", "crossheading-")):
@@ -161,6 +294,8 @@ def normalize_uk_replay_compare_eids(
             continue
         if any(eid.startswith(root + "-") for root in collapsed_roots):
             continue
+        if not oracle_has_table_eids and _uk_compare_eid_has_table_segment(eid):
+            continue
         if eid in oracle_norm:
             kept.add(eid)
             continue
@@ -175,6 +310,44 @@ def normalize_uk_replay_compare_eids(
         kept.add(eid)
 
     return kept, oracle_norm
+
+
+def _normalize_uk_source_container_eid(eid: str) -> str:
+    parts = [part for part in str(eid or "").lower().split("-") if part]
+    if not parts:
+        return ""
+    normalized: list[str] = []
+    idx = 0
+    while idx < len(parts):
+        part = parts[idx]
+        child_starts = _UK_SOURCE_CONTAINER_EID_CHILD_STARTS.get(part)
+        if child_starts is None:
+            normalized.append(part)
+            idx += 1
+            continue
+        normalized.append(part)
+        next_part = parts[idx + 1] if idx + 1 < len(parts) else ""
+        if not next_part:
+            normalized.append("1")
+            idx += 1
+            continue
+        match = re.fullmatch(r"n(?P<label>[0-9]+[a-z]?)", next_part)
+        if match is not None:
+            normalized.append(match.group("label"))
+            idx += 2
+            continue
+        if re.fullmatch(r"[0-9]+[a-z]?", next_part):
+            idx += 1
+            continue
+        if next_part in child_starts:
+            normalized.append("1")
+        idx += 1
+    return "-".join(normalized)
+
+
+def _uk_compare_eid_has_table_segment(eid: str) -> bool:
+    parts = [part for part in re.split(r"[-_]+", str(eid or "").lower()) if part]
+    return any(part in {"table", "row", "cell", "header", "headercell"} for part in parts)
 
 
 def is_core_uk_comparison(comparison_class: str) -> bool:
@@ -207,18 +380,48 @@ def classify_uk_replay_residual(
             if kind in adjudications:
                 return ("PROVED_REPLAY_BUG", UK_REPLAY_BUG_PROOF_KIND_BY_ADJUDICATION_KIND[kind])
     if adjudications & UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS:
+        if "uk_replay_absent_sibling_range_gap" in adjudications:
+            return ("UNRESOLVED", "uk_absent_sibling_range_gap")
         if "uk_replay_empty_descendant_shape_gap" in adjudications:
             return ("UNRESOLVED", "uk_empty_descendant_shape_gap")
+        if "uk_replay_annex_schedule_reference_gap" in adjudications:
+            return ("UNRESOLVED", "uk_annex_schedule_reference_gap")
+        if "uk_replay_existing_target_conflict_gap" in adjudications:
+            return ("UNRESOLVED", "uk_existing_target_conflict_gap")
         if "uk_replay_existing_target_gap" in adjudications:
             return ("UNRESOLVED", "uk_existing_target_gap")
+        if "uk_replay_heading_facet_target_gap" in adjudications:
+            return ("UNRESOLVED", "uk_heading_facet_target_gap")
         if "uk_replay_missing_source_target_gap" in adjudications:
             return ("UNRESOLVED", "uk_missing_source_target_gap")
+        if "uk_replay_missing_parent_grandparent_present_gap" in adjudications:
+            return ("UNRESOLVED", "uk_missing_parent_grandparent_present_gap")
+        if "uk_replay_missing_root_parent_shape_gap" in adjudications:
+            return ("UNRESOLVED", "uk_missing_root_parent_shape_gap")
         if "uk_replay_missing_parent_shape_gap" in adjudications:
             return ("UNRESOLVED", "uk_missing_parent_shape_gap")
+        if "uk_replay_missing_schedule_branch_gap" in adjudications:
+            return ("UNRESOLVED", "uk_missing_schedule_branch_gap")
+        if "uk_replay_missing_schedule_range_gap" in adjudications:
+            return ("UNRESOLVED", "uk_missing_schedule_range_gap")
+        if "uk_replay_missing_sectionlike_range_gap" in adjudications:
+            return ("UNRESOLVED", "uk_missing_sectionlike_range_gap")
         if "uk_replay_part_order_shape_gap" in adjudications:
             return ("UNRESOLVED", "uk_part_order_shape_gap")
         if "uk_replay_chapter_order_shape_gap" in adjudications:
             return ("UNRESOLVED", "uk_chapter_order_shape_gap")
+        if "uk_replay_crossheading_target_gap" in adjudications:
+            return ("UNRESOLVED", "uk_crossheading_target_gap")
+        if "uk_replay_broad_schedule_part_table_shape_gap" in adjudications:
+            return ("UNRESOLVED", "uk_broad_schedule_part_table_shape_gap")
+        if "uk_replay_broad_schedule_table_shape_gap" in adjudications:
+            return ("UNRESOLVED", "uk_broad_schedule_table_shape_gap")
+        if "uk_replay_definition_entry_shape_gap" in adjudications:
+            return ("UNRESOLVED", "uk_definition_entry_shape_gap")
+        if "uk_replay_definition_child_shape_gap" in adjudications:
+            return ("UNRESOLVED", "uk_definition_child_shape_gap")
+        if "uk_replay_direct_section_paragraph_carrier_gap" in adjudications:
+            return ("UNRESOLVED", "uk_direct_section_paragraph_carrier_gap")
         if "uk_replay_paragraph_order_shape_gap" in adjudications:
             return ("UNRESOLVED", "uk_paragraph_order_shape_gap")
         if "uk_replay_subparagraph_order_shape_gap" in adjudications:
@@ -227,15 +430,127 @@ def classify_uk_replay_residual(
             return ("UNRESOLVED", "uk_item_order_shape_gap")
         if "uk_replay_section_order_shape_gap" in adjudications:
             return ("UNRESOLVED", "uk_section_order_shape_gap")
+        if "uk_replay_schedule_partition_part_target_gap" in adjudications:
+            return ("UNRESOLVED", "uk_schedule_partition_part_target_gap")
+        if "uk_replay_schedule_partition_target_gap" in adjudications:
+            return ("UNRESOLVED", "uk_schedule_partition_target_gap")
+        if "uk_replay_schedule_p1group_wrapper_carrier_gap" in adjudications:
+            return ("UNRESOLVED", "uk_schedule_p1group_wrapper_carrier_gap")
+        if "uk_replay_schedule_paragraph_carrier_gap" in adjudications:
+            return ("UNRESOLVED", "uk_schedule_paragraph_carrier_gap")
+        if "uk_replay_schedule_entry_repeal_granularity_blocked" in adjudications:
+            return ("UNRESOLVED", "uk_schedule_entry_repeal_granularity_blocked")
+        if "uk_replay_schedule_list_entry_repeal_unresolved" in adjudications:
+            return ("UNRESOLVED", "uk_schedule_list_entry_repeal_unresolved")
+        if "uk_replay_schedule_list_entry_anchor_unresolved" in adjudications:
+            return ("UNRESOLVED", "uk_schedule_list_entry_anchor_unresolved")
+        if "uk_replay_schedule_container_text_target_gap" in adjudications:
+            return ("UNRESOLVED", "uk_schedule_container_text_target_gap")
+        if "uk_replay_schedule_unlabeled_paragraph_target_gap" in adjudications:
+            return ("UNRESOLVED", "uk_schedule_unlabeled_paragraph_target_gap")
+        if "uk_replay_subsection_descendant_target_collapse_gap" in adjudications:
+            return ("UNRESOLVED", "uk_subsection_descendant_target_collapse_gap")
+        if "uk_replay_repeated_form_label_payload_shape_gap" in adjudications:
+            return ("UNRESOLVED", "uk_repeated_form_label_payload_shape_gap")
         if "uk_replay_payload_shape_gap" in adjudications:
             return ("UNRESOLVED", "uk_payload_shape_gap")
+        if "uk_replay_malformed_target_placeholder_label_gap" in adjudications:
+            return ("UNRESOLVED", "uk_malformed_target_placeholder_label_gap")
+        if "uk_replay_malformed_target_note_or_crossheading_gap" in adjudications:
+            return ("UNRESOLVED", "uk_malformed_target_note_or_crossheading_gap")
+        if "uk_replay_malformed_target_sectionlike_label_gap" in adjudications:
+            return ("UNRESOLVED", "uk_malformed_target_sectionlike_label_gap")
+        if "uk_replay_malformed_target_schedule_root_label_gap" in adjudications:
+            return ("UNRESOLVED", "uk_malformed_target_schedule_root_label_gap")
+        if "uk_replay_malformed_target_granularity_collapse_gap" in adjudications:
+            return ("UNRESOLVED", "uk_malformed_target_granularity_collapse_gap")
         if "uk_replay_malformed_target_gap" in adjudications:
             return ("UNRESOLVED", "uk_malformed_target_gap")
+        if "uk_replay_replace_payload_target_leaf_mismatch_gap" in adjudications:
+            return ("UNRESOLVED", "uk_replace_payload_target_leaf_mismatch_gap")
         if "uk_replay_table_shape_gap" in adjudications:
             return ("UNRESOLVED", "uk_table_shape_gap")
+        if "uk_replay_text_target_empty_surface_gap" in adjudications:
+            return ("UNRESOLVED", "uk_text_target_empty_surface_gap")
+        if "uk_replay_text_match_citation_tail_surface_gap" in adjudications:
+            return ("UNRESOLVED", "uk_text_match_citation_tail_surface_gap")
+        if "uk_replay_text_match_normalized_preimage_present_gap" in adjudications:
+            return ("UNRESOLVED", "uk_text_match_normalized_preimage_present_gap")
+        if "uk_replay_text_match_non_substantive_selector_gap" in adjudications:
+            return ("UNRESOLVED", "uk_text_match_non_substantive_selector_gap")
+        if "uk_replay_text_match_multi_fragment_selector_gap" in adjudications:
+            return ("UNRESOLVED", "uk_text_match_multi_fragment_selector_gap")
+        if "uk_replay_text_match_synthetic_selector_gap" in adjudications:
+            return ("UNRESOLVED", "uk_text_match_synthetic_selector_gap")
+        if "uk_replay_text_patch_preimage_drift_multi_prior_same_target" in adjudications:
+            return ("UNRESOLVED", "uk_text_patch_preimage_drift_multi_prior_same_target")
         if "uk_replay_repealed_target_gap" in adjudications:
             return ("UNRESOLVED", "uk_repealed_target_gap")
         return ("UNRESOLVED", "uk_empty_schedule_shape_gap")
+    if "uk_replay_text_match_already_rewritten" in adjudications:
+        if replay_only and oracle_only:
+            return ("UNRESOLVED", "uk_text_match_already_rewritten_mixed_residual_eids")
+        if replay_only:
+            return ("UNRESOLVED", "uk_text_match_already_rewritten_replay_only_residual_eids")
+        if oracle_only:
+            return ("UNRESOLVED", "uk_text_match_already_rewritten_oracle_only_residual_eids")
+        return ("UNRESOLVED", "uk_text_match_already_rewritten")
+    if "uk_replay_text_patch_preimage_drift" in adjudications:
+        if replay_only and oracle_only:
+            return ("UNRESOLVED", "uk_text_patch_preimage_drift_mixed_residual_eids")
+        if replay_only:
+            return ("UNRESOLVED", "uk_text_patch_preimage_drift_replay_only_residual_eids")
+        if oracle_only:
+            return ("UNRESOLVED", "uk_text_patch_preimage_drift_oracle_only_residual_eids")
+        return ("UNRESOLVED", "uk_text_patch_preimage_drift")
+    if "uk_replay_heading_text_preimage_gap" in adjudications:
+        if replay_only and oracle_only:
+            return ("UNRESOLVED", "uk_heading_text_preimage_gap_mixed_residual_eids")
+        if replay_only:
+            return ("UNRESOLVED", "uk_heading_text_preimage_gap_replay_only_residual_eids")
+        if oracle_only:
+            return ("UNRESOLVED", "uk_heading_text_preimage_gap_oracle_only_residual_eids")
+        return ("UNRESOLVED", "uk_heading_text_preimage_gap")
+    if "uk_replay_text_insert_anchor_preimage_gap" in adjudications:
+        if replay_only and oracle_only:
+            return ("UNRESOLVED", "uk_text_insert_anchor_preimage_gap_mixed_residual_eids")
+        if replay_only:
+            return ("UNRESOLVED", "uk_text_insert_anchor_preimage_gap_replay_only_residual_eids")
+        if oracle_only:
+            return ("UNRESOLVED", "uk_text_insert_anchor_preimage_gap_oracle_only_residual_eids")
+        return ("UNRESOLVED", "uk_text_insert_anchor_preimage_gap")
+    if "uk_replay_text_monetary_amount_preimage_gap" in adjudications:
+        if replay_only and oracle_only:
+            return ("UNRESOLVED", "uk_text_monetary_amount_preimage_gap_mixed_residual_eids")
+        if replay_only:
+            return ("UNRESOLVED", "uk_text_monetary_amount_preimage_gap_replay_only_residual_eids")
+        if oracle_only:
+            return ("UNRESOLVED", "uk_text_monetary_amount_preimage_gap_oracle_only_residual_eids")
+        return ("UNRESOLVED", "uk_text_monetary_amount_preimage_gap")
+    if "uk_replay_text_parenthetical_omission_preimage_gap" in adjudications:
+        if replay_only and oracle_only:
+            return ("UNRESOLVED", "uk_text_parenthetical_omission_preimage_gap_mixed_residual_eids")
+        if replay_only:
+            return ("UNRESOLVED", "uk_text_parenthetical_omission_preimage_gap_replay_only_residual_eids")
+        if oracle_only:
+            return ("UNRESOLVED", "uk_text_parenthetical_omission_preimage_gap_oracle_only_residual_eids")
+        return ("UNRESOLVED", "uk_text_parenthetical_omission_preimage_gap")
+    if "uk_replay_text_match_citation_connector_surface_gap" in adjudications:
+        if replay_only and oracle_only:
+            return ("UNRESOLVED", "uk_text_match_citation_connector_surface_gap_mixed_residual_eids")
+        if replay_only:
+            return ("UNRESOLVED", "uk_text_match_citation_connector_surface_gap_replay_only_residual_eids")
+        if oracle_only:
+            return ("UNRESOLVED", "uk_text_match_citation_connector_surface_gap_oracle_only_residual_eids")
+        return ("UNRESOLVED", "uk_text_match_citation_connector_surface_gap")
+    if "uk_replay_text_match_article_phrase_surface_gap" in adjudications:
+        if replay_only and oracle_only:
+            return ("UNRESOLVED", "uk_text_match_article_phrase_surface_gap_mixed_residual_eids")
+        if replay_only:
+            return ("UNRESOLVED", "uk_text_match_article_phrase_surface_gap_replay_only_residual_eids")
+        if oracle_only:
+            return ("UNRESOLVED", "uk_text_match_article_phrase_surface_gap_oracle_only_residual_eids")
+        return ("UNRESOLVED", "uk_text_match_article_phrase_surface_gap")
     if "uk_replay_text_match_missing" in adjudications:
         if replay_only and oracle_only:
             return ("UNRESOLVED", "uk_text_match_missing_mixed_residual_eids")
@@ -257,6 +572,31 @@ def _normalize_effect_text(text: str) -> str:
     return " ".join((text or "").split()).strip().lower()
 
 
+def _normalize_compare_text(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
+
+
+def _is_synthetic_text_patch_selector(text: str) -> bool:
+    return bool(re.match(r"^TEXT(?:_|$)", (text or "").strip()))
+
+
+def _literal_text_patch_match_present(match: str, surfaces: Iterable[str]) -> bool:
+    match_text = " ".join((match or "").split()).strip()
+    if not match_text:
+        return False
+    pattern = re.escape(match_text).replace(r"\ ", r"\s+")
+    if match_text[0].isalnum():
+        pattern = r"(?<![A-Za-z0-9])" + pattern
+    if match_text[-1].isalnum():
+        pattern += r"(?![A-Za-z0-9])"
+    if any(re.search(pattern, surface or "", re.I) for surface in surfaces):
+        return True
+    norm_match = _normalize_compare_text(match_text)
+    if len(norm_match) <= 1:
+        return False
+    return any(norm_match in _normalize_compare_text(surface) for surface in surfaces)
+
+
 def _looks_like_instruction_text(text: str) -> bool:
     norm = _normalize_effect_text(text)
     return bool(
@@ -267,6 +607,65 @@ def _looks_like_instruction_text(text: str) -> bool:
             r")\b",
             norm,
             re.I,
+        )
+    )
+
+
+def _looks_like_schedule_list_entry_instruction(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if not (
+        re.search(
+            r"\b(?:before|after|for)\s+(?:the\s+)?entry\s+(?:(?:relating|relation)\s+to|for)\b",
+            norm,
+        )
+        or re.search(r"\bomit\s+(?:the\s+)?entry\s+for\b", norm)
+    ):
+        return False
+    if re.search(r"\b(?:table|column|row)\b", norm):
+        return False
+    return bool(re.search(r"\b(?:insert|insertion|substitute|omit|repeal)\b", norm))
+
+
+def _looks_like_appropriate_place_insert_instruction(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    return bool(
+        re.search(r"\bat\s+(?:an?|the)\s+appropriate\s+places?\b", norm)
+        and re.search(r"\b(?:insert|insertion|substitute)\b", norm)
+    )
+
+
+def _looks_like_repeal_schedule_table_source(
+    *,
+    extracted_tag: str | None,
+    effect_type: str,
+    text: str,
+) -> bool:
+    tag = extracted_tag or ""
+    if tag not in {"Schedule", "Part", "Table", "Tgroup", "Pblock"}:
+        return False
+    norm_effect_type = _normalize_effect_text(effect_type)
+    if not any(term in norm_effect_type for term in ("repeal", "omit")):
+        return False
+    norm = _normalize_effect_text(text)
+    if re.search(r"\b(?:enactment|extent)\s+of\s+repeal\b", norm):
+        return True
+    return bool(re.search(r"\bthe\s+whole\s+act\s+except\b", norm))
+
+
+def _looks_like_structural_sibling_insert_instruction(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    return bool(
+        re.search(
+            r"\bafter\s+(?:paragraph|sub-?paragraph|subsection)\s*\([0-9A-Za-z]+\)\s+insert(?:\b|\s*[—-])",
+            norm,
+        )
+        or re.search(
+            r"\bafter\s+that\s+(?:paragraph|sub-?paragraph|subsection)\s*,?\s+insert(?:\b|\s*[—-])",
+            norm,
+        )
+        or re.search(
+            r"\bat\s+the\s+end\s+of\s+(?:paragraph|sub-?paragraph|subsection)\s*\([0-9A-Za-z]+\)\s*,?\s+insert\s*[—-]",
+            norm,
         )
     )
 
@@ -307,6 +706,10 @@ def _target_depth(target_path: str) -> int:
     return sum(1 for part in target_path.split("/") if ":" in part)
 
 
+def _target_kinds(target_path: str) -> tuple[str, ...]:
+    return tuple(part.split(":", 1)[0].lower() for part in target_path.split("/") if ":" in part)
+
+
 def _required_instruction_depth(text: str) -> int:
     norm = _normalize_effect_text(text)
     if re.match(r"^(?:[0-9a-z]+\s+)?(?:in|for)\s+sub-?paragraphs?\b", norm):
@@ -320,6 +723,16 @@ def _required_instruction_depth(text: str) -> int:
     return 0
 
 
+def _target_satisfies_instruction_depth(target_path: str, *, required_depth: int, text: str) -> bool:
+    if _target_depth(target_path) >= required_depth:
+        return True
+    norm = _normalize_effect_text(text)
+    kinds = _target_kinds(target_path)
+    if re.match(r"^(?:[0-9a-z]+\s+)?(?:in|for)\s+paragraphs?\b", norm):
+        return "schedule" in kinds and "paragraph" in kinds and "section" not in kinds
+    return False
+
+
 def classify_uk_effect_source_pathology(
     *,
     extracted_tag: str | None,
@@ -328,6 +741,7 @@ def classify_uk_effect_source_pathology(
     payload_kinds: Iterable[str] = (),
     payload_texts: Iterable[str] = (),
     target_paths: Iterable[str] = (),
+    lowering_rule_ids: Iterable[str] = (),
     effect_type: str = "",
     is_structural: bool = True,
 ) -> str:
@@ -338,7 +752,10 @@ def classify_uk_effect_source_pathology(
     kinds = [kind for kind in payload_kinds if kind]
     payload_norms = [_normalize_effect_text(text) for text in payload_texts if _normalize_effect_text(text)]
     targets = [path for path in target_paths if path]
+    lowering_rules = {str(rule_id or "") for rule_id in lowering_rule_ids}
 
+    if not norm_text and not actions and not is_structural:
+        return "nonstructural_root_gap"
     if not norm_text and not actions:
         return "missing_extracted_source"
     if norm_text and _looks_like_non_substantive_shell(extracted_text):
@@ -346,6 +763,76 @@ def classify_uk_effect_source_pathology(
     if norm_text and not actions and not is_structural:
         return "nonstructural_root_gap"
     if norm_text and not actions:
+        if "uk_effect_crossheading_replace_rejected" in lowering_rules:
+            return "crossheading_target_unsupported"
+        if "uk_effect_heading_only_ref_rejected" in lowering_rules:
+            return "heading_facet_target_unsupported"
+        if "uk_effect_table_entry_instruction_rejected" in lowering_rules:
+            return "table_entry_target_unsupported"
+        if "uk_effect_broad_schedule_flat_payload_rejected" in lowering_rules:
+            return "broad_schedule_flat_payload_unsupported"
+        if "uk_effect_empty_type_as_if_words_omitted_rejected" in lowering_rules:
+            return "temporary_as_if_word_omission_unsupported"
+        if "uk_effect_schedule_note_target_rejected" in lowering_rules:
+            return "schedule_note_target_unsupported"
+        targets_norm = " ".join(targets).lower()
+        if re.search(r"(?:^|[:/ -])cross[-_ ]?heading\b", targets_norm):
+            return "crossheading_target_unsupported"
+        if re.search(r"(?:^|[:/ -])(?:heading|title|sidenote)\b", targets_norm):
+            return "heading_facet_target_unsupported"
+        if re.search(r"\bfor (?:the )?inserted text\b", norm_text):
+            return "amendment_text_target_unsupported"
+        if (
+            re.search(r"\b(?:entry|entries)\b", norm_text)
+            and re.search(r"\b(?:table|column)\b", norm_text)
+            and re.search(r"\b(?:insert|substitute|omit|repeal|added|amended)\b", norm_text)
+        ):
+            return "table_entry_target_unsupported"
+        if _looks_like_schedule_list_entry_instruction(norm_text):
+            return "schedule_list_entry_target_unsupported"
+        if _looks_like_structural_sibling_insert_instruction(norm_text):
+            return "structural_sibling_insert_unsupported"
+        if _looks_like_appropriate_place_insert_instruction(norm_text):
+            return "appropriate_place_insert_unsupported"
+        if _looks_like_repeal_schedule_table_source(
+            extracted_tag=extracted_tag,
+            effect_type=effect_type,
+            text=extracted_text,
+        ):
+            return "repeal_schedule_table_source_unsupported"
+        if re.search(
+            r"\b(?:shall\s+have\s+effect\s+(?:as\s+if|subject\s+to)|shall\s+be\s+read\s+as\s+if)\b",
+            norm_text,
+        ):
+            return "as_if_application_modification_unsupported"
+        if (
+            (extracted_tag or "") == "BlockAmendment"
+            and (
+                not norm_effect_type
+                or norm_effect_type.startswith(("word ", "words "))
+            )
+            and (
+                "uk_effect_lowering_no_supported_action_rejected" in lowering_rules
+                or
+                norm_text.startswith(";")
+                or re.match(r"^(?:[a-z]+|\([a-z0-9]+\))\s+(?:or|and|in|to|then)\b", norm_text)
+                or (re.search(r"[—-]", norm_text) and re.search(r"\b[a-z]\s+(?:after|with|and|or|if)\b", norm_text))
+            )
+        ):
+            return "payload_fragment_without_action_formula"
+        if re.search(
+            r"\bwhere\s+(?:it|they|those words?)\s+"
+            r"(?:occurs?|appear)s?\s+in\s+"
+            r"(?:subsections?|paragraphs?|sub-paragraphs?)\b",
+            norm_text,
+        ):
+            return "source_carried_multi_subunit_text_rewrite_unsupported"
+        if re.search(
+            r"\b(?:word|words)\s+following\s+(?:paragraph|sub-paragraph|subsection)\s+\([^)]+\)\s+"
+            r"(?:is|are)\s+(?:omitted|repealed)",
+            norm_text,
+        ):
+            return "source_carried_child_tail_text_rewrite_unsupported"
         if _looks_like_instruction_text(norm_text):
             return "unhandled_instruction_text"
         if _looks_like_reference_only_source(extracted_text):
@@ -370,10 +857,25 @@ def classify_uk_effect_source_pathology(
         return "broad_source_reused_as_payload"
 
     if norm_text and targets:
+        if (
+            norm_effect_type.startswith("substituted for ")
+            and "-" in norm_effect_type
+            and re.search(r"\bfor sections?\b", norm_text)
+            and re.search(r"\bsubstitute\b", norm_text)
+            and any("part:" in path.lower() and "chapter:" in path.lower() for path in targets)
+        ):
+            return "range_to_container_target_unsupported"
+
         required_depth = _required_instruction_depth(norm_text)
         if required_depth > 0:
-            min_depth = min(_target_depth(path) for path in targets)
-            if min_depth < required_depth:
+            if not any(
+                _target_satisfies_instruction_depth(
+                    path,
+                    required_depth=required_depth,
+                    text=norm_text,
+                )
+                for path in targets
+            ):
                 return "misselected_target_context"
 
     return ""
@@ -382,6 +884,294 @@ def classify_uk_effect_source_pathology(
 def is_core_uk_effect_source_candidate(pathology_class: str) -> bool:
     """Return True when an inspected UK effect row is not already a typed source pathology."""
     return pathology_class not in UK_EFFECT_SOURCE_PATHOLOGY_CLASSES
+
+
+def classify_uk_manual_compile_frontier(  # noqa: PLR0913
+    *,
+    effect_type: str,
+    source_pathology: str,
+    extracted_tag: str,
+    extracted_text: str,
+    lowering_rejections: Iterable[dict[str, Any]],
+    compiled_op_count: int,
+    replay_applicable: bool,
+    structural_for_replay: bool,
+    compare_shape: str = "",
+) -> dict[str, str]:
+    """Classify whether a UK blocked row belongs in deterministic or manual work.
+
+    This is an evidence/triage surface only. It must not alter lowering,
+    replay, candidate gating, or benchmark scoring.
+    """
+    lowering_rows = tuple(lowering_rejections)
+    blocking_rules = {
+        str(rejection.get("rule_id") or "")
+        for rejection in lowering_rows
+        if is_blocking_compile_record(rejection)
+    }
+    all_rules = {str(rejection.get("rule_id") or "") for rejection in lowering_rows}
+    effect_type_norm = " ".join(str(effect_type or "").lower().split())
+    source_pathology_norm = str(source_pathology or "")
+    compare_shape_norm = str(compare_shape or "")
+    extracted_tag_norm = str(extracted_tag or "")
+    extracted_text_norm = " ".join(str(extracted_text or "").lower().split())
+
+    if compare_shape_norm == "text_patch_preimage_absent_from_target_surfaces":
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_text_patch_preimage_chain_gap",
+            "reason": "The source instruction lowers to a text patch, but the quoted preimage is absent from available enacted/oracle target surfaces; acquire or prove the missing intermediate source chain before replaying or claiming it.",
+        }
+
+    if compare_shape_norm == "range_to_container_target_absent":
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_range_to_container_candidate",
+            "reason": "The source substitutes a section range into a higher-level container whose feed target is absent from the available source surfaces; a manual or deterministic range-to-container migration claim must own the replaced range, new container, and lineage.",
+        }
+
+    if source_pathology_norm == "range_to_container_target_unsupported":
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_range_to_container_candidate",
+            "reason": "The source substitutes a section range into a higher-level container; a manual or deterministic range-to-container migration claim must own the replaced range, new container, and lineage.",
+        }
+
+    if not replay_applicable or not structural_for_replay:
+        return {
+            "status": "non_textual_or_out_of_scope",
+            "rule_id": "uk_manual_frontier_non_textual_or_out_of_scope",
+            "reason": "The selected replay lens does not admit this row as a structural text/tree replay effect.",
+        }
+
+    if source_pathology_norm == "missing_extracted_source":
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_missing_payload_source_insufficient",
+            "reason": "No extracted source witness is available; a manual claim cannot replace missing public source evidence.",
+        }
+
+    if source_pathology_norm == "non_substantive_shell_payload":
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_non_substantive_payload_source_insufficient",
+            "reason": "The available payload is non-substantive shell or dot-leader text and should not become legal content.",
+        }
+
+    if (
+        source_pathology_norm
+        in {
+            "broad_source_reused_as_payload",
+            "fragment_context_missing",
+            "instruction_text_reused_as_payload",
+            "payload_fragment_without_action_formula",
+            "reference_only_source_fragment",
+            "broad_schedule_flat_payload_unsupported",
+            "temporary_as_if_word_omission_unsupported",
+        }
+        and blocking_rules
+    ):
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_source_pathology_insufficient",
+            "reason": "The blocking row is dominated by source-shape pathology rather than an unambiguous manual compilation opportunity.",
+        }
+
+    if compiled_op_count > 0 and not blocking_rules:
+        return {
+            "status": "deterministic_frontend_supported",
+            "rule_id": "uk_manual_frontier_deterministic_supported",
+            "reason": "The row already lowers to replay operations without blocking lowering rejections.",
+        }
+
+    if source_pathology_norm == "amendment_text_target_unsupported":
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_amendment_program_target_candidate",
+            "reason": "The source targets text inserted by another amendment instruction; this needs an explicit amendment-program compilation lane, not a base-text guess.",
+        }
+
+    if source_pathology_norm == "table_entry_target_unsupported":
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_table_entry_candidate",
+            "reason": "The source targets a table entry/column surface; a claim or future table compiler must identify the row and cell rather than mutating host body text.",
+        }
+
+    if source_pathology_norm == "schedule_list_entry_target_unsupported":
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_schedule_list_entry_candidate",
+            "reason": "The source targets a schedule/list entry by anchor entry text; a claim or future list-entry compiler must identify the entry carrier and sibling insertion point rather than mutating collapsed schedule text.",
+        }
+
+    if source_pathology_norm == "appropriate_place_insert_unsupported":
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_appropriate_place_candidate",
+            "reason": "The source asks for appropriate-place placement; a claim or future placement compiler must identify the insertion anchor without guessing from live text.",
+        }
+
+    if source_pathology_norm == "repeal_schedule_table_source_unsupported":
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_repeal_table_candidate",
+            "reason": "The row appears to depend on a repeal schedule/table or grouped repeal source that may need row/column compilation.",
+        }
+
+    if source_pathology_norm == "as_if_application_modification_unsupported":
+        return {
+            "status": "non_textual_or_out_of_scope",
+            "rule_id": "uk_manual_frontier_as_if_application_modification_out_of_scope",
+            "reason": "The source is an applied/as-if modification clause rather than a direct mutation of the affected statute text/tree under the current UK replay model.",
+        }
+
+    if source_pathology_norm == "source_carried_multi_subunit_text_rewrite_unsupported":
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
+            "reason": "The feed target is broader than the source-carried child targets; compile must split the text rewrite by the named child units rather than mutate the whole parent.",
+        }
+
+    if source_pathology_norm == "source_carried_child_tail_text_rewrite_unsupported":
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate",
+            "reason": "The source targets the text tail following a named child; compile must own a bounded child-tail selector rather than delete from the whole parent text.",
+        }
+
+    if source_pathology_norm == "structural_sibling_insert_unsupported":
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_structural_sibling_insert_candidate",
+            "reason": "The source inserts new structural siblings after a named child; a future compiler must emit sibling insert operations instead of appending payload text to the anchor child.",
+        }
+
+    if source_pathology_norm == "heading_facet_target_unsupported":
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_heading_facet_candidate",
+            "reason": "The source targets a heading/title/sidenote facet; a manual claim or future facet compiler must target that facet without mutating the host body.",
+        }
+
+    if source_pathology_norm == "crossheading_target_unsupported":
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_crossheading_candidate",
+            "reason": "The source targets a cross-heading surface that needs an explicit crossheading/facet claim.",
+        }
+
+    if source_pathology_norm == "schedule_note_target_unsupported":
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_schedule_note_candidate",
+            "reason": "The source targets a schedule note surface; a claim or future note compiler must target that note without inventing paragraph structure.",
+        }
+
+    if "uk_effect_heading_only_ref_rejected" in blocking_rules:
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_heading_facet_candidate",
+            "reason": "The source targets a heading/title/sidenote facet; a manual claim could target an explicit facet without mutating the host body.",
+        }
+
+    if "uk_effect_crossheading_replace_rejected" in blocking_rules:
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_crossheading_candidate",
+            "reason": "The source targets a cross-heading surface that needs an explicit crossheading/facet claim.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and re.search(r"\bat the appropriate place(?:s)?\b", extracted_text_norm)
+        and re.search(r"\b(?:insert|substitute)\b", extracted_text_norm)
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_appropriate_place_candidate",
+            "reason": "The source asks for appropriate-place placement; a claim or future placement compiler must identify the insertion anchor without guessing from live text.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and _looks_like_schedule_list_entry_instruction(extracted_text_norm)
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_schedule_list_entry_candidate",
+            "reason": "The source targets a schedule/list entry by anchor entry text; a claim or future list-entry compiler must identify the entry carrier and sibling insertion point rather than mutating collapsed schedule text.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and _looks_like_structural_sibling_insert_instruction(extracted_text_norm)
+    ):
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_structural_sibling_insert_candidate",
+            "reason": "The source inserts new structural siblings after a named child; a future compiler must emit sibling insert operations instead of appending payload text to the anchor child.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and extracted_tag_norm in {"Schedule", "Part", "Table", "Tgroup", "Pblock"}
+        and any(term in effect_type_norm for term in ("repeal", "omit"))
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_repeal_table_candidate",
+            "reason": "The row appears to depend on a repeal schedule/table or grouped repeal source that may need row/column compilation.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and extracted_tag_norm not in {"", "BlockAmendment"}
+        and re.search(r"\b(?:substitute|insert|omit|repeal)\b", extracted_text_norm)
+    ):
+        return {
+            "status": "deterministic_frontend_candidate",
+            "rule_id": "uk_manual_frontier_parser_or_extraction_candidate",
+            "reason": "The source still contains explicit instruction text; prefer deterministic parser or extraction work before manual claims.",
+        }
+
+    if "uk_effect_missing_structural_payload_rejected" in blocking_rules:
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_missing_payload_source_insufficient",
+            "reason": "No extracted payload is available; a closed operation cannot be claimed without better source evidence.",
+        }
+
+    if "uk_effect_non_substantive_payload_rejected" in blocking_rules:
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_non_substantive_payload_source_insufficient",
+            "reason": "The available payload is non-substantive shell or dot-leader text and should not become legal content.",
+        }
+
+    if (
+        "uk_effect_lowering_no_supported_action_rejected" in blocking_rules
+        and not effect_type_norm
+        and extracted_tag_norm == "BlockAmendment"
+    ):
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_payload_without_action_source_insufficient",
+            "reason": "The source lane exposes a naked payload fragment without a supported action verb or effect type.",
+        }
+
+    if "uk_effect_lowering_no_supported_action_rejected" in all_rules:
+        return {
+            "status": "non_textual_or_out_of_scope",
+            "rule_id": "uk_manual_frontier_unsupported_effect_family",
+            "reason": "The effect family is currently outside UK text/tree replay, though the diagnostic remains visible.",
+        }
+
+    return {
+        "status": "unclassified_frontier",
+        "rule_id": "uk_manual_frontier_unclassified",
+        "reason": "No manual-frontier rule classified this row; inspect the source and lowering evidence directly.",
+    }
 
 
 def classify_uk_effect_compare_shape(
@@ -401,6 +1191,9 @@ def classify_uk_effect_compare_shape(
     oracle_target_texts: Iterable[str] = (),
     base_parent_texts: Iterable[str] = (),
     oracle_parent_texts: Iterable[str] = (),
+    text_patch_matches: Iterable[str] = (),
+    text_patch_replacements: Iterable[str] = (),
+    lowering_rule_ids: Iterable[str] = (),
     base_has_text: bool = False,
     base_has_children: bool = False,
     oracle_has_text: bool = False,
@@ -409,11 +1202,18 @@ def classify_uk_effect_compare_shape(
     """Classify deterministic compare-shape-only lanes for one inspected effect row."""
     norm_affecting_title = _normalize_effect_text(affecting_title)
     actions = {action for action in op_actions if action}
-    payload_norms = [
-        re.sub(r"[^a-z0-9]+", "", text.lower())
-        for text in payload_texts
-        if re.sub(r"[^a-z0-9]+", "", text.lower())
+    payload_norms = [_normalize_compare_text(text) for text in payload_texts if _normalize_compare_text(text)]
+    text_patch_match_texts = [
+        text
+        for text in text_patch_matches
+        if not _is_synthetic_text_patch_selector(text) and _normalize_compare_text(text)
     ]
+    text_patch_replacement_texts = [
+        text
+        for text in text_patch_replacements
+        if not _is_synthetic_text_patch_selector(text) and _normalize_compare_text(text)
+    ]
+    lowering_rules = {rule_id for rule_id in lowering_rule_ids if rule_id}
     resolved = [eid for eid in resolver_eids if eid]
     base_hits = list(base_target_hits)
     oracle_hits = list(oracle_target_hits)
@@ -421,29 +1221,59 @@ def classify_uk_effect_compare_shape(
     oracle_descendants = list(oracle_descendant_hits)
     base_parents = list(base_parent_hits)
     oracle_parents = list(oracle_parent_hits)
+    base_target_text_surfaces = tuple(base_target_texts)
+    oracle_target_text_surfaces = tuple(oracle_target_texts)
     base_target_norms = [
-        re.sub(r"[^a-z0-9]+", "", text.lower())
-        for text in base_target_texts
-        if re.sub(r"[^a-z0-9]+", "", text.lower())
+        _normalize_compare_text(text) for text in base_target_text_surfaces if _normalize_compare_text(text)
     ]
     oracle_target_norms = [
-        re.sub(r"[^a-z0-9]+", "", text.lower())
-        for text in oracle_target_texts
-        if re.sub(r"[^a-z0-9]+", "", text.lower())
+        _normalize_compare_text(text) for text in oracle_target_text_surfaces if _normalize_compare_text(text)
     ]
     base_parent_norms = [
-        re.sub(r"[^a-z0-9]+", "", text.lower())
-        for text in base_parent_texts
-        if re.sub(r"[^a-z0-9]+", "", text.lower())
+        _normalize_compare_text(text) for text in base_parent_texts if _normalize_compare_text(text)
     ]
     oracle_parent_norms = [
-        re.sub(r"[^a-z0-9]+", "", text.lower())
-        for text in oracle_parent_texts
-        if re.sub(r"[^a-z0-9]+", "", text.lower())
+        _normalize_compare_text(text) for text in oracle_parent_texts if _normalize_compare_text(text)
     ]
 
     if not resolved:
+        if (
+            actions == {"replace"}
+            and (effect_type or "").strip().lower().startswith("substituted for ")
+            and "-" in (effect_type or "")
+        ):
+            return "range_to_container_target_absent"
         return ""
+    text_patch_preimage_absent = (
+        actions & {"text_replace", "text_repeal"}
+        and text_patch_match_texts
+        and (base_hits or oracle_hits)
+        and (any(base_hits) or any(oracle_hits))
+        and (base_target_norms or oracle_target_norms)
+        and not any(
+            _literal_text_patch_match_present(
+                match,
+                (*base_target_text_surfaces, *oracle_target_text_surfaces),
+            )
+            for match in text_patch_match_texts
+        )
+    )
+    if (
+        text_patch_preimage_absent
+        and "text_replace" in actions
+        and lowering_rules & UK_COMPARE_CHAINED_TEXT_REWRITE_RULE_IDS
+        and base_hits
+        and oracle_hits
+        and not any(base_hits)
+        and any(oracle_hits)
+        and any(
+            _literal_text_patch_match_present(replacement, oracle_target_text_surfaces)
+            for replacement in text_patch_replacement_texts
+        )
+    ):
+        return "uk_compare_text_patch_preimage_consumed_by_replay_chain"
+    if text_patch_preimage_absent:
+        return "text_patch_preimage_absent_from_target_surfaces"
     if (
         "gibraltar" in norm_affecting_title
         and "insert" in actions
@@ -586,9 +1416,15 @@ __all__ = [
     "UK_CORE_COMPARISON_CLASSES",
     "UK_EFFECT_COMPARE_SHAPE_CLASSES",
     "UK_EFFECT_SOURCE_PATHOLOGY_CLASSES",
+    "UK_REPLAY_BUG_ADJUDICATION_KINDS",
+    "UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS",
+    "UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS",
+    "UK_REPLAY_TEXT_SURFACE_ADJUDICATION_KINDS",
     "build_uk_source_adjudication",
     "classify_uk_effect_compare_shape",
     "classify_uk_effect_source_pathology",
+    "classify_uk_manual_compile_frontier",
+    "classify_uk_replay_adjudication_bucket",
     "classify_uk_replay_residual",
     "classify_uk_bench_comparison",
     "is_core_uk_effect_compare_candidate",

@@ -48,6 +48,26 @@ historical consecutive-version corpus and it is not restricted to the legacy
 343-case slice. Riigi Teataja has confirmed and corrected one LawVM-reported
 omission in `Audiitortegevuse seadus` § 95^2(1).
 
+## UK Replay Frontier
+
+The UK benchmark is effect-feed and version-surface oriented. A saved
+`uk-bench` run keeps the main CSV as the compatibility score table while
+separate lanes preserve source status, replay regime, effect-feed observations,
+authority and lowering rejections, replay adjudications, text scores, and
+commencement scores. When EID score mismatches exist, a bounded
+`<label>.score_witnesses.csv` sidecar can store deterministic sampled EID
+witnesses with schema, score formula, side labels, counts, source URLs, and
+source SHA-256 identities.
+
+The sidecar is diagnostic evidence, not legal text output. It intentionally
+stores EID identifiers and metadata rather than legal text excerpts.
+
+UK core replay averages exclude rows whose parsed effect surface is wholly
+classified as `nonstructural_root_gap`. Those rows are still saved and reported
+as `nonstructural_current_projection`, but they measure current-state or
+applicability projection rather than structural text/tree replay. Mixed rows
+with any structural/source-backed replay lane remain in the core frontier.
+
 ## Measurement Shape
 
 For each statute in the benchmark corpus, LawVM:

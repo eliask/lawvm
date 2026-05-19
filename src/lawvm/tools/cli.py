@@ -80,6 +80,9 @@ import os
 import re
 import sys
 
+from lawvm.tools.uk_replay_regime import UK_APPLICABILITY_MODE_CHOICES
+from lawvm.tools.uk_replay_regime import add_uk_replay_regime_arguments
+
 
 def _oracle_version_amendment_id(value: str) -> str:
     if re.fullmatch(r"\d{4}/\d{1,4}", value) is None:
@@ -88,14 +91,23 @@ def _oracle_version_amendment_id(value: str) -> str:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    # Shared parent with -j flag — every subcommand inherits it.
-    # This lets argparse accept `-j ee` AFTER the subcommand name:
-    #   lawvm bench -j ee --label v1
-    _j_parent = argparse.ArgumentParser(add_help=False)
-    _j_parent.add_argument(
+    jurisdiction_default = os.environ.get("LAWVM_JURISDICTION", "fi")
+
+    # Root parent provides the default; subcommand parent suppresses its default
+    # so `lawvm -j uk evidence-review ...` is not overwritten by the subparser.
+    _j_root_parent = argparse.ArgumentParser(add_help=False)
+    _j_root_parent.add_argument(
         "-j",
         "--jurisdiction",
-        default=os.environ.get("LAWVM_JURISDICTION", "fi"),
+        default=jurisdiction_default,
+        choices=["fi", "ee", "uk", "no", "nz"],
+        help="jurisdiction (default: fi, or LAWVM_JURISDICTION env var)",
+    )
+    _j_subcommand_parent = argparse.ArgumentParser(add_help=False)
+    _j_subcommand_parent.add_argument(
+        "-j",
+        "--jurisdiction",
+        default=argparse.SUPPRESS,
         choices=["fi", "ee", "uk", "no", "nz"],
         help="jurisdiction (default: fi, or LAWVM_JURISDICTION env var)",
     )
@@ -103,10 +115,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="lawvm",
         description="LawVM developer tools",
-        parents=[_j_parent],
+        parents=[_j_root_parent],
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
-    _P = [_j_parent]  # shorthand for parents= below
+    _P = [_j_subcommand_parent]  # shorthand for parents= below
 
     # --- bisect ---
     bisect_p = sub.add_parser(
@@ -711,82 +723,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="write the evidence bundle to PATH (.json for one statute, .jsonl for multi-statute or explicit .jsonl)",
     )
-    evidence_p.add_argument(
-        "--metadata-backfill",
-        dest="uk_allow_metadata_backfill",
-        action="store_true",
-        default=None,
-        help="[-j uk] allow CURRENT_XML_METADATA_BACKFILL during UK replay/evidence building",
-    )
-    evidence_p.add_argument(
-        "--no-metadata-backfill",
-        dest="uk_allow_metadata_backfill",
-        action="store_false",
-        help="[-j uk] disable CURRENT_XML_METADATA_BACKFILL and keep UK replay source-first within the current effects-assisted lane",
-    )
-    evidence_p.add_argument(
-        "--oracle-alignment",
-        dest="uk_allow_oracle_alignment",
-        action="store_true",
-        default=None,
-        help="[-j uk] allow ORACLE_ALIGNMENT_ONLY adapter behavior during UK replay/evidence building",
-    )
-    evidence_p.add_argument(
-        "--no-oracle-alignment",
-        dest="uk_allow_oracle_alignment",
-        action="store_false",
-        help="[-j uk] disable ORACLE_ALIGNMENT_ONLY replay-time adapter behavior during UK replay/evidence building",
-    )
-    evidence_p.add_argument(
-        "--respect-feed-applied",
-        dest="uk_respect_feed_applied",
-        action="store_true",
-        default=None,
-        help="[-j uk] keep the current effects-feed applied gating in UK replay selection",
-    )
-    evidence_p.add_argument(
-        "--ignore-feed-applied",
-        dest="uk_respect_feed_applied",
-        action="store_false",
-        help="[-j uk] use effective-date ordering without feed applied gating in UK replay selection",
-    )
-    evidence_p.add_argument(
-        "--applicability-mode",
-        dest="uk_applicability_mode",
-        choices=[
-            "effective_date_plus_feed_applied",
-            "effective_date_plus_requires_applied",
-            "effective_date_only",
-        ],
-        default=None,
-        help="[-j uk] select the UK applicability admission mode",
-    )
-    evidence_p.add_argument(
-        "--allow-metadata-only-effects",
-        dest="uk_allow_metadata_only_effects",
-        action="store_true",
-        default=None,
-        help="[-j uk] allow metadata-only UK effects to participate in replay selection",
-    )
-    evidence_p.add_argument(
-        "--no-metadata-only-effects",
-        dest="uk_allow_metadata_only_effects",
-        action="store_false",
-        help="[-j uk] keep UK replay selection source-backed by excluding metadata-only effects",
-    )
-    evidence_p.add_argument(
-        "--source-first-candidate",
-        dest="uk_source_first_candidate",
-        action="store_true",
-        help="[-j uk] run the current cleanest source-first candidate lane: no metadata backfill, no oracle alignment, feed-applied gate enabled",
-    )
-    evidence_p.add_argument(
-        "--authority-mode",
-        dest="uk_authority_mode",
-        default=None,
-        choices=["current_mixed", "source_text_only"],
-        help="[-j uk] authority enforcement mode for UK replay/evidence building",
-    )
+    add_uk_replay_regime_arguments(evidence_p, include_metadata_only_effects=True)
 
     # --- prove-oracle ---
     prove_oracle_p = sub.add_parser(
@@ -825,82 +762,7 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="include section bisect support when building oracle proof bundles",
     )
-    prove_oracle_p.add_argument(
-        "--metadata-backfill",
-        dest="uk_allow_metadata_backfill",
-        action="store_true",
-        default=None,
-        help="[-j uk] allow CURRENT_XML_METADATA_BACKFILL during UK replay/evidence building",
-    )
-    prove_oracle_p.add_argument(
-        "--no-metadata-backfill",
-        dest="uk_allow_metadata_backfill",
-        action="store_false",
-        help="[-j uk] disable CURRENT_XML_METADATA_BACKFILL and keep UK replay source-first within the current effects-assisted lane",
-    )
-    prove_oracle_p.add_argument(
-        "--oracle-alignment",
-        dest="uk_allow_oracle_alignment",
-        action="store_true",
-        default=None,
-        help="[-j uk] allow ORACLE_ALIGNMENT_ONLY adapter behavior during UK replay/evidence building",
-    )
-    prove_oracle_p.add_argument(
-        "--no-oracle-alignment",
-        dest="uk_allow_oracle_alignment",
-        action="store_false",
-        help="[-j uk] disable ORACLE_ALIGNMENT_ONLY replay-time adapter behavior during UK replay/evidence building",
-    )
-    prove_oracle_p.add_argument(
-        "--respect-feed-applied",
-        dest="uk_respect_feed_applied",
-        action="store_true",
-        default=None,
-        help="[-j uk] keep the current effects-feed applied gating in UK replay selection",
-    )
-    prove_oracle_p.add_argument(
-        "--ignore-feed-applied",
-        dest="uk_respect_feed_applied",
-        action="store_false",
-        help="[-j uk] use effective-date ordering without feed applied gating in UK replay selection",
-    )
-    prove_oracle_p.add_argument(
-        "--applicability-mode",
-        dest="uk_applicability_mode",
-        choices=[
-            "effective_date_plus_feed_applied",
-            "effective_date_plus_requires_applied",
-            "effective_date_only",
-        ],
-        default=None,
-        help="[-j uk] select the UK applicability admission mode",
-    )
-    prove_oracle_p.add_argument(
-        "--allow-metadata-only-effects",
-        dest="uk_allow_metadata_only_effects",
-        action="store_true",
-        default=None,
-        help="[-j uk] allow metadata-only UK effects to participate in replay selection",
-    )
-    prove_oracle_p.add_argument(
-        "--no-metadata-only-effects",
-        dest="uk_allow_metadata_only_effects",
-        action="store_false",
-        help="[-j uk] keep UK replay selection source-backed by excluding metadata-only effects",
-    )
-    prove_oracle_p.add_argument(
-        "--source-first-candidate",
-        dest="uk_source_first_candidate",
-        action="store_true",
-        help="[-j uk] run the current cleanest source-first candidate lane: no metadata backfill, no oracle alignment, feed-applied gate enabled",
-    )
-    prove_oracle_p.add_argument(
-        "--authority-mode",
-        dest="uk_authority_mode",
-        default=None,
-        choices=["current_mixed", "source_text_only"],
-        help="[-j uk] authority enforcement mode for UK replay/evidence building",
-    )
+    add_uk_replay_regime_arguments(prove_oracle_p, include_metadata_only_effects=True)
 
     # --- evidence-review ---
     evidence_review_p = sub.add_parser(
@@ -981,82 +843,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default="",
         help="reuse per-statute evidence bundles from this directory during live review; oracle-corpus mode defaults to .tmp/evidence_bundle_cache",
     )
-    evidence_review_p.add_argument(
-        "--metadata-backfill",
-        dest="uk_allow_metadata_backfill",
-        action="store_true",
-        default=None,
-        help="[-j uk] allow CURRENT_XML_METADATA_BACKFILL during live UK evidence review",
-    )
-    evidence_review_p.add_argument(
-        "--no-metadata-backfill",
-        dest="uk_allow_metadata_backfill",
-        action="store_false",
-        help="[-j uk] disable CURRENT_XML_METADATA_BACKFILL during live UK evidence review",
-    )
-    evidence_review_p.add_argument(
-        "--oracle-alignment",
-        dest="uk_allow_oracle_alignment",
-        action="store_true",
-        default=None,
-        help="[-j uk] allow ORACLE_ALIGNMENT_ONLY adapter behavior during live UK evidence review",
-    )
-    evidence_review_p.add_argument(
-        "--no-oracle-alignment",
-        dest="uk_allow_oracle_alignment",
-        action="store_false",
-        help="[-j uk] disable ORACLE_ALIGNMENT_ONLY replay-time adapter behavior during live UK evidence review",
-    )
-    evidence_review_p.add_argument(
-        "--respect-feed-applied",
-        dest="uk_respect_feed_applied",
-        action="store_true",
-        default=None,
-        help="[-j uk] keep the current effects-feed applied gating in live UK replay selection",
-    )
-    evidence_review_p.add_argument(
-        "--ignore-feed-applied",
-        dest="uk_respect_feed_applied",
-        action="store_false",
-        help="[-j uk] use effective-date ordering without feed applied gating in live UK replay selection",
-    )
-    evidence_review_p.add_argument(
-        "--applicability-mode",
-        dest="uk_applicability_mode",
-        choices=[
-            "effective_date_plus_feed_applied",
-            "effective_date_plus_requires_applied",
-            "effective_date_only",
-        ],
-        default=None,
-        help="[-j uk] select the UK applicability admission mode",
-    )
-    evidence_review_p.add_argument(
-        "--allow-metadata-only-effects",
-        dest="uk_allow_metadata_only_effects",
-        action="store_true",
-        default=None,
-        help="[-j uk] allow metadata-only UK effects to participate in live UK replay selection",
-    )
-    evidence_review_p.add_argument(
-        "--no-metadata-only-effects",
-        dest="uk_allow_metadata_only_effects",
-        action="store_false",
-        help="[-j uk] keep live UK replay selection source-backed by excluding metadata-only effects",
-    )
-    evidence_review_p.add_argument(
-        "--source-first-candidate",
-        dest="uk_source_first_candidate",
-        action="store_true",
-        help="[-j uk] run the current cleanest source-first candidate lane: no metadata backfill, no oracle alignment, feed-applied gate enabled",
-    )
-    evidence_review_p.add_argument(
-        "--authority-mode",
-        dest="uk_authority_mode",
-        default=None,
-        choices=["current_mixed", "source_text_only"],
-        help="[-j uk] authority enforcement mode for live UK evidence review",
-    )
+    add_uk_replay_regime_arguments(evidence_review_p, include_metadata_only_effects=True)
     evidence_review_p.add_argument(
         "--corpus-store",
         default="",
@@ -1366,7 +1153,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- bench ---
     from lawvm.tools.bench import register_cli as _register_bench
 
-    _register_bench(sub, _j_parent)
+    _register_bench(sub, _j_subcommand_parent)
 
     # --- blame ---
     blame_p = sub.add_parser(
@@ -1427,6 +1214,20 @@ def _build_parser() -> argparse.ArgumentParser:
     replay_p.add_argument("--verbose", "-v", action="store_true")
     replay_p.add_argument("--show-text", action="store_true", dest="show_text")
     replay_p.add_argument("--json", action="store_true", help="emit JSON")
+    replay_p.add_argument(
+        "--replay-adjudication-samples",
+        nargs="+",
+        metavar="KIND",
+        help="[-j uk] in text mode, print bounded samples for these replay adjudication kinds",
+    )
+    replay_p.add_argument(
+        "--replay-adjudication-sample-limit",
+        type=int,
+        default=5,
+        metavar="N",
+        help="[-j uk] maximum replay adjudication samples to print in text mode (default: 5)",
+    )
+    add_uk_replay_regime_arguments(replay_p)
 
     # --- no-index ---
     no_index_p = sub.add_parser(
@@ -3747,6 +3548,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="fetch missing affecting act XMLs into the archive before replaying",
     )
     uk_replay_p.add_argument(
+        "--include-enacted-affecting",
+        action="store_true",
+        help=(
+            "with --fetch-missing, also fetch /enacted/data.xml for cached or "
+            "newly fetched affecting acts"
+        ),
+    )
+    uk_replay_p.add_argument(
         "--db",
         metavar="PATH",
         help="Farchive DB path (default: data/uk_legislation.farchive); required because deprecated on-disk XML is no longer used",
@@ -3765,6 +3574,20 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="emit JSON",
     )
+    uk_replay_p.add_argument(
+        "--replay-adjudication-samples",
+        nargs="+",
+        metavar="KIND",
+        help="in text mode, print bounded samples for these replay adjudication kinds",
+    )
+    uk_replay_p.add_argument(
+        "--replay-adjudication-sample-limit",
+        type=int,
+        default=5,
+        metavar="N",
+        help="maximum replay adjudication samples to print in text mode (default: 5)",
+    )
+    add_uk_replay_regime_arguments(uk_replay_p, help_prefix="")
 
     # --- uk-fetch-affecting ---
     uk_fetch_p = sub.add_parser(
@@ -3791,6 +3614,11 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="dry_run",
         action="store_true",
         help="print what would be fetched without downloading",
+    )
+    uk_fetch_p.add_argument(
+        "--include-enacted-affecting",
+        action="store_true",
+        help="also fetch /enacted/data.xml for cached or newly fetched affecting acts",
     )
     uk_fetch_p.add_argument(
         "--verbose",
@@ -3837,6 +3665,18 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print a compact tree view of each compiled payload",
     )
+    uk_effect_p.add_argument(
+        "--applicability-mode",
+        dest="uk_applicability_mode",
+        choices=UK_APPLICABILITY_MODE_CHOICES,
+        default=None,
+        help="UK replay applicability lens for this effect report",
+    )
+    uk_effect_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit a machine-readable single-effect frontier report",
+    )
 
     # --- uk-effects ---
     uk_effects_p = sub.add_parser(
@@ -3867,6 +3707,34 @@ def _build_parser() -> argparse.ArgumentParser:
         help="case-insensitive substring filter on effect type",
     )
     uk_effects_p.add_argument(
+        "--source-pathology",
+        metavar="CLASS",
+        help="only show rows with this typed source-pathology class; use __none__ for clean source",
+    )
+    uk_effects_p.add_argument(
+        "--lowering-rule",
+        metavar="RULE_ID",
+        help="only show rows carrying this lowering rejection rule ID",
+    )
+    uk_effects_p.add_argument(
+        "--source-acquisition-rule",
+        metavar="RULE_ID",
+        help="only show rows carrying this source-acquisition rejection rule ID",
+    )
+    uk_effects_p.add_argument(
+        "--manual-compile-status",
+        metavar="STATUS",
+        help=(
+            "only show rows with this manual compile frontier status "
+            "(for example manual_compile_candidate)"
+        ),
+    )
+    uk_effects_p.add_argument(
+        "--manual-compile-rule",
+        metavar="RULE_ID",
+        help="only show rows with this manual compile frontier rule ID",
+    )
+    uk_effects_p.add_argument(
         "--applied-only",
         action="store_true",
         help="only show applied effects",
@@ -3875,6 +3743,21 @@ def _build_parser() -> argparse.ArgumentParser:
         "--structural-only",
         action="store_true",
         help="only show structural effects",
+    )
+    add_uk_replay_regime_arguments(
+        uk_effects_p,
+        help_prefix="",
+        include_metadata_only_effects=True,
+    )
+    uk_effects_p.add_argument(
+        "--candidate-only",
+        action="store_true",
+        help="only show rows whose typed source and compare classifications remain replay candidates",
+    )
+    uk_effects_p.add_argument(
+        "--non-candidate-only",
+        action="store_true",
+        help="only show rows defeated by typed source or compare classification",
     )
     uk_effects_p.add_argument(
         "--limit",
@@ -3885,6 +3768,24 @@ def _build_parser() -> argparse.ArgumentParser:
         "--db",
         metavar="PATH",
         help="Farchive DB path (default: data/uk_legislation.farchive)",
+    )
+    uk_effects_p.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="print only aggregate UK effect classification counts",
+    )
+    uk_effects_p.add_argument(
+        "--evidence-jsonl",
+        metavar="PATH",
+        help=(
+            "write selected UK effect diagnostic rows as JSONL, suitable as a "
+            "manual-compile work queue"
+        ),
+    )
+    uk_effects_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable UK effect classification rows and summary",
     )
 
     # --- uk-eids ---
@@ -3924,6 +3825,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--show-text",
         action="store_true",
         help="print a compact text snippet for each matched EID",
+    )
+    uk_eids_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable UK EID match rows and side summaries",
     )
     uk_eids_p.add_argument(
         "--db",
@@ -4067,6 +3973,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="rank the saved run without archive-backed per-effect summaries",
     )
     uk_candidates_p.add_argument(
+        "--effect-budget",
+        type=int,
+        metavar="N",
+        help=(
+            "maximum replay-applicable effects per statute to inspect in "
+            "archive-backed mode"
+        ),
+    )
+    uk_candidates_p.add_argument(
+        "--residual-budget",
+        type=int,
+        metavar="N",
+        help="maximum frontier rows to run archive-backed replay/oracle residual analysis for",
+    )
+    uk_candidates_p.add_argument(
         "--score-mode",
         choices=("auto", "replay", "replay_commencement"),
         default="auto",
@@ -4076,6 +3997,40 @@ def _build_parser() -> argparse.ArgumentParser:
         "--residual-only",
         action="store_true",
         help="show only statutes with nonzero residual-driving candidate rows",
+    )
+    uk_candidates_p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable UK candidate/residual triage rows",
+    )
+    uk_candidates_p.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="with --json, omit per-statute candidate rows and emit only aggregate triage counts",
+    )
+    uk_candidates_p.add_argument(
+        "--manual-compile-evidence-jsonl",
+        metavar="PATH",
+        help=(
+            "archive-backed mode only: write all inspected manual_compile_candidate "
+            "effect rows as source-witnessed JSONL work items"
+        ),
+    )
+    uk_candidates_p.add_argument(
+        "--replay-adjudication-kind",
+        nargs="+",
+        metavar="KIND",
+        help=(
+            "restrict saved-run frontier rows to statutes with one of these replay "
+            "adjudication kinds and include bounded samples"
+        ),
+    )
+    uk_candidates_p.add_argument(
+        "--replay-adjudication-sample-limit",
+        type=int,
+        default=5,
+        metavar="N",
+        help="maximum replay adjudication samples to include per emitted statute (default: 5)",
     )
 
     # --- disagreement ---
@@ -6223,6 +6178,29 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _has_uk_replay_regime_flags(args: argparse.Namespace) -> bool:
+    return (
+        getattr(args, "uk_allow_metadata_backfill", None) is not None
+        or getattr(args, "uk_allow_oracle_alignment", None) is not None
+        or getattr(args, "uk_respect_feed_applied", None) is not None
+        or getattr(args, "uk_applicability_mode", None) is not None
+        or bool(getattr(args, "uk_source_first_candidate", False))
+        or getattr(args, "uk_authority_mode", None) is not None
+        or getattr(args, "uk_allow_metadata_only_effects", None) is not None
+    )
+
+
+def _reject_uk_replay_regime_flags_for_non_uk(args: argparse.Namespace, *, command: str) -> None:
+    jurisdiction = str(getattr(args, "jurisdiction", "fi") or "fi")
+    if jurisdiction == "uk" or not _has_uk_replay_regime_flags(args):
+        return
+    print(
+        f"ERROR: UK replay regime flags on '{command}' are only supported with -j uk",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -6326,6 +6304,7 @@ def main() -> None:
 
     elif args.command == "bench":
         j = getattr(args, "jurisdiction", "fi")
+        _reject_uk_replay_regime_flags_for_non_uk(args, command="bench")
         if j == "ee":
             from lawvm.tools.ee_bench import main as ee_bench_main
 
@@ -6352,6 +6331,7 @@ def main() -> None:
 
     elif args.command == "replay":
         j = getattr(args, "jurisdiction", "fi")
+        _reject_uk_replay_regime_flags_for_non_uk(args, command="replay")
         if j == "ee":
             from lawvm.tools.ee_replay import main as ee_replay_main
 
@@ -6366,6 +6346,7 @@ def main() -> None:
             args.statute_id = args.base_id
             args.pit_date = getattr(args, "as_of", None)
             args.enacted_only = False
+            args.db = getattr(args, "archive", None)
             from lawvm.tools.uk_replay import main as uk_replay_main
 
             uk_replay_main(args)
@@ -6827,6 +6808,7 @@ def main() -> None:
                 archive,
                 dry_run=getattr(args, "dry_run", False),
                 verbose=getattr(args, "verbose", False),
+                include_enacted=getattr(args, "include_enacted_affecting", False),
             )
             fetched, cached, errors = report
         finally:
@@ -6846,6 +6828,20 @@ def main() -> None:
             print(_json.dumps(payload, ensure_ascii=False, indent=2))
         else:
             print(f"fetched={fetched}  already_cached={cached}  errors={errors}")
+            if hasattr(report, "to_dict"):
+                payload = report.to_dict()
+                rule_counts = payload.get("event_rule_counts") or {}
+                blocking_rule_counts = payload.get("blocking_event_rule_counts") or {}
+                if rule_counts:
+                    rule_text = ", ".join(
+                        f"{rule}={count}" for rule, count in sorted(rule_counts.items())
+                    )
+                    print(f"event_rules={rule_text}")
+                if blocking_rule_counts:
+                    blocking_rule_text = ", ".join(
+                        f"{rule}={count}" for rule, count in sorted(blocking_rule_counts.items())
+                    )
+                    print(f"blocking_event_rules={blocking_rule_text}")
         if errors:
             sys.exit(1)
 
