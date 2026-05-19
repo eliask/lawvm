@@ -3826,6 +3826,62 @@ def test_compile_source_carried_child_tail_repeal_rejects_mismatched_subsection_
     assert lowering_records[0]["blocking"] is True
 
 
+def test_compile_source_carried_child_tail_substitution_from_exact_subsection_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-13-1-a">
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>a in subsection (1), for the words after paragraph (b) substitute \u201cfor a term exceeding the applicable limit in respect of any one offence\u201d ;</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-28acb584d700bedc5ec7877ee5571517",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-04-25",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 224(1)",
+        affecting_uri="/id/ukpga/2022/35",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="35",
+        affecting_provisions="s. 13(1)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2022-07-14", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "224"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.REPLACE
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_TAIL_paragraph_b"
+    assert ops[0].text_patch.replacement == "for a term exceeding the applicable limit in respect of any one offence"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_child_tail_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_child_tail_substitution_text_patch",
+    ]
+    assert lowering_records[0]["blocking"] is False
+
+
 def test_compile_source_carried_multi_subunit_repeal_from_exact_section_context() -> None:
     extracted_el = ET.fromstring(
         f"""
