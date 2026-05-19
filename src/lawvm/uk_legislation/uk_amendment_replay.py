@@ -3946,6 +3946,8 @@ class _UKRepealTableQuotedWordsTextRepeal:
     row_text: str = ""
     enactment_cell: str = ""
     extent_cell: str = ""
+    occurrence: int = 0
+    end_occurrence: int = 0
 
 
 def _strip_outer_uk_quotes(text: str) -> str:
@@ -4015,24 +4017,64 @@ def _uk_repeal_table_columns(row: Sequence[str]) -> tuple[int, int] | None:
     return enactment_idx, extent_idx
 
 
-def _uk_repeal_table_quoted_words_original(extent_cell: str) -> str:
+def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> tuple[str, int, int]:
     text = " ".join(extent_cell.split()).strip()
-    if not text or ";" in text:
-        return ""
-    match = re.match(
-        r"^In\s+"
-        r"(?:(?:section|sections|s)\.?\s+[0-9A-Za-z]+(?:\s*\([^)]*\))?"
-        r"|(?:paragraph|paragraphs|para)\.?\s+[0-9A-Za-z]+(?:\s*\([^)]*\))?"
-        r"|schedule\s+[0-9A-Za-z]+(?:\s*,\s*paragraph\s+[0-9A-Za-z]+(?:\s*\([^)]*\))?)?)"
-        r"(?:,\s+in\s+(?:subsection|paragraph|sub-paragraph)\s+\([^)]+\))*"
-        r",\s+the\s+words?\s+"
-        r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\"|'(?P<single>.*?)')"
-        r"\.?\s*$",
+    if not text:
+        return "", 0, 0
+    quoted = r"(?:\u201c(?P<{name}_curly>.*?)\u201d|\"(?P<{name}_double>.*?)\"|'(?P<{name}_single>.*?)')"
+    range_match = re.search(
+        r"\bthe\s+words?\s+from\s+"
+        + quoted.format(name="start")
+        + r"(?:,?\s+where\s+(?:they|it|the\s+words?)\s+"
+        r"(?P<occurrence>firstly|first|1st|secondly|second|2nd|thirdly|third|3rd|fourthly|fourth|4th|fifthly|fifth|5th)"
+        r"\s+occurs?)?"
+        r",?\s+to\s+"
+        r"(?:(?:the\s+)?end|"
+        + quoted.format(name="end")
+        + r")",
+        text,
+        re.I,
+    )
+    if range_match is not None:
+        start = next(
+            group.strip()
+            for group in (
+                range_match.group("start_curly"),
+                range_match.group("start_double"),
+                range_match.group("start_single"),
+            )
+            if group is not None
+        )
+        end = next(
+            (
+                group.strip()
+                for group in (
+                    range_match.group("end_curly"),
+                    range_match.group("end_double"),
+                    range_match.group("end_single"),
+                )
+                if group is not None
+            ),
+            "",
+        )
+        start = " ".join(start.split()).strip()
+        end = " ".join(end.split()).strip()
+        if not start:
+            return "", 0, 0
+        occurrence = 0
+        if range_match.group("occurrence"):
+            occurrence = _uk_ordinal_to_int(range_match.group("occurrence")) or 0
+        if end:
+            return f"TEXT_FROM_{start}_TO_{end}", occurrence, 0
+        return f"TEXT_FROM_{start}_TO_END", occurrence, 0
+    match = re.search(
+        r"\bthe\s+words?\s+"
+        r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\"|'(?P<single>.*?)')",
         text,
         re.I,
     )
     if match is None:
-        return ""
+        return "", 0, 0
     original = next(
         group.strip()
         for group in (
@@ -4042,7 +4084,7 @@ def _uk_repeal_table_quoted_words_original(extent_cell: str) -> str:
         )
         if group is not None
     )
-    return " ".join(original.split()).strip()
+    return " ".join(original.split()).strip(), 0, 0
 
 
 def _uk_repeal_table_extent_clauses(extent_cell: str) -> list[str]:
@@ -4054,7 +4096,33 @@ def _uk_repeal_table_extent_clauses(extent_cell: str) -> list[str]:
         text,
         flags=re.I,
     )
-    return [clause.strip() for clause in clauses if clause.strip()]
+    expanded: list[str] = []
+    for clause in clauses:
+        stripped = clause.strip()
+        if not stripped:
+            continue
+        section_context = re.match(
+            r"^(?P<context>In\s+section\s+[0-9A-Za-z]+)\s*,\s*(?P<body>.+)$",
+            stripped,
+            re.I,
+        )
+        if section_context is None:
+            expanded.append(stripped)
+            continue
+        parts = re.split(
+            r";\s+and\s+(?=in\s+(?:subsection|paragraph|sub-paragraph)\b)",
+            section_context.group("body"),
+            flags=re.I,
+        )
+        if len(parts) == 1:
+            expanded.append(stripped)
+            continue
+        context = section_context.group("context")
+        for part in parts:
+            part_text = part.strip()
+            if part_text:
+                expanded.append(f"{context}, {part_text}".rstrip(".") + ".")
+    return expanded
 
 
 def _uk_table_is_repeal_extent_source_table(table: ET.Element) -> tuple[int, int] | None:
@@ -4084,7 +4152,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
     if not search_roots:
         return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
 
-    matches: list[tuple[int, str, str, str, str]] = []
+    matches: list[tuple[int, str, int, int, str, str, str]] = []
     tables = []
     seen_table_ids: set[int] = set()
     for root in search_roots:
@@ -4111,11 +4179,19 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                     affected_year=str(effect.affected_year or ""),
                 ):
                     continue
-                original = _uk_repeal_table_quoted_words_original(extent_clause)
+                original, occurrence, end_occurrence = _uk_repeal_table_quoted_words_selector(extent_clause)
                 if not original:
                     continue
                 matches.append(
-                    (table_index, original, " | ".join((enactment_cell, extent_clause)), enactment_cell, extent_clause)
+                    (
+                        table_index,
+                        original,
+                        occurrence,
+                        end_occurrence,
+                        " | ".join((enactment_cell, extent_clause)),
+                        enactment_cell,
+                        extent_clause,
+                    )
                 )
 
     if len(matches) != 1:
@@ -4125,7 +4201,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
             match_count=len(matches),
         )
 
-    table_index, original, row_text, enactment_cell, extent_cell = matches[0]
+    table_index, original, occurrence, end_occurrence, row_text, enactment_cell, extent_cell = matches[0]
     return _UKRepealTableQuotedWordsTextRepeal(
         recognized=True,
         original=original,
@@ -4135,6 +4211,8 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
         row_text=row_text,
         enactment_cell=enactment_cell,
         extent_cell=extent_cell,
+        occurrence=occurrence,
+        end_occurrence=end_occurrence,
     )
 
 
@@ -4160,20 +4238,23 @@ def _uk_cell_has_section_descendant_scope(
     descendant_labels: Sequence[str],
 ) -> bool:
     """Return true when descendant labels belong to the requested section."""
+    # Quoted legal text may itself contain parenthetical labels.  Those labels
+    # are payload/preimage evidence, not target-scope evidence.
+    scope_text = re.sub(r"[“\"'‘].*?[”\"'’]", "", text)
     section_pat = re.escape(section.lower())
     wanted = [label.lower() for label in descendant_labels if label]
     explicit_ref_re = re.compile(rf"\b{section_pat}\s*((?:\([^)]*\)\s*)+)", re.I)
-    for match in explicit_ref_re.finditer(text):
+    for match in explicit_ref_re.finditer(scope_text):
         if _uk_parenthetical_labels_contain_sequence(
             _uk_parenthetical_labels(match.group(1)),
             wanted,
         ):
             return True
 
-    singular_prefix = re.search(rf"\bsection\s+{section_pat}\b", text, re.I) is not None
-    plural_prefix = re.search(r"\bsections\b", text, re.I) is not None
+    singular_prefix = re.search(rf"\bsection\s+{section_pat}\b", scope_text, re.I) is not None
+    plural_prefix = re.search(r"\bsections\b", scope_text, re.I) is not None
     if singular_prefix and not plural_prefix:
-        before_act_title = re.split(r"\bof\b", text, maxsplit=1, flags=re.I)[0]
+        before_act_title = re.split(r"\bof\b", scope_text, maxsplit=1, flags=re.I)[0]
         return _uk_parenthetical_labels_contain_sequence(
             _uk_parenthetical_labels(before_act_title),
             wanted,
@@ -4384,6 +4465,8 @@ def _uk_ordinal_to_int(raw: str) -> int | None:
     token = " ".join(str(raw or "").lower().split()).strip(" .")
     if not token:
         return None
+    if token.endswith("ly"):
+        token = token[:-2]
     if token in _ORDINAL_WORDS:
         return _ORDINAL_WORDS[token]
     match = re.fullmatch(r"(\d+)(?:st|nd|rd|th)?", token)
@@ -6959,13 +7042,16 @@ def compile_effect_to_ir_ops(
                     "original": repeal_table_text_repeal.original,
                     "replacement": "",
                     "rule_id": _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID,
+                    "occurrence": str(repeal_table_text_repeal.occurrence),
+                    "end_occurrence": str(repeal_table_text_repeal.end_occurrence),
                 }
             ]
             text_patch = TextPatchSpec(
                 kind=TextPatchKindEnum.DELETE,
                 selector=TextSelector(
                     match_text=repeal_table_text_repeal.original,
-                    occurrence=0,
+                    occurrence=repeal_table_text_repeal.occurrence,
+                    end_occurrence=repeal_table_text_repeal.end_occurrence,
                 ),
             )
             _append_uk_effect_lowering_observation(
@@ -6990,6 +7076,8 @@ def compile_effect_to_ir_ops(
                     "enactment_cell": repeal_table_text_repeal.enactment_cell,
                     "extent_cell": repeal_table_text_repeal.extent_cell,
                     "original": repeal_table_text_repeal.original,
+                    "occurrence": repeal_table_text_repeal.occurrence,
+                    "end_occurrence": repeal_table_text_repeal.end_occurrence,
                 },
             )
             src = OperationSource(
@@ -7008,7 +7096,8 @@ def compile_effect_to_ir_ops(
                 text_patch=text_patch,
                 op_text_match=repeal_table_text_repeal.original,
                 op_text_replacement="",
-                op_text_occurrence=0,
+                op_text_occurrence=repeal_table_text_repeal.occurrence,
+                op_text_end_occurrence=repeal_table_text_repeal.end_occurrence,
             )
             lowered_witness = UKLoweredOperationWitness(
                 op_id=effect.effect_id,

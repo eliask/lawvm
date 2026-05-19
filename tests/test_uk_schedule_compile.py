@@ -4136,6 +4136,124 @@ def test_compile_repeal_table_quoted_words_text_repeal() -> None:
     )
 
 
+def test_compile_repeal_table_words_range_to_end_text_repeal() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule id="schedule-15">
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Abolition of Feudal Tenure etc. (Scotland) Act 2000 (asp 5)</td>
+                  <td>In section 77, in subsection (2), the words “Subject to subsection (4)(c) and (d) below,”; and in subsection (4), paragraphs (c) and (d) and the words from “but” to the end.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_words_range_to_end",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=False,
+        modified="2004-11-28",
+        affected_uri="/id/asp/2000/5",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="5",
+        affected_provisions="s. 77(4)",
+        affecting_uri="/id/asp/2003/9",
+        affecting_class="ScottishAct",
+        affecting_year="2003",
+        affecting_number="9",
+        affecting_provisions="Sch. 15",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2004-11-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "77"), ("subsection", "4"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_but_TO_END"
+    assert ops[0].text_patch.selector.occurrence == 0
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_quoted_words_text_repeal"
+        and record["extent_cell"].endswith('the words from “but” to the end.')
+        and record["original"] == "TEXT_FROM_but_TO_END"
+        for record in lowering_records
+    )
+
+
+def test_compile_repeal_table_words_range_occurrence_text_repeal() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Registration Act 1617 (c. 16) (Act of the Parliaments of Scotland)</td>
+                  <td>In section 1(1), the words from “It is”, where they thirdly occur, to “sufficient”.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_words_range_occurrence",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=False,
+        modified="2004-11-28",
+        affected_uri="/id/ukpga/1617/16",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1617",
+        affected_number="16",
+        affected_provisions="s. 1(1)",
+        affecting_uri="/id/asp/2003/9",
+        affecting_class="ScottishAct",
+        affecting_year="2003",
+        affecting_number="9",
+        affecting_provisions="Sch. 15",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2004-11-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_It is_TO_sufficient"
+    assert ops[0].text_patch.selector.occurrence == 3
+
+
 def test_compile_repeal_table_quoted_words_blocks_without_unique_owned_row() -> None:
     source_root = ET.fromstring(
         """

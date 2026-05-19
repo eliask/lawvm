@@ -1685,12 +1685,18 @@ Current block-substitution context invariant:
   `uk_effect_repeal_table_quoted_words_text_repeal`: the compiler must match a
   unique repeal table row by affected Act identity, split only explicit extent
   clauses inside that owned row, match the clause to the affected provision, and
-  lower `the word(s) "..."` to `TEXT_REPEAL`. Non-unique rows, whole-provision
-  repeal clauses, ranges, and multi-action clauses remain blocking
+  lower `the word(s) "..."`, `the words from "X" to "Y"`, and
+  `the words from "X" to the end` to `TEXT_REPEAL`. Range clauses lower to the
+  existing bounded selectors `TEXT_FROM_X_TO_Y` / `TEXT_FROM_X_TO_END`, carrying
+  any explicit ordinal occurrence such as `where they thirdly occur`.
+  Parenthetical labels inside quoted payload/preimage text are ignored for
+  target-scope matching; they are payload evidence, not authority to retarget
+  the clause. Non-unique rows, whole-provision repeal clauses, entry/table
+  structural repeals, and multi-action clauses remain blocking
   `uk_effect_repeal_table_quoted_words_text_repeal_unresolved` / manual
   frontier cases. This is a source-table elaboration rule, not a replay
   fallback, and its observation records the enactment cell, extent clause, and
-  selected quoted preimage.
+  selected quoted/range preimage plus occurrence metadata.
 - table-entry source that says a named entry/column is `added` or `amended`
   remains in `table_entry_target_unsupported` until a table compiler owns the
   row/cell and any referenced amount schedule. It is not a generic parser miss.
