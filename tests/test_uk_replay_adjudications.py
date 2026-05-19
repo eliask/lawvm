@@ -3568,6 +3568,235 @@ def test_executor_inserts_definition_child_and_appends_anchor_connector() -> Non
     assert adjudications == []
 
 
+def test_executor_deletes_source_carried_child_tail_from_collapsed_parent_text() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="21",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            text=(
+                                "For the purposes of subsection (3)(b) a person "
+                                "is qualified if that person is— and “EEA State” "
+                                "means a Contracting Party."
+                            ),
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text="eligible for appointment as an auditor, or",
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="b",
+                                    text="a member of a body of accountants;",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_carried_child_tail_repeal",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "21"), ("subsection", "5"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="TEXT_AFTER_CHILD_TAIL_paragraph_b", occurrence=0),
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "For the purposes of subsection (3)(b) a person is qualified if that person is—"
+    assert [child.label for child in subsection.children] == ["a", "b"]
+    assert [child.text for child in subsection.children] == [
+        "eligible for appointment as an auditor, or",
+        "a member of a body of accountants;",
+    ]
+    assert adjudications == []
+
+
+def test_executor_rejects_child_tail_delete_when_anchor_is_not_last_child() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="21",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            text="Opening words— and tail text.",
+                            children=(
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="first;"),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="b", text="second;"),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="c", text="third;"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_carried_child_tail_repeal_not_last",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "21"), ("subsection", "5"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="TEXT_AFTER_CHILD_TAIL_paragraph_b", occurrence=0),
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "Opening words— and tail text."
+    assert [finding.kind for finding in adjudications] == ["uk_replay_text_match_synthetic_selector_gap"]
+    assert adjudications[0].detail["blocking"] is True
+
+
+def test_executor_deletes_source_carried_multi_subunit_text_only_from_named_children() -> None:
+    adjudications: list[CompileAdjudication] = []
+    omitted = "(in a case where the incapacity of the granter is by reason of mental disorder)"
+    statute = IRStatute(
+        statute_id="asp/2000/4",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="22",
+                    text="",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=f"Notify the local authority and {omitted} the Commission.",
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            text=f"Notify the granter and {omitted} the Commission.",
+                        ),
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            text=f"Do not touch {omitted} here.",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_carried_multi_subunit_repeal",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "22"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(
+                    match_text=f"TEXT_IN_CHILDREN_subsection_1_2\x1f{omitted}",
+                    occurrence=0,
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    section = executor.statute.body.children[0]
+    assert [child.text for child in section.children] == [
+        "Notify the local authority and  the Commission.",
+        "Notify the granter and  the Commission.",
+        f"Do not touch {omitted} here.",
+    ]
+    assert adjudications == []
+
+
+def test_executor_rejects_multi_subunit_text_delete_when_named_child_missing() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/4",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="22",
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="mental disorder"),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_carried_multi_subunit_missing_child",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "22"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(
+                    match_text="TEXT_IN_CHILDREN_subsection_1_2\x1fmental disorder",
+                    occurrence=0,
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == "mental disorder"
+    assert [finding.kind for finding in adjudications] == ["uk_replay_text_match_synthetic_selector_gap"]
+    assert adjudications[0].detail["blocking"] is True
+
+
 def test_executor_occurrence_text_replacements_preserve_later_occurrences() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

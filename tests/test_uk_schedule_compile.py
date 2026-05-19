@@ -3388,6 +3388,213 @@ def test_compile_source_carried_definition_child_insert_from_parent_context() ->
     )
 
 
+def test_compile_source_carried_child_tail_repeal_from_exact_subsection_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-paragraph-4-a">
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>a in subsection (5), the words following paragraph (b) are repealed; and</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-997dbd5c31af47e5cf5c422b822fd85d",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2018-04-06",
+        affected_uri="/id/asp/2000/1",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 21(5)",
+        affecting_uri="/id/ssi/2013/177",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2013",
+        affecting_number="177",
+        affecting_provisions="Sch. para. 4(a)",
+        affecting_title="Test Amendment Regulations",
+        in_force_dates=[{"date": "2013-07-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "21"), ("subsection", "5"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_TAIL_paragraph_b"
+    assert ops[0].text_patch.replacement is None
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_child_tail_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_child_tail_repeal_text_patch",
+    ]
+    assert lowering_records[0]["blocking"] is False
+
+
+def test_compile_source_carried_child_tail_repeal_rejects_mismatched_subsection_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-paragraph-4-a">
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>a in subsection (6), the words following paragraph (b) are repealed; and</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-child-tail-mismatch",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2018-04-06",
+        affected_uri="/id/asp/2000/1",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 21(5)",
+        affecting_uri="/id/ssi/2013/177",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2013",
+        affecting_number="177",
+        affecting_provisions="Sch. para. 4(a)",
+        affecting_title="Test Amendment Regulations",
+        in_force_dates=[{"date": "2013-07-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_overlap_substitution_unlowered",
+    ]
+    assert lowering_records[0]["blocking"] is True
+
+
+def test_compile_source_carried_multi_subunit_repeal_from_exact_section_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="section-57-6">
+          <Pnumber>6</Pnumber>
+          <P2para>
+            <Text>6 In section 22 (notice of changes) of the 2000 Act, the words “(in a case where the incapacity of the granter is by reason of, or reasons which include, mental disorder)”, where they occur in subsections (1) and (2), are repealed.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-37702fb41563cbee8db9576ef07d96bc",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2017-04-24",
+        affected_uri="/id/asp/2000/4",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="4",
+        affected_provisions="s. 22",
+        affecting_uri="/id/asp/2007/10",
+        affecting_class="ScottishAct",
+        affecting_year="2007",
+        affecting_number="10",
+        affecting_provisions="s. 57(6)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2007-10-05", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "22"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == (
+        "TEXT_IN_CHILDREN_subsection_1_2\x1f"
+        "(in a case where the incapacity of the granter is by reason of, "
+        "or reasons which include, mental disorder)"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_multi_subunit_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_multi_subunit_repeal_text_patch",
+    ]
+    assert lowering_records[0]["blocking"] is False
+
+
+def test_compile_source_carried_multi_subunit_repeal_rejects_mismatched_section_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="section-57-6">
+          <Pnumber>6</Pnumber>
+          <P2para>
+            <Text>6 In section 23 of the 2000 Act, the words “mental disorder”, where they occur in subsections (1) and (2), are repealed.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-multi-subunit-mismatch",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2017-04-24",
+        affected_uri="/id/asp/2000/4",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="4",
+        affected_provisions="s. 22",
+        affecting_uri="/id/asp/2007/10",
+        affecting_class="ScottishAct",
+        affecting_year="2007",
+        affecting_number="10",
+        affecting_provisions="s. 57(6)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2007-10-05", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_overlap_substitution_unlowered",
+    ]
+    assert lowering_records[0]["blocking"] is True
+
+
 def test_compile_words_inserted_at_end_of_numbered_subparagraph_to_text_replace() -> None:
     extracted_el = ET.fromstring(
         f"""

@@ -1657,19 +1657,22 @@ Current block-substitution context invariant:
   Current witness: `asp/2000/5` affected `s. 73(1)` by `asp/2003/9`
   `Sch. 13 para. 13(a)(iii)`.
 - Source text such as `the words "X", where they occur in subsections (1) and
-  (2), are repealed` is classified as
-  `source_carried_multi_subunit_text_rewrite_unsupported` and
-  `uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate`
-  until the compiler can split the parent feed target into child-target text
-  patches. Replaying it as a section-wide deletion would violate the target
-  boundary invariant. Current witness: `asp/2000/4` affected `s. 22` by
+  (2), are repealed` lowers through
+  `uk_effect_source_carried_multi_subunit_repeal_text_patch` when the source
+  section number matches the feed target. Replay uses
+  `TEXT_IN_CHILDREN_subsection_<labels><US><quoted text>` and mutates only the
+  named direct child subsection text fields. It must not replay as a
+  section-wide deletion. Current witness: `asp/2000/4` affected `s. 22` by
   `asp/2007/10 s. 57(6)`.
-- Source text such as `the words following paragraph (b) are repealed` is
-  classified as `source_carried_child_tail_text_rewrite_unsupported` and
-  `uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate` until a
-  bounded child-tail selector is owned. It must not become deletion of the
-  parent body after an approximate text anchor. Current witness: `asp/2000/1`
-  affected `s. 21(5)` by `ssi/2013/177 Sch. para. 4(a)`.
+- Source text such as `in subsection (5), the words following paragraph (b)
+  are repealed` lowers through
+  `uk_effect_source_carried_child_tail_repeal_text_patch` when the feed target
+  names that exact subsection. Replay uses the synthetic selector
+  `TEXT_AFTER_CHILD_TAIL_paragraph_<label>` and may trim only collapsed parent
+  tail text when the named paragraph is unique and last among direct children;
+  it must not delete sibling provisions or pick a parent body by approximate
+  text anchoring. Current witness: `asp/2000/1` affected `s. 21(5)` by
+  `ssi/2013/177 Sch. para. 4(a)`.
 - `BlockAmendment` payload fragments with structured list payload such as
   `the Parliamentary corporation- a after ...; and b with ...` are also
   classified as `payload_fragment_without_action_formula` when the operative

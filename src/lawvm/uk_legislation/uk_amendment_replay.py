@@ -5527,6 +5527,22 @@ _SOURCE_DEFINITION_TERM_RE = re.compile(
     r"\bin\s+the\s+definition\s+of\s+[“\"'‘](?P<term>.*?)[”\"'’]",
     flags=re.I | re.S,
 )
+_SOURCE_CARRIED_CHILD_TAIL_REPEAL_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"in\s+subsection\s+\((?P<subsection>[0-9A-Za-z]+)\),?\s+"
+    r"the\s+words\s+following\s+paragraph\s+\((?P<label>[0-9A-Za-z]+)\)\s+"
+    r"are\s+repealed\s*;?\s*(?:and)?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
+_SOURCE_CARRIED_MULTI_SUBUNIT_REPEAL_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"in\s+section\s+(?P<section>[0-9A-Za-z]+)\b.*?,\s+"
+    r"the\s+words\s+[“\"'‘](?P<original>.*?)[”\"'’],?\s+"
+    r"where\s+they\s+occur\s+in\s+subsections?\s+"
+    r"(?P<labels>\([0-9A-Za-z]+\)(?:\s*(?:,|and)\s*\([0-9A-Za-z]+\))*)"
+    r",?\s+are\s+repealed\s*\.?\s*$",
+    flags=re.I | re.S,
+)
 
 
 def _source_definition_term_from_ancestors(ancestors: tuple[ET.Element, ...]) -> str:
@@ -5598,6 +5614,72 @@ def _fragment_substitution_source_carried_definition_child_insert(
         "source_parent_id": source_parent_id,
         "source_anchor_child_label": anchor_label,
         "rule_id": "uk_effect_source_carried_definition_child_insert_text_patch",
+    }
+
+
+def _fragment_substitution_source_carried_child_tail_repeal(
+    *,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Resolve explicit "words following paragraph (x)" tail repeals.
+
+    The source carries both the subsection and child anchor.  Lowering only
+    succeeds when the feed target already names that exact subsection; replay
+    then owns the source XML collapse separately by trimming only target text.
+    """
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return None
+    match = _SOURCE_CARRIED_CHILD_TAIL_REPEAL_RE.match(text)
+    if match is None:
+        return None
+    source_subsection = _clean_num(match.group("subsection"))
+    target_subsection = _clean_num(_addr_field(target, "subsection") or "")
+    if not source_subsection or source_subsection != target_subsection:
+        return None
+    anchor_label = _clean_num(match.group("label"))
+    if not anchor_label:
+        return None
+    return {
+        "original": f"TEXT_AFTER_CHILD_TAIL_paragraph_{anchor_label}",
+        "replacement": "",
+        "source_subsection_label": source_subsection,
+        "source_anchor_child_label": anchor_label,
+        "rule_id": "uk_effect_source_carried_child_tail_repeal_text_patch",
+    }
+
+
+def _fragment_substitution_source_carried_multi_subunit_repeal(
+    *,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Resolve explicit section-level rows that name child subsection text targets."""
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return None
+    match = _SOURCE_CARRIED_MULTI_SUBUNIT_REPEAL_RE.match(text)
+    if match is None:
+        return None
+    source_section = _clean_num(match.group("section"))
+    target_section = _clean_num(_addr_field(target, "section") or "")
+    if not source_section or source_section != target_section:
+        return None
+    labels = tuple(_clean_num(label) for label in re.findall(r"\(([0-9A-Za-z]+)\)", match.group("labels")))
+    labels = tuple(label for label in labels if label)
+    if len(labels) < 2:
+        return None
+    original = " ".join(match.group("original").split()).strip()
+    if not original:
+        return None
+    label_part = "_".join(labels)
+    return {
+        "original": f"TEXT_IN_CHILDREN_subsection_{label_part}{US}{original}",
+        "replacement": "",
+        "source_section_label": source_section,
+        "source_child_labels": ",".join(labels),
+        "rule_id": "uk_effect_source_carried_multi_subunit_repeal_text_patch",
     }
 
 
@@ -6767,6 +6849,24 @@ def compile_effect_to_ir_ops(
                     )
                     if source_carried_definition_child_insert is not None:
                         subs = [source_carried_definition_child_insert]
+                if not subs:
+                    source_carried_child_tail_repeal = (
+                        _fragment_substitution_source_carried_child_tail_repeal(
+                            extracted_text=extracted_text,
+                            target=target,
+                        )
+                    )
+                    if source_carried_child_tail_repeal is not None:
+                        subs = [source_carried_child_tail_repeal]
+                if not subs:
+                    source_carried_multi_subunit_repeal = (
+                        _fragment_substitution_source_carried_multi_subunit_repeal(
+                            extracted_text=extracted_text,
+                            target=target,
+                        )
+                    )
+                    if source_carried_multi_subunit_repeal is not None:
+                        subs = [source_carried_multi_subunit_repeal]
                 if subs:
                     if table_cell_selector is not None:
                         subs = [
@@ -6885,6 +6985,52 @@ def compile_effect_to_ir_ops(
                                 "text_match": op_text_match,
                                 "replacement": op_text_replacement,
                                 "occurrence": op_text_occurrence,
+                            },
+                        )
+                    if "uk_effect_source_carried_child_tail_repeal_text_patch" in _fragment_rule_ids(fragment_subs):
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id="uk_effect_source_carried_child_tail_repeal_text_patch",
+                            family="text_rewrite_lowering",
+                            reason_code="source_carried_child_tail_repeal_lowered",
+                            reason=(
+                                "UK source text explicitly repeals the words following "
+                                "a named paragraph inside the affected subsection; lowering "
+                                "preserves that as a bounded child-tail text selector instead "
+                                "of deleting from the whole parent."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "text_match": op_text_match,
+                                "source_anchor_child_label": str(primary.get("source_anchor_child_label") or ""),
+                                "source_subsection_label": str(primary.get("source_subsection_label") or ""),
+                            },
+                        )
+                    if "uk_effect_source_carried_multi_subunit_repeal_text_patch" in _fragment_rule_ids(fragment_subs):
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id="uk_effect_source_carried_multi_subunit_repeal_text_patch",
+                            family="text_rewrite_lowering",
+                            reason_code="source_carried_multi_subunit_repeal_lowered",
+                            reason=(
+                                "UK source text explicitly repeals quoted words where "
+                                "they occur in named child subsections; lowering preserves "
+                                "those child labels in a synthetic selector rather than "
+                                "deleting from the whole parent section."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "text_match": op_text_match,
+                                "source_child_labels": str(primary.get("source_child_labels") or ""),
+                                "source_section_label": str(primary.get("source_section_label") or ""),
                             },
                         )
                     if op_text_end_occurrence:
@@ -12125,6 +12271,87 @@ class UKReplayExecutor:
             if len(direct_child_matches) != 1:
                 return node, False
             rebuilt = dc_replace(node, text=replacement)
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_IN_CHILDREN_"):
+            child_match = re.fullmatch(
+                rf"TEXT_IN_CHILDREN_([A-Za-z]+)_([0-9A-Za-z_]+){re.escape(US)}(.+)",
+                match,
+                flags=re.S,
+            )
+            if child_match is None or replacement:
+                return node, False
+            child_kind = child_match.group(1)
+            child_labels = tuple(label for label in child_match.group(2).split("_") if label)
+            original = child_match.group(3).strip()
+            if not child_labels or not original:
+                return node, False
+            direct_matches: dict[str, tuple[int, UKMutableNode]] = {}
+            for index, child in enumerate(node.children):
+                kind_value = child.kind.value if isinstance(child.kind, IRNodeKind) else str(child.kind)
+                label_key = _clean_num(child.label or "")
+                if kind_value == child_kind and label_key in child_labels and label_key not in direct_matches:
+                    direct_matches[label_key] = (index, child)
+                elif kind_value == child_kind and label_key in child_labels:
+                    return node, False
+            if set(direct_matches) != set(child_labels):
+                return node, False
+
+            def _delete_from_child_text(text: str) -> tuple[str, bool]:
+                if original in text:
+                    return text.replace(original, ""), True
+                pattern = _text_patch_pattern(
+                    original,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                new_text, count = re.subn(pattern, "", text, flags=re.I | re.S)
+                return new_text, count > 0
+
+            new_children = list(node.children)
+            for label in child_labels:
+                index, child = direct_matches[label]
+                new_text, changed = _delete_from_child_text(child.text or "")
+                if not changed:
+                    return node, False
+                new_children[index] = dc_replace(child, text=new_text)
+            rebuilt = dc_replace(node, children=new_children)
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_AFTER_CHILD_TAIL_"):
+            child_match = re.fullmatch(
+                r"TEXT_AFTER_CHILD_TAIL_([A-Za-z]+)_([0-9A-Za-z]+)",
+                match,
+            )
+            if child_match is None or replacement:
+                return node, False
+            child_kind = child_match.group(1)
+            child_label = child_match.group(2)
+            direct_child_matches = [
+                (index, child)
+                for index, child in enumerate(node.children)
+                if (child.kind.value if isinstance(child.kind, IRNodeKind) else str(child.kind))
+                == child_kind
+                and _clean_num(child.label or "") == _clean_num(child_label)
+            ]
+            if len(direct_child_matches) != 1:
+                return node, False
+            child_index, _ = direct_child_matches[0]
+            if child_index != len(node.children) - 1:
+                return node, False
+            text = node.text or ""
+            if not text:
+                return node, False
+            separator_matches = list(re.finditer(r"[—–-]", text))
+            if not separator_matches:
+                return node, False
+            separator = separator_matches[-1]
+            tail = text[separator.end() :].strip()
+            if not tail or not re.match(r"(?:,?\s*)?(?:and|or)\b|[“\"'‘]", tail, flags=re.I):
+                return node, False
+            rebuilt = dc_replace(node, text=text[: separator.end()].rstrip())
             self._replace_node_in_statute(node, rebuilt)
             return rebuilt, True
 
