@@ -272,13 +272,15 @@ frontend cannot yet lower them safely:
   inserts still need a typed placement/compiler lane rather than a whole-body
   or synthetic text replacement.
 - cross-heading replacements lower only when the source gives an explicit
-  `heading before paragraph/section/article X substitute ...` shape. The
-  current owned lane is `uk_effect_crossheading_before_anchor_replacement_lowered`:
-  it targets `X/heading`, uses the named text rewrite rule
-  `uk_effect_crossheading_before_anchor_replacement_text_patch`, and replay may
-  mutate the crossheading parent only when `X` is the first structural child
-  under that parent. Other cross-heading replacements remain blocked by
-  `uk_effect_crossheading_replace_rejected`.
+  `heading before paragraph/section/article X substitute ...` whole-heading
+  shape, or a quoted text patch against the cross-heading before a named
+  paragraph/section/article. The owned lanes are
+  `uk_effect_crossheading_before_anchor_replacement_lowered` for whole-heading
+  replacement and `uk_effect_crossheading_before_anchor_text_patch_lowered` for
+  quoted text patches; both target `X/heading`, use named text rewrite rules,
+  and replay may mutate the crossheading parent only when `X` is the first
+  structural child under that parent. Other cross-heading replacements remain
+  blocked by `uk_effect_crossheading_replace_rejected`.
 - repeal schedules and table rows where the table columns identify enactment
   and extent of repeal
 - definition insertions where the source context supplies the anchor and the
@@ -1719,10 +1721,11 @@ Current block-substitution context invariant:
   `TEXT_FROM_X_TO_END` substitution rules. The replay selector remains a
   bounded text-span operation; it may not become a structural replacement or
   consume sibling provisions.
-- source text that targets `cross-heading` facets is classified as
-  `crossheading_target_unsupported` while UK lacks a safe facet replay lane for
-  those surfaces. These remain manual/future-compiler candidates, not section
-  body replacements.
+- source text that targets `cross-heading` facets lowers only through explicit
+  before-anchor whole-heading replacement or quoted text-patch lanes. Other
+  crossheading rows are classified as `crossheading_target_unsupported` while
+  UK lacks a safe facet replay lane for the claimed shape. These remain
+  manual/future-compiler candidates, not section body replacements.
 - alphabetic suffix labels such as `aa`, `ba`, or `ga` are part of the same
   local letter sequence as their base label. Replay insertion order must place
   `ga` after `g` and before later single-letter siblings such as `h` or `i`;
