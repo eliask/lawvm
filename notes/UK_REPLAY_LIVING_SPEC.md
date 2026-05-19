@@ -2960,6 +2960,18 @@ Current bench replay-regime invariant:
   locators and text previews, and lowers the operation with authority layer
   `AFFECTING_ACT_ENACTED_TEXT`. Fallback is same-provision only; enacted text
   elsewhere in the affecting act is not enough.
+- Some UK current affecting-source XML omits an extractable same-provision node
+  even though official enacted XML still contains it. The frontend may select
+  the enacted same-provision source lane when current extraction is missing and
+  enacted extraction is substantive. This emits
+  `uk_affecting_act_missing_current_enacted_source_selected`; it is source
+  acquisition recovery only, not permission to invent lowering.
+- UK effects metadata can name a schedule Part context even when descendant
+  paragraph IDs omit the Part segment. The extractor may normalize
+  `Sch. N Pt. P para. X` to `Sch. N para. X` only when the extracted paragraph
+  has a matching Part ancestor in the source XML. This emits
+  `uk_affecting_act_nonaddressable_schedule_part_context_ignored`; if the
+  ancestor is absent or different, extraction stays unresolved.
 
 ## UK Metadata Renumbering
 

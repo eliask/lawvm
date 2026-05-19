@@ -530,7 +530,7 @@ def main(args: "argparse.Namespace") -> None:
     )
     from lawvm.uk_legislation.uk_amendment_replay import (
         _build_affecting_source_context,
-        _extract_from_affecting_source_context,
+        _extract_from_affecting_source_context_with_observations,
         _select_enacted_source_for_current_shell,
         UKReplayExecutor,
         append_source_pathology_filter_lowering_rejections,
@@ -638,10 +638,11 @@ def main(args: "argparse.Namespace") -> None:
             elif parse_error is not None:
                 source_acquisition_rejections.append(affecting_act_xml_parse_rejection(effect, parse_error))
         extracted = None
+        source_extraction_observations: tuple[dict[str, Any], ...] = ()
         if source_context.xml_bytes and source_context.root is not None:
-            extracted = _extract_from_affecting_source_context(
+            extracted, source_extraction_observations = _extract_from_affecting_source_context_with_observations(
                 source_context,
-                effect.affecting_provisions,
+                effect,
             )
         source_context, extracted, source_lane_observations = _select_enacted_source_for_current_shell(
             effect=effect,
@@ -650,6 +651,7 @@ def main(args: "argparse.Namespace") -> None:
             current_el=extracted,
             enacted_context_cache={},
         )
+        source_acquisition_rejections.extend(source_extraction_observations)
         source_acquisition_rejections.extend(source_lane_observations)
         affecting_root = source_context.root
 

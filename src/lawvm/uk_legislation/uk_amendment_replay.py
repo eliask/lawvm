@@ -68,6 +68,8 @@ from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.uk_legislation.source_state import (
     uk_affecting_act_current_shell_enacted_source_selected,
+    uk_affecting_act_missing_current_enacted_source_selected,
+    uk_affecting_act_nonaddressable_schedule_part_context_ignored,
     uk_affecting_act_xml_missing_rejection,
     uk_affecting_act_xml_parse_rejection,
     uk_affecting_act_xml_too_small_rejection,
@@ -2617,7 +2619,10 @@ def get_affecting_act_enacted_xml_from_archive(
 ) -> Optional[bytes]:
     """Fetch enacted affecting act XML bytes from archive."""
     url = f"{_LEG_BASE}/{act_id}/enacted/data.xml"
-    return archive.get(url)
+    archive_get = getattr(archive, "get", None)
+    if not callable(archive_get):
+        return None
+    return archive_get(url)
 
 
 def parse_effects_from_metadata(
@@ -2973,6 +2978,80 @@ def _extract_from_affecting_source_context(
     )
 
 
+def _schedule_part_context_normalized_ref(provision_ref: str) -> tuple[str, str] | None:
+    match = re.search(
+        r"\b(Sch(?:edule)?\.?\s+\S+)\s+Pt\.?\s+([0-9A-Za-zIVXLCivxlc]+)\s+(.+)",
+        provision_ref,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    suffix = match.group(3).strip()
+    if not re.search(r"\bpara(?:graph)?\.?\b", suffix, flags=re.I):
+        return None
+    return match.group(2), f"{match.group(1)} {suffix}"
+
+
+def _has_matching_part_ancestor(
+    context: UKAffectingSourceContext,
+    el: ET.Element,
+    requested_part_label: str,
+) -> bool:
+    if context.parent_map is None:
+        return False
+    parent = context.parent_map.get(el)
+    while parent is not None:
+        tag = _tag(parent).lower()
+        if tag == "schedule":
+            return False
+        if tag == "part":
+            part_id = str(parent.get("id") or parent.get("Id") or "")
+            if part_id:
+                part_tokens = _get_id_sequence(part_id)
+                requested_tokens = _sequence_tokens((requested_part_label,))
+                for idx, token in enumerate(part_tokens[:-1]):
+                    if token == "part" and part_tokens[idx + 1 : idx + 2] == requested_tokens:
+                        return True
+            return _match_node(parent, "part", requested_part_label)
+        parent = context.parent_map.get(parent)
+    return False
+
+
+def _extract_from_affecting_source_context_with_observations(
+    context: UKAffectingSourceContext,
+    effect: UKEffectRecord,
+) -> tuple[Optional[ET.Element], tuple[dict[str, Any], ...]]:
+    provision_ref = str(effect.affecting_provisions or "")
+    el = _extract_from_affecting_source_context(context, provision_ref)
+    if el is not None:
+        return el, ()
+
+    normalized = _schedule_part_context_normalized_ref(provision_ref)
+    if normalized is None:
+        return None, ()
+
+    requested_part_label, normalized_ref = normalized
+    normalized_el = _extract_from_affecting_source_context(context, normalized_ref)
+    if normalized_el is None or not _has_matching_part_ancestor(
+        context,
+        normalized_el,
+        requested_part_label,
+    ):
+        return None, ()
+
+    observation = uk_affecting_act_nonaddressable_schedule_part_context_ignored(
+        effect_id=str(effect.effect_id or ""),
+        affecting_act_id=str(effect.affecting_act_id or ""),
+        affecting_provisions=provision_ref,
+        locator=context.locator,
+        authority_layer=context.authority_layer,
+        requested_part_label=requested_part_label,
+        normalized_affecting_provisions=normalized_ref,
+        extracted_element_id=str(normalized_el.get("id") or normalized_el.get("Id") or ""),
+    )
+    return normalized_el, (observation,)
+
+
 def _extracted_element_text(el: Optional[ET.Element]) -> str:
     return _text_content(el) if el is not None else ""
 
@@ -3002,7 +3081,14 @@ def _select_enacted_source_for_current_shell(
     current_el: Optional[ET.Element],
     enacted_context_cache: dict[str, UKAffectingSourceContext],
 ) -> tuple[UKAffectingSourceContext, Optional[ET.Element], tuple[dict[str, Any], ...]]:
-    if current_el is None or not _looks_like_non_substantive_shell_text(_extracted_element_text(current_el)):
+    current_missing = current_el is None
+    current_shell = (
+        current_el is not None
+        and _looks_like_non_substantive_shell_text(_extracted_element_text(current_el))
+    )
+    if not current_missing and not current_shell:
+        return current_context, current_el, ()
+    if current_missing and current_context.root is None:
         return current_context, current_el, ()
 
     act_id = str(effect.affecting_act_id or "")
@@ -3024,18 +3110,30 @@ def _select_enacted_source_for_current_shell(
     if enacted_el is None or _looks_like_non_substantive_shell_text(enacted_text):
         return current_context, current_el, ()
 
-    current_text = _extracted_element_text(current_el)
-    observation = uk_affecting_act_current_shell_enacted_source_selected(
-        effect_id=str(effect.effect_id or ""),
-        affecting_act_id=act_id,
-        affecting_provisions=str(effect.affecting_provisions or ""),
-        current_locator=current_context.locator,
-        enacted_locator=enacted_context.locator,
-        current_source_size=current_context.source_size,
-        enacted_source_size=enacted_context.source_size,
-        current_text_preview=_preview_source_text(current_text),
-        enacted_text_preview=_preview_source_text(enacted_text),
-    )
+    if current_missing:
+        observation = uk_affecting_act_missing_current_enacted_source_selected(
+            effect_id=str(effect.effect_id or ""),
+            affecting_act_id=act_id,
+            affecting_provisions=str(effect.affecting_provisions or ""),
+            current_locator=current_context.locator,
+            enacted_locator=enacted_context.locator,
+            current_source_size=current_context.source_size,
+            enacted_source_size=enacted_context.source_size,
+            enacted_text_preview=_preview_source_text(enacted_text),
+        )
+    else:
+        current_text = _extracted_element_text(current_el)
+        observation = uk_affecting_act_current_shell_enacted_source_selected(
+            effect_id=str(effect.effect_id or ""),
+            affecting_act_id=act_id,
+            affecting_provisions=str(effect.affecting_provisions or ""),
+            current_locator=current_context.locator,
+            enacted_locator=enacted_context.locator,
+            current_source_size=current_context.source_size,
+            enacted_source_size=enacted_context.source_size,
+            current_text_preview=_preview_source_text(current_text),
+            enacted_text_preview=_preview_source_text(enacted_text),
+        )
     return enacted_context, enacted_el, (observation,)
 
 
@@ -8761,7 +8859,10 @@ class UKReplayPipeline:
                             )
                         )
                 extraction_cache[e.affecting_act_id] = source_context
-            el = _extract_from_affecting_source_context(source_context, e.affecting_provisions)
+            el, source_extraction_observations = _extract_from_affecting_source_context_with_observations(
+                source_context,
+                e,
+            )
             source_context, el, source_lane_observations = _select_enacted_source_for_current_shell(
                 effect=e,
                 archive=archive,
@@ -8770,6 +8871,7 @@ class UKReplayPipeline:
                 enacted_context_cache=enacted_extraction_cache,
             )
             if effect_diagnostics_out is not None:
+                effect_diagnostics_out.extend(source_extraction_observations)
                 effect_diagnostics_out.extend(source_lane_observations)
             xml_bytes = source_context.xml_bytes
             root = source_context.root
