@@ -1655,6 +1655,24 @@ def test_classify_uk_effect_source_carried_child_tail_text_rewrite() -> None:
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_source_carried_child_tail_substitution() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "a in subsection (1), for the words after paragraph (b) substitute "
+            "for a term exceeding the applicable limit in respect of any one offence;"
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words substituted",
+        is_structural=True,
+    )
+
+    assert pathology == "source_carried_child_tail_text_rewrite_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_amendment_inserted_text_target() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P3",
@@ -1710,6 +1728,47 @@ def test_classify_uk_effect_table_entry_target_without_column() -> None:
 
     assert pathology == "table_entry_target_unsupported"
     assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_table_target_deictic_entry_insert() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "after that entry insert- electronic whereabouts monitoring "
+            "requirement Part 17 section 185(5)."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["section:174/subsection:1/table"],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "table_entry_target_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_manual_frontier_overlap_table_entry_candidate() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P3",
+        extracted_text="after that entry insert- electronic whereabouts monitoring requirement.",
+        lowering_rejections=[
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+                "original_affected_provisions": "s. 174(1) Table",
+            }
+        ],
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
 
 
 def test_classify_uk_effect_table_entry_added_or_amended_target() -> None:
@@ -1859,6 +1918,25 @@ def test_classify_uk_effect_at_end_child_dash_block_insert_as_structural_sibling
         payload_kinds=[],
         payload_texts=[],
         target_paths=["section:82/subsection:1"],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "structural_sibling_insert_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_before_child_block_insert_as_structural_sibling() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "b in sub-paragraph (3)(a), in the inserted paragraph (d), "
+            "before sub-paragraph (i) insert- ai the community order does not qualify."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["schedule:22/paragraph:21/subparagraph:3/item:a"],
         effect_type="words inserted",
         is_structural=True,
     )

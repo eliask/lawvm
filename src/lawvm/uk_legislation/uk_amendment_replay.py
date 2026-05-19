@@ -4918,15 +4918,36 @@ def _uk_broad_table_entry_instruction(
     if not text:
         return None
     target_surface = f"{target_ref} {target}".lower()
-    if "table" in target_surface:
-        return None
+    target_names_table = "table" in target_surface
     norm = text.lower()
     if "corresponding entry" in norm:
         return None
-    if not re.search(r"\b(?:table|column|columns)\b", norm):
+    if not target_names_table and not re.search(r"\b(?:table|column|columns)\b", norm):
         return None
-    has_entry_text = re.search(r"\b(?:entry|entries)\b", norm) is not None
-    has_column_instruction = re.search(r"\bin\s+column\s+\d+\b|\bin\s+the\s+\w+\s+column\b", norm) is not None
+    has_entry_text = (
+        re.search(r"\b(?:entry|entries)\b", norm) is not None
+        or (target_names_table and re.search(r"\bafter\s+(?:that\s+)?entry\s+[0-9A-Za-z]+\b", norm) is not None)
+        or (target_names_table and re.search(r"\bafter\s+that\s+entry\b", norm) is not None)
+        or (
+            target_names_table
+            and re.search(r"\bafter\s+the\s+entry\s+in\s+the\s+table\s+relating\s+to\b", norm) is not None
+        )
+        or (
+            target_names_table
+            and re.search(r"\bat\s+the\s+appropriate\s+place\b", norm) is not None
+        )
+    )
+    has_column_instruction = (
+        re.search(r"\bin\s+column\s+\d+\b|\bin\s+the\s+\w+\s+column\b", norm) is not None
+        or (
+            target_names_table
+            and re.search(
+                r"\bbetween\s+the\s+\w+\s+and\s+\w+\s+columns?\b",
+                norm,
+            )
+            is not None
+        )
+    )
     if not has_entry_text and not has_column_instruction:
         return None
     if not re.search(
@@ -4934,7 +4955,17 @@ def _uk_broad_table_entry_instruction(
         norm,
     ):
         return None
-    if re.search(r"\b(?:in|after|before)\s+(?:the\s+)?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+entry\b", norm):
+    if re.search(r"\bafter\s+that\s+entry\b", norm):
+        entry_shape = "deictic_table_entry"
+    elif re.search(r"\b(?:after|before)\s+entry\s+[0-9A-Za-z]+\b", norm):
+        entry_shape = "numbered_entry"
+    elif re.search(r"\bafter\s+the\s+entry\s+in\s+the\s+table\s+relating\s+to\b", norm):
+        entry_shape = "relating_entry"
+    elif target_names_table and re.search(r"\bat\s+the\s+appropriate\s+place\b", norm):
+        entry_shape = "appropriate_place_table_entry"
+    elif re.search(r"\bbetween\s+the\s+\w+\s+and\s+\w+\s+columns?\b", norm):
+        entry_shape = "between_columns"
+    elif re.search(r"\b(?:in|after|before)\s+(?:the\s+)?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+entry\b", norm):
         entry_shape = "ordinal_entry"
     elif re.search(r"\bentry\s+number\s+\d+\b", norm):
         entry_shape = "numbered_entry"

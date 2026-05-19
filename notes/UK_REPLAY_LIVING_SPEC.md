@@ -1569,6 +1569,10 @@ Current block-substitution context invariant:
   punctuation-only mutation separately. They must not fall through as generic
   parser gaps or become text appends to the enclosing subsection. Current
   witness: `asp/2001/2` affected `s. 82(1)` by `ssi/2024/161 art. 6(2)(b)-(c)`.
+- `before sub-paragraph (i) insert- <new sibling block>` inside an inserted or
+  nested paragraph is also a structural-sibling frontier. It is classified as
+  `structural_sibling_insert_unsupported` rather than a parser miss until a
+  compiler can own the parent context, sibling anchor, and inserted payload.
 - definition-scoped all-occurrence insertions such as `in the definition of
   "X" after "Y", in both places where it appears, insert "Z"` lower to
   `TEXT_IN_DEFINITION_X/AFTER_EACH/Y` using
@@ -1712,6 +1716,15 @@ Current block-substitution context invariant:
 - table-entry source that says a named entry/column is `added` or `amended`
   remains in `table_entry_target_unsupported` until a table compiler owns the
   row/cell and any referenced amount schedule. It is not a generic parser miss.
+- Direct table targets whose source says `after that entry insert- ...`,
+  `after entry 6A insert- ...`, `after the entry in the table relating to ...`,
+  `at the appropriate place insert- ...` inside a table, or `between the second
+  and third columns, insert- ...` are the same table-entry/table-column
+  frontier. Lowering emits
+  blocking `uk_effect_table_entry_instruction_rejected` with an entry-shape
+  witness instead of leaving these rows as generic overlap-substitution parser
+  failures. This is only diagnostic ownership; replay still requires a typed
+  table row/cell model before mutating legal text.
 - source text shaped as `shall have effect as if ...` is classified as
   `as_if_application_modification_unsupported` and manual frontier
   `uk_manual_frontier_as_if_application_modification_out_of_scope`. That family
@@ -1742,6 +1755,10 @@ Current block-substitution context invariant:
   it must not delete sibling provisions or pick a parent body by approximate
   text anchoring. Current witness: `asp/2000/1` affected `s. 21(5)` by
   `ssi/2013/177 Sch. para. 4(a)`.
+- The related form `for the words after paragraph (b) substitute "..."` is
+  classified as the same child-tail rewrite frontier, but remains unsupported
+  until replay can replace, not just delete, the collapsed parent tail with a
+  bounded selector. It must not be treated as a whole-subsection text patch.
 - `BlockAmendment` payload fragments with structured list payload such as
   `the Parliamentary corporation- a after ...; and b with ...` are also
   classified as `payload_fragment_without_action_formula` when the operative

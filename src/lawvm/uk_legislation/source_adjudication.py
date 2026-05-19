@@ -635,6 +635,35 @@ def _looks_like_schedule_list_entry_instruction(text: str) -> bool:
     return bool(re.search(r"\b(?:insert|insertion|substitute|omit|repeal)\b", norm))
 
 
+def _looks_like_table_entry_instruction(text: str, *, target_paths: Iterable[str] = ()) -> bool:
+    norm = _normalize_effect_text(text)
+    targets_norm = " ".join(str(path or "").lower() for path in target_paths)
+    target_names_table = re.search(r"(?:^|[:/ -])table\b", targets_norm) is not None
+    if "corresponding entry" in norm:
+        return False
+    has_entry_text = (
+        re.search(r"\b(?:entry|entries)\b", norm) is not None
+        or (target_names_table and re.search(r"\bafter\s+(?:that\s+)?entry\s+[0-9A-Za-z]+\b", norm) is not None)
+        or (target_names_table and re.search(r"\bafter\s+that\s+entry\b", norm) is not None)
+    )
+    has_column_instruction = (
+        re.search(r"\b(?:table|column|columns)\b", norm) is not None
+        or target_names_table
+    )
+    if not has_entry_text and not has_column_instruction:
+        return False
+    if not re.search(
+        r"\b(?:insert|inserted|substitute|substituted|omit|omitted|repeal|repealed|amend|amended|add|added)\b",
+        norm,
+    ):
+        return False
+    return bool(
+        re.search(r"\b(?:table|column|columns)\b", norm)
+        or (target_names_table and re.search(r"\bafter\s+(?:that\s+)?entry\b", norm))
+        or (target_names_table and re.search(r"\bbetween\s+the\s+\w+\s+and\s+\w+\s+columns?\b", norm))
+    )
+
+
 def _looks_like_appropriate_place_insert_instruction(text: str) -> bool:
     norm = _normalize_effect_text(text)
     return bool(
@@ -674,6 +703,10 @@ def _looks_like_structural_sibling_insert_instruction(text: str) -> bool:
         )
         or re.search(
             r"\bat\s+the\s+end\s+of\s+(?:paragraph|sub-?paragraph|subsection)\s*\([0-9A-Za-z]+\)\s*,?\s+insert\s*[—-]",
+            norm,
+        )
+        or re.search(
+            r"\bbefore\s+(?:paragraph|sub-?paragraph|subsection)\s*\([0-9A-Za-z]+\)\s+insert(?:\b|\s*[—-])",
             norm,
         )
     )
@@ -791,11 +824,7 @@ def classify_uk_effect_source_pathology(
             return "heading_facet_target_unsupported"
         if re.search(r"\bfor (?:the )?inserted text\b", norm_text):
             return "amendment_text_target_unsupported"
-        if (
-            re.search(r"\b(?:entry|entries)\b", norm_text)
-            and re.search(r"\b(?:table|column)\b", norm_text)
-            and re.search(r"\b(?:insert|substitute|omit|repeal|added|amended)\b", norm_text)
-        ):
+        if _looks_like_table_entry_instruction(norm_text, target_paths=targets):
             return "table_entry_target_unsupported"
         if _looks_like_schedule_list_entry_instruction(norm_text):
             return "schedule_list_entry_target_unsupported"
@@ -839,6 +868,9 @@ def classify_uk_effect_source_pathology(
         if re.search(
             r"\b(?:word|words)\s+following\s+(?:paragraph|sub-paragraph|subsection)\s+\([^)]+\)\s+"
             r"(?:is|are)\s+(?:omitted|repealed)",
+            norm_text,
+        ) or re.search(
+            r"\bfor\s+the\s+words\s+after\s+(?:paragraph|sub-paragraph|subsection)\s+\([^)]+\)\s+substitute\b",
             norm_text,
         ):
             return "source_carried_child_tail_text_rewrite_unsupported"
@@ -1120,6 +1152,27 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_crossheading_candidate",
             "reason": "The source targets a cross-heading surface that needs an explicit crossheading/facet claim.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and any(
+            "table" in str(rejection.get("original_affected_provisions") or "").lower()
+            or "table" in str(rejection.get("affected_provisions") or "").lower()
+            for rejection in lowering_rows
+        )
+        and _looks_like_table_entry_instruction(
+            extracted_text_norm,
+            target_paths=(
+                str(rejection.get("original_affected_provisions") or rejection.get("affected_provisions") or "")
+                for rejection in lowering_rows
+            ),
+        )
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_table_entry_candidate",
+            "reason": "The source targets a table entry/column surface; a claim or future table compiler must identify the row and cell rather than mutating host body text.",
         }
 
     if (
