@@ -9850,6 +9850,51 @@ def test_compile_heading_facet_word_substitution_targets_heading_special() -> No
     assert any(record["rule_id"] == "uk_effect_heading_facet_word_patch_lowered" for record in lowering_records)
 
 
+def test_compile_heading_facet_becomes_lowers_to_full_heading_replacement() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>f the section heading becomes “ “ Special provision for the
+          Scottish Crime and Drug Enforcement Agency ” .</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_heading_facet_becomes",
+        effect_type="substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2015-01-14",
+        affected_uri="/id/asp/2000/11/section/9/heading",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="11",
+        affected_provisions="s. 9 heading",
+        affecting_uri="/id/asp/2006/10",
+        affecting_class="ScottishAct",
+        affecting_year="2006",
+        affecting_number="10",
+        affecting_provisions="sch. 6 para. 9(2)(f)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2007-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(path=(("section", "9"),), special=FacetKind.HEADING)
+    assert ops[0].text_patch == _replace_patch(
+        "TEXT_ALL",
+        "Special provision for the Scottish Crime and Drug Enforcement Agency",
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_heading_facet_full_replacement_lowered"
+        for record in lowering_records
+    )
+
+
 def test_compile_title_facet_word_substitution_does_not_create_subsection_title_target() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -10109,6 +10154,44 @@ def test_replay_heading_facet_word_substitution_mutates_unique_p1group_heading_o
     assert crossheading.text == "Parliamentary sovereignty"
     assert group.text == "Parliamentary sovereignty and devolution"
     assert section.children[0].text == "Body text must not be searched for heading replacements."
+
+
+def test_replay_heading_facet_full_replacement_mutates_heading_only() -> None:
+    op = LegalOperation(
+        op_id="uk_test_heading_facet_full_replacement_apply",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "9"),), special=FacetKind.HEADING),
+        text_patch=_replace_patch(
+            "TEXT_ALL",
+            "Special provision for the Scottish Crime and Drug Enforcement Agency",
+        ),
+    )
+    base = IRStatute(
+        statute_id="asp/2000/11",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="9",
+                    text="This body text must survive.",
+                    children=(
+                        IRNode(kind=IRNodeKind.HEADING, label=None, text="Existing section heading"),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+
+    section = replayed.body.children[0]
+    assert section.text == "This body text must survive."
+    assert section.children[0].text == "Special provision for the Scottish Crime and Drug Enforcement Agency"
 
 
 def test_replay_heading_facet_append_mutates_unique_p1group_heading_only() -> None:

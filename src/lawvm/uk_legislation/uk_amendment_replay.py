@@ -332,9 +332,36 @@ def _heading_facet_after_anchor_insert_fragment(extracted_text: Optional[str]) -
     }
 
 
+def _heading_facet_full_replacement_fragment(extracted_text: Optional[str]) -> Optional[dict[str, Any]]:
+    """Return an explicit full heading/title/sidenote replacement fragment."""
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return None
+    match = re.search(
+        r"\b(?:the\s+)?(?:section\s+)?(?:heading|title|sidenote)\s+becomes\s+(?P<replacement>.+)$",
+        text,
+        flags=re.I | re.S,
+    )
+    if match is None:
+        return None
+    replacement = match.group("replacement").strip()
+    replacement = replacement.strip(" “”\"'‘’")
+    replacement = re.sub(r"^(?:\.\s*)+", "", replacement).strip(" “”\"'‘’")
+    replacement = re.sub(r"(?:\s*\.)+$", "", replacement).strip(" “”\"'‘’")
+    if not replacement:
+        return None
+    return {
+        "original": "TEXT_ALL",
+        "replacement": replacement,
+        "rule_id": "uk_effect_heading_facet_full_replacement_text_patch",
+    }
+
+
 def _is_heading_facet_word_patch_supported(effect_type: str, extracted_text: Optional[str] = None) -> bool:
     """Return whether a UK heading-facet effect can carry an explicit text patch."""
     normalized = " ".join((effect_type or "").lower().split())
+    if normalized in {"substituted", "replaced"}:
+        return _heading_facet_full_replacement_fragment(extracted_text) is not None
     if normalized in {
         "words substituted",
         "word substituted",
@@ -6507,6 +6534,7 @@ def compile_effect_to_ir_ops(
             target = LegalAddress(path=target.path, special=FacetKind.HEADING)
             heading_append_fragment = _heading_facet_append_fragment(extracted_text)
             heading_after_anchor_insert_fragment = _heading_facet_after_anchor_insert_fragment(extracted_text)
+            heading_full_replacement_fragment = _heading_facet_full_replacement_fragment(extracted_text)
             if heading_append_fragment is not None:
                 heading_observation_rule = "uk_effect_heading_facet_append_lowered"
                 heading_reason_code = "explicit_heading_facet_append"
@@ -6521,6 +6549,13 @@ def compile_effect_to_ir_ops(
                     "UK heading/title/sidenote target lowered as a facet text "
                     "insertion after an explicit heading anchor; replay must "
                     "mutate only the heading carrier."
+                )
+            elif heading_full_replacement_fragment is not None:
+                heading_observation_rule = "uk_effect_heading_facet_full_replacement_lowered"
+                heading_reason_code = "explicit_heading_facet_full_replacement"
+                heading_reason = (
+                    "UK heading/title/sidenote target lowered as a full facet "
+                    "replacement; replay must mutate only the heading carrier."
                 )
             else:
                 heading_observation_rule = "uk_effect_heading_facet_word_patch_lowered"
@@ -6906,7 +6941,13 @@ def compile_effect_to_ir_ops(
                 and not is_word_level
                 and source_structural_payload_matches_target
             )
-            if not treat_as_source_structural_replace and not is_whole_node_replacement(extracted_text, effect.effect_type):
+            heading_full_replacement_precheck = (
+                _heading_facet_full_replacement_fragment(extracted_text) if heading_facet_target else None
+            )
+            if not treat_as_source_structural_replace and (
+                heading_full_replacement_precheck is not None
+                or not is_whole_node_replacement(extracted_text, effect.effect_type)
+            ):
                 table_substitution = _uk_table_driven_corresponding_entry_word_substitution(
                     effect=effect,
                     extracted_text=extracted_text,
@@ -6971,11 +7012,16 @@ def compile_effect_to_ir_ops(
                 heading_after_anchor_insert = (
                     _heading_facet_after_anchor_insert_fragment(extracted_text) if heading_facet_target else None
                 )
+                heading_full_replacement = (
+                    _heading_facet_full_replacement_fragment(extracted_text) if heading_facet_target else None
+                )
                 subs = (
                     fragment_subs
                     if table_substitution.recognized
                     else [heading_after_anchor_insert]
                     if heading_after_anchor_insert is not None
+                    else [heading_full_replacement]
+                    if heading_full_replacement is not None
                     else parse_fragment_substitution(extracted_text)
                 )
                 if not subs:

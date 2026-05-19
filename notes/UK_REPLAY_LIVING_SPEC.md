@@ -1690,7 +1690,11 @@ Current block-substitution context invariant:
 - source text that targets `heading`, `title`, or `sidenote` facets lowers
   when it is an explicit word substitution/omission with a concrete old text
   selector, an explicit `at the end insert ...` append, or an explicit
-  `after "X" insert "Y"` insertion against a quoted heading anchor. Replay then
+  `after "X" insert "Y"` insertion against a quoted heading anchor. Explicit
+  full-facet forms such as `the section heading becomes "X"` lower as
+  `uk_effect_heading_facet_full_replacement_lowered` with a `TEXT_ALL` selector
+  only when the affected target itself is a heading/title/sidenote facet; this
+  is not a fallback for ordinary section replacement. Replay then
   mutates only the heading carrier: direct heading text on title-bearing nodes, an
   explicit `heading` child under the target section, a unique `P1group`
   heading that wraps the target section, or a subordinate source `P2group` /
@@ -2829,16 +2833,19 @@ Current bench replay-regime invariant:
   - lowering emits blocking `uk_effect_range_to_container_substitution_rejected`
     and does not replay the unsafe container replacement
   - manual-frontier classification emits
-    `uk_manual_frontier_range_to_container_candidate`
+  `uk_manual_frontier_range_to_container_candidate`
   - a future replay implementation must own the replaced section range, the new
     container payload, and lineage/migration evidence before mutating the tree
   - current witness: `asp/2001/2`, affected by `asp/2019/17 s. 35(2)` and
     `s. 38(2)`
 - Heading/title/sidenote suffixes are target facets, not child labels. The
-  supported heading-facet word-patch rule records
-  `uk_effect_heading_facet_word_patch_lowered` and emits a heading facet target
-  such as `section:6/heading`, never `section:6/subsection:title/heading`.
-  Witness: `asp/2000/6`, affected by `asp/2016/8 s. 3(3)`.
+  supported heading-facet rules record
+  `uk_effect_heading_facet_word_patch_lowered` or
+  `uk_effect_heading_facet_full_replacement_lowered` and emit a heading facet
+  target such as `section:6/heading`, never
+  `section:6/subsection:title/heading`. Witnesses: `asp/2000/6`, affected by
+  `asp/2016/8 s. 3(3)`, and `asp/2000/11`, affected by `asp/2006/10 Sch. 6
+  para. 9(2)(f)`.
 - When a heading-facet target resolves to a real heading carrier but the quoted
   source preimage is absent from that heading text, replay emits
   `uk_replay_heading_text_preimage_gap` and leaves the heading unchanged. This
