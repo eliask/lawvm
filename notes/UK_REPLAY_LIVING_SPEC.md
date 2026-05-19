@@ -1787,6 +1787,16 @@ Current block-substitution context invariant:
   selector-less facet edits remain `heading_facet_target_unsupported` /
   `uk_manual_frontier_heading_facet_candidate` until LawVM has a typed
   placement compiler for them.
+- Mixed targets of the form `s. N(X) and heading` may lower the structural
+  insert under `uk_effect_mixed_heading_structural_insert_target_normalized`
+  when the source carries an explicit inserted structural payload for `X`.
+  The heading suffix remains visible as unresolved evidence
+  (`heading_facet_status=unresolved`) and is not used as a body target. Compound
+  metadata such as `s. 61(2A)(2B) and heading` is normalized only if the source
+  payload proves sibling expansion; otherwise the row stays blocked as a heading
+  facet candidate rather than synthesizing a nested `2A/2B` target. Witnesses:
+  `ukpga/2020/17`, affected by `ukpga/2022/32 s. 159(2)` and
+  `ukpga/2022/32 Sch. 15 para. 3`.
 - source text that says `for "X", wherever occurring, substitute "Y"` lowers
   under `uk_effect_wherever_occurring_substitution_text_patch`. This is a
   deterministic text-patch family, not manual compilation, because the source
@@ -2922,7 +2932,9 @@ Current bench replay-regime invariant:
   target such as `section:6/heading`, never
   `section:6/subsection:title/heading`. Witnesses: `asp/2000/6`, affected by
   `asp/2016/8 s. 3(3)`, and `asp/2000/11`, affected by `asp/2006/10 Sch. 6
-  para. 9(2)(f)`.
+  para. 9(2)(f)`. Mixed structural inserts such as `s. 207(3A) and heading`
+  are a separate target-normalization family; they lower only the source-owned
+  structural child and keep the heading facet unresolved.
 - When a heading-facet target resolves to a real heading carrier but the quoted
   source preimage is absent from that heading text, replay emits
   `uk_replay_heading_text_preimage_gap` and leaves the heading unchanged. This
