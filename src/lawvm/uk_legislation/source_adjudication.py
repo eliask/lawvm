@@ -888,6 +888,24 @@ def is_core_uk_effect_source_candidate(pathology_class: str) -> bool:
     return pathology_class not in UK_EFFECT_SOURCE_PATHOLOGY_CLASSES
 
 
+def _looks_like_source_carried_structured_text_patch_payload(text: str) -> bool:
+    """Return True for payload-only fragments that visibly carry child structure.
+
+    The parent source instruction may supply the quoted anchor, but the payload
+    itself already proves that lowering as a flat text patch would lose
+    structure.  This is only a manual-frontier classifier, not authorization to
+    replay the fragment.
+    """
+    norm = " ".join(str(text or "").lower().split())
+    if not norm or re.search(r"\bthen\b", norm):
+        return False
+    return bool(
+        re.search(r"[—-]\s*(?:\(?[a-z0-9]+\)?|[ivxlcdm]+)\s+\w", norm)
+        or re.match(r"^(?:[ivxlcdm]+|[a-z])\s+where\b", norm)
+        or re.match(r"^;\s*(?:or|and)\s+(?:\(?[a-z0-9]+\)?\s+)", norm)
+    )
+
+
 def classify_uk_manual_compile_frontier(  # noqa: PLR0913
     *,
     effect_type: str,
@@ -958,6 +976,19 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "source_insufficient",
             "rule_id": "uk_manual_frontier_non_substantive_payload_source_insufficient",
             "reason": "The available payload is non-substantive shell or dot-leader text and should not become legal content.",
+        }
+
+    if (
+        source_pathology_norm in {"fragment_context_missing", "payload_fragment_without_action_formula"}
+        and extracted_tag_norm == "BlockAmendment"
+        and effect_type_norm.startswith(("word ", "words "))
+        and blocking_rules
+        and _looks_like_source_carried_structured_text_patch_payload(extracted_text_norm)
+    ):
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_source_carried_structured_text_patch_candidate",
+            "reason": "The extracted payload is a source-carried structured replacement/insert fragment; a future compiler or manual claim must combine the parent formula anchor with the payload structure instead of flattening it into host text.",
         }
 
     if (

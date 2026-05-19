@@ -833,6 +833,55 @@ def test_classify_uk_manual_compile_frontier_marks_payload_fragment_without_form
     assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
 
 
+def test_classify_uk_manual_compile_frontier_marks_structured_payload_fragment_manual_candidate() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="fragment_context_missing",
+        extracted_tag="BlockAmendment",
+        extracted_text=(
+            "i where that individual is a member of a police force, a police force; or "
+            "ii where that individual is a police member of the Scottish Crime and Drug "
+            "Enforcement Agency, that Agency,"
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert (
+        result["rule_id"]
+        == "uk_manual_frontier_source_carried_structured_text_patch_candidate"
+    )
+
+
+def test_classify_uk_manual_compile_frontier_does_not_promote_unstructured_payload_fragment() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="fragment_context_missing",
+        extracted_tag="BlockAmendment",
+        extracted_text="old expression",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "source_insufficient"
+    assert result["rule_id"] == "uk_manual_frontier_source_pathology_insufficient"
+
+
 def test_classify_uk_manual_compile_frontier_marks_source_carried_multi_subunit_text_rewrite() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words repealed",
