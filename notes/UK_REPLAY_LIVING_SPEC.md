@@ -1486,6 +1486,17 @@ Current block-substitution context invariant:
   same typed entry-insert family only when the rest of the instruction supplies
   an explicit before/after anchor and payload; the selector records
   `source_anchor_form=entry_relation_to_typo`.
+- `for the entry relating to X substitute Y` is not a word-level text patch
+  over the schedule carrier. It lowers to
+  `uk_effect_schedule_list_entry_replace`: the canonical action remains
+  `REPLACE`, the target remains the schedule carrier, and provenance carries
+  a source-owned entry anchor plus replacement entry text. Replay must resolve
+  exactly one direct `schedule_entry` child before replacing that child; missing
+  or duplicate anchors block with
+  `uk_replay_schedule_list_entry_replace_unresolved`, while successful entry
+  replacement records `uk_replay_schedule_list_entry_replace_resolved`.
+  Current witness: `asp/2000/7` affected `sch. 3` by `asp/2012/3 Sch. 2
+  para. 4`.
 - Some UK schedule-list carriers bucket entries under immediate schedule child
   groups such as `p1group` headings rather than as direct schedule children.
   When an explicit `before`/`after` entry-insert selector cannot resolve a
