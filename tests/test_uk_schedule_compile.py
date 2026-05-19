@@ -11791,6 +11791,56 @@ def test_compile_schedule_list_entry_repeal_handles_omit_entry_for_form() -> Non
     assert observations[0]["blocking"] is False
 
 
+def test_compile_schedule_list_entry_replace_lowers_to_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Text>4 In schedule 3, for the entry relating to The Trustees of the
+          National Library of Scotland substitute “ The National Library of Scotland ” .</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_list_entry_replace",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2020-02-06",
+        affected_uri="/id/asp/2000/7/schedule/3",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="7",
+        affected_provisions="Sch. 3",
+        affecting_uri="/id/asp/2012/3",
+        affecting_class="ScottishAct",
+        affecting_year="2012",
+        affecting_number="3",
+        affecting_provisions="Sch. 2 para. 4",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2013-02-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPLACE
+    assert op.target == LegalAddress(path=(("schedule", "3"),))
+    assert op.payload is not None
+    assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
+    assert op.payload.text == "The National Library of Scotland"
+    assert op.witness_rule_id == "uk_effect_schedule_list_entry_replace"
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("schedule_list_entry_replace_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_replace_selector:"))
+    assert selector["anchor"] == "The Trustees of the National Library of Scotland"
+    assert selector["replacement_text"] == "The National Library of Scotland"
+    assert observations[0]["rule_id"] == "uk_effect_schedule_list_entry_replace"
+    assert observations[0]["blocking"] is False
+
+
 def test_compile_schedule_list_entry_repeal_handles_multiple_anchors() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -11910,6 +11960,57 @@ def test_replay_schedule_list_entry_repeal_deletes_only_matched_entry() -> None:
     assert len(adjudications) == 1
     assert adjudications[0].kind == "uk_replay_schedule_list_entry_repeal_resolved"
     assert adjudications[0].detail["deleted_count"] == 1
+    assert adjudications[0].detail["strict_disposition"] == "record"
+
+
+def test_replay_schedule_list_entry_replace_replaces_only_matched_entry() -> None:
+    op = LegalOperation(
+        op_id="uk_test_schedule_entry_replace",
+        sequence=0,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("schedule", "3"),)),
+        payload=IRNode(
+            kind=IRNodeKind.SCHEDULE_ENTRY,
+            label=None,
+            text="The National Library of Scotland",
+        ),
+        provenance_tags=(
+            'schedule_list_entry_replace_selector:{"rule_id":"uk_effect_schedule_list_entry_replace",'
+            '"anchor":"The Trustees of the National Library of Scotland",'
+            '"replacement_text":"The National Library of Scotland"}',
+        ),
+    )
+    base = IRStatute(
+        statute_id="asp/2000/7",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 3",
+                text="Devolved public bodies",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SCHEDULE_ENTRY,
+                        label=None,
+                        text="The Trustees of the National Library of Scotland",
+                    ),
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label=None, text="Scottish Enterprise"),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    assert [child.text for child in replayed.supplements[0].children] == [
+        "The National Library of Scotland",
+        "Scottish Enterprise",
+    ]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_schedule_list_entry_replace_resolved"
+    assert adjudications[0].detail["matched_index"] == 0
     assert adjudications[0].detail["strict_disposition"] == "record"
 
 

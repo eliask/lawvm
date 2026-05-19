@@ -510,6 +510,7 @@ _NOTE_METADATA_SOURCE_FALLBACK = "metadata_source_fallback:"
 _NOTE_TABLE_CELL_SELECTOR = "table_cell_selector:"
 _NOTE_SCHEDULE_LIST_ENTRY_SELECTOR = "schedule_list_entry_selector:"
 _NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR = "schedule_list_entry_repeal_selector:"
+_NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR = "schedule_list_entry_replace_selector:"
 
 _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID = "uk_effect_table_entry_inline_text_insertion"
 _UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID = "uk_effect_table_entry_instruction_rejected"
@@ -517,6 +518,7 @@ _UK_REPLAY_TABLE_ENTRY_INLINE_UNRESOLVED_RULE_ID = "uk_replay_table_entry_inline
 _UK_REPLAY_TABLE_ENTRY_INLINE_PREIMAGE_GAP_RULE_ID = "uk_replay_table_entry_inline_text_preimage_gap"
 _UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID = "uk_effect_schedule_list_entry_insert"
 _UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID = "uk_effect_schedule_list_entry_repeal"
+_UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID = "uk_effect_schedule_list_entry_replace"
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID = (
     "uk_replay_schedule_list_entry_anchor_unresolved"
 )
@@ -525,6 +527,12 @@ _UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_UNRESOLVED_RULE_ID = (
 )
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_RESOLVED_RULE_ID = (
     "uk_replay_schedule_list_entry_repeal_resolved"
+)
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID = (
+    "uk_replay_schedule_list_entry_replace_unresolved"
+)
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_RESOLVED_RULE_ID = (
+    "uk_replay_schedule_list_entry_replace_resolved"
 )
 _UK_REPLAY_SCHEDULE_ENTRY_REPEAL_GRANULARITY_BLOCKED_RULE_ID = (
     "uk_replay_schedule_entry_repeal_granularity_blocked"
@@ -1063,6 +1071,20 @@ def _schedule_list_entry_repeal_selector(op: LegalOperation) -> dict[str, Any] |
             continue
         try:
             payload = json.loads(str(note)[len(_NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR) :])
+        except json.JSONDecodeError:
+            return None
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _schedule_list_entry_replace_selector(op: LegalOperation) -> dict[str, Any] | None:
+    """Return UK schedule-list-entry selector data carried on a lowered replace op."""
+    for note in getattr(op, "provenance_tags", ()) or ():
+        if not str(note).startswith(_NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR):
+            continue
+        try:
+            payload = json.loads(str(note)[len(_NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR) :])
         except json.JSONDecodeError:
             return None
         if isinstance(payload, dict):
@@ -4352,6 +4374,40 @@ def _uk_schedule_list_entry_repeal_selector(
     }
 
 
+def _uk_schedule_list_entry_replace_selector(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: Optional[str],
+) -> dict[str, Any] | None:
+    """Extract explicit schedule-list-entry replacement anchors."""
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    target_surface = f"{target_ref} {target}".lower()
+    if "table" in target_surface or _addr_leaf_kind(target) != "schedule":
+        return None
+    match = re.search(
+        r"\bfor\s+(?:the\s+)?entry\s+(?:relating\s+to|for)\s+"
+        r"(?P<anchor>.+?)\s+substitute\s*[—–-]?\s*(?P<payload>.+)$",
+        text,
+        re.I,
+    )
+    if match is None:
+        return None
+    anchor = _strip_schedule_entry_phrase(match.group("anchor"))
+    replacement = _strip_schedule_entry_payload(match.group("payload"))
+    if not anchor or not replacement:
+        return None
+    return {
+        "rule_id": _UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID,
+        "anchor": anchor,
+        "replacement_text": replacement,
+        "target_ref": target_ref,
+        "target": str(target),
+    }
+
+
 def _uk_broad_table_entry_instruction(
     *,
     target_ref: str,
@@ -6420,6 +6476,84 @@ def compile_effect_to_ir_ops(
                         ),
                     ),
                     witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
+                )
+            )
+            continue
+        schedule_list_entry_replace_selector = (
+            _uk_schedule_list_entry_replace_selector(
+                target_ref=t_str,
+                target=target,
+                extracted_text=extracted_text,
+            )
+            if action == "replace" or effect_type in {"words substituted", "word substituted"}
+            else None
+        )
+        if schedule_list_entry_replace_selector is not None:
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID,
+                family="source_schedule_list_entry_elaboration",
+                reason_code="explicit_schedule_list_entry_replace_anchor",
+                reason=(
+                    "UK schedule-list-entry replacement lowered as a typed "
+                    "entry-level schedule mutation; replay must resolve the "
+                    "claimed entry anchor before replacing a schedule child."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail=dict(schedule_list_entry_replace_selector),
+            )
+            payload_node = IRNode(
+                kind=IRNodeKind.SCHEDULE_ENTRY,
+                label=None,
+                text=str(schedule_list_entry_replace_selector["replacement_text"]),
+                attrs={
+                    "source_rule_id": "uk_schedule_list_entry_replace_payload",
+                    "anchor_text": str(schedule_list_entry_replace_selector["anchor"]),
+                },
+            )
+            src = OperationSource(
+                statute_id=effect.affecting_act_id,
+                title=effect.affecting_title,
+                effective=effect_witness.applicability.effective_date or "",
+                raw_text=extraction_witness.extracted_text,
+            )
+            target_expansion_witness = _uk_target_expansion_witness(
+                t_str,
+                [t_str],
+                original_targets_str=original_targets_str,
+            )
+            lowered_witness = UKLoweredOperationWitness(
+                op_id=effect.effect_id,
+                sequence=sequence,
+                action=StructuralAction.REPLACE,
+                target=target,
+                payload=payload_node,
+                source=src,
+                effect_witness=effect_witness,
+                extraction_witness=extraction_witness,
+                target_expansion_witness=target_expansion_witness,
+                text_rewrite_witness=None,
+                insertion_anchor_witness=None,
+            )
+            ops.append(
+                LegalOperation(
+                    op_id=lowered_witness.op_id,
+                    sequence=lowered_witness.sequence,
+                    action=StructuralAction.REPLACE,
+                    target=target,
+                    payload=_payload_with_rewrite_witness(payload_node, lowered_witness),
+                    source=src,
+                    group_id=_uk_temporal_group_id(effect),
+                    provenance_tags=(
+                        *_uk_lowered_op_provenance_tags(lowered_witness),
+                        (
+                            f"{_NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR}"
+                            f"{json.dumps(schedule_list_entry_replace_selector, ensure_ascii=False)}"
+                        ),
+                    ),
+                    witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID,
                 )
             )
             continue
@@ -11273,6 +11407,38 @@ class UKReplayExecutor:
             self._record_invariant_violations(op)
             self._emit_top_section_snapshot(op)
         elif _action_name(op.action) == "replace":
+            schedule_list_entry_replace_selector = _schedule_list_entry_replace_selector(op)
+            if schedule_list_entry_replace_selector is not None:
+                if op.payload is None:
+                    _append_uk_replay_adjudication(
+                        self.adjudications_out,
+                        kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID,
+                        message=(
+                            "UK replay skipped schedule-list-entry replacement: "
+                            "replacement payload was missing."
+                        ),
+                        op=op,
+                        detail={
+                            "target": str(target),
+                            "selector": dict(schedule_list_entry_replace_selector),
+                            "reason_code": "payload_missing",
+                            "family": "source_schedule_list_entry_elaboration",
+                            "blocking": True,
+                            "strict_disposition": "block",
+                            "quirks_disposition": "record",
+                        },
+                    )
+                    return
+                new_node = UKMutableNode.from_dict(op.payload.to_jsonable_dict())
+                if self._replace_schedule_list_entry(
+                    target,
+                    new_node,
+                    op,
+                    schedule_list_entry_replace_selector,
+                ):
+                    self._record_invariant_violations(op)
+                    self._emit_top_section_snapshot(op)
+                return
             frag_subs = _fragment_substitution(op)
             if frag_subs is not None:
                 if node:
@@ -14281,6 +14447,125 @@ class UKReplayExecutor:
                 "match_modes": match_modes,
                 "entry_count": len(entry_rows),
                 "deleted_count": len(matched_indices),
+                "family": "source_schedule_list_entry_elaboration",
+                "blocking": False,
+                "strict_disposition": "record",
+                "quirks_disposition": "record",
+            },
+        )
+        return True
+
+    def _replace_schedule_list_entry(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+        selector: dict[str, Any],
+    ) -> bool:
+        schedule_node, _, _ = self._find_node_by_target(target)
+        if schedule_node is None or _uk_kind_value(schedule_node.kind) != "schedule":
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID,
+                message=(
+                    "UK replay skipped schedule-list-entry replacement: target "
+                    "did not resolve to a schedule carrier."
+                ),
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "schedule_target_unresolved",
+                    "family": "source_schedule_list_entry_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+        anchor = str(selector.get("anchor") or "")
+        if not _compact_normalized_text(anchor):
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID,
+                message="UK replay skipped schedule-list-entry replacement: selector had no entry anchor.",
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "invalid_selector",
+                    "family": "source_schedule_list_entry_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+        entry_rows: list[tuple[int, UKMutableNode]] = [
+            (idx, child)
+            for idx, child in enumerate(schedule_node.children)
+            if _uk_kind_value(child.kind) == "schedule_entry"
+        ]
+        anchor_norm = _compact_normalized_text(anchor)
+        matches = [
+            (idx, child)
+            for idx, child in entry_rows
+            if _compact_normalized_text(child.text) == anchor_norm
+        ]
+        match_mode = "exact"
+        if not matches:
+            article_anchor_norm = _compact_schedule_entry_anchor_without_article(anchor)
+            matches = [
+                (idx, child)
+                for idx, child in entry_rows
+                if article_anchor_norm
+                and _compact_schedule_entry_anchor_without_article(child.text) == article_anchor_norm
+            ]
+            match_mode = "article"
+        if len(matches) != 1:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID,
+                message=(
+                    "UK replay skipped schedule-list-entry replacement: entry "
+                    "anchor did not resolve uniquely."
+                ),
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "anchor": anchor,
+                    "reason_code": "anchor_not_unique",
+                    "anchor_match_count": len(matches),
+                    "entry_count": len(entry_rows),
+                    "family": "source_schedule_list_entry_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+        replace_idx = matches[0][0]
+        for key in ("eId", "id"):
+            new_node.attrs.pop(key, None)
+        children = list(schedule_node.children)
+        children[replace_idx] = new_node
+        self._replace_children(schedule_node, children)
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_RESOLVED_RULE_ID,
+            message=(
+                "UK replay applied a schedule-list-entry replacement after the "
+                "source entry anchor resolved to exactly one direct schedule child."
+            ),
+            op=op,
+            detail={
+                "target": str(target),
+                "selector": dict(selector),
+                "reason_code": "explicit_entry_anchor_unique",
+                "matched_index": replace_idx,
+                "match_mode": match_mode,
+                "entry_count": len(entry_rows),
                 "family": "source_schedule_list_entry_elaboration",
                 "blocking": False,
                 "strict_disposition": "record",
