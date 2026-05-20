@@ -338,6 +338,12 @@ frontend cannot yet lower them safely:
   when the parent source instruction explicitly says `after the definition of
   "X" insert...` and the extracted payload is itself a definition entry;
   otherwise the row remains blocked rather than guessed into the target section.
+  The parent witness must be source-local to the payload row: broad containers
+  such as a `Pblock`/`P1` that also contain earlier sibling amendment rows
+  cannot lend a prior `for the definition of "Y" substitute...` context to a
+  later `after the definition of "X" insert...` payload. Current witness:
+  `asp/2000/4` effect `key-78605c6a5376f3a9f6955c985964d597` from
+  `ssi/2005/465 Sch. 1 para. 28(9)`.
 - `at the appropriate place` insertions, until a placement compiler can prove
   the target anchor without guessing from live text
 - grouped title/heading substitutions that do not name exact old and new text
@@ -2996,9 +3002,15 @@ Current bench replay-regime invariant:
   definition entry. The resulting selector is `TEXT_DEFINITION_ENTRY_X` with
   rule `uk_effect_source_carried_definition_entry_substitution_text_patch`.
   This is not authority to infer the old definition term from live text, nor to
-  treat a non-definition payload as a definition substitution. Current corpus
-  witness: `asp/2000/7` effect `key-b7c7cdf19629dcd25fde12967bca8c51` from
-  `asp/2010/11 Sch. 1 para. 7(a)`.
+  treat a non-definition payload as a definition substitution. The source-local
+  boundary is part of the rule: an unrelated sibling definition substitution in
+  the same schedule/cross-heading must not be smuggled into the current block
+  payload. Current corpus witnesses: `asp/2000/7` effect
+  `key-b7c7cdf19629dcd25fde12967bca8c51` from `asp/2010/11 Sch. 1 para. 7(a)`;
+  negative boundary witness `asp/2000/4`
+  `key-78605c6a5376f3a9f6955c985964d597`, where the correct lowering is an
+  anchored definition insertion after `Mental Welfare Commission`, not a
+  substitution of `hospital`.
 - The same source-local split is owned for generic quoted text patches when
   the parent source instruction supplies the exact quoted anchor/preimage and
   the extracted `BlockAmendment` supplies only the payload. `after "X" there
