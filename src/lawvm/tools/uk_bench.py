@@ -49,6 +49,7 @@ from lawvm.uk_legislation.uk_grafter import (
 )
 from lawvm.uk_legislation.source_adjudication import (
     classify_uk_bench_comparison,
+    classify_uk_current_projection_eid_shape,
     classify_uk_replay_adjudication_bucket,
     classify_uk_replay_residual,
     is_core_uk_comparison,
@@ -1222,6 +1223,15 @@ def _score_statute(
                     raw_score=replay_score,
                     effect_source_pathology_counts=effect_source_pathology_counts,
                 )
+                current_projection_shape = classify_uk_current_projection_eid_shape(
+                    enacted_eids=enacted_eids,
+                    oracle_eids=oracle_eids,
+                )
+                if (
+                    current_projection_shape
+                    and uk_residual_claim_comparison_class == "commensurable"
+                ):
+                    uk_residual_claim_comparison_class = current_projection_shape
                 uk_residual_claim_core_comparison = is_core_uk_comparison(
                     uk_residual_claim_comparison_class
                 )
@@ -1384,6 +1394,12 @@ def _score_statute(
             raw_score=score,
             effect_source_pathology_counts=effect_source_pathology_counts,
         )
+        current_projection_shape = classify_uk_current_projection_eid_shape(
+            enacted_eids=enacted_eids,
+            oracle_eids=oracle_eids,
+        )
+        if current_projection_shape and comparison_class == "commensurable":
+            comparison_class = current_projection_shape
         source_parse_rejections = _blocking_source_parse_rows(source_parse_observations)
 
         return _BenchResult(

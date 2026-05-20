@@ -5,6 +5,7 @@ from pathlib import Path
 
 from lawvm.uk_legislation import source_adjudication as sa
 from lawvm.uk_legislation.source_adjudication import (
+    classify_uk_current_projection_eid_shape,
     classify_uk_effect_compare_shape,
     classify_uk_effect_source_pathology,
     classify_uk_manual_compile_frontier,
@@ -2900,6 +2901,44 @@ def test_normalize_uk_replay_compare_eids_applies_oracle_physical_parent_alias()
 
     assert replayed == {"section-5-4-aa"}
     assert oracle == {"section-5-4-aa"}
+
+
+def test_classify_uk_current_projection_eid_shape_marks_spent_amending_act_surface() -> None:
+    classification = classify_uk_current_projection_eid_shape(
+        enacted_eids={
+            "section-1",
+            "section-1-1",
+            "section-1-1-a",
+            "section-1-1-b",
+            "section-2",
+            "section-2-1",
+            "section-2-2",
+            "section-3",
+            "section-3-1",
+            "section-3-2",
+        },
+        oracle_eids={"section-3", "section-3-1", "section-3-2"},
+    )
+
+    assert classification == "spent_amending_act_current_projection"
+    assert is_core_uk_comparison(classification) is False
+
+
+def test_classify_uk_current_projection_eid_shape_keeps_multi_root_oracle_core() -> None:
+    assert (
+        classify_uk_current_projection_eid_shape(
+            enacted_eids={
+                "section-1",
+                "section-2",
+                "section-3",
+                "section-3-1",
+                "section-4",
+                "section-4-1",
+            },
+            oracle_eids={"section-3", "section-4"},
+        )
+        == ""
+    )
 
 
 def test_normalize_uk_replay_compare_eids_drops_wrapper_with_oracle_descendants() -> None:
