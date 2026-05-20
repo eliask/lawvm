@@ -635,6 +635,9 @@ _UK_NUMBERED_SCHEDULE_ENTRY_REPEAL_TARGET_REFINED_RULE_ID = (
 _UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID = (
     "uk_effect_substituted_for_label_changing_target_rebound"
 )
+_UK_SOURCE_TEXT_SCHEDULE_PARAGRAPH_TARGET_OVERRIDE_RULE_ID = (
+    "uk_effect_source_text_schedule_paragraph_target_overrides_metadata"
+)
 _UK_REPLAY_SOURCE_LABEL_CHANGING_SUBSTITUTION_RESOLVED_RULE_ID = (
     "uk_replay_source_label_changing_substitution_resolved"
 )
@@ -6411,6 +6414,37 @@ def _source_label_changing_substitution(
     )
 
 
+def _source_text_schedule_paragraph_target_override(
+    *,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[LegalAddress]:
+    """Return explicit ``paragraph X of schedule Y`` target from source text."""
+    if not extracted_text or _addr_container(target) != "schedule":
+        return None
+    current_schedule = _clean_num(_addr_field(target, "schedule") or "")
+    current_paragraph = _clean_num(_addr_field(target, "paragraph") or "")
+    if not current_schedule or not current_paragraph:
+        return None
+    match = re.search(
+        r"\bIn\s+paragraph\s+([0-9A-Za-z]+)\s+of\s+schedule\s+([0-9A-Za-z]+)\s+to\b",
+        extracted_text,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    source_paragraph = _clean_num(match.group(1))
+    source_schedule = _clean_num(match.group(2))
+    if not source_paragraph or source_schedule != current_schedule:
+        return None
+    if source_paragraph == current_paragraph:
+        return None
+    return LegalAddress(
+        path=(("schedule", current_schedule), ("paragraph", source_paragraph)),
+        special=target.special,
+    )
+
+
 def _repeal_tail_for_substituted_series_replacement(
     effect_type: str,
     original_target_refs: list[str],
@@ -8431,6 +8465,37 @@ def compile_effect_to_ir_ops(
             continue
         parsed_target = _parse_affected_target(t_str)
         target = parsed_target if _is_direct_section_paragraph_ref(t_str) else canonicalize_uk_address(parsed_target)
+        source_text_target_override = (
+            _source_text_schedule_paragraph_target_override(
+                extracted_text=extracted_text,
+                target=target,
+            )
+            if is_word_level and action == "replace"
+            else None
+        )
+        if source_text_target_override is not None:
+            original_target = target
+            target = canonicalize_uk_address(source_text_target_override)
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_UK_SOURCE_TEXT_SCHEDULE_PARAGRAPH_TARGET_OVERRIDE_RULE_ID,
+                family="target_resolution_recovery",
+                reason_code="explicit_source_schedule_paragraph_overrides_metadata",
+                reason=(
+                    "UK source text explicitly names a different paragraph in "
+                    "the same schedule than the effect metadata; lowering uses "
+                    "the source-named target and records the metadata target as "
+                    "overridden evidence."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "metadata_target": str(original_target),
+                    "source_target": str(target),
+                },
+            )
         payload_match_target = target
         if (
             label_changing_substitution is not None
