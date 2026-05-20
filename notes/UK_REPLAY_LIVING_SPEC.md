@@ -1949,6 +1949,17 @@ Current nested-roman target invariant:
     `ukpga/2023/50 Sch. 14 para. 20`
   - broad base-26 ranges such as `(az)-(bc)` remain unsupported unless owned
     separately; no public `item:-` address should be emitted
+- adjacent same-length multi-letter metadata suffixes that denote source
+  sibling insertions must split as siblings, not nested descendants
+  - examples: `Sch. 26 para. 14(aa)(bb)` becomes `Sch. 26 para. 14(aa)` and
+    `Sch. 26 para. 14(bb)`; `Sch. 27 para. 15(2)(za)(zb)` becomes sibling
+    items under `15(2)`
+  - current witnesses: `ukpga/2020/17` `Sch. 26 para. 14(aa)(bb)` by
+    `uksi/2020/1520 reg. 6(3)`, `Sch. 27 para. 15(2)(za)(zb)` by
+    `ukpga/2021/11 Sch. 13 para. 26(28)`, and
+    `Sch. 21 para. 2(2)(ca)(cb)` by `ukpga/2026/2 s. 11`
+  - the existing negative cases remain binding: `letter + roman` and unrelated
+    letter/suffix shapes such as `(b)(ii)` or `(a)(zi)` stay nested
 
 Current `ukpga/2001/11` near-solved interpretation:
 
