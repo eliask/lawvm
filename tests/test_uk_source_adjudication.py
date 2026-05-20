@@ -1423,6 +1423,27 @@ def test_classify_uk_manual_compile_frontier_treats_record_disposition_as_nonblo
     assert result["rule_id"] == "uk_manual_frontier_deterministic_supported"
 
 
+def test_classify_uk_manual_compile_frontier_accepts_source_structuralized_added() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="added",
+        source_pathology="",
+        extracted_tag="BlockAmendment",
+        extracted_text="7 Inserted subsection.",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_added_type_source_structuralized",
+                "strict_disposition": "record",
+            },
+        ),
+        compiled_op_count=1,
+        replay_applicable=True,
+        structural_for_replay=False,
+    )
+
+    assert result["status"] == "deterministic_frontend_supported"
+    assert result["rule_id"] == "uk_manual_frontier_deterministic_supported"
+
+
 def test_classify_uk_manual_compile_frontier_marks_text_patch_preimage_chain_gap() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="word substituted",

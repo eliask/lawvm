@@ -175,6 +175,10 @@ Current UK-specific invariants:
     - all-`replace` substituted-for sibling families
     - `replace + trailing repeal` substituted-series anchor families
     - `revoked` rows that compile to structural repeals
+    - `added` rows only when the exact affecting source is extractable and
+      compiles to source-owned structural inserts; this emits
+      `uk_effect_added_type_source_structuralized` and does not permit
+      metadata-only backfill
   - it must not admit unapplied rows just because they compile cleanly
   - otherwise replay can materialize future-shape families like `s. 35(2)-(12)` and pollute the live frontier
 
@@ -2042,6 +2046,19 @@ Current block-substitution context invariant:
   facet candidate rather than synthesizing a nested `2A/2B` target. Witnesses:
   `ukpga/2020/17`, affected by `ukpga/2022/32 s. 159(2)` and
   `ukpga/2022/32 Sch. 15 para. 3`.
+- Flat `BlockAmendment/P1para` schedule paragraph insert payloads may lower
+  only when a direct source text run begins with the exact target paragraph
+  label. The rule is
+  `uk_effect_flat_p1para_schedule_paragraph_insert_payload_lowered`; sibling
+  text runs such as cross-heading text are recorded as unresolved heading
+  surface and are not smuggled into the inserted paragraph. If the effect
+  metadata names a schedule Part but the source-owned payload has no Part
+  wrapper, lowering may record
+  `uk_effect_nonaddressable_schedule_part_insert_target_normalized` and target
+  the replay-addressable schedule paragraph. Mismatched labels remain covered
+  by the generic `instruction_text_reused_as_payload` blocker. Current witness:
+  `asp/2002/11` affected by `ssi/2017/36 art. 21(3)`, `Sch. 2 Pt. 1 para. 17B
+  and cross-heading`.
 - source text that says `for "X", wherever occurring, substitute "Y"` lowers
   under `uk_effect_wherever_occurring_substitution_text_patch`. This is a
   deterministic text-patch family, not manual compilation, because the source
