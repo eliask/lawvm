@@ -3785,6 +3785,15 @@ def test_compile_source_carried_quoted_substitution_from_parent_context() -> Non
                       <Pnumber>c</Pnumber>
                       <P3para>
                         <Text>in subsection (4)—</Text>
+                        <P4 id="schedule-6-paragraph-9-4-c-i">
+                          <Pnumber>i</Pnumber>
+                          <P4para>
+                            <Text>
+                              in paragraph (a), after “force” there is inserted “or is a police member
+                              of the Scottish Crime and Drug Enforcement Agency”;
+                            </Text>
+                          </P4para>
+                        </P4>
                         <P4 id="schedule-6-paragraph-9-4-c-ii">
                           <Pnumber>ii</Pnumber>
                           <P4para>
