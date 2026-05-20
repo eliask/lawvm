@@ -2477,6 +2477,64 @@ def test_compile_words_inserted_after_definition_with_block_payload() -> None:
     )
 
 
+def test_replay_after_definition_insert_allows_parenthetical_translation_anchor() -> None:
+    op = LegalOperation(
+        op_id="uk_test_after_definition_parenthetical_translation",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "171"), ("subsection", "1"))),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="TEXT_AFTER_DEFINITION_2013 Act", occurrence=0),
+            replacement=(
+                "“corporate joint committee” (“ cyd-bwyllgor corfforedig ”) "
+                "has the same meaning as in section 68 of this Act;"
+            ),
+        ),
+    )
+    base = IRStatute(
+        statute_id="asc/2021/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="171",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "In this Act— “2000 Act” (“ Deddf 2000 ”) means the Local Government Act 2000; "
+                                "“2013 Act” (“ Deddf 2013 ”) means the Local Government (Democracy) (Wales) Act 2013; "
+                                "“existing” (“ presennol ”) means existing text;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    replayed_text = replayed.body.children[0].children[0].text
+    assert (
+        "“2013 Act” (“ Deddf 2013 ”) means the Local Government (Democracy) (Wales) Act 2013; "
+        "“corporate joint committee” (“ cyd-bwyllgor corfforedig ”) has the same meaning as in section 68 of this Act; "
+        "“existing”"
+        in replayed_text
+    )
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_definition_anchor_parenthetical_translation_normalized"
+    ]
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+
+
 def test_compile_words_inserted_after_definition_with_optional_article() -> None:
     extracted_el = ET.fromstring(
         f"""

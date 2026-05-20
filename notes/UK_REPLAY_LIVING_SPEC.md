@@ -1307,7 +1307,12 @@ Current block-substitution context invariant:
   `after the definition of "X", insert- <block text>` to a
   `TEXT_AFTER_DEFINITION_X` patch using the named rule
   `uk_effect_after_definition_text_insertion_patch`; replay applies it only
-  when the target text has a semicolon-terminated definition entry for `X`
+  when the target text has a semicolon-terminated definition entry for `X`.
+  Replay may recognize a parenthetical translation between the quoted defined
+  term and predicate, for example `"2013 Act" ("Deddf 2013") means ...`, under
+  `uk_replay_definition_anchor_parenthetical_translation_normalized`; this is a
+  recorded target-resolution recovery, not permission to insert after a
+  different definition term
 - the parser may lower `after the definitions of "X" and "Y" insert- <block
   text>` to a `TEXT_AFTER_DEFINITION_Y` patch using the named rule
   `uk_effect_after_definitions_text_insertion_patch`; the anchor is the final
