@@ -188,6 +188,12 @@ def test_executor_classifies_direct_section_paragraph_missing_carrier_as_source_
                             text="authority text authority text",
                             attrs={"eId": "section-48-1"},
                         ),
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            text="authority text authority text",
+                            attrs={"eId": "section-48-2"},
+                        ),
                     ),
                 ),
             ),
@@ -381,6 +387,107 @@ def test_executor_recovers_implicit_first_subparagraph_parent_text_patch() -> No
     assert adjudications[0].detail["target"] == "schedule:6/paragraph:43A/subparagraph:1"
     assert adjudications[0].detail["recovery_target"] == "schedule:6/paragraph:43A"
     assert adjudications[0].detail["strict_disposition"] == "block"
+
+
+def test_executor_recovers_direct_section_paragraph_text_patch_from_unique_child() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="48",
+                    text="",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="local transport authority means a transport authority",
+                        ),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="authority"),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_direct_section_paragraph_child_text",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "48"), ("paragraph", "a"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="authority", occurrence=2),
+                replacement="authority (i) ",
+            ),
+            source=_source(),
+        )
+    )
+
+    section = executor.statute.body.children[0]
+    assert "transport authority (i) " in section.children[0].text
+    assert section.children[1].text == "authority"
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_direct_section_paragraph_child_text_recovered"
+    assert adjudications[0].detail["target"] == "section:48/paragraph:a"
+    assert adjudications[0].detail["recovery_target"] == "section:48/subsection:1"
+    assert adjudications[0].detail["strict_disposition"] == "block"
+
+
+def test_executor_blocks_direct_section_paragraph_text_patch_when_child_text_ambiguous() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="48",
+                    text="",
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="authority authority"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="authority authority"),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_direct_section_paragraph_ambiguous_child_text",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "48"), ("paragraph", "a"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="authority", occurrence=2),
+                replacement="authority (i) ",
+            ),
+            source=_source(),
+        )
+    )
+
+    section = executor.statute.body.children[0]
+    assert section.children[0].text == "authority authority"
+    assert section.children[1].text == "authority authority"
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_direct_section_paragraph_carrier_gap"
 
 
 def test_executor_records_punctuation_spacing_text_match_recovery() -> None:
