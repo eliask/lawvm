@@ -2254,6 +2254,57 @@ def test_uk_bench_report_prints_requested_replay_adjudication_samples(capsys) ->
     assert "op-2" not in out
 
 
+def test_uk_bench_report_worst_rows_use_commencement_score_when_available(capsys) -> None:
+    raw_low_comm_high = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=1,
+        score=0.1,
+        status="OK",
+        n_effect_rows=1,
+        n_effect_feed_pages=1,
+        commencement_score=0.9,
+        n_commenced_eids=9,
+        replay_score=0.2,
+        replay_commencement_score=0.95,
+        comparison_class="commensurable",
+        core_benchmark=True,
+    )
+    raw_high_comm_low = _BenchResult(
+        statute_id="ukpga/2000/2",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=8,
+        score=0.8,
+        status="OK",
+        n_effect_rows=1,
+        n_effect_feed_pages=1,
+        commencement_score=0.4,
+        n_commenced_eids=4,
+        replay_score=0.85,
+        replay_commencement_score=0.45,
+        comparison_class="commensurable",
+        core_benchmark=True,
+    )
+
+    uk_bench._print_report([raw_low_comm_high, raw_high_comm_low], "commencement")
+
+    out = capsys.readouterr().out
+    assert "Worst 2 core rows (by commenced EID score):" in out
+    worst_block = out.split("Worst 2 core rows (by commenced EID score):", 1)[1]
+    assert worst_block.index("ukpga/2000/2") < worst_block.index("ukpga/2000/1")
+    assert "ukpga/2000/2" in out
+    assert "score=40.0% raw=80.0%" in out
+    assert "replay=45.0% raw_replay=85.0% ops=0" in out
+
+
 def test_uk_bench_report_prints_source_unavailable_rows(capsys) -> None:
     results = [
         _BenchResult(

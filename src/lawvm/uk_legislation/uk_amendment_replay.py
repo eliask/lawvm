@@ -19245,6 +19245,9 @@ _COMMENCEMENT_EFFECT_TYPES = frozenset(
         "commencement order",
     }
 )
+_UK_COMMENCEMENT_UNNUMBERED_SINGLE_SCHEDULE_RULE_ID = (
+    "uk_commencement_unnumbered_single_schedule_target_resolved"
+)
 
 # Kind aliases used in LegalAddress paths that map to IR node kinds
 _ADDR_KIND_ALIASES: dict[str, set[str]] = {
@@ -19295,6 +19298,10 @@ def _nodes_matching_address(
     nodes: Sequence["IRNode"],
     path: tuple[tuple[str, str], ...],
     depth: int = 0,
+    *,
+    observations_out: Optional[list[dict[str, Any]]] = None,
+    effect: Optional["UKEffectRecord"] = None,
+    source_ref: str = "",
 ) -> list["IRNode"]:
     """Walk an IR node list and return nodes that match the LegalAddress path.
 
@@ -19319,6 +19326,36 @@ def _nodes_matching_address(
         for kind in accepted_ir_kinds
         if kind not in {"part", "chapter", "wrapper", "hcontainer"} and not uk_is_transparent_wrapper_kind(kind)
     }
+    unique_unnumbered_schedule: Optional[IRNode] = None
+    if addr_kind == "schedule" and not str(addr_label or "").strip():
+        schedule_candidates = [
+            node
+            for node in nodes
+            if _uk_kind_value(node.kind) in non_transparent_accepted
+        ]
+        if len(schedule_candidates) == 1:
+            unique_unnumbered_schedule = schedule_candidates[0]
+            if observations_out is not None:
+                observations_out.append(
+                    {
+                        "rule_id": _UK_COMMENCEMENT_UNNUMBERED_SINGLE_SCHEDULE_RULE_ID,
+                        "family": "target_resolution_recovery",
+                        "phase": "commencement_filter",
+                        "effect_id": effect.effect_id if effect is not None else "",
+                        "affecting_act_id": effect.affecting_act_id if effect is not None else "",
+                        "affected_provisions": effect.affected_provisions if effect is not None else source_ref,
+                        "affecting_provisions": effect.affecting_provisions if effect is not None else "",
+                        "effect_type": effect.effect_type if effect is not None else "",
+                        "reason": (
+                            "UK commencement metadata named an unnumbered schedule target; "
+                            "the enacted source has exactly one schedule root."
+                        ),
+                        "source_ref": source_ref,
+                        "blocking": False,
+                        "strict_disposition": "record",
+                        "quirks_disposition": "record",
+                    }
+                )
 
     matched: list["IRNode"] = []
     for node in nodes:
@@ -19329,7 +19366,16 @@ def _nodes_matching_address(
             # chapters, and crossheadings.  Those containers are structural
             # context, not a reason to drop the named section.
             if _uk_commencement_container_descends_without_consuming(node_kind):
-                matched.extend(_nodes_matching_address(node.children, path, depth))
+                matched.extend(
+                    _nodes_matching_address(
+                        node.children,
+                        path,
+                        depth,
+                        observations_out=observations_out,
+                        effect=effect,
+                        source_ref=source_ref,
+                    )
+                )
             continue
 
         # Normalise label for comparison: strip leading zeros, lowercase
@@ -19337,16 +19383,37 @@ def _nodes_matching_address(
         # Also normalise addr_label the same way.
         addr_lbl_norm = _normalize_commencement_match_label(node_kind, addr_label)
 
-        if node_label != addr_lbl_norm:
+        node_matches = (
+            node is unique_unnumbered_schedule
+            if unique_unnumbered_schedule is not None
+            else node_label == addr_lbl_norm
+        )
+        if not node_matches:
             if _uk_commencement_container_descends_without_consuming(node_kind):
-                matched.extend(_nodes_matching_address(node.children, path, depth))
+                matched.extend(
+                    _nodes_matching_address(
+                        node.children,
+                        path,
+                        depth,
+                        observations_out=observations_out,
+                        effect=effect,
+                        source_ref=source_ref,
+                    )
+                )
             continue
 
         # This node matches this path component — descend for the rest
         if depth + 1 >= len(path):
             matched.append(node)
         else:
-            sub = _nodes_matching_address(node.children, path, depth + 1)
+            sub = _nodes_matching_address(
+                node.children,
+                path,
+                depth + 1,
+                observations_out=observations_out,
+                effect=effect,
+                source_ref=source_ref,
+            )
             if sub:
                 matched.extend(sub)
             else:
@@ -19362,6 +19429,7 @@ def commencement_eid_set(
     statute_ir: "IRStatute",
     *,
     applicability_mode: str = "effective_date_plus_feed_applied",
+    observations_out: Optional[list[dict[str, Any]]] = None,
 ) -> set[str]:
     """Return the set of EIDs that have been brought into force.
 
@@ -19422,7 +19490,13 @@ def commencement_eid_set(
             if not addr.path:
                 continue
 
-            matching = _nodes_matching_address(all_ir_nodes, addr.path)
+            matching = _nodes_matching_address(
+                all_ir_nodes,
+                addr.path,
+                observations_out=observations_out,
+                effect=effect,
+                source_ref=part,
+            )
             for node in matching:
                 commenced.update(_collect_all_eids(node))
 
