@@ -133,7 +133,21 @@ def uk_schedule_ordinal_paragraph_matches(
             if str(child.kind) == "p1group" and not _clean_num(str(child.label or ""))
         ]
         if 1 <= ordinal <= len(paragraph_children):
-            ordinal_matches.append(paragraph_children[ordinal - 1])
+            wrapper, wrapper_parent, wrapper_idx = paragraph_children[ordinal - 1]
+            wrapper_paragraph_children = [
+                (child, wrapper, i)
+                for i, child in enumerate(wrapper.children)
+                if str(child.kind) == "paragraph"
+            ]
+            exact_children = [
+                row
+                for row in wrapper_paragraph_children
+                if _clean_num(str(row[0].label or "")) == clean
+            ]
+            if len(wrapper_paragraph_children) == 1 and len(exact_children) == 1:
+                ordinal_matches.append(exact_children[0])
+            else:
+                ordinal_matches.append((wrapper, wrapper_parent, wrapper_idx))
     return ordinal_matches
 
 

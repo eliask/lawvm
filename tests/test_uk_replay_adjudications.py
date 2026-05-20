@@ -2466,6 +2466,105 @@ def test_executor_records_schedule_paragraph_carrier_gap() -> None:
     assert adjudications[0].detail["target"] == "schedule:1/paragraph:1/subparagraph:3A"
 
 
+def test_executor_resolves_unlabeled_schedule_p1group_single_paragraph_child() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2010/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                children=(
+                    IRNode(kind=IRNodeKind.P1GROUP, label=None, children=()),
+                    IRNode(kind=IRNodeKind.P1GROUP, label=None, children=()),
+                    IRNode(kind=IRNodeKind.P1GROUP, label=None, children=()),
+                    IRNode(
+                        kind=IRNodeKind.P1GROUP,
+                        label=None,
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.PARAGRAPH,
+                                label="4",
+                                text="4 Existing paragraph.",
+                                children=(
+                                    IRNode(
+                                        kind=IRNodeKind.SUBPARAGRAPH,
+                                        label="2B",
+                                        text="Old subparagraph.",
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_schedule_p1group_wrapper_resolved",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("schedule", "1"), ("paragraph", "4"), ("subparagraph", "2B"))),
+            payload=IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="2B", text="New subparagraph."),
+            source=_source(),
+        )
+    )
+
+    paragraph = executor.statute.supplements[0].children[3].children[0]
+    assert paragraph.children[0].text == "New subparagraph."
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_schedule_p1group_paragraph_wrapper_resolved"
+    ]
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["family"] == "target_resolution_recovery"
+
+
+def test_executor_keeps_ambiguous_unlabeled_schedule_p1group_blocked() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2010/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.P1GROUP,
+                        label=None,
+                        children=(
+                            IRNode(kind=IRNodeKind.PARAGRAPH, label="1", text="1 Existing paragraph."),
+                            IRNode(kind=IRNodeKind.PARAGRAPH, label="1A", text="1A Ambiguous carried paragraph."),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_schedule_p1group_wrapper_ambiguous",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("schedule", "1"), ("paragraph", "1"), ("subparagraph", "3A"))),
+            payload=IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="3A", text="New subparagraph."),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_schedule_p1group_wrapper_carrier_gap"
+    assert adjudications[0].detail["target"] == "schedule:1/paragraph:1/subparagraph:3A"
+
+
 def test_executor_records_schedule_paragraph_absent_carrier_gap() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(
