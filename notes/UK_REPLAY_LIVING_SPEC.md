@@ -2861,8 +2861,18 @@ Current bench replay-regime invariant:
   the idempotent rule is not permission to overwrite or ignore divergent
   payloads. Generic `uk_replay_existing_target_gap` remains only for
   existing-target inserts where replay cannot safely compare payload surface.
+  If the normal target lookup misses an existing target because the explicit
+  parent is wrapped in UK presentation containers such as `part`/`p1group`,
+  replay may resolve the exact parent by derived eId, match only the same
+  explicit leaf kind/label, and record
+  `target_resolution_recovery=explicit_parent_leaf_same_kind_label`; this
+  authorizes only existing-target adjudication, not insertion, replacement, or
+  sibling search.
   - current witness: `asp/2002/17` / `ssi/2011/141`, where paragraph `h` had
     already materialized before a later same-target insertion row
+  - wrapped-parent conflict witness: `asp/2002/17` / `ssi/2011/141` section
+    `4(2A)`, where a later source-anchored insertion would otherwise duplicate
+    an existing subsection under a `part`/`p1group` section wrapper
   - conflict witnesses include `asp/2000/4` / `ssi/2011/211` schedule item
     `1(e)` and `asp/2002/17` / `asp/2007/3` section `11(3)`
 - An inserted crossheading compiled to bare `crossheading:` has no explicit

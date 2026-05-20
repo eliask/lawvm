@@ -14323,6 +14323,46 @@ class UKReplayExecutor:
             "payload_text_preview": payload_text[:240],
         }
 
+    def _find_existing_insert_target_by_explicit_parent_leaf(
+        self,
+        target: LegalAddress,
+        op: LegalOperation,
+    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int], str]:
+        if _action_name(op.action) != "insert" or op.payload is None:
+            return None, None, None, ""
+        parent_addr = target.parent() if len(target.path) > 1 else None
+        leaf_kind = _addr_leaf_kind(target)
+        leaf_label = _addr_leaf_label(target)
+        if parent_addr is None or not leaf_kind or not leaf_label:
+            return None, None, None, ""
+        parent_candidate: Optional[UKMutableNode] = None
+        parent_eid = self._derive_target_eid(parent_addr)
+        if parent_eid:
+            parent_candidate, _, _ = self._find_node_and_parent_statute(
+                parent_eid,
+                allow_sequence_match=False,
+            )
+            if parent_candidate is not None and not self._eid_candidate_matches_target_leaf(
+                parent_candidate,
+                parent_addr,
+            ):
+                parent_candidate = None
+        if parent_candidate is None:
+            parent_candidate, _, _ = self._find_node_by_target(
+                parent_addr,
+                allow_recursive_match=False,
+            )
+        if parent_candidate is None:
+            return None, None, None, ""
+        for child_idx, child in enumerate(parent_candidate.children):
+            if self._match_kind_label(child, leaf_kind, leaf_label) and self._existing_target_insert_gap(
+                target,
+                child,
+                op,
+            ):
+                return child, parent_candidate, child_idx, "explicit_parent_leaf_same_kind_label"
+        return None, None, None, ""
+
     def _crossheading_insert_target_gap(
         self,
         target: LegalAddress,
@@ -14686,6 +14726,11 @@ class UKReplayExecutor:
                 target,
                 allow_compound_subsection_alias=allow_compound_subsection_alias,
                 allow_recursive_match=_action_name(op.action) != "insert",
+            )
+        insert_existing_target_resolution = ""
+        if not node:
+            node, parent, idx, insert_existing_target_resolution = (
+                self._find_existing_insert_target_by_explicit_parent_leaf(target, op)
             )
         target_found = node is not None
         if not target_found and self._empty_schedule_root_shape_gap(target):
@@ -15899,6 +15944,7 @@ class UKReplayExecutor:
                                 "target": str(target),
                                 "payload_kind": str(op.payload.kind),
                                 "payload_label": op.payload.label or "",
+                                "target_resolution_recovery": insert_existing_target_resolution,
                                 "blocking": False,
                                 "strict_disposition": "record",
                                 "quirks_disposition": "record",
@@ -15919,6 +15965,10 @@ class UKReplayExecutor:
                                 "target": str(target),
                                 "payload_kind": str(op.payload.kind),
                                 "payload_label": op.payload.label or "",
+                                "target_resolution_recovery": insert_existing_target_resolution,
+                                "blocking": True,
+                                "strict_disposition": "block",
+                                "quirks_disposition": "record",
                                 **conflict_detail,
                             },
                         )
@@ -15933,6 +15983,10 @@ class UKReplayExecutor:
                             "target": str(target),
                             "payload_kind": str(op.payload.kind),
                             "payload_label": op.payload.label or "",
+                            "target_resolution_recovery": insert_existing_target_resolution,
+                            "blocking": True,
+                            "strict_disposition": "block",
+                            "quirks_disposition": "record",
                         },
                     )
                     return
