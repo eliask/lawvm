@@ -165,6 +165,7 @@ from lawvm.uk_legislation.ordering import (
     _uk_source_provision_label_sort_key,
     _uk_source_provision_order_key,
 )
+from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
 from lawvm.uk_legislation.target_parser import (
     _parse_affected_target,
     _schedule_part_context_removed_target,
@@ -3605,34 +3606,6 @@ def _uk_table_driven_corresponding_entry_word_substitution(
         table_index=table_index,
         row_text=row_text,
     )
-
-
-_ORDINAL_WORDS = {
-    "first": 1,
-    "second": 2,
-    "third": 3,
-    "fourth": 4,
-    "fifth": 5,
-    "sixth": 6,
-    "seventh": 7,
-    "eighth": 8,
-    "ninth": 9,
-    "tenth": 10,
-}
-
-
-def _uk_ordinal_to_int(raw: str) -> int | None:
-    token = " ".join(str(raw or "").lower().split()).strip(" .")
-    if not token:
-        return None
-    if token.endswith("ly"):
-        token = token[:-2]
-    if token in _ORDINAL_WORDS:
-        return _ORDINAL_WORDS[token]
-    match = re.fullmatch(r"(\d+)(?:st|nd|rd|th)?", token)
-    if match:
-        return int(match.group(1))
-    return None
 
 
 def _uk_table_entry_inline_text_selector(
