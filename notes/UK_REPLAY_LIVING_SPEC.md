@@ -2744,6 +2744,11 @@ Current bench replay-regime invariant:
   patch op IDs. This is still blocking for the skipped operation; it only
   separates composition/preimage drift from generic missing text so later
   source-order or manual-compile work has a precise queue.
+  - if the replacement text is already present under alphanumeric
+    normalization, replay records
+    `uk_replay_text_match_replacement_normalized_present` instead. This remains
+    evidence-only and applies no mutation; it prevents quote/punctuation
+    surface differences from becoming a false blocking preimage-drift claim.
   - if more than one prior same-target text patch has already applied, replay
     records `uk_replay_text_patch_preimage_drift_multi_prior_same_target`
     because the unresolved composition problem is no longer a single-patch
