@@ -3005,6 +3005,22 @@ Current bench replay-regime invariant:
   `family=text_match_recovery`, `source_shape=trailing_comma_rotated_before_phrase`,
   `blocking=false`, and `strict_disposition=record`. Corpus witnesses include
   `uksi/2020/1520` regs. 5(13)(a) and 5(14)(a) against `ukpga/2020/17`.
+- Replay may recover an insertion-style text selector when the source quotes a
+  short numeric list anchor with a trailing comma, but the resolved target has
+  that same item uniquely as the final item before `and` or `or`. Example:
+  source says insert after `28,` while the enacted target surface says
+  `27, 28 and 60`. The rule
+  `uk_replay_numeric_list_trailing_comma_anchor_normalized` may replace only
+  the numeric/alphanumeric token (`28`), preserving the exact resolved target
+  and avoiding same-target preimage-drift classification. It requires selector
+  occurrence `0` or `1`, no end occurrence, replacement text beginning with the
+  same anchor plus comma, no exact selector preimage, and exactly one eligible
+  token before a conjunction in the explicit target subtree. Ambiguous or
+  non-list contexts remain blocking gaps or preimage-drift findings. This is
+  replay evidence with `family=text_match_recovery`,
+  `source_shape=numeric_list_trailing_comma_before_conjunction`,
+  `blocking=false`, and `strict_disposition=record`. Current witness:
+  `asp/2000/5` / `asp/2003/9` Sch. 13 para. 2(a)(iii), section `17(1)`.
 - Replay may recover a contextual word selector anchor kind when the explicit
   target subtree has no exact source kind but has exactly one same-label child
   among provision-like child kinds. This covers UK schedule wording such as
