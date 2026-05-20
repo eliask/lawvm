@@ -12517,6 +12517,82 @@ def test_compile_table_entry_label_row_insert_blocks_without_source_row_payload(
     )
 
 
+def test_compile_target_table_numbered_entry_insert_preserves_source_table_rows() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}" xmlns:html="http://www.w3.org/1999/xhtml">
+          <Pnumber>ii</Pnumber>
+          <P4para>
+            <Text>after entry 6A insert\u2014</Text>
+            <BlockAmendment>
+              <Tabular>
+                <html:table cols="3">
+                  <html:tbody>
+                    <html:tr>
+                      <html:td>6B</html:td>
+                      <html:td>a custodial sentence in respect of which section 244ZA applies</html:td>
+                      <html:td>two-thirds of the sentence</html:td>
+                    </html:tr>
+                    <html:tr>
+                      <html:td>6C</html:td>
+                      <html:td>a custodial sentence in respect of which section 247A applies</html:td>
+                      <html:td>two-thirds of the sentence</html:td>
+                    </html:tr>
+                  </html:tbody>
+                </html:table>
+              </Tabular>
+            </BlockAmendment>
+          </P4para>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_target_table_numbered_entry_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-06-28",
+        affected_uri="/id/ukpga/2020/17/section/166",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 166(5) Table",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="s. 140(2)(a)(ii)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2022-06-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "166"), ("subsection", "5"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.TABLE
+    assert [row.children[0].text for row in ops[0].payload.children] == ["6B", "6C"]
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    assert selector["selector_mode"] == "entry_label"
+    assert selector["source_payload_mode"] == "table_rows"
+    assert selector["anchor_entry_label"] == "6a"
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["reason_code"] == "explicit_table_entry_row_insert_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_subsection_table_entry_group_insert_preserves_source_table_rows() -> None:
     extracted_el = ET.fromstring(
         f"""

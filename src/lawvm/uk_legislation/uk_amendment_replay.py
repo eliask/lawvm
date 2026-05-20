@@ -5504,6 +5504,27 @@ def _uk_table_entry_row_insert_selector(
                 "original_target": str(target),
                 "target_ref": target_ref,
             }
+    target_names_table = "table" in f"{target_ref} {target}".lower()
+    numbered_target_table_match = re.search(
+        r"\bafter\s+entry\s+(?P<anchor>[0-9A-Z]+)\s+"
+        r"insert(?:ed)?\s*[—–-]?",
+        text,
+        re.I,
+    )
+    if target_names_table and numbered_target_table_match is not None:
+        anchor_entry_label = _clean_num(numbered_target_table_match.group("anchor"))
+        if anchor_entry_label:
+            return {
+                "rule_id": _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+                "selector_mode": "entry_label",
+                "direction": "after",
+                "anchor_entry_label": anchor_entry_label,
+                "table_label": table_match.group(1) if table_match is not None else "",
+                "source_payload_mode": "table_rows",
+                "source_names_table": source_names_table,
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
     if implicit_subsection_entry_group is not None and not source_names_table:
         relating_text = " ".join(implicit_subsection_entry_group.group("relating").split()).strip(" ,;.")
         inserted_text = _strip_schedule_entry_payload(implicit_subsection_entry_group.group("payload"))
@@ -9947,9 +9968,14 @@ def compile_effect_to_ir_ops(
                     detail={"target_ref": t_str, "target": str(target), **table_row_insert_selector},
                 )
                 continue
+            entry_label_table_rows = (
+                str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
+                and str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows"
+            )
             source_row_payload = (
                 _uk_single_table_row_payload(extracted_el)
                 if str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
+                and not entry_label_table_rows
                 else None
             )
             source_table_payload = (
@@ -9959,6 +9985,7 @@ def compile_effect_to_ir_ops(
             )
             if (
                 str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
+                and not entry_label_table_rows
                 and source_row_payload is None
             ):
                 _append_uk_effect_lowering_rejection(
@@ -10029,7 +10056,31 @@ def compile_effect_to_ir_ops(
                     **table_row_insert_selector,
                 },
             )
-            if str(table_row_insert_selector.get("selector_mode") or "") == "entry_label":
+            if str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows":
+                assert source_table_payload is not None
+                payload_node = dc_replace(
+                    source_table_payload,
+                    attrs={
+                        **dict(source_table_payload.attrs or {}),
+                        "source_rule_id": "uk_table_entry_group_insert_payload"
+                        if str(table_row_insert_selector.get("selector_mode") or "") == "entry_group_heading"
+                        else "uk_table_entry_label_insert_payload",
+                        "anchor_direction": str(table_row_insert_selector["direction"]),
+                        **(
+                            {
+                                "relating_text": str(table_row_insert_selector["relating_text"]),
+                            }
+                            if str(table_row_insert_selector.get("selector_mode") or "")
+                            == "entry_group_heading"
+                            else {
+                                "anchor_entry_label": str(
+                                    table_row_insert_selector["anchor_entry_label"]
+                                ),
+                            }
+                        ),
+                    },
+                )
+            elif str(table_row_insert_selector.get("selector_mode") or "") == "entry_label":
                 assert source_row_payload is not None
                 payload_node = dc_replace(
                     source_row_payload,
@@ -10037,17 +10088,6 @@ def compile_effect_to_ir_ops(
                         **dict(source_row_payload.attrs or {}),
                         "source_rule_id": "uk_table_entry_row_insert_payload",
                         "anchor_entry_label": str(table_row_insert_selector["anchor_entry_label"]),
-                    },
-                )
-            elif str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows":
-                assert source_table_payload is not None
-                payload_node = dc_replace(
-                    source_table_payload,
-                    attrs={
-                        **dict(source_table_payload.attrs or {}),
-                        "source_rule_id": "uk_table_entry_group_insert_payload",
-                        "relating_text": str(table_row_insert_selector["relating_text"]),
-                        "anchor_direction": str(table_row_insert_selector["direction"]),
                     },
                 )
             else:
