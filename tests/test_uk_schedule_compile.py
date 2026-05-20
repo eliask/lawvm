@@ -16305,6 +16305,92 @@ def test_compile_schedule_list_entry_repeal_handles_omit_entry_for_form() -> Non
     assert observations[0]["blocking"] is False
 
 
+def test_compile_numbered_schedule_entry_repeal_refines_partition_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Text>2 Part 2 of Schedule 2 is amended by omitting the entry in relation
+          to Traffic Commissioner for the Scottish Traffic Area (numbered 86).</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_numbered_schedule_entry_repeal",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2002-12-23",
+        affected_uri="/id/asp/2002/11/schedule/2/part/2",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="Sch. 2 Pt. 2",
+        affecting_uri="/id/ssi/2002/468",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2002",
+        affecting_number="468",
+        affecting_provisions="art. 2",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2002-12-23", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPEAL
+    assert op.target == LegalAddress(path=(("schedule", "2"), ("part", "2"), ("paragraph", "86")))
+    assert op.witness_rule_id != "uk_effect_schedule_list_entry_repeal"
+    assert any(
+        row["rule_id"] == "uk_effect_numbered_schedule_entry_repeal_target_refined"
+        and row["blocking"] is False
+        and row["original_target"] == "schedule:2/part:2"
+        and row["refined_target"] == "schedule:2/part:2/paragraph:86"
+        for row in observations
+    )
+
+
+def test_compile_broad_schedule_part_repeal_does_not_refine_without_entry_number() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Text>Part 2 of Schedule 2 is omitted.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_broad_schedule_part_repeal",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2002-12-23",
+        affected_uri="/id/asp/2002/11/schedule/2/part/2",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="Sch. 2 Pt. 2",
+        affecting_uri="/id/ssi/2002/468",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2002",
+        affecting_number="468",
+        affecting_provisions="art. 2",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2002-12-23", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target == LegalAddress(path=(("schedule", "2"), ("part", "2")))
+    assert not any(
+        row["rule_id"] == "uk_effect_numbered_schedule_entry_repeal_target_refined"
+        for row in observations
+    )
+
+
 def test_compile_schedule_list_entry_replace_lowers_to_selector() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -16763,6 +16849,61 @@ def test_replay_blocks_singular_schedule_entry_repeal_widened_to_whole_schedule(
     ]
     assert len(adjudications) == 1
     assert adjudications[0].kind == "uk_replay_schedule_entry_repeal_granularity_blocked"
+    assert adjudications[0].detail["strict_disposition"] == "block"
+
+
+def test_replay_blocks_unnumbered_schedule_entry_omission_widened_to_part() -> None:
+    op = LegalOperation(
+        op_id="unsafe-part-entry-omission",
+        sequence=0,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("schedule", "2"), ("part", "2"))),
+        source=OperationSource(
+            statute_id="ssi/2002/468",
+            title="Test Order",
+            effective="2002-12-23",
+            raw_text=(
+                "Part 2 of Schedule 2 is amended by omitting the entry in relation "
+                "to Traffic Commissioner for the Scottish Traffic Area."
+            ),
+        ),
+    )
+    base = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 2",
+                text="Listed authorities",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PART,
+                        label="Part 2",
+                        text="Entries amendable by Order in Council",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.PARAGRAPH,
+                                label="86",
+                                text="Traffic Commissioner for the Scottish Traffic Area.",
+                            ),
+                            IRNode(kind=IRNodeKind.PARAGRAPH, label="87", text="Other authority."),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    assert len(replayed.supplements[0].children) == 1
+    assert [child.label for child in replayed.supplements[0].children[0].children] == ["86", "87"]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_schedule_entry_repeal_granularity_blocked"
+    assert adjudications[0].detail["target"] == "schedule:2/part:2"
     assert adjudications[0].detail["strict_disposition"] == "block"
 
 

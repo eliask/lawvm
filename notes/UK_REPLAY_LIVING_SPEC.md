@@ -1647,6 +1647,9 @@ Current block-substitution context invariant:
 - schedule-root repeals whose source text only claims `entry`/`entries` repeal
   must not delete the whole schedule. Replay prepare blocks this granularity
   escalation with `uk_replay_schedule_entry_repeal_granularity_blocked`.
+  The same block applies to schedule partition carriers (`part`, `chapter`, or
+  `division`) when source text only claims entry-level omission/repeal and no
+  owned entry/paragraph target was lowered.
   Explicit source forms such as `the entry relating to X is repealed`,
   `omit the entry for X`, and `the entries for X, Y and Z are repealed` lower instead to
   `uk_effect_schedule_list_entry_repeal`: the target remains the schedule
@@ -1655,8 +1658,15 @@ Current block-substitution context invariant:
   before deleting any child. Missing, duplicate, or colliding anchors block
   atomically with `uk_replay_schedule_list_entry_repeal_unresolved`; successful
   entry-level deletion records `uk_replay_schedule_list_entry_repeal_resolved`.
+  When a partition-carrier target is paired with explicit source wording such
+  as `omitting the entry ... (numbered 86)`, lowering records
+  `uk_effect_numbered_schedule_entry_repeal_target_refined` and refines the
+  target to the numbered paragraph under that carrier. This is a target
+  narrowing rule, not a replay fallback: without the explicit number, LawVM
+  blocks rather than deleting the whole carrier.
   Current witnesses: `asp/2000/7` affected `sch. 3` by `asp/2002/3`,
-  `asp/2005/6`, and `asp/2010/8`.
+  `asp/2005/6`, and `asp/2010/8`; partition refinement witness:
+  `asp/2002/11` affected `Sch. 2 Pt. 2` by `ssi/2002/468 art. 2`.
 - definition-anchor text patches may include the article before the quoted
   term, e.g. `after the definition of the "2002 Act" insert- ...`; the article
   is drafting syntax, not part of the definition key, so the selector remains

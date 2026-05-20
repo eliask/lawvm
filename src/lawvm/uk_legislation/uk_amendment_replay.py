@@ -625,6 +625,9 @@ _UK_REPLAY_TABLE_ENTRY_ROW_INSERT_UNRESOLVED_RULE_ID = "uk_replay_table_entry_ro
 _UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID = "uk_effect_schedule_list_entry_insert"
 _UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID = "uk_effect_schedule_list_entry_repeal"
 _UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID = "uk_effect_schedule_list_entry_replace"
+_UK_NUMBERED_SCHEDULE_ENTRY_REPEAL_TARGET_REFINED_RULE_ID = (
+    "uk_effect_numbered_schedule_entry_repeal_target_refined"
+)
 _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_quoted_words_text_repeal"
 )
@@ -1326,9 +1329,9 @@ def _schedule_list_entry_replace_selector(op: LegalOperation) -> dict[str, Any] 
 
 def _looks_like_schedule_entry_repeal_text(text: str) -> bool:
     normalized = " ".join(str(text or "").split()).lower()
-    if "repeal" not in normalized:
+    if not re.search(r"\b(?:repeal\w*|omit\w*)\b", normalized):
         return False
-    return bool(re.search(r"\b(?:entry|entries)\s+(?:for|relating\s+to)\b", normalized))
+    return bool(re.search(r"\b(?:entry|entries)\s+(?:for|relating\s+to|in\s+relation\s+to)\b", normalized))
 
 
 def _is_unsafe_schedule_entry_repeal_op(op: LegalOperation) -> bool:
@@ -1336,7 +1339,9 @@ def _is_unsafe_schedule_entry_repeal_op(op: LegalOperation) -> bool:
         return False
     if _schedule_list_entry_repeal_selector(op) is not None:
         return False
-    if _addr_leaf_kind(op.target) != "schedule":
+    if _addr_container(op.target) != "schedule":
+        return False
+    if _addr_leaf_kind(op.target) not in {"schedule", "part", "chapter", "division"}:
         return False
     payload = op.payload
     raw_text = op.source.raw_text if op.source is not None else ""
@@ -5303,6 +5308,39 @@ def _uk_schedule_list_entry_repeal_selector(
     }
 
 
+def _uk_numbered_schedule_entry_repeal_target(
+    *,
+    target: LegalAddress,
+    extracted_text: Optional[str],
+) -> LegalAddress | None:
+    """Refine a partition-carrier target to an explicitly numbered entry child."""
+    if _addr_container(target) != "schedule":
+        return None
+    if _addr_leaf_kind(target) not in {"part", "chapter", "division"}:
+        return None
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    match = re.search(
+        r"\bomitt(?:ing|ed)?\s+(?:the\s+)?entry\b.+?\bnumbered\s+(?P<label>[0-9]+[A-Za-z]?)\b",
+        text,
+        re.I,
+    )
+    if match is None:
+        match = re.search(
+            r"\b(?:the\s+)?entry\b.+?\bnumbered\s+(?P<label>[0-9]+[A-Za-z]?)\b.+?"
+            r"\b(?:is|are)\s+(?:repealed|omitted)\b",
+            text,
+            re.I,
+        )
+    if match is None:
+        return None
+    label = _clean_num(match.group("label"))
+    if not label:
+        return None
+    return LegalAddress(path=(*target.path, ("paragraph", label)), special=None)
+
+
 def _uk_schedule_list_entry_replace_selector(
     *,
     target_ref: str,
@@ -8204,6 +8242,34 @@ def compile_effect_to_ir_ops(
                 extracted_text=extracted_text,
                 detail={"target_ref": t_str, "target": str(target)},
             )
+        if action == "repeal":
+            refined_numbered_entry_target = _uk_numbered_schedule_entry_repeal_target(
+                target=target,
+                extracted_text=extracted_text,
+            )
+            if refined_numbered_entry_target is not None:
+                original_target = target
+                target = refined_numbered_entry_target
+                _append_uk_effect_lowering_observation(
+                    lowering_rejections_out,
+                    rule_id=_UK_NUMBERED_SCHEDULE_ENTRY_REPEAL_TARGET_REFINED_RULE_ID,
+                    family="source_schedule_list_entry_elaboration",
+                    reason_code="explicit_numbered_entry_child",
+                    reason=(
+                        "UK source text claims omission/repeal of a numbered "
+                        "entry under a schedule partition; lowering refines "
+                        "the partition carrier target to the explicit numbered "
+                        "paragraph instead of deleting the carrier."
+                    ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        "target_ref": t_str,
+                        "original_target": str(original_target),
+                        "refined_target": str(target),
+                    },
+                )
         if crossheading_compound_heading_text is not None:
             heading_target = LegalAddress(path=target.path, special=FacetKind.HEADING)
             _append_uk_effect_lowering_observation(
