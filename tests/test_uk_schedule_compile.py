@@ -15215,6 +15215,9 @@ def test_pipeline_compile_ops_blocks_range_to_container_substitution_until_owned
                 label="1",
                 text="Bus services improvement partnerships",
                 attrs={"eId": "part-2-chapter-1"},
+                children=(
+                    IRNode(kind=IRNodeKind.SECTION, label="3A", attrs={"eId": "section-3A"}),
+                ),
             ),
             source=OperationSource(statute_id="asp/2001/2", title="Transport (Scotland) Act 2019"),
         )
@@ -15258,6 +15261,18 @@ def test_pipeline_compile_ops_blocks_range_to_container_substitution_until_owned
     assert lowering_rejections[-1]["source_range_start"] == "3"
     assert lowering_rejections[-1]["source_range_end"] == "12"
     assert lowering_rejections[-1]["compiled_targets"] == ("part:2/chapter:1",)
+    assert lowering_rejections[-1]["payload_roots"] == (
+        {
+            "kind": "chapter",
+            "label": "1",
+            "eid": "part-2-chapter-1",
+            "direct_child_count": 1,
+            "direct_children": (
+                {"kind": "section", "label": "3A", "eid": "section-3A"},
+            ),
+            "truncated_direct_children": False,
+        },
+    )
     assert lowering_rejections[-1]["required_ownership"] == (
         "source_range",
         "container_payload",
