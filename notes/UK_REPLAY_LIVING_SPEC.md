@@ -137,6 +137,11 @@ Current UK-specific invariants:
   - rule: `uk_whole_schedule_payload_descendant_eid_synthesis`
   - this is allowed only when the effect target is an explicit single schedule address and the root schedule EID is derived from that target
   - descendant IDs are derived from the target-owned root plus parsed source labels; oracle text/hash/fuzzy matching must not participate
+  - source-visible crossheading text in the inserted schedule payload may derive
+    `crossheading-<heading-slug>` identities under that target-owned root
+  - synthesized crossheading IDs do not become the parent identity for numbered
+    descendants; numbered paragraphs/subparagraphs/items remain rooted in the
+    explicit schedule target
   - source-provided descendant EIDs are preserved
   - if repeated local labels would create the same synthetic descendant EID
     under the same schedule payload, synthesis must skip the repeated identity
