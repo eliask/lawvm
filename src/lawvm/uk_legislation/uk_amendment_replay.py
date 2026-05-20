@@ -19251,6 +19251,20 @@ class UKReplayExecutor:
                         )
                         family = "definition_entry_predicate_recovery"
                         strict_disposition = "record"
+                    elif recovery_rule_id == "uk_replay_definition_entry_qualifier_phrase_normalized":
+                        message = (
+                            "UK replay applied definition-entry text op after recognizing "
+                            "a qualifier phrase between the defined term and predicate."
+                        )
+                        family = "definition_entry_predicate_recovery"
+                        strict_disposition = "record"
+                    elif recovery_rule_id == "uk_replay_definition_entry_orphan_separator_normalized":
+                        message = (
+                            "UK replay applied definition-entry text op after normalizing "
+                            "an orphan comma after a definition-entry separator."
+                        )
+                        family = "definition_entry_separator_recovery"
+                        strict_disposition = "record"
                     elif recovery_rule_id == "uk_replay_definition_anchor_lexical_variant_recovered":
                         message = (
                             "UK replay applied definition-anchor text op after resolving "
@@ -21406,7 +21420,7 @@ class UKReplayExecutor:
             if not term:
                 return node, False
 
-            def _rewrite_definition_entry(text: str) -> tuple[str, bool, bool]:
+            def _rewrite_definition_entry(text: str) -> tuple[str, bool, tuple[str, ...]]:
                 term_pattern = _text_patch_pattern(
                     term,
                     allow_punctuation_spacing=allow_punctuation_spacing,
@@ -21414,10 +21428,11 @@ class UKReplayExecutor:
                 )
                 definition_pattern = re.compile(
                     rf"""
-                    (?P<prefix>(?:^|[;\.:\u2014]\s*))
+                    (?P<prefix>(?:^|[;\.:\u2014]\s*,?\s*))
                     \s*
                     [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
                     (?:\s*\([^;]*?\))*
+                    (?P<qualifier>\s*,\s*[^;]{{1,240}}?\s*,)?
                     \s+
                     (?P<predicate>
                         means
@@ -21434,11 +21449,14 @@ class UKReplayExecutor:
                 )
                 matches = list(definition_pattern.finditer(text))
                 if len(matches) != 1:
-                    return text, False, False
+                    return text, False, ()
                 m = matches[0]
                 predicate = " ".join(str(m.group("predicate") or "").lower().split())
                 used_shall_construed = predicate == "shall be construed"
-                prefix = m.group("prefix")
+                used_qualifier = bool(str(m.group("qualifier") or "").strip())
+                raw_prefix = m.group("prefix")
+                used_orphan_separator = bool(re.search(r"[;\.:\u2014]\s*,\s*$", raw_prefix))
+                prefix = re.sub(r"\s*,\s*$", " ", raw_prefix) if used_orphan_separator else raw_prefix
                 if replacement:
                     replacement_prefix = "" if m.start() == 0 else prefix
                     joiner = "" if not replacement_prefix or replacement.startswith((" ", ",", ".", ";", ":", ")")) else " "
@@ -21446,33 +21464,36 @@ class UKReplayExecutor:
                 else:
                     replacement_prefix = "" if m.start() == 0 or prefix.strip() == "." else prefix
                     new_text = f"{text[:m.start()]}{replacement_prefix}{text[m.end():]}"
-                return " ".join(new_text.split()).strip(), True, used_shall_construed
+                recovery_rule_ids = []
+                if used_shall_construed:
+                    recovery_rule_ids.append("uk_replay_definition_predicate_shall_construed_normalized")
+                if used_qualifier:
+                    recovery_rule_ids.append("uk_replay_definition_entry_qualifier_phrase_normalized")
+                if used_orphan_separator:
+                    recovery_rule_ids.append("uk_replay_definition_entry_orphan_separator_normalized")
+                return " ".join(new_text.split()).strip(), True, tuple(recovery_rule_ids)
 
             if node.text:
-                new_text, changed, used_shall_construed = _rewrite_definition_entry(node.text)
+                new_text, changed, definition_recovery_rule_ids = _rewrite_definition_entry(node.text)
                 if changed:
-                    if used_shall_construed and recovery_rule_ids_out is not None:
-                        recovery_rule_ids_out.append(
-                            "uk_replay_definition_predicate_shall_construed_normalized"
-                        )
+                    if definition_recovery_rule_ids and recovery_rule_ids_out is not None:
+                        recovery_rule_ids_out.extend(definition_recovery_rule_ids)
                     rebuilt = dc_replace(node, text=new_text)
                     self._replace_node_in_statute(node, rebuilt)
                     return rebuilt, True
 
-            candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str, bool]] = []
+            candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str, tuple[str, ...]]] = []
             for path, text_node in text_nodes:
                 if not text_node.text:
                     continue
-                new_text, changed, used_shall_construed = _rewrite_definition_entry(text_node.text)
+                new_text, changed, definition_recovery_rule_ids = _rewrite_definition_entry(text_node.text)
                 if changed:
-                    candidate_paths.append((path, text_node, new_text, used_shall_construed))
+                    candidate_paths.append((path, text_node, new_text, definition_recovery_rule_ids))
             if len(candidate_paths) != 1:
                 return node, False
-            path, text_node, new_text, used_shall_construed = candidate_paths[0]
-            if used_shall_construed and recovery_rule_ids_out is not None:
-                recovery_rule_ids_out.append(
-                    "uk_replay_definition_predicate_shall_construed_normalized"
-                )
+            path, text_node, new_text, definition_recovery_rule_ids = candidate_paths[0]
+            if definition_recovery_rule_ids and recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.extend(definition_recovery_rule_ids)
             rebuilt = self._replace_descendant_at_path(
                 node,
                 path,

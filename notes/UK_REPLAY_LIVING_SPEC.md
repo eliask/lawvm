@@ -3061,6 +3061,23 @@ Current bench replay-regime invariant:
   alias text as part of the same bounded entry. This covers Welsh/translated
   definition aliases such as `"X" ("Y") means ...` without deleting a bare
   occurrence of `X` elsewhere in the target subsection.
+- Replay definition-entry matching also treats a comma-delimited qualifier
+  between the term and predicate as part of the same bounded entry, covering
+  forms such as `"X", in relation to Y, means ...`. Successful application
+  emits nonblocking `uk_replay_definition_entry_qualifier_phrase_normalized`
+  with `family=definition_entry_predicate_recovery` and
+  `strict_disposition=record`.
+- Replay definition-entry matching may normalize an orphan comma immediately
+  after a definition-entry separator before a quoted term, such as
+  `; , "X", in relation to Y, means ...`. This is a replay-surface seam caused
+  by earlier source-carried definition insertion/substitution ordering, not a
+  licence to match arbitrary comma-separated prose. Successful application
+  emits nonblocking
+  `uk_replay_definition_entry_orphan_separator_normalized` with
+  `family=definition_entry_separator_recovery` and
+  `strict_disposition=record`. Current corpus witness: `asp/2000/11`
+  `key-15ee4348695468e659eb4c241bb98b57_1`, where `police member` was inserted
+  by `asp/2006/10` and repealed by `asp/2012/8`.
 - Replay definition-entry matching treats `shall be construed` as a bounded
   definition predicate variant when and only when the named term resolves to
   exactly one definition entry in the target subtree. Successful application
