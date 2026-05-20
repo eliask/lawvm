@@ -4521,6 +4521,116 @@ def test_compile_source_carried_child_tail_repeal_rejects_mismatched_subsection_
     assert lowering_records[0]["blocking"] is True
 
 
+def test_compile_source_carried_subparagraph_tail_repeal_from_exact_paragraph_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-paragraph-8-b">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>b in paragraph (a), the words following sub-paragraph (ii) are repealed; and</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-subparagraph-tail-repeal",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2025-04-25",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 9(3)(a)",
+        affecting_uri="/id/ukpga/2025/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="Sch. para. 8(b)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2025-04-25", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (
+        ("section", "9"),
+        ("subsection", "3"),
+        ("paragraph", "a"),
+    )
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.DELETE
+    assert ops[0].text_patch.selector.match_text == "TEXT_AFTER_CHILD_TAIL_subparagraph_2"
+    assert ops[0].text_patch.replacement is None
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_subparagraph_tail_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_source_carried_subparagraph_tail_repeal_text_patch",
+    ]
+    assert lowering_records[0]["blocking"] is False
+    assert lowering_records[0]["source_parent_kind"] == "paragraph"
+    assert lowering_records[0]["source_parent_label"] == "a"
+    assert lowering_records[0]["source_anchor_child_kind"] == "subparagraph"
+    assert lowering_records[0]["source_anchor_child_label"] == "2"
+
+
+def test_compile_source_carried_subparagraph_tail_repeal_rejects_mismatched_paragraph_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-paragraph-8-b">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>b in paragraph (b), the words following sub-paragraph (ii) are repealed; and</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-subparagraph-tail-repeal-mismatch",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2025-04-25",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 9(3)(a)",
+        affecting_uri="/id/ukpga/2025/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="Sch. para. 8(b)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2025-04-25", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert [row["rule_id"] for row in lowering_records] == [
+        "uk_effect_overlap_substitution_unlowered",
+    ]
+    assert lowering_records[0]["blocking"] is True
+
+
 def test_compile_source_carried_child_tail_substitution_from_exact_subsection_context() -> None:
     extracted_el = ET.fromstring(
         f"""
