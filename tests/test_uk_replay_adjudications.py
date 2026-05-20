@@ -170,6 +170,89 @@ def test_executor_records_replay_target_not_found() -> None:
     assert adjudications[0].source_statute == "ukpga/2026/1"
 
 
+def test_executor_resolves_source_parent_range_schedule_paragraph_target_to_unique_item() -> None:
+    statute = IRStatute(
+        statute_id="asp/2000/4",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="1",
+                attrs={"eId": "schedule-1"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        attrs={"eId": "schedule-1-paragraph-1"},
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.ITEM,
+                                label="d",
+                                text="old d",
+                                attrs={"eId": "schedule-1-paragraph-1-d"},
+                            ),
+                            IRNode(kind=IRNodeKind.ITEM, label="e", text="old e"),
+                            IRNode(kind=IRNodeKind.ITEM, label="f", text="old f"),
+                            IRNode(kind=IRNodeKind.ITEM, label="g", text="old g"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    replacement = IRNode(
+        kind=IRNodeKind.ITEM,
+        label="d",
+        text="new d",
+        children=(
+            IRNode(kind=IRNodeKind.ITEM, label="i", text="new i"),
+            IRNode(kind=IRNodeKind.ITEM, label="ii", text="new ii"),
+            IRNode(kind=IRNodeKind.ITEM, label="iii", text="new iii"),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+    witness_rule = "uk_effect_source_parent_substitution_range_payload_lowered"
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_parent_range_replace",
+            sequence=1,
+            action=StructuralAction.REPLACE,
+            target=LegalAddress(path=(("schedule", "1"), ("paragraph", "d"))),
+            payload=replacement,
+            source=_source(),
+            witness_rule_id=witness_rule,
+        )
+    )
+    for idx, label in enumerate(("e", "f", "g")):
+        executor.apply_op(
+            LegalOperation(
+                op_id=f"uk_test_source_parent_range_repeal_{idx}",
+                sequence=2 + idx,
+                action=StructuralAction.REPEAL,
+                target=LegalAddress(path=(("schedule", "1"), ("paragraph", label))),
+                source=_source(),
+                witness_rule_id=witness_rule,
+            )
+        )
+
+    paragraph = executor.statute.supplements[0].children[0]
+    assert [child.label for child in paragraph.children] == ["d"]
+    assert paragraph.children[0].text == "new d"
+    assert [child.label for child in paragraph.children[0].children] == ["i", "ii", "iii"]
+    recovery_rows = [
+        row
+        for row in adjudications
+        if row.kind == "uk_replay_schedule_item_target_from_parent_substitution_resolved"
+    ]
+    assert len(recovery_rows) == 4
+    assert {row.detail["action"] for row in recovery_rows} == {"replace", "repeal"}
+    assert all(row.detail["strict_disposition"] == "block" for row in recovery_rows)
+    assert all(row.detail["quirks_disposition"] == "apply" for row in recovery_rows)
+
+
 def test_executor_classifies_direct_section_paragraph_missing_carrier_as_source_shape() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

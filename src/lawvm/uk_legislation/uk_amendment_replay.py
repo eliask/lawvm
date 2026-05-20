@@ -763,11 +763,20 @@ _UK_NUMBERED_SCHEDULE_ENTRY_REPEAL_TARGET_REFINED_RULE_ID = (
 _UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID = (
     "uk_effect_substituted_for_label_changing_target_rebound"
 )
+_UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID = (
+    "uk_effect_source_parent_substitution_range_payload_lowered"
+)
+_UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID = (
+    "uk_effect_source_parent_at_end_added_payload_lowered"
+)
 _UK_SOURCE_TEXT_SCHEDULE_PARAGRAPH_TARGET_OVERRIDE_RULE_ID = (
     "uk_effect_source_text_schedule_paragraph_target_overrides_metadata"
 )
 _UK_REPLAY_SOURCE_LABEL_CHANGING_SUBSTITUTION_RESOLVED_RULE_ID = (
     "uk_replay_source_label_changing_substitution_resolved"
+)
+_UK_REPLAY_SCHEDULE_ITEM_TARGET_FROM_PARENT_SUBSTITUTION_RULE_ID = (
+    "uk_replay_schedule_item_target_from_parent_substitution_resolved"
 )
 _UK_REPLAY_SOURCE_CARRIED_LABELED_CHILD_TEXT_SUBSTITUTION_RULE_ID = (
     "uk_replay_source_carried_labeled_child_text_substitution_recovered"
@@ -7798,6 +7807,31 @@ def _source_ancestor_chain(source_root: Optional[ET.Element], el: Optional[ET.El
     return ()
 
 
+def _unique_source_ancestor_chain_by_tag_text(
+    source_root: Optional[ET.Element],
+    el: Optional[ET.Element],
+) -> tuple[ET.Element, ...]:
+    """Reattach a detached extracted fragment to a unique same-text source node."""
+    if source_root is None or el is None:
+        return ()
+    target_tag = _tag(el)
+    target_text = " ".join(_text_content(el).split())
+    if not target_tag or not target_text:
+        return ()
+    matches: list[tuple[ET.Element, ...]] = []
+
+    def _walk(node: ET.Element, ancestors: tuple[ET.Element, ...]) -> None:
+        if _tag(node) == target_tag and " ".join(_text_content(node).split()) == target_text:
+            matches.append(tuple(reversed(ancestors)))
+        for child in node:
+            _walk(child, (*ancestors, node))
+
+    _walk(source_root, ())
+    if len(matches) != 1:
+        return ()
+    return matches[0]
+
+
 _AFTER_WORDS_INSERTED_BY_SIBLING_RE = re.compile(
     r"\bafter\s+the\s+words\s+inserted\s+by\s+(?:sub-?paragraph|paragraph)\s+\((?P<label>[0-9A-Za-z]+)\)\s+"
     r"insert(?:\s+[“\"'‘](?P<quoted>.*?)[”\"'’]|\s*[—-]\s*(?P<block>.+?)(?:\s+[.,;])?$)",
@@ -7916,6 +7950,8 @@ def _fragment_substitution_grouped_anchor_occurrence(
     if not child_match:
         return None
     ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
     for ancestor_index, ancestor in enumerate(ancestors):
         candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
         if not candidate_text:
@@ -8592,6 +8628,8 @@ def _fragment_substitution_source_carried_definition_entry_insert(
     ):
         return None
     ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
     for ancestor_index, ancestor in enumerate(ancestors):
         candidate_text = _source_local_instruction_text_for_carried_payload(ancestor)
         match = _SOURCE_AFTER_DEFINITION_INSERT_RE.search(candidate_text)
@@ -9249,6 +9287,212 @@ def _source_parent_instruction_with_payload(
     return None
 
 
+_SOURCE_PARENT_SUBSTITUTION_RANGE_RE = re.compile(
+    r"\bfor\s+(?P<kind>sub-?paragraphs?|paragraphs?|subsections?)\s+"
+    r"\((?P<start>[0-9A-Za-z]+)\)\s+to\s+\((?P<end>[0-9A-Za-z]+)\)\s+"
+    r"(?:(?:there\s+(?:is|are)\s+)?substituted|substitute)\b",
+    flags=re.I,
+)
+_SOURCE_PARENT_AT_END_ADDED_RE = re.compile(
+    r"\bat\s+the\s+end\b\s+(?:there\s+(?:is|are)\s+)?(?:added|inserted|insert)\b",
+    flags=re.I,
+)
+
+_UK_SOURCE_PAYLOAD_TAG_KIND = {
+    "Section": "section",
+    "P1": "section",
+    "Article": "section",
+    "Rule": "section",
+    "Subsection": "subsection",
+    "P2": "subsection",
+    "P3": "paragraph",
+    "P4": "subparagraph",
+}
+
+
+def _replace_last_parenthetical_label(ref: str, old_label: str, new_label: str) -> str:
+    labels = list(re.finditer(r"\(([0-9A-Za-z]+)\)", ref))
+    if not labels:
+        return ""
+    last = labels[-1]
+    if _source_parent_range_label(last.group(1)) != _source_parent_range_label(old_label):
+        return ""
+    return f"{ref[:last.start()]}({new_label}){ref[last.end():]}"
+
+
+def _source_parent_range_label(label: str | None) -> str:
+    raw = str(label or "").strip().strip("()").lower()
+    if re.fullmatch(r"[a-z]", raw):
+        return raw
+    return _clean_num(raw)
+
+
+def _source_parent_substitution_range_payload(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+    target_refs: Sequence[str],
+) -> Optional[dict[str, Any]]:
+    """Prove a payload-only BlockAmendment from its source-local range formula."""
+    payload_text = " ".join((extracted_text or "").split()).strip()
+    if not payload_text or not target_refs:
+        return None
+    if extracted_el is None or _tag(extracted_el) not in {"BlockAmendment", "InlineAmendment"}:
+        return None
+    all_structural_children = [
+        child
+        for child in list(extracted_el)
+        if _tag(child) in {"P1", "P2", "P3", "P4", "Section", "Subsection", "Paragraph"}
+    ]
+    if not all_structural_children:
+        return None
+    first_payload_tag = _tag(all_structural_children[0])
+    structural_children = [child for child in all_structural_children if _tag(child) == first_payload_tag]
+    if not structural_children:
+        return None
+    payload_labels = tuple(
+        label
+        for label in (_source_parent_range_label(_direct_structural_num(child)) for child in structural_children)
+        if label
+    )
+    if not payload_labels:
+        return None
+    target_ref = target_refs[0]
+    try:
+        targets = tuple(_parse_affected_target(ref) for ref in target_refs)
+    except Exception:
+        return None
+    target_labels = tuple(_source_parent_range_label(_addr_leaf_label(target) or "") for target in targets)
+    if not target_labels or any(not label for label in target_labels):
+        return None
+    if payload_labels != target_labels[: len(payload_labels)]:
+        return None
+
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        instruction_text = _instruction_text_before_amendment_container(ancestor)
+        instruction_text = " ".join(instruction_text.split()).strip()
+        if not instruction_text:
+            instruction_text = " ".join(_source_local_instruction_text_for_carried_payload(ancestor).split()).strip()
+        match = _SOURCE_PARENT_SUBSTITUTION_RANGE_RE.search(instruction_text)
+        if match is None:
+            continue
+        start_label = _source_parent_range_label(match.group("start"))
+        end_label = _source_parent_range_label(match.group("end"))
+        if start_label != target_labels[0]:
+            continue
+        if not re.fullmatch(r"[a-z]", start_label, re.I) or not re.fullmatch(r"[a-z]", end_label, re.I):
+            continue
+        start_ord = ord(start_label.lower())
+        end_ord = ord(end_label.lower())
+        if end_ord < start_ord:
+            continue
+        payload_end_ord = ord(payload_labels[-1].lower())
+        if payload_end_ord < start_ord or payload_end_ord > end_ord:
+            continue
+        expected_payload_labels = tuple(chr(label_ord) for label_ord in range(start_ord, payload_end_ord + 1))
+        if payload_labels != expected_payload_labels:
+            continue
+        trailing_refs = tuple(
+            ref
+            for ref in (
+                _replace_last_parenthetical_label(target_refs[-1], payload_labels[-1], chr(label_ord))
+                for label_ord in range(payload_end_ord + 1, end_ord + 1)
+            )
+            if ref
+        )
+        source_parent_id = str(ancestor.get("id") or "")
+        if not source_parent_id:
+            source_parent_id = next(
+                (str(candidate.get("id")) for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")),
+                "",
+            )
+        return {
+            "rule_id": _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID,
+            "source_parent_id": source_parent_id,
+            "source_parent_instruction": instruction_text,
+            "target_ref": target_ref,
+            "target": str(targets[0]),
+            "start_label": start_label,
+            "end_label": end_label,
+            "trailing_refs": trailing_refs,
+            "payload_label": payload_labels[0],
+            "payload_labels": payload_labels,
+            "payload_tag": _tag(structural_children[0]),
+            "payload_tags": tuple(_tag(child) for child in structural_children[: len(payload_labels)]),
+        }
+    return None
+
+
+def _source_parent_at_end_added_payload(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+    target_refs: Sequence[str],
+) -> Optional[dict[str, Any]]:
+    """Prove a payload-only BlockAmendment insertion from its parent formula."""
+    payload_text = " ".join((extracted_text or "").split()).strip()
+    if not payload_text or len(target_refs) != 1:
+        return None
+    if extracted_el is None or _tag(extracted_el) not in {"BlockAmendment", "InlineAmendment"}:
+        return None
+    structural_children = [
+        child
+        for child in list(extracted_el)
+        if _tag(child) in _UK_SOURCE_PAYLOAD_TAG_KIND
+    ]
+    if len(structural_children) != 1:
+        return None
+    payload_el = structural_children[0]
+    payload_label = _source_parent_range_label(_direct_structural_num(payload_el))
+    payload_kind = _UK_SOURCE_PAYLOAD_TAG_KIND.get(_tag(payload_el), "")
+    if not payload_label or not payload_kind:
+        return None
+    target_ref = target_refs[0]
+    try:
+        target = canonicalize_uk_address(_parse_affected_target(target_ref))
+    except Exception:
+        return None
+    target_label = _source_parent_range_label(_addr_leaf_label(target) or "")
+    target_kind = _addr_leaf_kind(target) or ""
+    if payload_label != target_label:
+        return None
+    if payload_kind != target_kind:
+        return None
+
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        instruction_text = _instruction_text_before_amendment_container(ancestor)
+        instruction_text = " ".join(instruction_text.split()).strip()
+        if not instruction_text:
+            instruction_text = " ".join(_source_local_instruction_text_for_carried_payload(ancestor).split()).strip()
+        if _SOURCE_PARENT_AT_END_ADDED_RE.search(instruction_text) is None:
+            continue
+        source_parent_id = str(ancestor.get("id") or "")
+        if not source_parent_id:
+            source_parent_id = next(
+                (str(candidate.get("id")) for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")),
+                "",
+            )
+        return {
+            "rule_id": _UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID,
+            "source_parent_id": source_parent_id,
+            "source_parent_instruction": instruction_text,
+            "target_ref": target_ref,
+            "target": str(target),
+            "payload_label": payload_label,
+            "payload_kind": payload_kind,
+            "payload_tag": _tag(payload_el),
+        }
+    return None
+
+
 _DEFINITION_LIST_OMISSION_CONTEXT_RE = re.compile(
     r"(?:^|\b)omit\s+(?:the\s+)?definitions?\s+of(?:\b|[\u2014-])",
     flags=re.I,
@@ -9426,6 +9670,8 @@ def compile_effect_to_ir_ops(
         metadata_renumber_targets,
         extracted_text,
     )
+    source_parent_substitution_range_payload: Optional[dict[str, Any]] = None
+    source_parent_at_end_added_payload: Optional[dict[str, Any]] = None
 
     # Infer missing action from text heuristics if metadata is empty.
     # For empty effect_type we require a clear structural verb — if none is found
@@ -9502,6 +9748,24 @@ def compile_effect_to_ir_ops(
             action = "insert"
         elif re.search(r"\bfrom\b.*\bto\b", text_lower, re.I | re.S):
             action = "replace"
+        else:
+            source_parent_substitution_range_payload = _source_parent_substitution_range_payload(
+                extracted_el=extracted_el,
+                source_root=source_root,
+                extracted_text=extracted_text,
+                target_refs=_split_metadata_provisions(effect.affected_provisions),
+            )
+            if source_parent_substitution_range_payload is not None:
+                action = "replace"
+            else:
+                source_parent_at_end_added_payload = _source_parent_at_end_added_payload(
+                    extracted_el=extracted_el,
+                    source_root=source_root,
+                    extracted_text=extracted_text,
+                    target_refs=_split_metadata_provisions(effect.affected_provisions),
+                )
+                if source_parent_at_end_added_payload is not None:
+                    action = "insert"
         # No else — leave action=None so we fall through to the early return below.
 
     if not action:
@@ -9666,11 +9930,40 @@ def compile_effect_to_ir_ops(
                     ],
                 },
             )
-        trailing_repeal_refs = _repeal_tail_for_substituted_series_replacement(
-            effect.effect_type,
-            original_targets_str,
-        )
-        if trailing_repeal_refs and original_targets_str and not label_changing_substitutions:
+        if source_parent_substitution_range_payload is not None:
+            trailing_repeal_refs = list(source_parent_substitution_range_payload["trailing_refs"])
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID,
+                family="source_context_elaboration",
+                reason_code="payload_fragment_combined_with_parent_substitution_range",
+                reason=(
+                    "UK effect feed row has no effect type and the extracted "
+                    "BlockAmendment contains only the replacement payload, but "
+                    "the source-local parent instruction explicitly substitutes "
+                    "a bounded sibling range; lowering combines those facts into "
+                    "one source-owned replacement plus explicit trailing repeals."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    key: value
+                    for key, value in source_parent_substitution_range_payload.items()
+                    if key != "rule_id"
+                },
+            )
+        else:
+            trailing_repeal_refs = _repeal_tail_for_substituted_series_replacement(
+                effect.effect_type,
+                original_targets_str,
+            )
+        if (
+            trailing_repeal_refs
+            and original_targets_str
+            and not label_changing_substitutions
+            and source_parent_substitution_range_payload is None
+        ):
             try:
                 replacement_target = _parse_affected_target(original_targets_str[0])
             except Exception:
@@ -9678,6 +9971,28 @@ def compile_effect_to_ir_ops(
             if replacement_target is not None:
                 replacement_leaf_override = _addr_leaf_label(replacement_target)
                 replacement_leaf_kind = _addr_leaf_kind(replacement_target)
+    if source_parent_at_end_added_payload is not None:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=_UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID,
+            family="source_context_elaboration",
+            reason_code="payload_fragment_combined_with_parent_at_end_added",
+            reason=(
+                "UK effect feed row has no effect type and the extracted "
+                "BlockAmendment contains only an inserted structural payload, "
+                "but the source-local parent instruction explicitly adds it at "
+                "the end of the affected provision; lowering keeps the metadata "
+                "target and payload identity as one source-owned insert."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                key: value
+                for key, value in source_parent_at_end_added_payload.items()
+                if key != "rule_id"
+            },
+        )
     if len(targets_str) == 1:
         mixed_heading_structural_ref = _mixed_heading_structural_insert_ref(
             targets_str[0],
@@ -9961,6 +10276,13 @@ def compile_effect_to_ir_ops(
         payload_match_target = target
         if label_changing_substitution is not None:
             payload_match_target = label_changing_substitution.replacement_target
+        elif source_parent_substitution_range_payload is not None and target_index == 0:
+            payload_match_target = LegalAddress(
+                path=(
+                    *target.path[:-1],
+                    ("item", str(source_parent_substitution_range_payload["payload_label"])),
+                )
+            )
         crossheading_replacement_text = (
             _crossheading_before_anchor_replacement_text(extracted_text)
             if action == "replace" and _is_crossheading_ref(t_str)
@@ -13458,6 +13780,14 @@ def compile_effect_to_ir_ops(
                     )
                 if flat_p1para_schedule_insert_lowered and curr_action == "insert":
                     op_witness_rule_id = _UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID
+                if (
+                    source_parent_substitution_range_payload is not None
+                    and curr_action == "replace"
+                    and target_index < len(source_parent_substitution_range_payload["payload_labels"])
+                ):
+                    op_witness_rule_id = _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID
+                if source_parent_at_end_added_payload is not None and curr_action == "insert":
+                    op_witness_rule_id = _UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID
                 op = LegalOperation(
                     op_id=lowered_witness.op_id,
                     sequence=lowered_witness.sequence,
@@ -13563,6 +13893,11 @@ def compile_effect_to_ir_ops(
                     source=lowered_witness.source,
                     group_id=_uk_temporal_group_id(effect),
                     provenance_tags=_uk_lowered_op_provenance_tags(lowered_witness),
+                    witness_rule_id=(
+                        _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID
+                        if source_parent_substitution_range_payload is not None
+                        else None
+                    ),
                 )
             )
     return ops
@@ -18272,6 +18607,76 @@ class UKReplayExecutor:
                 return raw_node
         return _find(canonicalize_uk_address(target))
 
+    def _find_unique_schedule_item_for_source_parent_substitution_range_target(
+        self,
+        target: LegalAddress,
+        op: LegalOperation,
+    ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
+        """Resolve feed `Sch. N para. (d)` shape to a unique schedule item.
+
+        This recovery is available only for ops whose lowering witness proved a
+        source-parent sibling-range substitution. It does not authorize general
+        schedule paragraph-to-item fallback.
+        """
+        if op.witness_rule_id != _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID:
+            return None, None, None
+        if _addr_container(target) != "schedule" or len(tuple(target.path)) != 2:
+            return None, None, None
+        schedule_label = target.path[0][1]
+        target_kind, target_label_raw = target.path[1]
+        target_label = _source_parent_range_label(target_label_raw)
+        if target_kind != "paragraph" or not re.fullmatch(r"[a-z]", target_label, re.I):
+            return None, None, None
+        if op.payload is not None:
+            payload_kind = _uk_kind_value(op.payload.kind).lower()
+            payload_label = _source_parent_range_label(op.payload.label or "")
+            if payload_kind != "item" or payload_label != target_label:
+                return None, None, None
+
+        roots = uk_schedule_root_candidates(
+            cast(list[IRNode], self.statute.supplements),
+            sched_label=schedule_label,
+            remaining_path=(),
+            match_kind_label=self._match_kind_label,
+        )
+        candidates: list[tuple[UKMutableNode, UKMutableNode, int]] = []
+
+        def _walk(parent: UKMutableNode) -> None:
+            for child_idx, child in enumerate(parent.children):
+                if (
+                    _uk_kind_value(child.kind).lower() == "item"
+                    and _source_parent_range_label(child.label or "") == target_label
+                ):
+                    candidates.append((child, parent, child_idx))
+                _walk(child)
+
+        for root, _root_parent, _root_idx in roots:
+            _walk(cast(UKMutableNode, root))
+        if len(candidates) != 1:
+            return None, None, None
+        recovered_node, recovered_parent, recovered_idx = candidates[0]
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind=_UK_REPLAY_SCHEDULE_ITEM_TARGET_FROM_PARENT_SUBSTITUTION_RULE_ID,
+            message=(
+                "UK replay resolved a source-parent substitution-range target "
+                "whose effect feed names a schedule item as a schedule paragraph."
+            ),
+            op=op,
+            detail={
+                "action": _action_name(op.action),
+                "target": str(target),
+                "recovered_kind": _uk_kind_value(recovered_node.kind),
+                "recovered_label": recovered_node.label or "",
+                "family": "target_resolution_recovery",
+                "source_rule_id": _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID,
+                "blocking": False,
+                "strict_disposition": "block",
+                "quirks_disposition": "apply",
+            },
+        )
+        return recovered_node, recovered_parent, recovered_idx
+
     @staticmethod
     def _is_explicit_direct_section_paragraph_target(target: LegalAddress) -> bool:
         path = tuple(target.path or ())
@@ -18509,6 +18914,11 @@ class UKReplayExecutor:
         if not node:
             node, parent, idx, insert_existing_target_resolution = (
                 self._find_existing_insert_target_by_explicit_parent_leaf(target, op)
+            )
+        if not node and _action_name(op.action) in {"replace", "repeal"}:
+            node, parent, idx = self._find_unique_schedule_item_for_source_parent_substitution_range_target(
+                target,
+                op,
             )
         target_found = node is not None
         if not target_found and self._empty_schedule_root_shape_gap(target):
