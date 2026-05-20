@@ -11,6 +11,7 @@ from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
 from lawvm.uk_legislation.nlp_parser import US
+from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
 from lawvm.uk_legislation.source_adjudication import classify_uk_replay_adjudication_bucket
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKReplayExecutor,
@@ -72,6 +73,15 @@ def test_definition_anchor_lexical_variants_are_narrow_and_deduplicated() -> Non
         "educational education",
     )
     assert _uk_definition_term_lexical_variants("health") == ()
+
+
+def test_uk_ordinal_to_int_accepts_words_adverbs_and_numeric_suffixes() -> None:
+    assert _uk_ordinal_to_int("") is None
+    assert _uk_ordinal_to_int("second") == 2
+    assert _uk_ordinal_to_int("secondly") == 2
+    assert _uk_ordinal_to_int("  3rd. ") == 3
+    assert _uk_ordinal_to_int("12th") == 12
+    assert _uk_ordinal_to_int("eleventh") is None
 
 
 def _uk_table_effect() -> UKEffectRecord:
