@@ -1940,6 +1940,15 @@ Current nested-roman target invariant:
     exists, replay may insert the claimed sibling under paragraph 12
   - this preserves exact eId and direct-path matching while preventing a
     target-hijack by recursive roman/numeric equivalence
+- parenthesized same-prefix alphabetic ranges must expand before target
+  parsing, rather than letting the dash become a synthetic legal label
+  - examples: `(da)-(dc)` becomes `(da)`, `(db)`, `(dc)`; `(axa)-(axc)`
+    becomes `(axa)`, `(axb)`, `(axc)`
+  - current witnesses: `ukpga/2020/17` `Sch. 26 para. 12(1)(da)-(dc)` by
+    `uksi/2020/1520 reg. 6(2)(b)` and `Sch. 18 para. 38(axa)-(axc)` by
+    `ukpga/2023/50 Sch. 14 para. 20`
+  - broad base-26 ranges such as `(az)-(bc)` remain unsupported unless owned
+    separately; no public `item:-` address should be emitted
 
 Current `ukpga/2001/11` near-solved interpretation:
 
