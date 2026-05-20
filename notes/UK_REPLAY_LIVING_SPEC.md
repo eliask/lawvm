@@ -2075,6 +2075,12 @@ Current nested-roman target invariant:
   - current witness: `asp/2000/1` / `ukpga/2014/2 Sch. 12 para. 47(2)`,
     where the affected metadata previously lowered one malformed target
     `section:26d/subsection:4/paragraph:b/subparagraph:-/item:bb`
+- canonical roman parenthesized ranges take precedence over same-stem
+  alphabetic expansion. `s. 25(3)(a)(i)-(iv)` becomes `(i)`, `(ii)`,
+  `(iii)`, `(iv)`, not the alphabetic stem family `(i)`, `(ia)`, ... `(iv)`.
+  - current witness: `asp/2001/8` / `ssi/2009/131 art. 4`, where affected
+    metadata `s. 25(3)(a)(i)-(iv)` previously produced bogus subparagraph
+    labels such as `ia`, `ib`, and `ic`
 - tight abbreviation+label forms such as `para.032B` are normalized before
   target parsing. The missing space is a metadata transport defect, and leading
   numeric zero padding is stripped from provision labels.
