@@ -46,6 +46,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "repeal_schedule_table_source_unsupported",
         "as_if_application_modification_unsupported",
         "commencement_effect_out_of_scope",
+        "application_modification_payload_out_of_scope",
         "broad_schedule_flat_payload_unsupported",
         "amendment_text_target_unsupported",
         "table_entry_target_unsupported",
@@ -847,6 +848,10 @@ def classify_uk_effect_source_pathology(
             return "broad_schedule_flat_payload_unsupported"
         if "uk_effect_empty_type_as_if_words_omitted_rejected" in lowering_rules:
             return "temporary_as_if_word_omission_unsupported"
+        if "uk_effect_commencement_source_rejected" in lowering_rules:
+            return "commencement_effect_out_of_scope"
+        if "uk_effect_application_modification_payload_rejected" in lowering_rules:
+            return "application_modification_payload_out_of_scope"
         if "uk_effect_schedule_note_target_rejected" in lowering_rules:
             return "schedule_note_target_unsupported"
         targets_norm = " ".join(targets).lower()
@@ -1148,6 +1153,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "non_textual_or_out_of_scope",
             "rule_id": "uk_manual_frontier_commencement_effect_out_of_scope",
             "reason": "The source is a commencement/applicability instrument; it may matter to temporal selection, but it is not a direct text/tree mutation under the current UK replay model.",
+        }
+
+    if source_pathology_norm == "application_modification_payload_out_of_scope":
+        return {
+            "status": "non_textual_or_out_of_scope",
+            "rule_id": "uk_manual_frontier_application_modification_payload_out_of_scope",
+            "reason": "The extracted payload belongs to an application-modification formula; replay must not treat it as a direct amendment to current target text without a scoped temporal/application model.",
         }
 
     if source_pathology_norm == "source_carried_multi_subunit_text_rewrite_unsupported":

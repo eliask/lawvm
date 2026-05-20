@@ -695,12 +695,31 @@ def test_classify_uk_effect_source_pathology_marks_commencement_out_of_scope() -
         op_actions=[],
         payload_kinds=[],
         payload_texts=[],
-        lowering_rule_ids=["uk_effect_lowering_no_supported_action_rejected"],
+        lowering_rule_ids=["uk_effect_commencement_source_rejected"],
         effect_type="",
         is_structural=True,
     )
 
     assert pathology == "commencement_effect_out_of_scope"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_source_pathology_marks_application_payload_out_of_scope() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="BlockAmendment",
+        extracted_text=(
+            "5 Where the proposed scheme specifies existing facilities the "
+            "authority shall inform operators when those facilities were provided."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        lowering_rule_ids=["uk_effect_application_modification_payload_rejected"],
+        effect_type="",
+        is_structural=True,
+    )
+
+    assert pathology == "application_modification_payload_out_of_scope"
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
@@ -1285,6 +1304,27 @@ def test_classify_uk_manual_compile_frontier_marks_commencement_out_of_scope() -
 
     assert result["status"] == "non_textual_or_out_of_scope"
     assert result["rule_id"] == "uk_manual_frontier_commencement_effect_out_of_scope"
+
+
+def test_classify_uk_manual_compile_frontier_marks_application_payload_out_of_scope() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="",
+        source_pathology="application_modification_payload_out_of_scope",
+        extracted_tag="BlockAmendment",
+        extracted_text="5 Where the proposed scheme specifies existing facilities ...",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_application_modification_payload_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["rule_id"] == "uk_manual_frontier_application_modification_payload_out_of_scope"
 
 
 def test_classify_uk_manual_compile_frontier_marks_schedule_note_target() -> None:
