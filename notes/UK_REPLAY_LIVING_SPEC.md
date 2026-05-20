@@ -1833,12 +1833,14 @@ Current block-substitution context invariant:
   explicit `heading` child under the target section, a unique `P1group`
   heading that wraps the target section, or a subordinate source `P2group` /
   `P3group` / `P4group` preserved as `pgroup` under
-  `uk_parse_subordinate_pgroup_heading_carrier`. Inserted sections wrapped in
-  source `P1group/Title + P1` payloads use the named payload-normalization
-  observation `uk_effect_inserted_section_p1group_heading_carrier_lowered` to
-  preserve the wrapper title as a target-owned `heading` child. This rule is
-  deliberately narrower than using a live parent `P1group`: shared parent
-  headings for neighbouring sections remain ambiguous. A multi-child `pgroup`
+  `uk_parse_subordinate_pgroup_heading_carrier`. Inserted provisions wrapped in
+  source `P1group/Title + P1` payloads preserve the wrapper title as a
+  target-owned `heading` child under named payload-normalization observations:
+  `uk_effect_inserted_section_p1group_heading_carrier_lowered` for sections and
+  `uk_effect_inserted_p1group_heading_carrier_lowered` for schedule
+  paragraphs. This rule is deliberately narrower than using a live parent
+  `P1group`: shared parent headings for neighbouring provisions remain
+  ambiguous. A multi-child `pgroup`
   heading may be used only for its first structural child, matching source
   wording such as "italic heading before subsection (3)"; later children must
   not hijack that carrier. Ambiguous shared wrappers emit
@@ -2740,6 +2742,15 @@ Current bench replay-regime invariant:
   `uk_replay_text_match_missing`: the executor found the structural target, but
   there is no text surface on which the text patch could operate. Replay must
   not infer a parent/sibling target or inject the source phrase.
+- When source explicitly targets a schedule paragraph's first subparagraph but
+  the UK XML carries that first subparagraph as paragraph intro text with item
+  children, replay may apply the exact text patch to the parent paragraph text
+  only under `uk_replay_implicit_first_subparagraph_parent_text_recovered`.
+  Preconditions are narrow: the leaf target is `subparagraph:1`, the parent
+  `paragraph` exists, no structural child `subparagraph:1` exists, and the
+  parent text contains the exact selector. The recovery is a nonblocking
+  quirks-mode observation with `strict_disposition=block`; it does not authorize
+  sibling/child mutation or any other parent fallback.
 - A valid single-segment section/article/rule/regulation target is not
   malformed merely because the body tree is organized under part/chapter
   wrappers. If the target is absent but bracketed by existing section-like
@@ -2961,6 +2972,13 @@ Current bench replay-regime invariant:
   alphabetic legal labels for ordering. They must not be Roman-normalized to
   100/500. Roman ordering is used for multi-letter Roman numerals and for
   nested `(i)` style labels after alphabetic parents.
+- Schedule materialization may rank structural inserts before text edits so
+  dependent target shapes exist before replay mutates them. Heading-facet
+  patches normally stay early, but not when a same-effective-date/same-source
+  structural insert or replacement has the same target path; in that case the
+  structural op creates the heading carrier first. Current witness:
+  `ukpga/2020/17` Schedule 6 paragraph 43A, inserted by `ukpga/2022/32` Sch.
+  17 para. 1 and then amended by Sch. 17 para. 12(9)-(10).
 - Same-target text patches may be reordered only by an exact quoted preimage
   chain inside the same effective-date bucket. If operation A replaces `old`
   with `middle` and operation B replaces `middle` with `new`, B depends on A

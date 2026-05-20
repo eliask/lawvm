@@ -184,6 +184,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_definition_predicate_shall_construed_normalized",
         "uk_replay_empty_descendant_parent_text_recovered",
         "uk_replay_existing_target_already_materialized",
+        "uk_replay_implicit_first_subparagraph_parent_text_recovered",
         "uk_replay_schedule_list_entry_alphabetical_position_resolved",
         "uk_replay_schedule_list_entry_anchor_article_normalized",
         "uk_replay_schedule_list_entry_anchor_prefix_normalized",
