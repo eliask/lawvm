@@ -12833,6 +12833,8 @@ class UKReplayExecutor:
                 target_eid,
                 allow_sequence_match=False,
             )
+            if node is not None and not self._eid_candidate_matches_target_leaf(node, target):
+                node, parent, idx = None, None, None
 
         if not node:
             allow_compound_subsection_alias = _action_name(op.action) in ("text_replace", "text_repeal")
@@ -16395,6 +16397,12 @@ class UKReplayExecutor:
             )
             self.statute.body.children = body_children
             return True
+
+    def _eid_candidate_matches_target_leaf(self, node: UKMutableNode, target: LegalAddress) -> bool:
+        leaf_kind = _addr_leaf_kind(target)
+        if not leaf_kind:
+            return True
+        return self._match_kind_label(node, str(leaf_kind), _addr_leaf_label(target))
 
     def _derive_target_eid(self, addr: LegalAddress) -> str:
         is_eur = self.statute.metadata.get("is_eur", False)

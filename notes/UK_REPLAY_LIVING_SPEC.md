@@ -76,10 +76,17 @@ Current UK-specific invariants:
   - if a target address derives a concrete EID and that EID exists in the live
     tree, replay must bind that node before trying schedule ordinal `p1group`
     recovery
+  - the concrete-EID fast path must still match the target leaf kind and label.
+    If the derived EID is coarser than the legal address, replay must ignore it
+    and resolve the explicit path instead of letting a child repeal/delete its
+    parent.
   - ordinal wrapper recovery is only for absent exact identity; it may not steal
     an explicit schedule paragraph/subparagraph/item target from another branch
-  - current witness: `asp/2001/10` / `asp/2014/14`, Schedule 3 paragraph 2(2)
-    and related text replacements
+  - current witnesses: `asp/2001/10` / `asp/2014/14`, Schedule 3 paragraph
+    2(2) and related text replacements; `ukpga/2020/17` s. 265(1)(b)(i)
+    repealed by `ukpga/2021/11 s. 22(3)(a)(i)`, where the coarse derived EID
+    `section-265-1-b` must not delete paragraph `(b)` when the source targeted
+    subparagraph `(i)`.
 - broad schedule/part text patches require a replay-visible text-bearing shape
   - if a broad schedule or schedule part target has no table nodes and no
     provision descendants carrying the preimage, replay should classify the row

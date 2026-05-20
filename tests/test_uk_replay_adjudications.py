@@ -1615,6 +1615,78 @@ def test_executor_records_missing_parent_grandparent_present_gap() -> None:
     assert executor.statute.body.children[0].text == "Section one."
 
 
+def test_repeal_ignores_coarse_eid_candidate_when_leaf_target_differs() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="265",
+                    attrs={"eId": "section-265"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            attrs={"eId": "section-265-1"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="b",
+                                    text="the offender-",
+                                    attrs={"eId": "section-265-1-b"},
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.SUBPARAGRAPH,
+                                            label="i",
+                                            text="was aged 18 or over, and",
+                                            attrs={"eId": "section-265-1-b-i"},
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.SUBPARAGRAPH,
+                                            label="ii",
+                                            text="is aged under 21.",
+                                            attrs={"eId": "section-265-1-b-ii"},
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=[])
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_repeal_subparagraph_i_not_paragraph_b",
+            sequence=1,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(
+                path=(
+                    ("section", "265"),
+                    ("subsection", "1"),
+                    ("paragraph", "b"),
+                    ("subparagraph", "i"),
+                )
+            ),
+            source=_source(),
+        )
+    )
+
+    paragraph_b = executor.statute.body.children[0].children[0].children[0]
+    assert paragraph_b.kind == IRNodeKind.PARAGRAPH
+    assert paragraph_b.label == "b"
+    assert [(child.kind, child.label, child.text) for child in paragraph_b.children] == [
+        (IRNodeKind.SUBPARAGRAPH, "ii", "is aged under 21.")
+    ]
+
+
 def test_executor_records_payload_missing() -> None:
     adjudications: list[CompileAdjudication] = []
     executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
