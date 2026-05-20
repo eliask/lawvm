@@ -66,6 +66,14 @@ Current UK-specific invariants:
 - deep roman descendant labels preserve roman suffixes in fallback IDs
   - `section-88-3c-b-ii` and `schedule-7a-paragraph-9-2-b-ii` are correct local fallback shapes
   - replay must not emit numeric fake tails like `...-1` / `...-2` where oracle uses `...-i` / `...-ii`
+- oracle/local fallback IDs require a stable visible label or a structural
+  container role
+  - replay must not synthesize public fallback IDs such as `section-7-item`
+    for unlabeled non-container nodes, because repeated unlabeled siblings
+    would collide and create replay-only benchmark identities
+  - unlabeled non-container source shape remains addressable only through the
+    surrounding target/operation evidence unless a later source phase assigns
+    a stable legal label
 - structural replacement preserves existing target identity from either source
   `eId` or source `id`
   - replacing a found node may not drop its identity because the base parser
@@ -3258,9 +3266,13 @@ Current bench replay-regime invariant:
   when the target is a container, preserving existing text and children. It
   must not flatten the target subtree or replace the whole target with only
   the inserted tail.
-  `omit the words from "X" to "Y"` lowers to `TEXT_FROM_X_TO_Y` deletion. These
-  rules do not cover table or cell targets, heading or cross-heading facets,
-  definition-child deletion, or `appropriate place(s)` placement.
+  `omit the words from "X" to "Y"` lowers to `TEXT_FROM_X_TO_Y` deletion. When
+  both bounded range anchors are found in the explicit target node's own text,
+  replay rewrites that node text and preserves existing children. Only a
+  genuinely cross-descendant bounded range may fall through to the destructive
+  target-subtree collapse path. These rules do not cover table or cell targets,
+  heading or cross-heading facets, definition-child deletion, or `appropriate
+  place(s)` placement.
 
 ## UK Effect Ordering
 

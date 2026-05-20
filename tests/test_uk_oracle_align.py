@@ -135,3 +135,36 @@ def test_align_uk_replay_to_oracle_local_schedule_fallback_uses_string_eids() ->
     assert isinstance(paragraph.attrs["eId"], str)
     assert result.report.local_fallback_count == 2
     assert all(isinstance(change.after_eid, str) for change in result.report.changes if change.after_eid is not None)
+
+
+def test_align_uk_replay_to_oracle_does_not_synthesize_unlabeled_item_eids() -> None:
+    statute = IRStatute(
+        statute_id="asp/2001/14",
+        title="Demo",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="7",
+                    attrs={"eId": "section-7"},
+                    children=(
+                        IRNode(kind=IRNodeKind.ITEM, text="first unlabeled limb"),
+                        IRNode(kind=IRNodeKind.ITEM, text="second unlabeled limb"),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    result = align_uk_replay_to_oracle_with_report(
+        statute,
+        eid_map={"body:section-7": "section-7"},
+        text_map={},
+    )
+
+    section = result.statute.body.children[0]
+    assert section.attrs["eId"] == "section-7"
+    assert [child.attrs for child in section.children] == [{}, {}]
+    assert result.report.local_fallback_count == 0
+    assert all(change.after_eid != "section-7-item" for change in result.report.changes)

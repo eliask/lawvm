@@ -7013,6 +7013,59 @@ def test_executor_range_text_patch_uses_independent_end_occurrence() -> None:
     assert executor.statute.body.children[0].text == "notify the Public Guardian within 7 days"
 
 
+def test_executor_bounded_range_text_patch_preserves_node_children_when_own_text_matches() -> None:
+    statute = IRStatute(
+        statute_id="asp/2001/14",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="3",
+                    attrs={"eId": "section-3"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="A police authority may obtain any record formerly recalled.",
+                            attrs={"eId": "section-3-1"},
+                            children=(
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="first limb"),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="b", text="second limb"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute)
+    op = LegalOperation(
+        op_id="uk_test_node_local_range_patch_preserves_children",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "3"), ("subsection", "1"))),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="TEXT_FROM_any_TO_recalled", occurrence=1),
+            replacement="the Police Service of Scotland",
+        ),
+    )
+
+    executor.apply_op(op)
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == (
+        "A police authority may obtain the Police Service of Scotland."
+    )
+    assert [child.label for child in subsection.children] == ["a", "b"]
+    assert [child.text for child in subsection.children] == ["first limb", "second limb"]
+
+
 def test_compile_range_to_end_second_occurrence_to_text_replace() -> None:
     extracted_el = ET.fromstring(
         f"""
