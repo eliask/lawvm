@@ -2291,15 +2291,14 @@ def _range_to_container_substitution_detail(
     )
     compiled_targets = tuple(str(op.target) for op in compiled_ops)
     compiled_actions = tuple(_action_name(op.action) for op in compiled_ops)
-    payload_kinds = tuple(
-        str(op.payload.kind.value if hasattr(op.payload.kind, "value") else op.payload.kind)
-        for op in compiled_ops
-        if op.payload is not None
-    )
+    payloads = tuple(op.payload for op in compiled_ops if op.payload is not None)
+    payload_kinds = tuple(payload.kind.value for payload in payloads)
+    payload_roots = tuple(_range_to_container_payload_root_summary(payload) for payload in payloads)
     detail: dict[str, Any] = {
         "compiled_actions": compiled_actions,
         "compiled_targets": compiled_targets,
         "payload_kinds": payload_kinds,
+        "payload_roots": payload_roots,
         "required_ownership": (
             "source_range",
             "container_payload",
@@ -2317,6 +2316,25 @@ def _range_to_container_substitution_detail(
             }
         )
     return detail
+
+
+def _range_to_container_payload_root_summary(payload: IRNode) -> dict[str, Any]:
+    child_summaries = tuple(
+        {
+            "kind": child.kind.value,
+            "label": child.label or "",
+            "eid": str(child.attrs.get("eId") or child.attrs.get("id") or ""),
+        }
+        for child in payload.children[:12]
+    )
+    return {
+        "kind": payload.kind.value,
+        "label": payload.label or "",
+        "eid": str(payload.attrs.get("eId") or payload.attrs.get("id") or ""),
+        "direct_child_count": len(payload.children),
+        "direct_children": child_summaries,
+        "truncated_direct_children": len(payload.children) > len(child_summaries),
+    }
 
 
 def uk_nonstructural_replay_candidate_family(

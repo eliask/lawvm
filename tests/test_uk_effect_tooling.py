@@ -625,7 +625,15 @@ def test_summarize_uk_effect_surfaces_range_to_container_blocking_rejection(monk
         affecting_title="Transport (Scotland) Act 2019",
         in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
     )
-    payload = IRNode(kind=IRNodeKind.CHAPTER, label="1", text="Chapter 1")
+    payload = IRNode(
+        kind=IRNodeKind.CHAPTER,
+        label="1",
+        text="Chapter 1",
+        attrs={"eId": "part-2-chapter-1"},
+        children=(
+            IRNode(kind=IRNodeKind.SECTION, label="3A", attrs={"eId": "section-3A"}),
+        ),
+    )
     compiled = [
         LegalOperation(
             op_id="eff-range-container",
@@ -691,6 +699,18 @@ def test_summarize_uk_effect_surfaces_range_to_container_blocking_rejection(monk
             "compiled_actions": ("replace",),
             "compiled_targets": ("part:2/chapter:1",),
             "payload_kinds": ("chapter",),
+            "payload_roots": (
+                {
+                    "kind": "chapter",
+                    "label": "1",
+                    "eid": "part-2-chapter-1",
+                    "direct_child_count": 1,
+                    "direct_children": (
+                        {"kind": "section", "label": "3A", "eid": "section-3A"},
+                    ),
+                    "truncated_direct_children": False,
+                },
+            ),
             "required_ownership": (
                 "source_range",
                 "container_payload",
