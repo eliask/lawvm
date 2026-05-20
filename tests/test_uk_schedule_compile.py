@@ -1726,6 +1726,54 @@ def test_compile_substituted_for_label_change_targets_source_old_sibling() -> No
     )
 
 
+def test_compile_words_substituted_uses_explicit_source_schedule_paragraph_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{uk_replay_mod._LEG_NS}">
+          <Pnumber>19</Pnumber>
+          <P1para>
+            <Text>In paragraph 5 of schedule 3 to the Scottish Public Services Ombudsman Act 2002, for “rent assessment” substitute “ private rented housing ”.</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_schedule_paragraph_target_override",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-11-07",
+        affected_uri="/id/asp/2002/11/schedule/3/paragraph/11",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="Sch. 3 para. 11",
+        affecting_uri="/id/asp/2006/1",
+        affecting_class="ScottishAct",
+        affecting_year="2006",
+        affecting_number="1",
+        affecting_provisions="Sch. 6 para. 19",
+        affecting_title="Housing (Scotland) Act 2006",
+        in_force_dates=[{"date": "2007-09-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action == StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("schedule", "3"), ("paragraph", "5"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "rent assessment"
+    assert ops[0].text_patch.replacement == " private rented housing "
+    assert any(
+        record["rule_id"] == "uk_effect_source_text_schedule_paragraph_target_overrides_metadata"
+        and record["metadata_target"] == "schedule:3/paragraph:11"
+        and record["source_target"] == "schedule:3/paragraph:5"
+        for record in lowering_records
+    )
+
+
 def test_repeal_tail_for_substituted_series_single_new_subsection() -> None:
     tail = _repeal_tail_for_substituted_series_replacement(
         "substituted for s. 3(5)(6)",

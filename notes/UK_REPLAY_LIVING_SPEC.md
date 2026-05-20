@@ -344,6 +344,11 @@ Deterministic substituted-series lowering:
   `uk_effect_substituted_for_label_changing_target_rebound`; replay records
   `uk_replay_source_label_changing_substitution_resolved` and preserves the new
   payload label/eId rather than silently carrying the old sibling identity
+- word-level rows where source text explicitly says `In paragraph X of schedule
+  Y to ...` but effect metadata names another paragraph in the same schedule may
+  lower to the source-named paragraph under
+  `uk_effect_source_text_schedule_paragraph_target_overrides_metadata`; this is
+  a source-vs-metadata conflict record, not a live-tree search
 - source rows shaped as `for paragraphs (a) and (b) substitute` with one
   compressed metadata range such as `Sch. 4 para. 11(a)-(ba)` may expand the
   target range from the direct `BlockAmendment` payload children under
