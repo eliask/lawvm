@@ -6195,6 +6195,13 @@ def _repeal_tail_for_substituted_series_replacement(
 
     Semantically this means the first replaced anchor becomes the new payload
     target and the remaining replaced anchors are repealed.
+
+    The feed may also name the first replaced anchor itself:
+      effect_type="substituted for s. 5(5)(6)"
+      affected_provisions="s. 5(5)"
+
+    That still authorizes only the trailing anchor repeal. It does not widen
+    the replacement target beyond the explicitly named first anchor.
     """
     raw = (effect_type or "").strip()
     if not raw.lower().startswith("substituted for "):
@@ -6225,7 +6232,6 @@ def _repeal_tail_for_substituted_series_replacement(
         or anchor_leaf_kind != replacement_leaf_kind
         or not anchor_leaf
         or not replacement_leaf
-        or replacement_leaf == anchor_leaf
         or not replacement_leaf.startswith(anchor_leaf)
     ):
         return []

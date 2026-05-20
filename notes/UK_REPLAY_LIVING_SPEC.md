@@ -154,6 +154,12 @@ Current UK-specific invariants:
     - `replace` the first replaced anchor (`5`) with payload label `5A`
     - `repeal` the remaining replaced anchors (`6`, etc.)
   - otherwise replay can silently retain the old tail and mutate the wrong anchor slot
+- substituted-series rows may also name the first replaced anchor as the affected provision
+  - when metadata/source says `substituted for s. 5(5)(6)` and the affected provision is
+    `s. 5(5)`, the replacement remains bounded to subsection `5`
+  - compile the same explicit trailing-anchor repeal for `s. 5(6)`; do not widen the
+    replacement operation to the whole `s. 5(5)-(6)` range
+  - current witness: `asp/2002/5` / `ukpga/2014/23 Sch. 1 para. 3(4)(c)`
 - commencement rows are non-mutating for replay-state purposes
   - `coming into force` / `commencement order` list items must compile to no IR ops
   - they matter for commencement gating, not for structural text mutation

@@ -1685,6 +1685,15 @@ def test_repeal_tail_for_substituted_series_single_new_subsection() -> None:
     assert tail == ["s. 3(6)"]
 
 
+def test_repeal_tail_for_substituted_series_single_first_anchor_subsection() -> None:
+    tail = _repeal_tail_for_substituted_series_replacement(
+        "substituted for s. 5(5)(6)",
+        ["s. 5(5)"],
+    )
+
+    assert tail == ["s. 5(6)"]
+
+
 def test_split_metadata_whitespace_compressed_sibling_subsections() -> None:
     assert _split_metadata_provisions("s. 62(7) (8)") == [
         "s. 62(7)",
