@@ -4,9 +4,17 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Optional, Sequence
 
-from lawvm.core.ir import IRNode
+from lawvm.core.ir import IRNode, IRStatute
 from lawvm.uk_legislation.addressing import _uk_kind_value
-from lawvm.uk_legislation.canonicalize import uk_is_transparent_wrapper_kind
+from lawvm.uk_legislation.canonicalize import (
+    uk_is_transparent_wrapper_kind,
+    uk_should_bubble_structural_commencement,
+)
+from lawvm.uk_legislation.effects import _COMMENCEMENT_EFFECT_TYPES
+from lawvm.uk_legislation.target_parser import (
+    _parse_affected_target,
+    _split_metadata_provisions,
+)
 
 if TYPE_CHECKING:
     from lawvm.uk_legislation.effects import UKEffectRecord
@@ -190,3 +198,132 @@ def _nodes_matching_address(
                 matched.append(node)
 
     return matched
+
+
+def commencement_eid_set(
+    effects: list["UKEffectRecord"],
+    statute_ir: IRStatute,
+    *,
+    applicability_mode: str = "effective_date_plus_feed_applied",
+    observations_out: Optional[list[dict[str, Any]]] = None,
+) -> set[str]:
+    """Return the set of EIDs that have been brought into force.
+
+    Parses "coming into force" effects, maps their provision references to
+    nodes in *statute_ir*, and returns the union of EIDs for those nodes,
+    their descendants, AND any structural ancestor nodes (part, chapter,
+    crossheading) that contain at least one commenced provision.
+
+    An EID is "commenced" when at least one replay-applicable commencement-like
+    effect with a non-empty effective date covers the provision (or any
+    ancestor).
+
+    If no commencement effects are found at all, returns the full set of EIDs
+    from the statute (treat all provisions as in force: self-commencement).
+    If commencement-like rows exist but none has a replay-applicable date,
+    returns an empty set and emits an observation instead of guessing.
+    """
+    commencement_like_effects = [
+        e
+        for e in effects
+        if e.effect_type.lower() in _COMMENCEMENT_EFFECT_TYPES
+    ]
+    comm_effects = [
+        e
+        for e in commencement_like_effects
+        if e.effective_date  # must have a real date
+        and e.is_applicable_for_replay(applicability_mode=applicability_mode)
+    ]
+
+    all_ir_nodes: list[IRNode] = list(statute_ir.body.children)
+    for sched in statute_ir.supplements:
+        all_ir_nodes.append(sched)
+
+    if not comm_effects:
+        if commencement_like_effects:
+            if observations_out is not None:
+                observations_out.append(
+                    {
+                        "rule_id": _UK_COMMENCEMENT_UNDATED_EFFECTS_RULE_ID,
+                        "family": "temporal_recovery",
+                        "phase": "commencement_filter",
+                        "effect_count": len(commencement_like_effects),
+                        "effect_types": sorted(
+                            {
+                                (effect.effect_type or "").strip()
+                                for effect in commencement_like_effects
+                                if (effect.effect_type or "").strip()
+                            }
+                        ),
+                        "reason": (
+                            "UK source has commencement-style effect rows, but none "
+                            "has a replay-applicable effective date; LawVM will not "
+                            "silently treat the whole instrument as commenced."
+                        ),
+                        "blocking": False,
+                        "strict_disposition": "record",
+                        "quirks_disposition": "record",
+                    }
+                )
+            return set()
+        # No commencement orders found: treat all provisions as in force.
+        all_eids: set[str] = set()
+        for node in all_ir_nodes:
+            all_eids.update(_collect_all_eids(node))
+        return all_eids
+
+    # Collect directly commenced EIDs: section/schedule/paragraph nodes and descendants.
+    commenced: set[str] = set()
+
+    for effect in comm_effects:
+        prov_str = effect.affected_provisions.strip()
+        if not prov_str:
+            continue
+
+        prov_parts = _split_metadata_provisions(prov_str)
+        for part in prov_parts:
+            part = part.strip()
+            if not part:
+                continue
+
+            addr = _parse_affected_target(part)
+
+            if str(addr.special or "") == "whole_act":
+                for node in all_ir_nodes:
+                    commenced.update(_collect_all_eids(node))
+                return commenced
+
+            if not addr.path:
+                continue
+
+            matching = _nodes_matching_address(
+                all_ir_nodes,
+                addr.path,
+                observations_out=observations_out,
+                effect=effect,
+                source_ref=part,
+            )
+            for node in matching:
+                commenced.update(_collect_all_eids(node))
+
+    # Bubble-up pass: add structural ancestors whose subtrees contain at least
+    # one commenced EID. These structural EIDs appear in the oracle but are
+    # never named in commencement orders.
+    def _add_structural_ancestors(nodes: Sequence[IRNode]) -> bool:
+        """Return True if any descendant is commenced. Side-effect: adds structural EIDs."""
+        any_child_commenced = False
+        for node in nodes:
+            eid = node.attrs.get("eId") or node.attrs.get("id")
+            if eid and eid in commenced:
+                any_child_commenced = True
+                continue
+            sub_commenced = _add_structural_ancestors(node.children)
+            if sub_commenced:
+                any_child_commenced = True
+                if uk_should_bubble_structural_commencement(node) and eid:
+                    commenced.add(eid)
+        return any_child_commenced
+
+    _add_structural_ancestors(all_ir_nodes)
+
+    return commenced
