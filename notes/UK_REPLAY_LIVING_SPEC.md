@@ -1425,8 +1425,15 @@ Current block-substitution context invariant:
   text>` to a `TEXT_AFTER_DEFINITION_Y` patch using the named rule
   `uk_effect_after_definitions_text_insertion_patch`; the anchor is the final
   quoted definition because the source inserts after the listed definition
-  group. Current witness: `asp/2000/11` affected `s. 31(1)` by `asp/2010/13`
-  `s. 106(8)`.
+  group. Replay may recognize the final anchor term inside a shared definition
+  entry such as `"directed" and "intrusive", in relation to surveillance, shall
+  be construed ...`; successful application records
+  `uk_replay_definition_anchor_conjoined_term_normalized` and, where present,
+  `uk_replay_definition_anchor_qualifier_phrase_normalized`. These are bounded
+  target-resolution recoveries: the quoted anchor term and definition predicate
+  must both be present. Current witness: `asp/2000/11` affected `s. 31(1)` by
+  `asp/2010/13` `s. 106(8)`, and later by `ukpga/2016/25`
+  `Sch. 10 para. 94(2)`.
 - the parser may lower `at the beginning of subsection (N) insert "X"` to a
   `TEXT_BEGINNING` patch using the named rule
   `uk_effect_beginning_text_insertion_patch`; the feed already supplies the
