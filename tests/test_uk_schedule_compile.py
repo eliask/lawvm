@@ -12513,6 +12513,51 @@ def test_compile_schedule_list_entry_insert_handles_alphabetical_order_form() ->
     assert selector["anchor_text"] == ""
 
 
+def test_compile_schedule_list_entry_insert_handles_an_appropriate_alphabetical_form() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>b at an appropriate place, in alphabetical order, insert—
+          “ Healthcare Improvement Scotland ” .</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_list_entry_an_alphabetical",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2010-10-01",
+        affected_uri="/id/asp/2000/7/schedule/3",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="7",
+        affected_provisions="Sch. 3",
+        affecting_uri="/id/asp/2010/8",
+        affecting_class="ScottishAct",
+        affecting_year="2010",
+        affecting_number="8",
+        affecting_provisions="sch. 17 para. 24(b)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2010-10-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.SCHEDULE_ENTRY
+    assert ops[0].payload.text == "Healthcare Improvement Scotland"
+    selector_note = next(
+        note for note in ops[0].provenance_tags if note.startswith("schedule_list_entry_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_selector:"))
+    assert selector["direction"] == "alphabetical"
+    assert selector["anchor_text"] == ""
+    assert observations[0]["rule_id"] == "uk_effect_schedule_list_entry_insert"
+
+
 def test_compile_schedule_list_entry_insert_handles_entry_inserted_feed_type() -> None:
     extracted_el = ET.fromstring(
         f"""

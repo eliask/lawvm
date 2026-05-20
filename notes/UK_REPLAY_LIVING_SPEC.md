@@ -1498,7 +1498,10 @@ Current block-substitution context invariant:
   alphabetical order insert- Y` forms lower to the same typed entry-insert
   family with an alphabetical placement selector; replay records
   `uk_replay_schedule_list_entry_alphabetical_position_resolved` and blocks if
-  the inserted entry is empty or already present. Rows that look like
+  the inserted entry is empty or already present. The explicit alphabetical
+  source form may say either `at the appropriate place` or
+  `at an appropriate place`; non-alphabetical `appropriate place` wording
+  remains a manual/frontier placement claim. Rows that look like
   schedule-list-entry amendments but
   lack enough carrier/target information remain in
   `schedule_list_entry_target_unsupported` /
