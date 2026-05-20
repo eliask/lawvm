@@ -668,6 +668,36 @@ class _BenchResult:
     core_benchmark: bool = True
 
 
+def _bench_primary_score(result: _BenchResult, *, has_commencement: bool) -> float:
+    if has_commencement and result.commencement_score >= 0.0:
+        return result.commencement_score
+    return result.score
+
+
+def _bench_primary_replay_score(result: _BenchResult, *, has_commencement: bool) -> float:
+    if has_commencement and result.replay_commencement_score >= 0.0:
+        return result.replay_commencement_score
+    return result.replay_score
+
+
+def _average_primary_ok_score(
+    results: Sequence[_BenchResult],
+    *,
+    has_commencement: bool,
+) -> float:
+    ok_results = [
+        result
+        for result in results
+        if result.status == "OK" and result.n_oracle_eids > 0
+    ]
+    if not ok_results:
+        return 0.0
+    return sum(
+        _bench_primary_score(result, has_commencement=has_commencement)
+        for result in ok_results
+    ) / len(ok_results)
+
+
 def _normalize_uk_bench_replay_regime(args: Any) -> UKReplayRegime:
     return normalize_uk_replay_regime(args)
 
@@ -1634,7 +1664,13 @@ def _run_bench(
                 if done % 50 == 0 or done == total:
                     elapsed = time.time() - t0
                     ok = sum(1 for x in results if x is not None and x.status == "OK")
-                    avg = sum(x.score for x in results if x is not None and x.status == "OK") / max(ok, 1)
+                    completed_results = [
+                        x for x in results if x is not None and x.status == "OK"
+                    ]
+                    avg = _average_primary_ok_score(
+                        completed_results,
+                        has_commencement=do_commencement,
+                    )
                     rate = done / elapsed if elapsed > 0 else 0
                     print(
                         f"  [{done}/{total}] {elapsed:.0f}s  {rate:.1f}/s  ok={ok}  avg={avg:.1%}",
@@ -1673,7 +1709,10 @@ def _run_bench(
         if (i + 1) % 100 == 0:
             elapsed = time.time() - t0
             ok = sum(1 for x in results_seq if x.status == "OK")
-            avg = sum(x.score for x in results_seq if x.status == "OK") / max(ok, 1)
+            avg = _average_primary_ok_score(
+                results_seq,
+                has_commencement=do_commencement,
+            )
             print(
                 f"  [{i + 1}/{total}] {elapsed:.0f}s  ok={ok}  avg={avg:.1%}",
                 file=sys.stderr,
@@ -2682,14 +2721,10 @@ def _print_report(
             print(f"  {t:<8} N={len(grp):5d}  avg={a:.1%}  perfect={p}")
 
     def _primary_score_for_row(r: _BenchResult) -> float:
-        if has_commencement and r.commencement_score >= 0.0:
-            return r.commencement_score
-        return r.score
+        return _bench_primary_score(r, has_commencement=has_commencement)
 
     def _primary_replay_score_for_row(r: _BenchResult) -> float:
-        if has_commencement and r.replay_commencement_score >= 0.0:
-            return r.replay_commencement_score
-        return r.replay_score
+        return _bench_primary_replay_score(r, has_commencement=has_commencement)
 
     def _score_fragment_for_row(r: _BenchResult) -> str:
         primary = _primary_score_for_row(r)
@@ -3003,8 +3038,9 @@ def _load_bench_diagnostic_rows(label: str) -> dict[str, dict[str, tuple[dict[st
 
 def _append_history(results: list[_BenchResult], label: str, score_witness_count: int) -> None:
     ok = [r for r in results if r.status == "OK" and r.n_oracle_eids > 0]
+    has_commencement = any(r.commencement_score >= 0.0 for r in ok)
     primary_scores = [
-        r.commencement_score if r.commencement_score >= 0.0 else r.score
+        _bench_primary_score(r, has_commencement=has_commencement)
         for r in ok
     ]
     replay_scores = [r.replay_score for r in ok if r.replay_score >= 0.0]
@@ -3589,7 +3625,7 @@ def _save_results(results: list[_BenchResult], label: str) -> None:
         w.writerow(headers)
         for r in results:
             # Primary score = commencement_score when available, else raw score.
-            primary_score = r.commencement_score if (has_commencement and r.commencement_score >= 0.0) else r.score
+            primary_score = _bench_primary_score(r, has_commencement=has_commencement)
             if has_commencement:
                 row = [
                     r.statute_id,
