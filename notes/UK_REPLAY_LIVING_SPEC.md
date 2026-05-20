@@ -1880,6 +1880,17 @@ Current block-substitution context invariant:
   `uk_replay_table_entry_inline_text_insertion_unresolved` or
   `uk_replay_table_entry_inline_text_preimage_gap` adjudication. This is a
   deterministic table compiler, not a fallback from a missing target path.
+- source-carried child rows under a parent instruction like `the entry for the
+  Information Commissioner is amended as follows` may lower under
+  `uk_effect_source_carried_table_entry_paragraph_substitution_text_patch`
+  when the child row explicitly substitutes a paragraph or subparagraph inside
+  that entry. Lowering targets the broad schedule, carries a table-cell selector
+  with the parent entry label, and uses a symbolic paragraph/subparagraph text
+  selector. Replay may mutate only a uniquely resolved table cell; it resolves
+  the flat cell paragraph shape at apply time and emits
+  `uk_replay_source_carried_table_entry_paragraph_substitution_resolved` or a
+  blocking table-cell unresolved/preimage adjudication. This is intentionally a
+  table-cell compiler, not a fabricated `schedule/paragraph` target.
 - direct table-marker word patches may lower to source-owned table-cell
   selectors when the source supplies enough row/cell evidence:
   `uk_effect_table_entry_relating_text_patch` for `in the entry relating to X,

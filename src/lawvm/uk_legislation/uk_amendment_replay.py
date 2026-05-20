@@ -620,6 +620,9 @@ _NOTE_SOURCE_LABEL_CHANGE_SUBSTITUTION = "source_label_change_substitution:"
 _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID = "uk_effect_table_entry_inline_text_insertion"
 _UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID = "uk_effect_table_entry_relating_text_patch"
 _UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID = "uk_effect_table_entry_label_text_patch"
+_UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID = (
+    "uk_effect_source_carried_table_entry_paragraph_substitution_text_patch"
+)
 _UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID = "uk_effect_table_column_heading_text_patch"
 _UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID = "uk_effect_table_column_text_patch"
 _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID = "uk_effect_table_entry_row_insert"
@@ -7268,6 +7271,27 @@ _SOURCE_AMENDMENT_INSERTED_TEXT_SUBSTITUTION_RE = re.compile(
     r"for\s+the\s+inserted\s+text\s+substitute\s*[—-]\s*(?P<replacement>.+?)\s*\.?\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_TABLE_ENTRY_PARENT_RE = re.compile(
+    r"\bentry\s+for\s+(?P<entry>.+?)\s+is\s+amended\s+as\s+follows\b",
+    flags=re.I | re.S,
+)
+_SOURCE_TABLE_ENTRY_PARAGRAPH_SUBPARA_SUBSTITUTION_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"in\s+paragraph\s+(?P<paragraph>[0-9]+),?\s+"
+    r"for\s+sub-?paragraph\s+\((?P<subparagraph>[0-9A-Za-z]+)\)\s+"
+    r"substitute\s*[—-]\s*(?P<replacement>.+?)\s*\.?\s*$",
+    flags=re.I | re.S,
+)
+_SOURCE_TABLE_ENTRY_PARAGRAPH_SUBSTITUTION_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"for\s+paragraph\s+(?P<paragraph>[0-9]+)\s+"
+    r"substitute\s*[—-]\s*(?P<replacement>.+?)\s*\.?\s*$",
+    flags=re.I | re.S,
+)
+_TABLE_CELL_PARAGRAPH_SENTINEL_RE = re.compile(
+    r"^TEXT_TABLE_CELL_PARAGRAPH_(?P<paragraph>[0-9]+)"
+    r"(?:_SUBPARAGRAPH_(?P<subparagraph>[0-9A-Za-z]+))?$"
+)
 
 
 def _looks_like_appropriate_place_definition_entry_insert_text(text: str) -> bool:
@@ -8076,6 +8100,119 @@ def _fragment_substitution_amendment_inserted_text_substitution(
         "source_paragraph_label": source_paragraph,
         "source_item_label": source_item,
         "rule_id": "uk_effect_amendment_inserted_text_substitution_text_patch",
+    }
+
+
+def _strip_instruction_terminal_dot(text: str) -> str:
+    stripped = " ".join((text or "").split()).strip()
+    if stripped.endswith(" ."):
+        stripped = stripped[:-2].rstrip()
+    if len(stripped) > 1 and stripped.endswith(".") and stripped[-2] in {",", ";"}:
+        stripped = stripped[:-1].rstrip()
+    return stripped
+
+
+def _strip_source_payload_label(text: str, label: str) -> str:
+    label_norm = _clean_num(label)
+    if not label_norm:
+        return _strip_instruction_terminal_dot(text)
+    stripped = _strip_instruction_terminal_dot(text)
+    return re.sub(rf"^\s*{re.escape(label_norm)}\s+", "", stripped, flags=re.I).strip()
+
+
+def _parenthesize_flat_source_subparagraph_labels(text: str) -> str:
+    """Render flattened source child labels as visible subparagraph markers."""
+    rendered = re.sub(r"([—-])\s+([a-z])\s+", r"\1\n\n(\2) ", text, count=1, flags=re.I)
+    rendered = re.sub(r"(\b(?:or|and)\b)\s+([a-z])\s+", r"\1\n\n(\2) ", rendered, flags=re.I)
+    return rendered
+
+
+def _source_carried_table_entry_paragraph_substitution(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+    target_ref: str,
+    target: LegalAddress,
+) -> Optional[dict[str, Any]]:
+    """Resolve child paragraph substitutions under a source-named table entry.
+
+    The effect feed can name only a broad schedule table, while the affecting
+    source parent says that a specific table entry is amended as follows and
+    child rows address paragraph/subparagraph slots inside that entry's matter
+    cell.  Lowering keeps that as a table-cell selector plus a symbolic
+    paragraph selector; replay resolves the live flat cell shape.
+    """
+    if _addr_leaf_kind(target) != "schedule":
+        return None
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return None
+    sub_match = _SOURCE_TABLE_ENTRY_PARAGRAPH_SUBPARA_SUBSTITUTION_RE.match(text)
+    para_match = _SOURCE_TABLE_ENTRY_PARAGRAPH_SUBSTITUTION_RE.match(text)
+    if sub_match is None and para_match is None:
+        return None
+
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    entry_label = ""
+    source_parent_id = ""
+    for ancestor_index, ancestor in enumerate(ancestors):
+        parent_text = _instruction_text_before_amendment_container(ancestor)
+        if not parent_text:
+            parent_text = _source_lead_text_before_subordinate_rows(ancestor)
+        parent_match = _SOURCE_TABLE_ENTRY_PARENT_RE.search(" ".join(parent_text.split()))
+        if parent_match is None:
+            continue
+        entry_label = " ".join(parent_match.group("entry").split()).strip()
+        source_parent_id = str(ancestor.get("id") or "")
+        if not source_parent_id:
+            source_parent_id = next(
+                (str(candidate.get("id")) for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")),
+                "",
+            )
+        break
+    if not entry_label:
+        return None
+
+    if sub_match is not None:
+        paragraph_label = _clean_num(sub_match.group("paragraph"))
+        subparagraph_label = _clean_num(sub_match.group("subparagraph"))
+        replacement_body = _strip_source_payload_label(sub_match.group("replacement"), subparagraph_label)
+        if not paragraph_label or not subparagraph_label or not replacement_body:
+            return None
+        replacement = f"({subparagraph_label}) {replacement_body}"
+        original = f"TEXT_TABLE_CELL_PARAGRAPH_{paragraph_label}_SUBPARAGRAPH_{subparagraph_label}"
+    else:
+        assert para_match is not None
+        paragraph_label = _clean_num(para_match.group("paragraph"))
+        replacement_body = _strip_source_payload_label(para_match.group("replacement"), paragraph_label)
+        if not paragraph_label or not replacement_body:
+            return None
+        replacement = f"{paragraph_label}. {_parenthesize_flat_source_subparagraph_labels(replacement_body)}"
+        subparagraph_label = ""
+        original = f"TEXT_TABLE_CELL_PARAGRAPH_{paragraph_label}"
+
+    selector = {
+        "rule_id": _UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID,
+        "selector_mode": "unique_entry_cell",
+        "entry_label": entry_label,
+        "column_index": 2,
+        "target_ref": target_ref,
+        "original_target": str(target),
+        "source_parent_id": source_parent_id,
+        "source_paragraph_label": paragraph_label,
+    }
+    if subparagraph_label:
+        selector["source_subparagraph_label"] = subparagraph_label
+    return {
+        "original": original,
+        "replacement": replacement,
+        "rule_id": _UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID,
+        "source_parent_id": source_parent_id,
+        "source_entry_label": entry_label,
+        "source_paragraph_label": paragraph_label,
+        "source_subparagraph_label": subparagraph_label,
+        "table_cell_selector": selector,
     }
 
 
@@ -9634,11 +9771,32 @@ def compile_effect_to_ir_ops(
                 target=target,
                 extracted_text=extracted_text,
             )
+        source_carried_table_entry_paragraph_substitution = (
+            _source_carried_table_entry_paragraph_substitution(
+                extracted_el=extracted_el,
+                source_root=source_root,
+                extracted_text=extracted_text,
+                target_ref=t_str,
+                target=target,
+            )
+            if table_cell_selector is None
+            else None
+        )
+        if source_carried_table_entry_paragraph_substitution is not None:
+            table_cell_selector = cast(
+                dict[str, Any],
+                source_carried_table_entry_paragraph_substitution["table_cell_selector"],
+            )
         if table_cell_selector is not None:
             selector_rule_id = str(table_cell_selector.get("rule_id") or _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID)
             selector_mode = str(table_cell_selector.get("selector_mode") or "")
             table_marker_parent = _uk_parent_target_before_table_marker(target)
-            parent_target = target if selector_mode == "unique_column_text" and table_marker_parent is None else table_marker_parent
+            parent_target = (
+                target
+                if selector_mode in {"unique_column_text", "unique_entry_cell"}
+                and table_marker_parent is None
+                else table_marker_parent
+            )
             if (
                 parent_target is not None
                 and len(parent_target.path) >= 2
@@ -9675,6 +9833,8 @@ def compile_effect_to_ir_ops(
                 reason_code=(
                     "explicit_table_column_preimage_selector"
                     if selector_mode == "unique_column_text"
+                    else "source_parent_table_entry_paragraph_selector"
+                    if selector_mode == "unique_entry_cell"
                     else "explicit_table_entry_column_selector"
                 ),
                 reason=(
@@ -10564,6 +10724,14 @@ def compile_effect_to_ir_ops(
                     )
                     if grouped_anchor_occurrence is not None:
                         subs = [grouped_anchor_occurrence]
+                if not subs and source_carried_table_entry_paragraph_substitution is not None:
+                    subs = [
+                        {
+                            key: str(value)
+                            for key, value in source_carried_table_entry_paragraph_substitution.items()
+                            if key != "table_cell_selector"
+                        }
+                    ]
                 if not subs:
                     source_carried_definition_child_insert = (
                         _fragment_substitution_source_carried_definition_child_insert(
@@ -10958,6 +11126,35 @@ def compile_effect_to_ir_ops(
                                 ),
                                 "source_parent_kind": str(primary.get("source_parent_kind") or ""),
                                 "source_parent_label": str(primary.get("source_parent_label") or ""),
+                            },
+                        )
+                    if _UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID in _fragment_rule_ids(fragment_subs):
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id=_UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID,
+                            family="source_table_elaboration",
+                            reason_code="source_carried_table_entry_paragraph_substitution_lowered",
+                            reason=(
+                                "UK child-row source names a paragraph or subparagraph "
+                                "inside a table entry, while the parent source names the "
+                                "entry; lowering combines those source-local facts into "
+                                "a bounded table-cell text patch instead of inventing "
+                                "schedule paragraph structure."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "text_match": op_text_match,
+                                "replacement": op_text_replacement,
+                                "source_parent_id": str(primary.get("source_parent_id") or ""),
+                                "source_entry_label": str(primary.get("source_entry_label") or ""),
+                                "source_paragraph_label": str(primary.get("source_paragraph_label") or ""),
+                                "source_subparagraph_label": str(
+                                    primary.get("source_subparagraph_label") or ""
+                                ),
                             },
                         )
                     if "uk_effect_source_carried_child_tail_substitution_text_patch" in _fragment_rule_ids(
@@ -12810,6 +13007,88 @@ class UKReplayExecutor:
         )
         return True
 
+    def _apply_source_carried_table_cell_paragraph_substitution(
+        self,
+        cell: UKMutableNode,
+        match_text: str,
+        replacement: str,
+    ) -> tuple[UKMutableNode, bool, str, dict[str, Any]]:
+        match = _TABLE_CELL_PARAGRAPH_SENTINEL_RE.match(match_text)
+        if match is None:
+            return cell, False, "not_source_carried_table_cell_selector", {}
+        text = cell.text or ""
+        paragraph_label = _clean_num(match.group("paragraph"))
+        subparagraph_label = _clean_num(match.group("subparagraph") or "")
+        try:
+            paragraph_index = int(paragraph_label) - 1
+        except ValueError:
+            return cell, False, "invalid_paragraph_label", {"source_paragraph_label": paragraph_label}
+        parts = re.split(r"(\n{6,})", text)
+        paragraph_slots = [index for index in range(0, len(parts), 2)]
+        if paragraph_index < 0 or paragraph_index >= len(paragraph_slots):
+            return cell, False, "paragraph_not_found", {
+                "source_paragraph_label": paragraph_label,
+                "paragraph_count": len(paragraph_slots),
+            }
+        slot = paragraph_slots[paragraph_index]
+        old_paragraph = parts[slot]
+        if not subparagraph_label:
+            parts[slot] = replacement
+            old_fragment = old_paragraph
+        else:
+            if len(subparagraph_label) != 1 or not subparagraph_label.isalpha():
+                return cell, False, "unsupported_subparagraph_label", {
+                    "source_paragraph_label": paragraph_label,
+                    "source_subparagraph_label": subparagraph_label,
+                }
+            sub_index = ord(subparagraph_label.lower()) - ord("a")
+            if sub_index < 0:
+                return cell, False, "invalid_subparagraph_label", {
+                    "source_paragraph_label": paragraph_label,
+                    "source_subparagraph_label": subparagraph_label,
+                }
+            if sub_index == 0:
+                sub_match = re.search(r"(?P<prefix>[—-]\s*\n+)(?P<old>.*?)(?=\n{4,}|$)", old_paragraph, re.S)
+                if sub_match is None:
+                    return cell, False, "subparagraph_not_found", {
+                        "source_paragraph_label": paragraph_label,
+                        "source_subparagraph_label": subparagraph_label,
+                    }
+                old_fragment = sub_match.group("old")
+                parts[slot] = (
+                    old_paragraph[: sub_match.start("old")]
+                    + replacement
+                    + old_paragraph[sub_match.end("old") :]
+                )
+            else:
+                subparts = re.split(r"(\n{4,})", old_paragraph)
+                sub_slots = [index for index in range(2, len(subparts), 2)]
+                if sub_index - 1 < 0 or sub_index - 1 >= len(sub_slots):
+                    return cell, False, "subparagraph_not_found", {
+                        "source_paragraph_label": paragraph_label,
+                        "source_subparagraph_label": subparagraph_label,
+                        "subparagraph_count": len(sub_slots) + 1,
+                    }
+                sub_slot = sub_slots[sub_index - 1]
+                old_fragment = subparts[sub_slot]
+                subparts[sub_slot] = replacement
+                parts[slot] = "".join(subparts)
+        new_text = "".join(parts)
+        if new_text == text:
+            return cell, False, "replacement_noop", {
+                "source_paragraph_label": paragraph_label,
+                "source_subparagraph_label": subparagraph_label,
+            }
+        old_cell = cell
+        cell = dc_replace(cell, text=new_text)
+        self._replace_node_in_statute(old_cell, cell)
+        return cell, True, "", {
+            "source_paragraph_label": paragraph_label,
+            "source_subparagraph_label": subparagraph_label,
+            "old_fragment": " ".join(old_fragment.split())[:240],
+            "replacement_fragment": " ".join(replacement.split())[:240],
+        }
+
     def _resolve_table_entry_inline_cell(
         self,
         node: UKMutableNode,
@@ -12820,6 +13099,8 @@ class UKReplayExecutor:
             return self._resolve_unique_table_column_text_cell(node, selector)
         if str(selector.get("selector_mode") or "") in {"unique_relating_text", "unique_entry_text"}:
             return self._resolve_unique_table_entry_text_cell(node, selector)
+        if str(selector.get("selector_mode") or "") == "unique_entry_cell":
+            return self._resolve_unique_table_entry_cell(node, selector)
 
         try:
             column_index = int(selector.get("column_index") or 0)
@@ -12943,6 +13224,56 @@ class UKReplayExecutor:
                 **carrier_detail,
             }
         reason = "cell_text_not_found" if not matching_cells else "cell_text_ambiguous"
+        return None, reason, {
+            "matching_cell_count": len(matching_cells),
+            "matching_rows": tuple(matching_rows[:5]),
+            **carrier_detail,
+        }
+
+    def _resolve_unique_table_entry_cell(
+        self,
+        node: UKMutableNode,
+        selector: dict[str, Any],
+    ) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
+        try:
+            column_index = int(selector.get("column_index") or 0)
+        except (TypeError, ValueError):
+            return None, "invalid_selector", {}
+        entry_label_norm = _compact_normalized_text(str(selector.get("entry_label") or ""))
+        if column_index < 1 or not entry_label_norm:
+            return None, "invalid_selector", {}
+
+        tables, carrier_detail = self._table_selector_tables(node, selector)
+        if len(tables) != 1:
+            return None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
+
+        matching_cells: list[UKMutableNode] = []
+        matching_rows: list[str] = []
+        for row_cells in self._expanded_table_rows(tables[0]):
+            if not any(
+                _compact_normalized_text(cell.text or "") == entry_label_norm
+                for cell in row_cells.values()
+            ):
+                continue
+            target_cell = row_cells.get(column_index)
+            if target_cell is None:
+                continue
+            if not matching_cells or matching_cells[-1] is not target_cell:
+                matching_cells.append(target_cell)
+                matching_rows.append(
+                    " | ".join(
+                        str(row_cells[col].text or "")
+                        for col in sorted(row_cells)
+                        if str(row_cells[col].text or "")
+                    )[:240]
+                )
+        if len(matching_cells) == 1:
+            return matching_cells[0], "", {
+                "matching_cell_count": 1,
+                "matched_row": matching_rows[0] if matching_rows else "",
+                **carrier_detail,
+            }
+        reason = "entry_cell_not_found" if not matching_cells else "entry_cell_ambiguous"
         return None, reason, {
             "matching_cell_count": len(matching_cells),
             "matching_rows": tuple(matching_rows[:5]),
@@ -16377,15 +16708,48 @@ class UKReplayExecutor:
                             },
                         )
                         return
-                    table_cell, applied = self._apply_text_replace_on_node_text_only(
-                        table_cell,
-                        text_patch.selector.match_text,
-                        replacement,
-                        text_patch.selector.occurrence,
-                        text_patch.selector.end_occurrence,
-                    )
+                    symbolic_detail: dict[str, Any] = {}
+                    symbolic_reason = ""
+                    if _TABLE_CELL_PARAGRAPH_SENTINEL_RE.match(text_patch.selector.match_text):
+                        table_cell, applied, symbolic_reason, symbolic_detail = (
+                            self._apply_source_carried_table_cell_paragraph_substitution(
+                                table_cell,
+                                text_patch.selector.match_text,
+                                replacement,
+                            )
+                        )
+                    else:
+                        table_cell, applied = self._apply_text_replace_on_node_text_only(
+                            table_cell,
+                            text_patch.selector.match_text,
+                            replacement,
+                            text_patch.selector.occurrence,
+                            text_patch.selector.end_occurrence,
+                        )
                     if applied:
-                        node = node
+                        if symbolic_detail:
+                            _append_uk_replay_adjudication(
+                                self.adjudications_out,
+                                kind="uk_replay_source_carried_table_entry_paragraph_substitution_resolved",
+                                message=(
+                                    "UK replay applied a source-carried table-entry "
+                                    "paragraph substitution to one resolved table cell."
+                                ),
+                                op=op,
+                                detail={
+                                    "action": _action_name(op.action),
+                                    "target": str(target),
+                                    "text_match": text_patch.selector.match_text,
+                                    "replacement_text": replacement,
+                                    "selector": dict(table_cell_selector),
+                                    **table_cell_detail,
+                                    **symbolic_detail,
+                                    "family": "source_table_elaboration",
+                                    "blocking": False,
+                                    "strict_disposition": "record",
+                                    "quirks_disposition": "apply",
+                                },
+                            )
                     else:
                         _append_uk_replay_adjudication(
                             self.adjudications_out,
@@ -16401,7 +16765,9 @@ class UKReplayExecutor:
                                 "text_match": text_patch.selector.match_text,
                                 "replacement_text": replacement,
                                 "selector": dict(table_cell_selector),
+                                "reason_code": symbolic_reason or "cell_text_preimage_gap",
                                 **table_cell_detail,
+                                **symbolic_detail,
                                 "family": "source_table_elaboration",
                                 "blocking": True,
                                 "strict_disposition": "block",

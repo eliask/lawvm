@@ -6451,6 +6451,263 @@ def test_replay_table_entry_relating_text_patch_mutates_unique_cell() -> None:
     assert table.children[1].children[0].text == "electronic compliance monitoring requirement"
 
 
+def test_compile_source_carried_table_entry_subparagraph_substitution() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Schedule id="schedule-19">
+            <P1group id="schedule-19-paragraph-87">
+              <P1 id="schedule-19-paragraph-87-1">
+                <Text>1 In Schedule 5 to the Scottish Public Services Ombudsman Act 2002,
+                the entry for the Information Commissioner is amended as follows.</Text>
+              </P1>
+              <P2 id="schedule-19-paragraph-87-2">
+                <Pnumber>2</Pnumber>
+                <Text>In paragraph 1, for sub-paragraph (a) substitute—
+                a sections 142 to 154, 160 to 164 or 174 to 176 of the Data Protection Act 2018, .</Text>
+              </P2>
+            </P1group>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P2")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_subparagraph_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2018-05-25",
+        affected_uri="/id/asp/2002/11",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="Sch. 5",
+        affecting_uri="/id/ukpga/2018/12",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2018",
+        affecting_number="12",
+        affecting_provisions="Sch. 19 para. 87(2)",
+        affecting_title="Test Data Protection Act",
+        in_force_dates=[{"date": "2018-05-25", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("schedule", "5"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_TABLE_CELL_PARAGRAPH_1_SUBPARAGRAPH_a"
+    assert ops[0].text_patch.replacement == (
+        "(a) sections 142 to 154, 160 to 164 or 174 to 176 of the Data Protection Act 2018,"
+    )
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_source_carried_table_entry_paragraph_substitution_text_patch"
+    assert selector["selector_mode"] == "unique_entry_cell"
+    assert selector["entry_label"] == "the Information Commissioner"
+    assert selector["column_index"] == 2
+    assert any(
+        record["rule_id"] == "uk_effect_source_carried_table_entry_paragraph_substitution_text_patch"
+        and record["reason_code"] == "source_carried_table_entry_paragraph_substitution_lowered"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_source_carried_table_entry_substitution_requires_parent_entry_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-19-paragraph-87-2">
+          <Pnumber>2</Pnumber>
+          <Text>In paragraph 1, for sub-paragraph (a) substitute—
+          a sections 142 to 154 of the Data Protection Act 2018, .</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_subparagraph_without_parent",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2018-05-25",
+        affected_uri="/id/asp/2002/11",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="Sch. 5",
+        affecting_uri="/id/ukpga/2018/12",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2018",
+        affecting_number="12",
+        affecting_provisions="Sch. 19 para. 87(2)",
+        affecting_title="Test Data Protection Act",
+        in_force_dates=[{"date": "2018-05-25", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+        source_root=extracted_el,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_overlap_substitution_unlowered"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
+def test_replay_source_carried_table_entry_paragraph_substitution_mutates_cell_only() -> None:
+    selector = {
+        "rule_id": "uk_effect_source_carried_table_entry_paragraph_substitution_text_patch",
+        "selector_mode": "unique_entry_cell",
+        "entry_label": "The Information Commissioner",
+        "column_index": 2,
+        "source_paragraph_label": "2",
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_paragraph_substitution",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("schedule", "5"),)),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="TEXT_TABLE_CELL_PARAGRAPH_2", occurrence=0),
+            replacement="2. The commission of an offence under—\n\n(a) a provision of the Data Protection Act 2018, or\n\n(b) section 77 of the Freedom of Information Act 2000.",
+        ),
+    )
+    base = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="5",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.TABLE,
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.ROW,
+                                children=(
+                                    IRNode(kind=IRNodeKind.HEADER_CELL, text="Person or body"),
+                                    IRNode(kind=IRNodeKind.HEADER_CELL, text="Matter"),
+                                ),
+                            ),
+                            IRNode(
+                                kind=IRNodeKind.ROW,
+                                children=(
+                                    IRNode(kind=IRNodeKind.CELL, text="The Information Commissioner"),
+                                    IRNode(
+                                        kind=IRNodeKind.CELL,
+                                        text=(
+                                            "A matter in respect of which the Commissioner could exercise any power conferred by—\n\n"
+                                            "Part V (enforcement) of the Data Protection Act 1998,\n\n\n\n"
+                                            "section 48 of the Freedom of Information Act 2000\n\n\n\n\n\n\n\n"
+                                            "The commission of an offence under—\n\n"
+                                            "any provision of the Data Protection Act 1998, or\n\n\n\n"
+                                            "section 77 of the Freedom of Information Act 2000"
+                                        ),
+                                    ),
+                                ),
+                            ),
+                            IRNode(
+                                kind=IRNodeKind.ROW,
+                                children=(
+                                    IRNode(kind=IRNodeKind.CELL, text="Another body"),
+                                    IRNode(kind=IRNodeKind.CELL, text="Unchanged matter"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    table = replayed.supplements[0].children[0]
+    target_cell = table.children[1].children[1]
+    assert "2. The commission of an offence under" in target_cell.text
+    assert "a provision of the Data Protection Act 2018" in target_cell.text
+    assert table.children[2].children[1].text == "Unchanged matter"
+    resolved = next(
+        row
+        for row in adjudications
+        if row.kind == "uk_replay_source_carried_table_entry_paragraph_substitution_resolved"
+    )
+    assert resolved.detail["blocking"] is False
+
+
+def test_replay_source_carried_table_entry_paragraph_substitution_blocks_duplicate_entry() -> None:
+    selector = {
+        "rule_id": "uk_effect_source_carried_table_entry_paragraph_substitution_text_patch",
+        "selector_mode": "unique_entry_cell",
+        "entry_label": "The Information Commissioner",
+        "column_index": 2,
+        "source_paragraph_label": "2",
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_paragraph_substitution_duplicate",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("schedule", "5"),)),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="TEXT_TABLE_CELL_PARAGRAPH_2", occurrence=0),
+            replacement="2. replacement",
+        ),
+    )
+    row = IRNode(
+        kind=IRNodeKind.ROW,
+        children=(
+            IRNode(kind=IRNodeKind.CELL, text="The Information Commissioner"),
+            IRNode(kind=IRNodeKind.CELL, text="one\n\n\n\n\n\n\n\ntwo"),
+        ),
+    )
+    base = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="5",
+                children=(IRNode(kind=IRNodeKind.TABLE, children=(row, row)),),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    assert replayed.supplements[0].children[0].children[0].children[1].text == "one\n\n\n\n\n\n\n\ntwo"
+    unresolved = next(
+        row
+        for row in adjudications
+        if row.kind == "uk_replay_table_entry_inline_text_insertion_unresolved"
+    )
+    assert unresolved.detail["reason_code"] == "entry_cell_ambiguous"
+    assert unresolved.detail["blocking"] is True
+
+
 def test_compile_table_column_heading_text_patch_uses_owned_cell_selector() -> None:
     extracted_el = ET.fromstring(
         f"""
