@@ -1064,6 +1064,30 @@ def test_classify_uk_manual_compile_frontier_marks_appropriate_place_source_path
     assert result["rule_id"] == "uk_manual_frontier_appropriate_place_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_marks_appropriate_place_definition_entry() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="appropriate_place_definition_entry_insert_unsupported",
+        extracted_tag="P4",
+        extracted_text=(
+            'iii at the appropriate place insert— "operational service standard" '
+            "is to be construed in accordance with section 3C(1)(b),"
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_appropriate_place_definition_entry_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_marks_schedule_list_entry_manual() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
@@ -1474,7 +1498,7 @@ def test_classify_uk_effect_appropriate_place_insert_source_pathology() -> None:
         extracted_tag="P4",
         extracted_text=(
             "viii at the appropriate place insert- "
-            '"Transport Partnership" means a Transport Partnership created by order.'
+            '"Scottish Ministers" and "local authorities".'
         ),
         op_actions=[],
         payload_kinds=[],
@@ -1484,6 +1508,24 @@ def test_classify_uk_effect_appropriate_place_insert_source_pathology() -> None:
     )
 
     assert pathology == "appropriate_place_insert_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_appropriate_place_definition_entry_source_pathology() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P4",
+        extracted_text=(
+            "iii at the appropriate place insert- "
+            '"operational service standard" is to be construed in accordance with section 3C(1)(b),'
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "appropriate_place_definition_entry_insert_unsupported"
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
