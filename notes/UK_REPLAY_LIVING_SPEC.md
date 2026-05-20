@@ -3071,6 +3071,22 @@ Current bench replay-regime invariant:
   over the explicit target subtree. Ambiguous definition entries, missing
   anchors, and source text saying only `at the appropriate place(s)` are not
   covered by these rules and must remain candidate/manual-compile evidence.
+- Definition-child parent context must not be lost because the child payload
+  contains a quoted legal reference. If a child row says only `after "X" insert
+  "..."` or `for "X" substitute "Y"` and the parent says `in the definition of
+  "D", in paragraph (a)(ii)`, lowering scopes the patch to
+  `TEXT_IN_DEFINITION_CHILD_PARAGRAPH_D` with the parent-supplied child label.
+  Quoted payload references such as `in section 2A` are inserted text, not a
+  competing target. The owned rules are
+  `uk_effect_source_parent_definition_child_after_quoted_anchor_insert_text_patch`
+  and `uk_effect_source_parent_definition_child_substitution_text_patch`.
+  If a BlockAmendment child row says only `at the end there is inserted` and
+  the parent supplies the same definition-child context, lowering uses
+  `uk_effect_source_carried_definition_child_at_end_insert_text_patch` and a
+  `TEXT_IN_DEFINITION_CHILD_PARAGRAPH_* AT_END` selector. This is a bounded
+  text append to the source-owned definition child, not an address-only insert
+  into a synthetic `section/paragraph/subparagraph` path that the enacted tree
+  does not expose.
 - UK quoted text-patch lowering also owns the common bounded occurrence
   variants when the source names an explicit affected target. `for "X", in
   each/both place(s) it occurs, substitute "Y"` and parenthesized variants such

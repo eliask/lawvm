@@ -980,7 +980,7 @@ def test_summarize_uk_effect_records_structural_no_op_lowering_rejection(monkeyp
     )
 
 
-def test_summarize_uk_effect_adds_aggregate_no_op_rejection_with_specific_rejection(monkeypatch) -> None:
+def test_summarize_uk_effect_suppresses_aggregate_no_op_rejection_with_specific_rejection(monkeypatch) -> None:
     from lawvm.uk_legislation.uk_amendment_replay import UKEffectRecord
 
     effect = UKEffectRecord(
@@ -1042,7 +1042,6 @@ def test_summarize_uk_effect_adds_aggregate_no_op_rejection_with_specific_reject
     assert summary.candidate is False
     assert [item["rule_id"] for item in summary.lowering_rejections] == [
         "uk_effect_missing_structural_payload_rejected",
-        "uk_effect_lowering_no_ops_rejected",
     ]
     assert all(item["blocking"] is True for item in summary.lowering_rejections)
 

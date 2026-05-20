@@ -8865,6 +8865,230 @@ def test_compile_direct_section_paragraph_after_insert_scopes_to_source_definiti
     )
 
 
+def test_compile_definition_child_after_insert_ignores_payload_legal_reference() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P4 id="schedule-paragraph-3-6-a-v">
+              <P4para>
+                <Text>in the definition of “relevant general policies”, in paragraph (a)(ii)—</Text>
+                <P5 id="schedule-paragraph-3-6-a-v-A">
+                  <Pnumber>A</Pnumber>
+                  <P5para>
+                    <Text>after “relate to” insert <InlineAmendment>“
+                    providing services of the kind mentioned in section 2A(1)
+                    of this Act or ”</InlineAmendment>,</Text>
+                  </P5para>
+                </P5>
+              </P4para>
+            </P4>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P5")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-e0b75dad2128708e8dc7418c9ddeae16",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-23",
+        affected_uri="/id/asp/2001/2/section/48/1",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 48(1)",
+        affecting_uri="/id/asp/2019/17",
+        affecting_class="ScottishAct",
+        affecting_year="2019",
+        affecting_number="17",
+        affecting_provisions="sch. para. 3(6)(a)(v)(A)",
+        affecting_title="Transport (Scotland) Act 2019",
+        in_force_dates=[{"date": "2022-06-24", "prospective": "false"}],
+    )
+    lowering_observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "48"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        "TEXT_IN_DEFINITION_CHILD_PARAGRAPH_relevant general policies"
+        f"{US}a{US}AFTER{US}"
+        "relate to"
+    )
+    assert ops[0].text_patch.replacement == (
+        "relate to providing services of the kind mentioned in section 2A(1) of this Act or "
+    )
+    assert any(
+        record["rule_id"]
+        == "uk_effect_source_parent_definition_child_after_quoted_anchor_insert_text_patch"
+        and record["source_definition_term"] == "relevant general policies"
+        and record["source_child_label"] == "a"
+        and record["source_unscoped_match_text"] == "relate to"
+        for record in lowering_observations
+    )
+
+
+def test_compile_source_carried_definition_child_at_end_block_insert() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P2 id="section-51-2">
+              <Pnumber>2</Pnumber>
+              <P2para>
+                <Text>In section 48, in the definition of “relevant general policies” in paragraph (a)—</Text>
+                <P3 id="section-51-2-b">
+                  <Pnumber>b</Pnumber>
+                  <P3para>
+                    <Text>at the end there is inserted</Text>
+                    <BlockAmendment>
+                      <Text>; or </Text>
+                      <P4><Pnumber>ii</Pnumber><P4para><Text>any policies which relate to matters;</Text></P4para></P4>
+                    </BlockAmendment>
+                  </P3para>
+                </P3>
+              </P2para>
+            </P2>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-b9032df59009c668b7e0433c617e58e4",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-23",
+        affected_uri="/id/asp/2001/2/section/48/a/ii",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 48(a)(ii) and word",
+        affecting_uri="/id/asp/2005/12",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="12",
+        affecting_provisions="s. 51(2)(b)",
+        affecting_title="Transport (Scotland) Act 2005",
+        in_force_dates=[{"date": "2005-10-10", "prospective": "false"}],
+    )
+    lowering_observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "48"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        "TEXT_IN_DEFINITION_CHILD_PARAGRAPH_relevant general policies"
+        f"{US}a{US}"
+        "AT_END"
+    )
+    assert ops[0].text_patch.replacement == "; or ii any policies which relate to matters;"
+    assert any(
+        record["rule_id"] == "uk_effect_source_carried_definition_child_at_end_insert_text_patch"
+        and record["source_definition_term"] == "relevant general policies"
+        and record["source_child_label"] == "a"
+        for record in lowering_observations
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_source_parent_definition_child_target_refined"
+        and record["refined_target"] == "section:48"
+        for record in lowering_observations
+    )
+
+
+def test_compile_definition_child_substitution_scopes_to_source_parent_definition() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P4 id="schedule-paragraph-3-6-a-v">
+              <P4para>
+                <Text>in the definition of “relevant general policies”, in paragraph (a)(ii)—</Text>
+                <P5 id="schedule-paragraph-3-6-a-v-B">
+                  <Pnumber>B</Pnumber>
+                  <P5para>
+                    <Text>for “a quality partnership scheme or a quality contract scheme”
+                    substitute <InlineAmendment>“ a partnership scheme or a
+                    franchising framework ”</InlineAmendment>,</Text>
+                  </P5para>
+                </P5>
+              </P4para>
+            </P4>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P5")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-942c3f38fcda6f4003284b6f4d3f0aa5",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-23",
+        affected_uri="/id/asp/2001/2/section/48/1",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 48(1)",
+        affecting_uri="/id/asp/2019/17",
+        affecting_class="ScottishAct",
+        affecting_year="2019",
+        affecting_number="17",
+        affecting_provisions="sch. para. 3(6)(a)(v)(B)",
+        affecting_title="Transport (Scotland) Act 2019",
+        in_force_dates=[{"date": "2023-12-04", "prospective": "false"}],
+    )
+    lowering_observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "48"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        "TEXT_IN_DEFINITION_CHILD_PARAGRAPH_relevant general policies"
+        f"{US}a{US}"
+        "a quality partnership scheme or a quality contract scheme"
+    )
+    assert ops[0].text_patch.replacement == " a partnership scheme or a franchising framework "
+    assert any(
+        record["rule_id"] == "uk_effect_source_parent_definition_child_substitution_text_patch"
+        and record["source_definition_term"] == "relevant general policies"
+        and record["source_child_label"] == "a"
+        and record["source_child_sublabel"] == "ii"
+        for record in lowering_observations
+    )
+
+
 def test_compile_after_quoted_insert_does_not_scope_to_remote_definition_context() -> None:
     source_root = ET.fromstring(
         f"""
