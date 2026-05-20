@@ -4048,6 +4048,7 @@ def _parse_ref(ref: str) -> tuple[tuple[Optional[str], str], ...]:
     r = re.sub(r"\bSch\b", "schedule", r, flags=re.I)
     r = re.sub(r"\bpara\.", "paragraph", r, flags=re.I)
     r = re.sub(r"\bparas\.", "paragraph", r, flags=re.I)
+    r = re.sub(r"\bparas?\b", "paragraph", r, flags=re.I)
     r = re.sub(r"\bs\.", "section", r, flags=re.I)
     r = re.sub(r"\bss\.", "section", r, flags=re.I)
     r = re.sub(r"\bPt\.", "part", r, flags=re.I)
