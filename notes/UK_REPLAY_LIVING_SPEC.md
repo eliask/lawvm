@@ -1821,6 +1821,13 @@ Current block-substitution context invariant:
   `table_entry_target_unsupported` /
   `uk_manual_frontier_table_entry_candidate`. Replay must not flatten any table
   amendment into the host provision body just to remove a benchmark residual.
+- schedule-list table-row insertions may inherit their anchor from the parent
+  instruction when the extracted source element is only the `BlockAmendment`
+  table payload. The parent must explicitly say `before/after the entry
+  relating to/for X ... inserted`; lowering then reuses
+  `uk_effect_schedule_list_entry_table_rows_lowered`, records the parent id in
+  the selector, and replay still resolves the anchor against exactly one target
+  schedule table before inserting source-owned rows.
 - if such wording appears while metadata names only a broad schedule, part, or
   provision target, lowering emits
   `uk_effect_table_entry_instruction_rejected` instead of coercing the row into

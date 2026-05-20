@@ -7292,6 +7292,12 @@ _TABLE_CELL_PARAGRAPH_SENTINEL_RE = re.compile(
     r"^TEXT_TABLE_CELL_PARAGRAPH_(?P<paragraph>[0-9]+)"
     r"(?:_SUBPARAGRAPH_(?P<subparagraph>[0-9A-Za-z]+))?$"
 )
+_SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE = re.compile(
+    r"\b(?:before|after)\s+(?:the\s+)?entry\s+"
+    r"(?:relating\s+to|relation\s+to|for)\s+.+?"
+    r"(?:,?\s+there\s+is\s+inserted|\s+insert\b)",
+    flags=re.I | re.S,
+)
 
 
 def _looks_like_appropriate_place_definition_entry_insert_text(text: str) -> bool:
@@ -8214,6 +8220,37 @@ def _source_carried_table_entry_paragraph_substitution(
         "source_subparagraph_label": subparagraph_label,
         "table_cell_selector": selector,
     }
+
+
+def _source_parent_instruction_with_payload(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+    instruction_pattern: re.Pattern[str],
+) -> Optional[dict[str, str]]:
+    """Combine a payload-only extracted amendment with its parent instruction."""
+    payload_text = " ".join((extracted_text or "").split()).strip()
+    if not payload_text or extracted_el is None or _tag(extracted_el) not in {"BlockAmendment", "InlineAmendment"}:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        instruction_text = _instruction_text_before_amendment_container(ancestor)
+        instruction_text = " ".join(instruction_text.split()).strip()
+        if not instruction_text or instruction_pattern.search(instruction_text) is None:
+            continue
+        source_parent_id = str(ancestor.get("id") or "")
+        if not source_parent_id:
+            source_parent_id = next(
+                (str(candidate.get("id")) for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")),
+                "",
+            )
+        return {
+            "combined_text": f"{instruction_text} {payload_text}",
+            "source_parent_id": source_parent_id,
+            "source_parent_instruction": instruction_text,
+        }
+    return None
 
 
 _DEFINITION_LIST_OMISSION_CONTEXT_RE = re.compile(
@@ -9196,6 +9233,30 @@ def compile_effect_to_ir_ops(
             if action == "insert" and not heading_facet_target
             else None
         )
+        source_parent_schedule_entry_insert = (
+            _source_parent_instruction_with_payload(
+                extracted_el=extracted_el,
+                source_root=source_root,
+                extracted_text=extracted_text,
+                instruction_pattern=_SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE,
+            )
+            if schedule_list_entry_selector is None and action == "insert" and not heading_facet_target
+            else None
+        )
+        if source_parent_schedule_entry_insert is not None:
+            schedule_list_entry_selector = _uk_schedule_list_entry_insert_selector(
+                target_ref=t_str,
+                target=target,
+                extracted_text=source_parent_schedule_entry_insert["combined_text"],
+            )
+            if schedule_list_entry_selector is not None:
+                schedule_list_entry_selector = {
+                    **schedule_list_entry_selector,
+                    "source_parent_id": source_parent_schedule_entry_insert["source_parent_id"],
+                    "source_parent_instruction": source_parent_schedule_entry_insert[
+                        "source_parent_instruction"
+                    ],
+                }
         if schedule_list_entry_selector is not None:
             table_payload_node = _uk_schedule_list_entry_table_payload(extracted_el)
             if table_payload_node is not None:
