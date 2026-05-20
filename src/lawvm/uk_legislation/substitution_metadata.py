@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Sequence
 
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.addressing import (
@@ -259,3 +259,106 @@ def _repeal_tail_for_substituted_series_replacement(
         return []
 
     return anchor_refs[1:]
+
+
+def _source_replaced_sibling_count_from_substitution_text(
+    *,
+    extracted_text: Optional[str],
+    target_refs: Sequence[str],
+) -> Optional[int]:
+    """Return how many source-named siblings are being replaced, if explicit."""
+    if not extracted_text or len(target_refs) < 2:
+        return None
+    match = re.search(
+        r"\bfor\s+(?:sub-?paragraphs?|paragraphs?|subsections?)\s+([^.;]+?)\s+substitute\b",
+        extracted_text,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    labels = re.findall(r"\(([0-9A-Za-z]+)\)", match.group(1))
+    if len(labels) < 2 or len(labels) >= len(target_refs):
+        return None
+    target_labels: list[str] = []
+    for target_ref in target_refs[: len(labels)]:
+        try:
+            target_labels.append(_clean_num(_addr_leaf_label(_parse_affected_target(target_ref)) or ""))
+        except Exception:
+            return None
+    if [_clean_num(label) for label in labels] != target_labels:
+        return None
+    return len(labels)
+
+
+def _expand_sibling_targets_from_text(
+    prov_str: str,
+    extracted_text: Optional[str],
+) -> Optional[list[str]]:
+    """Expand compressed sibling refs from plain-text omission/repeal wording."""
+    if not extracted_text:
+        return None
+
+    sibling_text = None
+    sibling_kind = None
+    for pattern in (
+        r"\bfor\s+((?:sub-)?paragraphs?|subsections?)\s+([^.;]+?)\s+substitute\b",
+        r"\bomit\s+(subsections?|(?:sub-)?paragraphs?)\s+([^.;]+)",
+        r"\b(subsections?|(?:sub-)?paragraphs?)\s+([^.;]+?)\s+(?:is|are)\s+repealed\b",
+        r"\bin\s+((?:sub-)?paragraphs?|subsections?)\s+([^.;]+?)\s+(?:after|before|insert|substitute)\b",
+    ):
+        m = re.search(pattern, extracted_text, flags=re.I)
+        if m:
+            sibling_kind = m.group(1).lower()
+            sibling_text = m.group(2)
+            break
+    if sibling_text is None or sibling_kind is None:
+        return None
+
+    sibling_parts = [part.strip() for part in re.split(r"\s*(?:,|and)\s*", sibling_text, flags=re.I) if part.strip()]
+    if len(sibling_parts) < 2:
+        return None
+    if any(re.search(r"\b(?:beginning|end)\b", part, flags=re.I) for part in sibling_parts):
+        return None
+    sibling_kind_base = re.sub(r"[^a-z]+", "", sibling_kind.lower())
+    if sibling_kind_base.endswith("s"):
+        sibling_kind_base = sibling_kind_base[:-1]
+    for part in sibling_parts[1:]:
+        kind_match = re.match(r"^(sub-?paragraph|paragraph|subsection|item|point)\b", part, flags=re.I)
+        if kind_match is None:
+            continue
+        part_kind_base = re.sub(r"[^a-z]+", "", kind_match.group(1).lower())
+        if part_kind_base.endswith("s"):
+            part_kind_base = part_kind_base[:-1]
+        if part_kind_base != sibling_kind_base:
+            return None
+    if sibling_kind.startswith("subsection") and any(
+        re.match(r"^(?:sub-?paragraph|paragraph|item|point)\b", part, flags=re.I) for part in sibling_parts
+    ):
+        return None
+
+    flat_sibling_raw: list[str] = []
+    for part in sibling_parts:
+        part_groups = re.findall(r"\(([0-9A-Z]+)\)", part, re.I)
+        if not part_groups:
+            return None
+        flat_sibling_raw.extend(part_groups)
+
+    paren_groups = re.findall(r"\(([0-9A-Z]+)\)", prov_str, re.I)
+    if len(paren_groups) < len(flat_sibling_raw):
+        return None
+
+    prov_is_schedule = bool(re.match(r"^\s*sch(?:edule)?\.?", prov_str, re.I))
+    if sibling_kind.startswith("subsection") and prov_is_schedule:
+        return None
+    if ("paragraph" in sibling_kind) and not prov_is_schedule and not re.match(r"^\s*ss?\.\s*", prov_str, re.I):
+        return None
+
+    trailing_raw = paren_groups[-len(flat_sibling_raw) :]
+    if [_clean_num(g) for g in trailing_raw] != [_clean_num(g) for g in flat_sibling_raw]:
+        return None
+
+    base = prov_str.rstrip()
+    for _ in range(len(flat_sibling_raw)):
+        base = re.sub(r"\([0-9A-Z]+\)\s*$", "", base, flags=re.I).rstrip()
+
+    return [f"{base}{part}" for part in sibling_parts]
