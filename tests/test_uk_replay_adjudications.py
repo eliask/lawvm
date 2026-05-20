@@ -4899,6 +4899,56 @@ def test_replay_prepare_preserves_duplicate_effect_id_structural_ops_with_text_b
     assert "uk_replay_repealed_target_gap" not in {adjudication.kind for adjudication in adjudications}
 
 
+def test_executor_observes_descendant_repeal_after_prior_parent_repeal() -> None:
+    statute = IRStatute(
+        statute_id="asp/2000/4",
+        title="Adults with Incapacity (Scotland) Act 2000",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="38",
+                    text="",
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="one"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="4", text="four"),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    ops = [
+        LegalOperation(
+            op_id="uk_test_repeal_section_38",
+            sequence=0,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "38"),)),
+            source=OperationSource(statute_id="asp/2001/8"),
+        ),
+        LegalOperation(
+            op_id="uk_test_repeal_section_38_4",
+            sequence=1,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "38"), ("subsection", "4"))),
+            source=OperationSource(statute_id="asp/2003/13"),
+        ),
+    ]
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(statute, ops, adjudications_out=adjudications)
+
+    assert replayed.body.children == ()
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_repeal_target_already_absent_observed"
+    ]
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+
+
 def test_executor_applies_before_definition_insert_at_explicit_definition_anchor() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

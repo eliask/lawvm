@@ -19303,10 +19303,21 @@ class UKReplayExecutor:
                 if self._target_under_repealed_prefix(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
-                        kind="uk_replay_repealed_target_gap",
-                        message="UK replay skipped repeal: target path was already repealed earlier in the chain.",
+                        kind="uk_replay_repeal_target_already_absent_observed",
+                        message=(
+                            "UK replay observed a structural repeal whose target path "
+                            "was already repealed earlier in the chain."
+                        ),
                         op=op,
-                        detail={"action": _action_name(op.action), "target": str(target)},
+                        detail={
+                            "action": _action_name(op.action),
+                            "target": str(target),
+                            "reason_code": "target_previously_repealed",
+                            "family": "structural_repeal_idempotence",
+                            "blocking": False,
+                            "strict_disposition": "record",
+                            "quirks_disposition": "record",
+                        },
                     )
                 elif self._doubled_alpha_gap(target):
                     _append_uk_replay_adjudication(
