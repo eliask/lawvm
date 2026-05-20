@@ -4090,6 +4090,43 @@ def _rotated_trailing_comma_omission_match(match: str, node: UKMutableNode) -> O
     return rotated_matches[0]
 
 
+def _numeric_list_trailing_comma_anchor_pattern(
+    match: str,
+    replacement: str | None,
+) -> tuple[str, re.Pattern[str]] | None:
+    """Return a bounded pattern for insertion anchors quoted as `28,`.
+
+    UK effect text can quote a list item with a following comma even when the
+    target text is the final item before a conjunction, e.g. source quotes
+    ``28,`` but the enacted preimage says ``27, 28 and 60``. This helper is
+    intentionally limited to short numeric/alphanumeric legal-list tokens.
+    """
+
+    match_obj = re.fullmatch(r"\s*(?P<anchor>\d+[A-Za-z]?)\s*,\s*", match or "")
+    if match_obj is None:
+        return None
+    anchor = match_obj.group("anchor")
+    replacement_text = (replacement or "").lstrip()
+    if re.match(rf"{re.escape(anchor)}\s*,", replacement_text, flags=re.I) is None:
+        return None
+    pattern = re.compile(
+        rf"(?<![A-Za-z0-9]){re.escape(anchor)}(?![A-Za-z0-9])(?=\s+(?:and|or)\b)",
+        flags=re.I,
+    )
+    return anchor, pattern
+
+
+def _splice_text_match_replacement(text: str, match_obj: re.Match[str], replacement: str) -> str:
+    """Splice replacement while avoiding duplicate whitespace at the join."""
+
+    applied_replacement = replacement
+    if applied_replacement and applied_replacement[-1].isspace() and text[match_obj.end() :].startswith(
+        (" ", "\t", "\n", "\r")
+    ):
+        applied_replacement = applied_replacement.rstrip()
+    return f"{text[: match_obj.start()]}{applied_replacement}{text[match_obj.end() :]}"
+
+
 def _norm_prov_ref(ref: str) -> str:
     """Normalise a provision reference for comparison."""
     return "".join(re.findall(r"[0-9a-zA-Z]", ref)).lower()
@@ -16180,6 +16217,76 @@ class UKReplayExecutor:
                 return token_matches, True
         return list(re.finditer(re.escape(anchor), text)), False
 
+    def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
+        self,
+        node: UKMutableNode,
+        match: str,
+        replacement: str,
+        occurrence: int,
+        end_occurrence: int,
+    ) -> tuple[UKMutableNode, bool, str | None]:
+        """Recover a unique numeric list item whose source selector adds a comma."""
+
+        if occurrence not in (0, 1) or end_occurrence:
+            return node, False, None
+        anchor_pattern = _numeric_list_trailing_comma_anchor_pattern(match, replacement)
+        if anchor_pattern is None:
+            return node, False, None
+        anchor, pattern = anchor_pattern
+        text = node.text or ""
+        if not text or match in text:
+            return node, False, None
+        matches = list(pattern.finditer(text))
+        if len(matches) != 1:
+            return node, False, None
+        rebuilt = dc_replace(node, text=_splice_text_match_replacement(text, matches[0], replacement))
+        self._replace_node_in_statute(node, rebuilt)
+        return rebuilt, True, anchor
+
+    def _apply_numeric_list_trailing_comma_anchor_on_subtree(
+        self,
+        node: UKMutableNode,
+        match: str,
+        replacement: str,
+        occurrence: int,
+        end_occurrence: int = 0,
+    ) -> tuple[UKMutableNode, bool, str | None]:
+        """Recover one unique numeric list item across a resolved target subtree."""
+
+        if occurrence not in (0, 1) or end_occurrence:
+            return node, False, None
+        anchor_pattern = _numeric_list_trailing_comma_anchor_pattern(match, replacement)
+        if anchor_pattern is None:
+            return node, False, None
+        anchor, pattern = anchor_pattern
+        text_nodes: list[tuple[tuple[int, ...], UKMutableNode]] = []
+
+        def _collect(current: UKMutableNode, path: tuple[int, ...] = ()) -> None:
+            if current.text:
+                text_nodes.append((path, current))
+            for index, child in enumerate(current.children):
+                _collect(child, path + (index,))
+
+        _collect(node)
+        if any(match in text_node.text for _, text_node in text_nodes):
+            return node, False, None
+        matches: list[tuple[tuple[int, ...], UKMutableNode, re.Match[str]]] = []
+        for path, text_node in text_nodes:
+            matches.extend((path, text_node, match_obj) for match_obj in pattern.finditer(text_node.text))
+        if len(matches) != 1:
+            return node, False, None
+        path, text_node, match_obj = matches[0]
+        rebuilt = self._replace_descendant_at_path(
+            node,
+            path,
+            dc_replace(
+                text_node,
+                text=_splice_text_match_replacement(text_node.text, match_obj, replacement),
+            ),
+        )
+        self._replace_node_in_statute(node, rebuilt)
+        return rebuilt, True, anchor
+
     def _apply_text_replace_on_node_text_only(
         self,
         node: UKMutableNode,
@@ -20295,6 +20402,67 @@ class UKReplayExecutor:
                                 "blocking": False,
                                 "strict_disposition": "record",
                                 "quirks_disposition": "record",
+                            },
+                        )
+                if (
+                    not applied
+                    and text_patch.kind is TextPatchKindEnum.REPLACE
+                    and bool(replacement)
+                ):
+                    if heading_carrier is not None:
+                        (
+                            heading_carrier,
+                            numeric_comma_applied,
+                            numeric_comma_anchor,
+                        ) = self._apply_numeric_list_trailing_comma_anchor_on_node_text_only(
+                            heading_carrier,
+                            text_patch.selector.match_text,
+                            replacement,
+                            text_patch.selector.occurrence,
+                            text_patch.selector.end_occurrence,
+                        )
+                    else:
+                        (
+                            node,
+                            numeric_comma_applied,
+                            numeric_comma_anchor,
+                        ) = self._apply_numeric_list_trailing_comma_anchor_on_subtree(
+                            node,
+                            text_patch.selector.match_text,
+                            replacement,
+                            text_patch.selector.occurrence,
+                            text_patch.selector.end_occurrence,
+                        )
+                    if numeric_comma_applied:
+                        applied = True
+                        applied_match = numeric_comma_anchor or text_patch.selector.match_text
+                        applied_rule_id = "uk_replay_numeric_list_trailing_comma_anchor_normalized"
+                        _append_uk_replay_adjudication(
+                            self.adjudications_out,
+                            kind=applied_rule_id,
+                            message=(
+                                "UK replay applied insertion-style text op after proving "
+                                "a unique numeric list anchor whose source selector carried "
+                                "a trailing comma absent before a conjunction in the target."
+                            ),
+                            op=op,
+                            detail={
+                                "action": _action_name(op.action),
+                                "target": str(target),
+                                "text_match": text_patch.selector.match_text,
+                                "applied_match": applied_match,
+                                "replacement_text": replacement,
+                                "family": "text_match_recovery",
+                                "source_shape": "numeric_list_trailing_comma_before_conjunction",
+                                "blocking": False,
+                                "strict_disposition": "record",
+                                "quirks_disposition": "record",
+                                "prior_same_target_text_patch_op_ids": tuple(
+                                    self._applied_text_patch_targets.get(str(target), ())
+                                ),
+                                "prior_same_target_text_patch_count": len(
+                                    self._applied_text_patch_targets.get(str(target), ())
+                                ),
                             },
                         )
                 if (

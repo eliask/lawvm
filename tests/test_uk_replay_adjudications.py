@@ -1239,6 +1239,108 @@ def test_executor_classifies_multi_prior_same_target_text_patch_preimage_drift()
     assert executor.statute.body.children[0].text == "Alpha new uno two"
 
 
+def test_executor_recovers_unique_numeric_list_trailing_comma_anchor() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/5",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="17",
+                    text="Subject to sections 18, 19, 20, 23, 27, 28 and 60 of this Act.",
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    for sequence, op_id, match_text, replacement in (
+        (1, "uk_test_numeric_list_first", "18", "18 to 18C "),
+        (2, "uk_test_numeric_list_second", "27,", "27, 27A, "),
+        (3, "uk_test_numeric_list_trailing_comma", "28,", "28, 28A, "),
+    ):
+        executor.apply_op(
+            LegalOperation(
+                op_id=op_id,
+                sequence=sequence,
+                action=StructuralAction.TEXT_REPLACE,
+                target=LegalAddress(path=(("section", "17"),)),
+                text_patch=TextPatchSpec(
+                    kind=TextPatchKindEnum.REPLACE,
+                    selector=TextSelector(match_text=match_text, occurrence=0),
+                    replacement=replacement,
+                ),
+                source=_source(),
+            )
+        )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_numeric_list_trailing_comma_anchor_normalized"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "numeric_list_trailing_comma_before_conjunction"
+    assert adjudications[0].detail["applied_match"] == "28"
+    assert adjudications[0].detail["prior_same_target_text_patch_op_ids"] == (
+        "uk_test_numeric_list_first",
+        "uk_test_numeric_list_second",
+    )
+    assert "28, 28A, and 60" in executor.statute.body.children[0].text
+
+
+def test_executor_rejects_ambiguous_numeric_list_trailing_comma_anchor() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/5",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="17",
+                    text="Sections 28 and 60 apply; sections 28 and 61 also apply.",
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    for sequence, op_id, match_text, replacement in (
+        (1, "uk_test_numeric_list_prior", "Sections", "Provisions"),
+        (2, "uk_test_numeric_list_ambiguous", "28,", "28, 28A, "),
+    ):
+        executor.apply_op(
+            LegalOperation(
+                op_id=op_id,
+                sequence=sequence,
+                action=StructuralAction.TEXT_REPLACE,
+                target=LegalAddress(path=(("section", "17"),)),
+                text_patch=TextPatchSpec(
+                    kind=TextPatchKindEnum.REPLACE,
+                    selector=TextSelector(match_text=match_text, occurrence=0),
+                    replacement=replacement,
+                ),
+                source=_source(),
+            )
+        )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_patch_preimage_drift"
+    assert adjudications[0].detail["blocking"] is True
+    assert executor.statute.body.children[0].text == (
+        "Provisions 28 and 60 apply; sections 28 and 61 also apply."
+    )
+
+
 def test_executor_classifies_synthetic_text_selector_gap() -> None:
     adjudications: list[CompileAdjudication] = []
     executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
