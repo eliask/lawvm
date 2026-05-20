@@ -1873,6 +1873,10 @@ def _is_uk_renumber_effect_type(effect_type: str) -> bool:
     return bool(re.search(r"\brenumbered\s+as\b", str(effect_type or ""), flags=re.I))
 
 
+def _is_uk_repealed_by_effect_type(effect_type: str) -> bool:
+    return str(effect_type or "").strip().lower().startswith("repealed by ")
+
+
 def _label_sort_key(label: Optional[str]) -> tuple[Any, ...]:
     """Return a deterministic natural sort key for UK structural labels."""
     clean = _clean_num(label or "")
@@ -2258,6 +2262,7 @@ class UKEffectRecord:
             self.effect_type in STRUCTURAL_EFFECT_TYPES
             or self.effect_type == ""
             or _is_uk_renumber_effect_type(self.effect_type)
+            or _is_uk_repealed_by_effect_type(self.effect_type)
         )
 
     def is_applicable_for_replay(
@@ -2281,6 +2286,7 @@ class UKEffectRecord:
             self.effect_type not in STRUCTURAL_EFFECT_TYPES
             and self.effect_type != ""
             and not _is_uk_renumber_effect_type(self.effect_type)
+            and not _is_uk_repealed_by_effect_type(self.effect_type)
         ):
             return False
         return self.is_applicable_for_replay(applicability_mode=applicability_mode)
@@ -7746,6 +7752,8 @@ def compile_effect_to_ir_ops(
     action = action_map.get(effect_type)
     if not action and effect_type.startswith("substituted for"):
         action = "replace"
+    if not action and _is_uk_repealed_by_effect_type(effect_type):
+        action = "repeal"
     if not action and metadata_renumber_targets is not None:
         action = "renumber"
     extracted_text = _text_content(extracted_el) if extracted_el is not None else None

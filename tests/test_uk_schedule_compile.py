@@ -1329,6 +1329,37 @@ def test_compile_repealed_paragraph_ref_inherits_active_subsection_context() -> 
     assert (("section", "90"), ("subsection", "b")) not in target_paths
 
 
+def test_compile_repealed_by_metadata_target_lowers_to_typed_repeal() -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_repealed_by_metadata_target",
+        effect_type="repealed by 2010 c. 15 Sch. 27 Pt. 1 (as substituted)",
+        applied=True,
+        requires_applied=True,
+        modified="2010-10-01",
+        affected_uri="/id/asp/2000/6",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="6",
+        affected_provisions="Sch. 2 para. 2",
+        affecting_uri="/id/uksi/2010/2279",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2010",
+        affecting_number="2279",
+        affecting_provisions="Sch. 2",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2010-10-01", "prospective": "false"}],
+    )
+
+    assert effect.is_structural
+    assert effect.is_structural_for_replay()
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el=None, sequence=0)
+
+    assert len(ops) == 1
+    assert ops[0].action == StructuralAction.REPEAL
+    assert ops[0].target.path == (("schedule", "2"), ("paragraph", "2"))
+
+
 def test_compile_nested_schedule_subparagraph_paragraph_repeal_not_sibling_expanded() -> None:
     extracted_el = ET.fromstring(
         f"""
