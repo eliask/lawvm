@@ -1813,7 +1813,11 @@ Current block-substitution context invariant:
   the second column relating to X insert- Y`, and explicit single-entry table
   anchors of the form `after the entry in the table relating to X insert- Y`
   or `after entry 4 in the table insert-` when the source carries exactly one
-  `BlockAmendment` table-row payload. It also admits subsection-targeted
+  `BlockAmendment` table-row payload. When the affected target itself names a
+  table, explicit numbered anchors such as `after entry 6A insert-` are also
+  admitted, but only as source-table payload insertions; the compiler preserves
+  all rows from the `BlockAmendment` table and never fabricates rows from the
+  flattened instruction text. It also admits subsection-targeted
   `after the entry for X insert-` only when the affected subsection is replay-
   proven to be backed by exactly one table and the source carries a
   `BlockAmendment` table payload; replay treats `X` as a table-entry group
