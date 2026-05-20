@@ -180,10 +180,13 @@ def test_uk_bench_save_load_round_trips_commencement_scores(monkeypatch, tmp_pat
                 "rule_id": "uk_manual_compile_frontier_classified",
                 "family": "manual_compile_frontier",
                 "phase": "lowering",
-                "manual_compile_status": "source_insufficient",
+                "manual_compile_status": "unclassified_frontier",
+                "manual_compile_rule_id": "uk_manual_frontier_unclassified",
                 "blocking": False,
             },
         ),
+        manual_compile_status_counts={"unclassified_frontier": 1},
+        manual_compile_rule_counts={"uk_manual_frontier_unclassified": 1},
         enacted_source_status="available",
         oracle_source_status="too_small",
         enacted_source_size=456,
@@ -395,6 +398,12 @@ def test_uk_bench_save_load_round_trips_commencement_scores(monkeypatch, tmp_pat
     assert rows[0]["uk_residual_section_claim_count"] == "1"
     assert rows[0]["uk_residual_section_claim_emitted"] == "1"
     assert rows[0]["replay_commencement_score"] == "0.9000"
+    assert json.loads(rows[0]["manual_compile_status_counts"]) == {
+        "unclassified_frontier": 1,
+    }
+    assert json.loads(rows[0]["manual_compile_rule_counts"]) == {
+        "uk_manual_frontier_unclassified": 1,
+    }
     with open(bench_dir / "demo.score_witnesses.csv", newline="") as handle:
         witness_rows = list(csv.DictReader(handle))
     assert witness_rows == [
@@ -585,10 +594,13 @@ def test_uk_bench_save_load_round_trips_commencement_scores(monkeypatch, tmp_pat
             "rule_id": "uk_manual_compile_frontier_classified",
             "family": "manual_compile_frontier",
             "phase": "lowering",
-            "manual_compile_status": "source_insufficient",
+            "manual_compile_status": "unclassified_frontier",
+            "manual_compile_rule_id": "uk_manual_frontier_unclassified",
             "blocking": False,
         },
     )
+    assert loaded_result.manual_compile_status_counts == {"unclassified_frontier": 1}
+    assert loaded_result.manual_compile_rule_counts == {"uk_manual_frontier_unclassified": 1}
     assert loaded_result.uk_authority_observations == (
         {
             "rule_id": "uk_authority_source_text_only_missing",

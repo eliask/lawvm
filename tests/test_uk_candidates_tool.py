@@ -1818,7 +1818,8 @@ def test_uk_candidates_fast_prefilter_preserves_saved_source_surface(monkeypatch
                 {
                     "rule_id": "uk_manual_compile_frontier_classified",
                     "phase": "lowering",
-                    "manual_compile_status": "source_insufficient",
+                    "manual_compile_status": "unclassified_frontier",
+                    "manual_compile_rule_id": "uk_manual_frontier_unclassified",
                     "blocking": False,
                 },
             ),
@@ -1842,8 +1843,8 @@ def test_uk_candidates_fast_prefilter_preserves_saved_source_surface(monkeypatch
                 },
             ),
             effect_source_pathology_counts={"missing_extracted_source": 4},
-            manual_compile_status_counts={"source_insufficient": 1},
-            manual_compile_rule_counts={"uk_manual_frontier_source_insufficient": 1},
+            manual_compile_status_counts={"unclassified_frontier": 1},
+            manual_compile_rule_counts={"uk_manual_frontier_unclassified": 1},
             source_acquisition_rejection_count=2,
             source_acquisition_rejection_rule_counts={"uk_affecting_act_xml_missing_rejected": 2},
             effect_feed_rejection_count=1,
@@ -1979,6 +1980,11 @@ def test_uk_candidates_fast_prefilter_preserves_saved_source_surface(monkeypatch
         "replay_adjudication",
         "bench_exception",
     ]
+    manual_diagnostic = row["saved_bench_diagnostics"][6]
+    assert manual_diagnostic["record"]["manual_compile_status"] == "unclassified_frontier"
+    assert manual_diagnostic["record"]["manual_compile_rule_id"] == (
+        "uk_manual_frontier_unclassified"
+    )
     assert row["core_benchmark"] is True
     assert row["bench_authority_observation_count"] == 1
     assert row["bench_authority_observation_rule_counts"] == {
@@ -1991,9 +1997,9 @@ def test_uk_candidates_fast_prefilter_preserves_saved_source_surface(monkeypatch
     assert row["bench_effect_source_pathology_counts"] == {
         "missing_extracted_source": 4,
     }
-    assert row["bench_manual_compile_status_counts"] == {"source_insufficient": 1}
+    assert row["bench_manual_compile_status_counts"] == {"unclassified_frontier": 1}
     assert row["bench_manual_compile_rule_counts"] == {
-        "uk_manual_frontier_source_insufficient": 1,
+        "uk_manual_frontier_unclassified": 1,
     }
     assert row["bench_source_acquisition_rejection_count"] == 2
     assert row["bench_source_acquisition_rejection_rule_counts"] == {
@@ -2056,9 +2062,11 @@ def test_uk_candidates_fast_prefilter_preserves_saved_source_surface(monkeypatch
     assert payload["summary"]["bench_effect_source_pathology_counts"] == {
         "missing_extracted_source": 4,
     }
-    assert payload["summary"]["bench_manual_compile_status_counts"] == {"source_insufficient": 1}
+    assert payload["summary"]["bench_manual_compile_status_counts"] == {
+        "unclassified_frontier": 1
+    }
     assert payload["summary"]["bench_manual_compile_rule_counts"] == {
-        "uk_manual_frontier_source_insufficient": 1,
+        "uk_manual_frontier_unclassified": 1,
     }
     assert payload["summary"]["bench_source_acquisition_rejection_count"] == 2
     assert payload["summary"]["rows_with_bench_source_acquisition_rejections"] == 1

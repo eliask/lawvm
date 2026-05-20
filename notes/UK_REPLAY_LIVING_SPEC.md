@@ -2342,6 +2342,10 @@ Current bench replay-regime invariant:
   treat rows with neither `blocking` nor `strict_disposition=record` as blocking
   for legacy safety, but the manual compile frontier must not become a compiler
   failure by serializer accident.
+- `uk_manual_frontier_unclassified` is an unresolved evidence bucket, not a
+  disposable default. Source adjudication, bench save/load, diagnostics sidecars,
+  and `uk-candidates` JSON/text must preserve its status and rule count so new
+  UK blocker families remain visible until deliberately classified.
 - `uk-bench` may refine manual-frontier rows after replay when replay emits
   exact preimage-gap adjudications for the same effect/op ID. This does not
   change lowering or replay. It corrects evidence summaries that were compiled
