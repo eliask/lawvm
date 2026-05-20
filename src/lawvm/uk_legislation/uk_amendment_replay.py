@@ -12283,70 +12283,81 @@ class UKReplayExecutor:
         allow_compound_subsection_alias: bool = False,
     ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
         """Find a node and its parent by LegalAddress path."""
-        target = canonicalize_uk_address(target)
-        path = list(target.path)
-        container = _addr_container(target)
+        def _find(address: LegalAddress) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
+            path = list(address.path)
+            container = _addr_container(address)
 
-        # 1. Resolve top-level container
-        roots: list[tuple[IRNode, Optional[IRNode], Optional[int]]] = []
-        if container == "schedule":
-            # First path segment is ("schedule", label)
-            sched_label = path[0][1] if path else None
-            remaining = path[1:]
-            roots = uk_schedule_root_candidates(
-                cast(list[IRNode], self.statute.supplements),
-                sched_label=sched_label,
-                remaining_path=tuple(remaining),
-                match_kind_label=self._match_kind_label,
-            )
-            if sched_label and roots and not remaining:
-                sch, _, idx = roots[0]
-                return cast(UKMutableNode, sch), None, idx
-            if not sched_label and len(roots) == 1 and not remaining:
-                sch, _, idx = roots[0]
-                return cast(UKMutableNode, sch), None, idx
-            path = remaining
-        else:
-            roots = [(cast(IRNode, self.statute.body), None, None)]
-        if not roots:
-            return None, None, None
-
-        curr_cands = roots
-        for p_kind, p_label in path:
-            next_cands: list[tuple[IRNode, Optional[IRNode], Optional[int]]] = []
-            for curr_node, _, _ in curr_cands:
-                for i, child in enumerate(curr_node.children):
-                    if self._match_kind_label(child, p_kind, p_label):
-                        next_cands.append((child, curr_node, i))
-                if not next_cands and allow_compound_subsection_alias and p_kind.lower() == "subsection" and p_label:
-                    compound = self._find_compound_subsection_candidate(cast(UKMutableNode, curr_node), p_label)
-                    if compound[0] is not None:
-                        next_cands.append(cast(tuple[IRNode, Optional[IRNode], Optional[int]], compound))
-            if not next_cands:
-                if container == "schedule":
-                    ordinal_matches = uk_schedule_ordinal_paragraph_matches(
-                        curr_cands,
-                        p_kind=p_kind,
-                        p_label=p_label,
-                    )
-                    if ordinal_matches:
-                        next_cands = ordinal_matches
-                if not next_cands:
-                    for curr_node, _, _ in curr_cands:
-                        for i, child in enumerate(curr_node.children):
-                            res_node, res_p, res_i = self._find_recursive_match(
-                                cast(UKMutableNode, child), p_kind, p_label
-                            )
-                            if res_node:
-                                next_cands.append((res_node, res_p, res_i))
-            if not next_cands:
+            # 1. Resolve top-level container
+            roots: list[tuple[IRNode, Optional[IRNode], Optional[int]]] = []
+            if container == "schedule":
+                # First path segment is ("schedule", label)
+                sched_label = path[0][1] if path else None
+                remaining = path[1:]
+                roots = uk_schedule_root_candidates(
+                    cast(list[IRNode], self.statute.supplements),
+                    sched_label=sched_label,
+                    remaining_path=tuple(remaining),
+                    match_kind_label=self._match_kind_label,
+                )
+                if sched_label and roots and not remaining:
+                    sch, _, idx = roots[0]
+                    return cast(UKMutableNode, sch), None, idx
+                if not sched_label and len(roots) == 1 and not remaining:
+                    sch, _, idx = roots[0]
+                    return cast(UKMutableNode, sch), None, idx
+                path = remaining
+            else:
+                roots = [(cast(IRNode, self.statute.body), None, None)]
+            if not roots:
                 return None, None, None
-            curr_cands = next_cands
-        return (
-            cast(tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]], curr_cands[0])
-            if curr_cands
-            else (None, None, None)
-        )
+
+            curr_cands = roots
+            for p_kind, p_label in path:
+                next_cands: list[tuple[IRNode, Optional[IRNode], Optional[int]]] = []
+                for curr_node, _, _ in curr_cands:
+                    for i, child in enumerate(curr_node.children):
+                        if self._match_kind_label(child, p_kind, p_label):
+                            next_cands.append((child, curr_node, i))
+                    if not next_cands and allow_compound_subsection_alias and p_kind.lower() == "subsection" and p_label:
+                        compound = self._find_compound_subsection_candidate(cast(UKMutableNode, curr_node), p_label)
+                        if compound[0] is not None:
+                            next_cands.append(cast(tuple[IRNode, Optional[IRNode], Optional[int]], compound))
+                if not next_cands:
+                    if container == "schedule":
+                        ordinal_matches = uk_schedule_ordinal_paragraph_matches(
+                            curr_cands,
+                            p_kind=p_kind,
+                            p_label=p_label,
+                        )
+                        if ordinal_matches:
+                            next_cands = ordinal_matches
+                    if not next_cands:
+                        for curr_node, _, _ in curr_cands:
+                            for child in curr_node.children:
+                                res_node, res_p, res_i = self._find_recursive_match(
+                                    cast(UKMutableNode, child), p_kind, p_label
+                                )
+                                if res_node:
+                                    next_cands.append((res_node, res_p, res_i))
+                if not next_cands:
+                    return None, None, None
+                curr_cands = next_cands
+            return (
+                cast(tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]], curr_cands[0])
+                if curr_cands
+                else (None, None, None)
+            )
+
+        if self._is_explicit_direct_section_paragraph_target(target):
+            raw_node = _find(target)
+            if raw_node[0] is not None:
+                return raw_node
+        return _find(canonicalize_uk_address(target))
+
+    @staticmethod
+    def _is_explicit_direct_section_paragraph_target(target: LegalAddress) -> bool:
+        path = tuple(target.path or ())
+        return len(path) >= 2 and path[0][0] == "section" and path[1][0] == "paragraph"
 
     def _find_recursive_match(
         self, node: UKMutableNode, kind: str, label: str

@@ -2947,7 +2947,10 @@ Current bench replay-regime invariant:
   `uk_effect_direct_section_paragraph_target_normalized` and emits
   `section:N/paragraph:a`; deeper references such as `s. N(a)(ii)` emit
   `section:N/paragraph:a/subparagraph:ii`. Witness:
-  `asp/2001/2`, affected by `asp/2005/12 s. 51(2)(a)-(b)`.
+  `asp/2001/2`, affected by `asp/2005/12 s. 51(2)(a)-(b)`, and
+  `ukpga/2020/17` section 399(c)(ii)-(iv), affected by `ukpga/2022/32`
+  section 124(8). Replay preserves this direct paragraph path instead of
+  re-canonicalizing it into subsection/paragraph shape during target lookup.
   If that paragraph is not represented as an addressable XML carrier under the
   section, replay emits `uk_replay_direct_section_paragraph_carrier_gap`
   rather than falling back to a subsection or whole-section text patch.
