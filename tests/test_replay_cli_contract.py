@@ -1826,7 +1826,7 @@ def test_uk_replay_main_json_records_oracle_compare_residuals(monkeypatch, tmp_p
     )
     monkeypatch.setattr(
         "lawvm.uk_legislation.source_adjudication.normalize_uk_replay_compare_eids",
-        lambda replayed, oracle: (set(replayed), set(oracle)),
+        lambda replayed, oracle, **kwargs: (set(replayed), set(oracle)),
     )
     monkeypatch.setattr(
         "lawvm.uk_legislation.source_adjudication.classify_uk_bench_comparison",

@@ -14832,6 +14832,8 @@ class UKReplayPipeline:
         )
         for op in prepared_ops.accepted_ops:
             executor.apply_op(op)
+        if allow_oracle_alignment and eid_map:
+            executor.ground_ids()
         if oracle_alignment_events_out is not None:
             oracle_alignment_events_out.extend(dict(event) for event in executor.oracle_alignment_events)
         return executor.statute.to_irstatute()
