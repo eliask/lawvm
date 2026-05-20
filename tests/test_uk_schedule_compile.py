@@ -1477,6 +1477,64 @@ def test_split_metadata_parenthesized_stemmed_alnum_range() -> None:
     ]
 
 
+def test_split_metadata_parenthesized_same_prefix_alpha_range() -> None:
+    assert _split_metadata_provisions("Sch. 26 para. 12(1)(da)-(dc)") == [
+        "Sch. 26 para. 12(1)(da)",
+        "Sch. 26 para. 12(1)(db)",
+        "Sch. 26 para. 12(1)(dc)",
+    ]
+    assert _split_metadata_provisions("Sch. 18 para. 38(axa)-(axc)") == [
+        "Sch. 18 para. 38(axa)",
+        "Sch. 18 para. 38(axb)",
+        "Sch. 18 para. 38(axc)",
+    ]
+
+
+def test_compile_same_prefix_alpha_range_does_not_emit_dash_item_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>20</Pnumber>
+          <P1para>
+            <Text>20 In Part 2 of Schedule 18 to the Sentencing Act 2020,
+            in paragraph 38, after sub-paragraph (ax) insert—
+            axa section 66A;
+            axb section 66B(2);
+            axc section 66B(3).</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_same_prefix_alpha_range",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-31",
+        affected_uri="/id/ukpga/2020/17/schedule/18/paragraph/38",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="Sch. 18 para. 38(axa)-(axc)",
+        affecting_uri="/id/ukpga/2023/50",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2023",
+        affecting_number="50",
+        affecting_provisions="Sch. 14 para. 20",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2024-01-31", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert [op.target.path for op in ops] == [
+        (("schedule", "18"), ("paragraph", "38"), ("item", "axa")),
+        (("schedule", "18"), ("paragraph", "38"), ("item", "axb")),
+        (("schedule", "18"), ("paragraph", "38"), ("item", "axc")),
+    ]
+    assert all(("item", "-") not in op.target.path for op in ops)
+
+
 def test_split_metadata_schedule_range_plus_trailing_sibling() -> None:
     assert _split_metadata_provisions("Sch. 7 para. 10(1)-(1D) (2)") == [
         "Sch. 7 para. 10(1)",

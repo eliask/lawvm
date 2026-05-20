@@ -5314,10 +5314,23 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
         )
 
     def _expand_parenthesized_range(prefix: str, start_str: str, end_str: str) -> Optional[list[str]]:
+        raw_start_str = start_str
+        raw_end_str = end_str
         start_str = start_str.upper()
         end_str = end_str.upper()
         if len(start_str) == 1 and len(end_str) == 1 and start_str.isalpha() and end_str.isalpha():
             return [f"{prefix}({chr(c)})" for c in range(ord(start_str), ord(end_str) + 1)]
+
+        if (
+            len(start_str) == len(end_str)
+            and len(start_str) > 1
+            and start_str.isalpha()
+            and end_str.isalpha()
+            and start_str[:-1] == end_str[:-1]
+            and ord(start_str[-1]) <= ord(end_str[-1])
+        ):
+            stem = raw_start_str[:-1]
+            return [f"{prefix}({stem}{chr(c)})" for c in range(ord(raw_start_str[-1]), ord(raw_end_str[-1]) + 1)]
 
         stemmed_start = _split_stemmed_alnum(start_str)
         stemmed_end = _split_stemmed_alnum(end_str)
