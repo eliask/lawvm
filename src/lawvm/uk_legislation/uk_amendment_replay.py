@@ -5887,7 +5887,11 @@ def _uk_schedule_list_entry_repeal_selector(
     if not text:
         return None
     target_surface = f"{target_ref} {target}".lower()
-    if "table" in target_surface or _addr_leaf_kind(target) not in {"schedule", "part", "chapter", "division"}:
+    if (
+        "table" in target_surface
+        or _is_heading_only_ref(target_ref)
+        or _addr_leaf_kind(target) not in {"schedule", "part", "chapter", "division"}
+    ):
         return None
 
     match = re.search(
