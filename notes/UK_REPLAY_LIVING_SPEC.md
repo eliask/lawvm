@@ -2379,6 +2379,14 @@ Current bench replay-regime invariant:
   the caller intentionally wants parser/lowering work items rather than human
   semantic compilation. The JSON/text metadata must disclose the status filter
   used so mixed work queues are not mistaken for manual-only review queues.
+- Saved-bench replay adjudications are a review frontier too.
+  `uk-candidates --replay-adjudication-evidence-jsonl PATH` writes the selected
+  frontier's saved replay adjudications as `lawvm.uk_replay_adjudication_frontier.v1`
+  work items, filtered by `--replay-adjudication-kind` when supplied. This is a
+  triage/export surface only: it carries the saved replay regime, source
+  witnesses, adjudication bucket, detail payload, blocking/strict dispositions,
+  and stable work-item IDs, but it does not authorize replay repair or compile
+  manual claims.
 - UK evidence/proof bundles are also replay evidence surfaces. Their
   `compiler_observations.uk_compile_observation_summary` and
   `uk_compile_rejection_summary` must preserve effect source pathology and
