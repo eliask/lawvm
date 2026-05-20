@@ -38,6 +38,7 @@ def test_uk_cli_help_strings_reference_data_archive_default(capsys) -> None:
     text = capsys.readouterr().out
     assert "data/uk_legislation.farchive" in text
     assert "--include-enacted-affecting" in text
+    assert "--commencement" in text
 
     with pytest.raises(SystemExit):
         parser.parse_args(["uk-fetch-affecting", "ukpga/2000/10", "--help"])
@@ -490,6 +491,54 @@ def test_uk_replay_regime_flags_are_exposed_on_all_diagnostic_entrypoints() -> N
     assert uk_replay_args.include_enacted_affecting is True
 
 
+def test_uk_replay_parser_accepts_commencement_diagnostic_lane() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(["uk-replay", "asp/2002/11", "--commencement"])
+
+    assert args.commencement is True
+
+
+def test_uk_replay_commencement_score_lens_is_symmetric() -> None:
+    oracle_eids = {"root", "s1", "s2"}
+    commenced_eids = {"s1"}
+
+    assert uk_replay._commenced_oracle_eids(oracle_eids, commenced_eids) == {"s1"}
+    assert uk_replay._score_commenced_eids({"s1"}, {"s1"}) == 1.0
+    assert uk_replay._score_commenced_eids(set(), {"s1"}) == -1.0
+
+
+def test_uk_replay_commencement_summary_preserves_observation_rules() -> None:
+    summary = uk_replay._uk_commencement_score_summary(
+        enabled=True,
+        applicability_mode="effective_date_plus_feed_applied",
+        observations=[
+            {
+                "rule_id": "uk_commencement_undated_effects_block_self_commencement",
+                "phase": "commencement_filter",
+            }
+        ],
+        commenced_eids=set(),
+        commenced_enacted_eids=set(),
+        commenced_replayed_eids=set(),
+        commenced_oracle_eids=set(),
+    )
+
+    assert summary["rule_id"] == "uk_replay_commencement_score_lane"
+    assert summary["commencement_score"] == -1.0
+    assert summary["replay_commencement_score"] == -1.0
+    assert summary["observation_rule_counts"] == {
+        "uk_commencement_undated_effects_block_self_commencement": 1
+    }
+    assert uk_replay._uk_commencement_score_text_lines(summary) == [
+        (
+            "Commencement EID score: enacted=not computed replay=not computed "
+            "commenced=0 oracle=0"
+        ),
+        "Commencement observations: uk_commencement_undated_effects_block_self_commencement=1",
+    ]
+
+
 def test_uk_effects_parser_accepts_diagnostic_family_filters() -> None:
     parser = cli._build_parser()
 
@@ -622,8 +671,18 @@ def test_uk_replay_payload_preserves_effect_source_diagnostic_lanes() -> None:
                 "blocking": True,
             }
         ],
+        uk_commencement_summary={
+            "enabled": True,
+            "rule_id": "uk_replay_commencement_score_lane",
+            "replay_commencement_score": 1.0,
+        },
     )
 
+    assert payload["uk_commencement_summary"] == {
+        "enabled": True,
+        "rule_id": "uk_replay_commencement_score_lane",
+        "replay_commencement_score": 1.0,
+    }
     assert payload["compile_observation_lane_counts"]["effect_source_pathology"] == 1
     assert payload["compile_observation_lane_counts"]["manual_compile_frontier"] == 1
     assert payload["compile_observation_lane_counts"]["source_acquisition"] == 1

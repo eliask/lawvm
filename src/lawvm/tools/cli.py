@@ -3575,6 +3575,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="emit JSON",
     )
     uk_replay_p.add_argument(
+        "--commencement",
+        action="store_true",
+        help=(
+            "also compute the symmetric commenced-EID comparison lane used by "
+            "UK bench; raw EID comparison remains the default headline"
+        ),
+    )
+    uk_replay_p.add_argument(
         "--replay-adjudication-samples",
         nargs="+",
         metavar="KIND",

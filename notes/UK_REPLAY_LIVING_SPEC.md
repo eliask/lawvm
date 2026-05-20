@@ -763,6 +763,11 @@ Current tooling-consistency invariant:
     commenced enacted/replay EIDs against oracle EIDs intersected with the same
     commenced EID set. Raw EID scoring remains the unfiltered current-XML
     comparison lane.
+  - `uk-replay --commencement` exposes that same symmetric commencement
+    comparison for one-statute diagnosis. It is an additional temporal
+    comparison lane, not a replacement for the default raw EID score, and its
+    JSON/text evidence must preserve commencement-filter observations such as
+    undated commencement blockers.
   - `Appointed Day(s)` is a commencement-like effect type. If a statute has
     commencement-like rows but none has a replay-applicable effective date,
     LawVM must not fall back to whole-instrument self-commencement. It returns

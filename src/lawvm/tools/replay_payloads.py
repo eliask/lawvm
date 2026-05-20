@@ -275,6 +275,7 @@ def build_uk_replay_payload(
     source_acquisition_rejections: Iterable[dict[str, Any]] = (),
     uk_replay_regime: dict[str, Any] | None = None,
     uk_oracle_alignment_summary: dict[str, Any] | None = None,
+    uk_commencement_summary: dict[str, Any] | None = None,
     uk_prefetch_report: dict[str, Any] | None = None,
     error: str | None = None,
 ) -> dict[str, Any]:
@@ -335,6 +336,7 @@ def build_uk_replay_payload(
         "mode": "enacted_only" if enacted_only else "replay",
         "uk_replay_regime": dict(uk_replay_regime or {}),
         "uk_oracle_alignment_summary": dict(uk_oracle_alignment_summary or {}),
+        "uk_commencement_summary": dict(uk_commencement_summary or {}),
         "uk_prefetch_report": dict(uk_prefetch_report or {}),
         "ops_count": int(n_ops),
         "adjudications_count": len(replay_adjudications),
