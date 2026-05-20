@@ -2903,6 +2903,16 @@ def test_normalize_uk_replay_compare_eids_applies_oracle_physical_parent_alias()
     assert oracle == {"section-5-4-aa"}
 
 
+def test_normalize_uk_replay_compare_eids_drops_nonlegal_text_fragment_ids() -> None:
+    replayed, oracle = normalize_uk_replay_compare_eids(
+        {"section-1", "p00090", "p01890a"},
+        {"section-1"},
+    )
+
+    assert replayed == {"section-1"}
+    assert oracle == {"section-1"}
+
+
 def test_classify_uk_current_projection_eid_shape_marks_spent_amending_act_surface() -> None:
     classification = classify_uk_current_projection_eid_shape(
         enacted_eids={

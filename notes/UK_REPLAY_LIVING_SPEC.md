@@ -3571,3 +3571,7 @@ Current bench replay-regime invariant:
   The effect feed repeals section 2, but it does not provide a source-backed
   repeal for section 1. LawVM therefore keeps section 1 in replay and treats
   the current XML's omission as current-projection evidence.
+- UK XML `Text` fragment IDs such as `p00090` are transport anchors, not legal
+  provision identities. Oracle EID extraction already excludes them; replay
+  comparison normalization also drops them so score residuals stay about legal
+  units rather than inline text spans.
