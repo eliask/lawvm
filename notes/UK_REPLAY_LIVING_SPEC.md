@@ -339,11 +339,11 @@ Deterministic substituted-series lowering:
   sibling payloads as inserts under
   `uk_effect_substituted_series_new_sibling_insert_lowered`
 - source rows shaped as `substituted for <old sibling>` with affected metadata
-  naming only the new sibling label may rebind the executable replace target to
-  the source-named old sibling under
+  naming the new sibling label, or one-for-one old/new sibling series, may
+  rebind the executable replace target to the source-named old sibling under
   `uk_effect_substituted_for_label_changing_target_rebound`; replay records
-  `uk_replay_source_label_changing_substitution_resolved` and preserves the new
-  payload label/eId rather than silently carrying the old sibling identity
+  `uk_replay_source_label_changing_substitution_resolved` and preserves each new
+  payload label/eId rather than silently carrying old sibling identity
 - word-level rows where source text explicitly says `In paragraph X of schedule
   Y to ...` but effect metadata names another paragraph in the same schedule may
   lower to the source-named paragraph under
