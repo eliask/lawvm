@@ -1677,6 +1677,68 @@ def test_executor_records_existing_target_conflict_gap() -> None:
     assert adjudications[0].detail["payload_text_preview"] == "duplicate section"
 
 
+def test_executor_insert_target_lookup_does_not_hijack_nested_roman_item() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="26",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="12",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.SUBPARAGRAPH,
+                                label="1",
+                                children=(
+                                    IRNode(
+                                        kind=IRNodeKind.ITEM,
+                                        label="c",
+                                        children=(
+                                            IRNode(kind=IRNodeKind.ITEM, label="i", text="first nested item"),
+                                            IRNode(kind=IRNodeKind.ITEM, label="ii", text="second nested item"),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_insert_subparagraph_without_nested_roman_hijack",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("schedule", "26"), ("paragraph", "12"), ("subparagraph", "2"))),
+            payload=IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="2", text="Inserted subparagraph."),
+            source=_source(),
+        )
+    )
+
+    paragraph = executor.statute.supplements[0].children[0]
+    assert [(child.kind, child.label, child.text) for child in paragraph.children] == [
+        (IRNodeKind.SUBPARAGRAPH, "1", ""),
+        (IRNodeKind.SUBPARAGRAPH, "2", "Inserted subparagraph."),
+    ]
+    nested_item = paragraph.children[0].children[0].children[1]
+    assert (nested_item.kind, nested_item.label, nested_item.text) == (
+        IRNodeKind.ITEM,
+        "ii",
+        "second nested item",
+    )
+    assert [row.kind for row in adjudications] == []
+
+
 def test_executor_records_existing_target_already_materialized() -> None:
     adjudications: list[CompileAdjudication] = []
     executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)

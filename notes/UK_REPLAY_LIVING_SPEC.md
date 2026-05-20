@@ -1931,6 +1931,15 @@ Current nested-roman target invariant:
     - if the would-be sibling family starts with a lettered item label and the
       later groups are roman subitem labels (`i`, `ii`, `iii`, ...), keep the
       lettered prefix fixed and do not split there
+- insert target lookup must not use recursive descendant fallback to prove an
+  existing-target conflict
+  - current witness: `ukpga/2020/17` `Sch. 26 para. 12(2)`, affected by
+    `uksi/2020/1520 reg. 6(2)(c)`
+  - `schedule:26/paragraph:12/subparagraph:2` must not bind to nested item
+    `(ii)` inside `subparagraph:1/item:c`; if no direct subparagraph `(2)`
+    exists, replay may insert the claimed sibling under paragraph 12
+  - this preserves exact eId and direct-path matching while preventing a
+    target-hijack by recursive roman/numeric equivalence
 
 Current `ukpga/2001/11` near-solved interpretation:
 
