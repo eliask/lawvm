@@ -3051,6 +3051,19 @@ def test_normalize_uk_replay_compare_eids_drops_wrapper_with_oracle_descendants(
     assert "schedule-10-paragraph-2a-2" in oracle
 
 
+def test_normalize_uk_replay_compare_eids_applies_visible_number_alias() -> None:
+    replayed, oracle = normalize_uk_replay_compare_eids(
+        {"schedule-2-paragraph-21za"},
+        {"schedule-2-paragraph-21n1"},
+        oracle_visible_number_eid_aliases={
+            "schedule-2-paragraph-21n1": "schedule-2-paragraph-21za"
+        },
+    )
+
+    assert replayed == {"schedule-2-paragraph-21za"}
+    assert oracle == {"schedule-2-paragraph-21za"}
+
+
 def test_normalize_uk_replay_compare_eids_drops_collapsed_section_descendants() -> None:
     replayed, oracle = normalize_uk_replay_compare_eids(
         {"section-142", "section-142-1", "section-142-2", "section-142-3"},

@@ -4105,6 +4105,9 @@ def build_uk_evidence_bundle(
         eid_map = dict(oracle_data.get("eid_map", {}) or {})
         text_map = dict(oracle_data.get("text_map", {}) or {})
         oracle_physical_eid_aliases = dict(oracle_data.get("physical_eid_aliases", {}) or {})
+        oracle_visible_number_eid_aliases = dict(
+            oracle_data.get("visible_number_eid_aliases", {}) or {}
+        )
 
         base_eids = _get_all_eids([base_ir.body])
         for schedule in base_ir.supplements:
@@ -4189,6 +4192,7 @@ def build_uk_evidence_bundle(
         replayed_eids,
         oracle_eids,
         oracle_physical_eid_aliases=oracle_physical_eid_aliases,
+        oracle_visible_number_eid_aliases=oracle_visible_number_eid_aliases,
     )
     common = compare_replayed & compare_oracle
     similarity = len(common) / max(len(compare_replayed), len(compare_oracle), 1)

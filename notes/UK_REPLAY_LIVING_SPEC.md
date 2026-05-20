@@ -3561,6 +3561,13 @@ Current bench replay-regime invariant:
   `schedule-1-paragraph-12n3` versus `schedule-1-paragraph-12C-1` can encode
   wrapper/display-number differences that need separate schedule-aware
   comparison handling.
+- A separate comparison-only source identity lane records
+  `uk_oracle_visible_number_eid_alias_aligned` when a schedule paragraph EID
+  uses an `n` placeholder but the same XML element's visible `Pnumber` supplies
+  the leaf label, for example `schedule-2-paragraph-21n1` with visible number
+  `21ZA`. Replay comparison may align this to
+  `schedule-2-paragraph-21za`; replay target resolution and mutation semantics
+  must not use the alias as permission to retarget an amendment.
 
 ## UK Current Projection Surfaces
 

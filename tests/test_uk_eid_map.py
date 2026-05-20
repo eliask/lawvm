@@ -115,4 +115,47 @@ def test_extract_eid_map_does_not_alias_schedule_parent_shape_without_section_ro
     eid_data = extract_eid_map_bytes(xml)
 
     assert eid_data["physical_eid_aliases"] == {}
-    assert eid_data["oracle_identity_observations"] == []
+    assert eid_data["visible_number_eid_aliases"] == {
+        "schedule-1-paragraph-12n3": "schedule-1-paragraph-12c"
+    }
+    assert eid_data["oracle_identity_observations"][0]["rule_id"] == (
+        "uk_oracle_visible_number_eid_alias_aligned"
+    )
+
+
+def test_extract_eid_map_records_schedule_visible_number_alias() -> None:
+    xml = b"""\
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation">
+  <Schedules>
+    <Schedule id="schedule-2">
+      <Number>Schedule 2</Number>
+      <ScheduleBody>
+        <P1 id="schedule-2-paragraph-21n1">
+          <Pnumber>21ZA</Pnumber>
+          <P1para><Text>The commissioner.</Text></P1para>
+        </P1>
+      </ScheduleBody>
+    </Schedule>
+  </Schedules>
+</Legislation>
+"""
+
+    eid_data = extract_eid_map_bytes(xml)
+
+    assert eid_data["visible_number_eid_aliases"] == {
+        "schedule-2-paragraph-21n1": "schedule-2-paragraph-21za"
+    }
+    assert eid_data["oracle_identity_observations"] == [
+        {
+            "rule_id": "uk_oracle_visible_number_eid_alias_aligned",
+            "phase": "oracle_alignment",
+            "family": "oracle_identity_drift",
+            "original_eid": "schedule-2-paragraph-21n1",
+            "visible_number_eid": "schedule-2-paragraph-21za",
+            "xml_tag": "P1",
+            "visible_number": "21za",
+            "physical_path_key": "schedule-2:paragraph-21za",
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]

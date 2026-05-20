@@ -537,6 +537,18 @@ def _eid_leaf_label(eid: str) -> str:
     return parts[-1] if parts else ""
 
 
+def _eid_with_leaf_label(eid: str, label: str) -> str:
+    parts = [part for part in re.split(r"[-_]+", str(eid or "").lower()) if part]
+    if not parts or not label:
+        return ""
+    return "-".join([*parts[:-1], label.lower()])
+
+
+def _leading_digits(label: str) -> str:
+    match = re.match(r"([0-9]+)", str(label or "").lower())
+    return match.group(1) if match is not None else ""
+
+
 def _section_or_article_root(eid: str) -> str:
     match = re.match(r"^(section|article|rule|regulation)-([^-]+)", str(eid or "").lower())
     if match is None:
@@ -573,6 +585,49 @@ def _record_physical_eid_drift(
             "original_eid": eid,
             "physical_eid": physical_eid,
             "xml_tag": tag,
+            "physical_path_key": path_key,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    )
+
+
+def _record_visible_number_eid_alias(
+    *,
+    eid: str,
+    kind: str,
+    clean_num: str,
+    tag: str,
+    path_key: str,
+    aliases: dict[str, str],
+    observations: list[dict[str, Any]],
+) -> None:
+    if not eid or kind != "paragraph" or not clean_num:
+        return
+    eid_norm = str(eid or "").lower()
+    if not eid_norm.startswith("schedule-"):
+        return
+    leaf = _eid_leaf_label(eid_norm)
+    clean_leaf = _clean_num(clean_num)
+    if not leaf or not clean_leaf or leaf == clean_leaf:
+        return
+    if "n" not in leaf:
+        return
+    if _leading_digits(leaf) != _leading_digits(clean_leaf):
+        return
+    visible_eid = _eid_with_leaf_label(eid_norm, clean_leaf)
+    if not visible_eid or visible_eid == eid_norm:
+        return
+    aliases.setdefault(eid, visible_eid)
+    observations.append(
+        {
+            "rule_id": "uk_oracle_visible_number_eid_alias_aligned",
+            "phase": "oracle_alignment",
+            "family": "oracle_identity_drift",
+            "original_eid": eid,
+            "visible_number_eid": visible_eid,
+            "xml_tag": tag,
+            "visible_number": clean_leaf,
             "physical_path_key": path_key,
             "strict_disposition": "block",
             "quirks_disposition": "record",
@@ -1183,6 +1238,7 @@ def _visit_eid(
     eid_map: Dict[str, str],
     text_map: Dict[str, str],
     physical_eid_aliases: dict[str, str],
+    visible_number_eid_aliases: dict[str, str],
     oracle_identity_observations: list[dict[str, Any]],
 ):
     if _is_zombie(el, False, pit_date):
@@ -1274,6 +1330,15 @@ def _visit_eid(
             aliases=physical_eid_aliases,
             observations=oracle_identity_observations,
         )
+        _record_visible_number_eid_alias(
+            eid=eid,
+            kind=kind,
+            clean_num=clean_num,
+            tag=tag,
+            path_key=this_node_path,
+            aliases=visible_number_eid_aliases,
+            observations=oracle_identity_observations,
+        )
         text = _text_content(el)
         if text and not re.match(r"^[.\s]+$", text):
             norm = _normalize_text_for_grounding(text)
@@ -1318,6 +1383,7 @@ def _visit_eid(
             eid_map,
             text_map,
             physical_eid_aliases,
+            visible_number_eid_aliases,
             oracle_identity_observations,
         )
 
@@ -1326,6 +1392,7 @@ def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dic
     eid_map = {}
     text_map = {}
     physical_eid_aliases: dict[str, str] = {}
+    visible_number_eid_aliases: dict[str, str] = {}
     oracle_identity_observations: list[dict[str, Any]] = []
     is_eur = any(_tag(el) == "EURetained" for el in root.iter() if isinstance(el.tag, str))
     body = root.find(f".//{{{_LEG_NS}}}Body")
@@ -1341,6 +1408,7 @@ def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dic
             eid_map,
             text_map,
             physical_eid_aliases,
+            visible_number_eid_aliases,
             oracle_identity_observations,
         )
     schedules = root.find(f".//{{{_LEG_NS}}}Schedules")
@@ -1354,12 +1422,14 @@ def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dic
             eid_map,
             text_map,
             physical_eid_aliases,
+            visible_number_eid_aliases,
             oracle_identity_observations,
         )
     return {
         "eid_map": eid_map,
         "text_map": text_map,
         "physical_eid_aliases": physical_eid_aliases,
+        "visible_number_eid_aliases": visible_number_eid_aliases,
         "oracle_identity_observations": oracle_identity_observations,
     }
 
