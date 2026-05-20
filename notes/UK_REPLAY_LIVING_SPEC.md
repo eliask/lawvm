@@ -1262,6 +1262,14 @@ Current source-defeat invariant:
   - current example: `ukpga/2001/11` `uksi/2001/4022 reg. 20`
   - `uk-effect` correctly classifies it as
     `instruction_text_reused_as_payload`
+  - instruction text includes source rows whose supposed payload says that
+    words or provisions `become` another unit; unless lowering owns a typed
+    renumber/migration operation, that wording is not replacement payload
+    text
+  - current additional witness: `asp/2003/13` / `asp/2015/9 s. 32(2)(a)`,
+    where `the words from "a person" to the end become sub-paragraph (i)` was
+    previously reused as paragraph payload and reached replay as a target-leaf
+    mismatch
   - before the pipeline change, it still executed as whole-section `replace`
     ops on `ss. 7, 8, 9`, wiping real subtree structure and making
     `2001/11` look like a deep replay failure

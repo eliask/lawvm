@@ -20,6 +20,7 @@ from lawvm.core.ir import (
 )
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.uk_legislation.source_adjudication import classify_uk_effect_source_pathology
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKEffectRecord,
@@ -17050,6 +17051,25 @@ def test_pipeline_compile_ops_skips_instruction_text_reused_as_payload_rows(monk
             "quirks_disposition": "record",
         }
     ]
+
+
+def test_source_pathology_classifies_becomes_instruction_text_payload() -> None:
+    text = 'a the words from "a person" to the end become sub-paragraph (i),'
+
+    assert (
+        classify_uk_effect_source_pathology(
+            extracted_tag="P3",
+            extracted_text=text,
+            op_actions=["replace"],
+            payload_kinds=["paragraph"],
+            payload_texts=[text],
+            target_paths=["section:289/subsection:1/paragraph:b/subparagraph:i"],
+            lowering_rule_ids=[],
+            effect_type="words renumbered as s. 289(1)(b)(i)",
+            is_structural=True,
+        )
+        == "instruction_text_reused_as_payload"
+    )
 
 
 def test_pipeline_compile_ops_blocks_range_to_container_substitution_until_owned(monkeypatch) -> None:
