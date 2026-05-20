@@ -580,23 +580,35 @@ def _replay_adjudication_sample_rows(
         detail = record.get("detail")
         if not isinstance(detail, Mapping):
             detail = {}
-        rows.append(
-            {
-                "kind": kind,
-                "message": _short_replay_adjudication_sample_value(record.get("message")),
-                "source_statute": str(record.get("source_statute") or ""),
-                "op_id": str(record.get("op_id") or ""),
-                "target": _short_replay_adjudication_sample_value(detail.get("target")),
-                "target_granularity": str(detail.get("target_granularity") or ""),
-                "text_match": _short_replay_adjudication_sample_value(detail.get("text_match")),
-                "replacement_text": _short_replay_adjudication_sample_value(
-                    detail.get("replacement_text")
-                ),
-                "source_shape": _short_replay_adjudication_sample_value(
-                    detail.get("source_shape")
-                ),
-            }
-        )
+        sample = {
+            "kind": kind,
+            "message": _short_replay_adjudication_sample_value(record.get("message")),
+            "source_statute": str(record.get("source_statute") or ""),
+            "op_id": str(record.get("op_id") or ""),
+            "target": _short_replay_adjudication_sample_value(detail.get("target")),
+            "target_granularity": str(detail.get("target_granularity") or ""),
+            "text_match": _short_replay_adjudication_sample_value(detail.get("text_match")),
+            "replacement_text": _short_replay_adjudication_sample_value(
+                detail.get("replacement_text")
+            ),
+            "source_shape": _short_replay_adjudication_sample_value(
+                detail.get("source_shape")
+            ),
+        }
+        for source_key, sample_key in (
+            ("kind", "duplicate_kind"),
+            ("path", "path"),
+            ("root", "root"),
+            ("left", "left"),
+            ("right", "right"),
+            ("excerpt", "excerpt"),
+            ("shared_token_count", "shared_token_count"),
+        ):
+            if detail.get(source_key) not in (None, ""):
+                sample[sample_key] = _short_replay_adjudication_sample_value(
+                    detail.get(source_key)
+                )
+        rows.append(sample)
         if len(rows) >= limit:
             break
     return tuple(rows)
@@ -2001,7 +2013,20 @@ def _format_saved_bench_feed_count_error(row: object) -> str:
 
 def _format_replay_adjudication_sample(row: Mapping[str, Any]) -> str:
     parts = [f"kind={row.get('kind') or 'unknown'}"]
-    for key in ("source_statute", "op_id", "target", "text_match", "replacement_text"):
+    for key in (
+        "source_statute",
+        "op_id",
+        "target",
+        "text_match",
+        "replacement_text",
+        "duplicate_kind",
+        "path",
+        "root",
+        "left",
+        "right",
+        "shared_token_count",
+        "excerpt",
+    ):
         value = str(row.get(key) or "")
         if value:
             parts.append(f"{key}={value}")
