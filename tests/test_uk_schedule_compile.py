@@ -16680,6 +16680,12 @@ def test_parse_schedule_part_wrapper_paragraph_target() -> None:
     assert target.path == (("schedule", "1"), ("part", "3"), ("paragraph", "wrapper1n1"))
 
 
+def test_parse_schedule_bare_part_abbreviation_target() -> None:
+    target = _parse_affected_target("Sch. 4 Pt 1")
+
+    assert target.path == (("schedule", "4"), ("part", "1"))
+
+
 def test_parse_schedule_paragraph_of_schedule_clause_keeps_schedule_root() -> None:
     target = _parse_affected_target("para. 2 of Sch. 4")
 
@@ -16746,6 +16752,49 @@ def test_compile_direct_section_paragraph_ref_records_target_normalization() -> 
     assert len(ops) == 1
     assert ops[0].target == LegalAddress(path=(("section", "48"), ("paragraph", "a")))
     assert any(record["rule_id"] == "uk_effect_direct_section_paragraph_target_normalized" for record in lowering_records)
+
+
+def test_compile_schedule_part_abbreviation_ref_records_target_normalization() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P xmlns="{_LEG_NS}">
+          <Text>In schedule 4, in Part 1, for “£100” substitute “£5,000,000”.</Text>
+        </P>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_part_abbreviation_target",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2002-04-01",
+        affected_uri="/id/asp/2001/4/schedule/4/part/1",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="4",
+        affected_provisions="Sch. 4 Pt 1",
+        affecting_uri="/id/ssi/2002/134",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2002",
+        affecting_number="134",
+        affecting_provisions="art. 2(7)",
+        affecting_title="Test Order",
+        in_force_dates=[{"date": "2002-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target == LegalAddress(path=(("schedule", "4"), ("part", "1")))
+    assert any(
+        record["rule_id"] == "uk_effect_schedule_part_abbreviation_target_normalized"
+        and record["family"] == "target_shape_normalization"
+        and record["strict_disposition"] == "record"
+        and record["target_ref"] == "Sch. 4 Pt 1"
+        and record["target"] == "schedule:4/part:1"
+        for record in lowering_records
+    )
 
 
 def test_executor_finds_schedule_descendant_when_schedule_number_is_omitted() -> None:
