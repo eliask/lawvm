@@ -2487,9 +2487,17 @@ def test_compile_structural_sibling_insert_keeps_inserted_parent_context_unsuppo
     assert "uk_effect_structural_sibling_insert_lowered" not in {
         row["rule_id"] for row in lowering_records
     }
-    assert "uk_effect_overlap_substitution_unlowered" in {
-        row["rule_id"] for row in lowering_records
-    }
+    rejection = lowering_records[0]
+    assert rejection["rule_id"] == "uk_effect_amendment_program_inserted_parent_structural_insert_rejected"
+    assert rejection["family"] == "amendment_program_lowering"
+    assert rejection["reason_code"] == "insert_targets_prior_amendment_inserted_parent"
+    assert rejection["source_subparagraph_label"] == "3"
+    assert rejection["source_item_label"] == "a"
+    assert rejection["inserted_parent_label"] == "d"
+    assert rejection["direction"] == "before"
+    assert rejection["anchor_label"] == "i"
+    assert rejection["inserted_label"] == "ai"
+    assert rejection["blocking"] is True
 
 
 def test_compile_structural_sibling_insert_does_not_append_when_feed_target_is_inserted_child() -> None:

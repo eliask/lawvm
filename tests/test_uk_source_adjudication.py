@@ -1907,6 +1907,28 @@ def test_classify_uk_effect_amendment_inserted_text_target() -> None:
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_amendment_inserted_parent_structural_insert_target() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "in sub-paragraph (3)(a), in the inserted paragraph (d), "
+            "before sub-paragraph (i) insert- ai inserted text"
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["schedule:22/paragraph:21/subparagraph:3/item:a"],
+        lowering_rule_ids=(
+            "uk_effect_amendment_program_inserted_parent_structural_insert_rejected",
+        ),
+        effect_type="words inserted",
+        is_structural=True,
+    )
+
+    assert pathology == "amendment_text_target_unsupported"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_effect_table_entry_target() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P4",

@@ -7896,6 +7896,16 @@ _SOURCE_AMENDMENT_INSERTED_TEXT_SUBSTITUTION_RE = re.compile(
     r"for\s+the\s+inserted\s+text\s+substitute\s*[—-]\s*(?P<replacement>.+?)\s*\.?\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_AMENDMENT_INSERTED_PARENT_STRUCTURAL_INSERT_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"in\s+sub-?paragraph\s+\((?P<subparagraph>[0-9A-Za-z]+)\)\s*"
+    r"\((?P<item>[0-9A-Za-z]+)\),?\s+"
+    r"in\s+the\s+inserted\s+paragraph\s+\((?P<inserted_parent>[0-9A-Za-z]+)\),?\s+"
+    r"(?P<direction>before|after)\s+sub-?paragraph\s+\((?P<anchor>[0-9A-Za-z]+)\)\s+"
+    r"insert\s*[—–-]\s*(?P<inserted_label>[0-9A-Za-z]+)\s+"
+    r"(?P<inserted_text>.+?)\s*$",
+    flags=re.I | re.S,
+)
 _SOURCE_TABLE_ENTRY_PARENT_RE = re.compile(
     r"\bentry\s+for\s+(?P<entry>.+?)\s+is\s+amended\s+as\s+follows\b",
     flags=re.I | re.S,
@@ -8854,6 +8864,37 @@ def _fragment_substitution_amendment_inserted_text_substitution(
         "source_paragraph_label": source_paragraph,
         "source_item_label": source_item,
         "rule_id": "uk_effect_amendment_inserted_text_substitution_text_patch",
+    }
+
+
+def _amendment_program_inserted_parent_structural_insert(
+    *,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Identify structural inserts into a prior amendment instruction's inserted payload."""
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text or _addr_container(target) != "schedule":
+        return None
+    match = _SOURCE_AMENDMENT_INSERTED_PARENT_STRUCTURAL_INSERT_RE.match(text)
+    if match is None:
+        return None
+    _target_paragraph, target_subparagraph, target_items = _schedule_target_levels(target)
+    source_subparagraph = _clean_num(match.group("subparagraph"))
+    source_item = _clean_num(match.group("item"))
+    if not source_subparagraph or _clean_num(target_subparagraph or "") != source_subparagraph:
+        return None
+    if not source_item or not target_items or _clean_num(target_items[-1]) != source_item:
+        return None
+    source_label = lambda value: str(value or "").strip().strip("()").lower().strip(".")
+    return {
+        "source_subparagraph_label": source_subparagraph,
+        "source_item_label": source_item,
+        "inserted_parent_label": source_label(match.group("inserted_parent")),
+        "direction": str(match.group("direction") or "").lower(),
+        "anchor_label": source_label(match.group("anchor")),
+        "inserted_label": source_label(match.group("inserted_label")),
+        "inserted_text_preview": " ".join(str(match.group("inserted_text") or "").split())[:240],
     }
 
 
@@ -11676,6 +11717,37 @@ def compile_effect_to_ir_ops(
                     "target": str(target),
                 },
             )
+
+        amendment_program_inserted_parent_structural_insert = (
+            _amendment_program_inserted_parent_structural_insert(
+                extracted_text=extracted_text,
+                target=target,
+            )
+            if extracted_text and curr_action == "insert"
+            else None
+        )
+        if amendment_program_inserted_parent_structural_insert is not None:
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id="uk_effect_amendment_program_inserted_parent_structural_insert_rejected",
+                family="amendment_program_lowering",
+                reason_code="insert_targets_prior_amendment_inserted_parent",
+                reason=(
+                    "UK source text inserts a child into a paragraph inserted by "
+                    "a prior amendment instruction; this needs an amendment-"
+                    "program compiler and must not be replayed against an "
+                    "unrelated live base-law parent."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "target": str(target),
+                    **amendment_program_inserted_parent_structural_insert,
+                },
+            )
+            continue
 
         # Grounding 2.0: Fragment substitutions
         structural_omission_reclassification = _word_level_structural_subsection_omission(
