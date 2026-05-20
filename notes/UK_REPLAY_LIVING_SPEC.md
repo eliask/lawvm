@@ -359,6 +359,15 @@ Rows also preserve full lowering/source-acquisition rejection records and a
 bounded target context (`affected_provisions`, resolver EIDs if known, and the
 compare shape) so a copied work item remains auditable without reopening the
 full effect report.
+Known manual families may additionally include a non-executable
+`suggested_claim_template` with `claim_status=template_only_not_validated`.
+The template is a reviewer aid, not an operation source. Current templates:
+`definition_entry_insert` for
+`uk_manual_frontier_appropriate_place_definition_entry_candidate`, and
+`range_to_container_substitution` for
+`uk_manual_frontier_range_to_container_candidate`. Both list required
+validator checks; replay must ignore them until a separate validated claim
+ledger emits canonical operations and provenance.
 
 The claim output should be typed, for example:
 
