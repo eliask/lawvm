@@ -1808,13 +1808,16 @@ Current block-substitution context invariant:
   If the source context does not match the feed target, the row remains an
   amendment-program frontier instead of becoming a base-law text guess.
 - source text that targets a table entry or table column remains manual unless
-  the claim/compiler owns the row/cell model. The deterministic exception is
+  the claim/compiler owns the row/cell model. The deterministic exceptions are
   explicit ordinal-column row insertion, for example `after the third entry in
-  the second column relating to X insert- Y`: lowering emits
+  the second column relating to X insert- Y`, and explicit single-entry table
+  anchors of the form `after the entry in the table relating to X insert- Y`.
+  In both cases lowering emits
   `uk_effect_table_entry_row_insert`, carries a table-row selector, and replay
-  must resolve exactly one table, expand rowspans, count only entries in the
-  named column whose earlier columns match `X`, and insert a row payload after
-  the selected physical row. Ambiguous tables/rows emit
+  must resolve exactly one table, expand rowspans, and insert a row payload
+  after the selected physical row. Ordinal-column selectors count only entries
+  in the named column whose earlier columns match `X`; relating-entry selectors
+  require exactly one row whose cell text matches `X`. Ambiguous tables/rows emit
   `uk_replay_table_entry_row_insert_unresolved`. Other table-entry claims such
   as `after entry 4 in the table insert-`, `after that entry insert-`,
   between-column insertions, and appropriate-place table insertions remain
