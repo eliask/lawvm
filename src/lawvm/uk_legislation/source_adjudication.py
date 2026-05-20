@@ -903,6 +903,8 @@ def classify_uk_effect_source_pathology(
         return "broad_source_reused_as_payload"
 
     if norm_text and targets:
+        if "uk_effect_source_carried_definition_child_text_omission_text_patch" in lowering_rules:
+            return ""
         if (
             norm_effect_type.startswith("substituted for ")
             and "-" in norm_effect_type

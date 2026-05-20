@@ -9,6 +9,7 @@ from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSour
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.source_adjudication import classify_uk_replay_adjudication_bucket
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKReplayExecutor,
@@ -4314,6 +4315,265 @@ def test_executor_inserts_definition_child_and_appends_anchor_connector() -> Non
         "the Strathclyde Passenger Transport Authority ; or",
         "the West of Scotland Transport Partnership;",
     ]
+    assert adjudications == []
+
+
+def test_executor_scopes_source_carried_anchor_insert_to_definition_entry() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="82",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "“local authority” means a council; "
+                                "“local transport strategy” means the strategy prepared by authority;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_scoped_definition_anchor_insert",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "82"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text=(
+                        "TEXT_IN_DEFINITION_local transport strategy"
+                        f"{US}AFTER{US}"
+                        "authority"
+                    ),
+                    occurrence=0,
+                ),
+                replacement="authority; or b a local traffic authority,",
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == (
+        "“local authority” means a council; “local transport strategy” means "
+        "the strategy prepared by authority; or b a local traffic authority,;"
+    )
+    assert adjudications == []
+
+
+def test_executor_applies_definition_scoped_from_to_range() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="82",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "In this Act— “charging scheme” means a scheme made under this Act; "
+                                "“local transport strategy” means the strategy prepared by authority "
+                                "in accordance with section 79 of this Act; "
+                                "“local authority” means a council;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_scoped_from_to_range",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "82"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(
+                    match_text=(
+                        "TEXT_IN_DEFINITION_local transport strategy"
+                        f"{US}FROM{US}"
+                        f"in{US}TO{US}Act"
+                    ),
+                    occurrence=1,
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == (
+        "In this Act— “charging scheme” means a scheme made under this Act; "
+        "“local transport strategy” means the strategy prepared by authority ; "
+        "“local authority” means a council;"
+    )
+    assert adjudications == []
+
+
+def test_executor_applies_definition_child_scoped_word_omission() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="82",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="“local transport authority” means-",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label=None,
+                                    text="a local authority; or",
+                                    attrs={
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                        "definition_term": "local transport authority",
+                                        "definition_child_label": "a",
+                                    },
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label=None,
+                                    text="the Strathclyde Passenger Transport Authority;",
+                                    attrs={
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                        "definition_term": "local transport authority",
+                                        "definition_child_label": "b",
+                                    },
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_child_scoped_word_omission",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "82"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(
+                    match_text=(
+                        "TEXT_IN_DEFINITION_CHILD_PARAGRAPH_local transport authority"
+                        f"{US}a{US}"
+                        "or"
+                    ),
+                    occurrence=0,
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert [child.text for child in subsection.children] == [
+        "a local authority;",
+        "the Strathclyde Passenger Transport Authority;",
+    ]
+    assert adjudications == []
+
+
+def test_executor_applies_definition_child_scoped_word_omission_to_flat_entry() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="82",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "“local transport authority” means a local authority; "
+                                "or the Strathclyde Passenger Transport Authority;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_child_scoped_word_omission_flat",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "82"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(
+                    match_text=(
+                        "TEXT_IN_DEFINITION_CHILD_PARAGRAPH_local transport authority"
+                        f"{US}a{US}"
+                        "or"
+                    ),
+                    occurrence=0,
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == (
+        "“local transport authority” means a local authority; the Strathclyde "
+        "Passenger Transport Authority;"
+    )
     assert adjudications == []
 
 
