@@ -6593,6 +6593,13 @@ _SOURCE_SECTION_DEFINITION_CHILD_CONTEXT_RE = re.compile(
     r"\bin\s+paragraph\s+\((?P<label>[0-9A-Za-z]+)\)",
     flags=re.I | re.S,
 )
+_SOURCE_DEFINITION_CHILD_CONTEXT_RE = re.compile(
+    r"\bin\s+the\s+definition\s+of\s+[“\"'‘](?P<term>.*?)[”\"'’]"
+    r"(?:(?!\bin\s+the\s+definition\b).){0,260}?"
+    r"\bin\s+paragraph\s+\((?P<label>[0-9A-Za-z]+)\)"
+    r"(?:\((?P<sublabel>[0-9A-Za-z]+)\))?",
+    flags=re.I | re.S,
+)
 _SOURCE_CARRIED_CHILD_TAIL_REPEAL_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"in\s+subsection\s+\((?P<subsection>[0-9A-Za-z]+)\),?\s+"
@@ -6695,6 +6702,30 @@ def _source_definition_child_context_for_direct_section_paragraph(
     return term, label
 
 
+def _source_definition_child_context_from_parent(parent_context_text: str) -> tuple[str, str, str]:
+    match = _SOURCE_DEFINITION_CHILD_CONTEXT_RE.search(parent_context_text)
+    if match is None:
+        return "", "", ""
+    term = " ".join(match.group("term").split()).strip()
+    label = _clean_num(match.group("label"))
+    sublabel = " ".join((match.group("sublabel") or "").split()).strip()
+    return term, label, sublabel
+
+
+def _source_row_names_explicit_target_context(row_text: str) -> bool:
+    # Quoted payloads often contain legal references ("in section 2A") that are
+    # inserted text, not a competing source target. Strip quoted segments before
+    # deciding that the child row overrides parent definition context.
+    text_without_quotes = re.sub(r"[“\"'‘][^”\"'’]{0,800}[”\"'’]", "", row_text)
+    return bool(
+        re.search(
+            r"\bin\s+(?:section|schedule|subsection|paragraph|article|regulation)\b",
+            text_without_quotes,
+            flags=re.I,
+        )
+    )
+
+
 def _scope_fragment_substitutions_to_source_definition_parent(
     *,
     fragments: list[dict[str, str]],
@@ -6707,7 +6738,7 @@ def _scope_fragment_substitutions_to_source_definition_parent(
     if not fragments:
         return fragments
     row_text = " ".join((extracted_text or "").split())
-    if re.search(r"\bin\s+(?:section|schedule|subsection|paragraph|article|regulation)\b", row_text, re.I):
+    if _source_row_names_explicit_target_context(row_text):
         return fragments
     ancestors = _source_ancestor_chain(source_root, extracted_el)
     if not ancestors:
@@ -6718,6 +6749,13 @@ def _scope_fragment_substitutions_to_source_definition_parent(
         target=target,
         parent_context_text=parent_context_text,
     )
+    child_definition_sublabel = ""
+    if not child_definition_term:
+        (
+            child_definition_term,
+            child_definition_label,
+            child_definition_sublabel,
+        ) = _source_definition_child_context_from_parent(parent_context_text)
     definition_match = _SOURCE_DEFINITION_TERM_RE.search(parent_context_text)
     definition_term = (
         " ".join(definition_match.group("term").split()).strip()
@@ -6768,6 +6806,27 @@ def _scope_fragment_substitutions_to_source_definition_parent(
             scoped_fragment["source_definition_term"] = child_definition_term or definition_term
             scoped_fragment["source_unscoped_match_text"] = original
             changed = True
+        elif (
+            original
+            and replacement
+            and child_definition_term
+            and child_definition_label
+            and not original.startswith("TEXT_")
+        ):
+            scoped_fragment["original"] = (
+                f"TEXT_IN_DEFINITION_CHILD_PARAGRAPH_{child_definition_term}"
+                f"{US}{child_definition_label}{US}{original}"
+            )
+            scoped_fragment["source_parent_id"] = source_parent_id
+            scoped_fragment["source_definition_term"] = child_definition_term
+            scoped_fragment["source_child_label"] = child_definition_label
+            if child_definition_sublabel:
+                scoped_fragment["source_child_sublabel"] = child_definition_sublabel
+            scoped_fragment["source_unscoped_match_text"] = original
+            scoped_fragment["rule_id"] = (
+                "uk_effect_source_parent_definition_child_substitution_text_patch"
+            )
+            changed = True
         scoped.append(scoped_fragment)
     return scoped if changed else fragments
 
@@ -6777,18 +6836,68 @@ def _source_definition_child_refined_target(
     target: LegalAddress,
     fragment: dict[str, str],
 ) -> Optional[LegalAddress]:
-    if str(fragment.get("rule_id") or "") != (
-        "uk_effect_source_parent_definition_child_after_quoted_anchor_insert_text_patch"
-    ):
+    if str(fragment.get("rule_id") or "") not in {
+        "uk_effect_source_parent_definition_child_after_quoted_anchor_insert_text_patch",
+        "uk_effect_source_carried_definition_child_at_end_insert_text_patch",
+    }:
         return None
     path = tuple(getattr(target, "path", ()) or ())
-    if len(path) != 2:
+    if len(path) < 2:
         return None
     if str(path[0][0] or "").lower() != "section" or str(path[1][0] or "").lower() != "paragraph":
         return None
     if _clean_num(str(path[1][1] or "")) != _clean_num(str(fragment.get("source_child_label") or "")):
         return None
     return LegalAddress(path=(path[0],), special=target.special)
+
+
+def _source_definition_child_context_from_ancestors(
+    ancestors: tuple[ET.Element, ...],
+) -> tuple[str, str, str, str]:
+    for ancestor in ancestors:
+        candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
+        if not candidate_text:
+            candidate_text = _instruction_text_before_amendment_container(ancestor)
+        term, label, sublabel = _source_definition_child_context_from_parent(candidate_text)
+        if term and label:
+            return term, label, sublabel, str(ancestor.get("id") or "")
+    return "", "", "", ""
+
+
+def _fragment_substitution_source_carried_definition_child_at_end_insert(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve BlockAmendment payloads inserted at the end of a carried definition child."""
+    if extracted_el is None or _tag(extracted_el) not in {"BlockAmendment", "InlineAmendment"}:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        return None
+    row_context = _instruction_text_before_amendment_container(ancestors[0])
+    if not re.match(r"^\s*at\s+the\s+end\s+there\s+is\s+inserted\b", row_context, flags=re.I | re.S):
+        return None
+    term, label, sublabel, source_parent_id = _source_definition_child_context_from_ancestors(ancestors)
+    if not term or not label:
+        return None
+    inserted = " ".join((extracted_text or "").split()).strip()
+    if not inserted:
+        inserted = _text_content(extracted_el)
+    inserted = " ".join(inserted.split()).strip()
+    if not inserted:
+        return None
+    return {
+        "original": f"TEXT_IN_DEFINITION_CHILD_PARAGRAPH_{term}{US}{label}{US}AT_END",
+        "replacement": inserted,
+        "source_parent_id": source_parent_id,
+        "source_definition_term": term,
+        "source_child_label": label,
+        "source_child_sublabel": sublabel,
+        "source_inserted_text": inserted,
+        "rule_id": "uk_effect_source_carried_definition_child_at_end_insert_text_patch",
+    }
 
 
 def _previous_source_sibling_label(
@@ -9036,6 +9145,88 @@ def compile_effect_to_ir_ops(
                 },
             )
 
+        source_carried_definition_child_at_end_insert = (
+            _fragment_substitution_source_carried_definition_child_at_end_insert(
+                extracted_el=extracted_el,
+                source_root=source_root,
+                extracted_text=extracted_text,
+            )
+            if extracted_text and curr_action == "insert"
+            else None
+        )
+        if source_carried_definition_child_at_end_insert is not None:
+            fragment_subs = [source_carried_definition_child_at_end_insert]
+            content_ir = None
+            op_text_match = source_carried_definition_child_at_end_insert["original"]
+            op_text_replacement = source_carried_definition_child_at_end_insert["replacement"]
+            curr_action = "text_replace"
+            source_definition_child_refined_target = _source_definition_child_refined_target(
+                target=target,
+                fragment=source_carried_definition_child_at_end_insert,
+            )
+            if source_definition_child_refined_target is not None:
+                _append_uk_effect_lowering_observation(
+                    lowering_rejections_out,
+                    rule_id="uk_effect_source_parent_definition_child_target_refined",
+                    family="source_context_elaboration",
+                    reason_code="source_parent_definition_child_refines_direct_section_paragraph",
+                    reason=(
+                        "UK affected-provision metadata names a direct section paragraph, "
+                        "while the source parent explicitly says that paragraph is inside "
+                        "a named definition entry; lowering targets the containing section "
+                        "and preserves the child paragraph as a scoped text selector."
+                    ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        "target_ref": t_str,
+                        "original_target": str(target),
+                        "refined_target": str(source_definition_child_refined_target),
+                        "source_definition_term": str(
+                            source_carried_definition_child_at_end_insert.get("source_definition_term") or ""
+                        ),
+                        "source_child_label": str(
+                            source_carried_definition_child_at_end_insert.get("source_child_label") or ""
+                        ),
+                    },
+                )
+                target = source_definition_child_refined_target
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_effect_source_carried_definition_child_at_end_insert_text_patch",
+                family="source_context_elaboration",
+                reason_code="definition_child_at_end_insert_resolved_from_parent_source",
+                reason=(
+                    "UK source payload contains only the inserted definition-child tail, "
+                    "while the parent source instruction names the definition term and "
+                    "paragraph; lowering combines those source-local facts into a bounded "
+                    "definition-child text append instead of inserting an unreachable "
+                    "address-only subparagraph."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "target": str(target),
+                    "source_parent_id": str(
+                        source_carried_definition_child_at_end_insert.get("source_parent_id") or ""
+                    ),
+                    "source_definition_term": str(
+                        source_carried_definition_child_at_end_insert.get("source_definition_term") or ""
+                    ),
+                    "source_child_label": str(
+                        source_carried_definition_child_at_end_insert.get("source_child_label") or ""
+                    ),
+                    "source_child_sublabel": str(
+                        source_carried_definition_child_at_end_insert.get("source_child_sublabel") or ""
+                    ),
+                    "text_match": op_text_match,
+                    "replacement": op_text_replacement,
+                },
+            )
+
         word_level_text_patch_required = (
             is_word_level
             and curr_action != "repeal"
@@ -9414,6 +9605,7 @@ def compile_effect_to_ir_ops(
                             "uk_effect_source_parent_definition_range_text_patch",
                             "uk_effect_source_parent_definition_after_quoted_anchor_insert_text_patch",
                             "uk_effect_source_parent_definition_child_after_quoted_anchor_insert_text_patch",
+                            "uk_effect_source_parent_definition_child_substitution_text_patch",
                         }:
                             continue
                         _append_uk_effect_lowering_observation(
@@ -9441,6 +9633,9 @@ def compile_effect_to_ir_ops(
                                     source_definition_fragment.get("source_unscoped_match_text") or ""
                                 ),
                                 "source_child_label": str(source_definition_fragment.get("source_child_label") or ""),
+                                "source_child_sublabel": str(
+                                    source_definition_fragment.get("source_child_sublabel") or ""
+                                ),
                                 "text_match": op_text_match,
                                 "replacement": op_text_replacement,
                                 "occurrence": op_text_occurrence,
@@ -10800,6 +10995,18 @@ def _compact_schedule_entry_anchor_without_article(text: str) -> str:
         flags=re.I,
     )
     return _compact_normalized_text(stripped)
+
+
+def _append_definition_child_suffix_text(child_text: str, suffix: str) -> str:
+    base = " ".join((child_text or "").split()).strip()
+    addition = " ".join((suffix or "").split()).strip()
+    if not base:
+        return addition
+    if not addition:
+        return base
+    if base.rstrip().endswith(";") and addition.startswith(";"):
+        addition = addition[1:].lstrip()
+    return f"{base.rstrip()} {addition}".strip()
 
 
 def _lowering_record_rule_ids(rows: tuple[dict[str, Any], ...]) -> tuple[str, ...]:
@@ -16170,11 +16377,13 @@ class UKReplayExecutor:
             child_selector = match[len("TEXT_IN_DEFINITION_CHILD_") :]
             child_parts = child_selector.split(US)
             child_after_anchor = ""
+            child_at_end = False
             if len(child_parts) == 4 and child_parts[2] == "AFTER":
                 kind_and_term, child_label, _, child_after_anchor = child_parts
                 original = ""
             elif len(child_parts) == 3:
                 kind_and_term, child_label, original = child_parts
+                child_at_end = original == "AT_END"
             else:
                 return node, False
             child_match = re.fullmatch(r"([A-Z]+)_(.+)", kind_and_term)
@@ -16187,7 +16396,7 @@ class UKReplayExecutor:
             child_after_anchor = child_after_anchor.strip()
             if child_kind != "paragraph" or not term or not child_label:
                 return node, False
-            if (child_after_anchor and original) or (not child_after_anchor and not original):
+            if (child_after_anchor and original) or (not child_after_anchor and not original and not child_at_end):
                 return node, False
 
             def _definition_child_nodes(
@@ -16228,7 +16437,9 @@ class UKReplayExecutor:
                 child_text = child_node.text or ""
                 if not child_text:
                     return node, False
-                if child_after_anchor:
+                if child_at_end:
+                    new_text = _append_definition_child_suffix_text(child_text, replacement_text)
+                elif child_after_anchor:
                     required_occurrence = occurrence if occurrence > 0 else 1
                     matches = list(re.finditer(pattern, child_text, flags=re.I | re.S))
                     if len(matches) < required_occurrence:
@@ -16316,6 +16527,10 @@ class UKReplayExecutor:
                     else entry_end
                 )
                 segment = text[segment_start:search_end]
+                if child_at_end:
+                    new_segment = _append_definition_child_suffix_text(segment, replacement_text)
+                    new_text = f"{text[:segment_start]}{new_segment}{text[search_end:]}"
+                    return " ".join(new_text.split()).strip(), True
                 matches = list(re.finditer(pattern, segment, flags=re.I | re.S))
                 if child_after_anchor:
                     required_occurrence = occurrence if occurrence > 0 else 1

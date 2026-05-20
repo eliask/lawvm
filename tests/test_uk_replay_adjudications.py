@@ -4656,6 +4656,78 @@ def test_executor_applies_definition_child_scoped_after_insert_to_structured_ent
     assert adjudications == []
 
 
+def test_executor_applies_definition_child_scoped_at_end_insert_to_structured_entry() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="48",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="“relevant general policies” means-",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label=None,
+                                    text=(
+                                        "where the authority is a local authority (i), "
+                                        "policies under section 63;"
+                                    ),
+                                    attrs={
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                        "definition_term": "relevant general policies",
+                                        "definition_child_label": "a",
+                                    },
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_child_scoped_at_end_insert_structured",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "48"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text=(
+                        "TEXT_IN_DEFINITION_CHILD_PARAGRAPH_relevant general policies"
+                        f"{US}a{US}"
+                        "AT_END"
+                    ),
+                    occurrence=0,
+                ),
+                replacement="; or ii policies which relate to matters;",
+            ),
+            source=_source(),
+        )
+    )
+
+    child = executor.statute.body.children[0].children[0].children[0]
+    assert child.text == (
+        "where the authority is a local authority (i), policies under section 63; "
+        "or ii policies which relate to matters;"
+    )
+    assert adjudications == []
+
+
 def test_executor_applies_definition_child_scoped_after_insert_to_flat_entry() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(
