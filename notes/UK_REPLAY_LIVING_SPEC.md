@@ -3033,6 +3033,11 @@ Current bench replay-regime invariant:
   typed `RENUMBER` operation only when the destination is the source provision's
   own immediate descendant. The lowering emits
   `uk_effect_metadata_renumber_lowered` with source and destination targets.
+- The metadata prefix `word(s) in X renumbered as Y` is source scope language,
+  not a child label. Lowering strips `word(s) in` before target parsing so the
+  source target remains `X`, while the destination still controls the new
+  descendant label. Current witnesses include `ukpga/2020/17` Schedule 22
+  paragraph 72(a), paragraph 43(a), and paragraph 54(a).
 - Explicit UK effect metadata of the form `X(n) renumbered as X(m)` also lowers
   to typed `RENUMBER` when source and destination are same-parent, same-kind
   siblings and the labels differ. The lowering emits

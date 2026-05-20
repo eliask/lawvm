@@ -3956,7 +3956,11 @@ def _uk_metadata_renumber_targets(effect: UKEffectRecord) -> Optional[UKMetadata
     match = re.fullmatch(r"(?P<source>.+?)\s+renumbered\s+as\s+(?P<dest>.+)", effect_type, flags=re.I)
     if match is None:
         return None
-    source_target = canonicalize_uk_address(_parse_affected_target(match.group("source")))
+    source_ref = " ".join(match.group("source").split())
+    words_in_match = re.fullmatch(r"words?\s+in\s+(?P<target>.+)", source_ref, flags=re.I)
+    if words_in_match is not None:
+        source_ref = words_in_match.group("target")
+    source_target = canonicalize_uk_address(_parse_affected_target(source_ref))
     destination = canonicalize_uk_address(_parse_affected_target(match.group("dest")))
     if len(destination.path) == len(source_target.path) + 1 and destination.path[:-1] == source_target.path:
         return UKMetadataRenumberTargets(
