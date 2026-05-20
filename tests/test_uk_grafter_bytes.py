@@ -59,6 +59,24 @@ def test_definition_ordered_list_term_prefers_source_language_quoted_term() -> N
     assert _definition_ordered_list_term(parent, list_el) == "private sector employer"
 
 
+def test_definition_ordered_list_term_ignores_qualifier_between_term_and_predicate() -> None:
+    ns = "http://www.legislation.gov.uk/namespaces/legislation"
+    parent = ET.fromstring(
+        f"""
+        <Para xmlns="{ns}">
+          <Text>“relevant general policies”, in relation to a local transport authority, means the authority’s local transport strategy and—</Text>
+          <OrderedList Type="alpha">
+            <ListItem><Para><Text>where the authority is a local authority, the policies;</Text></Para></ListItem>
+          </OrderedList>
+        </Para>
+        """
+    )
+    list_el = parent.find(f"{{{ns}}}OrderedList")
+
+    assert list_el is not None
+    assert _definition_ordered_list_term(parent, list_el) == "relevant general policies"
+
+
 def test_visible_inline_citation_text_is_preserved_in_host_provision_text() -> None:
     xml = b"""<?xml version="1.0" encoding="UTF-8"?>
 <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"

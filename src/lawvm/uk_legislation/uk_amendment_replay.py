@@ -6584,6 +6584,14 @@ _SOURCE_DEFINITION_TERM_RE = re.compile(
     r"\bin\s+the\s+definition\s+of\s+[“\"'‘](?P<term>.*?)[”\"'’]",
     flags=re.I | re.S,
 )
+_SOURCE_SECTION_DEFINITION_CHILD_CONTEXT_RE = re.compile(
+    r"\bin\s+section\s+(?P<section>[0-9A-Za-z]+)\b"
+    r"(?:(?!\bin\s+section\b).){0,500}?"
+    r"\bin\s+the\s+definition\s+of\s+[“\"'‘](?P<term>.*?)[”\"'’]"
+    r"(?:(?!\bin\s+the\s+definition\b).){0,260}?"
+    r"\bin\s+paragraph\s+\((?P<label>[0-9A-Za-z]+)\)",
+    flags=re.I | re.S,
+)
 _SOURCE_CARRIED_CHILD_TAIL_REPEAL_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"in\s+subsection\s+\((?P<subsection>[0-9A-Za-z]+)\),?\s+"
@@ -6662,12 +6670,37 @@ def _source_text_before_extracted_child(parent: ET.Element, extracted_el: Option
     return " ".join(" ".join(parts).split())
 
 
+def _source_definition_child_context_for_direct_section_paragraph(
+    *,
+    target: LegalAddress,
+    parent_context_text: str,
+) -> tuple[str, str]:
+    path = tuple(getattr(target, "path", ()) or ())
+    if len(path) != 2:
+        return "", ""
+    section_kind, section_label = path[0]
+    child_kind, child_label = path[1]
+    if str(section_kind or "").lower() != "section" or str(child_kind or "").lower() != "paragraph":
+        return "", ""
+    match = _SOURCE_SECTION_DEFINITION_CHILD_CONTEXT_RE.search(parent_context_text)
+    if match is None:
+        return "", ""
+    if _clean_num(match.group("section")) != _clean_num(str(section_label or "")):
+        return "", ""
+    label = _clean_num(match.group("label"))
+    if label != _clean_num(str(child_label or "")):
+        return "", ""
+    term = " ".join(match.group("term").split()).strip()
+    return term, label
+
+
 def _scope_fragment_substitutions_to_source_definition_parent(
     *,
     fragments: list[dict[str, str]],
     extracted_el: Optional[ET.Element],
     source_root: Optional[ET.Element],
     extracted_text: Optional[str],
+    target: LegalAddress,
 ) -> list[dict[str, str]]:
     """Scope generic child-row text patches when the source parent names a definition."""
     if not fragments:
@@ -6680,6 +6713,10 @@ def _scope_fragment_substitutions_to_source_definition_parent(
         return fragments
     parent = ancestors[0]
     parent_context_text = _source_text_before_extracted_child(parent, extracted_el)
+    child_definition_term, child_definition_label = _source_definition_child_context_for_direct_section_paragraph(
+        target=target,
+        parent_context_text=parent_context_text,
+    )
     definition_match = _SOURCE_DEFINITION_TERM_RE.search(parent_context_text)
     definition_term = (
         " ".join(definition_match.group("term").split()).strip()
@@ -6714,14 +6751,43 @@ def _scope_fragment_substitutions_to_source_definition_parent(
                 scoped_fragment["rule_id"] = "uk_effect_source_parent_definition_range_text_patch"
                 changed = True
         elif original and replacement.startswith(original):
-            scoped_fragment["original"] = f"TEXT_IN_DEFINITION_{definition_term}{US}AFTER{US}{original}"
+            if child_definition_term and child_definition_label:
+                scoped_fragment["original"] = (
+                    f"TEXT_IN_DEFINITION_CHILD_PARAGRAPH_{child_definition_term}"
+                    f"{US}{child_definition_label}{US}AFTER{US}{original}"
+                )
+                scoped_fragment["source_child_label"] = child_definition_label
+                scoped_fragment["rule_id"] = (
+                    "uk_effect_source_parent_definition_child_after_quoted_anchor_insert_text_patch"
+                )
+            else:
+                scoped_fragment["original"] = f"TEXT_IN_DEFINITION_{definition_term}{US}AFTER{US}{original}"
+                scoped_fragment["rule_id"] = "uk_effect_source_parent_definition_after_quoted_anchor_insert_text_patch"
             scoped_fragment["source_parent_id"] = source_parent_id
-            scoped_fragment["source_definition_term"] = definition_term
+            scoped_fragment["source_definition_term"] = child_definition_term or definition_term
             scoped_fragment["source_unscoped_match_text"] = original
-            scoped_fragment["rule_id"] = "uk_effect_source_parent_definition_after_quoted_anchor_insert_text_patch"
             changed = True
         scoped.append(scoped_fragment)
     return scoped if changed else fragments
+
+
+def _source_definition_child_refined_target(
+    *,
+    target: LegalAddress,
+    fragment: dict[str, str],
+) -> Optional[LegalAddress]:
+    if str(fragment.get("rule_id") or "") != (
+        "uk_effect_source_parent_definition_child_after_quoted_anchor_insert_text_patch"
+    ):
+        return None
+    path = tuple(getattr(target, "path", ()) or ())
+    if len(path) != 2:
+        return None
+    if str(path[0][0] or "").lower() != "section" or str(path[1][0] or "").lower() != "paragraph":
+        return None
+    if _clean_num(str(path[1][1] or "")) != _clean_num(str(fragment.get("source_child_label") or "")):
+        return None
+    return LegalAddress(path=(path[0],), special=target.special)
 
 
 def _previous_source_sibling_label(
@@ -9071,6 +9137,7 @@ def compile_effect_to_ir_ops(
                         extracted_el=extracted_el,
                         source_root=source_root,
                         extracted_text=extracted_text,
+                        target=target,
                     )
                     if table_cell_selector is not None:
                         subs = [
@@ -9085,6 +9152,34 @@ def compile_effect_to_ir_ops(
                     # Promote to text_replace / text_repeal with fields populated.
                     # Use the first pair as the primary; additional pairs stay in notes.
                     primary = subs[0]
+                    source_definition_child_refined_target = _source_definition_child_refined_target(
+                        target=target,
+                        fragment=primary,
+                    )
+                    if source_definition_child_refined_target is not None:
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id="uk_effect_source_parent_definition_child_target_refined",
+                            family="source_context_elaboration",
+                            reason_code="source_parent_definition_child_refines_direct_section_paragraph",
+                            reason=(
+                                "UK affected-provision metadata names a direct section paragraph, "
+                                "while the source parent explicitly says that paragraph is inside "
+                                "a named definition entry; lowering targets the containing section "
+                                "and preserves the child paragraph as a scoped text selector."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "original_target": str(target),
+                                "refined_target": str(source_definition_child_refined_target),
+                                "source_definition_term": str(primary.get("source_definition_term") or ""),
+                                "source_child_label": str(primary.get("source_child_label") or ""),
+                            },
+                        )
+                        target = source_definition_child_refined_target
                     primary_target_suffix = _fragment_target_suffix(primary)
                     if primary_target_suffix is not None:
                         refined_target = _append_target_suffix_if_safe(target, primary_target_suffix)
@@ -9196,6 +9291,7 @@ def compile_effect_to_ir_ops(
                         if source_definition_rule_id not in {
                             "uk_effect_source_parent_definition_range_text_patch",
                             "uk_effect_source_parent_definition_after_quoted_anchor_insert_text_patch",
+                            "uk_effect_source_parent_definition_child_after_quoted_anchor_insert_text_patch",
                         }:
                             continue
                         _append_uk_effect_lowering_observation(
@@ -9222,6 +9318,7 @@ def compile_effect_to_ir_ops(
                                 "source_unscoped_match_text": str(
                                     source_definition_fragment.get("source_unscoped_match_text") or ""
                                 ),
+                                "source_child_label": str(source_definition_fragment.get("source_child_label") or ""),
                                 "text_match": op_text_match,
                                 "replacement": op_text_replacement,
                                 "occurrence": op_text_occurrence,
@@ -15926,9 +16023,14 @@ class UKReplayExecutor:
         if match.startswith("TEXT_IN_DEFINITION_CHILD_"):
             child_selector = match[len("TEXT_IN_DEFINITION_CHILD_") :]
             child_parts = child_selector.split(US)
-            if len(child_parts) != 3:
+            child_after_anchor = ""
+            if len(child_parts) == 4 and child_parts[2] == "AFTER":
+                kind_and_term, child_label, _, child_after_anchor = child_parts
+                original = ""
+            elif len(child_parts) == 3:
+                kind_and_term, child_label, original = child_parts
+            else:
                 return node, False
-            kind_and_term, child_label, original = child_parts
             child_match = re.fullmatch(r"([A-Z]+)_(.+)", kind_and_term)
             if child_match is None:
                 return node, False
@@ -15936,7 +16038,10 @@ class UKReplayExecutor:
             term = child_match.group(2).strip()
             child_label = child_label.strip()
             original = original.strip()
-            if child_kind != "paragraph" or not term or not child_label or not original:
+            child_after_anchor = child_after_anchor.strip()
+            if child_kind != "paragraph" or not term or not child_label:
+                return node, False
+            if (child_after_anchor and original) or (not child_after_anchor and not original):
                 return node, False
 
             def _definition_child_nodes(
@@ -15957,7 +16062,13 @@ class UKReplayExecutor:
                 return matches
 
             structured_child_matches = _definition_child_nodes(node)
-            if re.fullmatch(r"[A-Za-z0-9]+", original):
+            if child_after_anchor:
+                pattern = _text_patch_pattern(
+                    child_after_anchor,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+            elif re.fullmatch(r"[A-Za-z0-9]+", original):
                 pattern = rf"(?<![A-Za-z0-9]){re.escape(original)}(?![A-Za-z0-9])"
             else:
                 pattern = _text_patch_pattern(
@@ -15971,16 +16082,25 @@ class UKReplayExecutor:
                 child_text = child_node.text or ""
                 if not child_text:
                     return node, False
-                new_text, count = re.subn(pattern, replacement_text, child_text, count=1, flags=re.I | re.S)
-                if count != 1:
-                    return node, False
+                if child_after_anchor:
+                    required_occurrence = occurrence if occurrence > 0 else 1
+                    matches = list(re.finditer(pattern, child_text, flags=re.I | re.S))
+                    if len(matches) < required_occurrence:
+                        return node, False
+                    match_obj = matches[required_occurrence - 1]
+                    new_text = (
+                        child_text[: match_obj.start()]
+                        + replacement_text
+                        + child_text[match_obj.end() :]
+                    )
+                else:
+                    new_text, count = re.subn(pattern, replacement_text, child_text, count=1, flags=re.I | re.S)
+                    if count != 1:
+                        return node, False
                 rebuilt_child = dc_replace(child_node, text=" ".join(new_text.split()).strip())
                 rebuilt = self._replace_descendant_at_path(node, child_path, rebuilt_child)
                 self._replace_node_in_statute(node, rebuilt)
                 return rebuilt, True
-
-            if len(text_nodes) != 1:
-                return node, False
 
             def _child_ordinal(label: str) -> Optional[int]:
                 if len(label) == 1 and label.isalpha():
@@ -16043,24 +16163,38 @@ class UKReplayExecutor:
                 if ordinal > 1:
                     segment_start = body_start + semicolons[ordinal - 2].end()
                 search_end = (
-                    body_start + semicolons[ordinal].end()
+                    body_start + semicolons[ordinal - 1].end()
+                    if child_after_anchor
+                    else body_start + semicolons[ordinal].end()
                     if len(semicolons) > ordinal
                     else entry_end
                 )
                 segment = text[segment_start:search_end]
                 matches = list(re.finditer(pattern, segment, flags=re.I | re.S))
-                if len(matches) != 1:
-                    return text, False
-                match_obj = matches[0]
+                if child_after_anchor:
+                    required_occurrence = occurrence if occurrence > 0 else 1
+                    if len(matches) < required_occurrence:
+                        return text, False
+                    match_obj = matches[required_occurrence - 1]
+                else:
+                    if len(matches) != 1:
+                        return text, False
+                    match_obj = matches[0]
                 absolute_start = segment_start + match_obj.start()
                 absolute_end = segment_start + match_obj.end()
                 new_text = f"{text[:absolute_start]}{replacement_text}{text[absolute_end:]}"
                 return " ".join(new_text.split()).strip(), True
 
-            text_path, text_node = text_nodes[0]
-            new_text, changed = _rewrite_flat_definition_child(text_node.text or "")
-            if not changed:
+            candidate_rewrites: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+            for text_path, text_node in text_nodes:
+                if not text_node.text:
+                    continue
+                new_text, changed = _rewrite_flat_definition_child(text_node.text)
+                if changed:
+                    candidate_rewrites.append((text_path, text_node, new_text))
+            if len(candidate_rewrites) != 1:
                 return node, False
+            text_path, text_node, new_text = candidate_rewrites[0]
             replacement_node = dc_replace(text_node, text=new_text)
             if not text_path:
                 self._replace_node_in_statute(text_node, replacement_node)
