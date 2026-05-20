@@ -45,6 +45,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "appropriate_place_insert_unsupported",
         "repeal_schedule_table_source_unsupported",
         "as_if_application_modification_unsupported",
+        "commencement_effect_out_of_scope",
         "broad_schedule_flat_payload_unsupported",
         "amendment_text_target_unsupported",
         "table_entry_target_unsupported",
@@ -766,6 +767,15 @@ def _looks_like_reference_only_source(text: str) -> bool:
     return False
 
 
+def _looks_like_commencement_effect_source(text: str) -> bool:
+    norm = " ".join((text or "").split()).strip().lower()
+    if not norm:
+        return False
+    # Commencement instruments alter temporal applicability, not the target
+    # statute text/tree, under the current UK structural replay lens.
+    return bool(re.search(r"\bshall\s+come\s+into\s+force\b|\bcomes?\s+into\s+force\b", norm))
+
+
 def _target_depth(target_path: str) -> int:
     return sum(1 for part in target_path.split("/") if ":" in part)
 
@@ -867,6 +877,8 @@ def classify_uk_effect_source_pathology(
             norm_text,
         ):
             return "as_if_application_modification_unsupported"
+        if _looks_like_commencement_effect_source(norm_text):
+            return "commencement_effect_out_of_scope"
         if (
             (extracted_tag or "") == "BlockAmendment"
             and (
@@ -1129,6 +1141,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "non_textual_or_out_of_scope",
             "rule_id": "uk_manual_frontier_as_if_application_modification_out_of_scope",
             "reason": "The source is an applied/as-if modification clause rather than a direct mutation of the affected statute text/tree under the current UK replay model.",
+        }
+
+    if source_pathology_norm == "commencement_effect_out_of_scope":
+        return {
+            "status": "non_textual_or_out_of_scope",
+            "rule_id": "uk_manual_frontier_commencement_effect_out_of_scope",
+            "reason": "The source is a commencement/applicability instrument; it may matter to temporal selection, but it is not a direct text/tree mutation under the current UK replay model.",
         }
 
     if source_pathology_norm == "source_carried_multi_subunit_text_rewrite_unsupported":

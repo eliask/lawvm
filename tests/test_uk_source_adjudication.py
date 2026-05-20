@@ -685,6 +685,25 @@ def test_classify_uk_effect_empty_nonstructural_source_as_nonstructural_gap() ->
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_source_pathology_marks_commencement_out_of_scope() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P1",
+        extracted_text=(
+            "2 Section 80 of the Transport (Scotland) Act 2001 shall come "
+            "into force on 1st May 2001."
+        ),
+        op_actions=[],
+        payload_kinds=[],
+        payload_texts=[],
+        lowering_rule_ids=["uk_effect_lowering_no_supported_action_rejected"],
+        effect_type="",
+        is_structural=True,
+    )
+
+    assert pathology == "commencement_effect_out_of_scope"
+    assert is_core_uk_effect_source_candidate(pathology) is False
+
+
 def test_classify_uk_manual_compile_frontier_marks_heading_facets_manual() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words substituted",
@@ -1242,6 +1261,30 @@ def test_classify_uk_manual_compile_frontier_marks_as_if_application_out_of_scop
 
     assert result["status"] == "non_textual_or_out_of_scope"
     assert result["rule_id"] == "uk_manual_frontier_as_if_application_modification_out_of_scope"
+
+
+def test_classify_uk_manual_compile_frontier_marks_commencement_out_of_scope() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="",
+        source_pathology="commencement_effect_out_of_scope",
+        extracted_tag="P2",
+        extracted_text=(
+            "The provisions specified in the Schedule shall come into force "
+            "on 1st April 2001."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_lowering_no_supported_action_rejected",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["rule_id"] == "uk_manual_frontier_commencement_effect_out_of_scope"
 
 
 def test_classify_uk_manual_compile_frontier_marks_schedule_note_target() -> None:

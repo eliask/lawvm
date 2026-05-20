@@ -3009,6 +3009,14 @@ Current bench replay-regime invariant:
   split in row JSON, summary JSON, and text summaries so candidate frontier
   triage cannot confuse nonblocking unsupported-effect evidence with a replay
   blocker.
+- UK commencement instruments are a temporal/applicability source lane, not a
+  structural text/tree mutation lane. If an extracted no-action source says the
+  target provisions `shall come into force` / `come into force`, source
+  adjudication classifies it as `commencement_effect_out_of_scope`, and manual
+  frontier reports `uk_manual_frontier_commencement_effect_out_of_scope`
+  instead of treating it as a generic unsupported replay action. A future
+  temporal compiler may consume these rows, but structural replay must not
+  synthesize text operations from commencement language.
 - `uk-replay` text diagnostics should label the all-row lowering histogram as
   `lowering observation rules`; `blocking lowering rules` is the replay-blocking
   subset.
