@@ -9,6 +9,7 @@ from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation, OperationSour
 from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.source_adjudication import classify_uk_replay_adjudication_bucket
 from lawvm.uk_legislation.uk_amendment_replay import (
@@ -56,6 +57,21 @@ def _duplicate_text_statute() -> IRStatute:
         ),
         supplements=(),
     )
+
+
+def test_definition_anchor_lexical_variants_are_narrow_and_deduplicated() -> None:
+    assert _uk_definition_term_lexical_variants("") == ()
+    assert _uk_definition_term_lexical_variants("education") == ("educational",)
+    assert _uk_definition_term_lexical_variants("educational") == ("education",)
+    assert _uk_definition_term_lexical_variants("education educational") == (
+        "educational educational",
+        "education education",
+    )
+    assert _uk_definition_term_lexical_variants("educational educational") == (
+        "education educational",
+        "educational education",
+    )
+    assert _uk_definition_term_lexical_variants("health") == ()
 
 
 def _uk_table_effect() -> UKEffectRecord:
