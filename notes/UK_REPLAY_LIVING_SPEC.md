@@ -2769,6 +2769,14 @@ Current bench replay-regime invariant:
     operating on a source surface where citation titles have silently vanished,
     for example `“2013 Act” means the <Citation>Local Government (Democracy)
     (Wales) Act 2013</Citation>;`.
+  - `<Text id="p...">` fragment anchors inside amendment payloads are likewise
+    not standalone legal units for EID scoring. The grafter must not count a
+    `Text` element's own `id`/`eId` as replay-addressable identity, while still
+    recursing through surrounding amendment containers so any genuine structural
+    descendants remain visible. Current witness: `asc/2024/6` current XML has
+    formula text anchors `p10001`... under `BlockAmendment PartialRefs`; those
+    IDs are source-local fragment anchors, not sections, schedules, or legal
+    paragraphs of the host Act.
   - fallback source-tree shape: for older flattened surfaces, replay may still
     use the existing semicolon-delimited paragraph ordinal path, but only when
     exactly one text carrier and one bounded definition entry exist.

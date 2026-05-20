@@ -265,6 +265,36 @@ def test_extract_eid_map_bytes_collects_schedule_eids() -> None:
     assert "schedule-paragraph-1" in values
 
 
+def test_extract_eid_map_bytes_ignores_text_fragment_ids() -> None:
+    xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+             xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <Metadata>
+    <dc:title>Formula Anchor Test Act</dc:title>
+  </Metadata>
+  <Body>
+    <P1 eId="section-11">
+      <Pnumber>11</Pnumber>
+      <P1para>
+        <Text>For paragraphs (a) and (b) substitute </Text>
+        <BlockAmendment PartialRefs="p10001">
+          <Text id="p10001">in accordance with the formula-</Text>
+          <Formula />
+        </BlockAmendment>
+      </P1para>
+    </P1>
+  </Body>
+</Legislation>
+"""
+
+    eid_data = extract_eid_map_bytes(xml)
+    values = set(eid_data["eid_map"].values())
+
+    assert "section-11" in values
+    assert "p10001" not in values
+    assert "p10001" not in eid_data["text_map"]
+
+
 def test_parse_uk_statute_ir_bytes_preserves_local_text_before_child_paragraphs() -> None:
     xml = b"""<?xml version="1.0" encoding="UTF-8"?>
 <Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"

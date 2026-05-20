@@ -24,6 +24,7 @@ _LEG_BASE = "http://www.legislation.gov.uk"
 #   Term        — markup for defined terms; carries eId="term-<name>" inline
 _EDITORIAL_TAGS: frozenset[str] = frozenset({"Commentary", "Citation", "CitationSubRef", "Term"})
 _VISIBLE_INLINE_TEXT_TAGS: frozenset[str] = frozenset({"Citation", "CitationSubRef", "Term"})
+_NON_LEGAL_UNIT_EID_TAGS: frozenset[str] = frozenset({"Text"})
 
 # ---------------------------------------------------------------------------
 # Parsing helpers
@@ -1075,6 +1076,7 @@ def _visit_eid(
     # and must not contribute eIds to the oracle scoring set.
     if tag in _EDITORIAL_TAGS:
         return
+    skip_own_eid = tag in _NON_LEGAL_UNIT_EID_TAGS
     eid = el.get("eId") or el.get("id")
     _pnum = el.find(f"./{{{_LEG_NS}}}Pnumber")
     _nnum = el.find(f"./{{{_LEG_NS}}}Number")
@@ -1131,7 +1133,7 @@ def _visit_eid(
     else:
         this_node_path = f"{parent_path_key}:{node_key_part}" if parent_path_key else node_key_part
 
-    if eid:
+    if eid and not skip_own_eid:
         key = this_node_path.lower()
         if key not in eid_map:
             eid_map[key] = eid
@@ -1168,7 +1170,7 @@ def _visit_eid(
             kind_counts[ck] = kind_counts.get(ck, 0) + 1
             ord_path = f"{next_parent_path}:{ck}[{kind_counts[ck]}]".lower()
             ceid = child.get("eId") or child.get("id")
-            if ceid and ord_path not in eid_map:
+            if ceid and ct not in _NON_LEGAL_UNIT_EID_TAGS and ord_path not in eid_map:
                 eid_map[ord_path] = ceid
         _visit_eid(child, next_parent_path, new_context, is_eur, pit_date, eid_map, text_map)
 
