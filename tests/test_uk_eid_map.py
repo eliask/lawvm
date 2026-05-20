@@ -88,3 +88,31 @@ def test_extract_eid_map_records_oracle_physical_parent_eid_drift() -> None:
             "quirks_disposition": "record",
         }
     ]
+
+
+def test_extract_eid_map_does_not_alias_schedule_parent_shape_without_section_root() -> None:
+    xml = b"""\
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation">
+  <Schedules>
+    <Schedule id="schedule-1">
+      <Number>Schedule 1</Number>
+      <ScheduleBody>
+        <P1 id="schedule-1-paragraph-12n3">
+          <Pnumber>12C</Pnumber>
+          <P1para>
+            <P2 id="schedule-1-paragraph-12C-1">
+              <Pnumber>1</Pnumber>
+              <P2para><Text>Charging power.</Text></P2para>
+            </P2>
+          </P1para>
+        </P1>
+      </ScheduleBody>
+    </Schedule>
+  </Schedules>
+</Legislation>
+"""
+
+    eid_data = extract_eid_map_bytes(xml)
+
+    assert eid_data["physical_eid_aliases"] == {}
+    assert eid_data["oracle_identity_observations"] == []

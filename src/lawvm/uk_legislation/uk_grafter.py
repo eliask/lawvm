@@ -559,7 +559,8 @@ def _record_physical_eid_drift(
         return
     # Narrow comparison-only repair: same root provision and same leaf label,
     # but the official EID's parent path contradicts XML physical ancestry.
-    if _section_or_article_root(eid) != _section_or_article_root(physical_eid):
+    root = _section_or_article_root(eid)
+    if not root or root != _section_or_article_root(physical_eid):
         return
     if _eid_leaf_label(eid) != _eid_leaf_label(physical_eid):
         return
