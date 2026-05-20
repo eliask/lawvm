@@ -3372,6 +3372,156 @@ def test_compile_source_carried_definition_entry_insert_rejects_non_definition_p
     ]
 
 
+def test_compile_source_carried_definition_entry_substitution_from_parent_context() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="schedule-1-paragraph-7">
+              <Pnumber>7</Pnumber>
+              <P1para>
+                <Text>In section 28(1)—</Text>
+                <P3 id="schedule-1-paragraph-7-a">
+                  <Pnumber>a</Pnumber>
+                  <P3para>
+                    <Text>for the definition of “Chief Investigating Officer” there is substituted—</Text>
+                    <BlockAmendment>
+                      <P3para>
+                        <Text>“Commissioner” means the Public Standards Commissioner for Scotland;</Text>
+                      </P3para>
+                    </BlockAmendment>
+                  </P3para>
+                </P3>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-source-carried-definition-entry-substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2011-04-01",
+        affected_uri="/id/asp/2000/7",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="7",
+        affected_provisions="s. 28(1)",
+        affecting_uri="/id/asp/2010/11",
+        affecting_class="ScottishAct",
+        affecting_year="2010",
+        affecting_number="11",
+        affecting_provisions="sch. 1 para. 7(a)",
+        affecting_title="Public Services Reform (Scotland) Act 2010",
+        in_force_dates=[{"date": "2011-04-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "28"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_DEFINITION_ENTRY_Chief Investigating Officer"
+    )
+    assert (
+        ops[0].text_patch.replacement
+        == "“Commissioner” means the Public Standards Commissioner for Scotland;"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_definition_entry_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in observations] == [
+        "uk_effect_source_carried_definition_entry_substitution_text_patch"
+    ]
+    assert observations[0]["blocking"] is False
+    assert observations[0]["source_original_definition_term"] == "Chief Investigating Officer"
+
+    enacted_source_ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        source_root=source_root,
+        source_authority_layer="AFFECTING_ACT_ENACTED_TEXT",
+    )
+    assert uk_replay_mod._uk_op_allowed_by_authority_mode(
+        enacted_source_ops[0],
+        "source_text_only",
+    ) == (True, None)
+
+
+def test_compile_source_carried_definition_entry_substitution_rejects_non_definition_payload() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="schedule-1-paragraph-7">
+              <Pnumber>7</Pnumber>
+              <P1para>
+                <P3 id="schedule-1-paragraph-7-a">
+                  <Pnumber>a</Pnumber>
+                  <P3para>
+                    <Text>for the definition of “Chief Investigating Officer” there is substituted—</Text>
+                    <BlockAmendment><P3para><Text>unanchored prose without a definition predicate</Text></P3para></BlockAmendment>
+                  </P3para>
+                </P3>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-source-carried-definition-entry-substitution-negative",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2011-04-01",
+        affected_uri="/id/asp/2000/7",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="7",
+        affected_provisions="s. 28(1)",
+        affecting_uri="/id/asp/2010/11",
+        affecting_class="ScottishAct",
+        affecting_year="2010",
+        affecting_number="11",
+        affecting_provisions="sch. 1 para. 7(a)",
+        affecting_title="Public Services Reform (Scotland) Act 2010",
+        in_force_dates=[{"date": "2011-04-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert [record["rule_id"] for record in observations] == [
+        "uk_effect_overlap_substitution_unlowered"
+    ]
+
+
 def test_compile_multiple_definition_entry_repeals_preserves_each_selector() -> None:
     extracted_el = ET.fromstring(
         f"""
