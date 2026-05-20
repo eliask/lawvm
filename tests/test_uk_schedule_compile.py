@@ -11940,6 +11940,82 @@ def test_compile_schedule_list_entry_table_payload_preserves_rows() -> None:
     )
 
 
+def test_compile_schedule_list_entry_table_payload_uses_parent_instruction_for_block_payload() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Schedule id="schedule-4">
+            <P1 id="schedule-4-paragraph-2">
+              <Pnumber>2</Pnumber>
+              <P1para>
+                <Text>In schedule 5, after the entry relating to the Information Commissioner,
+                there is inserted—</Text>
+                <BlockAmendment>
+                  <Tabular>
+                    <table>
+                      <tbody>
+                        <tr>
+                          <td>The Scottish Information Commissioner</td>
+                          <td>1. A matter in respect of which the Commissioner could exercise a power.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </Tabular>
+                </BlockAmendment>
+              </P1para>
+            </P1>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_table_entry_insert_parent_context",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-01-01",
+        affected_uri="/id/asp/2002/11/schedule/5",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="Sch. 5",
+        affecting_uri="/id/asp/2002/13",
+        affecting_class="ScottishAct",
+        affecting_year="2002",
+        affecting_number="13",
+        affecting_provisions="Sch. 4 para. 2",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2005-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].payload is not None
+    selector_tag = next(
+        tag
+        for tag in ops[0].provenance_tags
+        if tag.startswith(_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR)
+    )
+    selector = json.loads(selector_tag.removeprefix(_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR))
+    assert selector["anchor_text"] == "the Information Commissioner"
+    assert selector["source_parent_id"] == "schedule-4-paragraph-2"
+    assert [cell.text for cell in ops[0].payload.children[0].children] == [
+        "The Scottish Information Commissioner",
+        "1. A matter in respect of which the Commissioner could exercise a power.",
+    ]
+
+
 def test_compile_schedule_table_end_rows_preserves_tabular_payload() -> None:
     extracted_el = ET.fromstring(
         f"""
