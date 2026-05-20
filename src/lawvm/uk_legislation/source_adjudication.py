@@ -194,6 +194,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_schedule_list_entry_repeal_resolved",
         "uk_replay_source_anchored_order_observed",
         "uk_replay_source_carried_structured_tail_substitution_recovered",
+        "uk_replay_text_match_replacement_normalized_present",
         "uk_replay_text_match_punctuation_space_normalized",
         "uk_replay_text_match_word_punctuation_elided",
     }

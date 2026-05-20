@@ -898,6 +898,60 @@ def test_executor_classifies_same_target_text_patch_preimage_drift() -> None:
     assert executor.statute.body.children[0].text == "Alpha new Beta"
 
 
+def test_executor_records_normalized_replacement_already_present_before_preimage_drift() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(IRNode(kind=IRNodeKind.SECTION, label="1", text="Alpha old Beta"),),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_replace_first",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="old", occurrence=0),
+                replacement="30 December 2020",
+            ),
+            source=_source(),
+        )
+    )
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_replace_replacement_normalized_present",
+            sequence=2,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="\u201830 September 2020\u2019", occurrence=0),
+                replacement="\u201830 December 2020",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_match_replacement_normalized_present"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "replacement_normalized_present"
+    assert adjudications[0].detail["prior_same_target_text_patch_op_ids"] == ("uk_test_text_replace_first",)
+    assert executor.statute.body.children[0].text == "Alpha 30 December 2020 Beta"
+
+
 def test_executor_classifies_multi_prior_same_target_text_patch_preimage_drift() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(
