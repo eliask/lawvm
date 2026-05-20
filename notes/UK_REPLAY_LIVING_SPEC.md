@@ -2190,6 +2190,16 @@ Current block-substitution context invariant:
   exist, so the parent instruction does not authorize target hijacking or
   replacement of an existing sibling. Current witness: `asp/2000/4` affected
   `s. 35(6)` by `asp/2001/8` Sch. 3 para. 23(2)(d).
+- A source row that says `after paragraph (b), insert ; c ...; d ...; or e ...`
+  is not a valid whole-row payload even though it contains instruction text.
+  When the affected metadata explicitly says `(c)-(e) and semicolon`, lowering
+  records `uk_effect_after_paragraph_insert_labelled_series_lowered`, emits a
+  bounded `TEXT_END` semicolon append for paragraph `(b)`, and emits one
+  labelled paragraph `INSERT` for each contiguous source sibling. The rule
+  must prove the metadata range, source anchor, semicolon, and source labels;
+  otherwise the row remains `instruction_text_reused_as_payload`. Current
+  witnesses: `asp/2000/4` affected `s. 16(6)(c)-(e) and semicolon` and
+  `s. 64(2)(c)-(e) and semicolon` by `asp/2006/4` s. 57(2)(b) and s. 57(3)(b).
 - source text that targets `heading`, `title`, or `sidenote` facets lowers
   when it is an explicit word substitution/omission with a concrete old text
   selector, an explicit `at the end insert ...` append, or an explicit
