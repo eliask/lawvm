@@ -5472,7 +5472,17 @@ def _uk_table_entry_row_insert_selector(
     """Extract an explicit table-row insertion selector from ordinal entry wording."""
     text = " ".join((extracted_text or "").split())
     source_names_table = "table" in text.lower()
-    if not text or "table" not in " ".join((target_ref, str(target), text)).lower():
+    implicit_subsection_entry_group = re.search(
+        r"\bafter\s+(?:the\s+)?entry\s+"
+        r"(?:relating\s+to|for)\s+(?:the\s+)?(?P<relating>.+?)\s+"
+        r"insert(?:ed)?\s*[—–-]?\s*(?P<payload>.*)$",
+        text,
+        re.I,
+    )
+    if not text or (
+        "table" not in " ".join((target_ref, str(target), text)).lower()
+        and not (_addr_leaf_kind(target) == "subsection" and implicit_subsection_entry_group is not None)
+    ):
         return None
     entry_label_match = re.search(
         r"\bafter\s+entry\s+(?P<anchor>[0-9A-Z]+)\s+in\s+the\s+table\s+"
@@ -5491,6 +5501,21 @@ def _uk_table_entry_row_insert_selector(
                 "anchor_entry_label": anchor_entry_label,
                 "table_label": table_match.group(1) if table_match is not None else "",
                 "source_names_table": source_names_table,
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
+    if implicit_subsection_entry_group is not None and not source_names_table:
+        relating_text = " ".join(implicit_subsection_entry_group.group("relating").split()).strip(" ,;.")
+        inserted_text = _strip_schedule_entry_payload(implicit_subsection_entry_group.group("payload"))
+        if relating_text:
+            return {
+                "rule_id": _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+                "selector_mode": "entry_group_heading",
+                "direction": "after",
+                "relating_text": relating_text,
+                "inserted_text": inserted_text,
+                "source_payload_mode": "table_rows",
+                "source_names_table": False,
                 "original_target": str(target),
                 "target_ref": target_ref,
             }
@@ -9888,6 +9913,12 @@ def compile_effect_to_ir_ops(
             ):
                 parent_target = target
             if (
+                parent_target is None
+                and str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows"
+                and _addr_leaf_kind(target) == "subsection"
+            ):
+                parent_target = target
+            if (
                 parent_target is not None
                 and len(parent_target.path) >= 2
                 and parent_target.path[-1] == ("subsection", "1")
@@ -9921,6 +9952,11 @@ def compile_effect_to_ir_ops(
                 if str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
                 else None
             )
+            source_table_payload = (
+                _uk_schedule_list_entry_table_payload(extracted_el)
+                if str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows"
+                else None
+            )
             if (
                 str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
                 and source_row_payload is None
@@ -9935,6 +9971,32 @@ def compile_effect_to_ir_ops(
                         "the source does not carry exactly one BlockAmendment "
                         "table row payload; lowering blocks instead of "
                         "inventing a row from flattened text."
+                    ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        "target_ref": t_str,
+                        "original_target": str(target),
+                        "containing_target": str(parent_target),
+                        **table_row_insert_selector,
+                    },
+                )
+                continue
+            if (
+                str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows"
+                and source_table_payload is None
+            ):
+                _append_uk_effect_lowering_rejection(
+                    lowering_rejections_out,
+                    rule_id=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+                    family="source_table_elaboration",
+                    reason_code="explicit_table_entry_group_insert_without_table_payload",
+                    reason=(
+                        "UK table-entry group insertion names an entry anchor, "
+                        "but the source does not carry a BlockAmendment table "
+                        "payload; lowering blocks instead of inventing table "
+                        "rows from flattened text."
                     ),
                     effect=effect,
                     extracted_el=extracted_el,
@@ -9975,6 +10037,17 @@ def compile_effect_to_ir_ops(
                         **dict(source_row_payload.attrs or {}),
                         "source_rule_id": "uk_table_entry_row_insert_payload",
                         "anchor_entry_label": str(table_row_insert_selector["anchor_entry_label"]),
+                    },
+                )
+            elif str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows":
+                assert source_table_payload is not None
+                payload_node = dc_replace(
+                    source_table_payload,
+                    attrs={
+                        **dict(source_table_payload.attrs or {}),
+                        "source_rule_id": "uk_table_entry_group_insert_payload",
+                        "relating_text": str(table_row_insert_selector["relating_text"]),
+                        "anchor_direction": str(table_row_insert_selector["direction"]),
                     },
                 )
             else:
@@ -13392,13 +13465,16 @@ class UKReplayExecutor:
         if selector_mode == "entry_label":
             if not anchor_entry_label:
                 return None, None, "invalid_selector", {}
+        elif selector_mode == "entry_group_heading":
+            if not relating_norm:
+                return None, None, "invalid_selector", {}
         elif entry_index < 1 or not relating_norm:
             return None, None, "invalid_selector", {}
         if selector_mode == "ordinal_column" and column_index < 2:
             return None, None, "invalid_selector", {}
         if selector_mode == "relating_entry" and column_index != 1:
             return None, None, "invalid_selector", {}
-        if selector_mode not in {"ordinal_column", "relating_entry", "entry_label"}:
+        if selector_mode not in {"ordinal_column", "relating_entry", "entry_label", "entry_group_heading"}:
             return None, None, "invalid_selector", {}
 
         tables, carrier_detail = self._table_selector_tables(node, selector)
@@ -13406,9 +13482,60 @@ class UKReplayExecutor:
             return None, None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
 
         table = tables[0]
+
+        def _unique_row_cells(row_cells: dict[int, UKMutableNode]) -> list[UKMutableNode]:
+            cells: list[UKMutableNode] = []
+            seen: set[int] = set()
+            for _col, cell in sorted(row_cells.items()):
+                cell_id = id(cell)
+                if cell_id in seen:
+                    continue
+                seen.add(cell_id)
+                cells.append(cell)
+            return cells
+
+        def _is_entry_group_heading(row_cells: dict[int, UKMutableNode]) -> bool:
+            cells = _unique_row_cells(row_cells)
+            texts = [str(cell.text or "").strip() for cell in cells]
+            if len(cells) == 1 and texts[0]:
+                return True
+            return bool(texts and texts[0] and all(not text for text in texts[1:]))
+
+        expanded_rows = self._expanded_table_rows_with_physical_index(table)
+        if selector_mode == "entry_group_heading":
+            matching_groups: list[tuple[int, str]] = []
+            for row_position, (row_index, row_cells) in enumerate(expanded_rows):
+                if not _is_entry_group_heading(row_cells):
+                    continue
+                row_preview = " | ".join(
+                    str(cell.text or "")
+                    for cell in _unique_row_cells(row_cells)
+                    if str(cell.text or "")
+                )[:240]
+                if _compact_normalized_text(row_preview).find(relating_norm) < 0:
+                    continue
+                insert_index = len(table.children)
+                for next_row_index, next_row_cells in expanded_rows[row_position + 1 :]:
+                    if _is_entry_group_heading(next_row_cells):
+                        insert_index = next_row_index
+                        break
+                matching_groups.append((insert_index, row_preview))
+            if len(matching_groups) != 1:
+                return None, None, "entry_group_heading_not_unique", {
+                    "matching_entry_count": len(matching_groups),
+                    "matching_rows": tuple(row[1] for row in matching_groups[:5]),
+                    **carrier_detail,
+                }
+            insert_index, row_preview = matching_groups[0]
+            return table, insert_index, "", {
+                "matching_entry_count": 1,
+                "matched_row": row_preview,
+                **carrier_detail,
+            }
+
         matching_rows: list[tuple[int, str]] = []
         last_target_cell: UKMutableNode | None = None
-        for row_index, row_cells in self._expanded_table_rows_with_physical_index(table):
+        for row_index, row_cells in expanded_rows:
             if selector_mode == "relating_entry":
                 row_match_cells = [
                     cell
@@ -13521,7 +13648,8 @@ class UKReplayExecutor:
                 },
             )
             return False
-        if _uk_kind_value(new_node.kind).lower() != "row":
+        payload_kind = _uk_kind_value(new_node.kind).lower()
+        if payload_kind not in {"row", "table"}:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=_UK_REPLAY_TABLE_ENTRY_ROW_INSERT_UNRESOLVED_RULE_ID,
@@ -13539,9 +13667,31 @@ class UKReplayExecutor:
                 },
             )
             return False
-        self._strip_identity_attrs_recursive(new_node)
+        inserted_rows = [new_node] if payload_kind == "row" else [
+            child for child in new_node.children if _uk_kind_value(child.kind).lower() == "row"
+        ]
+        if not inserted_rows:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_TABLE_ENTRY_ROW_INSERT_UNRESOLVED_RULE_ID,
+                message="UK replay table-row insertion payload had no table rows.",
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "payload_has_no_rows",
+                    "payload_kind": _uk_kind_value(new_node.kind),
+                    "family": "source_table_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+        for row in inserted_rows:
+            self._strip_identity_attrs_recursive(row)
         children = list(table.children)
-        children.insert(insert_index, new_node)
+        children[insert_index:insert_index] = inserted_rows
         self._replace_children(table, children)
         _append_uk_replay_adjudication(
             self.adjudications_out,
@@ -13555,6 +13705,7 @@ class UKReplayExecutor:
                 "target": str(target),
                 "selector": dict(selector),
                 "insert_index": insert_index,
+                "inserted_row_count": len(inserted_rows),
                 **detail,
                 "family": "source_table_elaboration",
                 "blocking": False,
