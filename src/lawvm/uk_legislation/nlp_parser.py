@@ -167,6 +167,30 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
             }
         )
 
+    matches_respectively_all_occurrences_substituted = re.finditer(
+        r"[“\"](?P<original_1>.*?)[”\"]\s+and\s+"
+        r"[“\"](?P<original_2>.*?)[”\"],?\s+"
+        r"wherever\s+(?:these\s+expressions|they|those\s+words?)\s+"
+        r"(?:occur|occurs|appear|appears),?\s+"
+        r"become,?\s+respectively,?\s+"
+        r"[“\"](?P<replacement_1>.*?)[”\"]\s+and\s+"
+        r"[“\"](?P<replacement_2>.*?)[”\"]",
+        text,
+        re.I,
+    )
+    for m in matches_respectively_all_occurrences_substituted:
+        for original_name, replacement_name in (
+            ("original_1", "replacement_1"),
+            ("original_2", "replacement_2"),
+        ):
+            subs.append(
+                {
+                    "original": m.group(original_name).strip(),
+                    "replacement": m.group(replacement_name).strip(),
+                    "rule_id": "uk_effect_respectively_all_occurrences_substitution_text_patch",
+                }
+            )
+
     # Pattern 1: Substitution (Multiple possible)
     # Use non-greedy match for the fragments.
     # Allow an optional comma (and whitespace) between the quoted original and “substitute”,

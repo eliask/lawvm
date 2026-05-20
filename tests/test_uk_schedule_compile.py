@@ -17791,6 +17791,16 @@ def test_split_metadata_preserves_heading_only_ref() -> None:
     assert _split_metadata_provisions("s. 13 heading") == ["s. 13 heading"]
 
 
+def test_split_metadata_expands_explicit_section_title_range() -> None:
+    assert _split_metadata_provisions("s. 10-14 titles") == [
+        "s. 10 title",
+        "s. 11 title",
+        "s. 12 title",
+        "s. 13 title",
+        "s. 14 title",
+    ]
+
+
 def test_compile_skips_heading_only_ref_without_creating_section_replace() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -17868,6 +17878,57 @@ def test_compile_heading_facet_word_substitution_targets_heading_special() -> No
         "Parliamentary sovereignty and devolution",
     )
     assert any(record["rule_id"] == "uk_effect_heading_facet_word_patch_lowered" for record in lowering_records)
+
+
+def test_compile_heading_title_range_respectively_all_occurrences() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P xmlns="{_LEG_NS}">
+          <Text>9 In the titles to sections 10 to 14 “ Chief Investigating Officer ”
+          and “ Chief Investigating Officer's ”, wherever these expressions occur,
+          become, respectively, “ Public Standards Commissioner ” and
+          “ Public Standards Commissioner's ”.</Text>
+        </P>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-654517e6a8a061ca23657c00f28fe213",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2011-04-01",
+        affected_uri="/id/asp/2000/7/section/10-14/titles",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="7",
+        affected_provisions="s. 10-14 titles",
+        affecting_uri="/id/asp/2010/11",
+        affecting_class="ScottishAct",
+        affecting_year="2010",
+        affecting_number="11",
+        affecting_provisions="sch. 1 para. 9",
+        affecting_title="Public Services Reform (Scotland) Act 2010",
+        in_force_dates=[{"date": "2011-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 10
+    assert [op.target for op in ops[::2]] == [
+        LegalAddress(path=(("section", label),), special=FacetKind.HEADING)
+        for label in ("10", "11", "12", "13", "14")
+    ]
+    assert [(op.text_patch.selector.match_text, op.text_patch.replacement) for op in ops[:2] if op.text_patch] == [
+        ("Chief Investigating Officer", "Public Standards Commissioner"),
+        ("Chief Investigating Officer's", "Public Standards Commissioner's"),
+    ]
+    assert any(record["rule_id"] == "uk_effect_heading_facet_range_expanded" for record in lowering_records)
+    assert any(
+        record["rule_id"] == "uk_effect_respectively_all_occurrences_substitution_text_patch"
+        for record in lowering_records
+    )
+    assert not any(record.get("blocking") is True for record in lowering_records)
 
 
 def test_compile_schedule_part_heading_word_omit_targets_heading_facet_not_list_entry() -> None:
@@ -18348,6 +18409,71 @@ def test_replay_heading_facet_word_substitution_mutates_unique_p1group_heading_o
     assert crossheading.text == "Parliamentary sovereignty"
     assert group.text == "Parliamentary sovereignty and devolution"
     assert section.children[0].text == "Body text must not be searched for heading replacements."
+
+
+def test_replay_heading_respectively_all_occurrences_absent_is_observed() -> None:
+    base = IRStatute(
+        statute_id="asp/2000/7",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.P1GROUP,
+                    text="Chief Investigating Officer",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SECTION,
+                            label="10",
+                            children=(IRNode(kind=IRNodeKind.SUBSECTION, label="1", text="Body text."),),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    extracted_el = ET.fromstring(
+        f"""
+        <P xmlns="{_LEG_NS}">
+          <Text>9 In the titles to sections 10 to 10 “ Chief Investigating Officer ”
+          and “ Chief Investigating Officer's ”, wherever these expressions occur,
+          become, respectively, “ Public Standards Commissioner ” and
+          “ Public Standards Commissioner's ”.</Text>
+        </P>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_heading_respectively_absent",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=False,
+        modified="2011-04-01",
+        affected_uri="/id/asp/2000/7/section/10/title",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="7",
+        affected_provisions="s. 10-10 titles",
+        affecting_uri="/id/asp/2010/11",
+        affecting_class="ScottishAct",
+        affecting_year="2010",
+        affecting_number="11",
+        affecting_provisions="sch. 1 para. 9",
+        affecting_title="Public Services Reform (Scotland) Act 2010",
+        in_force_dates=[{"date": "2011-04-01", "prospective": "false"}],
+    )
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+    adjudications: list[CompileAdjudication] = []
+
+    result = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    assert result.body.children[0].text == "Public Standards Commissioner"
+    assert any(
+        adjudication.kind == "uk_replay_heading_respectively_all_occurrences_absent_observed"
+        and adjudication.detail["blocking"] is False
+        and adjudication.detail["strict_disposition"] == "record"
+        for adjudication in adjudications
+    )
+    assert not any(adjudication.kind == "uk_replay_heading_text_preimage_gap" for adjudication in adjudications)
 
 
 def test_replay_heading_facet_full_replacement_mutates_heading_only() -> None:

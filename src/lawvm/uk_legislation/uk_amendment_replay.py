@@ -319,6 +319,49 @@ def _is_heading_only_ref(ref: str) -> bool:
     return ref_clean.endswith(" heading") or ref_clean.endswith(" title") or ref_clean.endswith(" sidenote")
 
 
+def _expand_heading_facet_section_range_ref(ref: str) -> list[str]:
+    """Expand explicit section-title/heading ranges into heading facet refs."""
+    ref_clean = " ".join(str(ref or "").split()).strip()
+    if not ref_clean:
+        return []
+    if "cross-heading" in ref_clean.lower() or "cross heading" in ref_clean.lower():
+        return []
+    match = re.fullmatch(
+        r"(?P<prefix>s\.|ss\.|section|sections)\s+"
+        r"(?P<start>\d+[A-Z]?)\s*(?:-|to)\s*(?P<end>\d+[A-Z]?)\s+"
+        r"(?P<facet>heading|headings|title|titles|sidenote|sidenotes)",
+        ref_clean,
+        flags=re.I,
+    )
+    if match is None:
+        return []
+    start_label = match.group("start")
+    end_label = match.group("end")
+    start_num_match = re.fullmatch(r"(\d+)([A-Z]?)", start_label, flags=re.I)
+    end_num_match = re.fullmatch(r"(\d+)([A-Z]?)", end_label, flags=re.I)
+    if start_num_match is None or end_num_match is None:
+        return []
+    start_num = int(start_num_match.group(1))
+    end_num = int(end_num_match.group(1))
+    if end_num < start_num or end_num - start_num >= 100:
+        return []
+
+    start_suffix = start_num_match.group(2).upper()
+    end_suffix = end_num_match.group(2).upper()
+    labels = [str(value) for value in range(start_num, end_num + 1)]
+    if end_suffix:
+        if end_num == start_num:
+            suffix_start = start_suffix or "A"
+            if ord(end_suffix) < ord(suffix_start):
+                return []
+            labels = [f"{start_num}{chr(code)}" for code in range(ord(suffix_start), ord(end_suffix) + 1)]
+        else:
+            labels.extend(f"{end_num}{chr(code)}" for code in range(ord("A"), ord(end_suffix) + 1))
+    facet = match.group("facet").lower()
+    singular_facet = "sidenote" if facet.startswith("sidenote") else "heading" if facet.startswith("heading") else "title"
+    return [f"s. {label} {singular_facet}" for label in labels]
+
+
 def _mixed_heading_structural_insert_ref(ref: str, *, action: str) -> str:
     """Return the structural component of ``X and heading`` insert targets.
 
@@ -791,8 +834,12 @@ _UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
         "uk_effect_after_quoted_anchor_each_occasion_insert_text_patch",
         "uk_effect_all_occurrences_substitution_text_patch",
         "uk_effect_in_definition_after_anchor_all_occurrences_insert_text_patch",
+        "uk_effect_respectively_all_occurrences_substitution_text_patch",
         "uk_effect_wherever_occurring_substitution_text_patch",
     }
+)
+_UK_RESPECTIVELY_ALL_OCCURRENCES_TEXT_REWRITE_RULE_ID = (
+    "uk_effect_respectively_all_occurrences_substitution_text_patch"
 )
 _UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID = "uk_effect_range_to_end_there_is_substituted_text_patch"
 
@@ -1387,6 +1434,23 @@ def _fragment_substitution(op: LegalOperation) -> Optional[list]:
     return None
 
 
+def _text_rewrite_rule_ids_for_op(op: LegalOperation) -> tuple[str, ...]:
+    rule_ids: list[str] = []
+    witness = _witness_for_op(op)
+    text_rewrite_witness = getattr(witness, "text_rewrite_witness", None)
+    rewrite_source = getattr(text_rewrite_witness, "rewrite_source", "")
+    if rewrite_source:
+        rule_ids.append(str(rewrite_source))
+    for note in getattr(op, "provenance_tags", ()) or ():
+        note_text = str(note)
+        if not note_text.startswith(_NOTE_TEXT_REWRITE_RULE):
+            continue
+        rule_id = note_text[len(_NOTE_TEXT_REWRITE_RULE) :]
+        if rule_id and rule_id not in rule_ids:
+            rule_ids.append(rule_id)
+    return tuple(rule_ids)
+
+
 def _table_cell_selector(op: LegalOperation) -> dict[str, Any] | None:
     """Return UK table-cell selector data carried on a lowered text op."""
     for note in getattr(op, "provenance_tags", ()) or ():
@@ -1839,6 +1903,28 @@ def _separate_occurrence_text_replace_fragments(
                 "original": original,
                 "replacement": replacement,
                 "occurrence": occurrence,
+                "rule_id": rule_id,
+            }
+        )
+    return tuple(fragments)
+
+
+def _separate_all_occurrences_text_replace_fragments(
+    fragment_subs: Optional[list],
+) -> tuple[dict[str, str], ...]:
+    if not fragment_subs or len(fragment_subs) <= 1:
+        return ()
+    fragments: list[dict[str, str]] = []
+    for item in fragment_subs:
+        original = str(item.get("original") or "")
+        replacement = str(item.get("replacement") or "")
+        rule_id = str(item.get("rule_id") or "")
+        if rule_id not in _UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS or not original:
+            return ()
+        fragments.append(
+            {
+                "original": original,
+                "replacement": replacement,
                 "rule_id": rule_id,
             }
         )
@@ -6774,6 +6860,10 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
     # This is distinct from "s. 3A(1)" (subsection ref, parentheses present).
     expanded_parts = []
     for p in parts:
+        heading_facet_range_refs = _expand_heading_facet_section_range_ref(p)
+        if heading_facet_range_refs:
+            expanded_parts.extend(heading_facet_range_refs)
+            continue
         if _is_heading_only_ref(p):
             expanded_parts.append(p)
             continue
@@ -9409,8 +9499,28 @@ def compile_effect_to_ir_ops(
         ]
 
     # ALWAYS split metadata provisions to handle ranges and lists
+    raw_affected_provisions = effect.affected_provisions
     targets_str = _split_metadata_provisions(effect.affected_provisions)
     original_targets_str = list(targets_str)
+    heading_facet_range_targets = _expand_heading_facet_section_range_ref(raw_affected_provisions)
+    if heading_facet_range_targets and targets_str == heading_facet_range_targets:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_heading_facet_range_expanded",
+            family="target_shape_normalization",
+            reason_code="explicit_section_heading_facet_range_expanded",
+            reason=(
+                "UK effect metadata names an explicit range of section titles/headings; "
+                "lowering expands that range into one typed heading facet target per section."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "original_target_ref": raw_affected_provisions,
+                "expanded_targets": list(heading_facet_range_targets),
+            },
+        )
     mixed_heading_source_ref_by_target: dict[str, str] = {}
     trailing_repeal_refs: list[str] = []
     replacement_leaf_override: Optional[str] = None
@@ -12257,28 +12367,42 @@ def compile_effect_to_ir_ops(
                     for rewrite_rule_id in _fragment_rule_ids(fragment_subs):
                         if rewrite_rule_id not in _UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS:
                             continue
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id=rewrite_rule_id,
-                            family="text_rewrite_lowering",
-                            reason_code="explicit_all_occurrences_text_patch",
-                            reason=(
-                                "UK effect source explicitly applies a word-level "
-                                "text rewrite wherever/in each place it occurs; "
-                                "lowering preserves that as an all-occurrences "
-                                "text patch scoped to the affected target."
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "target": str(target),
-                                "text_match": op_text_match,
-                                "replacement": op_text_replacement,
-                                "occurrence": op_text_occurrence,
-                            },
-                        )
+                        rewrite_fragments = [
+                            item
+                            for item in fragment_subs or []
+                            if str(item.get("rule_id") or "") == rewrite_rule_id
+                        ]
+                        if not rewrite_fragments:
+                            rewrite_fragments = [
+                                {
+                                    "original": op_text_match,
+                                    "replacement": op_text_replacement,
+                                    "occurrence": str(op_text_occurrence),
+                                }
+                            ]
+                        for rewrite_fragment in rewrite_fragments:
+                            _append_uk_effect_lowering_observation(
+                                lowering_rejections_out,
+                                rule_id=rewrite_rule_id,
+                                family="text_rewrite_lowering",
+                                reason_code="explicit_all_occurrences_text_patch",
+                                reason=(
+                                    "UK effect source explicitly applies a word-level "
+                                    "text rewrite wherever/in each place it occurs; "
+                                    "lowering preserves that as an all-occurrences "
+                                    "text patch scoped to the affected target."
+                                ),
+                                effect=effect,
+                                extracted_el=extracted_el,
+                                extracted_text=extracted_text,
+                                detail={
+                                    "target_ref": t_str,
+                                    "target": str(target),
+                                    "text_match": str(rewrite_fragment.get("original") or ""),
+                                    "replacement": str(rewrite_fragment.get("replacement") or ""),
+                                    "occurrence": int(str(rewrite_fragment.get("occurrence") or "0") or "0"),
+                                },
+                            )
                     if "uk_effect_contextual_adjacent_word_omit_text_patch" in _fragment_rule_ids(
                         fragment_subs
                     ):
@@ -13012,6 +13136,7 @@ def compile_effect_to_ir_ops(
             text_patch_items: list[tuple[Optional[TextPatchSpec], Optional[list]]] = []
             separate_definition_repeals = _separate_definition_repeal_fragments(fragment_subs)
             separate_occurrence_replacements = _separate_occurrence_text_replace_fragments(fragment_subs)
+            separate_all_occurrences_replacements = _separate_all_occurrences_text_replace_fragments(fragment_subs)
             if curr_action == "text_repeal" and separate_definition_repeals:
                 for fragment in separate_definition_repeals:
                     text_patch_items.append(
@@ -13035,6 +13160,21 @@ def compile_effect_to_ir_ops(
                                 selector=TextSelector(
                                     match_text=fragment["original"],
                                     occurrence=int(fragment["occurrence"]),
+                                ),
+                                replacement=fragment["replacement"],
+                            ),
+                            [fragment],
+                        )
+                    )
+            elif curr_action == "text_replace" and separate_all_occurrences_replacements:
+                for fragment in separate_all_occurrences_replacements:
+                    text_patch_items.append(
+                        (
+                            TextPatchSpec(
+                                kind=TextPatchKindEnum.REPLACE,
+                                selector=TextSelector(
+                                    match_text=fragment["original"],
+                                    occurrence=0,
                                 ),
                                 replacement=fragment["replacement"],
                             ),
@@ -19176,6 +19316,18 @@ class UKReplayExecutor:
                             "UK replay skipped definition-child text op: definition child "
                             "could not be uniquely bounded in the target subtree."
                         )
+                    elif (
+                        target.special is FacetKind.HEADING
+                        and heading_carrier is not None
+                        and _UK_RESPECTIVELY_ALL_OCCURRENCES_TEXT_REWRITE_RULE_ID
+                        in _text_rewrite_rule_ids_for_op(op)
+                    ):
+                        kind = "uk_replay_heading_respectively_all_occurrences_absent_observed"
+                        message = (
+                            "UK replay observed a respectively paired heading-facet rewrite "
+                            "whose quoted preimage is absent from this heading carrier; the "
+                            "source instruction applies wherever that expression occurs."
+                        )
                     elif target.special is FacetKind.HEADING and heading_carrier is not None:
                         kind = "uk_replay_heading_text_preimage_gap"
                         message = (
@@ -19359,6 +19511,8 @@ class UKReplayExecutor:
                                 if kind == "uk_replay_text_target_empty_surface_gap"
                                 else "heading_preimage_absent"
                                 if kind == "uk_replay_heading_text_preimage_gap"
+                                else "respectively_all_occurrences_heading_preimage_absent"
+                                if kind == "uk_replay_heading_respectively_all_occurrences_absent_observed"
                                 else "insert_anchor_preimage_absent"
                                 if kind == "uk_replay_text_insert_anchor_preimage_gap"
                                 else "monetary_amount_preimage_absent"
