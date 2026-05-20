@@ -1179,6 +1179,111 @@ def test_split_metadata_provisions_carries_active_subsection_context() -> None:
     ]
 
 
+def test_same_effect_nested_sibling_insertions_chain_prior_insert_anchor() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}">
+          <Pnumber>iii</Pnumber>
+          <P4para>
+            <Text>after paragraph (b), insert—</Text>
+            <BlockAmendment>
+              <P3>
+                <Pnumber>c</Pnumber>
+                <P3para>
+                  <Text>if the notice is served under subsection (2)(b), specify—</Text>
+                  <P4><Pnumber>i</Pnumber><P4para><Text>the actions taken into account, and</Text></P4para></P4>
+                  <P4><Pnumber>ii</Pnumber><P4para><Text>the landlord's reasons for serving the notice, and</Text></P4para></P4>
+                </P3para>
+              </P3>
+              <P3>
+                <Pnumber>d</Pnumber>
+                <P3para><Text>explain the right of appeal conferred by subsection (5).</Text></P3para>
+              </P3>
+            </BlockAmendment>
+          </P4para>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_chained_nested_paragraph_insert",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2018-06-29",
+        affected_uri="/id/asp/2001/10/section/35/subsection/3/paragraph/c",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="10",
+        affected_provisions="s. 35(3)(c)(d)",
+        affecting_uri="/id/asp/2014/14",
+        affecting_class="ScottishAct",
+        affecting_year="2014",
+        affecting_number="14",
+        affecting_provisions="s. 7(2)(b)(iii)",
+        affecting_title="Housing (Scotland) Act 2014",
+        comments="",
+        in_force_dates=[{"date": "2019-05-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert [op.target for op in ops] == [
+        LegalAddress(path=(("section", "35"), ("subsection", "3"), ("paragraph", "c"))),
+        LegalAddress(path=(("section", "35"), ("subsection", "3"), ("paragraph", "d"))),
+    ]
+    assert _NOTE_PRECEDING_EID + "section-35-3-c" in ops[1].provenance_tags
+    assert any(
+        record["rule_id"] == "uk_effect_chained_insertion_anchor_lowered"
+        and record["blocking"] is False
+        and record["preceding_eid"] == "section-35-3-c"
+        for record in observations
+    )
+
+    base = IRStatute(
+        statute_id="asp/2001/10",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="35",
+                    attrs={"eId": "section-35"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            attrs={"eId": "section-35-3"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    attrs={"eId": "section-35-3-a"},
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="b",
+                                    attrs={"eId": "section-35-3-b"},
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    assert [child.label for child in subsection.children] == ["a", "b", "c", "d"]
+    assert "uk_replay_tree_invariant_violation" not in {
+        adjudication.kind for adjudication in adjudications
+    }
+
+
 def test_split_metadata_schedule_space_separated_sibling_paragraphs() -> None:
     assert _split_metadata_provisions("sch. 5 para. 11 12") == [
         "sch. 5 para. 11",

@@ -2840,11 +2840,19 @@ Current bench replay-regime invariant:
   one anchor, later siblings chain to the prior inserted target so `20A`,
   `20B`, `20C` remain in source order rather than repeatedly inserting after
   `20`.
+  - chained insertion anchors must work for nested targets as well as
+    top-level sections. The prior generated target eId is derived from the full
+    canonical UK target address, and lowering records
+    `uk_effect_chained_insertion_anchor_lowered` as nonblocking
+    `target_resolution_recovery` evidence.
   - replay may emit nonblocking `uk_replay_source_anchored_order_observed`
     when this explicit source order conflicts with the generic label-order
     invariant; this is an invariant-model limitation, not a replay failure
   - current witness: `asp/2003/2` / `asp/2015/6`, where the oracle places
     `97ZA` immediately after `97` and before `97A`
+  - current nested witness: `asp/2001/10` / `asp/2014/14 s. 7(2)(b)(iii)`,
+    where one source clause inserts `section 35(3)(c)` and `(d)` after
+    paragraph `(b)`
 - If an insert target already exists and the existing target subtree has the
   same normalized text as the payload subtree, replay records nonblocking
   `uk_replay_existing_target_already_materialized` and performs no mutation.

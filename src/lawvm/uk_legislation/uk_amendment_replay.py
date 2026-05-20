@@ -1748,7 +1748,7 @@ def _target_anchor_eid(target: LegalAddress) -> Optional[str]:
     if not target.path:
         return None
     if len(target.path) != 1:
-        return None
+        return _fallback_target_eid(target)
     kind, label = target.path[0]
     clean_label = _clean_num(label)
     if not clean_label:
@@ -10365,9 +10365,11 @@ def compile_effect_to_ir_ops(
         if curr_action:
             preceding_eid = None
             preceding_eid_source = "effect_comments_after_clause"
+            used_chained_insert_anchor = False
             if chained_insert_preceding_eid:
                 preceding_eid = chained_insert_preceding_eid
                 preceding_eid_source = chained_insert_preceding_eid_source
+                used_chained_insert_anchor = True
             source_anchor_text = ""
             if extracted_el is not None:
                 source_anchor_text = _instruction_text_before_amendment_container(extracted_el) or (extracted_text or "")
@@ -10586,6 +10588,27 @@ def compile_effect_to_ir_ops(
                 following_eid=following_eid,
                 anchor_source=following_eid_source or preceding_eid_source,
             )
+            if used_chained_insert_anchor:
+                _append_uk_effect_lowering_observation(
+                    lowering_rejections_out,
+                    rule_id="uk_effect_chained_insertion_anchor_lowered",
+                    family="target_resolution_recovery",
+                    reason_code="same_effect_insert_targets_ordered_by_prior_generated_target",
+                    reason=(
+                        "UK effect expands one insertion instruction into multiple sibling "
+                        "insert operations; later operations are anchored after the prior "
+                        "generated target rather than the original source anchor."
+                    ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        "target_ref": t_str,
+                        "target": str(target),
+                        "preceding_eid": preceding_eid,
+                        "preceding_eid_source": preceding_eid_source,
+                    },
+                )
             for text_patch_item, fragment_subs_for_witness in text_patch_items:
                 text_rewrite_witness = _uk_text_rewrite_spec(
                     fragment_subs=fragment_subs_for_witness,
