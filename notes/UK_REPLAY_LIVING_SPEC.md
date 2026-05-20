@@ -338,6 +338,12 @@ Deterministic substituted-series lowering:
   expanding to `<old sibling>, <new sibling...>` may lower later source-owned
   sibling payloads as inserts under
   `uk_effect_substituted_series_new_sibling_insert_lowered`
+- source rows shaped as `substituted for <old sibling>` with affected metadata
+  naming only the new sibling label may rebind the executable replace target to
+  the source-named old sibling under
+  `uk_effect_substituted_for_label_changing_target_rebound`; replay records
+  `uk_replay_source_label_changing_substitution_resolved` and preserves the new
+  payload label/eId rather than silently carrying the old sibling identity
 - source rows shaped as `for paragraphs (a) and (b) substitute` with one
   compressed metadata range such as `Sch. 4 para. 11(a)-(ba)` may expand the
   target range from the direct `BlockAmendment` payload children under

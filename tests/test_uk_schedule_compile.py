@@ -1677,6 +1677,55 @@ def test_retarget_substituted_series_single_new_subsection_to_first_replaced_anc
     assert retargeted == ["s. 3(5)"]
 
 
+def test_compile_substituted_for_label_change_targets_source_old_sibling() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <BlockAmendment xmlns="{uk_replay_mod._LEG_NS}">
+          <P3>
+            <Pnumber>c</Pnumber>
+            <P3para><Text>by the Police Complaints Commissioner for Scotland,</Text></P3para>
+          </P3>
+        </BlockAmendment>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_label_change_substitution",
+        effect_type="substituted for Sch. 4 para. 1(b)",
+        applied=True,
+        requires_applied=True,
+        modified="2018-08-11",
+        affected_uri="/id/asp/2002/11/schedule/4/paragraph/1/item/c",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="Sch. 4 para. 1(c)",
+        affecting_uri="/id/asp/2006/10",
+        affecting_class="ScottishAct",
+        affecting_year="2006",
+        affecting_number="10",
+        affecting_provisions="sch. 6 para. 10(3)(a)",
+        affecting_title="Police, Public Order and Criminal Justice (Scotland) Act 2006",
+        in_force_dates=[{"date": "2007-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action == StructuralAction.REPLACE
+    assert ops[0].target.path == (("schedule", "4"), ("paragraph", "1"), ("item", "b"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.label == "c"
+    assert ops[0].payload.attrs["eId"] == "schedule-4-paragraph-1-c"
+    assert ops[0].witness_rule_id == "uk_effect_substituted_for_label_changing_target_rebound"
+    assert any(
+        record["rule_id"] == "uk_effect_substituted_for_label_changing_target_rebound"
+        and record["source_target"] == "schedule:4/paragraph:1/item:b"
+        and record["replacement_target"] == "schedule:4/paragraph:1/item:c"
+        for record in lowering_records
+    )
+
+
 def test_repeal_tail_for_substituted_series_single_new_subsection() -> None:
     tail = _repeal_tail_for_substituted_series_replacement(
         "substituted for s. 3(5)(6)",
@@ -9717,13 +9766,13 @@ def test_compile_substituted_for_old_subsection_series_retargets_first_anchor_an
     assert len(ops) == 2
     assert [op.action.value for op in ops] == ["replace", "repeal"]
     assert [op.target.path for op in ops] == [
-        (("section", "3"), ("subsection", "5a")),
+        (("section", "3"), ("subsection", "5")),
         (("section", "3"), ("subsection", "6")),
     ]
     assert ops[0].payload is not None
     assert ops[0].payload.kind == IRNodeKind.SUBSECTION
-    assert ops[0].payload.label is not None
-    assert ops[0].payload.label.lower() == "5a"
+    assert ops[0].payload.label == "5a"
+    assert ops[0].witness_rule_id == "uk_effect_substituted_for_label_changing_target_rebound"
 
 
 def test_replay_substituted_for_old_subsection_series_replaces_first_anchor_and_removes_tail() -> None:
@@ -17017,6 +17066,56 @@ def test_replay_schedule_list_entry_repeal_deletes_only_matched_entry() -> None:
     assert adjudications[0].kind == "uk_replay_schedule_list_entry_repeal_resolved"
     assert adjudications[0].detail["deleted_count"] == 1
     assert adjudications[0].detail["strict_disposition"] == "record"
+
+
+def test_replay_source_label_changing_substitution_preserves_new_identity() -> None:
+    op = LegalOperation(
+        op_id="uk_test_label_changing_substitution",
+        sequence=0,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("schedule", "4"), ("paragraph", "1"), ("item", "b"))),
+        payload=IRNode(
+            kind=IRNodeKind.ITEM,
+            label="c",
+            text="by the Police Complaints Commissioner for Scotland,",
+            attrs={"eId": "schedule-4-paragraph-1-c"},
+        ),
+        witness_rule_id="uk_effect_substituted_for_label_changing_target_rebound",
+    )
+    base = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 4",
+                attrs={"eId": "schedule-4"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="1",
+                        attrs={"eId": "schedule-4-paragraph-1"},
+                        children=(
+                            IRNode(kind=IRNodeKind.ITEM, label="a", text="A.", attrs={"eId": "schedule-4-paragraph-1-a"}),
+                            IRNode(kind=IRNodeKind.ITEM, label="b", text="B.", attrs={"eId": "schedule-4-paragraph-1-b"}),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    items = replayed.supplements[0].children[0].children
+    assert [item.label for item in items] == ["a", "c"]
+    assert items[1].attrs["eId"] == "schedule-4-paragraph-1-c"
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_source_label_changing_substitution_resolved"
+    assert adjudications[0].detail["source_label"] == "b"
+    assert adjudications[0].detail["replacement_label"] == "c"
 
 
 def test_replay_schedule_list_entry_repeal_normalizes_parenthetical_paragraph_anchor() -> None:
