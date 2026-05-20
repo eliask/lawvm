@@ -3011,12 +3011,23 @@ Current bench replay-regime invariant:
   blocker.
 - UK commencement instruments are a temporal/applicability source lane, not a
   structural text/tree mutation lane. If an extracted no-action source says the
-  target provisions `shall come into force` / `come into force`, source
-  adjudication classifies it as `commencement_effect_out_of_scope`, and manual
-  frontier reports `uk_manual_frontier_commencement_effect_out_of_scope`
-  instead of treating it as a generic unsupported replay action. A future
-  temporal compiler may consume these rows, but structural replay must not
-  synthesize text operations from commencement language.
+  target provisions `shall come into force` / `come into force`, lowering
+  records `uk_effect_commencement_source_rejected`, source adjudication
+  classifies it as `commencement_effect_out_of_scope`, and manual frontier
+  reports `uk_manual_frontier_commencement_effect_out_of_scope` instead of
+  treating it as a generic unsupported replay action. A future temporal
+  compiler may consume these rows, but structural replay must not synthesize
+  text operations from commencement language.
+- UK application-modification payloads are also outside unconditional
+  structural replay. If an empty-effect row selects a `BlockAmendment` payload
+  whose parent source formula says the target statute `shall apply ... subject
+  to the modification that ...`, lowering records
+  `uk_effect_application_modification_payload_rejected`, source adjudication
+  classifies `application_modification_payload_out_of_scope`, and manual
+  frontier reports
+  `uk_manual_frontier_application_modification_payload_out_of_scope`. The
+  payload may be useful for a future scoped application/temporal model, but it
+  must not be replayed as a direct current-text insertion.
 - `uk-replay` text diagnostics should label the all-row lowering histogram as
   `lowering observation rules`; `blocking lowering rules` is the replay-blocking
   subset.

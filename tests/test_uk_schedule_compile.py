@@ -9566,6 +9566,124 @@ def test_compile_empty_effect_type_records_no_supported_action_rejection() -> No
     assert "trade union subscriptions" in rejection["extracted_text_preview"]
 
 
+def test_compile_empty_effect_type_blocks_commencement_source() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="article-2">
+          <Pnumber>2</Pnumber>
+          <P1para>
+            <Text>Section 80 of the Transport (Scotland) Act 2001 shall come
+            into force on 1st May 2001.</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_commencement_source_rejection",
+        effect_type="",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/asp/2001/2",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 80",
+        affecting_uri="/id/ssi/2001/167",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2001",
+        affecting_number="167",
+        affecting_provisions="art. 2",
+        affecting_title="Test Commencement Order",
+        in_force_dates=[],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_commencement_source_rejected"
+    assert rejection["family"] == "applicability_scope"
+    assert rejection["reason_code"] == "commencement_source_out_of_scope"
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+    assert "shall come into force" in rejection["extracted_text_preview"]
+
+
+def test_compile_empty_effect_type_blocks_application_modification_payload() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="regulation-5">
+          <Pnumber>5</Pnumber>
+          <P1para>
+            <Text>Section 5 of the 2001 Act shall apply, in relation to proposed
+            schemes which specify existing facilities, subject to the modification
+            that, at the end of subsection (4), there is inserted-</Text>
+            <BlockAmendment>
+              <P2>
+                <Pnumber>5</Pnumber>
+                <P2para>
+                  <Text>Where the proposed scheme specifies existing facilities
+                  the authority must inform operators when they were provided.</Text>
+                </P2para>
+              </P2>
+            </BlockAmendment>
+          </P1para>
+        </P1>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_application_modification_payload",
+        effect_type="",
+        applied=True,
+        requires_applied=False,
+        modified="2025-01-01",
+        affected_uri="/id/asp/2001/2",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 5",
+        affecting_uri="/id/ssi/2001/218",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2001",
+        affecting_number="218",
+        affecting_provisions="reg. 5",
+        affecting_title="Test Application Modification Regulations",
+        in_force_dates=[],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+            source_root=source_root,
+        )
+        == []
+    )
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_application_modification_payload_rejected"
+    assert rejection["family"] == "applicability_scope"
+    assert rejection["reason_code"] == "application_modification_payload_out_of_scope"
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+    assert "shall apply" in rejection["parent_context_preview"]
+    assert "subject to the modification" in rejection["parent_context_preview"]
+
+
 def test_compile_structural_effect_records_no_targets_rejection() -> None:
     effect = UKEffectRecord(
         effect_id="uk_test_no_targets_rejection",

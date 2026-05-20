@@ -7364,6 +7364,35 @@ def _quote_only_definition_list_omission_payload_match(
     return None
 
 
+def _source_parent_application_modification_context(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+) -> str:
+    if extracted_el is None or _tag(extracted_el) not in {"BlockAmendment", "InlineAmendment"}:
+        return ""
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    for ancestor in ancestors:
+        context_text = _instruction_text_before_amendment_container(ancestor)
+        context_norm = " ".join(context_text.split()).strip()
+        if not context_norm:
+            continue
+        if re.search(
+            r"\bshall\s+apply\b.*\bsubject\s+to\s+(?:the\s+)?modification\s+that\b",
+            context_norm,
+            flags=re.I,
+        ):
+            return context_norm
+    return ""
+
+
+def _empty_effect_type_commencement_source(text: str) -> bool:
+    normalized = " ".join((text or "").split()).strip().lower()
+    if not normalized:
+        return False
+    return bool(re.search(r"\bshall\s+come\s+into\s+force\b|\bcomes?\s+into\s+force\b", normalized))
+
+
 _EXTERNAL_ACT_TARGET_RE = re.compile(
     r"\bto\s+the\s+(?P<title>[A-Z][^.;]*?\bAct\s+(?:1[0-9]{3}|20[0-9]{2}))\b",
     flags=re.I,
@@ -7481,6 +7510,50 @@ def compile_effect_to_ir_ops(
     # we skip (return []) rather than guessing "modified" or a structural replace.
     if not action and extracted_el is not None:
         text_lower = (extracted_text or "").lower()
+        if _empty_effect_type_commencement_source(extracted_text or ""):
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id="uk_effect_commencement_source_rejected",
+                family="applicability_scope",
+                reason_code="commencement_source_out_of_scope",
+                reason=(
+                    "UK effect has no explicit text/tree action and the source "
+                    "is a commencement instrument; structural replay must not "
+                    "synthesize a mutation from in-force language."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={"effect_type_normalized": effect_type},
+            )
+            return []
+        application_modification_context = _source_parent_application_modification_context(
+            extracted_el=extracted_el,
+            source_root=source_root,
+        )
+        if application_modification_context:
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id="uk_effect_application_modification_payload_rejected",
+                family="applicability_scope",
+                reason_code="application_modification_payload_out_of_scope",
+                reason=(
+                    "UK effect has no explicit effect type and the extracted "
+                    "BlockAmendment payload is governed by a parent "
+                    "application-modification formula; structural replay must "
+                    "not treat it as an unconditional current-text amendment."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "parent_context_preview": _preview_source_text(
+                        application_modification_context,
+                        limit=240,
+                    ),
+                },
+            )
+            return []
         if _empty_effect_type_as_if_words_omitted(extracted_text or ""):
             _append_uk_effect_lowering_rejection(
                 lowering_rejections_out,
