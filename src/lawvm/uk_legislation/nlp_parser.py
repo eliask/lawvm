@@ -46,6 +46,17 @@ def _last_quoted_term(text: str) -> str | None:
     return terms[-1]
 
 
+def _looks_like_definition_entry_payload(text: str) -> bool:
+    return bool(
+        re.search(
+            r"[“\"'‘].+?[”\"'’](?:\s*\([^;]*?\))*[^;]{0,240}?"
+            r"\b(?:means|includes|has\s+the\s+(?:same\s+)?meaning|is\s+to\s+be\s+construed|shall\s+be\s+construed)\b",
+            text,
+            re.I | re.S,
+        )
+    )
+
+
 def _strip_optional_child_label(text: str, label: str) -> str:
     cleaned = text.strip()
     label_pattern = re.escape(label.strip())
@@ -930,6 +941,32 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
                     "rule_id": "uk_effect_before_definition_text_insertion_patch",
                 }
             )
+
+    matches_definition_entry_insert = re.finditer(
+        r"(?P<direction>before|after)\s+(?:the\s+)?entry\s+for\s+"
+        r"(?:[“\"'‘](?P<quoted>.*?)[”\"'’]|(?P<bare>.+?))\s*,?\s+"
+        r"(?:there is inserted|there are inserted|there shall be inserted|insert(?:ed)?)"
+        r"(?:\s+(?:the\s+)?words?)?\s*[—-]?\s+"
+        r"(?P<inserted>.+?)(?:\s+\.)?$",
+        text,
+        re.I,
+    )
+    for m in matches_definition_entry_insert:
+        inserted = re.sub(r"\s+\.$", "", m.group("inserted").strip()).strip()
+        if not _looks_like_definition_entry_payload(inserted):
+            continue
+        anchor = (m.group("quoted") or m.group("bare") or "").strip()
+        if not anchor:
+            continue
+        direction = m.group("direction").lower()
+        selector = "TEXT_BEFORE_DEFINITION" if direction == "before" else "TEXT_AFTER_DEFINITION"
+        subs.append(
+            {
+                "original": f"{selector}_{anchor}",
+                "replacement": inserted,
+                "rule_id": f"uk_effect_{direction}_definition_entry_text_insertion_patch",
+            }
+        )
 
     matches_definition_entry_substituted = re.finditer(
         r"for the definition of (?:the\s+)?[“\"'‘](.*?)[”\"'’],?\s+substitute[—-]?\s+(.+?)(?:\s+\.)?$",

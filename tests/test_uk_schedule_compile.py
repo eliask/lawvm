@@ -3050,6 +3050,86 @@ def test_compile_words_inserted_after_definition_with_optional_article() -> None
     )
 
 
+def test_compile_words_inserted_before_definition_entry_for_anchor() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-13-7-a">
+          <Pnumber>a</Pnumber>
+          <Text>a before the entry for “action” insert— “ the 2015 Act ” means the Welfare Funds (Scotland) Act 2015, ,</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_before_definition_entry_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2018-08-11",
+        affected_uri="/id/asp/2002/11",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="s. 23(1)",
+        affecting_uri="/id/asp/2015/5",
+        affecting_class="ScottishAct",
+        affecting_year="2015",
+        affecting_number="5",
+        affecting_provisions="s. 13(7)(a)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2016-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert lowering_records == []
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "23"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_BEFORE_DEFINITION_action"
+    assert ops[0].text_patch.replacement == (
+        "“ the 2015 Act ” means the Welfare Funds (Scotland) Act 2015, ,"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_before_definition_entry_text_insertion_patch"
+        in ops[0].provenance_tags
+    )
+
+    base = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="23",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="“action” means an action; “the Ombudsman” means the Scottish Public Services Ombudsman;",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+
+    replayed = replay_uk_ops(base, ops)
+    replayed_text = replayed.body.children[0].children[0].text
+    assert replayed_text.startswith(
+        "“ the 2015 Act ” means the Welfare Funds (Scotland) Act 2015, , “action” means an action;"
+    )
+
+
 def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
     extracted_el = ET.fromstring(
         f"""

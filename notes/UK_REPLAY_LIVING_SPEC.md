@@ -3313,11 +3313,20 @@ Current bench replay-regime invariant:
   `TEXT_BEFORE_DEFINITION_X`; `in the definition of "D", after "A" insert "B"`
   lowers to `TEXT_IN_DEFINITION_D_AFTER_A` using an internal selector separator
   so the replay executor rewrites only the uniquely bounded definition entry.
+  The same rule applies to interpretation lists drafted as `before/after the
+  entry for "X" insert "Y"`, but only when the inserted payload itself is a
+  definition entry (`means`, `includes`, `has the meaning`, `is to be
+  construed`, etc.). Non-definition entity-list entries remain outside this
+  lowering and must not be flattened into a generic text insertion.
   A before-definition anchor may match the first entry after an interpretation
   dash and a definition term followed by a qualifier comma or colon, such as
   `"X", in relation to ...`, because the source target is still the explicit
   definition term and replay inserts before the term boundary rather than
   guessing a placement from live text.
+  After-definition replay also treats comma-separated interpretation lists as
+  definition-entry boundaries when the named term resolves uniquely; this is a
+  bounded definition-entry selector, not authority to append to the whole
+  subsection tail.
   `after "A", in both places insert "B"` remains an all-occurrences text patch
   over the explicit target subtree. Ambiguous definition entries, missing
   anchors, and source text saying only `at the appropriate place(s)` are not

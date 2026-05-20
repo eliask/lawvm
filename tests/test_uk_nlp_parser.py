@@ -554,6 +554,50 @@ def test_parse_fragment_substitution_does_not_flatten_entry_relating_to_schedule
     )
 
 
+def test_parse_fragment_substitution_handles_before_definition_entry_insert() -> None:
+    subs = parse_fragment_substitution(
+        "a before the entry for \u201caction\u201d insert\u2014 "
+        "\u201c the 2015 Act \u201d means the Welfare Funds (Scotland) Act 2015, ,"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_BEFORE_DEFINITION_action",
+            "replacement": (
+                "\u201c the 2015 Act \u201d means the Welfare Funds (Scotland) Act 2015, ,"
+            ),
+            "rule_id": "uk_effect_before_definition_entry_text_insertion_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_after_definition_entry_insert() -> None:
+    subs = parse_fragment_substitution(
+        "b after the entry for \u201cthe Ombudsman\u201d insert\u2014 "
+        "\u201c the Ombudsman's functions \u201d includes the Ombudsman's functions under the 2015 Act, ,"
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_AFTER_DEFINITION_the Ombudsman",
+            "replacement": (
+                "\u201c the Ombudsman's functions \u201d includes the Ombudsman's functions under the 2015 Act, ,"
+            ),
+            "rule_id": "uk_effect_after_definition_entry_text_insertion_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_does_not_treat_entity_entry_insert_as_definition() -> None:
+    assert (
+        parse_fragment_substitution(
+            "4 after the entry for \u201cThe Royal Commission\u201d insert\u2014 "
+            "\u201cThe Cairngorms National Park Authority\u201d."
+        )
+        == []
+    )
+
+
 def test_parse_fragment_substitution_handles_after_definitions_insert() -> None:
     subs = parse_fragment_substitution(
         "8 In section 31 (interpretation), in subsection (1), "

@@ -18184,7 +18184,7 @@ class UKReplayExecutor:
                     )
                     definition_start_pattern = re.compile(
                         rf"""
-                        (?P<prefix>(?:^|[;\.]\s*))
+                        (?P<prefix>(?:^|[;\.,]\s*))
                         [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
                         (?P<parenthetical_translation>(?:\s*\([^;]*?\))*)
                         \s+
@@ -18212,7 +18212,7 @@ class UKReplayExecutor:
                     return text, False
                 next_definition_pattern = re.compile(
                     r"""
-                    [;\.]\s*
+                    [;\.,]\s*
                     [“"'\u2018][^”"'\u2019;]{1,160}[”"'\u2019]
                     (?:\s*\([^;]*?\))*
                     \s+

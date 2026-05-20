@@ -2239,6 +2239,7 @@ def test_uk_bench_report_prints_replay_and_commencement_error_lanes(capsys) -> N
     assert "Row statuses: {'OK': 1}" in out
     assert "Comparison classes: {'commensurable': 1}" in out
     assert "Core benchmark rows: 1" in out
+    assert "Score mode: enacted baseline + replay (1 replayed rows)" in out
     assert "Core raw avg: 40.0%" in out
     assert "Source status: enacted={'available': 1} oracle={'available': 1}" in out
     assert ">=90%:" in out
