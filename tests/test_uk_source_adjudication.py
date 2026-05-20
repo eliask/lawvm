@@ -1432,6 +1432,28 @@ def test_classify_uk_manual_compile_frontier_keeps_unsupported_family_out_of_sco
     assert result["rule_id"] == "uk_manual_frontier_unsupported_effect_family"
 
 
+def test_classify_uk_manual_compile_frontier_preserves_unclassified_rows() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="substituted",
+        source_pathology="",
+        extracted_tag="P1",
+        extracted_text="For X substitute Y.",
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_new_unclassified_blocker",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "unclassified_frontier"
+    assert result["rule_id"] == "uk_manual_frontier_unclassified"
+    assert "inspect the source and lowering evidence" in result["reason"]
+
+
 def test_classify_uk_effect_unhandled_instruction_text_without_ops() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P2",
