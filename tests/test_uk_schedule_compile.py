@@ -16906,6 +16906,138 @@ def test_replay_schedule_list_entry_repeal_deletes_only_matched_entry() -> None:
     assert adjudications[0].detail["strict_disposition"] == "record"
 
 
+def test_replay_schedule_list_entry_repeal_normalizes_parenthetical_paragraph_anchor() -> None:
+    op = LegalOperation(
+        op_id="uk_test_schedule_entry_parenthetical_paragraph_repeal",
+        sequence=0,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("schedule", "2"), ("part", "2"))),
+        provenance_tags=(
+            'schedule_list_entry_repeal_selector:{"rule_id":"uk_effect_schedule_list_entry_repeal",'
+            '"anchors":["the Scottish Qualifications Authority (paragraph 49)"]}',
+        ),
+    )
+    base = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 2",
+                text="Listed authorities",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PART,
+                        label="Part 2",
+                        text="Entries amendable by Order in Council",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.PARAGRAPH,
+                                label="48",
+                                text="48 The Scottish Police Authority.",
+                            ),
+                            IRNode(
+                                kind=IRNodeKind.P1GROUP,
+                                text="Scottish public authorities",
+                                children=(
+                                    IRNode(
+                                        kind=IRNodeKind.PARAGRAPH,
+                                        label="49",
+                                        text="49 The Scottish Qualifications Authority.",
+                                    ),
+                                    IRNode(
+                                        kind=IRNodeKind.PARAGRAPH,
+                                        label="50",
+                                        text="50 The Scottish Social Services Council.",
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    group_children = replayed.supplements[0].children[0].children[1].children
+    assert [child.label for child in group_children] == ["50"]
+    assert adjudications[0].kind == "uk_replay_schedule_list_entry_repeal_resolved"
+    assert adjudications[0].detail["match_modes"] == {
+        "the Scottish Qualifications Authority (paragraph 49)": "parenthetical_paragraph"
+    }
+    assert adjudications[0].detail["normalization_rule_ids"] == (
+        "uk_replay_schedule_list_entry_repeal_parenthetical_paragraph_normalized",
+    )
+    assert adjudications[0].detail["strict_disposition"] == "record"
+
+
+def test_replay_schedule_list_entry_repeal_normalizes_numbered_partition_anchor() -> None:
+    op = LegalOperation(
+        op_id="uk_test_schedule_entry_numbered_partition_repeal",
+        sequence=0,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("schedule", "2"), ("part", "2"))),
+        provenance_tags=(
+            'schedule_list_entry_repeal_selector:{"rule_id":"uk_effect_schedule_list_entry_repeal",'
+            '"anchors":["79 National Consumer Council"]}',
+        ),
+    )
+    base = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 2",
+                text="Listed authorities",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PART,
+                        label="Part 2",
+                        text="Entries amendable by Order in Council",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.P1GROUP,
+                                text="Cross-border public authorities",
+                                children=(
+                                    IRNode(
+                                        kind=IRNodeKind.PARAGRAPH,
+                                        label="79",
+                                        text="79 National Consumer Council.",
+                                    ),
+                                    IRNode(
+                                        kind=IRNodeKind.PARAGRAPH,
+                                        label="80",
+                                        text="80 Remploy Limited.",
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    group_children = replayed.supplements[0].children[0].children[0].children
+    assert [child.label for child in group_children] == ["80"]
+    assert adjudications[0].kind == "uk_replay_schedule_list_entry_repeal_resolved"
+    assert adjudications[0].detail["match_modes"] == {
+        "79 National Consumer Council": "numbered"
+    }
+    assert adjudications[0].detail["normalization_rule_ids"] == (
+        "uk_replay_schedule_list_entry_repeal_numbered_anchor_normalized",
+    )
+
+
 def test_replay_schedule_list_entry_replace_replaces_only_matched_entry() -> None:
     op = LegalOperation(
         op_id="uk_test_schedule_entry_replace",

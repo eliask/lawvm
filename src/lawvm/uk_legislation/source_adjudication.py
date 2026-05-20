@@ -197,6 +197,8 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_schedule_list_entry_anchor_prefix_normalized",
         "uk_replay_schedule_list_entry_table_anchor_citation_short_title_normalized",
         "uk_replay_schedule_list_entry_group_anchor_resolved",
+        "uk_replay_schedule_list_entry_repeal_numbered_anchor_normalized",
+        "uk_replay_schedule_list_entry_repeal_parenthetical_paragraph_normalized",
         "uk_replay_schedule_list_entry_replace_resolved",
         "uk_replay_schedule_list_entry_repeal_resolved",
         "uk_replay_schedule_list_entry_table_rows_insert_resolved",
