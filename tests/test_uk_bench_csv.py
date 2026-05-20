@@ -37,6 +37,51 @@ def test_uk_bench_commencement_oracle_uses_same_temporal_lens() -> None:
     )
 
 
+def test_uk_bench_primary_score_prefers_commencement_when_active() -> None:
+    raw_low_commenced_high = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=5,
+        score=0.5,
+        status="OK",
+        commencement_score=0.9,
+        replay_score=0.4,
+        replay_commencement_score=0.95,
+    )
+    raw_high_no_commencement = _BenchResult(
+        statute_id="ukpga/2000/2",
+        act_type="ukpga",
+        year=2000,
+        n_effects=1,
+        n_enacted_eids=10,
+        n_oracle_eids=10,
+        n_common=8,
+        score=0.8,
+        status="OK",
+        commencement_score=-1.0,
+        replay_score=0.7,
+        replay_commencement_score=-1.0,
+    )
+
+    assert uk_bench._bench_primary_score(
+        raw_low_commenced_high,
+        has_commencement=True,
+    ) == 0.9
+    assert uk_bench._bench_primary_replay_score(
+        raw_low_commenced_high,
+        has_commencement=True,
+    ) == 0.95
+    average = uk_bench._average_primary_ok_score(
+        [raw_low_commenced_high, raw_high_no_commencement],
+        has_commencement=True,
+    )
+    assert round(average, 6) == 0.85
+
+
 def test_uk_bench_score_witness_helper_is_bounded_and_deterministic() -> None:
     rows = uk_bench._build_eid_score_witness_rows(
         comparison_scope="raw",
