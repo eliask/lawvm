@@ -338,6 +338,13 @@ Deterministic substituted-series lowering:
   expanding to `<old sibling>, <new sibling...>` may lower later source-owned
   sibling payloads as inserts under
   `uk_effect_substituted_series_new_sibling_insert_lowered`
+- source rows shaped as `for paragraphs (a) and (b) substitute` with one
+  compressed metadata range such as `Sch. 4 para. 11(a)-(ba)` may expand the
+  target range from the direct `BlockAmendment` payload children under
+  `uk_effect_source_payload_sibling_range_expanded`; when the source names only
+  the first two siblings as replaced but the payload contains an extra labelled
+  sibling, the extra payload lowers as an insert under
+  `uk_effect_substituted_range_extra_payload_sibling_insert_lowered`
 - this is not a generic action-family rewrite: the old target must be the first
   expanded target, every inserted sibling must share the same parent and leaf
   kind, and each inserted payload must carry the same label as its target

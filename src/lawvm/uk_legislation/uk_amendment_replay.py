@@ -6468,6 +6468,35 @@ def _substituted_series_new_sibling_insert_detail(
     }
 
 
+def _source_replaced_sibling_count_from_substitution_text(
+    *,
+    extracted_text: Optional[str],
+    target_refs: Sequence[str],
+) -> Optional[int]:
+    """Return how many source-named siblings are being replaced, if explicit."""
+    if not extracted_text or len(target_refs) < 2:
+        return None
+    match = re.search(
+        r"\bfor\s+(?:sub-?paragraphs?|paragraphs?|subsections?)\s+([^.;]+?)\s+substitute\b",
+        extracted_text,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    labels = re.findall(r"\(([0-9A-Za-z]+)\)", match.group(1))
+    if len(labels) < 2 or len(labels) >= len(target_refs):
+        return None
+    target_labels: list[str] = []
+    for target_ref in target_refs[: len(labels)]:
+        try:
+            target_labels.append(_clean_num(_addr_leaf_label(_parse_affected_target(target_ref)) or ""))
+        except Exception:
+            return None
+    if [_clean_num(label) for label in labels] != target_labels:
+        return None
+    return len(labels)
+
+
 def _expand_sibling_targets_from_text(
     prov_str: str,
     extracted_text: Optional[str],
@@ -8146,6 +8175,10 @@ def compile_effect_to_ir_ops(
             expansion_ref = mixed_heading_structural_ref
             amendment_container = _first_amendment_container(extracted_el)
             expansion_source_el = amendment_container if amendment_container is not None else extracted_el
+        else:
+            amendment_container = _first_amendment_container(extracted_el)
+            if amendment_container is not None:
+                expansion_source_el = amendment_container
         expanded_targets = _expand_sibling_targets_from_extracted(expansion_ref, expansion_source_el)
         if not expanded_targets:
             expanded_targets = _expand_sibling_targets_from_text(expansion_ref, extracted_text)
@@ -8155,6 +8188,27 @@ def compile_effect_to_ir_ops(
                 mixed_heading_source_ref_by_target = {
                     target_ref: original_targets_str[0] for target_ref in expanded_targets
                 }
+            else:
+                _append_uk_effect_lowering_observation(
+                    lowering_rejections_out,
+                    rule_id="uk_effect_source_payload_sibling_range_expanded",
+                    family="target_shape_normalization",
+                    reason_code="source_payload_children_expand_compressed_sibling_range",
+                    reason=(
+                        "UK effect metadata compressed a sibling target range, "
+                        "while the extracted BlockAmendment contains one direct "
+                        "payload child for each sibling; lowering expands the "
+                        "targets to those source-owned children."
+                    ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        "original_target_ref": original_targets_str[0],
+                        "expanded_targets": list(expanded_targets),
+                        "source_container": _tag(expansion_source_el) if expansion_source_el is not None else "",
+                    },
+                )
         elif mixed_heading_structural_ref and len(re.findall(r"\([0-9A-Z]+\)", mixed_heading_structural_ref, re.I)) == 1:
             targets_str = [mixed_heading_structural_ref]
             mixed_heading_source_ref_by_target = {
@@ -8244,6 +8298,14 @@ def compile_effect_to_ir_ops(
                     provenance_tags=_uk_lowered_op_provenance_tags(crossheading_lowered_witness),
                 )
             )
+    source_replaced_sibling_count = (
+        _source_replaced_sibling_count_from_substitution_text(
+            extracted_text=extracted_text,
+            target_refs=targets_str,
+        )
+        if action == "replace"
+        else None
+    )
     for target_index, t_str in enumerate(targets_str):
         heading_facet_target = _is_heading_only_ref(t_str)
         if _is_schedule_note_ref(t_str):
@@ -9576,6 +9638,35 @@ def compile_effect_to_ir_ops(
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
                 detail=substituted_series_insert_detail,
+            )
+        elif (
+            source_replaced_sibling_count is not None
+            and target_index >= source_replaced_sibling_count
+            and _source_payload_matches_target_leaf(content_ir, target)
+        ):
+            curr_action = "insert"
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_effect_substituted_range_extra_payload_sibling_insert_lowered",
+                family="lowering_normalization",
+                reason_code="source_substitution_payload_contains_extra_sibling",
+                reason=(
+                    "UK source substitutes a bounded sibling range but the "
+                    "BlockAmendment contains additional source-owned sibling "
+                    "payloads beyond the replaced range; lowering keeps the "
+                    "range members as replacements and lowers the extra "
+                    "siblings as inserts."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "target": str(target),
+                    "replaced_sibling_count": source_replaced_sibling_count,
+                    "source_payload_kind": str(content_ir.get("kind") or "") if content_ir else "",
+                    "source_payload_label": str(content_ir.get("label") or "") if content_ir else "",
+                },
             )
 
         structural_sibling_insert_detail = (
