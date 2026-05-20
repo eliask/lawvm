@@ -1632,19 +1632,32 @@ def _fragment_target_suffix(fragment: object) -> tuple[str, str] | None:
     return kind, label
 
 
-def _append_target_suffix_if_safe(target: LegalAddress, suffix: tuple[str, str]) -> LegalAddress | None:
-    """Return a target refined by explicit source-local child context, if safe."""
+def _labeled_child_end_range_selector(
+    target: LegalAddress,
+    fragment: object,
+    suffix: tuple[str, str],
+) -> str:
+    """Return a parent-scoped selector for ranges ending at an explicit child."""
+    if target.special is not None or not isinstance(fragment, dict):
+        return ""
+    original = str(fragment.get("original") or "")
+    if not original.startswith("TEXT_FROM_") or not original.endswith("_TO_END"):
+        return ""
     suffix_kind, suffix_label = suffix
-    if target.special is not None:
-        return None
     leaf_kind = target.leaf_kind()
-    if leaf_kind == suffix_kind and _clean_num(target.leaf_label()) == _clean_num(suffix_label):
-        return target
-    if _addr_container(target) != "schedule" and leaf_kind == "subsection" and suffix_kind == "paragraph":
-        return LegalAddress(path=(*target.path, ("paragraph", suffix_label)))
-    if _addr_container(target) != "schedule" and leaf_kind == "paragraph" and suffix_kind == "subparagraph":
-        return LegalAddress(path=(*target.path, ("subparagraph", suffix_label)))
-    return None
+    compatible = (
+        _addr_container(target) != "schedule"
+        and (
+            (leaf_kind == "subsection" and suffix_kind == "paragraph")
+            or (leaf_kind == "paragraph" and suffix_kind == "subparagraph")
+        )
+    )
+    if not compatible:
+        return ""
+    start = original[len("TEXT_FROM_") : -len("_TO_END")].strip()
+    if not start:
+        return ""
+    return f"TEXT_FROM_CHILD_END{US}{suffix_kind}{US}{suffix_label}{US}{start}"
 
 
 def _uk_op_allowed_by_authority_mode(op: LegalOperation, authority_mode: str) -> tuple[bool, Optional[str]]:
@@ -12412,17 +12425,22 @@ def compile_effect_to_ir_ops(
                         target = source_definition_child_refined_target
                     primary_target_suffix = _fragment_target_suffix(primary)
                     if primary_target_suffix is not None:
-                        refined_target = _append_target_suffix_if_safe(target, primary_target_suffix)
-                        if refined_target is None:
+                        labeled_child_end_selector = _labeled_child_end_range_selector(
+                            target,
+                            primary,
+                            primary_target_suffix,
+                        )
+                        if not labeled_child_end_selector:
                             _append_uk_effect_lowering_rejection(
                                 lowering_rejections_out,
-                                rule_id="uk_effect_labeled_end_range_target_refinement_rejected",
+                                rule_id="uk_effect_labeled_child_end_range_target_rejected",
                                 family="target_resolution_recovery",
                                 reason_code="unsupported_labeled_end_range_target_suffix",
                                 reason=(
                                     "UK source text bounds a text range to a labelled child target, "
-                                    "but the affected provision target could not be safely refined "
-                                    "without widening or changing the source scope."
+                                    "but the affected provision target could not safely carry the "
+                                    "parent-scoped child-end selector without widening or changing "
+                                    "the source scope."
                                 ),
                                 effect=effect,
                                 extracted_el=extracted_el,
@@ -12436,29 +12454,30 @@ def compile_effect_to_ir_ops(
                             )
                             curr_action = None
                             continue
-                        if refined_target != target:
-                            _append_uk_effect_lowering_observation(
-                                lowering_rejections_out,
-                                rule_id="uk_effect_labeled_end_range_target_refined",
-                                family="target_resolution_recovery",
-                                reason_code="source_bounded_text_range_names_child_target",
-                                reason=(
-                                    "UK source text bounds a text range to a labelled child of "
-                                    "the affected provision; lowering refines the text-patch target "
-                                    "to that explicit child instead of mutating the broader parent."
-                                ),
-                                effect=effect,
-                                extracted_el=extracted_el,
-                                extracted_text=extracted_text,
-                                detail={
-                                    "target_ref": t_str,
-                                    "original_target": str(target),
-                                    "refined_target": str(refined_target),
-                                    "target_suffix_kind": primary_target_suffix[0],
-                                    "target_suffix_label": primary_target_suffix[1],
-                                },
-                            )
-                            target = refined_target
+                        primary = {**primary, "original": labeled_child_end_selector}
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id="uk_effect_labeled_child_end_range_text_patch",
+                            family="text_rewrite_lowering",
+                            reason_code="source_bounded_text_range_names_child_endpoint",
+                            reason=(
+                                "UK source text bounds a range from a parent text anchor to "
+                                "the end of a labelled child provision; lowering preserves the "
+                                "parent target and encodes the explicit child endpoint in the "
+                                "text selector instead of retargeting to the child."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "text_match": labeled_child_end_selector,
+                                "source_text_match": str(subs[0].get("original") or ""),
+                                "target_suffix_kind": primary_target_suffix[0],
+                                "target_suffix_label": primary_target_suffix[1],
+                            },
+                        )
                     op_text_match = primary["original"]
                     op_text_replacement = primary["replacement"]
                     op_text_occurrence = int(primary.get("occurrence", "0") or "0")
@@ -19367,6 +19386,13 @@ class UKReplayExecutor:
                         )
                         family = "text_match_recovery"
                         strict_disposition = "record"
+                    elif recovery_rule_id == "uk_replay_labeled_child_end_range_applied":
+                        message = (
+                            "UK replay applied a text range from a parent text anchor "
+                            "through the end of an explicitly labelled child provision."
+                        )
+                        family = "text_rewrite_recovery"
+                        strict_disposition = "record"
                     else:
                         message = (
                             "UK replay applied text-based op after normalizing "
@@ -20305,6 +20331,66 @@ class UKReplayExecutor:
             joiner = "" if replacement.endswith((" ", "(", "/", "-")) else " "
             rebuilt = dc_replace(node, text=f"{replacement}{joiner}{node.text}")
             self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith(f"TEXT_FROM_CHILD_END{US}"):
+            parts = match.split(US, 3)
+            if len(parts) != 4:
+                return node, False
+            child_kind = parts[1]
+            child_label = parts[2]
+            start_text = parts[3].strip()
+            if not child_kind or not child_label or not start_text:
+                return node, False
+            direct_child_matches = [
+                (index, child)
+                for index, child in enumerate(node.children)
+                if (child.kind.value if isinstance(child.kind, IRNodeKind) else str(child.kind))
+                == child_kind
+                and _clean_num(child.label or "") == _clean_num(child_label)
+            ]
+            if len(direct_child_matches) != 1:
+                return node, False
+            child_index, _child = direct_child_matches[0]
+            text = node.text or ""
+            if not text:
+                return node, False
+            ordinal = occurrence if occurrence > 0 else 1
+            literal_matches = list(re.finditer(re.escape(start_text), text))
+            if len(literal_matches) >= ordinal:
+                start_match = literal_matches[ordinal - 1]
+            else:
+                pattern = _text_patch_pattern(
+                    start_text,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                matches = list(re.finditer(pattern, text, flags=re.I | re.S))
+                if len(matches) < ordinal:
+                    return node, False
+                start_match = matches[ordinal - 1]
+            separators = list(re.finditer(r"[—–-]", text[start_match.end() :]))
+            if not separators:
+                return node, False
+            separator = separators[-1]
+            tail_start = start_match.end() + separator.end()
+            prefix = text[: start_match.start()].rstrip()
+            tail = text[tail_start:].strip()
+            replacement_text = replacement.strip()
+            if not replacement_text:
+                new_text = f"{prefix} {tail}".strip()
+            else:
+                joiner_before = "" if not prefix or replacement_text.startswith((" ", ",", ".", ";", ":", ")")) else " "
+                joiner_after = "" if not tail or replacement_text.endswith((" ", "(", "/", "-")) else " "
+                new_text = f"{prefix}{joiner_before}{replacement_text}{joiner_after}{tail}".strip()
+            rebuilt = dc_replace(
+                node,
+                text=" ".join(new_text.split()).strip(),
+                children=tuple(node.children[child_index + 1 :]),
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_labeled_child_end_range_applied")
             return rebuilt, True
 
         if match.startswith("TEXT_BEFORE_CHILD_"):

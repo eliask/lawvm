@@ -4022,7 +4022,7 @@ def test_compile_grouped_anchor_occurrence_substitution_does_not_invent_anchor_w
     }
 
 
-def test_compile_labeled_end_range_refines_text_patch_target() -> None:
+def test_compile_labeled_end_range_preserves_parent_target_with_child_endpoint_selector() -> None:
     extracted_el = ET.fromstring(
         f"""
         <P4 xmlns="{_LEG_NS}" id="section-60-2-a-i">
@@ -4032,7 +4032,7 @@ def test_compile_labeled_end_range_refines_text_patch_target() -> None:
         """
     )
     effect = UKEffectRecord(
-        effect_id="uk_test_labeled_end_range_target_refined",
+        effect_id="uk_test_labeled_child_end_range_text_patch",
         effect_type="words substituted",
         applied=True,
         requires_applied=True,
@@ -4061,24 +4061,28 @@ def test_compile_labeled_end_range_refines_text_patch_target() -> None:
 
     assert len(ops) == 1
     assert ops[0].action is StructuralAction.TEXT_REPLACE
-    assert ops[0].target.path == (("section", "58"), ("subsection", "6"), ("paragraph", "b"))
+    assert ops[0].target.path == (("section", "58"), ("subsection", "6"))
     assert ops[0].text_patch is not None
-    assert ops[0].text_patch.selector.match_text == "TEXT_FROM_shall_TO_END"
+    assert (
+        ops[0].text_patch.selector.match_text
+        == f"TEXT_FROM_CHILD_END{US}paragraph{US}b{US}shall"
+    )
     assert ops[0].text_patch.replacement == "may"
     assert (
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_labeled_end_range_substitution_text_patch"
         in ops[0].provenance_tags
     )
     assert [record["rule_id"] for record in lowering_records] == [
-        "uk_effect_labeled_end_range_target_refined"
+        "uk_effect_labeled_child_end_range_text_patch"
     ]
     assert lowering_records[0]["blocking"] is False
     assert lowering_records[0]["strict_disposition"] == "record"
-    assert lowering_records[0]["original_target"] == "section:58/subsection:6"
-    assert lowering_records[0]["refined_target"] == "section:58/subsection:6/paragraph:b"
+    assert lowering_records[0]["target"] == "section:58/subsection:6"
+    assert lowering_records[0]["target_suffix_kind"] == "paragraph"
+    assert lowering_records[0]["target_suffix_label"] == "b"
 
 
-def test_compile_labeled_end_range_blocks_incompatible_target_refinement() -> None:
+def test_compile_labeled_end_range_blocks_incompatible_child_endpoint_target() -> None:
     extracted_el = ET.fromstring(
         f"""
         <P4 xmlns="{_LEG_NS}" id="schedule-1-paragraph-8-4-a-i">
@@ -4088,7 +4092,7 @@ def test_compile_labeled_end_range_blocks_incompatible_target_refinement() -> No
         """
     )
     effect = UKEffectRecord(
-        effect_id="uk_test_labeled_end_range_target_refinement_rejected",
+        effect_id="uk_test_labeled_child_end_range_target_rejected",
         effect_type="words substituted",
         applied=True,
         requires_applied=True,
@@ -4117,7 +4121,7 @@ def test_compile_labeled_end_range_blocks_incompatible_target_refinement() -> No
 
     assert ops == []
     assert [record["rule_id"] for record in lowering_records] == [
-        "uk_effect_labeled_end_range_target_refinement_rejected"
+        "uk_effect_labeled_child_end_range_target_rejected"
     ]
     assert lowering_records[0]["blocking"] is True
     assert lowering_records[0]["strict_disposition"] == "block"

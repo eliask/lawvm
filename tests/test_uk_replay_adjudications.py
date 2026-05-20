@@ -1205,6 +1205,136 @@ def test_executor_classifies_range_synthetic_text_selector_gap() -> None:
     assert executor.statute.body.children[0].text == "Section one."
 
 
+def test_executor_applies_labeled_child_end_range_without_target_hijack() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/4",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="58",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="6",
+                            text=(
+                                "In making a guardianship order the sheriff shall, "
+                                "except where— require an individual appointed as guardian "
+                                "to find caution."
+                            ),
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text="the individual is unable to find caution; but",
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="b",
+                                    text=(
+                                        "the sheriff is satisfied that nevertheless he is "
+                                        "suitable to be appointed guardian,"
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_labeled_child_end_range",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "58"), ("subsection", "6"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text=f"TEXT_FROM_CHILD_END{US}paragraph{US}b{US}shall",
+                    occurrence=0,
+                ),
+                replacement="may",
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == (
+        "In making a guardianship order the sheriff may require an individual "
+        "appointed as guardian to find caution."
+    )
+    assert subsection.children == ()
+    assert [row.kind for row in adjudications] == ["uk_replay_labeled_child_end_range_applied"]
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+
+
+def test_executor_blocks_labeled_child_end_range_when_child_missing() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/4",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="58",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="6",
+                            text="The sheriff shall, except where— require caution.",
+                            children=(
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="condition a"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_labeled_child_end_range_missing_child",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "58"), ("subsection", "6"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text=f"TEXT_FROM_CHILD_END{US}paragraph{US}b{US}shall",
+                    occurrence=0,
+                ),
+                replacement="may",
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "The sheriff shall, except where— require caution."
+    assert len(subsection.children) == 1
+    assert [row.kind for row in adjudications] == ["uk_replay_text_match_synthetic_selector_gap"]
+    assert adjudications[0].detail["blocking"] is True
+
+
 def test_executor_applies_after_anchor_to_end_text_patch_without_flattening_children() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

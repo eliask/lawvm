@@ -1820,13 +1820,17 @@ Current block-substitution context invariant:
   `reg. 6(2)(a)(ii)`.
 - `from "X" to the end of paragraph (b) substitute "Y"` must not be broadened
   into a target-subtree `TEXT_FROM_X_TO_END` patch when the effect feed target
-  names only the enclosing subsection. The narrow owned lane is
-  `uk_effect_labeled_end_range_substitution_text_patch` plus
-  `uk_effect_labeled_end_range_target_refined`: the parser preserves the
-  labelled child suffix and lowering appends that child target only when the
-  feed target is a compatible parent. Current witnesses: `asp/2000/4` affected
-  `s. 58(6)`, `s. 63(5)`, `s. 71(2)`, and `s. 74(2)` by `asp/2007/10`
-  `s. 60`.
+  names only the enclosing subsection. It also must not be narrowed to the
+  labelled child alone, because the source range starts in the parent text and
+  runs through child `(b)`. The owned lane is
+  `uk_effect_labeled_child_end_range_text_patch`: the parser preserves the
+  labelled child suffix, lowering keeps the compatible parent target, and
+  replay applies `TEXT_FROM_CHILD_END/<kind>/<label>/<anchor>` only when the
+  direct child endpoint exists uniquely and the parent text carries the start
+  anchor plus the child-list tail separator. Successful replay emits
+  `uk_replay_labeled_child_end_range_applied`. Current witnesses:
+  `asp/2000/4` affected `s. 58(6)`, `s. 63(5)`, `s. 71(2)`, and `s. 74(2)` by
+  `asp/2007/10 s. 60`.
 - named table substitutions such as `for the Table A mentioned there
   substitute-` must not be smuggled through generic text replacement. They
   remain a table-compiler frontier until the table target and replacement
