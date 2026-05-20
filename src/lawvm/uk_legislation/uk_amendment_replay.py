@@ -1242,7 +1242,8 @@ def _uk_op_allowed_by_authority_mode(op: LegalOperation, authority_mode: str) ->
     witness = _witness_for_op(op)
     extraction_witness = getattr(witness, "extraction_witness", None)
     target_expansion_witness = getattr(witness, "target_expansion_witness", None)
-    if str(getattr(extraction_witness, "authority_layer", "") or "") != "AFFECTING_ACT_TEXT":
+    authority_layer = str(getattr(extraction_witness, "authority_layer", "") or "")
+    if authority_layer not in {"AFFECTING_ACT_TEXT", "AFFECTING_ACT_ENACTED_TEXT"}:
         return False, "extraction_authority"
     if str(getattr(target_expansion_witness, "expansion_source", "") or "") == "metadata_split":
         return False, "metadata_target_expansion"
@@ -6234,6 +6235,11 @@ _SOURCE_AFTER_DEFINITION_INSERT_RE = re.compile(
     r"(?:there\s+is\s+inserted|there\s+are\s+inserted|there\s+shall\s+be\s+inserted|insert)",
     flags=re.I | re.S,
 )
+_SOURCE_FOR_DEFINITION_SUBSTITUTE_RE = re.compile(
+    r"\bfor\s+the\s+definition\s+of\s+(?:the\s+)?[“\"'‘](?P<term>.*?)[”\"'’],?\s+"
+    r"(?:there\s+is\s+substituted|there\s+shall\s+be\s+substituted|substitute)",
+    flags=re.I | re.S,
+)
 _SOURCE_DEFINITION_TERM_RE = re.compile(
     r"\bin\s+the\s+definition\s+of\s+[“\"'‘](?P<term>.*?)[”\"'’]",
     flags=re.I | re.S,
@@ -6388,6 +6394,49 @@ def _fragment_substitution_source_carried_definition_entry_insert(
             "source_parent_id": source_parent_id,
             "source_anchor_definition_term": anchor_term,
             "rule_id": "uk_effect_source_carried_definition_entry_insert_text_patch",
+        }
+    return None
+
+
+def _fragment_substitution_source_carried_definition_entry_substitution(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve definition substitutions whose block payload omits the old term."""
+    replacement = " ".join((extracted_text or "").split()).strip()
+    if not replacement or not re.search(
+        r"[“\"'‘].+?[”\"'’](?:\s*\([^;]*?\))*[^;]{0,240}?"
+        r"\b(?:means|has\s+the\s+same\s+meaning|has\s+the\s+meaning|"
+        r"is\s+to\s+be\s+construed|shall\s+be\s+construed|includes)\b",
+        replacement,
+        re.I | re.S,
+    ):
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        candidate_text = _instruction_text_before_amendment_container(ancestor)
+        if not candidate_text:
+            candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
+        match = _SOURCE_FOR_DEFINITION_SUBSTITUTE_RE.search(candidate_text)
+        if match is None:
+            continue
+        original_term = " ".join(match.group("term").split()).strip()
+        if not original_term:
+            return None
+        source_parent_id = str(ancestor.get("id") or "")
+        if not source_parent_id:
+            source_parent_id = next(
+                (str(candidate.get("id")) for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")),
+                "",
+            )
+        return {
+            "original": f"TEXT_DEFINITION_ENTRY_{original_term}",
+            "replacement": replacement,
+            "source_parent_id": source_parent_id,
+            "source_original_definition_term": original_term,
+            "rule_id": "uk_effect_source_carried_definition_entry_substitution_text_patch",
         }
     return None
 
@@ -8268,6 +8317,16 @@ def compile_effect_to_ir_ops(
                     if source_carried_definition_entry_insert is not None:
                         subs = [source_carried_definition_entry_insert]
                 if not subs:
+                    source_carried_definition_entry_substitution = (
+                        _fragment_substitution_source_carried_definition_entry_substitution(
+                            extracted_el=extracted_el,
+                            source_root=source_root,
+                            extracted_text=extracted_text,
+                        )
+                    )
+                    if source_carried_definition_entry_substitution is not None:
+                        subs = [source_carried_definition_entry_substitution]
+                if not subs:
                     source_carried_child_tail_repeal = (
                         _fragment_substitution_source_carried_child_tail_repeal(
                             extracted_text=extracted_text,
@@ -8631,6 +8690,39 @@ def compile_effect_to_ir_ops(
                                 ),
                                 "source_anchor_definition_term": str(
                                     definition_entry_context_fragment.get("source_anchor_definition_term") or ""
+                                ),
+                                "text_match": op_text_match,
+                                "replacement": op_text_replacement,
+                            },
+                        )
+                    for definition_entry_context_fragment in fragment_subs:
+                        if (
+                            str(definition_entry_context_fragment.get("rule_id") or "")
+                            != "uk_effect_source_carried_definition_entry_substitution_text_patch"
+                        ):
+                            continue
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id="uk_effect_source_carried_definition_entry_substitution_text_patch",
+                            family="source_context_elaboration",
+                            reason_code="definition_substitution_anchor_resolved_from_parent_source",
+                            reason=(
+                                "UK source payload contains only the replacement definition entry, "
+                                "while the parent source instruction names the definition being "
+                                "substituted; lowering combines those source-local facts instead "
+                                "of guessing the old definition term from live text."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "source_parent_id": str(
+                                    definition_entry_context_fragment.get("source_parent_id") or ""
+                                ),
+                                "source_original_definition_term": str(
+                                    definition_entry_context_fragment.get("source_original_definition_term") or ""
                                 ),
                                 "text_match": op_text_match,
                                 "replacement": op_text_replacement,

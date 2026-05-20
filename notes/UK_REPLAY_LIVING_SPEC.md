@@ -2477,6 +2477,16 @@ Current bench replay-regime invariant:
   quoted anchor is punctuation in the source formula, not a different target
   family. Current corpus witness: `asp/2001/10`
   `key-3c8a483c35fb24fd68e1677ad672502a`.
+- If legislation.gov.uk splits that same formula across a parent source
+  instruction and a `BlockAmendment`, lowering may combine only those
+  source-local facts: the parent must explicitly say `for the definition of
+  "X" there is substituted`, and the block payload must itself be a complete
+  definition entry. The resulting selector is `TEXT_DEFINITION_ENTRY_X` with
+  rule `uk_effect_source_carried_definition_entry_substitution_text_patch`.
+  This is not authority to infer the old definition term from live text, nor to
+  treat a non-definition payload as a definition substitution. Current corpus
+  witness: `asp/2000/7` effect `key-b7c7cdf19629dcd25fde12967bca8c51` from
+  `asp/2010/11 Sch. 1 para. 7(a)`.
 - Parser lowering may inherit definition-list context for child rows that only
   contain a quoted term. If the parent source instruction explicitly says
   `omit the definitions of-` and each child row is just `"X",`, the child row
@@ -3016,7 +3026,9 @@ Current bench replay-regime invariant:
   `uk_affecting_act_current_shell_enacted_source_selected` with current/enacted
   locators and text previews, and lowers the operation with authority layer
   `AFFECTING_ACT_ENACTED_TEXT`. Fallback is same-provision only; enacted text
-  elsewhere in the affecting act is not enough.
+  elsewhere in the affecting act is not enough. The `source_text_only` replay
+  authority lane accepts this source layer because it is official affecting-act
+  text selected by a witnessed acquisition rule, not metadata backfill.
 - Some UK current affecting-source XML omits an extractable same-provision node
   even though official enacted XML still contains it. The frontend may select
   the enacted same-provision source lane when current extraction is missing and

@@ -169,3 +169,8 @@ Current tightening already in place:
 
 - `source_text_only` now rejects lowered ops whose target expansion depends on
   `metadata_split`, even when extraction authority is source-backed
+- `source_text_only` accepts same-provision operations extracted from official
+  enacted affecting-act XML (`AFFECTING_ACT_ENACTED_TEXT`) when acquisition
+  has already emitted the current-shell/current-missing source-lane observation.
+  This remains source text, not metadata backfill; `EFFECT_FEED_INDEX` and
+  `CURRENT_XML_METADATA_BACKFILL` are still rejected.
