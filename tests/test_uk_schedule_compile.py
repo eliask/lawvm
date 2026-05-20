@@ -35,6 +35,7 @@ from lawvm.uk_legislation.uk_amendment_replay import (
     _NOTE_FRAGMENT_SUB,
     _NOTE_TABLE_CELL_SELECTOR,
     _NOTE_TABLE_ROW_INSERT_SELECTOR,
+    _NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR,
     _NOTE_REWRITE_WITNESS,
     _NOTE_TEXT_REWRITE_RULE,
     _NOTE_PRECEDING_EID,
@@ -11148,6 +11149,301 @@ def test_replay_table_entry_row_insert_blocks_ambiguous_table() -> None:
     )
     assert unresolved.detail["reason_code"] == "table_not_unique"
     assert unresolved.detail["blocking"] is True
+
+
+def test_compile_schedule_list_entry_table_payload_preserves_rows() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Text>In schedule 5, after the entry relating to NHS Education for Scotland insert—
+          <BlockAmendment>
+            <Tabular>
+              <table>
+                <tbody>
+                  <tr>
+                    <td>The Patient Safety Commissioner for Scotland</td>
+                    <td>A matter of relevance to the Commissioner’s general functions.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </Tabular>
+          </BlockAmendment>
+          </Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_table_entry_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-05-01",
+        affected_uri="/id/asp/2002/11/schedule/5",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="sch. 5",
+        affecting_uri="/id/asp/2023/6",
+        affecting_class="ScottishAct",
+        affecting_year="2023",
+        affecting_number="6",
+        affecting_provisions="sch. 2 para. 1(3)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2024-05-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target == LegalAddress(path=(("schedule", "5"),))
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.TABLE
+    assert [cell.text for cell in ops[0].payload.children[0].children] == [
+        "The Patient Safety Commissioner for Scotland",
+        "A matter of relevance to the Commissioner’s general functions.",
+    ]
+    selector_tag = next(
+        tag
+        for tag in ops[0].provenance_tags
+        if tag.startswith(_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR)
+    )
+    selector = json.loads(selector_tag.removeprefix(_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR))
+    assert selector["anchor_text"] == "NHS Education for Scotland"
+    assert selector["direction"] == "after"
+    assert ops[0].witness_rule_id == "uk_effect_schedule_list_entry_table_rows_lowered"
+    assert any(
+        record["rule_id"] == "uk_effect_schedule_list_entry_table_rows_lowered"
+        and record["reason_code"] == "explicit_schedule_entry_insert_table_payload"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_replay_schedule_list_entry_table_rows_insert_mutates_table_only() -> None:
+    selector = {
+        "rule_id": "uk_effect_schedule_list_entry_insert",
+        "direction": "after",
+        "anchor_text": "NHS Education for Scotland",
+        "inserted_text": "flattened fallback must not be used",
+        "target": "schedule:5",
+    }
+    op = LegalOperation(
+        op_id="uk_test_schedule_table_entry_insert",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("schedule", "5"),)),
+        payload=IRNode(
+            kind=IRNodeKind.TABLE,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(
+                        IRNode(kind=IRNodeKind.CELL, text="The Patient Safety Commissioner for Scotland"),
+                        IRNode(kind=IRNodeKind.CELL, text="A matter of relevance to the Commissioner."),
+                    ),
+                ),
+            ),
+        ),
+        provenance_tags=(
+            f"{_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR}{json.dumps(selector)}",
+        ),
+    )
+    base = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="5",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.TABLE,
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.ROW,
+                                children=(
+                                    IRNode(kind=IRNodeKind.HEADER_CELL, text="Authority"),
+                                    IRNode(kind=IRNodeKind.HEADER_CELL, text="Matter"),
+                                ),
+                            ),
+                            IRNode(
+                                kind=IRNodeKind.ROW,
+                                children=(
+                                    IRNode(kind=IRNodeKind.CELL, text="NHS Education for Scotland"),
+                                    IRNode(kind=IRNodeKind.CELL, text="Training functions."),
+                                ),
+                            ),
+                            IRNode(
+                                kind=IRNodeKind.ROW,
+                                children=(
+                                    IRNode(kind=IRNodeKind.CELL, text="The Mental Welfare Commission for Scotland"),
+                                    IRNode(kind=IRNodeKind.CELL, text="Investigation functions."),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    rows = replayed.supplements[0].children[0].children
+    assert len(rows) == 4
+    assert [cell.text for cell in rows[2].children] == [
+        "The Patient Safety Commissioner for Scotland",
+        "A matter of relevance to the Commissioner.",
+    ]
+    assert rows[1].children[0].text == "NHS Education for Scotland"
+    assert rows[3].children[0].text == "The Mental Welfare Commission for Scotland"
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_schedule_list_entry_table_rows_insert_resolved"
+    ]
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+
+
+def test_replay_schedule_list_entry_table_rows_normalizes_citation_short_title_anchor() -> None:
+    selector = {
+        "rule_id": "uk_effect_schedule_list_entry_insert",
+        "direction": "after",
+        "anchor_text": (
+            "an auditor within the meaning of section 97(6) of the Local "
+            "Government (Scotland) Act 1973"
+        ),
+        "inserted_text": "new rows",
+        "target": "schedule:5",
+    }
+    op = LegalOperation(
+        op_id="uk_test_schedule_table_entry_insert_short_title_anchor",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("schedule", "5"),)),
+        payload=IRNode(
+            kind=IRNodeKind.TABLE,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(
+                        IRNode(kind=IRNodeKind.CELL, text="The Common Services Agency"),
+                        IRNode(kind=IRNodeKind.CELL, text="Fraud or another irregularity."),
+                    ),
+                ),
+            ),
+        ),
+        provenance_tags=(
+            f"{_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR}{json.dumps(selector)}",
+        ),
+    )
+    base = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="5",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.TABLE,
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.ROW,
+                                children=(
+                                    IRNode(
+                                        kind=IRNodeKind.CELL,
+                                        text="An auditor within the meaning of section 97(6) of the 1973 Act",
+                                    ),
+                                    IRNode(kind=IRNodeKind.CELL, text="Audit functions."),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    rows = replayed.supplements[0].children[0].children
+    assert [row.children[0].text for row in rows] == [
+        "An auditor within the meaning of section 97(6) of the 1973 Act",
+        "The Common Services Agency",
+    ]
+    assert adjudications[0].kind == "uk_replay_schedule_list_entry_table_rows_insert_resolved"
+    assert adjudications[0].detail["match_mode"] == "citation_short_title"
+    assert (
+        adjudications[0].detail["anchor_normalization_rule_id"]
+        == "uk_replay_schedule_list_entry_table_anchor_citation_short_title_normalized"
+    )
+
+
+def test_replay_schedule_list_entry_table_rows_blocks_duplicate_anchor() -> None:
+    selector = {
+        "rule_id": "uk_effect_schedule_list_entry_insert",
+        "direction": "after",
+        "anchor_text": "NHS Education for Scotland",
+        "inserted_text": "new row",
+        "target": "schedule:5",
+    }
+    op = LegalOperation(
+        op_id="uk_test_schedule_table_entry_insert_duplicate_anchor",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("schedule", "5"),)),
+        payload=IRNode(
+            kind=IRNodeKind.TABLE,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(IRNode(kind=IRNodeKind.CELL, text="New authority"),),
+                ),
+            ),
+        ),
+        provenance_tags=(
+            f"{_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR}{json.dumps(selector)}",
+        ),
+    )
+    duplicate_row = IRNode(
+        kind=IRNodeKind.ROW,
+        children=(IRNode(kind=IRNodeKind.CELL, text="NHS Education for Scotland"),),
+    )
+    base = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="5",
+                children=(
+                    IRNode(kind=IRNodeKind.TABLE, children=(duplicate_row, duplicate_row)),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    assert len(replayed.supplements[0].children[0].children) == 2
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_schedule_list_entry_table_rows_insert_unresolved"
+    ]
+    assert adjudications[0].detail["reason_code"] == "anchor_not_unique_or_payload_empty"
+    assert adjudications[0].detail["blocking"] is True
 
 
 def test_compile_direct_table_between_columns_instruction_rejects_column_insert() -> None:

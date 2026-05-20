@@ -79,6 +79,7 @@ from lawvm.uk_legislation.source_state import (
     uk_source_state_wire_tuple,
 )
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
+from lawvm.uk_legislation.uk_grafter import _parse_table as _parse_uk_table_payload
 
 if TYPE_CHECKING:
     from lawvm.core.compile_result import TemporalEvent
@@ -609,6 +610,7 @@ _NOTE_METADATA_SOURCE_FALLBACK = "metadata_source_fallback:"
 _NOTE_TABLE_CELL_SELECTOR = "table_cell_selector:"
 _NOTE_TABLE_ROW_INSERT_SELECTOR = "table_row_insert_selector:"
 _NOTE_SCHEDULE_LIST_ENTRY_SELECTOR = "schedule_list_entry_selector:"
+_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR = "schedule_list_entry_table_rows_selector:"
 _NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR = "schedule_list_entry_repeal_selector:"
 _NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR = "schedule_list_entry_replace_selector:"
 
@@ -623,6 +625,7 @@ _UK_REPLAY_TABLE_ENTRY_INLINE_UNRESOLVED_RULE_ID = "uk_replay_table_entry_inline
 _UK_REPLAY_TABLE_ENTRY_INLINE_PREIMAGE_GAP_RULE_ID = "uk_replay_table_entry_inline_text_preimage_gap"
 _UK_REPLAY_TABLE_ENTRY_ROW_INSERT_UNRESOLVED_RULE_ID = "uk_replay_table_entry_row_insert_unresolved"
 _UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID = "uk_effect_schedule_list_entry_insert"
+_UK_SCHEDULE_LIST_ENTRY_TABLE_ROWS_RULE_ID = "uk_effect_schedule_list_entry_table_rows_lowered"
 _UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID = "uk_effect_schedule_list_entry_repeal"
 _UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID = "uk_effect_schedule_list_entry_replace"
 _UK_NUMBERED_SCHEDULE_ENTRY_REPEAL_TARGET_REFINED_RULE_ID = (
@@ -666,6 +669,15 @@ _UK_REPLAY_SCHEDULE_LIST_ENTRY_GROUP_ANCHOR_RULE_ID = (
 )
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_ALPHABETICAL_POSITION_RULE_ID = (
     "uk_replay_schedule_list_entry_alphabetical_position_resolved"
+)
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ROWS_INSERT_RESOLVED_RULE_ID = (
+    "uk_replay_schedule_list_entry_table_rows_insert_resolved"
+)
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ROWS_INSERT_UNRESOLVED_RULE_ID = (
+    "uk_replay_schedule_list_entry_table_rows_insert_unresolved"
+)
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ANCHOR_CITATION_SHORT_TITLE_RULE_ID = (
+    "uk_replay_schedule_list_entry_table_anchor_citation_short_title_normalized"
 )
 _UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
     {
@@ -1281,6 +1293,20 @@ def _table_row_insert_selector(op: LegalOperation) -> dict[str, Any] | None:
             continue
         try:
             payload = json.loads(str(note)[len(_NOTE_TABLE_ROW_INSERT_SELECTOR) :])
+        except json.JSONDecodeError:
+            return None
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _schedule_list_entry_table_rows_selector(op: LegalOperation) -> dict[str, Any] | None:
+    """Return UK schedule-list table-row insertion selector data."""
+    for note in getattr(op, "provenance_tags", ()) or ():
+        if not str(note).startswith(_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR):
+            continue
+        try:
+            payload = json.loads(str(note)[len(_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR) :])
         except json.JSONDecodeError:
             return None
         if isinstance(payload, dict):
@@ -5228,6 +5254,30 @@ def _uk_schedule_list_entry_insert_selector(
     )
 
 
+def _uk_schedule_list_entry_table_payload(extracted_el: Optional[ET.Element]) -> IRNode | None:
+    amendment = _first_amendment_container(extracted_el)
+    if amendment is None or _tag(amendment) != "BlockAmendment":
+        return None
+    tables = [
+        el
+        for el in amendment.iter()
+        if el is not amendment and _tag(el).lower() == "table"
+    ]
+    if len(tables) != 1:
+        return None
+    table_node = _parse_uk_table_payload(tables[0], None, force_active=True)
+    if table_node is None or _uk_kind_value(table_node.kind) != "table":
+        return None
+    row_children = [
+        child
+        for child in table_node.children
+        if _uk_kind_value(child.kind) == "row"
+    ]
+    if not row_children:
+        return None
+    return table_node.to_irnode()
+
+
 def _strip_schedule_entry_repeal_anchor(raw: str) -> str:
     text = _strip_schedule_entry_phrase(raw)
     text = re.sub(r"^(?:and\s+)?(?:\(?[ivxlcdm]+\)?|[a-z])\.?\s+", "", text, flags=re.I)
@@ -8363,6 +8413,84 @@ def compile_effect_to_ir_ops(
             else None
         )
         if schedule_list_entry_selector is not None:
+            table_payload_node = _uk_schedule_list_entry_table_payload(extracted_el)
+            if table_payload_node is not None:
+                _append_uk_effect_lowering_observation(
+                    lowering_rejections_out,
+                    rule_id=_UK_SCHEDULE_LIST_ENTRY_TABLE_ROWS_RULE_ID,
+                    family="source_table_elaboration",
+                    reason_code="explicit_schedule_entry_insert_table_payload",
+                    reason=(
+                        "UK schedule-list-entry insertion carried a tabular "
+                        "source payload; lowering preserves source rows and "
+                        "replay must resolve the entry anchor in the target "
+                        "schedule table before inserting rows."
+                    ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        "selector_rule_id": str(schedule_list_entry_selector.get("rule_id") or ""),
+                        **{
+                            key: value
+                            for key, value in schedule_list_entry_selector.items()
+                            if key != "rule_id"
+                        },
+                    },
+                )
+                payload_node = dc_replace(
+                    table_payload_node,
+                    attrs={
+                        **dict(table_payload_node.attrs or {}),
+                        "source_rule_id": "uk_schedule_list_entry_table_rows_payload",
+                        "anchor_text": str(schedule_list_entry_selector["anchor_text"]),
+                        "anchor_direction": str(schedule_list_entry_selector["direction"]),
+                    },
+                )
+                src = OperationSource(
+                    statute_id=effect.affecting_act_id,
+                    title=effect.affecting_title,
+                    effective=effect_witness.applicability.effective_date or "",
+                    raw_text=extraction_witness.extracted_text,
+                )
+                target_expansion_witness = _uk_target_expansion_witness(
+                    t_str,
+                    [t_str],
+                    original_targets_str=original_targets_str,
+                )
+                lowered_witness = UKLoweredOperationWitness(
+                    op_id=effect.effect_id,
+                    sequence=sequence,
+                    action=StructuralAction.INSERT,
+                    target=target,
+                    payload=payload_node,
+                    source=src,
+                    effect_witness=effect_witness,
+                    extraction_witness=extraction_witness,
+                    target_expansion_witness=target_expansion_witness,
+                    text_rewrite_witness=None,
+                    insertion_anchor_witness=None,
+                )
+                ops.append(
+                    LegalOperation(
+                        op_id=lowered_witness.op_id,
+                        sequence=lowered_witness.sequence,
+                        action=StructuralAction.INSERT,
+                        target=target,
+                        payload=_payload_with_rewrite_witness(payload_node, lowered_witness),
+                        source=src,
+                        group_id=_uk_temporal_group_id(effect),
+                        provenance_tags=(
+                            *_uk_lowered_op_provenance_tags(lowered_witness),
+                            (
+                                f"{_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR}"
+                                f"{json.dumps(schedule_list_entry_selector, ensure_ascii=False)}"
+                            ),
+                        ),
+                        witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_TABLE_ROWS_RULE_ID,
+                    )
+                )
+                continue
             _append_uk_effect_lowering_observation(
                 lowering_rejections_out,
                 rule_id=_UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
@@ -11445,6 +11573,19 @@ def _compact_schedule_entry_anchor_without_article(text: str) -> str:
         flags=re.I,
     )
     return _compact_normalized_text(stripped)
+
+
+def _compact_schedule_entry_anchor_with_citation_short_title(text: str) -> str:
+    """Normalize long UK Act title references to same-context year Act aliases."""
+    stripped = " ".join(str(text or "").split())
+    shortened = re.sub(
+        r"\b(of|under|by|in|for)\s+the\s+[A-Z][A-Za-z0-9&(),.\-'’ ]{3,}?\s+Act\s+(\d{4})\b",
+        r"\1 the \2 Act",
+        stripped,
+    )
+    if shortened == stripped:
+        return ""
+    return _compact_normalized_text(shortened)
 
 
 def _compact_numbered_schedule_entry_text(text: str) -> str:
@@ -16215,6 +16356,8 @@ class UKReplayExecutor:
                     self._record_invariant_violations(op)
                     self._emit_top_section_snapshot(op)
                 else:
+                    if _schedule_list_entry_table_rows_selector(op) is not None:
+                        return
                     if _schedule_list_entry_selector(op) is not None:
                         return
                     if self._malformed_target_gap(target):
@@ -18050,6 +18193,202 @@ class UKReplayExecutor:
         self._replace_node_in_statute(node, rebuilt)
         return rebuilt
 
+    def _insert_schedule_list_entry_table_rows(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+        selector: dict[str, Any],
+    ) -> bool:
+        if _uk_kind_value(new_node.kind) != "table":
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ROWS_INSERT_UNRESOLVED_RULE_ID,
+                message="UK replay skipped schedule-list table-row insert: payload was not a table.",
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "payload_not_table",
+                    "payload_kind": _uk_kind_value(new_node.kind),
+                    "family": "source_table_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+        schedule_node, _, _ = self._find_node_by_target(target)
+        if schedule_node is None or _uk_kind_value(schedule_node.kind) != "schedule":
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ROWS_INSERT_UNRESOLVED_RULE_ID,
+                message=(
+                    "UK replay skipped schedule-list table-row insert: target "
+                    "did not resolve to a schedule carrier."
+                ),
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "schedule_target_unresolved",
+                    "family": "source_table_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+        direct_tables = [
+            child
+            for child in schedule_node.children
+            if _uk_kind_value(child.kind) == "table"
+        ]
+        direct_entries = [
+            child
+            for child in schedule_node.children
+            if _uk_kind_value(child.kind) == "schedule_entry"
+        ]
+        if len(direct_tables) != 1 or direct_entries:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ROWS_INSERT_UNRESOLVED_RULE_ID,
+                message=(
+                    "UK replay skipped schedule-list table-row insert: schedule "
+                    "was not represented by exactly one direct table and no "
+                    "direct schedule-entry children."
+                ),
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "schedule_not_single_table_backed",
+                    "table_count": len(direct_tables),
+                    "direct_entry_count": len(direct_entries),
+                    "family": "source_table_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+        direction = str(selector.get("direction") or "")
+        anchor_text = str(selector.get("anchor_text") or "")
+        anchor_norm = _compact_normalized_text(anchor_text)
+        article_anchor_norm = _compact_schedule_entry_anchor_without_article(anchor_text)
+        citation_short_anchor_norm = _compact_schedule_entry_anchor_with_citation_short_title(anchor_text)
+        if direction not in {"before", "after"} or not anchor_norm:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ROWS_INSERT_UNRESOLVED_RULE_ID,
+                message="UK replay skipped schedule-list table-row insert: selector was invalid.",
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "invalid_selector",
+                    "family": "source_table_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+        table = direct_tables[0]
+        matched_rows: list[tuple[int, str, str]] = []
+        last_anchor_cell: UKMutableNode | None = None
+        for row_index, row_cells in self._expanded_table_rows_with_physical_index(table):
+            anchor_cell = row_cells.get(1)
+            if anchor_cell is None or anchor_cell is last_anchor_cell:
+                continue
+            last_anchor_cell = anchor_cell
+            cell_text = str(anchor_cell.text or "")
+            cell_norm = _compact_normalized_text(cell_text)
+            cell_article_norm = _compact_schedule_entry_anchor_without_article(cell_text)
+            cell_citation_short_norm = _compact_schedule_entry_anchor_with_citation_short_title(cell_text)
+            match_mode = ""
+            if cell_norm == anchor_norm:
+                match_mode = "exact"
+            elif cell_norm.startswith(anchor_norm):
+                match_mode = "prefix"
+            elif article_anchor_norm and cell_article_norm == article_anchor_norm:
+                match_mode = "article"
+            elif article_anchor_norm and cell_article_norm.startswith(article_anchor_norm):
+                match_mode = "article_prefix"
+            elif citation_short_anchor_norm and cell_norm == citation_short_anchor_norm:
+                match_mode = "citation_short_title"
+            elif citation_short_anchor_norm and cell_norm.startswith(citation_short_anchor_norm):
+                match_mode = "citation_short_title_prefix"
+            elif cell_citation_short_norm and cell_citation_short_norm == anchor_norm:
+                match_mode = "cell_citation_short_title"
+            elif cell_citation_short_norm and cell_citation_short_norm.startswith(anchor_norm):
+                match_mode = "cell_citation_short_title_prefix"
+            if match_mode:
+                matched_rows.append((row_index, match_mode, cell_text[:240]))
+        payload_rows = [
+            child
+            for child in new_node.children
+            if _uk_kind_value(child.kind) == "row"
+        ]
+        if len(matched_rows) != 1 or not payload_rows:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ROWS_INSERT_UNRESOLVED_RULE_ID,
+                message=(
+                    "UK replay skipped schedule-list table-row insert: anchor "
+                    "row did not resolve uniquely or payload rows were absent."
+                ),
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "anchor_not_unique_or_payload_empty",
+                    "anchor_match_count": len(matched_rows),
+                    "payload_row_count": len(payload_rows),
+                    "matching_rows": tuple(row[2] for row in matched_rows[:5]),
+                    "family": "source_table_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+        row_index, match_mode, row_preview = matched_rows[0]
+        insert_index = row_index if direction == "before" else row_index + 1
+        for row in payload_rows:
+            self._strip_identity_attrs_recursive(row)
+        children = list(table.children)
+        children[insert_index:insert_index] = payload_rows
+        self._replace_children(table, children)
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ROWS_INSERT_RESOLVED_RULE_ID,
+            message=(
+                "UK replay inserted source-owned schedule table rows after "
+                "resolving an explicit schedule-list entry anchor in the table."
+            ),
+            op=op,
+            detail={
+                "target": str(target),
+                "selector": dict(selector),
+                "reason_code": "explicit_entry_anchor_unique_in_schedule_table",
+                "match_mode": match_mode,
+                "matched_row": row_preview,
+                "anchor_normalization_rule_id": (
+                    _UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ANCHOR_CITATION_SHORT_TITLE_RULE_ID
+                    if "citation_short_title" in match_mode
+                    else ""
+                ),
+                "insert_index": insert_index,
+                "payload_row_count": len(payload_rows),
+                "family": "source_table_elaboration",
+                "blocking": False,
+                "strict_disposition": "record",
+                "quirks_disposition": "record",
+            },
+        )
+        return True
+
     def _insert_schedule_list_entry(
         self,
         target: LegalAddress,
@@ -18747,6 +19086,14 @@ class UKReplayExecutor:
             uk_resolve_insertion_parent,
         )
 
+        schedule_list_entry_table_rows_selector = _schedule_list_entry_table_rows_selector(op)
+        if schedule_list_entry_table_rows_selector is not None:
+            return self._insert_schedule_list_entry_table_rows(
+                target,
+                new_node,
+                op,
+                schedule_list_entry_table_rows_selector,
+            )
         schedule_list_entry_selector = _schedule_list_entry_selector(op)
         if schedule_list_entry_selector is not None:
             return self._insert_schedule_list_entry(target, new_node, op, schedule_list_entry_selector)
