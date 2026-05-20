@@ -1892,6 +1892,18 @@ Current block-substitution context invariant:
     targeting `s. 16(1)(a)`, where replay has a flat subsection parent carrying
     the exact preimage but no addressable paragraph child at that point in the
     amendment chain
+- a source-carried word-tail substitution may materialize explicit child
+  carriers under a flat parent when the source says `for the words following
+  "anchor" substitute` and the extracted payload supplies the child provisions
+  - rule: `uk_replay_source_carried_structured_tail_substitution_recovered`
+  - family: `source_carried_structured_tail_substitution`
+  - replay trims only the parent text after the quoted anchor, then inserts
+    only the claimed child payloads; it must not infer unrelated siblings
+  - strict disposition is `block`; quirks disposition is `apply`
+  - current witness: `ukpga/2020/17` `Sch. 20 para. 5(a)(b)`, affected by
+    `ukpga/2020/17 Sch. 22 para. 81(5)`, where enacted paragraph 5 is a flat
+    `where ...` sentence and the current oracle has structural items `(a)` and
+    `(b)`
 
 Current subordinate-sibling payload invariant:
 

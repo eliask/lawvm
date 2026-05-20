@@ -6258,6 +6258,11 @@ _SOURCE_CARRIED_CHILD_TAIL_SUBSTITUTION_RE = re.compile(
     r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*;?\s*(?:and)?\s*\.?\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_FOLLOWING_ANCHOR_STRUCTURED_SUBSTITUTION_RE = re.compile(
+    r"\bfor\s+the\s+words\s+(?:following|after)\s+[“\"'‘](?P<anchor>.*?)[”\"'’]\s+"
+    r"substitute\b",
+    flags=re.I | re.S,
+)
 _SOURCE_CARRIED_STRUCTURAL_SIBLING_INSERT_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"after\s+(?P<source_kind>sub-?paragraph|paragraph|subsection|item)\s+"
@@ -11445,6 +11450,94 @@ class UKReplayExecutor:
         )
         return True
 
+    def _source_following_anchor_structured_substitution_anchor(self, op: LegalOperation) -> str:
+        witness = _witness_for_op(op)
+        extraction = getattr(witness, "extraction_witness", None)
+        source_text = str(getattr(extraction, "extracted_text", "") or getattr(op.source, "raw_text", "") or "")
+        if not source_text:
+            return ""
+        match = _SOURCE_FOLLOWING_ANCHOR_STRUCTURED_SUBSTITUTION_RE.search(source_text)
+        if match is None:
+            return ""
+        return " ".join(match.group("anchor").split()).strip()
+
+    def _recover_source_carried_structured_tail_substitution(
+        self,
+        op: LegalOperation,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+    ) -> bool:
+        anchor = self._source_following_anchor_structured_substitution_anchor(op)
+        if not anchor:
+            return False
+        path = tuple(getattr(target, "path", ()) or ())
+        if len(path) < 2:
+            return False
+        leaf_kind = str(path[-1][0] or "").lower()
+        leaf_label = _clean_num(str(path[-1][1] or ""))
+        if leaf_kind not in {"paragraph", "subparagraph", "item", "point"} or not leaf_label:
+            return False
+        if not uk_kind_matches(
+            node_kind=str(new_node.kind),
+            target_kind=leaf_kind,
+            node_label=_clean_num(new_node.label or ""),
+            target_label=leaf_label,
+        ):
+            return False
+        parent_target = LegalAddress(path=path[:-1], special=None)
+        parent_node, _, _ = self._find_node_by_target(parent_target)
+        if parent_node is None:
+            return False
+        for child in getattr(parent_node, "children", []) or []:
+            if str(child.kind).lower() == leaf_kind and _clean_num(str(child.label or "")) == leaf_label:
+                return False
+
+        parent_had_children = bool(getattr(parent_node, "children", []) or [])
+        parent_tail_trimmed = False
+        if not parent_had_children:
+            parent_node, parent_tail_trimmed = self._apply_text_replace_on_node_text_only(
+                parent_node,
+                f"TEXT_AFTER_{anchor}_TO_END",
+                "",
+                occurrence=0,
+            )
+            if not parent_tail_trimmed:
+                return False
+            trimmed_parent_text = (parent_node.text or "").rstrip()
+            if trimmed_parent_text != (parent_node.text or ""):
+                old_parent_node = parent_node
+                parent_node = dc_replace(parent_node, text=trimmed_parent_text)
+                self._replace_node_in_statute(old_parent_node, parent_node)
+
+        if not str(new_node.attrs.get("eId") or new_node.attrs.get("id") or ""):
+            new_node.attrs["eId"] = self._derive_target_eid(target)
+        self._insert_child_sorted(parent_node, new_node)
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind="uk_replay_source_carried_structured_tail_substitution_recovered",
+            message=(
+                "UK replay materialized a source-carried structured substitution: "
+                "the affecting text replaces the words after a quoted parent anchor "
+                "with explicit child provisions."
+            ),
+            op=op,
+            detail={
+                "action": _action_name(op.action),
+                "target": str(target),
+                "recovery_target": str(parent_target),
+                "source_anchor": anchor,
+                "payload_kind": str(new_node.kind),
+                "payload_label": str(new_node.label or ""),
+                "parent_had_children_before": parent_had_children,
+                "parent_tail_trimmed": parent_tail_trimmed,
+                "family": "source_carried_structured_tail_substitution",
+                "blocking": False,
+                "strict_disposition": "block",
+                "quirks_disposition": "apply",
+            },
+        )
+        return True
+
     def _annex_schedule_mismatch_gap(self, op: LegalOperation) -> bool:
         target = getattr(op, "target", None)
         path = tuple(getattr(target, "path", ()) or ())
@@ -12839,6 +12932,9 @@ class UKReplayExecutor:
                         if parent and idx is not None:
                             self._replace_node_in_statute(node, new_node)
                             self._record_invariant_violations(op)
+                elif self._recover_source_carried_structured_tail_substitution(op, target, new_node):
+                    self._record_invariant_violations(op)
+                    self._emit_top_section_snapshot(op)
                 elif uk_kind_matches(
                     node_kind=str(new_node.kind),
                     target_kind=_addr_leaf_kind(op.target) or "",
