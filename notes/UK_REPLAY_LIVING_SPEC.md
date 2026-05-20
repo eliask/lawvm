@@ -2570,6 +2570,17 @@ Current bench replay-regime invariant:
   treat a non-definition payload as a definition substitution. Current corpus
   witness: `asp/2000/7` effect `key-b7c7cdf19629dcd25fde12967bca8c51` from
   `asp/2010/11 Sch. 1 para. 7(a)`.
+- The same source-local split is owned for generic quoted text patches when
+  the parent source instruction supplies the exact quoted anchor/preimage and
+  the extracted `BlockAmendment` supplies only the payload. `after "X" there
+  is inserted- <payload>` lowers to a replacement of `X` with `X<payload>`
+  under `uk_effect_source_carried_after_quoted_anchor_insert_text_patch`;
+  `for "X" there is substituted- <payload>` lowers to replacement of `X`
+  under `uk_effect_source_carried_quoted_text_substitution_text_patch`.
+  These rules require the parent source witness and do not infer anchors from
+  live text. Current corpus witnesses: `asp/2001/2`
+  `key-5c591c6e000ad938236c4a9711426132` and `asp/2000/11`
+  `key-aeafeef7fe358d46b1fd8715e2aa27ef`.
 - Parser lowering may inherit definition-list context for child rows that only
   contain a quoted term. If the parent source instruction explicitly says
   `omit the definitions of-` and each child row is just `"X",`, the child row

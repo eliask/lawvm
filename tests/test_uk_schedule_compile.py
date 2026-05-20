@@ -3695,6 +3695,170 @@ def test_compile_source_carried_definition_entry_substitution_rejects_non_defini
     ]
 
 
+def test_compile_source_carried_after_quoted_anchor_insert_from_parent_context() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="section-51">
+              <Pnumber>51</Pnumber>
+              <P1para>
+                <P2 id="section-51-8">
+                  <Pnumber>8</Pnumber>
+                  <P2para>
+                    <Text>In section 82(1), in the definition of “local transport strategy”—</Text>
+                    <P3 id="section-51-8-c">
+                      <Pnumber>c</Pnumber>
+                      <P3para>
+                        <Text>after “authority” there is inserted</Text>
+                        <BlockAmendment><Text>; or b a local traffic authority,</Text></BlockAmendment>
+                      </P3para>
+                    </P3>
+                  </P2para>
+                </P2>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-source-carried-after-anchor-insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-10-10",
+        affected_uri="/id/asp/2001/2",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 82(1)",
+        affecting_uri="/id/asp/2005/12",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="12",
+        affecting_provisions="s. 51(8)(c)",
+        affecting_title="Transport (Scotland) Act 2005",
+        in_force_dates=[{"date": "2005-10-10", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "82"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "authority"
+    assert ops[0].text_patch.replacement == "authority; or b a local traffic authority,"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_after_quoted_anchor_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in observations] == [
+        "uk_effect_source_carried_after_quoted_anchor_insert_text_patch"
+    ]
+    assert observations[0]["blocking"] is False
+
+
+def test_compile_source_carried_quoted_substitution_from_parent_context() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="schedule-6-paragraph-9">
+              <Pnumber>9</Pnumber>
+              <P1para>
+                <P2 id="schedule-6-paragraph-9-4">
+                  <Pnumber>4</Pnumber>
+                  <P2para>
+                    <Text>In section 11 (grant of authorisations)—</Text>
+                    <P3 id="schedule-6-paragraph-9-4-c">
+                      <Pnumber>c</Pnumber>
+                      <P3para>
+                        <Text>in subsection (4)—</Text>
+                        <P4 id="schedule-6-paragraph-9-4-c-ii">
+                          <Pnumber>ii</Pnumber>
+                          <P4para>
+                            <Text>in paragraph (b), for “a police force,” there is substituted—</Text>
+                            <BlockAmendment>
+                              <Text>
+                                i where that individual is a member of a police force, a police force; or
+                                ii where that individual is a police member of the Scottish Crime and Drug
+                                Enforcement Agency, that Agency,
+                              </Text>
+                            </BlockAmendment>
+                          </P4para>
+                        </P4>
+                      </P3para>
+                    </P3>
+                  </P2para>
+                </P2>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-source-carried-quoted-substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2007-04-01",
+        affected_uri="/id/asp/2000/11",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="11",
+        affected_provisions="s. 11(4)(b)",
+        affecting_uri="/id/asp/2006/10",
+        affecting_class="ScottishAct",
+        affecting_year="2006",
+        affecting_number="10",
+        affecting_provisions="sch. 6 para. 9(4)(c)(ii)",
+        affecting_title="Police, Public Order and Criminal Justice (Scotland) Act 2006",
+        in_force_dates=[{"date": "2007-04-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "11"), ("subsection", "4"), ("paragraph", "b"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "a police force,"
+    assert ops[0].text_patch.replacement == (
+        "i where that individual is a member of a police force, a police force; or "
+        "ii where that individual is a police member of the Scottish Crime and Drug "
+        "Enforcement Agency, that Agency,"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_quoted_text_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in observations] == [
+        "uk_effect_source_carried_quoted_text_substitution_text_patch"
+    ]
+    assert observations[0]["blocking"] is False
+
+
 def test_compile_multiple_definition_entry_repeals_preserves_each_selector() -> None:
     extracted_el = ET.fromstring(
         f"""
