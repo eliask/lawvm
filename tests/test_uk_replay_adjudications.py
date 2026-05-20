@@ -3515,6 +3515,171 @@ def test_executor_applies_definition_entry_repeal_without_phrase_deletion() -> N
     assert adjudications == []
 
 
+def test_executor_applies_definition_entry_repeal_with_qualifier_before_predicate() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/11",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="31",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "\u201cpolice force\u201d means a force; "
+                                "\u201cpolice member\u201d, in relation to the Agency, "
+                                "means a person appointed as such a member; "
+                                "\u201cprivate vehicle\u201d means a vehicle;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_entry_qualifier_repeal",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "31"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="TEXT_DEFINITION_ENTRY_police member", occurrence=0),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "\u201cpolice force\u201d means a force; \u201cprivate vehicle\u201d means a vehicle;"
+    )
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_definition_entry_qualifier_phrase_normalized"
+    ]
+    assert adjudications[0].detail["family"] == "definition_entry_predicate_recovery"
+    assert adjudications[0].detail["strict_disposition"] == "record"
+
+
+def test_executor_applies_definition_entry_repeal_with_orphan_separator() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/11",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="31",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "\u201cPolice Service\u201d means the Police Service of Scotland; , "
+                                "\u201c police member \u201d, in relation to the Agency, "
+                                "means a person appointed as such a member; "
+                                "\u201cprivate vehicle\u201d means a vehicle;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_entry_orphan_separator_repeal",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "31"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="TEXT_DEFINITION_ENTRY_police member", occurrence=0),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "\u201cPolice Service\u201d means the Police Service of Scotland; "
+        "\u201cprivate vehicle\u201d means a vehicle;"
+    )
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_definition_entry_qualifier_phrase_normalized",
+        "uk_replay_definition_entry_orphan_separator_normalized",
+    ]
+    assert adjudications[1].detail["family"] == "definition_entry_separator_recovery"
+    assert adjudications[1].detail["strict_disposition"] == "record"
+
+
+def test_executor_does_not_treat_plain_comma_as_definition_entry_separator() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/11",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="31",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "This subsection mentions, \u201cpolice member\u201d, "
+                                "in relation to the Agency, means something in a note."
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_entry_plain_comma_repeal",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "31"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="TEXT_DEFINITION_ENTRY_police member", occurrence=0),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "This subsection mentions, \u201cpolice member\u201d, "
+        "in relation to the Agency, means something in a note."
+    )
+    assert [row.kind for row in adjudications] == ["uk_replay_definition_entry_shape_gap"]
+
+
 def test_executor_records_absent_definition_entry_repeal_without_shape_gap() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

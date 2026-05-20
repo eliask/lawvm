@@ -65,6 +65,8 @@ def test_classify_uk_replay_adjudication_bucket() -> None:
         "uk_replay_table_entry_inline_text_insertion_unresolved": "source_shape",
         "uk_replay_table_entry_inline_text_preimage_gap": "source_shape",
         "uk_replay_definition_anchor_parenthetical_translation_normalized": "nonblocking_observation",
+        "uk_replay_definition_entry_orphan_separator_normalized": "nonblocking_observation",
+        "uk_replay_definition_entry_qualifier_phrase_normalized": "nonblocking_observation",
         "uk_replay_definition_predicate_shall_construed_normalized": "nonblocking_observation",
         "uk_replay_direct_section_paragraph_child_text_recovered": "nonblocking_observation",
         "uk_replay_empty_descendant_parent_text_recovered": "nonblocking_observation",
