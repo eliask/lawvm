@@ -64,7 +64,10 @@ from lawvm.uk_legislation.canonicalize import (
     uk_should_bubble_structural_commencement,
     uk_should_descend_transparently,
 )
-from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
+from lawvm.roman import (
+    arabic_to_roman as _shared_arabic_to_roman,
+    roman_to_arabic as _shared_roman_to_arabic,
+)
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.uk_legislation.source_state import (
     uk_affecting_act_current_shell_enacted_source_selected,
@@ -5715,6 +5718,21 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
         raw_end_str = end_str
         start_str = start_str.upper()
         end_str = end_str.upper()
+        roman_start = _shared_roman_to_arabic(start_str)
+        roman_end = _shared_roman_to_arabic(end_str)
+        if (
+            roman_start is not None
+            and roman_end is not None
+            and roman_end > roman_start
+            and roman_end - roman_start < 50
+        ):
+            if raw_start_str.islower():
+                return [
+                    f"{prefix}({_shared_arabic_to_roman(value).lower()})"
+                    for value in range(roman_start, roman_end + 1)
+                ]
+            return [f"{prefix}({_shared_arabic_to_roman(value)})" for value in range(roman_start, roman_end + 1)]
+
         if len(start_str) == 1 and len(end_str) == 1 and start_str.isalpha() and end_str.isalpha():
             return [f"{prefix}({chr(c)})" for c in range(ord(start_str), ord(end_str) + 1)]
 

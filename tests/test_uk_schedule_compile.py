@@ -1700,6 +1700,23 @@ def test_split_metadata_parenthesized_one_letter_to_same_stem_alpha_range() -> N
     ]
 
 
+def test_split_metadata_parenthesized_roman_range_precedes_alpha_stem_range() -> None:
+    parts = _split_metadata_provisions("s. 25(3)(a)(i)-(iv)")
+
+    assert parts == [
+        "s. 25(3)(a)(i)",
+        "s. 25(3)(a)(ii)",
+        "s. 25(3)(a)(iii)",
+        "s. 25(3)(a)(iv)",
+    ]
+    assert [_parse_affected_target(part).path for part in parts] == [
+        (("section", "25"), ("subsection", "3"), ("paragraph", "a"), ("subparagraph", "i")),
+        (("section", "25"), ("subsection", "3"), ("paragraph", "a"), ("subparagraph", "ii")),
+        (("section", "25"), ("subsection", "3"), ("paragraph", "a"), ("subparagraph", "iii")),
+        (("section", "25"), ("subsection", "3"), ("paragraph", "a"), ("subparagraph", "iv")),
+    ]
+
+
 def test_compile_same_prefix_alpha_range_does_not_emit_dash_item_target() -> None:
     extracted_el = ET.fromstring(
         f"""
