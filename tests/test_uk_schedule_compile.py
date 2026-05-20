@@ -3546,6 +3546,161 @@ def test_compile_source_carried_definition_entry_insert_rejects_non_definition_p
     ]
 
 
+def test_compile_source_carried_following_words_repeal_from_block_payload() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P2 id="schedule-paragraph-3-9">
+              <Pnumber>9</Pnumber>
+              <P2para>
+                <P3 id="schedule-paragraph-3-9-b">
+                  <Pnumber>b</Pnumber>
+                  <P3para>
+                    <Text>in subsection (2), the following words are repealed—</Text>
+                    <BlockAmendment>
+                      <P3para>
+                        <Text>section 3(3)(a); section 6(2)(a) and (4)(a); section 8(1) and (2);</Text>
+                      </P3para>
+                    </BlockAmendment>
+                  </P3para>
+                </P3>
+              </P2para>
+            </P2>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-source-carried-following-words-repeal",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2023-12-04",
+        affected_uri="/id/asp/2001/2/section/82/subsection/2",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 82(2)",
+        affecting_uri="/id/asp/2019/17",
+        affecting_class="ScottishAct",
+        affecting_year="2019",
+        affecting_number="17",
+        affecting_provisions="sch. para. 3(9)(b)",
+        affecting_title="Transport (Scotland) Act 2019",
+        in_force_dates=[{"date": "2023-12-04", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "82"), ("subsection", "2"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        "section 3(3)(a); section 6(2)(a) and (4)(a); section 8(1) and (2);"
+    )
+    assert ops[0].text_patch.replacement is None
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_following_words_repeal_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in observations] == [
+        "uk_effect_source_carried_following_words_repeal_text_patch"
+    ]
+    base = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="82",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            text=(
+                                "Where references apply— section 3(3)(a);\n\n"
+                                "section 6(2)(a) and (4)(a);\n\n"
+                                "section 8(1) and (2); section 33(4);"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    replayed = replay_uk_ops(base, ops)
+    subsection = replayed.body.children[0].children[0]
+
+    assert subsection.text == "Where references apply—  section 33(4);"
+
+
+def test_compile_source_carried_following_words_repeal_rejects_without_parent_formula() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P3 id="schedule-paragraph-3-9-b">
+              <P3para>
+                <Text>in subsection (2), after the following words insert—</Text>
+                <BlockAmendment><P3para><Text>section 3(3)(a);</Text></P3para></BlockAmendment>
+              </P3para>
+            </P3>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-source-carried-following-words-repeal-negative",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2023-12-04",
+        affected_uri="/id/asp/2001/2/section/82/subsection/2",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 82(2)",
+        affecting_uri="/id/asp/2019/17",
+        affecting_class="ScottishAct",
+        affecting_year="2019",
+        affecting_number="17",
+        affecting_provisions="sch. para. 3(9)(b)",
+        affecting_title="Transport (Scotland) Act 2019",
+        in_force_dates=[{"date": "2023-12-04", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert [record["rule_id"] for record in observations] == [
+        "uk_effect_overlap_substitution_unlowered"
+    ]
+
+
 def test_compile_source_carried_definition_entry_substitution_from_parent_context() -> None:
     source_root = ET.fromstring(
         f"""

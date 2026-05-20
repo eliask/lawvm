@@ -6983,6 +6983,44 @@ def _fragment_substitution_source_carried_definition_entry_substitution(
     return None
 
 
+def _fragment_substitution_source_carried_following_words_repeal(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve block payloads whose parent says the following words are repealed."""
+    original = " ".join((extracted_text or "").split()).strip()
+    if not original or re.search(r"\b(?:omit|repeal|substitute|insert)\b", original, flags=re.I):
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        candidate_text = _instruction_text_before_amendment_container(ancestor)
+        if not candidate_text:
+            candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
+        if not candidate_text:
+            continue
+        if not re.search(
+            r"\b(?:the\s+)?following\s+words?\s+(?:are\s+)?(?:repealed|omitted)\b",
+            candidate_text,
+            flags=re.I,
+        ):
+            continue
+        source_parent_id = str(ancestor.get("id") or "")
+        if not source_parent_id:
+            source_parent_id = next(
+                (str(candidate.get("id")) for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")),
+                "",
+            )
+        return {
+            "original": original,
+            "replacement": "",
+            "source_parent_id": source_parent_id,
+            "rule_id": "uk_effect_source_carried_following_words_repeal_text_patch",
+        }
+    return None
+
+
 def _fragment_substitution_source_carried_after_quoted_anchor_insert(
     *,
     extracted_el: Optional[ET.Element],
@@ -9076,6 +9114,16 @@ def compile_effect_to_ir_ops(
                     if source_carried_definition_entry_substitution is not None:
                         subs = [source_carried_definition_entry_substitution]
                 if not subs:
+                    source_carried_following_words_repeal = (
+                        _fragment_substitution_source_carried_following_words_repeal(
+                            extracted_el=extracted_el,
+                            source_root=source_root,
+                            extracted_text=extracted_text,
+                        )
+                    )
+                    if source_carried_following_words_repeal is not None:
+                        subs = [source_carried_following_words_repeal]
+                if not subs:
                     source_carried_after_anchor_insert = (
                         _fragment_substitution_source_carried_after_quoted_anchor_insert(
                             extracted_el=extracted_el,
@@ -9346,6 +9394,30 @@ def compile_effect_to_ir_ops(
                                 "text_match": op_text_match,
                                 "source_anchor_child_label": str(primary.get("source_anchor_child_label") or ""),
                                 "source_subsection_label": str(primary.get("source_subsection_label") or ""),
+                            },
+                        )
+                    if (
+                        "uk_effect_source_carried_following_words_repeal_text_patch"
+                        in _fragment_rule_ids(fragment_subs)
+                    ):
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id="uk_effect_source_carried_following_words_repeal_text_patch",
+                            family="text_rewrite_lowering",
+                            reason_code="source_carried_following_words_repeal_lowered",
+                            reason=(
+                                "UK source parent says the following words are repealed "
+                                "and the BlockAmendment carries only those words; lowering "
+                                "preserves the block payload as the exact deletion preimage."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "text_match": op_text_match,
+                                "source_parent_id": str(primary.get("source_parent_id") or ""),
                             },
                         )
                     if "uk_effect_source_carried_subparagraph_tail_repeal_text_patch" in _fragment_rule_ids(
