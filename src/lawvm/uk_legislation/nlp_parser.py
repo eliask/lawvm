@@ -806,7 +806,8 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
         r"after (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’],?\s+"
         r"where\s+(?:it|they|those words?)\s+"
         r"(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
-        r"(?:occurs?|appear)s?,?\s+insert\s+[“\"'‘](?P<inserted>.+)[”\"'’]\s*(?:[,.;]|$)",
+        r"(?:occurs?|appear)s?,?\s+(?:there\s+(?:is|are)\s+inserted|insert)\s+"
+        r"[“\"'‘](?P<inserted>.+)[”\"'’]\s*(?:[,.;]|$)",
         text,
         re.I,
     )
@@ -831,10 +832,11 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
         )
 
     matches_after_where_ordinal_insert = re.finditer(
-        r"after (?:(?:the )?words? )?[“\"'‘](.*?)[”\"'’]\s+"
+        r"after (?:(?:the )?words? )?[“\"'‘](.*?)[”\"'’],?\s+"
         r"where\s+(?:it|they|those words?)\s+"
         r"(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
-        r"(?:occurs?|appear)s?,?\s+insert\s+[“\"'‘](.*?)[”\"'’]",
+        r"(?:occurs?|appear)s?,?\s+(?:there\s+(?:is|are)\s+inserted|insert)\s+"
+        r"[“\"'‘](.*?)[”\"'’]",
         text,
         re.I,
     )

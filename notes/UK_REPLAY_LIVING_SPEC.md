@@ -1445,11 +1445,14 @@ Current block-substitution context invariant:
   `asp/2003/9 Sch. 13 para. 8(a)(i)` and affected `s. 17(1)` by
   `asp/2003/9 Sch. 13 para. 2(a)(i)`, plus affected `s. 43(3)(a)` by
   `asp/2003/9 Sch. 13 para. 8(c)(ii)`.
-- the parser may lower `after "X" where it first/second occurs insert "Y"` to
-  an occurrence-qualified anchor patch using the named rule
+- the parser may lower `after "X" where it first/second occurs insert "Y"`
+  and the same comma-separated passive form `after "X", where it second
+  occurs, there is inserted "Y"` to an occurrence-qualified anchor patch using
+  the named rule
   `uk_effect_after_quoted_anchor_where_ordinal_insert_text_patch`. Current
-  witness: `asp/2001/2` affected `s. 79(2)` by `asp/2019/17`
-  `sch. para. 3(7)(b)`.
+  witnesses: `asp/2001/2` affected `s. 79(2)` by `asp/2019/17`
+  `sch. para. 3(7)(b)`, and `asp/2002/11` affected `s. 5(1)(a)` by
+  `asp/2010/11 Sch. 3 para. 1`.
 - the parser may lower inverted wording `the word "Y" is inserted after the
   word "X" where it second appears` to the same text-patch shape, using
   `uk_effect_word_inserted_after_word_where_ordinal_text_patch`. The inserted

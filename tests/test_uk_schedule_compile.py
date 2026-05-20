@@ -3486,6 +3486,17 @@ def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
             "uk_effect_after_quoted_anchor_where_ordinal_insert_text_patch",
         ),
         (
+            "1 In section 5(1)(a) (matters which may be investigated) after “or”, "
+            "where it second occurs, there is inserted “ on ” .",
+            "word inserted",
+            "s. 5(1)(a)",
+            "or",
+            "or on ",
+            2,
+            StructuralAction.TEXT_REPLACE,
+            "uk_effect_after_quoted_anchor_where_ordinal_insert_text_patch",
+        ),
+        (
             "c repeal the words “or to the Scottish Crime and Drug Enforcement Agency”.",
             "words repealed",
             "s. 24(2)(b)",

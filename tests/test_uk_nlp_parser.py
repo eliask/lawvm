@@ -386,6 +386,22 @@ def test_parse_fragment_substitution_handles_after_anchor_where_ordinal_insert()
     ]
 
 
+def test_parse_fragment_substitution_handles_after_anchor_where_ordinal_there_inserted() -> None:
+    subs = parse_fragment_substitution(
+        "1 In section 5(1)(a), after \u201cor\u201d, where it second occurs, "
+        "there is inserted \u201c on \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "or",
+            "replacement": "or on ",
+            "occurrence": "2",
+            "rule_id": "uk_effect_after_quoted_anchor_where_ordinal_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_after_anchor_where_ordinal_nested_quote_insert() -> None:
     subs = parse_fragment_substitution(
         "i after \u201cassociation\u201d, where it first occurs, insert "
