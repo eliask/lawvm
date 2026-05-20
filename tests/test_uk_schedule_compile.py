@@ -19148,6 +19148,77 @@ def test_executor_single_segment_body_insert_reuses_nested_predecessor_parent() 
     assert [child.label for child in group.children] == ["15", "15A", "16", "16A", "16B"]
 
 
+def test_existing_insert_target_under_wrapped_parent_records_conflict_gap() -> None:
+    statute = IRStatute(
+        statute_id="asp/2002/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="Part 1",
+                    text="",
+                    attrs={"eId": "part-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.P1GROUP,
+                            label=None,
+                            text="",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.SECTION,
+                                    label="4",
+                                    text="Section 4",
+                                    attrs={"eId": "section-4"},
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.SUBSECTION,
+                                            label="2",
+                                            text="Base subsection",
+                                            attrs={"eId": "section-4-2"},
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.SUBSECTION,
+                                            label="2A",
+                                            text="Existing subsection text",
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_wrapped_same_target_subsection_insert",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("section", "4"), ("subsection", "2a"))),
+            payload=IRNode(kind=IRNodeKind.SUBSECTION, label="2A", text="Different subsection text"),
+            source=OperationSource(statute_id="ssi/2011/141", title="Test Regulations"),
+        )
+    )
+
+    section = executor.statute.body.children[0].children[0].children[0]
+    assert [child.label for child in section.children] == ["2", "2A"]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_existing_target_conflict_gap"
+    ]
+    assert adjudications[0].detail["target_resolution_recovery"] == "explicit_parent_leaf_same_kind_label"
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
+
+
 def test_executor_alpha_suffix_paragraph_insert_sorts_after_base_letter() -> None:
     statute = IRStatute(
         statute_id="asc/2021/1",
