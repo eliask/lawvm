@@ -1602,10 +1602,11 @@ Current block-substitution context invariant:
   `ukpga/2009/1` `s. 253(7)`.
 - `before/after the entry relating to "X" insert- "Y"` is not a text-patch
   family. It lowers to `uk_effect_schedule_list_entry_insert` only when the
-  affected target is a schedule and source parsing has a typed
-  `schedule_entry` carrier. Replay then requires exactly one direct
-  schedule-entry anchor and inserts an unlabeled `schedule_entry` sibling
-  before/after that anchor. Missing or ambiguous anchors block with
+  affected target is a schedule or explicit schedule partition and source
+  parsing has a typed `schedule_entry` carrier. Replay then requires exactly
+  one direct schedule-entry anchor on that carrier and inserts a
+  `schedule_entry` sibling before/after that anchor. Missing or ambiguous
+  anchors block with
   `uk_replay_schedule_list_entry_anchor_unresolved`, classified as source
   shape, not replay bug. If the cited anchor is the unique prefix of a longer
   descriptive entry, replay may proceed with nonblocking
@@ -1613,7 +1614,12 @@ Current block-substitution context invariant:
   among multiple prefix matches. If the only mismatch is a leading article
   (`the`/`a`/`an`) on either the source anchor or preserved entry text, replay
   may proceed with nonblocking
-  `uk_replay_schedule_list_entry_anchor_article_normalized`. Source forms such
+  `uk_replay_schedule_list_entry_anchor_article_normalized`. For explicit
+  schedule-partition carriers, an anchor of the form `the X (paragraph N)` may
+  proceed with nonblocking
+  `uk_replay_schedule_list_entry_anchor_parenthetical_paragraph_normalized`
+  only when both the paragraph label `N` and the normalized entry text `X`
+  resolve to one direct entry in that partition. Source forms such
   as `there is inserted the following entry- ...`, `the insertion, after the
   entry for X, of Y`, and quoted schedule-list anchors like `insert before
   "X"- Y` are part of this family. Explicit `at the appropriate place in
@@ -1631,6 +1637,10 @@ Current block-substitution context invariant:
   `asp/2000/7` affected `sch. 3` by `asp/2005/6` `Sch. 3 para. 9(a)`,
   `ssi/2009/286` `art. 2(2)(c)`, `asp/2010/8` `sch. 14 para. 1(b)`,
   `asp/2005/10` `sch. 4 para. 12`, and `asp/2007/5` `Sch. 5 para. 4`.
+  A schedule-partition lowering witness is `asp/2002/11` affected
+  `sch. 2 Pt. 2` by `asp/2025/11` `sch. 4 para. 2(2)(a)`; corpus replay
+  currently keeps that row visible as `uk_replay_schedule_list_entry_anchor_unresolved`
+  when the carrier has no direct entries at the operation point.
   The source classifier also treats `for the entry relating to X substitute Y`
   as this same bounded list-entry frontier rather than a free text replacement.
   The source typo `after the entry relation to X insert Y` lowers through the

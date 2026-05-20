@@ -16698,6 +16698,55 @@ def test_compile_schedule_list_entry_insert_lowers_to_typed_schedule_entry() -> 
     assert observations[0]["blocking"] is False
 
 
+def test_compile_schedule_list_entry_insert_allows_explicit_schedule_partition_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>after the entry relating to the Principal Reporter (paragraph 32AA),
+          insert— 32AAZA Qualifications Scotland. ,</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_list_entry_partition_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-02-17",
+        affected_uri="/id/asp/2002/11/schedule/2/part/2",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="Sch. 2 Pt. 2",
+        affecting_uri="/id/asp/2025/11",
+        affecting_class="ScottishAct",
+        affecting_year="2025",
+        affecting_number="11",
+        affecting_provisions="sch. 4 para. 2(2)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2026-02-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.INSERT
+    assert op.target == LegalAddress(path=(("schedule", "2"), ("part", "2")))
+    assert op.payload is not None
+    assert op.payload.kind is IRNodeKind.SCHEDULE_ENTRY
+    assert op.payload.label is None
+    assert op.payload.text == "32AAZA Qualifications Scotland"
+    selector_note = next(note for note in op.provenance_tags if note.startswith("schedule_list_entry_selector:"))
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_selector:"))
+    assert selector["direction"] == "after"
+    assert selector["anchor_text"] == "the Principal Reporter (paragraph 32AA)"
+    assert op.witness_rule_id == "uk_effect_schedule_list_entry_insert"
+    assert observations[0]["rule_id"] == "uk_effect_schedule_list_entry_insert"
+    assert observations[0]["blocking"] is False
+
+
 def test_compile_schedule_list_entry_insert_handles_there_is_inserted_form() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -17193,6 +17242,62 @@ def test_replay_schedule_list_entry_insert_records_unique_article_anchor() -> No
     assert adjudications[0].detail["strict_disposition"] == "record"
 
 
+def test_replay_schedule_list_entry_insert_normalizes_partition_parenthetical_paragraph_anchor() -> None:
+    op = LegalOperation(
+        op_id="uk_test_schedule_entry_partition_parenthetical_anchor",
+        sequence=0,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("schedule", "2"), ("part", "2"))),
+        payload=IRNode(
+            kind=IRNodeKind.SCHEDULE_ENTRY,
+            label=None,
+            text="32AAZA Qualifications Scotland",
+        ),
+        provenance_tags=(
+            'schedule_list_entry_selector:{"rule_id":"uk_effect_schedule_list_entry_insert",'
+            '"direction":"after","anchor_text":"the Principal Reporter (paragraph 32AA)",'
+            '"inserted_text":"32AAZA Qualifications Scotland"}',
+        ),
+    )
+    base = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PART,
+                        label="2",
+                        text="Persons to whom Act applies",
+                        children=(
+                            IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label="32AA", text="Principal Reporter"),
+                            IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label="33", text="Scottish Ministers"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+    part = replayed.supplements[0].children[0]
+
+    assert [child.label for child in part.children] == ["32AA", None, "33"]
+    assert [child.text for child in part.children] == [
+        "Principal Reporter",
+        "32AAZA Qualifications Scotland",
+        "Scottish Ministers",
+    ]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_schedule_list_entry_anchor_parenthetical_paragraph_normalized"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+
+
 def test_replay_schedule_list_entry_insert_records_alphabetical_position() -> None:
     op = LegalOperation(
         op_id="uk_test_schedule_entry_alphabetical",
@@ -17278,6 +17383,52 @@ def test_replay_schedule_list_entry_insert_blocks_when_anchor_ambiguous() -> Non
     ]
     assert len(adjudications) == 1
     assert adjudications
+    assert adjudications[0].kind == "uk_replay_schedule_list_entry_anchor_unresolved"
+    assert adjudications[0].detail["reason_code"] == "anchor_not_unique"
+    assert adjudications[0].detail["strict_disposition"] == "block"
+
+
+def test_replay_schedule_list_entry_insert_blocks_partition_parenthetical_anchor_label_mismatch() -> None:
+    op = LegalOperation(
+        op_id="uk_test_schedule_entry_partition_parenthetical_anchor_mismatch",
+        sequence=0,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("schedule", "2"), ("part", "2"))),
+        payload=IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label=None, text="32AAZA Qualifications Scotland"),
+        provenance_tags=(
+            'schedule_list_entry_selector:{"rule_id":"uk_effect_schedule_list_entry_insert",'
+            '"direction":"after","anchor_text":"the Principal Reporter (paragraph 32AA)",'
+            '"inserted_text":"32AAZA Qualifications Scotland"}',
+        ),
+    )
+    base = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="2",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PART,
+                        label="2",
+                        children=(
+                            IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label="32AB", text="Principal Reporter"),
+                            IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label="33", text="Scottish Ministers"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+    part = replayed.supplements[0].children[0]
+
+    assert [child.label for child in part.children] == ["32AB", "33"]
+    assert len(adjudications) == 1
     assert adjudications[0].kind == "uk_replay_schedule_list_entry_anchor_unresolved"
     assert adjudications[0].detail["reason_code"] == "anchor_not_unique"
     assert adjudications[0].detail["strict_disposition"] == "block"

@@ -71,6 +71,7 @@ def test_classify_uk_replay_adjudication_bucket() -> None:
         "uk_replay_implicit_first_subparagraph_parent_text_recovered": "nonblocking_observation",
         "uk_replay_schedule_list_entry_alphabetical_position_resolved": "nonblocking_observation",
         "uk_replay_schedule_list_entry_anchor_article_normalized": "nonblocking_observation",
+        "uk_replay_schedule_list_entry_anchor_parenthetical_paragraph_normalized": "nonblocking_observation",
         "uk_replay_schedule_list_entry_anchor_prefix_normalized": "nonblocking_observation",
         "uk_replay_schedule_list_entry_group_anchor_resolved": "nonblocking_observation",
         "uk_replay_schedule_list_entry_repeal_numbered_anchor_normalized": "nonblocking_observation",

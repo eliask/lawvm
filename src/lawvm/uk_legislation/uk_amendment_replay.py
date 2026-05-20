@@ -676,6 +676,9 @@ _UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_PREFIX_NORMALIZED_RULE_ID = (
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_ARTICLE_NORMALIZED_RULE_ID = (
     "uk_replay_schedule_list_entry_anchor_article_normalized"
 )
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_PARENTHETICAL_PARAGRAPH_RULE_ID = (
+    "uk_replay_schedule_list_entry_anchor_parenthetical_paragraph_normalized"
+)
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_GROUP_ANCHOR_RULE_ID = (
     "uk_replay_schedule_list_entry_group_anchor_resolved"
 )
@@ -5391,8 +5394,14 @@ def _uk_schedule_list_entry_insert_selector(
     target_surface = f"{target_ref} {target}".lower()
     if "table" in target_surface or "column" in text.lower():
         return None
-    if _addr_leaf_kind(target) != "schedule":
+    if _addr_container(target) != "schedule" or _addr_leaf_kind(target) not in {
+        "schedule",
+        "part",
+        "chapter",
+        "division",
+    }:
         return None
+    target_leaf_kind = _addr_leaf_kind(target)
 
     match = re.search(
         r"\b(?P<direction>before|after)\s+(?:the\s+)?entry\s+"
@@ -5408,13 +5417,13 @@ def _uk_schedule_list_entry_insert_selector(
             text,
             re.I,
         )
-    if match is None:
+    if match is None and target_leaf_kind == "schedule":
         match = re.search(
             r"\binsert\s+(?P<direction>before|after)\s+[“\"'](?P<anchor>.+?)[”\"']\s*[—–-]\s*(?P<payload>.+)$",
             text,
             re.I,
         )
-    if match is None:
+    if match is None and target_leaf_kind == "schedule":
         match = re.search(
             r"\b(?P<direction>before|after)\s+[“\"'](?P<anchor>.+?)[”\"']\s+"
             r"(?:,?\s+)?(?:there\s+is\s+)?insert(?:ed)?\s*[—–-]?\s*(?P<payload>.+)$",
@@ -19310,14 +19319,15 @@ class UKReplayExecutor:
     ) -> bool:
         if _uk_kind_value(new_node.kind) != "schedule_entry":
             return False
-        schedule_node, _, _ = self._find_node_by_target(target)
-        if schedule_node is None or _uk_kind_value(schedule_node.kind) != "schedule":
+        carrier_node, _, _ = self._find_node_by_target(target)
+        carrier_kind = _uk_kind_value(carrier_node.kind) if carrier_node is not None else ""
+        if carrier_node is None or carrier_kind not in {"schedule", "part", "chapter", "division"}:
             if self._target_under_repealed_prefix(target):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_repealed_target_gap",
                     message=(
-                        "UK replay skipped schedule-list-entry insert: schedule "
+                        "UK replay skipped schedule-list-entry insert: carrier "
                         "target was already repealed earlier in the chain."
                     ),
                     op=op,
@@ -19338,7 +19348,7 @@ class UKReplayExecutor:
                 kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID,
                 message=(
                     "UK replay skipped schedule-list-entry insert: target did "
-                    "not resolve to a schedule carrier."
+                    "not resolve to a schedule or schedule-partition carrier."
                 ),
                 op=op,
                 detail={
@@ -19377,7 +19387,7 @@ class UKReplayExecutor:
 
         entry_rows: list[tuple[int, UKMutableNode]] = [
             (idx, child)
-            for idx, child in enumerate(schedule_node.children)
+            for idx, child in enumerate(carrier_node.children)
             if _uk_kind_value(child.kind) == "schedule_entry"
         ]
         if direction == "alphabetical":
@@ -19409,7 +19419,7 @@ class UKReplayExecutor:
                     },
                 )
                 return False
-            insert_index = len(schedule_node.children)
+            insert_index = len(carrier_node.children)
             for idx, child in entry_rows:
                 child_sort_key = _compact_schedule_entry_anchor_without_article(child.text)
                 if child_sort_key > inserted_sort_key:
@@ -19437,9 +19447,9 @@ class UKReplayExecutor:
             )
             for key in ("eId", "id"):
                 new_node.attrs.pop(key, None)
-            children = list(schedule_node.children)
+            children = list(carrier_node.children)
             children.insert(insert_index, new_node)
-            self._replace_children(schedule_node, children)
+            self._replace_children(carrier_node, children)
             return True
 
         matches = [
@@ -19449,6 +19459,7 @@ class UKReplayExecutor:
         ]
         prefix_normalized = False
         article_normalized = False
+        parenthetical_paragraph_normalized = False
         if not matches:
             matches = [
                 (idx, child)
@@ -19470,10 +19481,28 @@ class UKReplayExecutor:
                 )
             ]
             article_normalized = len(matches) == 1
+        if not matches and carrier_kind != "schedule":
+            parenthetical_anchor = _schedule_entry_parenthetical_paragraph_anchor(
+                str(selector.get("anchor_text") or "")
+            )
+            if parenthetical_anchor is not None:
+                entry_text, paragraph_label = parenthetical_anchor
+                entry_article_norm = _compact_schedule_entry_anchor_without_article(entry_text)
+                matches = [
+                    (idx, child)
+                    for idx, child in entry_rows
+                    if _clean_num(child.label or "") == paragraph_label
+                    and entry_article_norm
+                    and (
+                        _compact_schedule_entry_anchor_without_article(child.text) == entry_article_norm
+                        or _compact_schedule_entry_anchor_without_article(child.text).startswith(entry_article_norm)
+                    )
+                ]
+                parenthetical_paragraph_normalized = len(matches) == 1
         if not matches:
             grouped_entry_rows: list[tuple[int, UKMutableNode, int, UKMutableNode]] = [
                 (group_idx, group, child_idx, child)
-                for group_idx, group in enumerate(schedule_node.children)
+                for group_idx, group in enumerate(carrier_node.children)
                 if _uk_kind_value(group.kind) == "p1group"
                 for child_idx, child in enumerate(group.children)
                 if _uk_kind_value(child.kind) == "schedule_entry"
@@ -19611,14 +19640,35 @@ class UKReplayExecutor:
                     "quirks_disposition": "record",
                 },
             )
+        if parenthetical_paragraph_normalized:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_PARENTHETICAL_PARAGRAPH_RULE_ID,
+                message=(
+                    "UK replay resolved a schedule-list-entry insert anchor "
+                    "after validating its parenthetical paragraph label."
+                ),
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "anchor_parenthetical_paragraph_unique",
+                    "anchor_match_count": len(matches),
+                    "entry_count": len(entry_rows),
+                    "family": "source_schedule_list_entry_elaboration",
+                    "blocking": False,
+                    "strict_disposition": "record",
+                    "quirks_disposition": "record",
+                },
+            )
 
         anchor_index = matches[0][0]
         insert_index = anchor_index if direction == "before" else anchor_index + 1
         for key in ("eId", "id"):
             new_node.attrs.pop(key, None)
-        children = list(schedule_node.children)
+        children = list(carrier_node.children)
         children.insert(insert_index, new_node)
-        self._replace_children(schedule_node, children)
+        self._replace_children(carrier_node, children)
         return True
 
     def _repeal_schedule_list_entries(
