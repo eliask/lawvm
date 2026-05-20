@@ -769,6 +769,9 @@ _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID = (
 _UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID = (
     "uk_effect_source_parent_at_end_added_payload_lowered"
 )
+_UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID = (
+    "uk_effect_after_paragraph_insert_labelled_series_lowered"
+)
 _UK_SOURCE_TEXT_SCHEDULE_PARAGRAPH_TARGET_OVERRIDE_RULE_ID = (
     "uk_effect_source_text_schedule_paragraph_target_overrides_metadata"
 )
@@ -9309,6 +9312,22 @@ _UK_SOURCE_PAYLOAD_TAG_KIND = {
     "P4": "subparagraph",
 }
 
+_UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_REF_RE = re.compile(
+    r"^\s*s\.\s*(?P<section>[0-9A-Za-z]+)\s*"
+    r"\((?P<subsection>[0-9A-Za-z]+)\)\s*"
+    r"\((?P<start>[a-z])\)\s*-\s*\((?P<end>[a-z])\)\s+and\s+semicolon\s*$",
+    flags=re.I,
+)
+_UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_TEXT_RE = re.compile(
+    r"^\s*(?P<row_label>[a-z])\s+(?:(?P=row_label)\s+)?after\s+paragraph\s+\((?P<anchor>[a-z])\),\s*"
+    r"insert\s+(?P<payload>.+?)\s*$",
+    flags=re.I | re.S,
+)
+_UK_LABELLED_SERIES_ITEM_RE = re.compile(
+    r"(?:^|;\s+(?:or\s+)?)(?P<label>[a-z])\s+",
+    flags=re.I,
+)
+
 
 def _replace_last_parenthetical_label(ref: str, old_label: str, new_label: str) -> str:
     labels = list(re.finditer(r"\(([0-9A-Za-z]+)\)", ref))
@@ -9491,6 +9510,80 @@ def _source_parent_at_end_added_payload(
             "payload_tag": _tag(payload_el),
         }
     return None
+
+
+def _source_after_paragraph_insert_labelled_series(
+    *,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    affected_provisions: str,
+) -> Optional[dict[str, Any]]:
+    """Lower `after paragraph (b), insert ; c ...; d ...; or e ...` rows."""
+    if extracted_el is None or _tag(extracted_el) not in {"P3", "P4"}:
+        return None
+    ref_match = _UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_REF_RE.match(affected_provisions or "")
+    if ref_match is None:
+        return None
+    text = " ".join((extracted_text or "").split()).strip()
+    text_match = _UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_TEXT_RE.match(text)
+    if text_match is None:
+        return None
+    section = ref_match.group("section")
+    subsection = ref_match.group("subsection")
+    start_label = _source_parent_range_label(ref_match.group("start"))
+    end_label = _source_parent_range_label(ref_match.group("end"))
+    anchor_label = _source_parent_range_label(text_match.group("anchor"))
+    if not all(re.fullmatch(r"[a-z]", label, re.I) for label in (start_label, end_label, anchor_label)):
+        return None
+    if ord(anchor_label) + 1 != ord(start_label) or ord(end_label) < ord(start_label):
+        return None
+    payload_text = text_match.group("payload").strip()
+    if not payload_text.startswith(";"):
+        return None
+    payload_tail = payload_text[1:].strip()
+    matches = list(_UK_LABELLED_SERIES_ITEM_RE.finditer(payload_tail))
+    if not matches:
+        return None
+    payloads: list[dict[str, str]] = []
+    for index, match in enumerate(matches):
+        label = _source_parent_range_label(match.group("label"))
+        next_start = matches[index + 1].start() if index + 1 < len(matches) else len(payload_tail)
+        item_text = payload_tail[match.end() : next_start].strip()
+        item_text = item_text.rstrip(" .")
+        if not label or not item_text:
+            return None
+        payloads.append(
+            {
+                "label": label,
+                "text": item_text,
+                "target_ref": f"s. {section}({subsection})({label})",
+                "target": f"section:{section}/subsection:{subsection}/paragraph:{label}",
+            }
+        )
+    expected_labels = tuple(chr(label_ord) for label_ord in range(ord(start_label), ord(end_label) + 1))
+    if tuple(payload["label"] for payload in payloads) != expected_labels:
+        return None
+    anchor_target = LegalAddress(
+        path=(
+            ("section", section),
+            ("subsection", subsection),
+            ("paragraph", anchor_label),
+        )
+    )
+    return {
+        "rule_id": _UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
+        "source_id": str(extracted_el.get("id") or ""),
+        "source_instruction": text[: text_match.start("payload")].strip(),
+        "target_ref": affected_provisions,
+        "section": section,
+        "subsection": subsection,
+        "anchor_label": anchor_label,
+        "anchor_target": str(anchor_target),
+        "start_label": start_label,
+        "end_label": end_label,
+        "semicolon_target": str(anchor_target),
+        "payloads": tuple(payloads),
+    }
 
 
 _DEFINITION_LIST_OMISSION_CONTEXT_RE = re.compile(
@@ -9863,6 +9956,139 @@ def compile_effect_to_ir_ops(
                 witness_rule_id=metadata_renumber_targets.rule_id,
             )
         ]
+
+    after_paragraph_series = _source_after_paragraph_insert_labelled_series(
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        affected_provisions=effect.affected_provisions,
+    )
+    if action == "insert" and after_paragraph_series is not None:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=_UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
+            family="source_context_elaboration",
+            reason_code="after_paragraph_insert_semicolon_and_labelled_series",
+            reason=(
+                "UK source row inserts a semicolon after an existing paragraph "
+                "and then a contiguous labelled paragraph series; lowering "
+                "separates the punctuation patch from the inserted legal "
+                "siblings instead of treating the instruction text as one "
+                "payload."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                key: value
+                for key, value in after_paragraph_series.items()
+                if key != "rule_id"
+            },
+        )
+        src = OperationSource(
+            statute_id=effect.affecting_act_id,
+            title=effect.affecting_title,
+            effective=effect_witness.applicability.effective_date or "",
+            raw_text=extraction_witness.extracted_text,
+        )
+        semicolon_target = LegalAddress(
+            path=(
+                ("section", str(after_paragraph_series["section"])),
+                ("subsection", str(after_paragraph_series["subsection"])),
+                ("paragraph", str(after_paragraph_series["anchor_label"])),
+            )
+        )
+        semicolon_patch = TextPatchSpec(
+            kind=TextPatchKindEnum.APPEND,
+            selector=TextSelector(match_text="TEXT_END", occurrence=0),
+            replacement=";",
+        )
+        semicolon_rewrite = _uk_text_rewrite_spec(
+            fragment_subs=[
+                {
+                    "original": "TEXT_END",
+                    "replacement": ";",
+                    "rule_id": _UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
+                }
+            ],
+            text_patch=semicolon_patch,
+            op_text_match="TEXT_END",
+            op_text_replacement=";",
+            op_text_occurrence=0,
+        )
+        semicolon_witness = UKLoweredOperationWitness(
+            op_id=f"{effect.effect_id}_semicolon",
+            sequence=sequence,
+            action=StructuralAction.TEXT_REPLACE,
+            target=semicolon_target,
+            payload=None,
+            source=src,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            target_expansion_witness=_uk_target_expansion_witness(
+                effect.affected_provisions,
+                [str(after_paragraph_series["semicolon_target"])],
+                original_targets_str=[effect.affected_provisions],
+            ),
+            text_rewrite_witness=semicolon_rewrite,
+            insertion_anchor_witness=None,
+        )
+        custom_ops = [
+            LegalOperation(
+                op_id=semicolon_witness.op_id,
+                sequence=semicolon_witness.sequence,
+                action=semicolon_witness.action,
+                target=semicolon_target,
+                payload=None,
+                source=src,
+                group_id=_uk_temporal_group_id(effect),
+                provenance_tags=_uk_lowered_op_provenance_tags(semicolon_witness),
+                text_patch=semicolon_patch,
+                witness_rule_id=_UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
+            )
+        ]
+        preceding_target = semicolon_target
+        for payload_index, payload in enumerate(after_paragraph_series["payloads"]):
+            payload_target = _parse_affected_target(str(payload["target_ref"]))
+            payload_node = IRNode(
+                kind=IRNodeKind.PARAGRAPH,
+                label=str(payload["label"]),
+                text=str(payload["text"]),
+            )
+            insert_witness = UKLoweredOperationWitness(
+                op_id=f"{effect.effect_id}_insert_{payload_index}",
+                sequence=sequence,
+                action=StructuralAction.INSERT,
+                target=payload_target,
+                payload=payload_node,
+                source=src,
+                effect_witness=effect_witness,
+                extraction_witness=extraction_witness,
+                target_expansion_witness=_uk_target_expansion_witness(
+                    effect.affected_provisions,
+                    [str(payload["target_ref"])],
+                    original_targets_str=[effect.affected_provisions],
+                ),
+                text_rewrite_witness=None,
+                insertion_anchor_witness=_uk_insertion_anchor_witness(
+                    _target_anchor_eid(preceding_target),
+                    anchor_source=_UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
+                ),
+            )
+            custom_ops.append(
+                LegalOperation(
+                    op_id=insert_witness.op_id,
+                    sequence=insert_witness.sequence,
+                    action=insert_witness.action,
+                    target=payload_target,
+                    payload=_payload_with_rewrite_witness(payload_node, insert_witness),
+                    source=src,
+                    group_id=_uk_temporal_group_id(effect),
+                    provenance_tags=_uk_lowered_op_provenance_tags(insert_witness),
+                    witness_rule_id=_UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
+                )
+            )
+            preceding_target = payload_target
+        return custom_ops
 
     # ALWAYS split metadata provisions to handle ranges and lists
     raw_affected_provisions = effect.affected_provisions

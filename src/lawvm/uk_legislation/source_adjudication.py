@@ -972,6 +972,7 @@ def classify_uk_effect_source_pathology(
     if {
         "uk_effect_source_parent_substitution_range_payload_lowered",
         "uk_effect_source_parent_at_end_added_payload_lowered",
+        "uk_effect_after_paragraph_insert_labelled_series_lowered",
     } & lowering_rules:
         return ""
     if not norm_text and not actions and not is_structural:

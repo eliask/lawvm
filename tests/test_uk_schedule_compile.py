@@ -22392,6 +22392,73 @@ def test_compile_source_parent_at_end_added_payload_lowers_insert() -> None:
     assert source_parent_rows[0]["payload_tag"] == "P2"
 
 
+def test_compile_after_paragraph_insert_labelled_series_lowers_semicolon_and_siblings() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-57-2-b">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>b after paragraph (b), insert ; c make, on behalf of the granter, a request under section 4(1) of the Anatomy Act 1984 (c. 14); d give, on behalf of the granter, an authorisation under, or by virtue of, section 6(1), 17, 29(1) or 42(1) of the Human Tissue (Scotland) Act 2006 (asp 4); or e make, on behalf of the granter, a nomination under section 30(1) of that Act.</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_after_paragraph_insert_labelled_series",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2017-04-24",
+        affected_uri="/id/asp/2000/4/section/16/subsection/6/paragraph/c",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="4",
+        affected_provisions="s. 16(6)(c)-(e) and semicolon",
+        affecting_uri="/id/asp/2006/4/section/57",
+        affecting_class="ScottishAct",
+        affecting_year="2006",
+        affecting_number="4",
+        affecting_provisions="s. 57(2)(b)",
+        affecting_title="Human Tissue (Scotland) Act 2006",
+        in_force_dates=[],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPLACE,
+        StructuralAction.INSERT,
+        StructuralAction.INSERT,
+        StructuralAction.INSERT,
+    ]
+    assert [str(op.target) for op in ops] == [
+        "section:16/subsection:6/paragraph:b",
+        "section:16/subsection:6/paragraph:c",
+        "section:16/subsection:6/paragraph:d",
+        "section:16/subsection:6/paragraph:e",
+    ]
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.kind is TextPatchKindEnum.APPEND
+    assert ops[0].text_patch.selector.match_text == "TEXT_END"
+    assert ops[0].text_patch.replacement == ";"
+    assert [op.payload.label if op.payload is not None else None for op in ops[1:]] == ["c", "d", "e"]
+    assert ops[1].payload is not None
+    assert ops[1].payload.text.startswith("make, on behalf of the granter")
+    assert all(op.witness_rule_id == "uk_effect_after_paragraph_insert_labelled_series_lowered" for op in ops)
+    assert [row["rule_id"] for row in observations if row["rule_id"].endswith("_rejected")] == []
+    series_rows = [
+        row for row in observations if row["rule_id"] == "uk_effect_after_paragraph_insert_labelled_series_lowered"
+    ]
+    assert len(series_rows) == 1
+    assert series_rows[0]["source_id"] == "section-57-2-b"
+    assert series_rows[0]["anchor_target"] == "section:16/subsection:6/paragraph:b"
+    assert series_rows[0]["semicolon_target"] == "section:16/subsection:6/paragraph:b"
+    assert series_rows[0]["start_label"] == "c"
+    assert series_rows[0]["end_label"] == "e"
+    assert [payload["label"] for payload in series_rows[0]["payloads"]] == ["c", "d", "e"]
+
+
 def test_pipeline_compile_ops_blocks_range_to_container_substitution_until_owned(monkeypatch) -> None:
     effect = UKEffectRecord(
         effect_id="uk_test_range_to_container_skip",

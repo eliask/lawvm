@@ -1882,6 +1882,25 @@ def test_classify_uk_effect_source_parent_at_end_added_payload_is_owned() -> Non
     assert is_core_uk_effect_source_candidate(pathology) is True
 
 
+def test_classify_uk_effect_after_paragraph_insert_labelled_series_is_owned() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text=(
+            "b after paragraph (b), insert ; c make, on behalf of the granter, a request; "
+            "d give, on behalf of the granter, an authorisation; or e make, on behalf of the granter, a nomination."
+        ),
+        op_actions=["text_replace", "insert", "insert", "insert"],
+        payload_kinds=["paragraph", "paragraph", "paragraph"],
+        payload_texts=["make, on behalf of the granter, a request"],
+        lowering_rule_ids=["uk_effect_after_paragraph_insert_labelled_series_lowered"],
+        effect_type="inserted",
+        is_structural=True,
+    )
+
+    assert pathology == ""
+    assert is_core_uk_effect_source_candidate(pathology) is True
+
+
 def test_classify_uk_effect_source_carried_multi_subunit_text_rewrite() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P2",
