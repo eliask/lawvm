@@ -5225,6 +5225,64 @@ def test_executor_replaces_source_carried_child_tail_in_collapsed_parent_text() 
     assert adjudications == []
 
 
+def test_executor_replaces_source_carried_child_tail_when_tail_is_not_connector_word() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="224",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "A magistrates' court does not have power to impose— "
+                                "for more than 6 months in respect of any one offence"
+                            ),
+                            children=(
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="imprisonment, or"),
+                                IRNode(kind=IRNodeKind.PARAGRAPH, label="b", text="detention;"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_carried_child_tail_substitution_non_connector_tail",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "224"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="TEXT_AFTER_CHILD_TAIL_paragraph_b", occurrence=0),
+                replacement="for a term exceeding the applicable limit in respect of any one offence",
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == (
+        "A magistrates' court does not have power to impose— "
+        "for a term exceeding the applicable limit in respect of any one offence"
+    )
+    assert [child.label for child in subsection.children] == ["a", "b"]
+    assert adjudications == []
+
+
 def test_executor_rejects_child_tail_delete_when_anchor_is_not_last_child() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(
