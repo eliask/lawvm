@@ -609,6 +609,10 @@ def _replay_adjudication_sample_rows(
                 sample[sample_key] = _short_replay_adjudication_sample_value(
                     detail.get(source_key)
                 )
+        if not sample.get("root"):
+            path = str(sample.get("path") or "")
+            if path == "body" or path.startswith("body/"):
+                sample["root"] = "body"
         rows.append(sample)
         if len(rows) >= limit:
             break
