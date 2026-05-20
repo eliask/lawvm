@@ -2061,6 +2061,12 @@ Current nested-roman target invariant:
   - current witness: `asp/2001/8` / `asp/2007/4 s. 7`, where the affected
     metadata `s. 2(11)-(12B)` previously lowered one malformed target
     `section:2/subsection:11/paragraph:-/subparagraph:12b`
+- one-letter to same-stem two-letter parenthesized ranges are supported as a
+  narrow sibling family: `s. 26D(4)(b)-(bb)` becomes `(b)`, `(ba)`, `(bb)`.
+  This does not generalize to broad base-26 ranges.
+  - current witness: `asp/2000/1` / `ukpga/2014/2 Sch. 12 para. 47(2)`,
+    where the affected metadata previously lowered one malformed target
+    `section:26d/subsection:4/paragraph:b/subparagraph:-/item:bb`
 - adjacent same-length multi-letter metadata suffixes that denote source
   sibling insertions must split as siblings, not nested descendants
   - examples: `Sch. 26 para. 14(aa)(bb)` becomes `Sch. 26 para. 14(aa)` and

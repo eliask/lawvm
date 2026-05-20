@@ -1677,6 +1677,21 @@ def test_split_metadata_parenthesized_same_prefix_alpha_range() -> None:
     ]
 
 
+def test_split_metadata_parenthesized_one_letter_to_same_stem_alpha_range() -> None:
+    parts = _split_metadata_provisions("s. 26D(4)(b)-(bb)")
+
+    assert parts == [
+        "s. 26D(4)(b)",
+        "s. 26D(4)(ba)",
+        "s. 26D(4)(bb)",
+    ]
+    assert [_parse_affected_target(part).path for part in parts] == [
+        (("section", "26d"), ("subsection", "4"), ("paragraph", "b")),
+        (("section", "26d"), ("subsection", "4"), ("paragraph", "ba")),
+        (("section", "26d"), ("subsection", "4"), ("paragraph", "bb")),
+    ]
+
+
 def test_compile_same_prefix_alpha_range_does_not_emit_dash_item_target() -> None:
     extracted_el = ET.fromstring(
         f"""

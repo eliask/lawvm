@@ -5716,6 +5716,18 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
             stem = raw_start_str[:-1]
             return [f"{prefix}({stem}{chr(c)})" for c in range(ord(raw_start_str[-1]), ord(raw_end_str[-1]) + 1)]
 
+        if (
+            len(start_str) == 1
+            and len(end_str) == 2
+            and start_str.isalpha()
+            and end_str.isalpha()
+            and end_str.startswith(start_str)
+        ):
+            end_letter = raw_end_str[-1].lower()
+            return [f"{prefix}({raw_start_str})"] + [
+                f"{prefix}({raw_start_str}{chr(c)})" for c in range(ord("a"), ord(end_letter) + 1)
+            ]
+
         stemmed_start = _split_stemmed_alnum(start_str)
         stemmed_end = _split_stemmed_alnum(end_str)
         if stemmed_start is not None and stemmed_end is not None and stemmed_start[0] == stemmed_end[0]:
