@@ -4284,6 +4284,141 @@ def test_executor_rejects_child_tail_delete_when_anchor_is_not_last_child() -> N
     assert adjudications[0].detail["blocking"] is True
 
 
+def test_executor_deletes_source_carried_subparagraph_tail_from_collapsed_parent_text() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="9",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text="The condition is met if— and the trailing words apply.",
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.SUBPARAGRAPH,
+                                            label="i",
+                                            text="first condition, or",
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.SUBPARAGRAPH,
+                                            label="ii",
+                                            text="second condition;",
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_carried_subparagraph_tail_repeal",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "9"), ("subsection", "3"), ("paragraph", "a"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="TEXT_AFTER_CHILD_TAIL_subparagraph_2", occurrence=0),
+            ),
+            source=_source(),
+        )
+    )
+
+    paragraph = executor.statute.body.children[0].children[0].children[0]
+    assert paragraph.text == "The condition is met if—"
+    assert [child.label for child in paragraph.children] == ["i", "ii"]
+    assert adjudications == []
+
+
+def test_executor_rejects_subparagraph_tail_delete_when_anchor_is_not_last_child() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="9",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text="Opening words— and tail text.",
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.SUBPARAGRAPH,
+                                            label="i",
+                                            text="first;",
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.SUBPARAGRAPH,
+                                            label="ii",
+                                            text="second;",
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.SUBPARAGRAPH,
+                                            label="iii",
+                                            text="third;",
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_carried_subparagraph_tail_repeal_not_last",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "9"), ("subsection", "3"), ("paragraph", "a"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="TEXT_AFTER_CHILD_TAIL_subparagraph_2", occurrence=0),
+            ),
+            source=_source(),
+        )
+    )
+
+    paragraph = executor.statute.body.children[0].children[0].children[0]
+    assert paragraph.text == "Opening words— and tail text."
+    assert [finding.kind for finding in adjudications] == ["uk_replay_text_match_synthetic_selector_gap"]
+    assert adjudications[0].detail["blocking"] is True
+
+
 def test_executor_deletes_source_carried_multi_subunit_text_only_from_named_children() -> None:
     adjudications: list[CompileAdjudication] = []
     omitted = "(in a case where the incapacity of the granter is by reason of mental disorder)"

@@ -1805,6 +1805,14 @@ Current block-substitution context invariant:
   it must not delete sibling provisions or pick a parent body by approximate
   text anchoring. Current witness: `asp/2000/1` affected `s. 21(5)` by
   `ssi/2013/177 Sch. para. 4(a)`.
+- Source text such as `in paragraph (a), the words following sub-paragraph
+  (ii) are repealed` lowers through
+  `uk_effect_source_carried_subparagraph_tail_repeal_text_patch` when the feed
+  target names that exact paragraph. Replay uses the same bounded child-tail
+  selector family, `TEXT_AFTER_CHILD_TAIL_subparagraph_<canonical label>`, and
+  may trim only the collapsed parent paragraph tail after a unique last direct
+  subparagraph. This does not authorize omitted wording, parent fallback,
+  whole-paragraph rewrites, or broader substitution/multi-subunit cases.
 - The related form `for the words after paragraph (b) substitute "..."` lowers
   through `uk_effect_source_carried_child_tail_substitution_text_patch` when
   the source subsection matches the feed target. Replay uses the same bounded

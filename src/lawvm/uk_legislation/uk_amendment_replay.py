@@ -6485,6 +6485,13 @@ _SOURCE_CARRIED_CHILD_TAIL_REPEAL_RE = re.compile(
     r"are\s+repealed\s*;?\s*(?:and)?\s*\.?\s*$",
     flags=re.I | re.S,
 )
+_SOURCE_CARRIED_SUBPARAGRAPH_TAIL_REPEAL_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
+    r"in\s+paragraph\s+\((?P<paragraph>[0-9A-Za-z]+)\),?\s+"
+    r"the\s+words\s+following\s+sub-?paragraph\s+\((?P<label>[0-9A-Za-z]+)\)\s+"
+    r"are\s+repealed\s*;?\s*(?:and)?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
 _SOURCE_CARRIED_CHILD_TAIL_SUBSTITUTION_RE = re.compile(
     r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+){0,2}"
     r"in\s+subsection\s+\((?P<subsection>[0-9A-Za-z]+)\),?\s+"
@@ -6775,7 +6782,29 @@ def _fragment_substitution_source_carried_child_tail_repeal(
         return None
     match = _SOURCE_CARRIED_CHILD_TAIL_REPEAL_RE.match(text)
     if match is None:
-        return None
+        subparagraph_match = _SOURCE_CARRIED_SUBPARAGRAPH_TAIL_REPEAL_RE.match(text)
+        if subparagraph_match is None:
+            return None
+        source_paragraph = _clean_num(subparagraph_match.group("paragraph"))
+        target_paragraph = _clean_num(_addr_field(target, "paragraph") or "")
+        if (
+            _addr_leaf_kind(target) != "paragraph"
+            or not source_paragraph
+            or source_paragraph != target_paragraph
+        ):
+            return None
+        anchor_label = _clean_num(subparagraph_match.group("label"))
+        if not anchor_label:
+            return None
+        return {
+            "original": f"TEXT_AFTER_CHILD_TAIL_subparagraph_{anchor_label}",
+            "replacement": "",
+            "source_parent_kind": "paragraph",
+            "source_parent_label": source_paragraph,
+            "source_anchor_child_kind": "subparagraph",
+            "source_anchor_child_label": anchor_label,
+            "rule_id": "uk_effect_source_carried_subparagraph_tail_repeal_text_patch",
+        }
     source_subsection = _clean_num(match.group("subsection"))
     target_subsection = _clean_num(_addr_field(target, "subsection") or "")
     if not source_subsection or source_subsection != target_subsection:
@@ -8884,6 +8913,37 @@ def compile_effect_to_ir_ops(
                                 "text_match": op_text_match,
                                 "source_anchor_child_label": str(primary.get("source_anchor_child_label") or ""),
                                 "source_subsection_label": str(primary.get("source_subsection_label") or ""),
+                            },
+                        )
+                    if "uk_effect_source_carried_subparagraph_tail_repeal_text_patch" in _fragment_rule_ids(
+                        fragment_subs
+                    ):
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id="uk_effect_source_carried_subparagraph_tail_repeal_text_patch",
+                            family="text_rewrite_lowering",
+                            reason_code="source_carried_subparagraph_tail_repeal_lowered",
+                            reason=(
+                                "UK source text explicitly repeals the words following "
+                                "a named subparagraph inside the affected paragraph; lowering "
+                                "preserves that as a bounded child-tail text selector instead "
+                                "of deleting from the whole paragraph."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "text_match": op_text_match,
+                                "source_anchor_child_kind": str(
+                                    primary.get("source_anchor_child_kind") or ""
+                                ),
+                                "source_anchor_child_label": str(
+                                    primary.get("source_anchor_child_label") or ""
+                                ),
+                                "source_parent_kind": str(primary.get("source_parent_kind") or ""),
+                                "source_parent_label": str(primary.get("source_parent_label") or ""),
                             },
                         )
                     if "uk_effect_source_carried_child_tail_substitution_text_patch" in _fragment_rule_ids(
