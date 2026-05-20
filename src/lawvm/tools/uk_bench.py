@@ -174,6 +174,18 @@ def _score_commenced_eids(commenced_eids: Set[str], oracle_eids: Set[str]) -> fl
     return _score_eids(commenced_eids, oracle_eids)
 
 
+def _commenced_oracle_eids(oracle_eids: Set[str], commenced_eids: Set[str]) -> Set[str]:
+    """Return oracle EIDs within the same commencement lens as the left side.
+
+    UK current XML may still expose not-yet-commenced provisions.  The
+    commencement benchmark is therefore a temporal comparison lane, not a raw
+    current-XML EID comparison with only one side filtered.
+    """
+    if not commenced_eids:
+        return set()
+    return oracle_eids & commenced_eids
+
+
 def _build_eid_score_witness_rows(
     *,
     comparison_scope: str,
@@ -648,9 +660,9 @@ class _BenchResult:
     n_text_compared: int = 0  # number of EIDs compared for text_score
     replay_text_score: float = -1.0  # replayed vs oracle; -1 = not computed
     # Commencement-filtered fields (populated only when --commencement is active)
-    commencement_score: float = -1.0  # enacted (commenced only) vs oracle; -1 = not computed
+    commencement_score: float = -1.0  # enacted vs oracle within commencement lens; -1 = not computed
     n_commenced_eids: int = 0  # how many enacted EIDs are commenced
-    replay_commencement_score: float = -1.0  # replayed (commenced only) vs oracle; -1 = not computed
+    replay_commencement_score: float = -1.0  # replay vs oracle within commencement lens; -1 = not computed
     commencement_error: str = ""
     comparison_class: str = ""
     core_benchmark: bool = True
@@ -1272,14 +1284,15 @@ def _score_statute(
                     observations_out=commencement_feed_observations,
                 )
                 commenced_enacted = enacted_eids & commenced
+                commenced_oracle = _commenced_oracle_eids(oracle_eids, commenced)
                 n_commenced_eids = len(commenced_enacted)
-                commencement_score = _score_commenced_eids(commenced_enacted, oracle_eids)
+                commencement_score = _score_commenced_eids(commenced_enacted, commenced_oracle)
                 score_witness_rows.extend(
                     _build_eid_score_witness_rows(
                         comparison_scope="commencement",
                         left_side="only_in_commenced_enacted",
                         left_eids=commenced_enacted,
-                        right_eids=oracle_eids,
+                        right_eids=commenced_oracle,
                     )
                 )
                 if replayed_ir is not None:
@@ -1287,13 +1300,13 @@ def _score_statute(
                     for s in replayed_ir.supplements:
                         _replayed_eids_all.update(_collect_eids([s]))
                     commenced_replayed = _replayed_eids_all & commenced
-                    replay_commencement_score = _score_commenced_eids(commenced_replayed, oracle_eids)
+                    replay_commencement_score = _score_commenced_eids(commenced_replayed, commenced_oracle)
                     score_witness_rows.extend(
                         _build_eid_score_witness_rows(
                             comparison_scope="replay_commencement",
                             left_side="only_in_commenced_replay",
                             left_eids=commenced_replayed,
-                            right_eids=oracle_eids,
+                            right_eids=commenced_oracle,
                         )
                     )
             except Exception as comm_exc:
@@ -2735,9 +2748,9 @@ def _score_witness_labels(comparison_scope: str) -> tuple[str, str]:
     if comparison_scope == "replay":
         return "replay", "oracle"
     if comparison_scope == "commencement":
-        return "commenced_enacted", "oracle"
+        return "commenced_enacted", "commenced_oracle"
     if comparison_scope == "replay_commencement":
-        return "commenced_replay", "oracle"
+        return "commenced_replay", "commenced_oracle"
     return comparison_scope or "left", "oracle"
 
 

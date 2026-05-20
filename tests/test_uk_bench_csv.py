@@ -21,6 +21,22 @@ def test_uk_bench_commencement_score_requires_commenced_eid_evidence() -> None:
     assert uk_bench._score_commenced_eids({"section-1"}, {"section-1", "section-2"}) == 0.5
 
 
+def test_uk_bench_commencement_oracle_uses_same_temporal_lens() -> None:
+    assert uk_bench._commenced_oracle_eids(
+        {"section-1", "section-2", "section-3"},
+        {"section-1", "section-3", "section-4"},
+    ) == {"section-1", "section-3"}
+    assert uk_bench._commenced_oracle_eids({"section-1"}, set()) == set()
+    assert uk_bench._score_witness_labels("commencement") == (
+        "commenced_enacted",
+        "commenced_oracle",
+    )
+    assert uk_bench._score_witness_labels("replay_commencement") == (
+        "commenced_replay",
+        "commenced_oracle",
+    )
+
+
 def test_uk_bench_score_witness_helper_is_bounded_and_deterministic() -> None:
     rows = uk_bench._build_eid_score_witness_rows(
         comparison_scope="raw",
