@@ -1602,6 +1602,23 @@ def test_split_metadata_mixed_numeric_to_alphanumeric_range_keeps_middle_section
     ]
 
 
+def test_split_metadata_parenthesized_numeric_to_alphanumeric_range_keeps_middle_subsection() -> None:
+    parts = _split_metadata_provisions("s. 2(11)-(12B)")
+
+    assert parts == [
+        "s. 2(11)",
+        "s. 2(12)",
+        "s. 2(12A)",
+        "s. 2(12B)",
+    ]
+    assert [_parse_affected_target(part).path for part in parts] == [
+        (("section", "2"), ("subsection", "11")),
+        (("section", "2"), ("subsection", "12")),
+        (("section", "2"), ("subsection", "12a")),
+        (("section", "2"), ("subsection", "12b")),
+    ]
+
+
 def test_retarget_substituted_series_anchors_first_replacement_to_replaced_subsection() -> None:
     retargeted = _retarget_substituted_series_to_replaced_anchor(
         "substituted for s. 39(5)",

@@ -2054,6 +2054,13 @@ Current nested-roman target invariant:
     `ukpga/2023/50 Sch. 14 para. 20`
   - broad base-26 ranges such as `(az)-(bc)` remain unsupported unless owned
     separately; no public `item:-` address should be emitted
+- parenthesized numeric-to-alphanumeric ranges must mirror ordinary section
+  range expansion: `s. 2(11)-(12B)` becomes `s. 2(11)`, `s. 2(12)`,
+  `s. 2(12A)`, and `s. 2(12B)`, rather than leaking the dash into a synthetic
+  descendant label
+  - current witness: `asp/2001/8` / `asp/2007/4 s. 7`, where the affected
+    metadata `s. 2(11)-(12B)` previously lowered one malformed target
+    `section:2/subsection:11/paragraph:-/subparagraph:12b`
 - adjacent same-length multi-letter metadata suffixes that denote source
   sibling insertions must split as siblings, not nested descendants
   - examples: `Sch. 26 para. 14(aa)(bb)` becomes `Sch. 26 para. 14(aa)` and

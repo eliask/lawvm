@@ -5734,6 +5734,15 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
                 f"{prefix}({start_str}{chr(c)})" for c in range(ord("A"), ord(me.group(2)) + 1)
             ]
 
+        if start_str.isdigit() and me is not None:
+            start = int(start_str)
+            end = int(me.group(1))
+            suffix = me.group(2).upper()
+            if suffix and end > start and end - start < 100:
+                return [f"{prefix}({n})" for n in range(start, end + 1)] + [
+                    f"{prefix}({end}{chr(c)})" for c in range(ord("A"), ord(suffix) + 1)
+                ]
+
         if start_str.isdigit() and end_str.isdigit():
             start = int(start_str)
             end = int(end_str)
