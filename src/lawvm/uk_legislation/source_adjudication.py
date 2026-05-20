@@ -1231,6 +1231,29 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
         }
 
     if source_pathology_norm == "table_entry_target_unsupported":
+        entry_shapes = {
+            str(rejection.get("entry_shape") or "")
+            for rejection in lowering_rows
+            if str(rejection.get("entry_shape") or "")
+        }
+        if "deictic_table_entry" in entry_shapes:
+            return {
+                "status": "manual_compile_candidate",
+                "rule_id": "uk_manual_frontier_table_entry_deictic_candidate",
+                "reason": "The source uses deictic table-entry placement such as 'after that entry'; a future compiler must prove the antecedent from source context, resolve exactly one table row, and preserve the source-owned row payload.",
+            }
+        if "between_columns" in entry_shapes:
+            return {
+                "status": "manual_compile_candidate",
+                "rule_id": "uk_manual_frontier_table_column_insert_candidate",
+                "reason": "The source inserts material between table columns; this needs a column-insertion compiler that proves the column boundary, row alignment, and rowspan handling instead of replaying a row insertion.",
+            }
+        if "appropriate_place_table_entry" in entry_shapes:
+            return {
+                "status": "manual_compile_candidate",
+                "rule_id": "uk_manual_frontier_table_appropriate_place_candidate",
+                "reason": "The source inserts table rows at an appropriate place without an explicit row anchor; a placement claim or compiler must prove the predecessor/successor or table ordering rule before replay.",
+            }
         return {
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_table_entry_candidate",

@@ -1985,6 +1985,72 @@ def test_classify_uk_manual_frontier_overlap_table_entry_candidate() -> None:
     assert result["rule_id"] == "uk_manual_frontier_table_entry_candidate"
 
 
+def test_classify_uk_manual_frontier_deictic_table_entry_candidate() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="table_entry_target_unsupported",
+        extracted_tag="P3",
+        extracted_text="after that entry insert- electronic whereabouts monitoring requirement.",
+        lowering_rejections=[
+            {
+                "rule_id": "uk_effect_table_entry_instruction_rejected",
+                "blocking": True,
+                "entry_shape": "deictic_table_entry",
+            }
+        ],
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_table_entry_deictic_candidate"
+
+
+def test_classify_uk_manual_frontier_table_column_insert_candidate() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="table_entry_target_unsupported",
+        extracted_tag="P3",
+        extracted_text="between the second and third columns, insert- new column text.",
+        lowering_rejections=[
+            {
+                "rule_id": "uk_effect_table_entry_instruction_rejected",
+                "blocking": True,
+                "entry_shape": "between_columns",
+            }
+        ],
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_table_column_insert_candidate"
+
+
+def test_classify_uk_manual_frontier_table_appropriate_place_candidate() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology="table_entry_target_unsupported",
+        extracted_tag="P1",
+        extracted_text="in the table in subsection (1), at the appropriate place insert- new row.",
+        lowering_rejections=[
+            {
+                "rule_id": "uk_effect_table_entry_instruction_rejected",
+                "blocking": True,
+                "entry_shape": "appropriate_place_table_entry",
+            }
+        ],
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_table_appropriate_place_candidate"
+
+
 def test_classify_uk_effect_table_entry_added_or_amended_target() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P2",

@@ -1830,11 +1830,14 @@ Current block-substitution context invariant:
   require exactly one row whose cell text matches `X`; entry-label selectors
   require exactly one row whose first logical cell is the explicit anchor label.
   Ambiguous tables/rows emit `uk_replay_table_entry_row_insert_unresolved`.
-  Other table-entry claims such as `after that entry insert-`, between-column
-  insertions, flat numbered-entry payloads without a source table row, and
-  appropriate-place table insertions remain `table_entry_target_unsupported` /
-  `uk_manual_frontier_table_entry_candidate`. Replay must not flatten any table
-  amendment into the host provision body just to remove a benchmark residual.
+  Other table-entry claims such as source-context-free `after that entry
+  insert-`, between-column insertions, flat numbered-entry payloads without a
+  source table row, and appropriate-place table insertions remain
+  `table_entry_target_unsupported`. The manual frontier classifier separates
+  deictic row placement, column insertion, appropriate-place table placement,
+  and generic table-entry candidates so future compilers can have distinct
+  proof obligations. Replay must not flatten any table amendment into the host
+  provision body just to remove a benchmark residual.
 - schedule-list table-row insertions may inherit their anchor from the parent
   instruction when the extracted source element is only the `BlockAmendment`
   table payload. The parent must explicitly say `before/after the entry
