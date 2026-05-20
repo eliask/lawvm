@@ -3392,6 +3392,36 @@ def test_uk_bench_replay_preimage_gap_reclassifies_manual_frontier_row() -> None
     assert diagnostics[1]["manual_compile_rule_id"] == "uk_manual_frontier_deterministic_supported"
 
 
+def test_uk_bench_replay_preimage_gap_reclassifies_frontier_shapes() -> None:
+    for replay_kind in (
+        "uk_replay_heading_text_preimage_gap",
+        "uk_replay_text_insert_anchor_preimage_gap",
+        "uk_replay_text_parenthetical_omission_preimage_gap",
+    ):
+        diagnostics = [
+            {
+                "rule_id": "uk_manual_compile_frontier_classified",
+                "effect_id": "key-gap",
+                "manual_compile_status": "deterministic_frontend_supported",
+                "manual_compile_rule_id": "uk_manual_frontier_deterministic_supported",
+                "manual_compile_reason": "The row already lowers to replay operations.",
+                "blocking": False,
+            },
+        ]
+
+        uk_bench._apply_replay_preimage_frontier_to_effect_diagnostics(
+            diagnostics,
+            ({"kind": replay_kind, "op_id": "key-gap"},),
+        )
+
+        assert diagnostics[0]["manual_compile_status"] == "source_insufficient"
+        assert (
+            diagnostics[0]["manual_compile_rule_id"]
+            == "uk_manual_frontier_text_patch_preimage_chain_gap"
+        )
+        assert diagnostics[0]["replay_adjudication_kind"] == replay_kind
+
+
 def test_uk_bench_score_statute_preserves_compile_diagnostics_on_replay_exception(
     monkeypatch,
     tmp_path,

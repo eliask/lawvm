@@ -9913,6 +9913,16 @@ class UKReplayPipeline:
                         "manual_compile_status": manual_frontier["status"],
                         "manual_compile_rule_id": manual_frontier["rule_id"],
                         "manual_compile_reason": manual_frontier["reason"],
+                        "lowering_rule_ids": _lowering_record_rule_ids(
+                            current_lowering_rejections
+                        ),
+                        "blocking_lowering_rule_ids": _lowering_record_rule_ids(
+                            tuple(
+                                row
+                                for row in current_lowering_rejections
+                                if is_blocking_compile_record(row)
+                            )
+                        ),
                         "source_pathology": source_pathology or "",
                         "structural_for_replay": structural_for_replay,
                         "replay_applicable": e.is_applicable_for_replay(
@@ -10110,6 +10120,11 @@ def _compact_schedule_entry_anchor_without_article(text: str) -> str:
         flags=re.I,
     )
     return _compact_normalized_text(stripped)
+
+
+def _lowering_record_rule_ids(rows: tuple[dict[str, Any], ...]) -> tuple[str, ...]:
+    """Return stable non-empty lowering rule ids for evidence rows."""
+    return tuple(sorted({str(row.get("rule_id") or "unknown") for row in rows}))
 
 
 def _text_patch_replacement_preserves_anchor(match_text: str, replacement: str | None) -> bool:

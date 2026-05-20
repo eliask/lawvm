@@ -2347,6 +2347,8 @@ Current bench replay-regime invariant:
   change lowering or replay. It corrects evidence summaries that were compiled
   before live replay state was available; affected rows become
   `uk_manual_frontier_text_patch_preimage_chain_gap` / `source_insufficient`.
+  The current exact replay kinds are heading text, insert-anchor, monetary
+  amount, parenthetical omission, and same-target text-patch preimage drift.
 - `uk-candidates` residual replay analysis is also a compiler surface. Its
   `residual_compile_observations` and `residual_compile_rejections` must carry
   the same `effect_source_pathology` and `source_acquisition` lanes as
