@@ -1520,8 +1520,11 @@ Current block-substitution context invariant:
   `uk_effect_schedule_list_entry_replace`: the canonical action remains
   `REPLACE`, the target remains the schedule carrier, and provenance carries
   a source-owned entry anchor plus replacement entry text. Replay must resolve
-  exactly one direct `schedule_entry` child before replacing that child; missing
-  or duplicate anchors block with
+  exactly one direct `schedule_entry` child before replacing that child. As
+  with entry insertions, an anchor may resolve through a unique longer-entry
+  prefix or a unique leading-article-normalized match, and replay records the
+  nonblocking normalization before applying the replacement. Missing or
+  duplicate anchors block with
   `uk_replay_schedule_list_entry_replace_unresolved`, while successful entry
   replacement records `uk_replay_schedule_list_entry_replace_resolved`.
   Current witness: `asp/2000/7` affected `sch. 3` by `asp/2012/3 Sch. 2
