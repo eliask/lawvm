@@ -610,6 +610,7 @@ _NOTE_PRECEDING_EID = "preceding_eid:"
 _NOTE_METADATA_SOURCE_FALLBACK = "metadata_source_fallback:"
 _NOTE_TABLE_CELL_SELECTOR = "table_cell_selector:"
 _NOTE_TABLE_ROW_INSERT_SELECTOR = "table_row_insert_selector:"
+_NOTE_TABLE_COLUMN_INSERT_SELECTOR = "table_column_insert_selector:"
 _NOTE_SCHEDULE_LIST_ENTRY_SELECTOR = "schedule_list_entry_selector:"
 _NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR = "schedule_list_entry_table_rows_selector:"
 _NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR = "schedule_table_end_rows_selector:"
@@ -631,11 +632,13 @@ _UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID = (
 )
 _UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID = "uk_effect_table_column_heading_text_patch"
 _UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID = "uk_effect_table_column_text_patch"
+_UK_TABLE_COLUMN_INSERT_RULE_ID = "uk_effect_table_column_insert"
 _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID = "uk_effect_table_entry_row_insert"
 _UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID = "uk_effect_table_entry_instruction_rejected"
 _UK_REPLAY_TABLE_ENTRY_INLINE_UNRESOLVED_RULE_ID = "uk_replay_table_entry_inline_text_insertion_unresolved"
 _UK_REPLAY_TABLE_ENTRY_INLINE_PREIMAGE_GAP_RULE_ID = "uk_replay_table_entry_inline_text_preimage_gap"
 _UK_REPLAY_TABLE_ENTRY_ROW_INSERT_UNRESOLVED_RULE_ID = "uk_replay_table_entry_row_insert_unresolved"
+_UK_REPLAY_TABLE_COLUMN_INSERT_UNRESOLVED_RULE_ID = "uk_replay_table_column_insert_unresolved"
 _UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID = "uk_effect_schedule_list_entry_insert"
 _UK_SCHEDULE_LIST_ENTRY_TABLE_ROWS_RULE_ID = "uk_effect_schedule_list_entry_table_rows_lowered"
 _UK_SCHEDULE_TABLE_END_ROWS_RULE_ID = "uk_effect_schedule_table_end_rows_lowered"
@@ -1340,6 +1343,20 @@ def _table_row_insert_selector(op: LegalOperation) -> dict[str, Any] | None:
             continue
         try:
             payload = json.loads(str(note)[len(_NOTE_TABLE_ROW_INSERT_SELECTOR) :])
+        except json.JSONDecodeError:
+            return None
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _table_column_insert_selector(op: LegalOperation) -> dict[str, Any] | None:
+    """Return UK table-column insertion selector data carried on a lowered insert op."""
+    for note in getattr(op, "provenance_tags", ()) or ():
+        if not str(note).startswith(_NOTE_TABLE_COLUMN_INSERT_SELECTOR):
+            continue
+        try:
+            payload = json.loads(str(note)[len(_NOTE_TABLE_COLUMN_INSERT_SELECTOR) :])
         except json.JSONDecodeError:
             return None
         if isinstance(payload, dict):
@@ -5907,6 +5924,75 @@ def _uk_single_table_row_payload(extracted_el: Optional[ET.Element]) -> IRNode |
     return rows[0]
 
 
+def _uk_single_table_column_payload(extracted_el: Optional[ET.Element]) -> IRNode | None:
+    """Return a source-owned one-column table payload, if exactly one is present."""
+    table_node = _uk_schedule_list_entry_table_payload(extracted_el)
+    if table_node is None:
+        return None
+    rows = tuple(child for child in table_node.children if _uk_kind_value(child.kind).lower() == "row")
+    if not rows:
+        return None
+    for row in rows:
+        cells = tuple(
+            child
+            for child in row.children
+            if _uk_kind_value(child.kind).lower() in {"cell", "header_cell"}
+        )
+        if len(cells) != 1:
+            return None
+    return table_node
+
+
+def _uk_table_column_insert_selector(
+    *,
+    target_ref: str,
+    target: LegalAddress,
+    extracted_text: Optional[str],
+    extracted_el: Optional[ET.Element],
+) -> dict[str, Any] | None:
+    """Extract a source-owned ``between columns`` table-column insert selector."""
+    target_surface = f"{target_ref} {target}".lower()
+    if "table" not in target_surface:
+        return None
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    match = re.search(
+        r"\bbetween\s+the\s+"
+        r"(?P<after>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+"
+        r"and\s+"
+        r"(?P<before>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+"
+        r"columns?\b",
+        text,
+        re.I,
+    )
+    if match is None or re.search(r"\binsert(?:ed)?\b", text, re.I) is None:
+        return None
+    after_column_index = _uk_ordinal_to_int(match.group("after"))
+    before_column_index = _uk_ordinal_to_int(match.group("before"))
+    if (
+        after_column_index is None
+        or before_column_index is None
+        or after_column_index < 1
+        or before_column_index != after_column_index + 1
+    ):
+        return None
+    payload = _uk_single_table_column_payload(extracted_el)
+    if payload is None:
+        return None
+    payload_rows = tuple(child for child in payload.children if _uk_kind_value(child.kind).lower() == "row")
+    return {
+        "rule_id": _UK_TABLE_COLUMN_INSERT_RULE_ID,
+        "selector_mode": "between_columns",
+        "after_column_index": after_column_index,
+        "before_column_index": before_column_index,
+        "source_payload_mode": "single_column_table",
+        "payload_row_count": len(payload_rows),
+        "target_ref": target_ref,
+        "original_target": str(target),
+    }
+
+
 def _strip_schedule_entry_repeal_anchor(raw: str) -> str:
     text = _strip_schedule_entry_phrase(raw)
     text = re.sub(r"^(?:and\s+)?(?:\(?[ivxlcdm]+\)?|[a-z])\.?\s+", "", text, flags=re.I)
@@ -10094,6 +10180,118 @@ def compile_effect_to_ir_ops(
                 )
             )
             continue
+        table_column_insert_selector = (
+            _uk_table_column_insert_selector(
+                target_ref=t_str,
+                target=target,
+                extracted_text=extracted_text,
+                extracted_el=extracted_el,
+            )
+            if action == "insert"
+            else None
+        )
+        if table_column_insert_selector is not None:
+            table_marker_parent = _uk_parent_target_before_table_marker(target)
+            parent_target = table_marker_parent
+            if (
+                parent_target is not None
+                and len(parent_target.path) >= 2
+                and parent_target.path[-1] == ("subsection", "1")
+                and parent_target.path[-2][0] == "section"
+            ):
+                table_column_insert_selector = {
+                    **table_column_insert_selector,
+                    "allow_implicit_subsection_one_table": True,
+                    "table_marker_parent_target": str(parent_target),
+                }
+                parent_target = LegalAddress(path=parent_target.path[:-1], special=parent_target.special)
+            source_column_payload = _uk_single_table_column_payload(extracted_el)
+            if parent_target is None or source_column_payload is None:
+                _append_uk_effect_lowering_rejection(
+                    lowering_rejections_out,
+                    rule_id=_UK_TABLE_COLUMN_INSERT_RULE_ID,
+                    family="source_table_elaboration",
+                    reason_code=(
+                        "table_marker_parent_missing"
+                        if parent_target is None
+                        else "between_columns_without_single_column_payload"
+                    ),
+                    reason=(
+                        "UK table-column insertion needs both a containing "
+                        "table target and an exactly one-column BlockAmendment "
+                        "table payload; lowering blocks instead of inventing "
+                        "column cells from flattened text."
+                    ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={"target_ref": t_str, "target": str(target), **table_column_insert_selector},
+                )
+                continue
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_UK_TABLE_COLUMN_INSERT_RULE_ID,
+                family="source_table_elaboration",
+                reason_code="explicit_between_columns_table_column_insert_selector",
+                reason=(
+                    "UK table-column insertion lowered as a typed column "
+                    "insert; replay must prove the visual column boundary, "
+                    "row alignment, and span adjustments before mutating the table."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "original_target": str(target),
+                    "containing_target": str(parent_target),
+                    **table_column_insert_selector,
+                },
+            )
+            src = OperationSource(
+                statute_id=effect.affecting_act_id,
+                title=effect.affecting_title,
+                effective=effect_witness.applicability.effective_date or "",
+                raw_text=extraction_witness.extracted_text,
+            )
+            target_expansion_witness = _uk_target_expansion_witness(
+                t_str,
+                [t_str],
+                original_targets_str=original_targets_str,
+            )
+            lowered_witness = UKLoweredOperationWitness(
+                op_id=effect.effect_id,
+                sequence=sequence,
+                action=StructuralAction.INSERT,
+                target=parent_target,
+                payload=source_column_payload,
+                source=src,
+                effect_witness=effect_witness,
+                extraction_witness=extraction_witness,
+                target_expansion_witness=target_expansion_witness,
+                text_rewrite_witness=None,
+                insertion_anchor_witness=None,
+            )
+            ops.append(
+                LegalOperation(
+                    op_id=lowered_witness.op_id,
+                    sequence=lowered_witness.sequence,
+                    action=StructuralAction.INSERT,
+                    target=parent_target,
+                    payload=_payload_with_rewrite_witness(source_column_payload, lowered_witness),
+                    source=src,
+                    group_id=_uk_temporal_group_id(effect),
+                    provenance_tags=(
+                        *_uk_lowered_op_provenance_tags(lowered_witness),
+                        (
+                            f"{_NOTE_TABLE_COLUMN_INSERT_SELECTOR}"
+                            f"{json.dumps(table_column_insert_selector, ensure_ascii=False)}"
+                        ),
+                    ),
+                    witness_rule_id=_UK_TABLE_COLUMN_INSERT_RULE_ID,
+                )
+            )
+            continue
         table_row_insert_selector = (
             _uk_table_entry_row_insert_selector(
                 target_ref=t_str,
@@ -13863,6 +14061,248 @@ class UKReplayExecutor:
             node.attrs.pop(key, None)
         for child in node.children:
             self._strip_identity_attrs_recursive(child)
+
+    def _table_column_payload_cells(
+        self,
+        new_node: UKMutableNode,
+    ) -> tuple[list[UKMutableNode], str, dict[str, Any]]:
+        if _uk_kind_value(new_node.kind).lower() != "table":
+            return [], "payload_not_table", {"payload_kind": _uk_kind_value(new_node.kind)}
+        payload_rows = [
+            row for row in new_node.children if _uk_kind_value(row.kind).lower() == "row"
+        ]
+        if not payload_rows:
+            return [], "payload_has_no_rows", {"payload_row_count": 0}
+        payload_cells: list[UKMutableNode] = []
+        for row_index, row in enumerate(payload_rows):
+            row_cells = [
+                child
+                for child in row.children
+                if _uk_kind_value(child.kind).lower() in {"cell", "header_cell"}
+            ]
+            if len(row_cells) != 1:
+                return [], "payload_not_single_column", {
+                    "payload_row_index": row_index,
+                    "payload_cell_count": len(row_cells),
+                    "payload_row_count": len(payload_rows),
+                }
+            cloned = UKMutableNode.from_irnode(row_cells[0].to_irnode())
+            self._strip_identity_attrs_recursive(cloned)
+            payload_cells.append(cloned)
+        return payload_cells, "", {"payload_row_count": len(payload_rows)}
+
+    def _table_column_insert_plans(
+        self,
+        table: UKMutableNode,
+    ) -> list[dict[str, Any]]:
+        plans: list[dict[str, Any]] = []
+        active_rowspans: dict[int, tuple[int, UKMutableNode]] = {}
+        for row_index, row in enumerate(table.children):
+            if _uk_kind_value(row.kind).lower() != "row":
+                continue
+            row_cells: dict[int, UKMutableNode] = {
+                col: cell for col, (_, cell) in active_rowspans.items()
+            }
+            next_rowspans: dict[int, tuple[int, UKMutableNode]] = {
+                col: (remaining - 1, cell)
+                for col, (remaining, cell) in active_rowspans.items()
+                if remaining > 1
+            }
+            col = 1
+            owned_ranges: list[tuple[int, int, UKMutableNode, int]] = []
+            for physical_index, cell in enumerate(row.children):
+                cell_kind = _uk_kind_value(cell.kind).lower()
+                if cell_kind not in {"cell", "header_cell"}:
+                    continue
+                while col in row_cells:
+                    col += 1
+                rowspan, colspan = self._table_cell_span(cell)
+                start_col = col
+                end_col = col + colspan - 1
+                owned_ranges.append((start_col, end_col, cell, physical_index))
+                for offset in range(colspan):
+                    current_col = col + offset
+                    row_cells[current_col] = cell
+                    if rowspan > 1:
+                        next_rowspans[current_col] = (rowspan - 1, cell)
+                col += colspan
+            if row_cells:
+                plans.append(
+                    {
+                        "row_index": row_index,
+                        "row": row,
+                        "row_cells": row_cells,
+                        "owned_ranges": owned_ranges,
+                    }
+                )
+            active_rowspans = next_rowspans
+        return plans
+
+    def _insert_table_column(
+        self,
+        target: LegalAddress,
+        new_node: UKMutableNode,
+        op: LegalOperation,
+        selector: dict[str, Any],
+    ) -> bool:
+        node, _, _ = self._find_node_by_target(target)
+        if node is None:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_TABLE_COLUMN_INSERT_UNRESOLVED_RULE_ID,
+                message="UK replay could not resolve the table-column insertion containing target.",
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "target_not_found",
+                    "family": "source_table_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+        try:
+            after_column_index = int(selector.get("after_column_index") or 0)
+            before_column_index = int(selector.get("before_column_index") or 0)
+        except (TypeError, ValueError):
+            after_column_index = 0
+            before_column_index = 0
+        if after_column_index < 1 or before_column_index != after_column_index + 1:
+            reason = "invalid_selector"
+            detail: dict[str, Any] = {}
+            table = None
+        else:
+            tables, carrier_detail = self._table_selector_tables(node, selector)
+            table = tables[0] if len(tables) == 1 else None
+            reason = "" if table is not None else "table_not_unique"
+            detail = {"table_count": len(tables), **carrier_detail} if table is None else carrier_detail
+        payload_cells, payload_reason, payload_detail = self._table_column_payload_cells(new_node)
+        if table is None or payload_reason:
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_TABLE_COLUMN_INSERT_UNRESOLVED_RULE_ID,
+                message="UK replay could not resolve a source-owned table column insertion.",
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": payload_reason or reason,
+                    **detail,
+                    **payload_detail,
+                    "family": "source_table_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+
+        payload_index = 0
+        adjusted_spans = 0
+        inserted_cells = 0
+        matched_rows: list[str] = []
+        plans = self._table_column_insert_plans(table)
+        for plan in plans:
+            row = cast(UKMutableNode, plan["row"])
+            row_cells = cast(dict[int, UKMutableNode], plan["row_cells"])
+            owned_ranges = cast(list[tuple[int, int, UKMutableNode, int]], plan["owned_ranges"])
+            before_cell = row_cells.get(before_column_index)
+            after_cell = row_cells.get(after_column_index)
+            owned_spanners = [
+                (start, end, cell, physical_index)
+                for start, end, cell, physical_index in owned_ranges
+                if start <= after_column_index and end >= before_column_index
+            ]
+            if owned_spanners:
+                if len(owned_spanners) != 1:
+                    reason = "column_boundary_span_ambiguous"
+                    break
+                _start, _end, spanner, _physical_index = owned_spanners[0]
+                old_colspan_raw = str(spanner.attrs.get("colspan") or "1")
+                if not re.fullmatch(r"[0-9]+", old_colspan_raw):
+                    reason = "unsupported_colspan_value"
+                    break
+                old_colspan = int(old_colspan_raw)
+                spanner.attrs = {**spanner.attrs, "colspan": str(old_colspan + 1)}
+                adjusted_spans += 1
+                matched_rows.append(str(spanner.text or "")[:160])
+                continue
+            if before_cell is not None and before_cell is after_cell:
+                reason = "column_boundary_carried_span_unsupported"
+                break
+            if payload_index >= len(payload_cells):
+                reason = "payload_row_count_too_small"
+                break
+            insertion_candidates = [
+                physical_index
+                for start, _end, _cell, physical_index in owned_ranges
+                if start >= before_column_index
+            ]
+            if insertion_candidates:
+                insert_index = min(insertion_candidates)
+            elif row_cells and max(row_cells) == after_column_index:
+                insert_index = len(row.children)
+            else:
+                reason = "column_boundary_not_found"
+                break
+            row.children[insert_index:insert_index] = [payload_cells[payload_index]]
+            inserted_cells += 1
+            payload_index += 1
+            matched_rows.append(
+                " | ".join(
+                    str(row_cells[col].text or "")
+                    for col in sorted(row_cells)
+                    if str(row_cells[col].text or "")
+                )[:160]
+            )
+        else:
+            reason = ""
+        if reason or payload_index != len(payload_cells):
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_TABLE_COLUMN_INSERT_UNRESOLVED_RULE_ID,
+                message="UK replay could not prove the table-column insertion boundary.",
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": reason or "payload_row_count_too_large",
+                    "payload_row_count": len(payload_cells),
+                    "payload_rows_consumed": payload_index,
+                    "adjusted_spans": adjusted_spans,
+                    "inserted_cells": inserted_cells,
+                    "matched_rows": tuple(matched_rows[:5]),
+                    "family": "source_table_elaboration",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
+                },
+            )
+            return False
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind=_UK_TABLE_COLUMN_INSERT_RULE_ID,
+            message=(
+                "UK replay inserted a table column after resolving a source-owned "
+                "between-columns selector."
+            ),
+            op=op,
+            detail={
+                "target": str(target),
+                "selector": dict(selector),
+                "payload_row_count": len(payload_cells),
+                "adjusted_spans": adjusted_spans,
+                "inserted_cells": inserted_cells,
+                "matched_rows": tuple(matched_rows[:5]),
+                "family": "source_table_elaboration",
+                "blocking": False,
+                "strict_disposition": "record",
+                "quirks_disposition": "record",
+            },
+        )
+        return True
 
     def _insert_table_entry_row(
         self,
@@ -21781,6 +22221,9 @@ class UKReplayExecutor:
         schedule_list_entry_selector = _schedule_list_entry_selector(op)
         if schedule_list_entry_selector is not None:
             return self._insert_schedule_list_entry(target, new_node, op, schedule_list_entry_selector)
+        table_column_insert_selector = _table_column_insert_selector(op)
+        if table_column_insert_selector is not None:
+            return self._insert_table_column(target, new_node, op, table_column_insert_selector)
         table_row_insert_selector = _table_row_insert_selector(op)
         if table_row_insert_selector is not None:
             return self._insert_table_entry_row(target, new_node, op, table_row_insert_selector)

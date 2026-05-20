@@ -1836,9 +1836,15 @@ Current block-substitution context invariant:
   require exactly one row whose cell text matches `X`; entry-label selectors
   require exactly one row whose first logical cell is the explicit anchor label.
   Ambiguous tables/rows emit `uk_replay_table_entry_row_insert_unresolved`.
-  Other table-entry claims such as source-context-free `after that entry
-  insert-`, between-column insertions, flat numbered-entry payloads without a
-  source table row, and appropriate-place table insertions remain
+  Source-owned between-column insertions such as `between the second and third
+  columns, insert-` may lower under `uk_effect_table_column_insert` only when
+  the source carries exactly one inserted table column. Replay resolves exactly
+  one table, proves the visual column boundary, inserts one physical cell into
+  each aligned row, and may only widen an owned header cell that spans across
+  the insertion boundary; unresolved boundaries emit
+  `uk_replay_table_column_insert_unresolved`. Other table-entry claims such as
+  source-context-free `after that entry insert-`, flat numbered-entry payloads
+  without a source table row, and appropriate-place table insertions remain
   `table_entry_target_unsupported`. The manual frontier classifier separates
   deictic row placement, column insertion, appropriate-place table placement,
   and generic table-entry candidates so future compilers can have distinct
@@ -2032,9 +2038,10 @@ Current block-substitution context invariant:
   row/cell and any referenced amount schedule. It is not a generic parser miss.
 - Direct table targets whose source says `after that entry insert- ...`,
   `after entry 6A insert- ...`, `after the entry in the table relating to ...`,
-  `at the appropriate place insert- ...` inside a table, or `between the second
-  and third columns, insert- ...` are the same table-entry/table-column
-  frontier unless the row/cell compiler proves the antecedent and payload.
+  or `at the appropriate place insert- ...` inside a table are the same
+  table-entry frontier unless the row/cell compiler proves the antecedent and
+  payload. Direct `between the second and third columns, insert- ...` claims
+  are supported only by the guarded one-column table payload lane above.
   Lowering emits blocking `uk_effect_table_entry_instruction_rejected` or, for
   guarded row-insert selectors whose source lacks a single row payload,
   blocking `uk_effect_table_entry_row_insert` with an entry-shape witness. This
