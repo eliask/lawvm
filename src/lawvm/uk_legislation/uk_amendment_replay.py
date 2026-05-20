@@ -15261,6 +15261,13 @@ class UKReplayExecutor:
                         )
                         family = "target_resolution_recovery"
                         strict_disposition = "block"
+                    elif recovery_rule_id == "uk_replay_definition_anchor_parenthetical_translation_normalized":
+                        message = (
+                            "UK replay applied definition-anchor text op after recognizing "
+                            "a parenthetical translation between the defined term and predicate."
+                        )
+                        family = "target_resolution_recovery"
+                        strict_disposition = "record"
                     else:
                         message = (
                             "UK replay applied text-based op after normalizing "
@@ -17121,6 +17128,7 @@ class UKReplayExecutor:
             def _insert_after_definition_in_text(text: str) -> tuple[str, bool]:
                 definition_start: Optional[re.Match[str]] = None
                 recovered_anchor = False
+                recovered_parenthetical_translation = False
                 for candidate_term in (term, *_uk_definition_term_lexical_variants(term)):
                     term_pattern = _text_patch_pattern(
                         candidate_term,
@@ -17131,6 +17139,7 @@ class UKReplayExecutor:
                         rf"""
                         (?P<prefix>(?:^|[;\.]\s*))
                         [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                        (?P<parenthetical_translation>(?:\s*\([^;]*?\))*)
                         \s+
                         (?:
                             means
@@ -17148,6 +17157,9 @@ class UKReplayExecutor:
                         continue
                     definition_start = definition_starts[0]
                     recovered_anchor = candidate_term != term
+                    recovered_parenthetical_translation = bool(
+                        str(definition_start.group("parenthetical_translation") or "").strip()
+                    )
                     break
                 if definition_start is None:
                     return text, False
@@ -17155,6 +17167,7 @@ class UKReplayExecutor:
                     r"""
                     [;\.]\s*
                     [“"'\u2018][^”"'\u2019;]{1,160}[”"'\u2019]
+                    (?:\s*\([^;]*?\))*
                     \s+
                     (?:
                         means
@@ -17177,6 +17190,10 @@ class UKReplayExecutor:
                 if recovered_anchor and recovery_rule_ids_out is not None:
                     recovery_rule_ids_out.append(
                         "uk_replay_definition_anchor_lexical_variant_recovered"
+                    )
+                if recovered_parenthetical_translation and recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_definition_anchor_parenthetical_translation_normalized"
                     )
                 return " ".join(new_text.split()).strip(), True
 

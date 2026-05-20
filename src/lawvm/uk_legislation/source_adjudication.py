@@ -185,6 +185,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
     {
         "text_duplication_warning",
         "uk_replay_contextual_word_anchor_kind_normalized",
+        "uk_replay_definition_anchor_parenthetical_translation_normalized",
         "uk_replay_definition_predicate_shall_construed_normalized",
         "uk_replay_direct_section_paragraph_child_text_recovered",
         "uk_replay_empty_descendant_parent_text_recovered",
