@@ -958,6 +958,8 @@ def classify_uk_effect_source_pathology(
             return "heading_facet_target_unsupported"
         if "uk_effect_table_entry_instruction_rejected" in lowering_rules:
             return "table_entry_target_unsupported"
+        if "uk_effect_table_entry_row_insert" in lowering_rules:
+            return "table_entry_target_unsupported"
         if "uk_effect_broad_schedule_flat_payload_rejected" in lowering_rules:
             return "broad_schedule_flat_payload_unsupported"
         if "uk_effect_empty_type_as_if_words_omitted_rejected" in lowering_rules:

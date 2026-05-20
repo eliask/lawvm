@@ -2008,6 +2008,40 @@ def test_classify_uk_manual_frontier_deictic_table_entry_candidate() -> None:
     assert result["rule_id"] == "uk_manual_frontier_table_entry_deictic_candidate"
 
 
+def test_classify_uk_manual_frontier_deictic_table_row_insert_payload_gap() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text="after that entry insert- electronic whereabouts monitoring requirement.",
+        op_actions=[],
+        target_paths=["section:190/subsection:3/paragraph:table"],
+        lowering_rule_ids=["uk_effect_table_entry_row_insert"],
+        effect_type="words inserted",
+        is_structural=True,
+    )
+    assert pathology == "table_entry_target_unsupported"
+
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words inserted",
+        source_pathology=pathology,
+        extracted_tag="P3",
+        extracted_text="after that entry insert- electronic whereabouts monitoring requirement.",
+        lowering_rejections=[
+            {
+                "rule_id": "uk_effect_table_entry_row_insert",
+                "reason_code": "deictic_table_entry_insert_without_single_row_payload",
+                "blocking": True,
+                "entry_shape": "deictic_table_entry",
+            }
+        ],
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "manual_compile_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_table_entry_deictic_candidate"
+
+
 def test_classify_uk_manual_frontier_table_column_insert_candidate() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",
