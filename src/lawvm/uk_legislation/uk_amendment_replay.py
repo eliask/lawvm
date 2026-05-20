@@ -8653,6 +8653,32 @@ def _fragment_substitution_source_carried_definition_entry_insert(
 ) -> Optional[dict[str, str]]:
     """Resolve definition-entry insertions whose payload omits the parent anchor."""
     inserted = " ".join((extracted_text or "").split()).strip()
+    payload_rule_ids: list[str] = []
+    appropriate_place_without_anchor = False
+    instruction_match = re.match(
+        r"""
+        ^
+        (?P<prefix>(?:(?:[ivxlcdm]+|[a-z]{1,3}|\d+[A-Za-z]?)\s+){1,3})
+        at\s+the\s+appropriate\s+place\s+insert(?:ed)?
+        \s*[—-]\s*
+        (?P<body>.+)
+        $
+        """,
+        inserted,
+        flags=re.I | re.S | re.X,
+    )
+    if instruction_match is not None:
+        inserted = " ".join(str(instruction_match.group("body") or "").split()).strip()
+        payload_rule_ids.append(
+            "uk_effect_source_carried_definition_entry_payload_instruction_stripped"
+        )
+        appropriate_place_without_anchor = True
+    normalized_inserted = re.sub(r"\s*,\s*,\s*$", ",", inserted).strip()
+    if normalized_inserted != inserted:
+        inserted = normalized_inserted
+        payload_rule_ids.append(
+            "uk_effect_source_carried_definition_entry_payload_punctuation_normalized"
+        )
     if not inserted or not re.search(
         r"[“\"'‘].+?[”\"'’](?:\s*\([^;]*?\))*[^;]{0,240}?"
         r"\b(?:means|has\s+the\s+same\s+meaning|has\s+the\s+meaning|"
@@ -8660,6 +8686,8 @@ def _fragment_substitution_source_carried_definition_entry_insert(
         inserted,
         re.I | re.S,
     ):
+        return None
+    if appropriate_place_without_anchor:
         return None
     ancestors = _source_ancestor_chain(source_root, extracted_el)
     if not ancestors:
@@ -8683,6 +8711,7 @@ def _fragment_substitution_source_carried_definition_entry_insert(
             "replacement": inserted,
             "source_parent_id": source_parent_id,
             "source_anchor_definition_term": anchor_term,
+            "payload_normalization_rule_ids": US.join(payload_rule_ids),
             "rule_id": "uk_effect_source_carried_definition_entry_insert_text_patch",
         }
     return None
@@ -8696,6 +8725,8 @@ def _fragment_substitution_source_carried_definition_entry_substitution(
 ) -> Optional[dict[str, str]]:
     """Resolve definition substitutions whose block payload omits the old term."""
     replacement = " ".join((extracted_text or "").split()).strip()
+    if _looks_like_appropriate_place_definition_entry_insert_text(replacement):
+        return None
     if not replacement or not re.search(
         r"[“\"'‘].+?[”\"'’](?:\s*\([^;]*?\))*[^;]{0,240}?"
         r"\b(?:means|has\s+the\s+same\s+meaning|has\s+the\s+meaning|"
@@ -13552,6 +13583,16 @@ def compile_effect_to_ir_ops(
                                 ),
                                 "text_match": op_text_match,
                                 "replacement": op_text_replacement,
+                                "payload_normalization_rule_ids": tuple(
+                                    rule_id
+                                    for rule_id in str(
+                                        definition_entry_context_fragment.get(
+                                            "payload_normalization_rule_ids"
+                                        )
+                                        or ""
+                                    ).split(US)
+                                    if rule_id
+                                ),
                             },
                         )
                     for definition_entry_context_fragment in fragment_subs:

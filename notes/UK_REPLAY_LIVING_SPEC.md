@@ -345,7 +345,16 @@ frontend cannot yet lower them safely:
   `asp/2000/4` effect `key-78605c6a5376f3a9f6955c985964d597` from
   `ssi/2005/465 Sch. 1 para. 28(9)`.
 - `at the appropriate place` insertions, until a placement compiler can prove
-  the target anchor without guessing from live text
+  the target anchor without guessing from live text. A child source instruction
+  of the form `at the appropriate place insert— <definition entry>` does not
+  inherit an anchor merely because a broad schedule/paragraph ancestor contains
+  another `after/for the definition of "X" ...` formula. Lowering must reject
+  the row under `uk_effect_appropriate_place_definition_entry_insert_rejected`
+  with reason
+  `appropriate_place_definition_entry_requires_anchor_claim`, leaving it for a
+  manual/auditable placement claim. Current witness: `asp/2001/2` affected
+  `s. 48(1)` by `asp/2019/17 Sch. para. 3(6)(a)(iii)/(vi)/(viii)`, with
+  analogous `s. 82(1)` rows in the same schedule paragraph.
 - grouped title/heading substitutions that do not name exact old and new text
   for each executable patch. Explicit ranges such as `In the titles to sections
   10 to 14 "A" and "B", wherever these expressions occur, become,
@@ -2049,7 +2058,13 @@ Current block-substitution context invariant:
   live-tree uniqueness. Lowering records these rows under
   `uk_effect_appropriate_place_definition_entry_insert_rejected` rather than
   the generic overlap-substitution parser-miss rule so work queues can route
-  them to a placement-claim validator.
+  them to a placement-claim validator. A broad ancestor or sibling amendment
+  formula that names a different definition term is not a valid placement
+  claim for the current child row. Current witness: `asp/2001/2`
+  `asp/2019/17 Sch. para. 3(6)(a)(iii)/(vi)/(viii)` and
+  `Sch. para. 3(9)(a)(v)/(vii)`, which must remain five manual
+  `uk_manual_frontier_appropriate_place_definition_entry_candidate` rows until
+  a validated claim supplies exact placement.
 - repeal schedules, table parts, or grouped repeal source fragments that expose
   an `Enactment / Extent of repeal` surface but do not yet identify the specific
   target row/cell for the affected provision are classified as
@@ -3340,9 +3355,11 @@ Current bench replay-regime invariant:
   - do not treat this class as permission to reorder same-date operations or
     apply fuzzy matching in replay
   - current witnesses show different causes: `asp/2001/8` has a repealed phrase
-    absent from the base/oracle target surfaces after a same-source insertion,
-    while `asp/2001/2` points toward definition-target lowering that is too
-    coarse for the enclosing subsection
+    absent from the base/oracle target surfaces after a same-source insertion.
+    Earlier `asp/2001/2` samples exposed false ancestor-anchor borrowing for
+    `at the appropriate place` definition-entry inserts; those rows now block
+    during lowering as manual placement candidates rather than reaching replay
+    as preimage drift.
   - a future fix belongs in phase-local lowering/source extraction only if it
     proves the narrower target or legal ordering from source evidence
 - Synthetic text selectors such as `TEXT_FROM_*` or `TEXT_AFTER_*` are internal

@@ -4365,6 +4365,105 @@ def test_compile_source_carried_definition_entry_insert_from_parent_context() ->
     assert observations[0]["blocking"] is False
 
 
+def test_compile_appropriate_place_definition_entry_insert_rejects_without_anchor_claim() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <Schedule id="schedule">
+              <P1 id="schedule-paragraph-3">
+                <Pnumber>3</Pnumber>
+                <P1para>
+                  <P2 id="schedule-paragraph-3-5">
+                    <Pnumber>5</Pnumber>
+                    <P2para>
+                      <Text>
+                        In section 48(1), for the definition of “quality partnership
+                        scheme” substitute—
+                      </Text>
+                      <BlockAmendment>
+                        <P3para>
+                          <Text>
+                            “qualifying agreement” means an agreement satisfying
+                            section 3A;
+                          </Text>
+                        </P3para>
+                      </BlockAmendment>
+                    </P2para>
+                  </P2>
+                  <P2 id="schedule-paragraph-3-6">
+                    <Pnumber>6</Pnumber>
+                    <P2para>
+                      <Text>
+                        In section 48(1), after the definition of “the Commissioner” insert—
+                      </Text>
+                      <P3 id="schedule-paragraph-3-6-a">
+                        <Pnumber>a</Pnumber>
+                        <P3para>
+                          <P4 id="schedule-paragraph-3-6-a-iii">
+                            <Pnumber>iii</Pnumber>
+                            <P4para>
+                              <Text>
+                                iii at the appropriate place insert—
+                                “ operational service standard ” is to be construed
+                                in accordance with section 3C(1)(b), ,
+                              </Text>
+                            </P4para>
+                          </P4>
+                        </P3para>
+                      </P3>
+                    </P2para>
+                  </P2>
+                </P1para>
+              </P1>
+            </Schedule>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(
+        f".//{{{_LEG_NS}}}P4[@id='schedule-paragraph-3-6-a-iii']"
+    )
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-source-carried-definition-entry-child-wrapper",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2023-12-04",
+        affected_uri="/id/asp/2001/2",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 48(1)",
+        affecting_uri="/id/asp/2019/17",
+        affecting_class="ScottishAct",
+        affecting_year="2019",
+        affecting_number="17",
+        affecting_provisions="sch. para. 3(6)(a)(iii)",
+        affecting_title="Transport (Scotland) Act 2019",
+        in_force_dates=[{"date": "2023-12-04", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert [record["rule_id"] for record in observations] == [
+        "uk_effect_appropriate_place_definition_entry_insert_rejected"
+    ]
+    assert observations[0]["blocking"] is True
+    assert observations[0]["reason_code"] == (
+        "appropriate_place_definition_entry_requires_anchor_claim"
+    )
+
+
 def test_compile_source_carried_definition_entry_insert_does_not_smuggle_sibling_substitution_context() -> None:
     source_root = ET.fromstring(
         f"""
