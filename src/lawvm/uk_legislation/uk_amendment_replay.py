@@ -620,6 +620,7 @@ _NOTE_SOURCE_LABEL_CHANGE_SUBSTITUTION = "source_label_change_substitution:"
 _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID = "uk_effect_table_entry_inline_text_insertion"
 _UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID = "uk_effect_table_entry_relating_text_patch"
 _UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID = "uk_effect_table_entry_label_text_patch"
+_UK_TABLE_ENTRY_LABEL_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_label_column_text_patch"
 _UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID = (
     "uk_effect_source_carried_table_entry_paragraph_substitution_text_patch"
 )
@@ -5309,6 +5310,27 @@ def _uk_table_entry_inline_text_selector(
                 "selector_mode": "unique_relating_text",
                 "relating_text": relating_text,
                 "match_text": original_text,
+                "table_label": "",
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
+    entry_column_match = re.search(
+        r"\bin\s+entry\s+(?P<entry>[0-9A-Z]+),?\s+in\s+"
+        r"(?:(?:the\s+)?(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
+        r"column\s+(?P<column_number>\d+))\b",
+        text,
+        re.I,
+    )
+    if entry_column_match is not None:
+        entry_label = _clean_num(entry_column_match.group("entry"))
+        column_token = entry_column_match.group("column_ordinal") or entry_column_match.group("column_number")
+        column_index = _uk_ordinal_to_int(column_token or "")
+        if entry_label and column_index is not None and column_index >= 1:
+            return {
+                "rule_id": _UK_TABLE_ENTRY_LABEL_COLUMN_TEXT_RULE_ID,
+                "selector_mode": "unique_entry_cell",
+                "entry_label": entry_label,
+                "column_index": column_index,
                 "table_label": "",
                 "original_target": str(target),
                 "target_ref": target_ref,
@@ -17034,6 +17056,14 @@ class UKReplayExecutor:
                                 text_patch.selector.match_text,
                                 replacement,
                             )
+                        )
+                    elif (
+                        text_patch.kind is TextPatchKindEnum.APPEND
+                        and text_patch.selector.match_text == "TEXT_END"
+                    ):
+                        table_cell, applied = self._apply_text_append_on_node_text_only(
+                            table_cell,
+                            replacement,
                         )
                     else:
                         table_cell, applied = self._apply_text_replace_on_node_text_only(
