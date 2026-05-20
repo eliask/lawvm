@@ -2203,6 +2203,67 @@ def test_executor_recovers_empty_descendant_text_patch_on_parent_text() -> None:
     assert adjudications[0].detail["quirks_disposition"] == "apply"
 
 
+def test_executor_recovers_source_carried_structured_tail_substitution() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="20",
+                attrs={"eId": "schedule-20"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="5",
+                        attrs={"eId": "schedule-20-paragraph-5"},
+                        text="An offence where old tail words.",
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+    source = OperationSource(
+        statute_id="ukpga/2020/17",
+        title="Amending Act",
+        raw_text=(
+            "5 In paragraph 5, for the words following \u201cwhere\u201d substitute \u2014 "
+            "a the first condition, or b the second condition."
+        ),
+    )
+
+    for label, text in (("a", "the first condition, or"), ("b", "the second condition.")):
+        executor.apply_op(
+            LegalOperation(
+                op_id=f"uk_test_source_carried_structured_tail_substitution_{label}",
+                sequence=1,
+                action=StructuralAction.REPLACE,
+                target=LegalAddress(path=(("schedule", "20"), ("paragraph", "5"), ("item", label))),
+                payload=IRNode(kind=IRNodeKind.ITEM, label=label, text=text),
+                source=source,
+            )
+        )
+
+    paragraph = executor.statute.supplements[0].children[0]
+    assert paragraph.text == "An offence where"
+    assert [(child.kind, child.label, child.text) for child in paragraph.children] == [
+        (IRNodeKind.ITEM, "a", "the first condition, or"),
+        (IRNodeKind.ITEM, "b", "the second condition."),
+    ]
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_source_carried_structured_tail_substitution_recovered",
+        "uk_replay_source_carried_structured_tail_substitution_recovered",
+    ]
+    assert adjudications[0].detail["source_anchor"] == "where"
+    assert adjudications[0].detail["parent_tail_trimmed"] is True
+    assert adjudications[1].detail["parent_tail_trimmed"] is False
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "apply"
+
+
 def test_executor_classifies_repeated_form_label_payload_shape_gap() -> None:
     adjudications: list[CompileAdjudication] = []
     payload = IRNode(

@@ -67,6 +67,7 @@ def test_classify_uk_replay_adjudication_bucket() -> None:
         "uk_replay_schedule_list_entry_group_anchor_resolved": "nonblocking_observation",
         "uk_replay_schedule_list_entry_replace_resolved": "nonblocking_observation",
         "uk_replay_schedule_list_entry_repeal_resolved": "nonblocking_observation",
+        "uk_replay_source_carried_structured_tail_substitution_recovered": "nonblocking_observation",
         "uk_replay_text_match_missing": "text_surface",
         "uk_replay_text_monetary_amount_preimage_gap": "text_surface",
         "uk_replay_text_parenthetical_omission_preimage_gap": "text_surface",
