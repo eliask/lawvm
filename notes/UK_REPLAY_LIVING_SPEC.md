@@ -275,7 +275,9 @@ frontend cannot yet lower them safely:
   `TextPatchKindEnum.APPEND` patch; quoted-anchor heading insertion lowers via
   `uk_effect_heading_facet_after_anchor_insert_text_patch`. Other heading
   inserts still need a typed placement/compiler lane rather than a whole-body
-  or synthetic text replacement.
+  or synthetic text replacement. Schedule heading/title/sidenote refs are
+  heading facets too; they must not be lowered through schedule-list-entry
+  insertion just because their structural carrier is `Sch. N`.
 - cross-heading replacements lower only when the source gives an explicit
   `heading before paragraph/section/article X substitute ...` whole-heading
   shape, or a quoted text patch against the cross-heading before a named
@@ -1820,7 +1822,9 @@ Current block-substitution context invariant:
   `uk_replay_heading_facet_target_gap`. Other heading insertions and
   selector-less facet edits remain `heading_facet_target_unsupported` /
   `uk_manual_frontier_heading_facet_candidate` until LawVM has a typed
-  placement compiler for them.
+  placement compiler for them. Schedule heading targets with explicit quoted
+  anchors use the same facet lane and do not enter the schedule-list-entry
+  elaboration path.
 - Mixed targets of the form `s. N(X) and heading` may lower the structural
   insert under `uk_effect_mixed_heading_structural_insert_target_normalized`
   when the source carries an explicit inserted structural payload for `X`.
@@ -3065,6 +3069,10 @@ Current bench replay-regime invariant:
   descendant, and assigning the descendant eId derived from the destination
   address. This supports later same-source text patches against the new
   descendant without treating the text patch as a target-resolution fallback.
+- Destination collision checking for same-provision descendant renumbering is
+  direct-child only. Broad recursive target resolution is intentionally not used
+  here because a nested item such as roman `i` can normalize like `1`, but it is
+  not a collision for `paragraph 12 becomes sub-paragraph (1)`.
 - Same-parent sibling renumbering materializes only when the source exists and
   the destination is absent. Replay relabels the source node to the destination
   label, derives the destination eId, and reorders it under the same parent; it

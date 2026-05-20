@@ -1391,6 +1391,73 @@ def test_executor_applies_same_provision_descendant_renumber_with_existing_child
     assert adjudications == []
 
 
+def test_executor_descendant_renumber_ignores_recursive_item_label_collision() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="26",
+                attrs={"eId": "schedule-26"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="12",
+                        text="In section 218A (life sentence for second listed offence)—",
+                        attrs={"eId": "schedule-26-paragraph-12"},
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.ITEM,
+                                label="c",
+                                text="c Existing item.",
+                                attrs={"eId": "schedule-26-paragraph-12-c"},
+                                children=(
+                                    IRNode(
+                                        kind=IRNodeKind.ITEM,
+                                        label="i",
+                                        text="i Existing nested item.",
+                                        attrs={"eId": "schedule-26-paragraph-12-c-i"},
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_renumber_26_12_recursive_collision",
+            sequence=1,
+            action=StructuralAction.RENUMBER,
+            target=LegalAddress(path=(("schedule", "26"), ("paragraph", "12"))),
+            destination=LegalAddress(
+                path=(("schedule", "26"), ("paragraph", "12"), ("subparagraph", "1"))
+            ),
+            source=_source(),
+            witness_rule_id="uk_effect_metadata_renumber_lowered",
+        )
+    )
+
+    paragraph = executor.statute.supplements[0].children[0]
+    assert paragraph.label == "12"
+    assert paragraph.text == ""
+    assert len(paragraph.children) == 1
+    subparagraph = paragraph.children[0]
+    assert subparagraph.kind is IRNodeKind.SUBPARAGRAPH
+    assert subparagraph.label == "1"
+    assert subparagraph.attrs["eId"] == "schedule-26-paragraph-12-1"
+    assert subparagraph.children[0].label == "c"
+    assert subparagraph.children[0].children[0].label == "i"
+    assert adjudications == []
+
+
 def test_executor_applies_same_parent_sibling_renumber_after_repeal() -> None:
     statute = IRStatute(
         statute_id="asc/2024/6",
