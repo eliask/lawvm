@@ -387,6 +387,16 @@ def _heading_facet_full_replacement_fragment(extracted_text: Optional[str]) -> O
         flags=re.I | re.S,
     )
     if match is None:
+        match = re.search(
+            r"\bfor\s+the\s+(?:(?:section|part|chapter|schedule|article|rule|regulation)\s+)?"
+            r"(?:heading|title)"
+            r"(?:\s+of\s+(?:the\s+)?(?:section|part|chapter|schedule|article|rule|regulation)"
+            r"\s+[0-9A-Za-z]+)?"
+            r"\s+substitute\s*[—–-]?\s*(?P<replacement>.+)$",
+            text,
+            flags=re.I | re.S,
+        )
+    if match is None:
         return None
     replacement = match.group("replacement").strip()
     replacement = replacement.strip(" “”\"'‘’")
