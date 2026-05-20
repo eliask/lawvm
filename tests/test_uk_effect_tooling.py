@@ -688,6 +688,19 @@ def test_summarize_uk_effect_surfaces_range_to_container_blocking_rejection(monk
             "strict_disposition": "block",
             "quirks_disposition": "record",
             "source_pathology": "range_to_container_target_unsupported",
+            "compiled_actions": ("replace",),
+            "compiled_targets": ("part:2/chapter:1",),
+            "payload_kinds": ("chapter",),
+            "required_ownership": (
+                "source_range",
+                "container_payload",
+                "lineage_or_migration_events",
+                "mutation_boundary",
+            ),
+            "target_container_ref": "Pt. 2 Ch. 1",
+            "source_range_kind": "section",
+            "source_range_start": "3",
+            "source_range_end": "12",
         },
     )
 

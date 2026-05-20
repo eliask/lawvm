@@ -2272,10 +2272,51 @@ def append_source_pathology_filter_lowering_rejections(
                 "strict_disposition": "block",
                 "quirks_disposition": "record",
                 "source_pathology": source_pathology,
+                **_range_to_container_substitution_detail(effect, compiled_ops),
             }
         )
         appended = True
     return appended
+
+
+def _range_to_container_substitution_detail(
+    effect: UKEffectRecord,
+    compiled_ops: Sequence[LegalOperation],
+) -> dict[str, Any]:
+    """Return typed evidence for a blocked UK range-to-container substitution."""
+    range_match = re.search(
+        r"\bss?\.?\s*(?P<start>[0-9]+[A-Za-z]?)\s*[-\u2013\u2014]\s*(?P<end>[0-9]+[A-Za-z]?)\b",
+        effect.effect_type,
+        flags=re.I,
+    )
+    compiled_targets = tuple(str(op.target) for op in compiled_ops)
+    compiled_actions = tuple(_action_name(op.action) for op in compiled_ops)
+    payload_kinds = tuple(
+        str(op.payload.kind.value if hasattr(op.payload.kind, "value") else op.payload.kind)
+        for op in compiled_ops
+        if op.payload is not None
+    )
+    detail: dict[str, Any] = {
+        "compiled_actions": compiled_actions,
+        "compiled_targets": compiled_targets,
+        "payload_kinds": payload_kinds,
+        "required_ownership": (
+            "source_range",
+            "container_payload",
+            "lineage_or_migration_events",
+            "mutation_boundary",
+        ),
+        "target_container_ref": effect.affected_provisions,
+    }
+    if range_match is not None:
+        detail.update(
+            {
+                "source_range_kind": "section",
+                "source_range_start": range_match.group("start"),
+                "source_range_end": range_match.group("end"),
+            }
+        )
+    return detail
 
 
 def uk_nonstructural_replay_candidate_family(
