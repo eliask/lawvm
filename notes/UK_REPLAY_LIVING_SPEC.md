@@ -2609,6 +2609,14 @@ Current bench replay-regime invariant:
   live text. Current corpus witnesses: `asp/2001/2`
   `key-5c591c6e000ad938236c4a9711426132` and `asp/2000/11`
   `key-aeafeef7fe358d46b1fd8715e2aa27ef`.
+  A related block-payload rule handles parent instructions that say `the
+  following words are repealed`: the `BlockAmendment` payload lowers to the
+  exact deletion preimage under
+  `uk_effect_source_carried_following_words_repeal_text_patch`. This is not a
+  structural payload and not a license to synthesize omitted words from the
+  target. Current corpus witness: `asp/2001/2`
+  `key-34becb61c5e46e181f9889c8a8a91de1` from `asp/2019/17`
+  `sch. para. 3(9)(b)`.
   If the same parent source instruction also names a definition entry, the
   quoted-anchor insertion is scoped to
   `TEXT_IN_DEFINITION_<term>/AFTER/<anchor>` rather than lowered as a bare
