@@ -1579,6 +1579,59 @@ def test_split_metadata_lettered_alpha_suffix_sibling_family_still_expands() -> 
     ]
 
 
+def test_split_metadata_same_length_multi_letter_siblings_expand() -> None:
+    assert _split_metadata_provisions("Sch. 27 para. 15(2)(za)(zb)") == [
+        "Sch. 27 para. 15(2)(za)",
+        "Sch. 27 para. 15(2)(zb)",
+    ]
+    assert _split_metadata_provisions("Sch. 26 para. 14(aa)(bb)") == [
+        "Sch. 26 para. 14(aa)",
+        "Sch. 26 para. 14(bb)",
+    ]
+
+
+def test_compile_same_length_multi_letter_siblings_does_not_nest_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>28</Pnumber>
+          <P2para>
+            <Text>28 In Schedule 27, in paragraph 15(2), before paragraph (a) insert—
+            za first inserted sibling;
+            zb second inserted sibling.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_same_length_multi_letter_siblings",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2021-04-30",
+        affected_uri="/id/ukpga/2020/17/schedule/27/paragraph/15",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="Sch. 27 para. 15(2)(za)(zb)",
+        affecting_uri="/id/ukpga/2021/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="11",
+        affecting_provisions="Sch. 13 para. 26(28)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2021-04-30", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert [op.target.path for op in ops] == [
+        (("schedule", "27"), ("paragraph", "15"), ("subparagraph", "2"), ("item", "za")),
+        (("schedule", "27"), ("paragraph", "15"), ("subparagraph", "2"), ("item", "zb")),
+    ]
+    assert all(op.target.path[-2:] != (("item", "za"), ("item", "zb")) for op in ops)
+
+
 def test_compile_before_anchor_insert_places_nested_alpha_label_before_named_sibling() -> None:
     extracted_el = ET.fromstring(
         f"""

@@ -5294,10 +5294,12 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
                 return True
             if alpha_lengths <= {1, 2}:
                 single_stems = {group.upper() for group in groups if len(group) == 1}
-                return bool(single_stems) and all(
-                    len(group) == 1 or any(group.upper().startswith(stem) for stem in single_stems)
-                    for group in groups
-                )
+                if single_stems:
+                    return all(
+                        len(group) == 1 or any(group.upper().startswith(stem) for stem in single_stems)
+                        for group in groups
+                    )
+                return len(alpha_lengths) == 1
             return len(alpha_lengths) == 1
         alnum = [re.fullmatch(r"(\d+)([A-Z])", group, re.I) for group in groups]
         if (
