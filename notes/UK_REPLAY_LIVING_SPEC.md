@@ -1745,14 +1745,23 @@ Current block-substitution context invariant:
   `the words from "X" to the end` to `TEXT_REPEAL`. Range clauses lower to the
   existing bounded selectors `TEXT_FROM_X_TO_Y` / `TEXT_FROM_X_TO_END`, carrying
   any explicit ordinal occurrence such as `where they thirdly occur`.
-  Parenthetical labels inside quoted payload/preimage text are ignored for
-  target-scope matching; they are payload evidence, not authority to retarget
-  the clause. Non-unique rows, whole-provision repeal clauses, entry/table
-  structural repeals, and multi-action clauses remain blocking
+  Parenthetical labels and years inside quoted payload/preimage text are
+  ignored for target-scope matching; they are payload evidence, not authority to
+  retarget the clause or reject the row as the wrong affected Act. Non-unique
+  rows, whole-provision repeal clauses, entry/table structural repeals, and
+  multi-action clauses remain blocking
   `uk_effect_repeal_table_quoted_words_text_repeal_unresolved` / manual
   frontier cases. This is a source-table elaboration rule, not a replay
   fallback, and its observation records the enactment cell, extent clause, and
   selected quoted/range preimage plus occurrence metadata.
+- bounded repeal-table definition-entry rows are owned separately by
+  `uk_effect_repeal_table_definition_entry_text_repeal`: after the same unique
+  affected-Act row and affected-provision clause matching, an extent clause of
+  the form `the definition of "X"` or singular `the entry for "X"` lowers to
+  the existing `TEXT_DEFINITION_ENTRY_X` delete selector. This rule does not
+  authorize whole-provision repeals, table-entry repeals, plural entry lists, or
+  definition-child removals; those remain explicit manual/frontier cases until
+  their target granularity is owned.
 - table-entry source that says a named entry/column is `added` or `amended`
   remains in `table_entry_target_unsupported` until a table compiler owns the
   row/cell and any referenced amount schedule. It is not a generic parser miss.

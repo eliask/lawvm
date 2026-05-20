@@ -622,6 +622,9 @@ _UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID = "uk_effect_schedule_list_entry_replace
 _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_quoted_words_text_repeal"
 )
+_UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID = (
+    "uk_effect_repeal_table_definition_entry_text_repeal"
+)
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID = (
     "uk_replay_schedule_list_entry_anchor_unresolved"
 )
@@ -4095,6 +4098,7 @@ class _UKTableDrivenWordSubstitution:
 class _UKRepealTableQuotedWordsTextRepeal:
     recognized: bool
     original: Optional[str] = None
+    rule_id: str = _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID
     reason_code: str = ""
     match_count: int = 0
     table_index: int = -1
@@ -4242,6 +4246,34 @@ def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> tuple[str, int, 
     return " ".join(original.split()).strip(), 0, 0
 
 
+def _uk_repeal_table_definition_entry_selector(extent_cell: str) -> str:
+    text = " ".join(extent_cell.split()).strip()
+    if not text:
+        return ""
+    match = re.search(
+        r"\b(?:the\s+)?(?:definition\s+of|entry\s+for)\s+"
+        r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\"|'(?P<single>.*?)')",
+        text,
+        re.I,
+    )
+    if match is None:
+        return ""
+    tail = text[match.end() :]
+    if re.search(r"\b(?:paragraph|paragraphs|sub-?paragraph|sub-?paragraphs|head|heads)\b", tail, re.I):
+        return ""
+    term = next(
+        group.strip()
+        for group in (
+            match.group("curly"),
+            match.group("double"),
+            match.group("single"),
+        )
+        if group is not None
+    )
+    term = " ".join(term.split()).strip()
+    return f"TEXT_DEFINITION_ENTRY_{term}" if term else ""
+
+
 def _uk_repeal_table_extent_clauses(extent_cell: str) -> list[str]:
     text = " ".join(extent_cell.split()).strip()
     if not text:
@@ -4307,7 +4339,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
     if not search_roots:
         return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
 
-    matches: list[tuple[int, str, int, int, str, str, str]] = []
+    matches: list[tuple[int, str, int, int, str, str, str, str]] = []
     tables = []
     seen_table_ids: set[int] = set()
     for root in search_roots:
@@ -4335,6 +4367,10 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                 ):
                     continue
                 original, occurrence, end_occurrence = _uk_repeal_table_quoted_words_selector(extent_clause)
+                rule_id = _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID
+                if not original:
+                    original = _uk_repeal_table_definition_entry_selector(extent_clause)
+                    rule_id = _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID
                 if not original:
                     continue
                 matches.append(
@@ -4343,6 +4379,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                         original,
                         occurrence,
                         end_occurrence,
+                        rule_id,
                         " | ".join((enactment_cell, extent_clause)),
                         enactment_cell,
                         extent_clause,
@@ -4356,10 +4393,11 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
             match_count=len(matches),
         )
 
-    table_index, original, occurrence, end_occurrence, row_text, enactment_cell, extent_cell = matches[0]
+    table_index, original, occurrence, end_occurrence, rule_id, row_text, enactment_cell, extent_cell = matches[0]
     return _UKRepealTableQuotedWordsTextRepeal(
         recognized=True,
         original=original,
+        rule_id=rule_id,
         reason_code="",
         match_count=1,
         table_index=table_index,
@@ -4427,7 +4465,8 @@ def _uk_table_cell_mentions_target(
     text = " ".join(cell_text.split()).lower()
     if not text:
         return False
-    years = set(re.findall(r"\b(?:1[6-9]|20)\d{2}\b", text))
+    scope_text = re.sub(r"[“\"'‘].*?[”\"'’]", "", text)
+    years = set(re.findall(r"\b(?:1[6-9]|20)\d{2}\b", scope_text))
     if years and affected_year and affected_year not in years:
         return False
 
@@ -7565,11 +7604,28 @@ def compile_effect_to_ir_ops(
             target=target,
         )
         if repeal_table_text_repeal.recognized and repeal_table_text_repeal.original:
+            repeal_table_rule_id = repeal_table_text_repeal.rule_id
+            if repeal_table_rule_id == _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID:
+                reason_code = "unique_repeal_table_extent_row_definition_entry"
+                reason = (
+                    "UK repeal-table source row matched the affected Act and "
+                    "provision exactly, and its extent cell names a definition "
+                    "entry repeal; lowering emits a definition-entry text delete "
+                    "instead of replaying the broad repeal schedule."
+                )
+            else:
+                reason_code = "unique_repeal_table_extent_row_quoted_words"
+                reason = (
+                    "UK repeal-table source row matched the affected Act and "
+                    "provision exactly, and its extent cell names a quoted "
+                    "word-level repeal; lowering emits a text delete instead "
+                    "of replaying the broad repeal schedule."
+                )
             fragment_subs = [
                 {
                     "original": repeal_table_text_repeal.original,
                     "replacement": "",
-                    "rule_id": _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID,
+                    "rule_id": repeal_table_rule_id,
                     "occurrence": str(repeal_table_text_repeal.occurrence),
                     "end_occurrence": str(repeal_table_text_repeal.end_occurrence),
                 }
@@ -7584,15 +7640,10 @@ def compile_effect_to_ir_ops(
             )
             _append_uk_effect_lowering_observation(
                 lowering_rejections_out,
-                rule_id=_UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID,
+                rule_id=repeal_table_rule_id,
                 family="source_repeal_table_elaboration",
-                reason_code="unique_repeal_table_extent_row_quoted_words",
-                reason=(
-                    "UK repeal-table source row matched the affected Act and "
-                    "provision exactly, and its extent cell names a quoted "
-                    "word-level repeal; lowering emits a text delete instead "
-                    "of replaying the broad repeal schedule."
-                ),
+                reason_code=reason_code,
+                reason=reason,
                 effect=effect,
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
@@ -7651,7 +7702,7 @@ def compile_effect_to_ir_ops(
                     group_id=_uk_temporal_group_id(effect),
                     provenance_tags=_uk_lowered_op_provenance_tags(lowered_witness),
                     text_patch=text_patch,
-                    witness_rule_id=_UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID,
+                    witness_rule_id=repeal_table_rule_id,
                 )
             )
             continue
