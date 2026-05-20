@@ -679,6 +679,12 @@ _UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ROWS_INSERT_UNRESOLVED_RULE_ID = (
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ANCHOR_CITATION_SHORT_TITLE_RULE_ID = (
     "uk_replay_schedule_list_entry_table_anchor_citation_short_title_normalized"
 )
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_PARENTHETICAL_PARAGRAPH_RULE_ID = (
+    "uk_replay_schedule_list_entry_repeal_parenthetical_paragraph_normalized"
+)
+_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_NUMBERED_ANCHOR_RULE_ID = (
+    "uk_replay_schedule_list_entry_repeal_numbered_anchor_normalized"
+)
 _UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
     {
         "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
@@ -11608,6 +11614,21 @@ def _compact_numbered_schedule_entry_text_without_article(text: str) -> str:
     return _compact_schedule_entry_anchor_without_article(stripped)
 
 
+def _schedule_entry_parenthetical_paragraph_anchor(anchor: str) -> tuple[str, str] | None:
+    match = re.fullmatch(
+        r"\s*(?P<entry>.+?)\s*\(\s*paragraph\s+(?P<label>[0-9A-Za-z]+)\s*\)\s*",
+        str(anchor or ""),
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    entry = " ".join(match.group("entry").split())
+    label = _clean_num(match.group("label"))
+    if not entry or not label:
+        return None
+    return entry, label
+
+
 def _append_definition_child_suffix_text(child_text: str, suffix: str) -> str:
     base = " ".join((child_text or "").split()).strip()
     addition = " ".join((suffix or "").split()).strip()
@@ -18813,6 +18834,47 @@ class UKReplayExecutor:
             ]
             if matches:
                 return matches, "article"
+            if carrier_kind != "schedule":
+                parenthetical_anchor = _schedule_entry_parenthetical_paragraph_anchor(anchor)
+                if parenthetical_anchor is not None:
+                    entry_text, paragraph_label = parenthetical_anchor
+                    entry_article_norm = _compact_schedule_entry_anchor_without_article(entry_text)
+                    matches = [
+                        (parent, idx, child)
+                        for parent, idx, child in entry_rows
+                        if _clean_num(child.label or "") == paragraph_label
+                        and entry_article_norm
+                        and (
+                            _entry_text_article_norm(child) == entry_article_norm
+                            or _entry_text_article_norm(child).startswith(entry_article_norm)
+                        )
+                    ]
+                    if matches:
+                        return matches, "parenthetical_paragraph"
+                numbered_anchor_norm = _compact_numbered_schedule_entry_text(anchor)
+                matches = [
+                    (parent, idx, child)
+                    for parent, idx, child in entry_rows
+                    if numbered_anchor_norm
+                    and (
+                        _entry_text_norm(child) == numbered_anchor_norm
+                        or _entry_text_norm(child).startswith(numbered_anchor_norm)
+                    )
+                ]
+                if matches:
+                    return matches, "numbered"
+                numbered_anchor_article_norm = _compact_numbered_schedule_entry_text_without_article(anchor)
+                matches = [
+                    (parent, idx, child)
+                    for parent, idx, child in entry_rows
+                    if numbered_anchor_article_norm
+                    and (
+                        _entry_text_article_norm(child) == numbered_anchor_article_norm
+                        or _entry_text_article_norm(child).startswith(numbered_anchor_article_norm)
+                    )
+                ]
+                if matches:
+                    return matches, "numbered_article"
             return [], "none"
 
         matched_rows: list[tuple[UKMutableNode, int, UKMutableNode]] = []
@@ -18893,6 +18955,15 @@ class UKReplayExecutor:
                 "reason_code": "explicit_entry_anchors_unique",
                 "matched_indices": tuple(idx for _parent, idx, _child in matched_rows),
                 "match_modes": match_modes,
+                "normalization_rule_ids": tuple(
+                    (
+                        _UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_PARENTHETICAL_PARAGRAPH_RULE_ID
+                        if mode == "parenthetical_paragraph"
+                        else _UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_NUMBERED_ANCHOR_RULE_ID
+                    )
+                    for mode in match_modes.values()
+                    if mode in {"parenthetical_paragraph", "numbered", "numbered_article"}
+                ),
                 "entry_count": len(entry_rows),
                 "deleted_count": len(matched_rows),
                 "carrier_kind": carrier_kind,

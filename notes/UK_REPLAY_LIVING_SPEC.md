@@ -1668,7 +1668,14 @@ Current block-substitution context invariant:
   `in Part 2, the entry relating to the Deer Commission for Scotland is
   repealed`. These lower through the same schedule-list-entry selector, but
   replay resolves the anchor only inside the explicit carrier and deletes the
-  uniquely matched paragraph entry; missing or duplicate matches block.
+  uniquely matched paragraph entry; missing or duplicate matches block. For
+  partition-carrier repeals, replay owns two narrow anchor normalizations:
+  `uk_replay_schedule_list_entry_repeal_numbered_anchor_normalized` lets an
+  anchor such as `79 National Consumer Council` match only a paragraph entry
+  whose visible number is stripped from source text, and
+  `uk_replay_schedule_list_entry_repeal_parenthetical_paragraph_normalized`
+  lets an anchor such as `the Scottish Qualifications Authority (paragraph 49)`
+  match only paragraph `49` when the stripped entry text is unique.
   Table-backed schedule lists are a separate owned shape:
   `uk_effect_schedule_list_entry_table_rows_lowered` preserves an actual
   `BlockAmendment/Tabular/table` payload as source-owned row IR when source
