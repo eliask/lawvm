@@ -1664,9 +1664,16 @@ Current block-substitution context invariant:
   target to the numbered paragraph under that carrier. This is a target
   narrowing rule, not a replay fallback: without the explicit number, LawVM
   blocks rather than deleting the whole carrier.
+  Partition-carrier targets may also carry explicit entry anchors, e.g.
+  `in Part 2, the entry relating to the Deer Commission for Scotland is
+  repealed`. These lower through the same schedule-list-entry selector, but
+  replay resolves the anchor only inside the explicit carrier and deletes the
+  uniquely matched paragraph entry; missing or duplicate matches block.
   Current witnesses: `asp/2000/7` affected `sch. 3` by `asp/2002/3`,
   `asp/2005/6`, and `asp/2010/8`; partition refinement witness:
-  `asp/2002/11` affected `Sch. 2 Pt. 2` by `ssi/2002/468 art. 2`.
+  `asp/2002/11` affected `Sch. 2 Pt. 2` by `ssi/2002/468 art. 2`;
+  partition anchor witness: `asp/2002/11` affected `sch. 2 Pt. 2` by
+  `asp/2010/8 sch. 1 para. 29`.
 - definition-anchor text patches may include the article before the quoted
   term, e.g. `after the definition of the "2002 Act" insert- ...`; the article
   is drafting syntax, not part of the definition key, so the selector remains

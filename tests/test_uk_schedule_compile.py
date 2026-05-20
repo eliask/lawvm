@@ -16391,6 +16391,53 @@ def test_compile_broad_schedule_part_repeal_does_not_refine_without_entry_number
     )
 
 
+def test_compile_schedule_partition_entry_repeal_lowers_to_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Text>29 In schedule 2, in Part 2, the entry relating to the Deer
+          Commission for Scotland is repealed.</Text>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_partition_entry_repeal",
+        effect_type="entry repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2010-08-01",
+        affected_uri="/id/asp/2002/11/schedule/2/part/2",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="Sch. 2 Pt. 2",
+        affecting_uri="/id/asp/2010/8",
+        affecting_class="ScottishAct",
+        affecting_year="2010",
+        affecting_number="8",
+        affecting_provisions="sch. 1 para. 29",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2010-08-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.REPEAL
+    assert op.target == LegalAddress(path=(("schedule", "2"), ("part", "2")))
+    assert op.witness_rule_id == "uk_effect_schedule_list_entry_repeal"
+    selector_note = next(
+        note for note in op.provenance_tags if note.startswith("schedule_list_entry_repeal_selector:")
+    )
+    selector = json.loads(selector_note.removeprefix("schedule_list_entry_repeal_selector:"))
+    assert selector["anchors"] == ["the Deer Commission for Scotland"]
+    assert selector["target"] == "schedule:2/part:2"
+    assert observations[0]["rule_id"] == "uk_effect_schedule_list_entry_repeal"
+    assert observations[0]["blocking"] is False
+
+
 def test_compile_schedule_list_entry_replace_lowers_to_selector() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -16905,6 +16952,65 @@ def test_replay_blocks_unnumbered_schedule_entry_omission_widened_to_part() -> N
     assert adjudications[0].kind == "uk_replay_schedule_entry_repeal_granularity_blocked"
     assert adjudications[0].detail["target"] == "schedule:2/part:2"
     assert adjudications[0].detail["strict_disposition"] == "block"
+
+
+def test_replay_schedule_partition_entry_repeal_deletes_only_matched_paragraph() -> None:
+    op = LegalOperation(
+        op_id="uk_test_schedule_partition_entry_repeal",
+        sequence=0,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("schedule", "2"), ("part", "2"))),
+        provenance_tags=(
+            'schedule_list_entry_repeal_selector:{"rule_id":"uk_effect_schedule_list_entry_repeal",'
+            '"anchors":["the Deer Commission for Scotland"],"target":"schedule:2/part:2"}',
+        ),
+    )
+    base = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 2",
+                text="Listed authorities",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PART,
+                        label="Part 2",
+                        text="Entries amendable by Order in Council",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.P1GROUP,
+                                label=None,
+                                text="Scottish public authorities",
+                                children=(
+                                    IRNode(kind=IRNodeKind.PARAGRAPH, label="22", text="22 The Crofters Commission."),
+                                    IRNode(
+                                        kind=IRNodeKind.PARAGRAPH,
+                                        label="23",
+                                        text="23 The Deer Commission for Scotland.",
+                                    ),
+                                    IRNode(kind=IRNodeKind.PARAGRAPH, label="24", text="24 The General Teaching Council."),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    group_children = replayed.supplements[0].children[0].children[0].children
+    assert [child.label for child in group_children] == ["22", "24"]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_schedule_list_entry_repeal_resolved"
+    assert adjudications[0].detail["carrier_kind"] == "part"
+    assert adjudications[0].detail["deleted_count"] == 1
+    assert adjudications[0].detail["strict_disposition"] == "record"
 
 
 def test_executor_replace_overwrites_existing_schedule_root() -> None:

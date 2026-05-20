@@ -5273,7 +5273,7 @@ def _uk_schedule_list_entry_repeal_selector(
     if not text:
         return None
     target_surface = f"{target_ref} {target}".lower()
-    if "table" in target_surface or _addr_leaf_kind(target) != "schedule":
+    if "table" in target_surface or _addr_leaf_kind(target) not in {"schedule", "part", "chapter", "division"}:
         return None
 
     match = re.search(
@@ -11442,6 +11442,26 @@ def _compact_schedule_entry_anchor_without_article(text: str) -> str:
         flags=re.I,
     )
     return _compact_normalized_text(stripped)
+
+
+def _compact_numbered_schedule_entry_text(text: str) -> str:
+    stripped = re.sub(
+        r"^\s*\(?[0-9]+[A-Za-z]?\)?\.?\s+",
+        "",
+        " ".join(str(text or "").split()),
+        count=1,
+    )
+    return _compact_normalized_text(stripped)
+
+
+def _compact_numbered_schedule_entry_text_without_article(text: str) -> str:
+    stripped = re.sub(
+        r"^\s*\(?[0-9]+[A-Za-z]?\)?\.?\s+",
+        "",
+        " ".join(str(text or "").split()),
+        count=1,
+    )
+    return _compact_schedule_entry_anchor_without_article(stripped)
 
 
 def _append_definition_child_suffix_text(child_text: str, suffix: str) -> str:
@@ -18322,14 +18342,15 @@ class UKReplayExecutor:
         op: LegalOperation,
         selector: dict[str, Any],
     ) -> bool:
-        schedule_node, _, _ = self._find_node_by_target(target)
-        if schedule_node is None or _uk_kind_value(schedule_node.kind) != "schedule":
+        carrier_node, _, _ = self._find_node_by_target(target)
+        carrier_kind = _uk_kind_value(carrier_node.kind) if carrier_node is not None else ""
+        if carrier_node is None or carrier_kind not in {"schedule", "part", "chapter", "division"}:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_UNRESOLVED_RULE_ID,
                 message=(
                     "UK replay skipped schedule-list-entry repeal: target did "
-                    "not resolve to a schedule carrier."
+                    "not resolve to a schedule or schedule-partition carrier."
                 ),
                 op=op,
                 detail={
@@ -18363,43 +18384,65 @@ class UKReplayExecutor:
                 },
             )
             return False
-        entry_rows: list[tuple[int, UKMutableNode]] = [
-            (idx, child)
-            for idx, child in enumerate(schedule_node.children)
-            if _uk_kind_value(child.kind) == "schedule_entry"
-        ]
+        entry_rows: list[tuple[UKMutableNode, int, UKMutableNode]] = []
+        if carrier_kind == "schedule":
+            entry_rows = [
+                (carrier_node, idx, child)
+                for idx, child in enumerate(carrier_node.children)
+                if _uk_kind_value(child.kind) == "schedule_entry"
+            ]
+        else:
+            def _collect_partition_entry_rows(parent: UKMutableNode) -> None:
+                for idx, child in enumerate(parent.children):
+                    child_kind = _uk_kind_value(child.kind)
+                    if child_kind == "paragraph":
+                        entry_rows.append((parent, idx, child))
+                    elif child_kind in {"p1group", "pblock", "part", "chapter", "division"}:
+                        _collect_partition_entry_rows(child)
 
-        def _matches_for_anchor(anchor: str) -> tuple[list[tuple[int, UKMutableNode]], str]:
+            _collect_partition_entry_rows(carrier_node)
+
+        def _entry_text_norm(child: UKMutableNode) -> str:
+            if carrier_kind == "schedule":
+                return _compact_normalized_text(child.text)
+            return _compact_numbered_schedule_entry_text(child.text)
+
+        def _entry_text_article_norm(child: UKMutableNode) -> str:
+            if carrier_kind == "schedule":
+                return _compact_schedule_entry_anchor_without_article(child.text)
+            return _compact_numbered_schedule_entry_text_without_article(child.text)
+
+        def _matches_for_anchor(anchor: str) -> tuple[list[tuple[UKMutableNode, int, UKMutableNode]], str]:
             anchor_norm = _compact_normalized_text(anchor)
             matches = [
-                (idx, child)
-                for idx, child in entry_rows
-                if _compact_normalized_text(child.text) == anchor_norm
+                (parent, idx, child)
+                for parent, idx, child in entry_rows
+                if _entry_text_norm(child) == anchor_norm
             ]
             if matches:
                 return matches, "exact"
             matches = [
-                (idx, child)
-                for idx, child in entry_rows
-                if _compact_normalized_text(child.text).startswith(anchor_norm)
+                (parent, idx, child)
+                for parent, idx, child in entry_rows
+                if _entry_text_norm(child).startswith(anchor_norm)
             ]
             if matches:
                 return matches, "prefix"
             article_anchor_norm = _compact_schedule_entry_anchor_without_article(anchor)
             matches = [
-                (idx, child)
-                for idx, child in entry_rows
+                (parent, idx, child)
+                for parent, idx, child in entry_rows
                 if article_anchor_norm
                 and (
-                    _compact_schedule_entry_anchor_without_article(child.text) == article_anchor_norm
-                    or _compact_schedule_entry_anchor_without_article(child.text).startswith(article_anchor_norm)
+                    _entry_text_article_norm(child) == article_anchor_norm
+                    or _entry_text_article_norm(child).startswith(article_anchor_norm)
                 )
             ]
             if matches:
                 return matches, "article"
             return [], "none"
 
-        matched_indices: list[int] = []
+        matched_rows: list[tuple[UKMutableNode, int, UKMutableNode]] = []
         match_modes: dict[str, str] = {}
         for anchor in anchors:
             matches, mode = _matches_for_anchor(anchor)
@@ -18419,6 +18462,7 @@ class UKReplayExecutor:
                         "reason_code": "anchor_not_unique",
                         "anchor_match_count": len(matches),
                         "entry_count": len(entry_rows),
+                        "carrier_kind": carrier_kind,
                         "family": "source_schedule_list_entry_elaboration",
                         "blocking": True,
                         "strict_disposition": "block",
@@ -18426,9 +18470,10 @@ class UKReplayExecutor:
                     },
                 )
                 return False
-            matched_indices.append(matches[0][0])
+            matched_rows.append(matches[0])
             match_modes[anchor] = mode
-        if len(set(matched_indices)) != len(matched_indices):
+        matched_keys = tuple((id(parent), idx) for parent, idx, _child in matched_rows)
+        if len(set(matched_keys)) != len(matched_keys):
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_UNRESOLVED_RULE_ID,
@@ -18441,7 +18486,8 @@ class UKReplayExecutor:
                     "target": str(target),
                     "selector": dict(selector),
                     "reason_code": "anchor_collision",
-                    "matched_indices": matched_indices,
+                    "matched_indices": tuple(idx for _parent, idx, _child in matched_rows),
+                    "carrier_kind": carrier_kind,
                     "family": "source_schedule_list_entry_elaboration",
                     "blocking": True,
                     "strict_disposition": "block",
@@ -18449,10 +18495,17 @@ class UKReplayExecutor:
                 },
             )
             return False
-        children = list(schedule_node.children)
-        for idx in sorted(matched_indices, reverse=True):
-            children.pop(idx)
-        self._replace_children(schedule_node, children)
+        rows_by_parent: dict[int, tuple[UKMutableNode, list[int]]] = {}
+        for parent, idx, _child in matched_rows:
+            key = id(parent)
+            if key not in rows_by_parent:
+                rows_by_parent[key] = (parent, [])
+            rows_by_parent[key][1].append(idx)
+        for parent, indices in rows_by_parent.values():
+            children = list(parent.children)
+            for idx in sorted(indices, reverse=True):
+                children.pop(idx)
+            self._replace_children(parent, children)
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_RESOLVED_RULE_ID,
@@ -18465,10 +18518,11 @@ class UKReplayExecutor:
                 "target": str(target),
                 "selector": dict(selector),
                 "reason_code": "explicit_entry_anchors_unique",
-                "matched_indices": matched_indices,
+                "matched_indices": tuple(idx for _parent, idx, _child in matched_rows),
                 "match_modes": match_modes,
                 "entry_count": len(entry_rows),
-                "deleted_count": len(matched_indices),
+                "deleted_count": len(matched_rows),
+                "carrier_kind": carrier_kind,
                 "family": "source_schedule_list_entry_elaboration",
                 "blocking": False,
                 "strict_disposition": "record",
