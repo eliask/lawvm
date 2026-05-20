@@ -3849,9 +3849,9 @@ def build_uk_evidence_bundle(
         is_core_uk_comparison,
         normalize_uk_replay_compare_eids,
     )
+    from lawvm.uk_legislation.effects import load_effects_for_statute_from_archive
     from lawvm.uk_legislation.uk_amendment_replay import (
         UKReplayPipeline,
-        load_effects_for_statute_from_archive,
     )
     from lawvm.uk_legislation.uk_grafter import (
         extract_eid_map_bytes,

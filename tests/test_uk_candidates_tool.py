@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import pytest
 
+from lawvm.uk_legislation import effects as uk_legislation_effects
 from lawvm.tools import uk_candidates
 from lawvm.tools.uk_candidates import (
     _candidate_root_hits,
@@ -2307,7 +2308,7 @@ def test_uk_candidates_full_text_reports_saved_bench_rejection_rules(
     monkeypatch.setattr(farchive, "Farchive", FakeArchive)
     monkeypatch.setattr("lawvm.tools.uk_bench._load_run", lambda _label: [row])
     monkeypatch.setattr(
-        uk_amendment_replay,
+        uk_legislation_effects,
         "load_effects_for_statute_from_archive",
         lambda *_args, **_kwargs: [],
     )
@@ -2441,7 +2442,7 @@ def test_uk_candidates_full_mode_exports_manual_compile_evidence_jsonl(
     monkeypatch.setattr(farchive, "Farchive", FakeArchive)
     monkeypatch.setattr("lawvm.tools.uk_bench._load_run", lambda _label: [bench_row])
     monkeypatch.setattr(
-        uk_amendment_replay,
+        uk_legislation_effects,
         "load_effects_for_statute_from_archive",
         lambda *_args, **_kwargs: [effect],
     )
@@ -2678,7 +2679,7 @@ def test_uk_candidates_manual_compile_evidence_jsonl_can_export_frontend_candida
     monkeypatch.setattr(farchive, "Farchive", FakeArchive)
     monkeypatch.setattr("lawvm.tools.uk_bench._load_run", lambda _label: [bench_row])
     monkeypatch.setattr(
-        uk_amendment_replay,
+        uk_legislation_effects,
         "load_effects_for_statute_from_archive",
         lambda *_args, **_kwargs: [manual_effect, frontend_effect],
     )
@@ -2881,7 +2882,7 @@ def test_uk_candidates_fast_residual_only_keeps_source_unavailable_rows(
     monkeypatch.setattr(farchive, "Farchive", FakeArchive)
     monkeypatch.setattr("lawvm.tools.uk_bench._load_run", lambda _label: [bench_row])
     monkeypatch.setattr(
-        uk_amendment_replay,
+        uk_legislation_effects,
         "load_effects_for_statute_from_archive",
         lambda *_args, **_kwargs: [FakeEffect()],
     )
@@ -2992,7 +2993,7 @@ def test_uk_candidates_fast_residual_only_keeps_source_unavailable_without_candi
     monkeypatch.setattr(farchive, "Farchive", FakeArchive)
     monkeypatch.setattr("lawvm.tools.uk_bench._load_run", lambda _label: [bench_row])
     monkeypatch.setattr(
-        uk_amendment_replay,
+        uk_legislation_effects,
         "load_effects_for_statute_from_archive",
         lambda *_args, **_kwargs: [],
     )
@@ -3101,7 +3102,7 @@ def test_uk_candidates_fast_residual_only_keeps_budget_skipped_rows_without_cand
     monkeypatch.setattr(farchive, "Farchive", FakeArchive)
     monkeypatch.setattr("lawvm.tools.uk_bench._load_run", lambda _label: [bench_row])
     monkeypatch.setattr(
-        uk_amendment_replay,
+        uk_legislation_effects,
         "load_effects_for_statute_from_archive",
         lambda *_args, **_kwargs: [],
     )
@@ -3264,7 +3265,7 @@ def test_uk_candidates_residual_analysis_uses_saved_replay_regime(
     monkeypatch.setattr(farchive, "Farchive", FakeArchive)
     monkeypatch.setattr("lawvm.tools.uk_bench._load_run", lambda _label: [bench_row])
     monkeypatch.setattr(
-        uk_amendment_replay,
+        uk_legislation_effects,
         "load_effects_for_statute_from_archive",
         lambda *_args, **_kwargs: [FakeEffect()],
     )
@@ -3429,7 +3430,7 @@ def test_uk_candidates_residual_analysis_exceptions_are_row_local(
     monkeypatch.setattr(farchive, "Farchive", FakeArchive)
     monkeypatch.setattr("lawvm.tools.uk_bench._load_run", lambda _label: [bench_row])
     monkeypatch.setattr(
-        uk_amendment_replay,
+        uk_legislation_effects,
         "load_effects_for_statute_from_archive",
         lambda *_args, **_kwargs: [FakeEffect()],
     )

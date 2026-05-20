@@ -198,7 +198,7 @@ def fetch_missing_for_statute(
     Returns:
         A tuple-unpackable :class:`UKPrefetchReport`.
     """
-    from lawvm.uk_legislation.uk_amendment_replay import (
+    from lawvm.uk_legislation.effects import (
         load_effects_for_statute_from_archive,
         get_affecting_act_enacted_xml_from_archive,
         get_affecting_act_xml_from_archive,

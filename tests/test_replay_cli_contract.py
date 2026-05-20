@@ -600,7 +600,7 @@ def test_uk_replay_enacted_only_json_threads_effect_count_parse_rejections(
     monkeypatch.setattr(farchive, "Farchive", _FakeArchive)
     monkeypatch.setattr("lawvm.uk_legislation.uk_grafter.parse_uk_statute_ir_bytes", lambda *args, **kwargs: base_ir)
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         fake_load_effects,
     )
     monkeypatch.setattr("lawvm.core.timeline_consistency.ingest_uk_snapshots", lambda *args, **kwargs: {})
@@ -773,7 +773,7 @@ def test_uk_replay_main_threads_replay_adjudications_into_json(monkeypatch, tmp_
         fake_fetch_missing_for_statute,
     )
     monkeypatch.setattr("lawvm.uk_legislation.uk_grafter.parse_uk_statute_ir_bytes", lambda *args, **kwargs: base_ir)
-    monkeypatch.setattr("lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive", lambda *args, **kwargs: [])
+    monkeypatch.setattr("lawvm.uk_legislation.effects.load_effects_for_statute_from_archive", lambda *args, **kwargs: [])
     monkeypatch.setattr("lawvm.uk_legislation.uk_amendment_replay.UKReplayPipeline", _FakePipeline)
     monkeypatch.setattr("lawvm.core.timeline_consistency.ingest_uk_snapshots", lambda *args, **kwargs: {})
 
@@ -990,7 +990,7 @@ def test_uk_replay_main_text_reports_evidence_summary(monkeypatch, tmp_path, cap
         lambda *args, **kwargs: UKPrefetchReport(0, 0, 1, (prefetch_event,)),
     )
     monkeypatch.setattr("lawvm.uk_legislation.uk_grafter.parse_uk_statute_ir_bytes", lambda *args, **kwargs: base_ir)
-    monkeypatch.setattr("lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive", lambda *args, **kwargs: [])
+    monkeypatch.setattr("lawvm.uk_legislation.effects.load_effects_for_statute_from_archive", lambda *args, **kwargs: [])
     monkeypatch.setattr("lawvm.uk_legislation.uk_amendment_replay.UKReplayPipeline", _FakePipeline)
     monkeypatch.setattr("lawvm.core.timeline_consistency.ingest_uk_snapshots", lambda *args, **kwargs: {})
 
@@ -1253,7 +1253,7 @@ def test_uk_replay_main_json_reports_too_small_oracle_source(monkeypatch, tmp_pa
 
     monkeypatch.setattr(farchive, "Farchive", _FakeArchive)
     monkeypatch.setattr("lawvm.uk_legislation.uk_grafter.parse_uk_statute_ir_bytes", fake_parse_uk_statute_ir_bytes)
-    monkeypatch.setattr("lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive", lambda *args, **kwargs: [])
+    monkeypatch.setattr("lawvm.uk_legislation.effects.load_effects_for_statute_from_archive", lambda *args, **kwargs: [])
     monkeypatch.setattr("lawvm.uk_legislation.uk_amendment_replay.UKReplayPipeline", _FakePipeline)
     monkeypatch.setattr("lawvm.core.timeline_consistency.ingest_uk_snapshots", lambda *args, **kwargs: {})
 
@@ -1495,7 +1495,7 @@ def test_uk_replay_json_records_malformed_available_oracle_source(
         "lawvm.uk_legislation.uk_grafter.extract_eid_map_bytes",
         lambda *args, **kwargs: {"eid_map": {"body:section-1": "section-1"}, "text_map": {}},
     )
-    monkeypatch.setattr("lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive", lambda *args, **kwargs: [])
+    monkeypatch.setattr("lawvm.uk_legislation.effects.load_effects_for_statute_from_archive", lambda *args, **kwargs: [])
     monkeypatch.setattr("lawvm.uk_legislation.uk_amendment_replay.UKReplayPipeline", _FakePipeline)
 
     uk_replay.main(
@@ -1608,7 +1608,7 @@ def test_uk_replay_source_first_threads_replay_regime(monkeypatch, tmp_path, cap
 
     monkeypatch.setattr(farchive, "Farchive", _FakeArchive)
     monkeypatch.setattr("lawvm.uk_legislation.uk_grafter.parse_uk_statute_ir_bytes", lambda *args, **kwargs: base_ir)
-    monkeypatch.setattr("lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive", lambda *args, **kwargs: [])
+    monkeypatch.setattr("lawvm.uk_legislation.effects.load_effects_for_statute_from_archive", lambda *args, **kwargs: [])
     monkeypatch.setattr("lawvm.uk_legislation.uk_amendment_replay.UKReplayPipeline", _FakePipeline)
     monkeypatch.setattr("lawvm.core.timeline_consistency.ingest_uk_snapshots", lambda *args, **kwargs: {})
 
@@ -1833,7 +1833,7 @@ def test_uk_replay_main_json_records_oracle_compare_residuals(monkeypatch, tmp_p
         lambda **kwargs: "commensurable_delta",
     )
     monkeypatch.setattr("lawvm.uk_legislation.source_adjudication.is_core_uk_comparison", lambda value: True)
-    monkeypatch.setattr("lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive", lambda *args, **kwargs: [object(), object()])
+    monkeypatch.setattr("lawvm.uk_legislation.effects.load_effects_for_statute_from_archive", lambda *args, **kwargs: [object(), object()])
     monkeypatch.setattr("lawvm.uk_legislation.uk_amendment_replay.UKReplayPipeline", _FakePipeline)
     monkeypatch.setattr("lawvm.core.timeline_consistency.ingest_uk_snapshots", lambda *args, **kwargs: {})
 

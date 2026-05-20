@@ -528,6 +528,11 @@ def main(args: "argparse.Namespace") -> None:
         extract_eid_map_bytes,
         parse_uk_statute_ir_bytes,
     )
+    from lawvm.uk_legislation.effects import (
+        get_affecting_act_xml_from_archive,
+        load_effects_for_statute_from_archive,
+        uk_effect_requires_affecting_source_for_replay,
+    )
     from lawvm.uk_legislation.uk_amendment_replay import (
         _build_affecting_source_context,
         _extract_from_affecting_source_context_with_observations,
@@ -536,10 +541,7 @@ def main(args: "argparse.Namespace") -> None:
         append_source_pathology_filter_lowering_rejections,
         append_no_ops_lowering_rejections,
         compile_effect_to_ir_ops,
-        get_affecting_act_xml_from_archive,
-        load_effects_for_statute_from_archive,
         mark_nonreplay_lowering_rejections_nonblocking,
-        uk_effect_requires_affecting_source_for_replay,
     )
     from lawvm.tools.uk_replay import _archive_url_for_statute
 
