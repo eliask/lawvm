@@ -1827,6 +1827,15 @@ def test_parse_affected_target_normalizes_tight_zero_padded_paragraph_abbreviati
     )
 
 
+def test_parse_affected_target_normalizes_undotted_schedule_para_abbreviation() -> None:
+    assert _parse_affected_target("Sch. 1 para 7(1)(b)").path == (
+        ("schedule", "1"),
+        ("paragraph", "7"),
+        ("subparagraph", "1"),
+        ("item", "b"),
+    )
+
+
 def test_retarget_substituted_series_anchors_first_replacement_to_replaced_subsection() -> None:
     retargeted = _retarget_substituted_series_to_replaced_anchor(
         "substituted for s. 39(5)",

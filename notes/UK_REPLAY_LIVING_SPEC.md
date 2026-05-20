@@ -1901,6 +1901,13 @@ Current block-substitution context invariant:
   `section 15(2)(b) (...)` are source-insufficient when paired with blocking
   word-level lowering. They must not remain unclassified manual frontier rows,
   because the public witness does not contain an executable amendment program.
+- Effect-feed target references may use the undotted abbreviation `para` as
+  well as `para.`. UK target parsing treats both as `paragraph` under
+  `uk_target_ref_undotted_para_abbreviation_normalized`; otherwise
+  `Sch. 1 para 7(1)(b)` is mis-addressed as
+  `schedule:1/paragraph:para/subparagraph:7/item:1/item:b` rather than
+  `schedule:1/paragraph:7/subparagraph:1/item:b`. This is grammar
+  normalization at parse time, not a replay fallback or live-tree retargeting.
 - source text that uses a table as an amendment program, for example
   `provisions listed in column 1 ... for the words in the corresponding entry
   in column 2 ... substitute "X"`, may lower under
