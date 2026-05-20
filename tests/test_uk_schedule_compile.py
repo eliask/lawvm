@@ -13581,6 +13581,63 @@ def test_replay_schedule_list_entry_replace_replaces_only_matched_entry() -> Non
     assert adjudications[0].detail["strict_disposition"] == "record"
 
 
+def test_replay_schedule_list_entry_replace_resolves_unique_prefix_anchor() -> None:
+    op = LegalOperation(
+        op_id="uk_test_schedule_entry_replace_prefix",
+        sequence=0,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("schedule", "3"),)),
+        payload=IRNode(
+            kind=IRNodeKind.SCHEDULE_ENTRY,
+            label=None,
+            text="The National Library of Scotland",
+        ),
+        provenance_tags=(
+            'schedule_list_entry_replace_selector:{"rule_id":"uk_effect_schedule_list_entry_replace",'
+            '"anchor":"The Trustees of the National Library of Scotland",'
+            '"replacement_text":"The National Library of Scotland"}',
+        ),
+    )
+    base = IRStatute(
+        statute_id="asp/2000/7",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 3",
+                text="Devolved public bodies",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.SCHEDULE_ENTRY,
+                        label=None,
+                        text=(
+                            "The Trustees of the National Library of Scotland, "
+                            "constituted under section 1 of the National Library of Scotland Act 1925"
+                        ),
+                    ),
+                    IRNode(kind=IRNodeKind.SCHEDULE_ENTRY, label=None, text="Scottish Enterprise"),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    assert [child.text for child in replayed.supplements[0].children] == [
+        "The National Library of Scotland",
+        "Scottish Enterprise",
+    ]
+    assert [record.kind for record in adjudications] == [
+        "uk_replay_schedule_list_entry_anchor_prefix_normalized",
+        "uk_replay_schedule_list_entry_replace_resolved",
+    ]
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[1].detail["match_mode"] == "prefix"
+    assert adjudications[1].detail["strict_disposition"] == "record"
+
+
 def test_replay_schedule_list_entry_repeal_is_all_or_nothing_when_anchor_missing() -> None:
     op = LegalOperation(
         op_id="uk_test_schedule_entry_repeal_missing",

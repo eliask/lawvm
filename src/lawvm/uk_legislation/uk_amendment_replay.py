@@ -15823,12 +15823,22 @@ class UKReplayExecutor:
         ]
         match_mode = "exact"
         if not matches:
+            matches = [
+                (idx, child)
+                for idx, child in entry_rows
+                if _compact_normalized_text(child.text).startswith(anchor_norm)
+            ]
+            match_mode = "prefix"
+        if not matches:
             article_anchor_norm = _compact_schedule_entry_anchor_without_article(anchor)
             matches = [
                 (idx, child)
                 for idx, child in entry_rows
                 if article_anchor_norm
-                and _compact_schedule_entry_anchor_without_article(child.text) == article_anchor_norm
+                and (
+                    _compact_schedule_entry_anchor_without_article(child.text) == article_anchor_norm
+                    or _compact_schedule_entry_anchor_without_article(child.text).startswith(article_anchor_norm)
+                )
             ]
             match_mode = "article"
         if len(matches) != 1:
@@ -15855,6 +15865,48 @@ class UKReplayExecutor:
             )
             return False
         replace_idx = matches[0][0]
+        if match_mode == "prefix":
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_PREFIX_NORMALIZED_RULE_ID,
+                message=(
+                    "UK replay resolved a schedule-list-entry anchor as the "
+                    "unique prefix of a longer source entry."
+                ),
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "anchor_prefix_unique",
+                    "anchor_match_count": len(matches),
+                    "entry_count": len(entry_rows),
+                    "family": "source_schedule_list_entry_elaboration",
+                    "blocking": False,
+                    "strict_disposition": "record",
+                    "quirks_disposition": "record",
+                },
+            )
+        elif match_mode == "article":
+            _append_uk_replay_adjudication(
+                self.adjudications_out,
+                kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_ARTICLE_NORMALIZED_RULE_ID,
+                message=(
+                    "UK replay resolved a schedule-list-entry anchor after "
+                    "normalizing a leading article."
+                ),
+                op=op,
+                detail={
+                    "target": str(target),
+                    "selector": dict(selector),
+                    "reason_code": "anchor_leading_article_unique",
+                    "anchor_match_count": len(matches),
+                    "entry_count": len(entry_rows),
+                    "family": "source_schedule_list_entry_elaboration",
+                    "blocking": False,
+                    "strict_disposition": "record",
+                    "quirks_disposition": "record",
+                },
+            )
         for key in ("eId", "id"):
             new_node.attrs.pop(key, None)
         children = list(schedule_node.children)
