@@ -283,6 +283,7 @@ def normalize_uk_replay_compare_eids(
 
     - official oracle EID parent-path drift where XML physical ancestry proves
       a different intermediate parent while preserving the same root and leaf
+    - non-legal UK text-fragment IDs such as `p00090`
     - case-only EID drift (`2a` vs `2A`)
     - source URI ordinal drift for generic UK containers (`part-n2` vs
       `part-2`, `schedule-paragraph-1` vs `schedule-1-paragraph-1`)
@@ -307,11 +308,13 @@ def normalize_uk_replay_compare_eids(
         alias_norm.get(normalized, normalized)
         for eid in replayed_eids
         if (normalized := _normalize_uk_source_container_eid(eid))
+        and not _is_uk_nonlegal_text_fragment_eid(normalized)
     }
     oracle_norm = {
         alias_norm.get(normalized, normalized)
         for eid in oracle_eids
         if (normalized := _normalize_uk_source_container_eid(eid))
+        and not _is_uk_nonlegal_text_fragment_eid(normalized)
     }
     dropped_prefixes: set[str] = set()
     kept: set[str] = set()
@@ -408,6 +411,10 @@ def _normalize_uk_source_container_eid(eid: str) -> str:
             normalized.append("1")
         idx += 1
     return "-".join(normalized)
+
+
+def _is_uk_nonlegal_text_fragment_eid(eid: str) -> bool:
+    return re.fullmatch(r"p[0-9]{4,}[a-z]?", str(eid or "").lower()) is not None
 
 
 def _uk_compare_eid_has_table_segment(eid: str) -> bool:
