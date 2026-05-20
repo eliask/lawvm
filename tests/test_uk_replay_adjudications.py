@@ -3378,6 +3378,62 @@ def test_executor_applies_definition_entry_repeal_without_phrase_deletion() -> N
     assert adjudications == []
 
 
+def test_executor_records_absent_definition_entry_repeal_without_shape_gap() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/13",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="28",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "\u201cthe 2001 Act\u201d means the International Criminal Court Act 2001; "
+                                "\u201cUnited Kingdom national\u201d means a person of a described kind;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_entry_already_absent",
+            sequence=1,
+            action=StructuralAction.TEXT_REPEAL,
+            target=LegalAddress(path=(("section", "28"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="TEXT_DEFINITION_ENTRY_United Kingdom resident", occurrence=0),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "\u201cthe 2001 Act\u201d means the International Criminal Court Act 2001; "
+        "\u201cUnited Kingdom national\u201d means a person of a described kind;"
+    )
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_definition_entry_already_absent_observed"
+    ]
+    assert classify_uk_replay_adjudication_bucket(adjudications[0].kind) == "nonblocking_observation"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+
+
 def test_executor_applies_bilingual_definition_entry_repeal_without_phrase_deletion() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

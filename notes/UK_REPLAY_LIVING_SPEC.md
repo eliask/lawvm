@@ -3065,8 +3065,11 @@ Current bench replay-regime invariant:
   `key-02150edb4f24177b310a05305b2617c8`, and
   `key-570e7790f9e34114d99beba23be1565a` from `asp/2019/17`.
   The rule does not authorize inserting an absent definition entry or treating
-  `substitute` as `insert`; absent terms remain
-  `uk_replay_definition_entry_shape_gap`.
+  `substitute` as `insert`. For repeal/delete operations only, if the named
+  definition term is already absent from the target subtree, replay emits
+  nonblocking `uk_replay_definition_entry_already_absent_observed`; if the term
+  is present but cannot be uniquely bounded as a definition entry, replay
+  remains blocking `uk_replay_definition_entry_shape_gap`.
 - Parser lowering may compile `in the definition of "X", omit paragraph (d)` or
   `in the definition of "X", for paragraph (c) substitute ...` to
   `TEXT_DEFINITION_CHILD_PARAGRAPH_X<US>label`. Replay may rewrite only a
