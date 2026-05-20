@@ -71,6 +71,120 @@ def _source_sha256(blob: bytes | None) -> str | None:
     return hashlib.sha256(blob).hexdigest()
 
 
+def _score_eids(left_eids: Set[str], right_eids: Set[str]) -> float:
+    common = left_eids & right_eids
+    denom = max(len(left_eids), len(right_eids), 1)
+    return len(common) / denom
+
+
+def _score_commenced_eids(left_eids: Set[str], right_eids: Set[str]) -> float:
+    if not left_eids:
+        return -1.0
+    return _score_eids(left_eids, right_eids)
+
+
+def _commenced_oracle_eids(oracle_eids: Set[str], commenced_eids: Set[str]) -> Set[str]:
+    if not commenced_eids:
+        return set()
+    return oracle_eids & commenced_eids
+
+
+def _uk_commencement_score_summary(
+    *,
+    enabled: bool,
+    applicability_mode: str,
+    observations: Sequence[dict[str, Any]] = (),
+    unavailable_reason: str = "",
+    commenced_eids: Set[str] | None = None,
+    commenced_enacted_eids: Set[str] | None = None,
+    commenced_replayed_eids: Set[str] | None = None,
+    commenced_oracle_eids: Set[str] | None = None,
+) -> dict[str, object]:
+    commenced_eids = set(commenced_eids or set())
+    commenced_enacted_eids = set(commenced_enacted_eids or set())
+    commenced_replayed_eids = set(commenced_replayed_eids or set())
+    commenced_oracle_eids = set(commenced_oracle_eids or set())
+    observation_rows = [dict(row) for row in observations]
+    return {
+        "enabled": enabled,
+        "rule_id": "uk_replay_commencement_score_lane",
+        "phase": "oracle_comparison",
+        "family": "temporal_comparison_lane",
+        "comparison_scope": "commencement",
+        "score_formula": "common/max(left,right)",
+        "applicability_mode": applicability_mode,
+        "evidence_available": bool(enabled and not unavailable_reason),
+        "unavailable_reason": unavailable_reason,
+        "commenced_eid_count": len(commenced_eids) if enabled and not unavailable_reason else None,
+        "commenced_enacted_eid_count": (
+            len(commenced_enacted_eids) if enabled and not unavailable_reason else None
+        ),
+        "commenced_replayed_eid_count": (
+            len(commenced_replayed_eids) if enabled and not unavailable_reason else None
+        ),
+        "commenced_oracle_eid_count": (
+            len(commenced_oracle_eids) if enabled and not unavailable_reason else None
+        ),
+        "commenced_enacted_common_count": (
+            len(commenced_enacted_eids & commenced_oracle_eids)
+            if enabled and not unavailable_reason
+            else None
+        ),
+        "commenced_replayed_common_count": (
+            len(commenced_replayed_eids & commenced_oracle_eids)
+            if enabled and not unavailable_reason
+            else None
+        ),
+        "commencement_score": (
+            _score_commenced_eids(commenced_enacted_eids, commenced_oracle_eids)
+            if enabled and not unavailable_reason
+            else None
+        ),
+        "replay_commencement_score": (
+            _score_commenced_eids(commenced_replayed_eids, commenced_oracle_eids)
+            if enabled and not unavailable_reason
+            else None
+        ),
+        "observation_count": len(observation_rows),
+        "observation_rule_counts": dict(
+            sorted(Counter(str(row.get("rule_id") or "unknown") for row in observation_rows).items())
+        ),
+        "observations": observation_rows,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+
+
+def _uk_commencement_score_text_lines(summary: dict[str, object]) -> list[str]:
+    if not summary.get("enabled"):
+        return []
+    reason = str(summary.get("unavailable_reason") or "")
+    if reason:
+        return [f"Commencement EID score: unavailable reason={reason}"]
+    commencement_score = summary.get("commencement_score")
+    replay_commencement_score = summary.get("replay_commencement_score")
+    if not isinstance(commencement_score, (int, float)) or commencement_score < 0:
+        enacted_text = "not computed"
+    else:
+        enacted_text = f"{commencement_score:.1%}"
+    if not isinstance(replay_commencement_score, (int, float)) or replay_commencement_score < 0:
+        replay_text = "not computed"
+    else:
+        replay_text = f"{replay_commencement_score:.1%}"
+    lines = [
+        "Commencement EID score: "
+        f"enacted={enacted_text} "
+        f"replay={replay_text} "
+        f"commenced={summary['commenced_eid_count']} "
+        f"oracle={summary['commenced_oracle_eid_count']}"
+    ]
+    rule_counts = summary.get("observation_rule_counts")
+    if isinstance(rule_counts, dict) and rule_counts:
+        rule_text = ", ".join(f"{rule}={count}" for rule, count in sorted(rule_counts.items()))
+        lines.append(f"Commencement observations: {rule_text}")
+    return lines
+
+
 def _uk_replay_executor_oracle_alignment_summary(
     *,
     enabled: bool,
@@ -532,6 +646,7 @@ def main(args: "argparse.Namespace") -> None:
     as_json: bool = getattr(args, "json", False)
     db_arg: Optional[str] = getattr(args, "db", None)
     use_timeline: bool = getattr(args, "timeline", False)
+    score_commencement: bool = getattr(args, "commencement", False)
     _out = (lambda *a, **k: None) if as_json else print
 
     # ── 0. Pre-fetch missing affecting act XMLs (optional) ─────────────────
@@ -565,12 +680,22 @@ def main(args: "argparse.Namespace") -> None:
     lowering_rejections: list[dict[str, object]] = []
     authority_rejections: list[dict[str, object]] = []
     uk_prefetch_report: dict[str, Any] = {"enabled": bool(fetch_missing)}
+    uk_commencement_summary: dict[str, object] = _uk_commencement_score_summary(
+        enabled=score_commencement,
+        applicability_mode="",
+        unavailable_reason="not_requested" if not score_commencement else "",
+    )
     replay_regime = normalize_uk_replay_regime(args)
     allow_oracle_alignment = replay_regime.allow_oracle_alignment
     applicability_mode = replay_regime.applicability_mode
     authority_mode = replay_regime.authority_mode
     allow_metadata_backfill = replay_regime.allow_metadata_backfill
     allow_metadata_only_effects = replay_regime.allow_metadata_only_effects
+    uk_commencement_summary = _uk_commencement_score_summary(
+        enabled=score_commencement,
+        applicability_mode=applicability_mode,
+        unavailable_reason="not_requested" if not score_commencement else "",
+    )
     if not as_json:
         _out(
             "Replay regime: "
@@ -892,6 +1017,39 @@ def main(args: "argparse.Namespace") -> None:
         else:
             _out(f"Note: no oracle XML in archive for {oracle_url}.")
 
+        if score_commencement:
+            if current_ir is None:
+                uk_commencement_summary = _uk_commencement_score_summary(
+                    enabled=True,
+                    applicability_mode=applicability_mode,
+                    unavailable_reason="oracle_xml_unavailable_or_parse_rejected",
+                )
+            else:
+                commencement_observations: list[dict[str, Any]] = []
+                all_effects = load_effects_for_statute_from_archive(
+                    statute_id,
+                    archive,
+                    parse_rejections_out=commencement_observations,
+                )
+                commenced = uk_replay_module.commencement_eid_set(
+                    all_effects,
+                    base_ir,
+                    applicability_mode=applicability_mode,
+                    observations_out=commencement_observations,
+                )
+                commenced_enacted = base_eids & commenced
+                commenced_replayed = replayed_eids & commenced
+                commenced_oracle = _commenced_oracle_eids(current_eids, commenced)
+                uk_commencement_summary = _uk_commencement_score_summary(
+                    enabled=True,
+                    applicability_mode=applicability_mode,
+                    observations=commencement_observations,
+                    commenced_eids=commenced,
+                    commenced_enacted_eids=commenced_enacted,
+                    commenced_replayed_eids=commenced_replayed,
+                    commenced_oracle_eids=commenced_oracle,
+                )
+
     # ── 5. Timeline compilation ───────────────────────────────────────────
     # Two paths:
     #
@@ -1037,6 +1195,7 @@ def main(args: "argparse.Namespace") -> None:
             authority_rejections=authority_rejections,
             uk_replay_regime=uk_replay_regime,
             uk_oracle_alignment_summary=uk_oracle_alignment_summary,
+            uk_commencement_summary=uk_commencement_summary,
             uk_prefetch_report=uk_prefetch_report,
         )
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -1088,6 +1247,8 @@ def main(args: "argparse.Namespace") -> None:
     ):
         print(line)
     for line in _uk_oracle_alignment_text_lines(uk_oracle_alignment_summary):
+        print(line)
+    for line in _uk_commencement_score_text_lines(uk_commencement_summary):
         print(line)
     if replay_compare_eid_count is not None:
         print(
