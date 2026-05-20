@@ -228,6 +228,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_text_match_punctuation_space_normalized",
         "uk_replay_text_match_rotated_trailing_comma_omission",
         "uk_replay_text_match_word_punctuation_elided",
+        "uk_replay_text_range_anchor_word_boundary_normalized",
         "uk_replay_heading_respectively_all_occurrences_absent_observed",
     }
 )
