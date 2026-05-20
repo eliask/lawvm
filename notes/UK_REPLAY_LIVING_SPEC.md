@@ -2985,6 +2985,10 @@ Current bench replay-regime invariant:
   emit blocking `uk_effect_external_act_target_rejected` with the source-named
   Act title and skip the row rather than sending a destructive `/whole_act`
   text operation to replay.
+  Manual-frontier triage classifies this as
+  `uk_manual_frontier_external_act_target_out_of_scope`, because it is not a
+  manual compilation opportunity for the current statute; it belongs to the
+  source-named target Act's replay graph.
   - current witness: `asp/2002/11` Schedule 6 paragraphs amending schedules to
     the Town and Country Planning (Scotland) Act 1997 and related external Acts
 - A partial whole-Act repeal such as `The whole Act (other than sections 13 and
