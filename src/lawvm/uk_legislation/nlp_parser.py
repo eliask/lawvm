@@ -1238,9 +1238,38 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
             }
         )
 
+    matches_imperative_contextual_word_omission = re.finditer(
+        r"\bomit\s+(?:the\s+)?(?:word\s+)?[“\"'‘](.*?)[”\"'’]\s+"
+        r"((?:immediately\s+)?(?:preceding|following)|after|before)\s+"
+        r"(paragraph|sub-paragraph|subsection)\s+\(([0-9A-Za-z]+)\)",
+        text,
+        re.I,
+    )
+    for m in matches_imperative_contextual_word_omission:
+        relation = m.group(2).lower()
+        relation_key = (
+            "PRECEDING"
+            if relation in {"preceding", "immediately preceding", "before"}
+            else "FOLLOWING"
+        )
+        unit_kind = m.group(3).lower().replace("-", "")
+        subs.append(
+            {
+                "original": (
+                    f"TEXT_WORD_{m.group(1).strip()}_IMMEDIATELY_"
+                    f"{relation_key}_{unit_kind}_{m.group(4).strip()}"
+                ),
+                "replacement": "",
+                "rule_id": "uk_effect_contextual_adjacent_word_omit_text_patch",
+            }
+        )
+
     # Pattern 2: Omission from A to B
     matches_direct_quoted_word_omission = re.finditer(
-        r"\bomit\s+(?:the\s+)?(?:words?\s+)?[“\"'‘](.*?)[”\"'’](?:\s+at the end(?: of [^.;]+)?)?",
+        r"\bomit\s+(?:the\s+)?(?:words?\s+)?[“\"'‘](.*?)[”\"'’]"
+        r"(?!\s+(?:immediately\s+)?(?:preceding|following|after|before)\s+"
+        r"(?:paragraph|sub-paragraph|subsection)\s+\([0-9A-Za-z]+\))"
+        r"(?:\s+at the end(?: of [^.;]+)?)?",
         text,
         re.I,
     )
