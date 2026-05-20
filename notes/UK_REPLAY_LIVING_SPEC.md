@@ -2810,6 +2810,16 @@ Current bench replay-regime invariant:
   `uk_replay_direct_section_paragraph_carrier_gap`. Current witness:
   `asp/2001/2`, `asp/2005/12` s. 51(2)(a), "after second authority ... (i)".
   Strict mode blocks the recovery.
+- Same-source ordinal text-patch overlap blocking is target-text-aware. If an
+  ordinal selector such as `scheme` appears inside broader same-source patches
+  but the claimed ordinal occurrence is disjoint in the base target text,
+  replay records nonblocking
+  `uk_replay_same_source_text_patch_overlap_disjoint`, orders that ordinal patch
+  before the broader same-source patches that would disturb its base-text
+  occurrence count, and allows the operation.
+  If the base target cannot witness disjointness, or the claimed occurrence
+  overlaps a broader same-source patch, replay still blocks under
+  `uk_replay_same_source_text_patch_overlap_blocked`.
 - A valid single-segment section/article/rule/regulation target is not
   malformed merely because the body tree is organized under part/chapter
   wrappers. If the target is absent but bracketed by existing section-like

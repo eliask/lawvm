@@ -74,6 +74,7 @@ def test_classify_uk_replay_adjudication_bucket() -> None:
         "uk_replay_text_monetary_amount_preimage_gap": "text_surface",
         "uk_replay_text_parenthetical_omission_preimage_gap": "text_surface",
         "uk_replay_same_source_text_patch_overlap_blocked": "source_shape",
+        "uk_replay_same_source_text_patch_overlap_disjoint": "nonblocking_observation",
         "text_duplication_warning": "nonblocking_observation",
         "uk_replay_text_match_punctuation_space_normalized": "nonblocking_observation",
         "uk_replay_text_match_replacement_normalized_present": "nonblocking_observation",
