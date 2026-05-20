@@ -2754,6 +2754,143 @@ def test_executor_recovers_empty_descendant_text_patch_on_parent_text() -> None:
     assert adjudications[0].detail["quirks_disposition"] == "apply"
 
 
+def test_executor_materializes_source_carried_labeled_child_text_substitution() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/11",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="11",
+                    attrs={"eId": "section-11"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="4",
+                            attrs={"eId": "section-11-4"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="b",
+                                    attrs={"eId": "section-11-4-b"},
+                                    text="An authorisation insofar as relating to a police force,",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_source_carried_labeled_child_text_substitution",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "11"), ("subsection", "4"), ("paragraph", "b"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="a police force,", occurrence=0),
+                replacement=(
+                    "i where that individual is a member of a police force, a police force; or "
+                    "ii where that individual is a police member of the Agency, that Agency,"
+                ),
+            ),
+            source=_source(),
+            provenance_tags=(
+                "text_rewrite_rule:uk_effect_source_carried_quoted_text_substitution_text_patch",
+            ),
+        )
+    )
+
+    paragraph = executor.statute.body.children[0].children[0].children[0]
+    assert paragraph.text == "An authorisation insofar as relating to"
+    assert [(child.kind, child.label, child.text, child.attrs.get("eId")) for child in paragraph.children] == [
+        (
+            IRNodeKind.SUBPARAGRAPH,
+            "i",
+            "where that individual is a member of a police force, a police force; or",
+            "section-11-4-b-i",
+        ),
+        (
+            IRNodeKind.SUBPARAGRAPH,
+            "ii",
+            "where that individual is a police member of the Agency, that Agency,",
+            "section-11-4-b-ii",
+        ),
+    ]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_source_carried_labeled_child_text_substitution_recovered"
+    assert adjudications[0].detail["child_labels"] == ("i", "ii")
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "apply"
+
+
+def test_executor_does_not_materialize_labeled_child_text_without_source_rule() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/11",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="11",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="4",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="b",
+                                    text="An authorisation insofar as relating to a police force,",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_plain_labeled_text_substitution",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "11"), ("subsection", "4"), ("paragraph", "b"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="a police force,", occurrence=0),
+                replacement="i first visible limb; or ii second visible limb",
+            ),
+            source=_source(),
+        )
+    )
+
+    paragraph = executor.statute.body.children[0].children[0].children[0]
+    assert paragraph.children == []
+    assert "i first visible limb" in paragraph.text
+    assert not any(
+        row.kind == "uk_replay_source_carried_labeled_child_text_substitution_recovered"
+        for row in adjudications
+    )
+
+
 def test_executor_recovers_source_carried_structured_tail_substitution() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

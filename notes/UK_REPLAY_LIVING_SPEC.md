@@ -2998,6 +2998,14 @@ Current bench replay-regime invariant:
   live text. Current corpus witnesses: `asp/2001/2`
   `key-5c591c6e000ad938236c4a9711426132` and `asp/2000/11`
   `key-aeafeef7fe358d46b1fd8715e2aa27ef`.
+  If that quoted-substitution payload itself begins with a visible consecutive
+  roman child run, replay may materialize those children under the explicit
+  paragraph-like target via
+  `uk_replay_source_carried_labeled_child_text_substitution_recovered`. This
+  is not oracle alignment: the source payload must carry the labels, the target
+  node must have no existing children, and strict mode disposition is `block`.
+  The `asp/2000/11` witness above creates `s. 11(4)(b)(i)` and `(ii)` before
+  later 2012 effects target those children.
   If the same parent instruction itself contains the inserted quoted words,
   as in `after "weapon" insert "or corrosive substance"` followed by child
   rows listing affected provisions, the inline quoted words are the payload;

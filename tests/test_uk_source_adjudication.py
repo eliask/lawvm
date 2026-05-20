@@ -85,6 +85,7 @@ def test_classify_uk_replay_adjudication_bucket() -> None:
         "uk_effect_table_entry_row_insert": "nonblocking_observation",
         "uk_replay_table_entry_multi_cell_text_patch_resolved": "nonblocking_observation",
         "uk_replay_source_label_changing_substitution_resolved": "nonblocking_observation",
+        "uk_replay_source_carried_labeled_child_text_substitution_recovered": "nonblocking_observation",
         "uk_replay_source_carried_structured_tail_substitution_recovered": "nonblocking_observation",
         "uk_replay_text_match_missing": "text_surface",
         "uk_replay_text_monetary_amount_preimage_gap": "text_surface",
