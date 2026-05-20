@@ -1147,6 +1147,17 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source substitutes a section range into a higher-level container; a manual or deterministic range-to-container migration claim must own the replaced range, new container, and lineage.",
         }
 
+    if (
+        compiled_op_count > 0
+        and not blocking_rules
+        and "uk_effect_added_type_source_structuralized" in all_rules
+    ):
+        return {
+            "status": "deterministic_frontend_supported",
+            "rule_id": "uk_manual_frontier_deterministic_supported",
+            "reason": "The row already lowers to replay operations through a source-verified nonstructural replay family.",
+        }
+
     if not replay_applicable or not structural_for_replay:
         return {
             "status": "non_textual_or_out_of_scope",

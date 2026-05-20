@@ -1361,6 +1361,100 @@ def test_compile_repealed_by_metadata_target_lowers_to_typed_repeal() -> None:
     assert ops[0].target.path == (("schedule", "2"), ("paragraph", "2"))
 
 
+def test_compile_added_type_requires_source_and_replays_verified_insert_payload() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <BlockAmendment xmlns="{_LEG_NS}">
+          <P2><Pnumber>7</Pnumber><Text>Inserted subsection 7.</Text></P2>
+          <P2><Pnumber>8</Pnumber><Text>Inserted subsection 8.</Text></P2>
+          <P2><Pnumber>9</Pnumber><Text>Inserted subsection 9.</Text></P2>
+        </BlockAmendment>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_added_type_structuralized",
+        effect_type="added",
+        applied=True,
+        requires_applied=True,
+        modified="2020-06-10",
+        affected_uri="/id/asp/2002/11",
+        affected_class="ActOfScottishParliament",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="s. 3(7)-(9)",
+        affecting_uri="/id/asp/2005/6",
+        affecting_class="ActOfScottishParliament",
+        affecting_year="2005",
+        affecting_number="6",
+        affecting_provisions="s. 27(1)(b)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2005-10-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    assert effect.is_structural is False
+    assert effect.is_structural_for_replay() is False
+    assert uk_replay_mod.uk_effect_requires_affecting_source_for_replay(effect) is True
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert [op.action for op in ops] == [
+        StructuralAction.INSERT,
+        StructuralAction.INSERT,
+        StructuralAction.INSERT,
+    ]
+    assert [op.target.path for op in ops] == [
+        (("section", "3"), ("subsection", "7")),
+        (("section", "3"), ("subsection", "8")),
+        (("section", "3"), ("subsection", "9")),
+    ]
+    assert all(op.payload is not None for op in ops)
+    assert UKReplayPipeline._should_replay_nonstructural_ops(effect, ops) is True
+    assert any(
+        row.get("rule_id") == "uk_effect_added_type_source_structuralized"
+        and row.get("target_refs") == ["s. 3(7)", "s. 3(8)", "s. 3(9)"]
+        for row in lowering_records
+    )
+
+
+def test_compile_added_type_does_not_metadata_backfill_without_source() -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_added_type_no_source",
+        effect_type="added",
+        applied=True,
+        requires_applied=True,
+        modified="2020-06-10",
+        affected_uri="/id/asp/2002/11",
+        affected_class="ActOfScottishParliament",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="s. 3(7)-(9)",
+        affecting_uri="/id/asp/2005/6",
+        affecting_class="ActOfScottishParliament",
+        affecting_year="2005",
+        affecting_number="6",
+        affecting_provisions="s. 27(1)(b)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2005-10-03", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el=None,
+        sequence=0,
+        fallback_for_missing_extracted_source=True,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert any(
+        row.get("rule_id") == "uk_effect_missing_structural_payload_rejected"
+        and row.get("effect_id") == "uk_test_added_type_no_source"
+        for row in lowering_records
+    )
+
+
 def test_compile_nested_schedule_subparagraph_paragraph_repeal_not_sibling_expanded() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -14567,6 +14661,138 @@ def test_compile_structural_inserted_schedule_paragraph_stays_insert() -> None:
     assert ops[0].payload.kind == IRNodeKind.PARAGRAPH
     assert ops[0].payload.label == "197"
     assert ops[0].text_patch is None
+
+
+def test_compile_flat_p1para_schedule_paragraph_insert_owns_heading_gap() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="article-21-3">
+          <Pnumber>3</Pnumber>
+          <P2para>
+            <Text>In the Scottish Public Services Ombudsman Act 2002, in Part 1 of schedule 2 (listed authorities), after paragraph 17A insert—</Text>
+            <BlockAmendment>
+              <P1para>
+                <Text><Emphasis>Crown Estate</Emphasis></Text>
+                <Text>17B Crown Estate Scotland (Interim Management).</Text>
+              </P1para>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_flat_p1para_schedule_para_insert",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2018-08-11",
+        affected_uri="/id/asp/2002/11",
+        affected_class="ActOfScottishParliament",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="Sch. 2 Pt. 1 para. 17B and cross-heading",
+        affecting_uri="/id/ssi/2017/36",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2017",
+        affecting_number="36",
+        affecting_provisions="art. 21(3)",
+        affecting_title="Test Instrument",
+        in_force_dates=[{"date": "2017-02-16", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.INSERT
+    assert op.target.path == (("schedule", "2"), ("paragraph", "17b"))
+    assert op.witness_rule_id == "uk_effect_flat_p1para_schedule_paragraph_insert_payload_lowered"
+    assert op.payload is not None
+    assert op.payload.kind == IRNodeKind.PARAGRAPH
+    assert op.payload.label == "17B"
+    assert op.payload.text == "Crown Estate Scotland (Interim Management)."
+    assert op.payload.attrs["eId"] == "schedule-2-paragraph-17B"
+    assert any(
+        row.get("rule_id") == "uk_effect_nonaddressable_schedule_part_insert_target_normalized"
+        and row.get("metadata_target") == "schedule:2/part:1/paragraph:17b"
+        and row.get("normalized_target") == "schedule:2/paragraph:17b"
+        for row in lowering_records
+    )
+    assert any(
+        row.get("rule_id") == "uk_effect_flat_p1para_schedule_paragraph_insert_payload_lowered"
+        and row.get("unresolved_heading_texts") == ["Crown Estate"]
+        for row in lowering_records
+    )
+
+    filter_records: list[dict[str, Any]] = []
+    rejected = uk_replay_mod.append_source_pathology_filter_lowering_rejections(
+        effect,
+        source_pathology="instruction_text_reused_as_payload",
+        structural_for_replay=True,
+        compiled_ops=ops,
+        lowering_rejections_out=filter_records,
+    )
+    assert rejected is False
+    assert filter_records == []
+
+
+def test_compile_flat_p1para_schedule_paragraph_insert_requires_matching_label() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="article-21-3">
+          <P2para>
+            <Text>After paragraph 17A insert—</Text>
+            <BlockAmendment>
+              <P1para>
+                <Text>Crown Estate</Text>
+                <Text>18B Crown Estate Scotland (Interim Management).</Text>
+              </P1para>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_flat_p1para_schedule_para_insert_mismatch",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2018-08-11",
+        affected_uri="/id/asp/2002/11",
+        affected_class="ActOfScottishParliament",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="Sch. 2 Pt. 1 para. 17B and cross-heading",
+        affecting_uri="/id/ssi/2017/36",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2017",
+        affecting_number="36",
+        affecting_provisions="art. 21(3)",
+        affecting_title="Test Instrument",
+        in_force_dates=[{"date": "2017-02-16", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("schedule", "2"), ("part", "1"), ("paragraph", "17b"))
+    assert ops[0].witness_rule_id != "uk_effect_flat_p1para_schedule_paragraph_insert_payload_lowered"
+    assert all(
+        row.get("rule_id") != "uk_effect_flat_p1para_schedule_paragraph_insert_payload_lowered"
+        for row in lowering_records
+    )
+    filter_records: list[dict[str, Any]] = []
+    rejected = uk_replay_mod.append_source_pathology_filter_lowering_rejections(
+        effect,
+        source_pathology="instruction_text_reused_as_payload",
+        structural_for_replay=True,
+        compiled_ops=ops,
+        lowering_rejections_out=filter_records,
+    )
+    assert rejected is True
+    assert filter_records[0]["rule_id"] == "uk_effect_instruction_text_payload_rejected"
 
 
 def test_compile_multiclause_schedule_paragraph_substitution_splits_to_items() -> None:

@@ -2437,6 +2437,10 @@ def append_source_pathology_filter_lowering_rejections(
         structural_for_replay
         and source_pathology == "instruction_text_reused_as_payload"
         and any(_action_name(op.action) in {"insert", "replace"} for op in compiled_ops)
+        and not any(
+            op.witness_rule_id == _UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID
+            for op in compiled_ops
+        )
     ):
         lowering_rejections_out.append(
             {
@@ -2555,6 +2559,8 @@ def uk_nonstructural_replay_candidate_family(
         return "revoked_repeal"
     if effect_type.startswith("ceases to have effect"):
         return "ceases_to_have_effect_repeal"
+    if effect_type == "added":
+        return "added_source_structural_insert"
     return ""
 
 
@@ -3587,6 +3593,105 @@ def _prepend_inserted_section_heading_carrier(
     }
     content_ir["children"] = [heading_child, *children]
     return True
+
+
+_UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID = (
+    "uk_effect_flat_p1para_schedule_paragraph_insert_payload_lowered"
+)
+_UK_NONADDRESSABLE_SCHEDULE_PART_INSERT_TARGET_RULE_ID = (
+    "uk_effect_nonaddressable_schedule_part_insert_target_normalized"
+)
+
+
+def _flat_p1para_schedule_paragraph_insert_payload(
+    extracted_el: Optional[ET.Element],
+    target: LegalAddress,
+) -> Optional[dict[str, Any]]:
+    """Return a source-owned paragraph payload from a flat BlockAmendment/P1para.
+
+    Some UK affecting XML encodes ``after paragraph X insert`` payloads as a
+    bare ``P1para`` with direct ``Text`` runs rather than a nested ``P1``.  This
+    helper accepts only the narrow shape where one direct text run begins with
+    the target paragraph label.  Other text runs are reported as unresolved
+    heading/cross-heading surface, not smuggled into the paragraph body.
+    """
+
+    if _addr_container(target) != "schedule" or _addr_leaf_kind(target) != "paragraph":
+        return None
+    target_label = _addr_leaf_label(target) or ""
+    if not target_label:
+        return None
+    amendment = _first_amendment_container(extracted_el)
+    if amendment is None or _tag(amendment) != "BlockAmendment":
+        return None
+    p1paras = [child for child in list(amendment) if _tag(child) == "P1para"]
+    if len(p1paras) != 1:
+        return None
+    p1para = p1paras[0]
+    for descendant in p1para.iter():
+        if descendant is p1para:
+            continue
+        if _tag(descendant) in {
+            "P1",
+            "P2",
+            "P3",
+            "P4",
+            "Part",
+            "Chapter",
+            "Pblock",
+            "P1group",
+            "Schedule",
+        }:
+            return None
+    direct_texts = [
+        " ".join(_text_content(child).split())
+        for child in list(p1para)
+        if _tag(child) == "Text" and _text_content(child).strip()
+    ]
+    if len(direct_texts) < 2:
+        return None
+    paragraph_text = ""
+    paragraph_label = ""
+    heading_texts: list[str] = []
+    for text in direct_texts:
+        match = re.match(r"^\(?(?P<label>[0-9]+[A-Za-z]?)\)?(?:\.|\s)+(?P<body>.+)$", text)
+        if match and _clean_num(match.group("label")) == _clean_num(target_label):
+            paragraph_label = match.group("label")
+            paragraph_text = match.group("body").strip()
+        else:
+            heading_texts.append(text)
+    if not paragraph_label or not paragraph_text:
+        return None
+    paragraph_target = LegalAddress(path=target.path, special=target.special)
+    return {
+        "kind": IRNodeKind.PARAGRAPH.value,
+        "label": paragraph_label,
+        "text": paragraph_text,
+        "attrs": {
+            "eId": _fallback_target_eid(paragraph_target),
+            "source_rule_id": _UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID,
+        },
+        "children": [],
+        "_lawvm_detail": {
+            "paragraph_label": paragraph_label,
+            "paragraph_text_preview": paragraph_text[:240],
+            "unresolved_heading_texts": heading_texts,
+            "source_container": "BlockAmendment/P1para",
+        },
+    }
+
+
+def _schedule_part_context_removed_target(target: LegalAddress) -> Optional[LegalAddress]:
+    """Drop a non-addressable schedule Part context from a paragraph target."""
+
+    if _addr_container(target) != "schedule":
+        return None
+    if _addr_field(target, "part") is None or _addr_field(target, "paragraph") is None:
+        return None
+    stripped_path = tuple((kind, label) for kind, label in target.path if kind != "part")
+    if stripped_path == target.path:
+        return None
+    return LegalAddress(path=stripped_path, special=target.special)
 
 
 def _normalize_text(text: str) -> str:
@@ -8058,6 +8163,7 @@ def compile_effect_to_ir_ops(
         "word inserted": "insert",
         "words inserted": "insert",
         "entry inserted": "insert",
+        "added": "insert",
         "repealed": "repeal",
         "entry repealed": "repeal",
         "repealed in part": "replace",
@@ -8185,7 +8291,7 @@ def compile_effect_to_ir_ops(
         fallback_for_missing_extracted_source
         and extracted_el is None
         and action == "insert"
-        and effect_type not in {"entry inserted"}
+        and effect_type not in {"added", "entry inserted"}
     )
     extraction_witness = _uk_extraction_witness(
         effect,
@@ -8389,6 +8495,29 @@ def compile_effect_to_ir_ops(
                     "heading_facet_status": "unresolved",
                 },
             )
+    if effect_type == "added" and action == "insert" and extracted_el is not None:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_added_type_source_structuralized",
+            family="effect_feed_normalization",
+            reason_code="nonstructural_added_type_has_source_structural_insert",
+            reason=(
+                "UK effect feed classified the row as 'added', but the exact "
+                "affecting source provision resolves and contains a source-owned "
+                "insert payload for the affected target; lowering admits the row "
+                "as a structural insert without treating all 'added' rows as "
+                "structural by metadata alone."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_refs": list(targets_str),
+                "source_container": _tag(_first_amendment_container(extracted_el))
+                if _first_amendment_container(extracted_el) is not None
+                else _tag(extracted_el),
+            },
+        )
     if not targets_str:
         _append_uk_effect_lowering_rejection(
             lowering_rejections_out,
@@ -8540,6 +8669,41 @@ def compile_effect_to_ir_ops(
                     "source_target": str(target),
                 },
         )
+        flat_p1para_schedule_insert_lowered = False
+        flat_p1para_payload_detail: dict[str, Any] = {}
+        if action == "insert":
+            flat_p1para_probe = _flat_p1para_schedule_paragraph_insert_payload(
+                extracted_el,
+                target,
+            )
+            if flat_p1para_probe is not None:
+                if _addr_field(target, "part") is not None:
+                    stripped_target = _schedule_part_context_removed_target(target)
+                    if stripped_target is not None:
+                        original_target = target
+                        target = canonicalize_uk_address(stripped_target)
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id=_UK_NONADDRESSABLE_SCHEDULE_PART_INSERT_TARGET_RULE_ID,
+                            family="target_resolution_recovery",
+                            reason_code="flat_insert_payload_uses_nonaddressable_schedule_part_context",
+                            reason=(
+                                "UK source names a schedule Part as insertion context, "
+                                "but the source-owned BlockAmendment payload is a direct "
+                                "labelled schedule paragraph with no Part wrapper; lowering "
+                                "records the Part as context and targets the replay-addressable "
+                                "schedule paragraph."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "metadata_target": str(original_target),
+                                "normalized_target": str(target),
+                                "removed_part_label": _addr_field(original_target, "part") or "",
+                            },
+                        )
         payload_match_target = target
         if label_changing_substitution is not None:
             payload_match_target = label_changing_substitution.replacement_target
@@ -9528,9 +9692,40 @@ def compile_effect_to_ir_ops(
         actual_el: Optional[ET.Element] = None
         source_structural_payload_matches_target = False
         if extracted_el is not None:
+            flat_p1para_payload = None
+            if action == "insert":
+                flat_p1para_payload = _flat_p1para_schedule_paragraph_insert_payload(
+                    extracted_el,
+                    payload_match_target,
+                )
+            if flat_p1para_payload is not None:
+                flat_p1para_payload_detail = dict(flat_p1para_payload.pop("_lawvm_detail", {}) or {})
+                content_ir = flat_p1para_payload
+                flat_p1para_schedule_insert_lowered = True
+                _append_uk_effect_lowering_observation(
+                    lowering_rejections_out,
+                    rule_id=_UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID,
+                    family="payload_normalization",
+                    reason_code="flat_blockamendment_p1para_labelled_schedule_paragraph",
+                    reason=(
+                        "UK inserted schedule paragraph source payload is a flat "
+                        "BlockAmendment/P1para with a direct text run beginning with "
+                        "the target paragraph label; lowering uses that labelled text "
+                        "as the paragraph payload and records sibling heading text as "
+                        "unresolved rather than replaying the whole instruction."
+                    ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        "target_ref": t_str,
+                        "target": str(payload_match_target),
+                        **flat_p1para_payload_detail,
+                    },
+                )
             actual_el = _select_whole_schedule_element(extracted_el, target)
             # Find any BlockAmendment or InlineAmendment in the subtree
-            if actual_el is None:
+            if content_ir is None and actual_el is None:
                 for am in extracted_el.iter():
                     if _tag(am) in ("BlockAmendment", "InlineAmendment"):
                         # Find the first structural node whose numbering matches the
@@ -9563,7 +9758,7 @@ def compile_effect_to_ir_ops(
                             actual_el = _with_trailing_subordinate_siblings(actual_el, am)
                             break
 
-            if actual_el is None:
+            if content_ir is None and actual_el is None:
                 # Fallback: maybe the extracted element ITSELF is the node
                 if _tag(extracted_el) in (
                     "Part",
@@ -9591,10 +9786,10 @@ def compile_effect_to_ir_ops(
                             payload_match_target,
                             extracted_text,
                         )
-            elif actual_el is not extracted_el:
+            elif content_ir is None and actual_el is not extracted_el:
                 actual_el = _with_trailing_subordinate_siblings(actual_el, extracted_el)
 
-            if actual_el is not None:
+            if content_ir is None and actual_el is not None:
                 tag = _tag(actual_el)
                 if tag == "Part":
                     content_ir = _parse_part(
@@ -11309,6 +11504,8 @@ def compile_effect_to_ir_ops(
                             f"{json.dumps(label_change_note, ensure_ascii=False)}"
                         ),
                     )
+                if flat_p1para_schedule_insert_lowered and curr_action == "insert":
+                    op_witness_rule_id = _UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID
                 op = LegalOperation(
                     op_id=lowered_witness.op_id,
                     sequence=lowered_witness.sequence,
@@ -11464,6 +11661,11 @@ class UKReplayPipeline:
             return bool(compiled_ops) and all(_action_name(op.action) == "repeal" and op.target.path for op in compiled_ops)
         if effect_type.startswith("ceases to have effect"):
             return bool(compiled_ops) and all(_action_name(op.action) == "repeal" and op.target.path for op in compiled_ops)
+        if effect_type == "added":
+            return bool(compiled_ops) and all(
+                _action_name(op.action) == "insert" and op.payload is not None
+                for op in compiled_ops
+            )
         return False
 
     @staticmethod
