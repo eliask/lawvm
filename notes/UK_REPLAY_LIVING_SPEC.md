@@ -1669,11 +1669,29 @@ Current block-substitution context invariant:
   repealed`. These lower through the same schedule-list-entry selector, but
   replay resolves the anchor only inside the explicit carrier and deletes the
   uniquely matched paragraph entry; missing or duplicate matches block.
+  Table-backed schedule lists are a separate owned shape:
+  `uk_effect_schedule_list_entry_table_rows_lowered` preserves an actual
+  `BlockAmendment/Tabular/table` payload as source-owned row IR when source
+  text says e.g. `after the entry relating to NHS Education for Scotland
+  insert`. Replay emits
+  `uk_replay_schedule_list_entry_table_rows_insert_resolved` only when the
+  target schedule has exactly one direct table, no direct schedule-entry
+  children, and the first-column anchor resolves uniquely; missing, duplicate,
+  non-table, or flattened-only payload cases block under
+  `uk_replay_schedule_list_entry_table_rows_insert_unresolved`. A narrow
+  anchor normalization is owned by
+  `uk_replay_schedule_list_entry_table_anchor_citation_short_title_normalized`:
+  when the source anchor spells out a same-context UK Act title such as
+  `the Local Government (Scotland) Act 1973`, replay may compare it with a
+  table row that abbreviates the same citation as `the 1973 Act`; the row must
+  still be unique, and the resolved adjudication records the normalization rule.
   Current witnesses: `asp/2000/7` affected `sch. 3` by `asp/2002/3`,
   `asp/2005/6`, and `asp/2010/8`; partition refinement witness:
   `asp/2002/11` affected `Sch. 2 Pt. 2` by `ssi/2002/468 art. 2`;
   partition anchor witness: `asp/2002/11` affected `sch. 2 Pt. 2` by
-  `asp/2010/8 sch. 1 para. 29`.
+  `asp/2010/8 sch. 1 para. 29`; table-backed insertion witnesses:
+  `asp/2002/11` Schedule 5 by `ssi/2020/5 art. 3(7)` and `asp/2023/6
+  Sch. 2 para. 1(3)`.
 - definition-anchor text patches may include the article before the quoted
   term, e.g. `after the definition of the "2002 Act" insert- ...`; the article
   is drafting syntax, not part of the definition key, so the selector remains
