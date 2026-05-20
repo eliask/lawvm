@@ -1905,8 +1905,9 @@ Current block-substitution context invariant:
   selectors when the source supplies enough row/cell evidence:
   `uk_effect_table_entry_relating_text_patch` for `in the entry relating to X,
   for "Y" substitute "Z"`, `uk_effect_table_entry_label_text_patch` for
-  `in entry 1A in the table`, `uk_effect_table_entry_label_column_text_patch`
-  for `in entry X, in column Y`, and
+  `in entry 1A in the table`, `uk_effect_table_entry_relating_column_text_patch`
+  for `in the entry for X, in the Nth column`,
+  `uk_effect_table_entry_label_column_text_patch` for `in entry X, in column Y`, and
   `uk_effect_table_column_heading_text_patch` for `in the heading of the
   second column`
   - replay mutates only a uniquely resolved table cell; ambiguous tables,

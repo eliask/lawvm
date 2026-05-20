@@ -619,6 +619,7 @@ _NOTE_SOURCE_LABEL_CHANGE_SUBSTITUTION = "source_label_change_substitution:"
 
 _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID = "uk_effect_table_entry_inline_text_insertion"
 _UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID = "uk_effect_table_entry_relating_text_patch"
+_UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_relating_column_text_patch"
 _UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID = "uk_effect_table_entry_label_text_patch"
 _UK_TABLE_ENTRY_LABEL_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_label_column_text_patch"
 _UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID = (
@@ -5310,6 +5311,27 @@ def _uk_table_entry_inline_text_selector(
                 "selector_mode": "unique_relating_text",
                 "relating_text": relating_text,
                 "match_text": original_text,
+                "table_label": "",
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
+    relating_column_match = re.search(
+        r"\bin\s+the\s+entry\s+(?:for|relating\s+to)\s+(?:the\s+)?(?P<relating>.*?),\s+in\s+"
+        r"(?:(?:the\s+)?(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
+        r"column\s+(?P<column_number>\d+))\b",
+        text,
+        re.I,
+    )
+    if relating_column_match is not None:
+        relating_text = " ".join(relating_column_match.group("relating").split()).strip(" ,;.")
+        column_token = relating_column_match.group("column_ordinal") or relating_column_match.group("column_number")
+        column_index = _uk_ordinal_to_int(column_token or "")
+        if relating_text and column_index is not None and column_index >= 1:
+            return {
+                "rule_id": _UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID,
+                "selector_mode": "unique_relating_cell",
+                "relating_text": relating_text,
+                "column_index": column_index,
                 "table_label": "",
                 "original_target": str(target),
                 "target_ref": target_ref,
@@ -13436,6 +13458,8 @@ class UKReplayExecutor:
         """Resolve a source-owned "nth entry in column N relating to X" table cell."""
         if str(selector.get("selector_mode") or "") == "unique_column_text":
             return self._resolve_unique_table_column_text_cell(node, selector)
+        if str(selector.get("selector_mode") or "") == "unique_relating_cell":
+            return self._resolve_unique_table_relating_cell(node, selector)
         if str(selector.get("selector_mode") or "") in {"unique_relating_text", "unique_entry_text"}:
             return self._resolve_unique_table_entry_text_cell(node, selector)
         if str(selector.get("selector_mode") or "") == "unique_entry_cell":
@@ -13513,6 +13537,52 @@ class UKReplayExecutor:
             if _uk_kind_value(child.kind).lower() == "table"
         ]
         return tables, {"table_carrier": "implicit_subsection_one", "subsection_one_count": 1}
+
+    def _resolve_unique_table_relating_cell(
+        self,
+        node: UKMutableNode,
+        selector: dict[str, Any],
+    ) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
+        try:
+            column_index = int(selector.get("column_index") or 0)
+        except (TypeError, ValueError):
+            return None, "invalid_selector", {}
+        relating_norm = _compact_normalized_text(str(selector.get("relating_text") or ""))
+        if column_index < 1 or not relating_norm:
+            return None, "invalid_selector", {}
+
+        tables, carrier_detail = self._table_selector_tables(node, selector)
+        if len(tables) != 1:
+            return None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
+
+        matching_cells: list[UKMutableNode] = []
+        matching_rows: list[str] = []
+        for row_cells in self._expanded_table_rows(tables[0]):
+            row_texts = [
+                str(row_cells[col].text or "")
+                for col in sorted(row_cells)
+                if str(row_cells[col].text or "")
+            ]
+            if not any(_compact_normalized_text(text).find(relating_norm) >= 0 for text in row_texts):
+                continue
+            target_cell = row_cells.get(column_index)
+            if target_cell is None:
+                continue
+            if not matching_cells or matching_cells[-1] is not target_cell:
+                matching_cells.append(target_cell)
+                matching_rows.append(" | ".join(row_texts)[:240])
+        if len(matching_cells) == 1:
+            return matching_cells[0], "", {
+                "matching_cell_count": 1,
+                "matched_row": matching_rows[0] if matching_rows else "",
+                **carrier_detail,
+            }
+        reason = "relating_cell_not_found" if not matching_cells else "relating_cell_ambiguous"
+        return None, reason, {
+            "matching_cell_count": len(matching_cells),
+            "matching_rows": tuple(matching_rows[:5]),
+            **carrier_detail,
+        }
 
     def _resolve_unique_table_entry_text_cell(
         self,
