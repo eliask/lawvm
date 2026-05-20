@@ -2891,6 +2891,17 @@ def test_normalize_uk_replay_compare_eids_handles_source_container_ordinal_drift
     assert "schedule-1-paragraph-1" in replayed
 
 
+def test_normalize_uk_replay_compare_eids_applies_oracle_physical_parent_alias() -> None:
+    replayed, oracle = normalize_uk_replay_compare_eids(
+        {"section-5-4-aa"},
+        {"section-5-1-aa"},
+        oracle_physical_eid_aliases={"section-5-1-aa": "section-5-4-aa"},
+    )
+
+    assert replayed == {"section-5-4-aa"}
+    assert oracle == {"section-5-4-aa"}
+
+
 def test_normalize_uk_replay_compare_eids_drops_wrapper_with_oracle_descendants() -> None:
     replayed, oracle = normalize_uk_replay_compare_eids(
         {"schedule-10-paragraph-2a", "schedule-10-paragraph-2a-2"},

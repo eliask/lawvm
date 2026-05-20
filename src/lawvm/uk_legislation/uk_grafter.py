@@ -466,6 +466,119 @@ def _get_kind(tag: str, context: str = "body", is_eur: bool = False) -> str:
     return t
 
 
+_PHYSICAL_EID_BODY_KINDS = frozenset(
+    {
+        "section",
+        "article",
+        "rule",
+        "regulation",
+        "subsection",
+        "paragraph",
+        "subparagraph",
+        "item",
+        "point",
+    }
+)
+_PHYSICAL_EID_SCHEDULE_KINDS = frozenset(
+    {
+        "schedule",
+        "annex",
+        "part",
+        "chapter",
+        "paragraph",
+        "subsection",
+        "subparagraph",
+        "item",
+        "point",
+    }
+)
+
+
+def _physical_eid_from_semantic_path(path_key: str) -> str:
+    """Derive the EID implied by physical XML ancestry, without trusting attrs."""
+    parts = [part for part in str(path_key or "").split(":") if part and part != "body"]
+    if not parts:
+        return ""
+    physical: list[str] = []
+    in_schedule = False
+    for part in parts:
+        if "-" not in part:
+            continue
+        kind, raw_label = part.split("-", 1)
+        kind = kind.lower()
+        label = _clean_num(raw_label)
+        if not label:
+            continue
+        if kind in {"schedule", "annex"}:
+            physical.extend([kind, label])
+            in_schedule = True
+            continue
+        if in_schedule:
+            if kind not in _PHYSICAL_EID_SCHEDULE_KINDS:
+                continue
+            if kind in {"part", "chapter"}:
+                physical.extend([kind, label])
+            elif kind == "paragraph" and "paragraph" not in physical:
+                physical.extend(["paragraph", label])
+            else:
+                physical.append(label)
+            continue
+        if kind not in _PHYSICAL_EID_BODY_KINDS:
+            continue
+        if kind in {"section", "article", "rule", "regulation"}:
+            physical.extend([kind, label])
+        else:
+            physical.append(label)
+    return "-".join(physical)
+
+
+def _eid_leaf_label(eid: str) -> str:
+    parts = [part for part in re.split(r"[-_]+", str(eid or "").lower()) if part]
+    return parts[-1] if parts else ""
+
+
+def _section_or_article_root(eid: str) -> str:
+    match = re.match(r"^(section|article|rule|regulation)-([^-]+)", str(eid or "").lower())
+    if match is None:
+        return ""
+    return f"{match.group(1)}-{match.group(2)}"
+
+
+def _record_physical_eid_drift(
+    *,
+    eid: str,
+    physical_eid: str,
+    tag: str,
+    path_key: str,
+    aliases: dict[str, str],
+    observations: list[dict[str, Any]],
+) -> None:
+    if not eid or not physical_eid or eid == physical_eid:
+        return
+    if eid.lower() == physical_eid.lower():
+        return
+    # Narrow comparison-only repair: same root provision and same leaf label,
+    # but the official EID's parent path contradicts XML physical ancestry.
+    if _section_or_article_root(eid) != _section_or_article_root(physical_eid):
+        return
+    if _eid_leaf_label(eid) != _eid_leaf_label(physical_eid):
+        return
+    aliases.setdefault(eid, physical_eid)
+    observations.append(
+        {
+            "rule_id": "uk_oracle_physical_parent_eid_drift_aligned",
+            "phase": "oracle_alignment",
+            "family": "oracle_identity_drift",
+            "original_eid": eid,
+            "physical_eid": physical_eid,
+            "xml_tag": tag,
+            "physical_path_key": path_key,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    )
+
+
 def _is_zombie(el: ET.Element, force_active: bool = False, pit_date: Optional[str] = None) -> bool:
     if force_active:
         return False
@@ -1068,6 +1181,8 @@ def _visit_eid(
     pit_date: Optional[str],
     eid_map: Dict[str, str],
     text_map: Dict[str, str],
+    physical_eid_aliases: dict[str, str],
+    oracle_identity_observations: list[dict[str, Any]],
 ):
     if _is_zombie(el, False, pit_date):
         return
@@ -1093,15 +1208,28 @@ def _visit_eid(
     if not clean_num and eid and kind not in ("body", "crossheading", "p1group", "pblock"):
         _eid_lower = eid.lower()
         _m = re.search(r"(?:^|-)(?:" + re.escape(kind) + r")-([^-]+)$", _eid_lower)
-        if not _m:
-            # Fallback: any recognized kind at start (simple ids like "section-2")
-            _m = re.match(
-                r"(?:section|article|paragraph|subsection|schedule|part|chapter|annex|rule)[-](.+)$", _eid_lower
-            )
         if _m:
             _inferred = _clean_num(_m.group(1))
             if _inferred:
                 clean_num = _inferred
+        elif kind in {"subsection", "paragraph", "subparagraph", "item", "point"}:
+            # Descendant UK IDs are often full ancestor paths
+            # (`section-5-1B-c-ii`).  The physical local label is the final
+            # component, not the whole section-rooted suffix.
+            parts = [part for part in re.split(r"[-_]+", _eid_lower) if part]
+            if parts:
+                _inferred = _clean_num(parts[-1])
+                if _inferred:
+                    clean_num = _inferred
+        else:
+            # Fallback: any recognized kind at start (simple ids like "section-2")
+            _m = re.match(
+                r"(?:section|article|paragraph|subsection|schedule|part|chapter|annex|rule)[-](.+)$", _eid_lower
+            )
+            if _m:
+                _inferred = _clean_num(_m.group(1))
+                if _inferred:
+                    clean_num = _inferred
 
     new_context = context
     if kind == "schedule" and clean_num:
@@ -1137,6 +1265,14 @@ def _visit_eid(
         key = this_node_path.lower()
         if key not in eid_map:
             eid_map[key] = eid
+        _record_physical_eid_drift(
+            eid=eid,
+            physical_eid=_physical_eid_from_semantic_path(this_node_path),
+            tag=tag,
+            path_key=this_node_path,
+            aliases=physical_eid_aliases,
+            observations=oracle_identity_observations,
+        )
         text = _text_content(el)
         if text and not re.match(r"^[.\s]+$", text):
             norm = _normalize_text_for_grounding(text)
@@ -1172,22 +1308,59 @@ def _visit_eid(
             ceid = child.get("eId") or child.get("id")
             if ceid and ct not in _NON_LEGAL_UNIT_EID_TAGS and ord_path not in eid_map:
                 eid_map[ord_path] = ceid
-        _visit_eid(child, next_parent_path, new_context, is_eur, pit_date, eid_map, text_map)
+        _visit_eid(
+            child,
+            next_parent_path,
+            new_context,
+            is_eur,
+            pit_date,
+            eid_map,
+            text_map,
+            physical_eid_aliases,
+            oracle_identity_observations,
+        )
 
 
 def _extract_eid_map_from_root(root: Any, pit_date: Optional[str] = None) -> Dict[str, Any]:
     eid_map = {}
     text_map = {}
+    physical_eid_aliases: dict[str, str] = {}
+    oracle_identity_observations: list[dict[str, Any]] = []
     is_eur = any(_tag(el) == "EURetained" for el in root.iter() if isinstance(el.tag, str))
     body = root.find(f".//{{{_LEG_NS}}}Body")
     if body is None:
         body = root.find(f".//{{{_LEG_NS}}}EURetained")
     if body is not None:
-        _visit_eid(body, "body", "body", is_eur, pit_date, eid_map, text_map)
+        _visit_eid(
+            body,
+            "body",
+            "body",
+            is_eur,
+            pit_date,
+            eid_map,
+            text_map,
+            physical_eid_aliases,
+            oracle_identity_observations,
+        )
     schedules = root.find(f".//{{{_LEG_NS}}}Schedules")
     if schedules is not None:
-        _visit_eid(schedules, "", "schedule", is_eur, pit_date, eid_map, text_map)
-    return {"eid_map": eid_map, "text_map": text_map}
+        _visit_eid(
+            schedules,
+            "",
+            "schedule",
+            is_eur,
+            pit_date,
+            eid_map,
+            text_map,
+            physical_eid_aliases,
+            oracle_identity_observations,
+        )
+    return {
+        "eid_map": eid_map,
+        "text_map": text_map,
+        "physical_eid_aliases": physical_eid_aliases,
+        "oracle_identity_observations": oracle_identity_observations,
+    }
 
 
 def extract_eid_map(xml_path: Path, pit_date: Optional[str] = None) -> Dict[str, Any]:

@@ -274,12 +274,15 @@ def classify_uk_bench_comparison(
 def normalize_uk_replay_compare_eids(
     replayed_eids: Iterable[str],
     oracle_eids: Iterable[str],
+    oracle_physical_eid_aliases: dict[str, str] | None = None,
 ) -> tuple[set[str], set[str]]:
     """Normalize UK replay-vs-oracle EID sets for known compare-shape noise.
 
     This is intentionally narrow and only applies to replay comparison, not
     mutation semantics. It currently handles:
 
+    - official oracle EID parent-path drift where XML physical ancestry proves
+      a different intermediate parent while preserving the same root and leaf
     - case-only EID drift (`2a` vs `2A`)
     - source URI ordinal drift for generic UK containers (`part-n2` vs
       `part-2`, `schedule-paragraph-1` vs `schedule-1-paragraph-1`)
@@ -293,8 +296,23 @@ def normalize_uk_replay_compare_eids(
       EIDs; table wording remains compared through ancestor text, but row/cell
       fallback identity is not yet a common benchmark surface
     """
-    replay_norm = {_normalize_uk_source_container_eid(eid) for eid in replayed_eids if eid}
-    oracle_norm = {_normalize_uk_source_container_eid(eid) for eid in oracle_eids if eid}
+    alias_norm: dict[str, str] = {}
+    for original, physical in (oracle_physical_eid_aliases or {}).items():
+        normalized_original = _normalize_uk_source_container_eid(original)
+        normalized_physical = _normalize_uk_source_container_eid(physical)
+        if normalized_original and normalized_physical and normalized_original != normalized_physical:
+            alias_norm[normalized_original] = normalized_physical
+
+    replay_norm = {
+        alias_norm.get(normalized, normalized)
+        for eid in replayed_eids
+        if (normalized := _normalize_uk_source_container_eid(eid))
+    }
+    oracle_norm = {
+        alias_norm.get(normalized, normalized)
+        for eid in oracle_eids
+        if (normalized := _normalize_uk_source_container_eid(eid))
+    }
     dropped_prefixes: set[str] = set()
     kept: set[str] = set()
     collapsed_roots: set[str] = set()

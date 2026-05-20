@@ -3535,3 +3535,23 @@ Current bench replay-regime invariant:
   insertion-parent resolution and sorted insertion paths; the unresolved anchor
   shape should remain visible through the replay result or a later adjudication
   family rather than rewriting a parent or sibling.
+
+## UK Oracle Identity Drift
+
+- Official current XML can carry an `id`/`eId` whose parent path contradicts
+  the element's physical XML ancestry. This is an oracle/source identity drift,
+  not replay permission to retarget a source-backed amendment.
+- The UK grafter records this as
+  `uk_oracle_physical_parent_eid_drift_aligned` when the official EID and the
+  physical ancestry-derived EID have the same root provision and leaf label but
+  disagree on the intermediate parent path. The record carries
+  `original_eid`, `physical_eid`, `xml_tag`, and `physical_path_key`; strict
+  disposition is `block`, quirks disposition is `record`.
+- Replay comparison may use the emitted alias only as a comparison
+  normalization. It does not mutate the replay tree, alter target resolution,
+  or change the official oracle EID set used as source evidence.
+- Witness: `asp/2002/1` current XML physically places the inserted paragraph
+  `aa` under `section-5-4`, while the child node's official ID says
+  `section-5-1-aa`. The affecting source `asp/2006/14 s. 25` explicitly
+  targets `section 5(4)(aa)`, so LawVM keeps the replay node
+  `section-5-4-aa` and classifies the mismatch as oracle identity drift.
