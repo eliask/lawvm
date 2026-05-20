@@ -5474,6 +5474,26 @@ def _uk_table_entry_row_insert_selector(
     source_names_table = "table" in text.lower()
     if not text or "table" not in " ".join((target_ref, str(target), text)).lower():
         return None
+    entry_label_match = re.search(
+        r"\bafter\s+entry\s+(?P<anchor>[0-9A-Z]+)\s+in\s+the\s+table\s+"
+        r"insert(?:ed)?\s*[—–-]?",
+        text,
+        re.I,
+    )
+    table_match = re.search(r"\btable\s+([0-9A-Za-z]+)\b", target_ref, re.I)
+    if entry_label_match is not None:
+        anchor_entry_label = _clean_num(entry_label_match.group("anchor"))
+        if anchor_entry_label:
+            return {
+                "rule_id": _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+                "selector_mode": "entry_label",
+                "direction": "after",
+                "anchor_entry_label": anchor_entry_label,
+                "table_label": table_match.group(1) if table_match is not None else "",
+                "source_names_table": source_names_table,
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
     match = re.search(
         r"\bafter\s+the\s+"
         r"(?P<entry>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+"
@@ -5484,7 +5504,6 @@ def _uk_table_entry_row_insert_selector(
         text,
         re.I,
     )
-    table_match = re.search(r"\btable\s+([0-9A-Za-z]+)\b", target_ref, re.I)
     if match is not None:
         entry_index = _uk_ordinal_to_int(match.group("entry"))
         column_index = _uk_ordinal_to_int(match.group("column"))
@@ -5758,6 +5777,20 @@ def _uk_schedule_list_entry_table_payload(extracted_el: Optional[ET.Element]) ->
     if not row_children:
         return None
     return table_node.to_irnode()
+
+
+def _uk_single_table_row_payload(extracted_el: Optional[ET.Element]) -> IRNode | None:
+    table_node = _uk_schedule_list_entry_table_payload(extracted_el)
+    if table_node is None:
+        return None
+    rows = tuple(
+        child
+        for child in table_node.children
+        if _uk_kind_value(child.kind).lower() == "row"
+    )
+    if len(rows) != 1:
+        return None
+    return rows[0]
 
 
 def _strip_schedule_entry_repeal_anchor(raw: str) -> str:
@@ -9883,6 +9916,37 @@ def compile_effect_to_ir_ops(
                     detail={"target_ref": t_str, "target": str(target), **table_row_insert_selector},
                 )
                 continue
+            source_row_payload = (
+                _uk_single_table_row_payload(extracted_el)
+                if str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
+                else None
+            )
+            if (
+                str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
+                and source_row_payload is None
+            ):
+                _append_uk_effect_lowering_rejection(
+                    lowering_rejections_out,
+                    rule_id=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+                    family="source_table_elaboration",
+                    reason_code="explicit_table_entry_label_insert_without_single_row_payload",
+                    reason=(
+                        "UK table-row insertion names an entry anchor, but "
+                        "the source does not carry exactly one BlockAmendment "
+                        "table row payload; lowering blocks instead of "
+                        "inventing a row from flattened text."
+                    ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        "target_ref": t_str,
+                        "original_target": str(target),
+                        "containing_target": str(parent_target),
+                        **table_row_insert_selector,
+                    },
+                )
+                continue
             _append_uk_effect_lowering_observation(
                 lowering_rejections_out,
                 rule_id=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
@@ -9903,32 +9967,43 @@ def compile_effect_to_ir_ops(
                     **table_row_insert_selector,
                 },
             )
-            column_index = int(table_row_insert_selector["column_index"])
-            payload_node = IRNode(
-                kind=IRNodeKind.ROW,
-                label=None,
-                attrs={
-                    "source_rule_id": "uk_table_entry_row_insert_payload",
-                    "target_column_index": str(column_index),
-                    "relating_text": str(table_row_insert_selector["relating_text"]),
-                },
-                children=tuple(
-                    IRNode(
-                        kind=IRNodeKind.CELL,
-                        label=None,
-                        text=(
-                            str(table_row_insert_selector["inserted_text"])
-                            if cell_index == column_index
-                            else ""
-                        ),
-                        attrs={
-                            "source_rule_id": "uk_table_entry_row_insert_cell",
-                            "column_index": str(cell_index),
-                        },
-                    )
-                    for cell_index in range(1, column_index + 1)
-                ),
-            )
+            if str(table_row_insert_selector.get("selector_mode") or "") == "entry_label":
+                assert source_row_payload is not None
+                payload_node = dc_replace(
+                    source_row_payload,
+                    attrs={
+                        **dict(source_row_payload.attrs or {}),
+                        "source_rule_id": "uk_table_entry_row_insert_payload",
+                        "anchor_entry_label": str(table_row_insert_selector["anchor_entry_label"]),
+                    },
+                )
+            else:
+                column_index = int(table_row_insert_selector["column_index"])
+                payload_node = IRNode(
+                    kind=IRNodeKind.ROW,
+                    label=None,
+                    attrs={
+                        "source_rule_id": "uk_table_entry_row_insert_payload",
+                        "target_column_index": str(column_index),
+                        "relating_text": str(table_row_insert_selector["relating_text"]),
+                    },
+                    children=tuple(
+                        IRNode(
+                            kind=IRNodeKind.CELL,
+                            label=None,
+                            text=(
+                                str(table_row_insert_selector["inserted_text"])
+                                if cell_index == column_index
+                                else ""
+                            ),
+                            attrs={
+                                "source_rule_id": "uk_table_entry_row_insert_cell",
+                                "column_index": str(cell_index),
+                            },
+                        )
+                        for cell_index in range(1, column_index + 1)
+                    ),
+                )
             src = OperationSource(
                 statute_id=effect.affecting_act_id,
                 title=effect.affecting_title,
@@ -13309,15 +13384,21 @@ class UKReplayExecutor:
         except (TypeError, ValueError):
             return None, None, "invalid_selector", {}
         relating_norm = _compact_normalized_text(str(selector.get("relating_text") or ""))
+        anchor_entry_label = _clean_num(str(selector.get("anchor_entry_label") or ""))
         direction = str(selector.get("direction") or "")
         selector_mode = str(selector.get("selector_mode") or "ordinal_column")
-        if entry_index < 1 or not relating_norm or direction != "after":
+        if direction != "after":
+            return None, None, "invalid_selector", {}
+        if selector_mode == "entry_label":
+            if not anchor_entry_label:
+                return None, None, "invalid_selector", {}
+        elif entry_index < 1 or not relating_norm:
             return None, None, "invalid_selector", {}
         if selector_mode == "ordinal_column" and column_index < 2:
             return None, None, "invalid_selector", {}
         if selector_mode == "relating_entry" and column_index != 1:
             return None, None, "invalid_selector", {}
-        if selector_mode not in {"ordinal_column", "relating_entry"}:
+        if selector_mode not in {"ordinal_column", "relating_entry", "entry_label"}:
             return None, None, "invalid_selector", {}
 
         tables, carrier_detail = self._table_selector_tables(node, selector)
@@ -13337,6 +13418,12 @@ class UKReplayExecutor:
                 if not row_match_cells:
                     continue
                 target_cell = row_match_cells[0]
+            elif selector_mode == "entry_label":
+                target_cell = row_cells.get(1)
+                if target_cell is None:
+                    continue
+                if _clean_num(target_cell.text or "") != anchor_entry_label:
+                    continue
             else:
                 target_cell = row_cells.get(column_index)
                 if target_cell is None:
@@ -13361,13 +13448,20 @@ class UKReplayExecutor:
                     )[:240],
                 )
             )
-        if len(matching_rows) < entry_index:
+        required_entry_index = 1 if selector_mode == "entry_label" else entry_index
+        if len(matching_rows) < required_entry_index:
             return None, None, "entry_not_found", {
                 "matching_entry_count": len(matching_rows),
                 "matching_rows": tuple(row[1] for row in matching_rows[:5]),
                 **carrier_detail,
             }
-        row_index, row_preview = matching_rows[entry_index - 1]
+        if selector_mode == "entry_label" and len(matching_rows) > 1:
+            return None, None, "entry_not_unique", {
+                "matching_entry_count": len(matching_rows),
+                "matching_rows": tuple(row[1] for row in matching_rows[:5]),
+                **carrier_detail,
+            }
+        row_index, row_preview = matching_rows[required_entry_index - 1]
         return table, row_index + 1, "", {
             "matching_entry_count": len(matching_rows),
             "matched_row": row_preview,

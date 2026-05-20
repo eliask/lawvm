@@ -12393,6 +12393,130 @@ def test_compile_table_entry_ordinal_column_row_insert_uses_owned_selector() -> 
     )
 
 
+def test_compile_table_entry_label_row_insert_preserves_source_table_row() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>after entry 4 in the table insert\u2014</Text>
+            <BlockAmendment>
+              <Tabular>
+                <table xmlns="http://www.w3.org/1999/xhtml">
+                  <tbody>
+                    <tr>
+                      <td>4A</td>
+                      <td>a serious terrorism sentence of detention in a young offender institution</td>
+                      <td>the term imposed pursuant to section 268C(2) (the appropriate custodial term)</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </Tabular>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_label_row_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2021-06-29",
+        affected_uri="/id/ukpga/2020/17/section/166",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 166(5) table",
+        affecting_uri="/id/ukpga/2021/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="11",
+        affecting_provisions="Sch. 13 para. 11(6)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2021-06-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "166"), ("subsection", "5"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.ROW
+    assert [child.text for child in ops[0].payload.children] == [
+        "4A",
+        "a serious terrorism sentence of detention in a young offender institution",
+        "the term imposed pursuant to section 268C(2) (the appropriate custodial term)",
+    ]
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_entry_row_insert"
+    assert selector["selector_mode"] == "entry_label"
+    assert selector["direction"] == "after"
+    assert selector["anchor_entry_label"] == "4"
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["reason_code"] == "explicit_table_entry_row_insert_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_table_entry_label_row_insert_blocks_without_source_row_payload() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>after entry 4 in the table insert\u2014 4A flat row text</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_label_row_insert_without_payload",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2021-06-29",
+        affected_uri="/id/ukpga/2020/17/section/166",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 166(5) table",
+        affecting_uri="/id/ukpga/2021/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="11",
+        affecting_provisions="Sch. 13 para. 11(6)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2021-06-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["reason_code"] == "explicit_table_entry_label_insert_without_single_row_payload"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_replay_table_entry_ordinal_column_row_insert_mutates_table_only() -> None:
     selector = {
         "rule_id": "uk_effect_table_entry_row_insert",
@@ -12490,6 +12614,156 @@ def test_replay_table_entry_ordinal_column_row_insert_mutates_table_only() -> No
         "uk_effect_table_entry_row_insert"
     ]
     assert adjudications[0].detail["blocking"] is False
+
+
+def test_replay_table_entry_label_row_insert_mutates_table_only() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_row_insert",
+        "selector_mode": "entry_label",
+        "direction": "after",
+        "anchor_entry_label": "4",
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_label_row_insert",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "166"), ("subsection", "5"))),
+        payload=IRNode(
+            kind=IRNodeKind.ROW,
+            children=(
+                IRNode(kind=IRNodeKind.CELL, text="4A"),
+                IRNode(kind=IRNodeKind.CELL, text="serious terrorism sentence"),
+                IRNode(kind=IRNodeKind.CELL, text="the appropriate custodial term"),
+            ),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_ROW_INSERT_SELECTOR}{json.dumps(selector)}",),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="166",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            text="The following table has effect.",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="4"),
+                                                IRNode(kind=IRNodeKind.CELL, text="sentence of detention"),
+                                                IRNode(kind=IRNodeKind.CELL, text="half the term"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="5"),
+                                                IRNode(kind=IRNodeKind.CELL, text="sentence of imprisonment"),
+                                                IRNode(kind=IRNodeKind.CELL, text="two-thirds"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    table = subsection.children[0]
+    assert subsection.text == "The following table has effect."
+    assert [row.children[0].text for row in table.children] == ["4", "4A", "5"]
+    assert [cell.text for cell in table.children[1].children] == [
+        "4A",
+        "serious terrorism sentence",
+        "the appropriate custodial term",
+    ]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_effect_table_entry_row_insert"
+    ]
+    assert adjudications[0].detail["blocking"] is False
+
+
+def test_replay_table_entry_label_row_insert_blocks_ambiguous_anchor() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_row_insert",
+        "selector_mode": "entry_label",
+        "direction": "after",
+        "anchor_entry_label": "4",
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_label_row_insert_ambiguous",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "166"), ("subsection", "5"))),
+        payload=IRNode(kind=IRNodeKind.ROW, children=(IRNode(kind=IRNodeKind.CELL, text="4A"),)),
+        provenance_tags=(f"{_NOTE_TABLE_ROW_INSERT_SELECTOR}{json.dumps(selector)}",),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="166",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(IRNode(kind=IRNodeKind.CELL, text="4"),),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(IRNode(kind=IRNodeKind.CELL, text="4"),),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    table = replayed.body.children[0].children[0].children[0]
+    assert [row.children[0].text for row in table.children] == ["4", "4"]
+    unresolved = next(
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind == "uk_replay_table_entry_row_insert_unresolved"
+    )
+    assert unresolved.detail["reason_code"] == "entry_not_unique"
+    assert unresolved.detail["blocking"] is True
 
 
 def test_replay_table_entry_relating_row_insert_mutates_unique_row_table_only() -> None:
