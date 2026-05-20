@@ -6,6 +6,7 @@ from lawvm.uk_legislation.oracle_align import (
     UK_ORACLE_ALIGNMENT_RULE_ID,
     align_uk_replay_to_oracle_with_report,
 )
+from lawvm.uk_legislation.uk_amendment_replay import UKReplayPipeline
 
 
 def test_align_uk_replay_to_oracle_reports_eid_grounding() -> None:
@@ -73,6 +74,49 @@ def test_align_uk_replay_to_oracle_reports_eid_grounding() -> None:
     assert result.report.changes[0].after_eid == "section-1"
     assert result.report.changes[0].match_method == "flat"
     assert result.report.changes[0].match_key == "flat:body:section-1"
+
+
+def test_pipeline_apply_ops_runs_oracle_alignment_when_enabled(tmp_path) -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2000/1",
+        title="Demo",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="A section.",
+                    attrs={"eId": "local-section-one"},
+                ),
+            ),
+        ),
+    )
+    events: list[dict] = []
+
+    result = UKReplayPipeline(tmp_path).apply_ops(
+        statute,
+        [],
+        eid_map={"body:section-1": "section-1"},
+        text_map={},
+        allow_oracle_alignment=True,
+        oracle_alignment_events_out=events,
+    )
+
+    assert result.body.children[0].attrs["eId"] == "section-1"
+    assert events == [
+        {
+            "rule_id": UK_ORACLE_ALIGNMENT_RULE_ID,
+            "phase": "oracle_alignment",
+            "family": "oracle_alignment_adapter",
+            "kind": "section",
+            "label": "1",
+            "before_eid": "section-1",
+            "after_eid": "section-1",
+            "match_method": "flat",
+            "match_key": "flat:body:section-1",
+        }
+    ]
 
 
 def test_align_uk_replay_to_oracle_disabled_without_eid_map() -> None:

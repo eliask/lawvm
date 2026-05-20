@@ -2524,6 +2524,10 @@ Current bench replay-regime invariant:
   counts when replay skipped/no-oped operations. JSON-only visibility is not
   sufficient for interactive diagnosis because unsupported replay actions are
   part of the coverage surface.
+- `UKReplayPipeline.apply_ops` must invoke replay-time oracle EID grounding
+  when oracle alignment is enabled and an oracle map is available. Otherwise
+  `uk-replay` advertises the oracle adapter but compares ungrounded replay
+  IDs, which turns bounded oracle identity drift into false replay residuals.
 - UK bench rows must also persist replay lowering rejection totals, including
   the blocking subset. A replay score without its unsupported/no-op lowering
   surface is not a coverage metric; it hides which source effects were parsed
