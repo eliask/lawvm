@@ -1689,6 +1689,9 @@ Current block-substitution context invariant:
   `omit the entry for X`, and `the entries for X, Y and Z are repealed` lower instead to
   `uk_effect_schedule_list_entry_repeal`: the target remains the schedule
   carrier, but a provenance selector lists the claimed direct entry anchors.
+  Heading-only targets are excluded from this selector: a source such as
+  `In the Part heading, omit "requirement"` is a heading-facet text patch, not
+  authorization to delete a schedule/list entry named `requirement`.
   Replay must resolve every anchor to exactly one direct `schedule_entry` child
   before deleting any child. Missing, duplicate, or colliding anchors block
   atomically with `uk_replay_schedule_list_entry_repeal_unresolved`; successful

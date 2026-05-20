@@ -17078,6 +17078,48 @@ def test_compile_heading_facet_word_substitution_targets_heading_special() -> No
     assert any(record["rule_id"] == "uk_effect_heading_facet_word_patch_lowered" for record in lowering_records)
 
 
+def test_compile_schedule_part_heading_word_omit_targets_heading_facet_not_list_entry() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <Text>In the Part heading, omit \u201crequirement\u201d.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_part_heading_word_omit",
+        effect_type="word omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-04-28",
+        affected_uri="/id/ukpga/2020/17/schedule/6/part/17/heading",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="Sch. 6 Pt. 17 heading",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="Sch. 17 para. 12(2)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2022-04-28", "prospective": "false"}],
+    )
+
+    lowering_records: list[dict[str, object]] = []
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target == LegalAddress(path=(("schedule", "6"), ("part", "17")), special=FacetKind.HEADING)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "requirement"
+    assert ops[0].witness_rule_id != "uk_effect_schedule_list_entry_repeal"
+    assert any(record["rule_id"] == "uk_effect_heading_facet_word_patch_lowered" for record in lowering_records)
+    assert all(record["rule_id"] != "uk_effect_schedule_list_entry_repeal" for record in lowering_records)
+
+
 def test_compile_heading_facet_becomes_lowers_to_full_heading_replacement() -> None:
     extracted_el = ET.fromstring(
         f"""
