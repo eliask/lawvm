@@ -443,6 +443,13 @@ _CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE = "uk_effect_crossheading_before_anc
 _CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE = (
     "uk_effect_crossheading_and_structural_replacement_split_lowered"
 )
+_CROSSHEADING_AND_STRUCTURAL_REPEAL_RULE = "uk_effect_crossheading_and_structural_repeal_lowered"
+_UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_RESOLVED_RULE_ID = (
+    "uk_replay_crossheading_and_structural_repeal_resolved"
+)
+_UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_UNRESOLVED_RULE_ID = (
+    "uk_replay_crossheading_and_structural_repeal_unresolved"
+)
 
 
 def _crossheading_before_anchor_replacement_text(extracted_text: Optional[str]) -> Optional[str]:
@@ -544,6 +551,53 @@ def _crossheading_and_structural_replacement_heading_text(
     return None
 
 
+def _crossheading_and_structural_repeal_selector(
+    *,
+    affected_ref: str,
+    effect_type: str,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, Any]]:
+    """Return an explicit selector for ``paragraph X and the heading above it`` repeals."""
+    if not _is_crossheading_ref(affected_ref):
+        return None
+    effect_type_norm = " ".join((effect_type or "").lower().split())
+    if effect_type_norm not in {"repealed", "omitted", "revoked", "repealed in part"}:
+        return None
+    target_kind = _addr_leaf_kind(target)
+    target_label = _clean_num(_addr_leaf_label(target) or "")
+    if target_kind not in {"section", "article", "paragraph"} or not target_label:
+        return None
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    noun_by_kind = {
+        "section": "section",
+        "article": "article",
+        "paragraph": "paragraph",
+    }
+    noun = noun_by_kind[target_kind]
+    label_rx = re.escape(target_label)
+    if not re.search(
+        rf"\b{noun}\s+{label_rx}\b"
+        rf"(?:(?!\b(?:section|article|paragraph)\s+[0-9A-Za-z]+).){{0,320}}?"
+        rf"\band\s+the\s+(?:italic\s+)?(?:heading|cross-heading|cross heading)\s+above\s+it\b"
+        rf"(?:(?!\.).){{0,240}}?\b(?:is|are)\s+(?:repealed|omitted|revoked)\b",
+        text,
+        flags=re.I,
+    ):
+        return None
+    return {
+        "rule_id": _CROSSHEADING_AND_STRUCTURAL_REPEAL_RULE,
+        "selector_mode": "structural_with_heading_above_repeal",
+        "heading_anchor_direction": "above",
+        "target_ref": affected_ref,
+        "structural_target": str(target),
+        "source_target_kind": target_kind,
+        "source_target_label": target_label,
+    }
+
+
 def _clone_element(el: ET.Element) -> ET.Element:
     return ET.fromstring(ET.tostring(el, encoding="unicode"))
 
@@ -608,6 +662,7 @@ _NOTE_REWRITE_WITNESS = "rewrite_witness:"
 _NOTE_TEXT_REWRITE_RULE = "text_rewrite_rule:"
 _NOTE_PRECEDING_EID = "preceding_eid:"
 _NOTE_METADATA_SOURCE_FALLBACK = "metadata_source_fallback:"
+_NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR = "crossheading_group_repeal_selector:"
 _NOTE_TABLE_CELL_SELECTOR = "table_cell_selector:"
 _NOTE_TABLE_ROW_INSERT_SELECTOR = "table_row_insert_selector:"
 _NOTE_TABLE_COLUMN_INSERT_SELECTOR = "table_column_insert_selector:"
@@ -1329,6 +1384,20 @@ def _table_cell_selector(op: LegalOperation) -> dict[str, Any] | None:
             continue
         try:
             payload = json.loads(str(note)[len(_NOTE_TABLE_CELL_SELECTOR) :])
+        except json.JSONDecodeError:
+            return None
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _crossheading_group_repeal_selector(op: LegalOperation) -> dict[str, Any] | None:
+    """Return UK cross-heading group repeal selector data."""
+    for note in getattr(op, "provenance_tags", ()) or ():
+        if not str(note).startswith(_NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR):
+            continue
+        try:
+            payload = json.loads(str(note)[len(_NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR) :])
         except json.JSONDecodeError:
             return None
         if isinstance(payload, dict):
@@ -9594,12 +9663,23 @@ def compile_effect_to_ir_ops(
             if action == "replace" and _is_crossheading_ref(t_str)
             else None
         )
+        crossheading_group_repeal_selector = (
+            _crossheading_and_structural_repeal_selector(
+                affected_ref=t_str,
+                effect_type=effect.effect_type,
+                extracted_text=extracted_text,
+                target=target,
+            )
+            if action in {"replace", "repeal"} and _is_crossheading_ref(t_str)
+            else None
+        )
         if (
             action == "replace"
             and _is_crossheading_ref(t_str)
             and crossheading_replacement_text is None
             and crossheading_text_patch_fragment is None
             and crossheading_compound_heading_text is None
+            and crossheading_group_repeal_selector is None
         ):
             _append_uk_effect_lowering_rejection(
                 lowering_rejections_out,
@@ -11355,7 +11435,26 @@ def compile_effect_to_ir_ops(
         op_text_replacement: Optional[str] = None
         op_text_occurrence: int = 0
         op_text_end_occurrence: int = 0
-        if crossheading_replacement_text is not None:
+        if crossheading_group_repeal_selector is not None:
+            curr_action = "repeal"
+            content_ir = None
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_CROSSHEADING_AND_STRUCTURAL_REPEAL_RULE,
+                family="target_facet_lowering",
+                reason_code="explicit_crossheading_and_structural_repeal",
+                reason=(
+                    "UK source explicitly repeals the named provision and the "
+                    "heading above it; lowering keeps the provision target and "
+                    "carries a replay selector that may remove the heading "
+                    "wrapper only if that wrapper owns exactly the target."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail=dict(crossheading_group_repeal_selector),
+            )
+        elif crossheading_replacement_text is not None:
             curr_action = "text_replace"
             content_ir = None
             op_text_match = "TEXT_ALL"
@@ -12885,6 +12984,15 @@ def compile_effect_to_ir_ops(
                         f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(table_cell_selector, ensure_ascii=False)}",
                     )
                 op_witness_rule_id = None
+                if crossheading_group_repeal_selector is not None and curr_action == "repeal":
+                    op_witness_rule_id = _CROSSHEADING_AND_STRUCTURAL_REPEAL_RULE
+                    provenance_tags = (
+                        *provenance_tags,
+                        (
+                            f"{_NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR}"
+                            f"{json.dumps(crossheading_group_repeal_selector, ensure_ascii=False)}"
+                        ),
+                    )
                 if (
                     label_changing_substitution is not None
                     and curr_action == "replace"
@@ -15151,6 +15259,108 @@ class UKReplayExecutor:
             if root is node:
                 self.statute.supplements.pop(s_idx)
                 return True
+        return False
+
+    def _find_parent_tuple_for_node(
+        self,
+        target_node: UKMutableNode,
+    ) -> tuple[Optional[UKMutableNode], Optional[int]]:
+        def _walk(parent: UKMutableNode) -> tuple[Optional[UKMutableNode], Optional[int]]:
+            for child_idx, child in enumerate(parent.children):
+                if child is target_node:
+                    return parent, child_idx
+                found_parent, found_idx = _walk(child)
+                if found_parent is not None:
+                    return found_parent, found_idx
+            return None, None
+
+        if self.statute.body is target_node:
+            return None, None
+        found_parent, found_idx = _walk(self.statute.body)
+        if found_parent is not None:
+            return found_parent, found_idx
+        for supplement in self.statute.supplements:
+            if supplement is target_node:
+                return None, None
+            found_parent, found_idx = _walk(supplement)
+            if found_parent is not None:
+                return found_parent, found_idx
+        return None, None
+
+    def _repeal_crossheading_group(
+        self,
+        target: LegalAddress,
+        node: UKMutableNode,
+        parent: Optional[UKMutableNode],
+        op: LegalOperation,
+        selector: dict[str, Any],
+    ) -> bool:
+        """Delete a heading wrapper only when source and live shape prove sole ownership."""
+        if str(selector.get("selector_mode") or "") != "structural_with_heading_above_repeal":
+            reason_code = "invalid_selector"
+            detail: dict[str, Any] = {"selector": dict(selector)}
+        elif parent is None:
+            reason_code = "target_has_no_heading_parent"
+            detail = {"selector": dict(selector)}
+        else:
+            parent_kind = _uk_kind_value(parent.kind).lower()
+            structural_children = [
+                child
+                for child in parent.children
+                if _uk_kind_value(child.kind).lower()
+                in {"section", "article", "rule", "regulation", "paragraph", "subparagraph", "item"}
+            ]
+            if parent_kind not in {"crossheading", "p1group", "pgroup", "pblock"}:
+                reason_code = "parent_is_not_heading_wrapper"
+                detail = {"parent_kind": parent_kind, "selector": dict(selector)}
+            elif not (parent.text or "").strip():
+                reason_code = "heading_wrapper_has_no_heading_text"
+                detail = {"parent_kind": parent_kind, "selector": dict(selector)}
+            elif len(structural_children) != 1 or structural_children[0] is not node:
+                reason_code = "heading_wrapper_does_not_solely_own_target"
+                detail = {
+                    "parent_kind": parent_kind,
+                    "structural_child_count": len(structural_children),
+                    "selector": dict(selector),
+                }
+            else:
+                grandparent, parent_idx = self._find_parent_tuple_for_node(parent)
+                if self._remove_node(parent, grandparent, parent_idx):
+                    self._record_repealed_target(target)
+                    _append_uk_replay_adjudication(
+                        self.adjudications_out,
+                        kind=_UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_RESOLVED_RULE_ID,
+                        message=(
+                            "UK replay removed a cross-heading wrapper because "
+                            "the source explicitly repealed the heading above "
+                            "the target and the wrapper owned only that target."
+                        ),
+                        op=op,
+                        detail={
+                            "target": str(target),
+                            "removed_parent_kind": parent_kind,
+                            "removed_heading_preview": " ".join((parent.text or "").split())[:200],
+                            "selector": dict(selector),
+                        },
+                    )
+                    return True
+                reason_code = "heading_wrapper_remove_failed"
+                detail = {"parent_kind": parent_kind, "selector": dict(selector)}
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind=_UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_UNRESOLVED_RULE_ID,
+            message=(
+                "UK replay skipped cross-heading group repeal: source selector "
+                "did not prove a unique heading wrapper solely owned by the target."
+            ),
+            op=op,
+            detail={
+                "action": _action_name(op.action),
+                "target": str(target),
+                "reason_code": reason_code,
+                **detail,
+            },
+        )
         return False
 
     def _insert_child_sorted(self, parent: UKMutableNode, new_node: UKMutableNode) -> bool:
@@ -17728,6 +17938,29 @@ class UKReplayExecutor:
                 if self._repeal_schedule_list_entries(target, op, schedule_list_entry_repeal_selector):
                     self._record_invariant_violations(op)
                     self._emit_top_section_snapshot(op)
+                return
+            crossheading_group_repeal_selector = _crossheading_group_repeal_selector(op)
+            if crossheading_group_repeal_selector is not None and node is not None:
+                if self._repeal_crossheading_group(target, node, parent, op, crossheading_group_repeal_selector):
+                    self._record_invariant_violations(op)
+                    self._emit_top_section_snapshot(op)
+                return
+            if crossheading_group_repeal_selector is not None:
+                _append_uk_replay_adjudication(
+                    self.adjudications_out,
+                    kind=_UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_UNRESOLVED_RULE_ID,
+                    message=(
+                        "UK replay skipped cross-heading group repeal: "
+                        "structural target was not found."
+                    ),
+                    op=op,
+                    detail={
+                        "action": _action_name(op.action),
+                        "target": str(target),
+                        "reason_code": "target_not_found",
+                        "selector": dict(crossheading_group_repeal_selector),
+                    },
+                )
                 return
             if node is None:
                 if self._target_under_repealed_prefix(target):

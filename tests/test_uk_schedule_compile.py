@@ -33,6 +33,7 @@ from lawvm.uk_legislation.uk_amendment_replay import (
     _fragment_substitution,
     _NOTE_METADATA_SOURCE_FALLBACK,
     _NOTE_FRAGMENT_SUB,
+    _NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR,
     _NOTE_TABLE_CELL_SELECTOR,
     _NOTE_TABLE_ROW_INSERT_SELECTOR,
     _NOTE_TABLE_COLUMN_INSERT_SELECTOR,
@@ -18709,6 +18710,56 @@ def test_compile_crossheading_and_paragraph_replace_does_not_split_mismatched_pa
     assert observations[0]["blocking"] is True
 
 
+def test_compile_crossheading_and_paragraph_repeal_lowers_guarded_group_repeal() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>b</Pnumber>
+          <Text>In Schedule 22, paragraph 4 (prospective addition of offences to Schedule 1 to the Code), and the heading above it, are repealed to the extent that paragraph 4 is not yet in force when section 1 of this Act comes into force.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_crossheading_and_para_repeal",
+        effect_type="repealed in part",
+        applied=True,
+        requires_applied=True,
+        modified="2022-06-28",
+        affected_uri="/id/ukpga/2020/17/schedule/22/paragraph/4",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="Sch. 22 para. 4 and cross-heading",
+        affecting_uri="/id/ukpga/2021/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="11",
+        affecting_provisions="Sch. 13 para. 6(4)",
+        affecting_title="Police, Crime, Sentencing and Courts Act 2022",
+        in_force_dates=[{"date": "2022-06-28", "prospective": "false"}],
+    )
+
+    observations: list[dict[str, object]] = []
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target == LegalAddress(path=(("schedule", "22"), ("paragraph", "4")))
+    assert ops[0].witness_rule_id == "uk_effect_crossheading_and_structural_repeal_lowered"
+    selector_tag = next(
+        note for note in ops[0].provenance_tags if note.startswith(_NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR)
+    )
+    selector = json.loads(selector_tag.removeprefix(_NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR))
+    assert selector["selector_mode"] == "structural_with_heading_above_repeal"
+    assert selector["structural_target"] == "schedule:22/paragraph:4"
+    assert any(
+        record["rule_id"] == "uk_effect_crossheading_and_structural_repeal_lowered"
+        and record["blocking"] is False
+        for record in observations
+    )
+    assert not any(record.get("rule_id") == "uk_effect_crossheading_replace_rejected" for record in observations)
+
+
 def test_compile_crossheading_before_section_word_substitution_lowers_to_heading_patch() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -18850,6 +18901,115 @@ def test_replay_crossheading_before_anchor_text_patch_mutates_crossheading_paren
     assert crossheading.text == "Investigatory Powers Commissioner"
     assert section.text == "Section body must not be replaced."
     assert sibling.text == "Sibling body."
+
+
+def test_replay_crossheading_group_repeal_removes_single_child_heading_wrapper() -> None:
+    base = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="22",
+                text="",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.P1GROUP,
+                        label=None,
+                        text="Seriousness",
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.PARAGRAPH,
+                                label="4",
+                                text="Prospective addition of offences.",
+                                children=(),
+                            ),
+                        ),
+                    ),
+                    IRNode(kind=IRNodeKind.PARAGRAPH, label="5", text="Sibling paragraph."),
+                ),
+            ),
+        ),
+    )
+    selector = {
+        "rule_id": "uk_effect_crossheading_and_structural_repeal_lowered",
+        "selector_mode": "structural_with_heading_above_repeal",
+        "heading_anchor_direction": "above",
+        "target_ref": "Sch. 22 para. 4 and cross-heading",
+        "structural_target": "schedule:22/paragraph:4",
+    }
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="uk_test_crossheading_group_repeal_apply",
+        sequence=0,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("schedule", "22"), ("paragraph", "4"))),
+        source=OperationSource(statute_id="ukpga/2021/11", title="Test Act", effective="2022-06-28"),
+        provenance_tags=(f"{_NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR}{json.dumps(selector)}",),
+    )
+
+    result = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    schedule = result.supplements[0]
+    assert [(child.kind, child.label, child.text) for child in schedule.children] == [
+        (IRNodeKind.PARAGRAPH, "5", "Sibling paragraph.")
+    ]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_crossheading_and_structural_repeal_resolved"
+    ]
+
+
+def test_replay_crossheading_group_repeal_blocks_shared_heading_wrapper() -> None:
+    base = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="22",
+                text="",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.P1GROUP,
+                        label=None,
+                        text="Seriousness",
+                        children=(
+                            IRNode(kind=IRNodeKind.PARAGRAPH, label="4", text="Target.", children=()),
+                            IRNode(kind=IRNodeKind.PARAGRAPH, label="5", text="Shared sibling.", children=()),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    selector = {
+        "rule_id": "uk_effect_crossheading_and_structural_repeal_lowered",
+        "selector_mode": "structural_with_heading_above_repeal",
+        "heading_anchor_direction": "above",
+        "target_ref": "Sch. 22 para. 4 and cross-heading",
+        "structural_target": "schedule:22/paragraph:4",
+    }
+    adjudications: list[CompileAdjudication] = []
+    op = LegalOperation(
+        op_id="uk_test_crossheading_group_repeal_shared",
+        sequence=0,
+        action=StructuralAction.REPEAL,
+        target=LegalAddress(path=(("schedule", "22"), ("paragraph", "4"))),
+        source=OperationSource(statute_id="ukpga/2021/11", title="Test Act", effective="2022-06-28"),
+        provenance_tags=(f"{_NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR}{json.dumps(selector)}",),
+    )
+
+    result = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    group = result.supplements[0].children[0]
+    assert group.text == "Seriousness"
+    assert [child.label for child in group.children] == ["4", "5"]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_crossheading_and_structural_repeal_unresolved"
+    ]
+    assert adjudications[0].detail["reason_code"] == "heading_wrapper_does_not_solely_own_target"
 
 
 def test_oracle_grounding_does_not_create_public_schedule_entry_eids() -> None:
