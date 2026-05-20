@@ -2937,6 +2937,41 @@ def test_normalize_uk_replay_compare_eids_keeps_descendants_when_oracle_has_chil
     assert oracle == {"section-142", "section-142-1"}
 
 
+def test_normalize_uk_replay_compare_eids_drops_collapsed_schedule_descendants() -> None:
+    replayed, oracle = normalize_uk_replay_compare_eids(
+        {
+            "schedule-2",
+            "schedule-2-paragraph-1",
+            "schedule-2-paragraph-1-1",
+            "schedule-2-paragraph-2",
+        },
+        {"schedule-2"},
+    )
+
+    assert replayed == {"schedule-2"}
+    assert oracle == {"schedule-2"}
+
+
+def test_normalize_uk_replay_compare_eids_keeps_schedule_descendants_when_oracle_has_children() -> None:
+    replayed, oracle = normalize_uk_replay_compare_eids(
+        {
+            "schedule-2",
+            "schedule-2-paragraph-1",
+            "schedule-2-paragraph-1-1",
+            "schedule-2-paragraph-2",
+        },
+        {"schedule-2", "schedule-2-paragraph-1"},
+    )
+
+    assert replayed == {
+        "schedule-2",
+        "schedule-2-paragraph-1",
+        "schedule-2-paragraph-1-1",
+        "schedule-2-paragraph-2",
+    }
+    assert oracle == {"schedule-2", "schedule-2-paragraph-1"}
+
+
 def test_normalize_uk_replay_compare_eids_drops_collapsed_crossheading_descendants() -> None:
     replayed, oracle = normalize_uk_replay_compare_eids(
         {

@@ -1025,6 +1025,14 @@ Current tooling-consistency invariant:
     enacted/oracle URLs, and missing booleans) before compare-shape conclusions,
     because missing enacted/oracle lanes are source facts rather than replay
     outcomes
+  - replay-vs-oracle EID comparison normalizes known collapsed oracle roots
+    only as a benchmark surface rule, not as replay mutation semantics.
+    Collapsed root handling includes sections, articles, crossheadings, and
+    schedules when the oracle exposes only the root EID and replay has multiple
+    descendants under that same root.
+    - current witness: `asp/2003/17`, where current XML exposes Schedule 2 as
+      `schedule-2` while replay/source parsing carries `schedule-2-paragraph-*`
+      descendants
   - `uk-effects` text summaries must print the archive path and enacted/oracle
     source URLs alongside source status/size, so copied human triage preserves
     the same source surface as JSON.
