@@ -321,8 +321,15 @@ frontend cannot yet lower them safely:
   `uk_effect_crossheading_and_structural_replacement_split_lowered` when the
   affecting source payload is a titled wrapper whose first structural child is
   exactly `X`; lowering emits a separate `X/heading` patch plus the ordinary
-  structural replacement for `X`. Other cross-heading replacements remain
-  blocked by `uk_effect_crossheading_replace_rejected`.
+  structural replacement for `X`. A compound `paragraph/section/article X and
+  cross-heading` repeal may lower through
+  `uk_effect_crossheading_and_structural_repeal_lowered` only when the source
+  text explicitly says the named structural target and the heading above it are
+  repealed or omitted. Replay then removes the heading wrapper only if it has
+  heading text and exactly one structural child, the claimed target; unresolved
+  shared wrappers emit `uk_replay_crossheading_and_structural_repeal_unresolved`
+  instead of deleting siblings. Other cross-heading replacements remain blocked
+  by `uk_effect_crossheading_replace_rejected`.
 - repeal schedules and table rows where the table columns identify enactment
   and extent of repeal
 - definition insertions where the source context supplies the anchor and the
@@ -2188,10 +2195,11 @@ Current block-substitution context invariant:
   bounded text-span operation; it may not become a structural replacement or
   consume sibling provisions.
 - source text that targets `cross-heading` facets lowers only through explicit
-  before-anchor whole-heading replacement or quoted text-patch lanes. Other
-  crossheading rows are classified as `crossheading_target_unsupported` while
-  UK lacks a safe facet replay lane for the claimed shape. These remain
-  manual/future-compiler candidates, not section body replacements.
+  before-anchor whole-heading replacement, quoted text-patch, titled replacement
+  split, or guarded heading-wrapper repeal lanes. Other crossheading rows are
+  classified as `crossheading_target_unsupported` while UK lacks a safe facet
+  replay lane for the claimed shape. These remain manual/future-compiler
+  candidates, not section body replacements.
 - alphabetic suffix labels such as `aa`, `ba`, or `ga` are part of the same
   local letter sequence as their base label. Replay insertion order must place
   `ga` after `g` and before later single-letter siblings such as `h` or `i`;
