@@ -148,6 +148,14 @@ from lawvm.uk_legislation.text_matching import (
     _text_match_has_word_punctuation_elision_candidate,
     _text_patch_pattern,
 )
+from lawvm.uk_legislation.xml_helpers import (
+    _clone_element,
+    _direct_structural_num,
+    _structural_children,
+    _tag,
+    _text_content,
+    get_all_eids,
+)
 from lawvm.uk_legislation.uk_grafter import _parse_table as _parse_uk_table_payload
 
 if TYPE_CHECKING:
@@ -184,38 +192,6 @@ def _uk_definition_term_lexical_variants(term: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(variant for variant in variants if variant != cleaned))
 
 
-def _direct_structural_num(el: ET.Element) -> str:
-    """Return the node's own structural number, not a descendant's number."""
-    num_el = el.find(f"./{{{_LEG_NS}}}Pnumber")
-    if num_el is None:
-        num_el = el.find(f"./{{{_LEG_NS}}}Number")
-    if num_el is None and _tag(el) == "Schedule":
-        num_el = el.find(f".//{{{_LEG_NS}}}Number")
-    if num_el is None:
-        return ""
-    return _text_content(num_el)
-
-
-def _structural_children(el: ET.Element) -> tuple[ET.Element, ...]:
-    structural_tags = {
-        "Part",
-        "Chapter",
-        "EUChapter",
-        "Pblock",
-        "P1group",
-        "Section",
-        "P1",
-        "Article",
-        "Rule",
-        "Subsection",
-        "P2",
-        "P3",
-        "P4",
-        "Schedule",
-    }
-    return tuple(child for child in list(el) if _tag(child) in structural_tags)
-
-
 def _crossheading_and_structural_replacement_heading_text(
     *,
     affected_ref: str,
@@ -248,10 +224,6 @@ def _crossheading_and_structural_replacement_heading_text(
             if first_child_label == target_label:
                 return heading_text
     return None
-
-
-def _clone_element(el: ET.Element) -> ET.Element:
-    return ET.fromstring(ET.tostring(el, encoding="unicode"))
 
 
 def _retarget_instruction_element_to_target(
@@ -2360,34 +2332,6 @@ def mark_nonreplay_lowering_rejections_nonblocking(
 # ---------------------------------------------------------------------------
 # Provision Text Extractor
 # ---------------------------------------------------------------------------
-
-
-def _tag(el: ET.Element) -> str:
-    t = el.tag
-    return t.split("}", 1)[1] if "}" in t else t
-
-
-def get_all_eids(nodes: Sequence[IRNode]) -> list[str]:
-    """Recursively gather all eIds from an IR tree fragment."""
-    eids = []
-    for n in nodes:
-        eid = n.attrs.get("id") or n.attrs.get("eId")
-        if eid:
-            eids.append(eid)
-        if n.children:
-            eids.extend(get_all_eids(n.children))
-    return eids
-
-
-def _text_content(el: ET.Element) -> str:
-    """Recursively collect normalised text."""
-    parts: list[str] = []
-    for node in el.iter():
-        if node.text:
-            parts.append(node.text)
-        if node.tail and node is not el:
-            parts.append(node.tail)
-    return " ".join(" ".join(parts).split())
 
 
 @dataclass(frozen=True)
