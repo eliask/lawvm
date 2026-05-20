@@ -18967,9 +18967,11 @@ class UKReplayExecutor:
                 return node, False
             separator = separator_matches[-1]
             tail = text[separator.end() :].strip()
-            if not tail or not re.match(r"(?:,?\s*)?(?:and|or)\b|[“\"'‘]", tail, flags=re.I):
-                return node, False
             replacement_text = str(replacement or "").strip()
+            if not tail:
+                return node, False
+            if not replacement_text and not re.match(r"(?:,?\s*)?(?:and|or)\b|[“\"'‘]", tail, flags=re.I):
+                return node, False
             if replacement_text:
                 joiner = "" if replacement_text.startswith((" ", ",", ".", ";", ":", ")")) else " "
                 rebuilt_text = f"{text[: separator.end()].rstrip()}{joiner}{replacement_text}".rstrip()

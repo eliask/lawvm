@@ -2070,8 +2070,11 @@ Current block-substitution context invariant:
   through `uk_effect_source_carried_child_tail_substitution_text_patch` when
   the source subsection matches the feed target. Replay uses the same bounded
   `TEXT_AFTER_CHILD_TAIL_paragraph_<label>` selector and may replace only the
-  collapsed parent tail after the last direct child; it blocks instead of
-  treating the row as a whole-subsection text patch.
+  collapsed parent tail after the last direct child. Unlike deletion, a
+  substitution may replace non-connector tail text such as `for more than ...`
+  because the source explicitly supplies replacement text for the whole tail;
+  it still blocks instead of treating the row as a whole-subsection text patch
+  when the child anchor is absent, non-unique, or not the last direct child.
 - `BlockAmendment` payload fragments with structured list payload such as
   `the Parliamentary corporation- a after ...; and b with ...` are also
   classified as `payload_fragment_without_action_formula` when the operative
