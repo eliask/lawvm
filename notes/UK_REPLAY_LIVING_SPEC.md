@@ -1300,6 +1300,13 @@ Current metadata-only repeal-series invariant:
     - all `\d+[A-Z]*` sibling groups can be treated as one subsection family
     - all one/two-letter alpha groups can be treated as one paragraph family
     - do not broaden beyond that without a fresh deterministic regression
+- metadata effect types beginning `repealed by ...` are also structural repeals
+  when the affected-provisions metadata names a concrete target. The cited
+  repealing instrument is provenance for the repeal, not payload text needed to
+  execute the deletion.
+  - current witness: `asp/2000/6` / `uksi/2010/2279 Sch. 2`, where
+    `Sch. 2 para. 2` previously stayed in replay because `repealed by 2010
+    c. 15 Sch. 27 Pt. 1 (as substituted)` was treated as nonstructural
 
 Current `ukpga/2001/11` interpretation:
 
