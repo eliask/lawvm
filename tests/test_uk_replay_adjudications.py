@@ -3772,6 +3772,68 @@ def test_executor_applies_before_definition_insert_at_explicit_definition_anchor
     assert adjudications == []
 
 
+def test_executor_applies_before_definition_insert_when_term_has_comma_qualifier() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2024/21",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="17",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="6",
+                            text=(
+                                "In this section— "
+                                "\u201centitled to practise\u201d, in relation to a regulated profession, "
+                                "is to be read in accordance with section 19(2); "
+                                "\u201cqualified lawyer\u201d means a lawyer;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_before_definition_insert_comma_qualifier",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "17"), ("subsection", "6"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="TEXT_BEFORE_DEFINITION_entitled to practise",
+                    occurrence=0,
+                ),
+                replacement=(
+                    "\u201cCriminal Injuries Compensation Scheme\u201d means a scheme;"
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "In this section— "
+        "\u201cCriminal Injuries Compensation Scheme\u201d means a scheme; "
+        "\u201centitled to practise\u201d, in relation to a regulated profession, "
+        "is to be read in accordance with section 19(2); "
+        "\u201cqualified lawyer\u201d means a lawyer;"
+    )
+    assert adjudications == []
+
+
 def test_executor_applies_definition_child_repeal_without_bare_term_deletion() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

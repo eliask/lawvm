@@ -15020,7 +15020,8 @@ class UKReplayExecutor:
                 allow_word_punctuation_elision=allow_word_punctuation_elision,
             )
             definition_pattern = re.compile(
-                rf"(?P<prefix>^|[;\.]\s*)(?P<body>[“\"'‘]?\s*{term_pattern}\s*[”\"'’]?\s+)",
+                rf"(?P<prefix>^|[;\.—–-]\s*)"
+                rf"(?P<body>[“\"'‘]?\s*{term_pattern}\s*[”\"'’]?(?:\s*[,;:])?\s+)",
                 re.I | re.S,
             )
             definition_match = definition_pattern.search(full_text)
