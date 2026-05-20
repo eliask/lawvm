@@ -15,6 +15,7 @@ UK_AFFECTING_ACT_XML_SOURCE_RULE_IDS = frozenset(
         "uk_affecting_act_current_shell_enacted_source_selected",
         "uk_affecting_act_missing_current_enacted_source_selected",
         "uk_affecting_act_nonaddressable_schedule_part_context_ignored",
+        "uk_affecting_act_parenthesized_range_source_extracted",
     }
 )
 
@@ -255,6 +256,43 @@ def uk_affecting_act_nonaddressable_schedule_part_context_ignored(
             "ancestor container in source XML rather than in descendant paragraph IDs; "
             "the normalized paragraph reference was accepted only because the extracted "
             "node has a matching Part ancestor."
+        ),
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+
+
+def uk_affecting_act_parenthesized_range_source_extracted(
+    *,
+    effect_id: str,
+    affecting_act_id: str,
+    affecting_provisions: str,
+    locator: str,
+    authority_layer: str,
+    normalized_parent_ref: str,
+    requested_start_label: str,
+    requested_end_label: str,
+    extracted_element_ids: list[str],
+) -> dict[str, Any]:
+    return {
+        "rule_id": "uk_affecting_act_parenthesized_range_source_extracted",
+        "family": "source_range_extraction",
+        "phase": "extraction",
+        "effect_id": effect_id,
+        "affecting_act_id": affecting_act_id,
+        "affecting_provisions": affecting_provisions,
+        "normalized_parent_ref": normalized_parent_ref,
+        "locator": locator,
+        "authority_layer": authority_layer,
+        "requested_start_label": requested_start_label,
+        "requested_end_label": requested_end_label,
+        "extracted_element_ids": extracted_element_ids,
+        "reason": (
+            "UK effects metadata named a parenthesized source range whose individual "
+            "children are addressable in the affecting XML; LawVM extracted only the "
+            "bounded child range into a synthetic source wrapper instead of widening "
+            "to the whole parent provision."
         ),
         "blocking": False,
         "strict_disposition": "record",
