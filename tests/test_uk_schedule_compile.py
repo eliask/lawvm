@@ -20,6 +20,7 @@ from lawvm.core.ir import (
 )
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
+from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKEffectRecord,
     UKReplayPipeline,
@@ -3757,7 +3758,11 @@ def test_compile_source_carried_after_quoted_anchor_insert_from_parent_context()
     assert ops[0].action is StructuralAction.TEXT_REPLACE
     assert ops[0].target.path == (("section", "82"), ("subsection", "1"))
     assert ops[0].text_patch is not None
-    assert ops[0].text_patch.selector.match_text == "authority"
+    assert ops[0].text_patch.selector.match_text == (
+        "TEXT_IN_DEFINITION_local transport strategy"
+        f"{US}AFTER{US}"
+        "authority"
+    )
     assert ops[0].text_patch.replacement == "authority; or b a local traffic authority,"
     assert (
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_after_quoted_anchor_insert_text_patch"
@@ -3767,6 +3772,61 @@ def test_compile_source_carried_after_quoted_anchor_insert_from_parent_context()
         "uk_effect_source_carried_after_quoted_anchor_insert_text_patch"
     ]
     assert observations[0]["blocking"] is False
+    assert observations[0]["source_definition_term"] == "local transport strategy"
+
+
+def test_compile_source_carried_after_quoted_anchor_insert_without_definition_context() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="section-1">
+              <Pnumber>1</Pnumber>
+              <P1para>
+                <Text>In section 2, after “authority” there is inserted</Text>
+                <BlockAmendment><Text>or local board</Text></BlockAmendment>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-source-carried-after-anchor-insert-generic",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2000/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 2",
+        affecting_uri="/id/ukpga/2025/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="s. 1",
+        affecting_title="Test Act 2025",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "authority"
+    assert ops[0].text_patch.replacement == "authority or local board"
+    assert observations[0]["source_definition_term"] == ""
 
 
 def test_compile_source_carried_quoted_substitution_from_parent_context() -> None:
@@ -4417,6 +4477,83 @@ def test_compile_source_carried_definition_child_insert_from_parent_context() ->
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_definition_child_insert_text_patch"
         in ops[0].provenance_tags
     )
+
+
+def test_compile_source_carried_definition_child_text_omission_from_parent_context() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="article-6">
+              <Pnumber>6</Pnumber>
+              <P1para>
+                <P2 id="article-6-2">
+                  <Pnumber>2</Pnumber>
+                  <P2para>
+                    <Text>In the definition of “local transport authority” in section 82(1)—</Text>
+                    <P3 id="article-6-2-a">
+                      <Pnumber>a</Pnumber>
+                      <P3para><Text>a in paragraph (a), omit “or”,</Text></P3para>
+                    </P3>
+                  </P2para>
+                </P2>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='article-6-2-a']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-efa4c30800c7243c647a336405612eaf",
+        effect_type="word omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-06-05",
+        affected_uri="/id/asp/2001/2",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 82(1)",
+        affecting_uri="/id/ssi/2024/161",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2024",
+        affecting_number="161",
+        affecting_provisions="art. 6(2)(a)",
+        affecting_title=(
+            "The Regional Transport Partnerships (Establishment, Constitution "
+            "and Membership) (Scotland) Amendment Order 2024"
+        ),
+        in_force_dates=[{"date": "2024-06-05", "prospective": "false"}],
+    )
+    lowering_observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "82"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_IN_DEFINITION_CHILD_PARAGRAPH_local transport authority\x1fa\x1for"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_definition_child_text_omission_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert [record["rule_id"] for record in lowering_observations] == [
+        "uk_effect_source_carried_definition_child_text_omission_text_patch"
+    ]
+    assert lowering_observations[0]["source_definition_term"] == "local transport authority"
+    assert lowering_observations[0]["source_child_label"] == "a"
 
 
 def test_compile_source_carried_child_tail_repeal_from_exact_subsection_context() -> None:
@@ -8354,6 +8491,211 @@ def test_compile_word_range_repeal_uses_parenthesized_ordinal_start_occurrence()
         f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_range_occurrence_repeal_text_patch"
         in ops[0].provenance_tags
     )
+
+
+def test_compile_word_range_repeal_scopes_to_source_parent_definition() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P2 id="section-51-8">
+              <Pnumber>8</Pnumber>
+              <Text>In section 82(1) (interpretation) in the definition of “local transport strategy”—</Text>
+              <P3 id="section-51-8-a">
+                <Pnumber>a</Pnumber>
+                <Text>the words from “in” (where first occurring) to “Act” are repealed;</Text>
+              </P3>
+            </P2>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='section-51-8-a']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-cc094c3c4191990e937717114a3b4723",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2005-08-04",
+        affected_uri="/id/asp/2001/2",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 82(1)",
+        affecting_uri="/id/asp/2005/12",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="12",
+        affecting_provisions="s. 51(8)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2005-08-04", "prospective": "false"}],
+    )
+    lowering_observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        "TEXT_IN_DEFINITION_local transport strategy"
+        f"{US}FROM{US}"
+        f"in{US}TO{US}Act"
+    )
+    assert ops[0].text_patch.selector.occurrence == 1
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_parent_definition_range_text_patch"
+        in ops[0].provenance_tags
+    )
+    observations = [
+        record
+        for record in lowering_observations
+        if record["rule_id"] == "uk_effect_source_parent_definition_range_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["source_definition_term"] == "local transport strategy"
+    assert observations[0]["source_unscoped_match_text"] == "TEXT_FROM_in_TO_Act"
+
+
+def test_compile_after_quoted_insert_scopes_to_source_parent_definition() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P2 id="section-51-8">
+              <Pnumber>8</Pnumber>
+              <Text>In section 82(1) (interpretation) in the definition of “local transport strategy”—</Text>
+              <P3 id="section-51-8-b">
+                <Pnumber>b</Pnumber>
+                <Text>after “by” there is inserted “ (a) ” ; and</Text>
+              </P3>
+            </P2>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='section-51-8-b']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-dc76a11b514db23da6e544dc344e25b6",
+        effect_type="word inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-08-04",
+        affected_uri="/id/asp/2001/2",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 82(1)",
+        affecting_uri="/id/asp/2005/12",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="12",
+        affecting_provisions="s. 51(8)(b)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2005-08-04", "prospective": "false"}],
+    )
+    lowering_observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        "TEXT_IN_DEFINITION_local transport strategy"
+        f"{US}AFTER{US}"
+        "by"
+    )
+    assert ops[0].text_patch.replacement == "by (a) "
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_parent_definition_after_quoted_anchor_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    observations = [
+        record
+        for record in lowering_observations
+        if record["rule_id"] == "uk_effect_source_parent_definition_after_quoted_anchor_insert_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["source_definition_term"] == "local transport strategy"
+    assert observations[0]["source_unscoped_match_text"] == "by"
+
+
+def test_compile_after_quoted_insert_does_not_scope_to_remote_definition_context() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="section-45">
+              <Pnumber>45</Pnumber>
+              <P1para>
+                <Text>Section 70 is amended as follows.</Text>
+                <P2 id="section-45-4">
+                  <Pnumber>4</Pnumber>
+                  <P2para><Text>In subsection (1), after “grants” there is inserted “ or loans ” .</Text></P2para>
+                </P2>
+                <P2 id="section-45-8">
+                  <Pnumber>8</Pnumber>
+                  <P2para><Text>In the definition of “relevant general policies”, omit “old text”.</Text></P2para>
+                </P2>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P2[@id='section-45-4']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-95160ef3fb9e8d613d14c692189453b5",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-08-04",
+        affected_uri="/id/asp/2001/2",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 70(1)",
+        affecting_uri="/id/asp/2005/12",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="12",
+        affecting_provisions="s. 45(4)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2005-08-04", "prospective": "false"}],
+    )
+    lowering_observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "grants"
+    assert ops[0].text_patch.replacement == "grants or loans "
+    assert not [
+        record
+        for record in lowering_observations
+        if record["rule_id"] == "uk_effect_source_parent_definition_after_quoted_anchor_insert_text_patch"
+    ]
 
 
 def test_replace_missing_alphanumeric_subsection_does_not_sequence_match_paragraph() -> None:

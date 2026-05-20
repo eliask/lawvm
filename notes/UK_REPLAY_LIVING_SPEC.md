@@ -2603,6 +2603,26 @@ Current bench replay-regime invariant:
   live text. Current corpus witnesses: `asp/2001/2`
   `key-5c591c6e000ad938236c4a9711426132` and `asp/2000/11`
   `key-aeafeef7fe358d46b1fd8715e2aa27ef`.
+  If the same parent source instruction also names a definition entry, the
+  quoted-anchor insertion is scoped to
+  `TEXT_IN_DEFINITION_<term>/AFTER/<anchor>` rather than lowered as a bare
+  text patch against the whole subsection. This prevents a generic anchor such
+  as `authority` from rebinding to an earlier definition entry merely because
+  that word appears first in the live target. Strict mode records the scoped
+  source-context elaboration; it does not authorize inferring the definition
+  term from live text.
+  Generic child rows under a parent instruction that explicitly names a
+  definition entry are also scoped to that source-carried definition. A child
+  row such as `the words from "in" ... to "Act" are repealed` lowers to
+  `TEXT_IN_DEFINITION_<term>/FROM/<start>/TO/<end>` under
+  `uk_effect_source_parent_definition_range_text_patch`; a child row such as
+  `after "by" there is inserted "(a)"` lowers to
+  `TEXT_IN_DEFINITION_<term>/AFTER/<anchor>` under
+  `uk_effect_source_parent_definition_after_quoted_anchor_insert_text_patch`.
+  The current corpus witness is `asp/2001/2` affected by `asp/2005/12`
+  `s.51(8)(a)-(b)`. These are source-context elaborations, not live-text
+  guesses: strict mode records the source parent context and blocks if replay
+  cannot find exactly one matching definition entry.
 - Parser lowering may inherit definition-list context for child rows that only
   contain a quoted term. If the parent source instruction explicitly says
   `omit the definitions of-` and each child row is just `"X",`, the child row
@@ -2659,6 +2679,17 @@ Current bench replay-regime invariant:
     anchor child before inserting the new child. Without this parent source
     context, the row remains a deterministic frontend/manual frontier item
     rather than being guessed from the extracted child text alone.
+  - Source-carried child text omissions such as parent source `In the
+    definition of "local transport authority"...` plus child row `in paragraph
+    (a), omit "or"` lower to
+    `TEXT_IN_DEFINITION_CHILD_PARAGRAPH_<term>/<label>/<text>` under
+    `uk_effect_source_carried_definition_child_text_omission_text_patch`.
+    Replay mutates only the uniquely preserved definition child whose
+    `definition_term` and `definition_child_label` match the source facts. It
+    must not lower the quoted word as a bare subsection-wide text deletion,
+    because short words such as `or` can otherwise corrupt unrelated words such
+    as `authority`, `transport`, or `charging`. Current corpus witness:
+    `asp/2001/2` affected by `ssi/2024/161` `art. 6(2)(a)`.
   - bilingual definition headings such as `“private sector employer”
     (“cyflogwr sector preifat”) means...` preserve the first/source-language
     quoted term as `definition_term`; the parenthesized translation is source

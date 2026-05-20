@@ -2102,6 +2102,22 @@ def test_classify_uk_effect_misselected_target_context() -> None:
     assert is_core_uk_effect_source_candidate(pathology) is False
 
 
+def test_classify_uk_effect_scoped_definition_child_omission_is_not_misselected() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="P3",
+        extracted_text="a in paragraph (a), omit “or”,",
+        op_actions=["text_repeal"],
+        payload_kinds=[],
+        payload_texts=[],
+        target_paths=["section:82/subsection:1"],
+        lowering_rule_ids=["uk_effect_source_carried_definition_child_text_omission_text_patch"],
+        effect_type="word omitted",
+        is_structural=True,
+    )
+
+    assert pathology == ""
+
+
 def test_classify_uk_effect_schedule_paragraph_context_is_not_misselected() -> None:
     pathology = classify_uk_effect_source_pathology(
         extracted_tag="P3",
