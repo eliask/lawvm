@@ -1339,6 +1339,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source targets a cross-heading surface that needs an explicit crossheading/facet claim.",
         }
 
+    if "uk_effect_external_act_target_rejected" in blocking_rules:
+        return {
+            "status": "non_textual_or_out_of_scope",
+            "rule_id": "uk_manual_frontier_external_act_target_out_of_scope",
+            "reason": "The affecting source names a different Act as the mutation target; the row is not a manual compilation opportunity for the current statute.",
+        }
+
     if (
         "uk_effect_overlap_substitution_unlowered" in blocking_rules
         and any(

@@ -1576,6 +1576,31 @@ def test_classify_uk_manual_compile_frontier_keeps_unsupported_family_out_of_sco
     assert result["rule_id"] == "uk_manual_frontier_unsupported_effect_family"
 
 
+def test_classify_uk_manual_compile_frontier_external_act_target_out_of_scope() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text=(
+            "In Schedule 4 to the Town and Country Planning (Scotland) Act 1997, "
+            "in paragraph 8(2), for the words from X to the end substitute Y."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_external_act_target_rejected",
+                "blocking": True,
+                "source_named_target": "Town and Country Planning (Scotland) Act 1997",
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "non_textual_or_out_of_scope"
+    assert result["rule_id"] == "uk_manual_frontier_external_act_target_out_of_scope"
+
+
 def test_classify_uk_manual_compile_frontier_preserves_unclassified_rows() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="substituted",
