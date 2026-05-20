@@ -1491,7 +1491,12 @@ Current block-substitution context invariant:
   "Y" substitute "Z"` to an occurrence-qualified `TEXT_FROM_X_TO_Y` patch using
   `uk_effect_range_occurrence_substitution_text_patch`. Current witness:
   `asp/2000/11` affected `s. 16(1)(a)` by `asp/2012/8`
-  `sch. 7 para. 15(8)(b)`.
+  `sch. 7 para. 15(8)(b)`. Replay treats a quoted single-word range anchor as
+  a word token for ordinal counting, not as an arbitrary substring; otherwise
+  `"an", where second occurring` can be hijacked by the leading letters of
+  `any`. Successful application emits nonblocking
+  `uk_replay_text_range_anchor_word_boundary_normalized` with
+  `family=text_match_recovery` and `strict_disposition=record`.
 - the parser may lower `for the words from "X", where it first occurs, to "X",
   where it second occurs, substitute "Z"` to a bounded same-anchor range patch
   using

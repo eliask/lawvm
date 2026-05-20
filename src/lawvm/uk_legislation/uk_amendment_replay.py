@@ -15393,6 +15393,16 @@ class UKReplayExecutor:
                 return parent
         return None
 
+    @staticmethod
+    def _range_anchor_matches(text: str, anchor: str) -> tuple[list[re.Match[str]], bool]:
+        """Return range-anchor matches, token-bounded for quoted single words."""
+        if re.fullmatch(r"[A-Za-z]+", anchor or ""):
+            token_pattern = rf"(?<![A-Za-z0-9]){re.escape(anchor)}(?![A-Za-z0-9])"
+            token_matches = list(re.finditer(token_pattern, text, flags=re.I))
+            if token_matches:
+                return token_matches, True
+        return list(re.finditer(re.escape(anchor), text)), False
+
     def _apply_text_replace_on_node_text_only(
         self,
         node: UKMutableNode,
@@ -15403,6 +15413,7 @@ class UKReplayExecutor:
         *,
         allow_punctuation_spacing: bool = False,
         allow_word_punctuation_elision: bool = False,
+        recovery_rule_ids_out: Optional[list[str]] = None,
     ) -> tuple[UKMutableNode, bool]:
         """Apply a text patch only to one node's text, never to descendants."""
         text = node.text or ""
@@ -15466,9 +15477,15 @@ class UKReplayExecutor:
                 return node, False
             start_ordinal = occurrence if occurrence > 0 else 1
             end_ordinal = end_occurrence if end_occurrence > 0 else 0
-            literal_start_matches = list(re.finditer(re.escape(start_text), text))
-            if len(literal_start_matches) >= start_ordinal:
-                start_match = literal_start_matches[start_ordinal - 1]
+            if occurrence > 0:
+                start_matches, used_word_start = self._range_anchor_matches(text, start_text)
+            else:
+                start_matches = list(re.finditer(re.escape(start_text), text))
+                used_word_start = False
+            if len(start_matches) >= start_ordinal:
+                start_match = start_matches[start_ordinal - 1]
+                if used_word_start and recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append("uk_replay_text_range_anchor_word_boundary_normalized")
             else:
                 start_pattern = _text_patch_pattern(
                     start_text,
@@ -15480,12 +15497,14 @@ class UKReplayExecutor:
                     return node, False
                 start_match = start_matches[start_ordinal - 1]
             if end_ordinal:
-                literal_end_matches = list(re.finditer(re.escape(end_text), text))
-                if len(literal_end_matches) >= end_ordinal:
-                    end_match = literal_end_matches[end_ordinal - 1]
+                end_matches, used_word_end = self._range_anchor_matches(text, end_text)
+                if len(end_matches) >= end_ordinal:
+                    end_match = end_matches[end_ordinal - 1]
                     if end_match.start() < start_match.end():
                         return node, False
                     end_end = end_match.end()
+                    if used_word_end and recovery_rule_ids_out is not None:
+                        recovery_rule_ids_out.append("uk_replay_text_range_anchor_word_boundary_normalized")
                 else:
                     end_pattern = _text_patch_pattern(
                         end_text,
@@ -19293,6 +19312,13 @@ class UKReplayExecutor:
                         )
                         family = "target_resolution_recovery"
                         strict_disposition = "record"
+                    elif recovery_rule_id == "uk_replay_text_range_anchor_word_boundary_normalized":
+                        message = (
+                            "UK replay applied range text op after matching a quoted "
+                            "single-word range anchor as a word token."
+                        )
+                        family = "text_match_recovery"
+                        strict_disposition = "record"
                     else:
                         message = (
                             "UK replay applied text-based op after normalizing "
@@ -21724,6 +21750,7 @@ class UKReplayExecutor:
                     end_occurrence,
                     allow_punctuation_spacing=allow_punctuation_spacing,
                     allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    recovery_rule_ids_out=recovery_rule_ids_out,
                 )
                 if applied:
                     return rebuilt, True
@@ -21734,14 +21761,15 @@ class UKReplayExecutor:
 
             def _find_start_index(start_text: str) -> int:
                 ordinal = occurrence if occurrence > 0 else 1
-                start = 0
-                for _ in range(ordinal):
-                    start_idx = full_text.find(start_text, start)
-                    if start_idx == -1:
-                        break
-                    start = start_idx + len(start_text)
+                if occurrence > 0:
+                    range_matches, used_word_anchor = self._range_anchor_matches(full_text, start_text)
                 else:
-                    return start_idx
+                    range_matches = list(re.finditer(re.escape(start_text), full_text))
+                    used_word_anchor = False
+                if len(range_matches) >= ordinal:
+                    if used_word_anchor and recovery_rule_ids_out is not None:
+                        recovery_rule_ids_out.append("uk_replay_text_range_anchor_word_boundary_normalized")
+                    return range_matches[ordinal - 1].start()
                 pattern = _text_patch_pattern(
                     start_text,
                     allow_punctuation_spacing=allow_punctuation_spacing,
@@ -21770,12 +21798,16 @@ class UKReplayExecutor:
                     end_idx = -1
                     if start_idx != -1:
                         if end_occurrence > 0:
-                            end_matches = list(re.finditer(re.escape(end_text), full_text))
+                            end_matches, used_word_end = self._range_anchor_matches(full_text, end_text)
                             if len(end_matches) >= end_occurrence:
                                 end_match = end_matches[end_occurrence - 1]
                                 if end_match.start() >= start_idx + len(start_text):
                                     end_idx = end_match.start()
                                     end_end = end_match.end()
+                                    if used_word_end and recovery_rule_ids_out is not None:
+                                        recovery_rule_ids_out.append(
+                                            "uk_replay_text_range_anchor_word_boundary_normalized"
+                                        )
                         else:
                             end_idx = full_text.find(end_text, start_idx + len(start_text))
                             end_end = end_idx + len(end_text)

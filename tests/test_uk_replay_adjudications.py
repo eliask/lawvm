@@ -685,6 +685,71 @@ def test_executor_records_punctuation_spacing_text_from_to_recovery() -> None:
     ]
 
 
+def test_executor_text_from_to_occurrence_counts_single_word_tokens() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/11",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="16",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text=(
+                                        "any refusal of an ordinary Surveillance Commissioner "
+                                        "to approve an authorisation for the carrying out of "
+                                        "intrusive surveillance;"
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_range_occurrence_word_token",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "16"), ("subsection", "1"), ("paragraph", "a"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="TEXT_FROM_an_TO_surveillance",
+                    occurrence=2,
+                ),
+                replacement="the authorisation",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].children[0].text == (
+        "any refusal of an ordinary Surveillance Commissioner to approve the authorisation;"
+    )
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_text_range_anchor_word_boundary_normalized"
+    ]
+    assert adjudications[0].detail["family"] == "text_match_recovery"
+    assert adjudications[0].detail["strict_disposition"] == "record"
+
+
 def test_executor_records_word_punctuation_elision_text_match_recovery() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

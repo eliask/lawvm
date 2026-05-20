@@ -100,6 +100,7 @@ def test_classify_uk_replay_adjudication_bucket() -> None:
         "uk_replay_text_match_punctuation_space_normalized": "nonblocking_observation",
         "uk_replay_text_match_rotated_trailing_comma_omission": "nonblocking_observation",
         "uk_replay_text_match_replacement_normalized_present": "nonblocking_observation",
+        "uk_replay_text_range_anchor_word_boundary_normalized": "nonblocking_observation",
         "uk_replay_future_kind": "unknown",
         "": "unknown",
     }
