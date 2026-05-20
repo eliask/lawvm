@@ -6866,6 +6866,131 @@ def test_compile_repeal_table_quoted_words_text_repeal() -> None:
     )
 
 
+def test_compile_repeal_table_structural_provision_repeal() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Scottish Public Services Ombudsman Act 2002 (asp 11)</td>
+                  <td>In schedule 2, paragraph 21B.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_structural_repeal",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=False,
+        modified="2011-08-15",
+        affected_uri="/id/asp/2002/11/schedule/2/paragraph/21B",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="sch. 2 para. 21B",
+        affecting_uri="/id/asp/2010/8",
+        affecting_class="ScottishAct",
+        affecting_year="2010",
+        affecting_number="8",
+        affecting_provisions="sch. 2 para. 21",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2011-08-15", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.REPEAL
+    assert ops[0].target.path == (("schedule", "2"), ("paragraph", "21b"))
+    assert ops[0].payload is None
+    assert ops[0].witness_rule_id == "uk_effect_repeal_table_structural_repeal"
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal"
+        and record["family"] == "source_repeal_table_elaboration"
+        and record["reason_code"] == "unique_repeal_table_extent_row_structural_repeal"
+        and record["blocking"] is False
+        and record["strict_disposition"] == "record"
+        and record["extent_cell"] == "In schedule 2, paragraph 21B."
+        for record in lowering_records
+    )
+
+
+def test_compile_repeal_table_entry_surface_remains_unresolved() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Companies Consolidation (Consequential Provisions) Act 1985 (c. 9)</td>
+                  <td>In Schedule 2 the entry relating to the Teaching Council (Scotland) Act 1965.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_entry_surface",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=False,
+        modified="2012-04-02",
+        affected_uri="/id/ukpga/1985/9/schedule/2",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="1985",
+        affected_number="9",
+        affected_provisions="Sch. 2",
+        affecting_uri="/id/ssi/2011/215",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2011",
+        affecting_number="215",
+        affecting_provisions="Sch. 7",
+        affecting_title="Test Repeal Instrument",
+        in_force_dates=[{"date": "2012-04-02", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
+        and record["reason_code"] == "no_unique_matching_repeal_table_structural_row"
+        and record["match_count"] == 0
+        and record["blocking"] is True
+        and record["strict_disposition"] == "block"
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_definition_entry_text_repeal() -> None:
     source_root = ET.fromstring(
         """

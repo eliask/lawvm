@@ -1964,6 +1964,15 @@ Current block-substitution context invariant:
   frontier cases. This is a source-table elaboration rule, not a replay
   fallback, and its observation records the enactment cell, extent clause, and
   selected quoted/range preimage plus occurrence metadata.
+- bounded repeal-table whole-provision rows are owned by
+  `uk_effect_repeal_table_structural_repeal`: the compiler must match the same
+  unique affected-Act row and an extent clause that explicitly names the exact
+  affected section, schedule, paragraph, subsection, or subparagraph. It then
+  lowers only the feed-named target to a typed `REPEAL`. Clauses mentioning
+  words, definitions, entries, or table-entry surfaces remain outside this
+  rule; non-unique or unmatched rows emit
+  `uk_effect_repeal_table_structural_repeal_unresolved` rather than replaying a
+  broad repeal schedule or table row as host text.
 - bounded repeal-table definition-entry rows are owned separately by
   `uk_effect_repeal_table_definition_entry_text_repeal`: after the same unique
   affected-Act row and affected-provision clause matching, an extent clause of

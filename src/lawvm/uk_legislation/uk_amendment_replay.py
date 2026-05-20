@@ -653,6 +653,7 @@ _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID = (
 _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_definition_entry_text_repeal"
 )
+_UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID = "uk_effect_repeal_table_structural_repeal"
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_UNRESOLVED_RULE_ID = (
     "uk_replay_schedule_list_entry_anchor_unresolved"
 )
@@ -4563,6 +4564,17 @@ class _UKRepealTableQuotedWordsTextRepeal:
     end_occurrence: int = 0
 
 
+@dataclass(frozen=True)
+class _UKRepealTableStructuralRepeal:
+    recognized: bool
+    reason_code: str = ""
+    match_count: int = 0
+    table_index: int = -1
+    row_text: str = ""
+    enactment_cell: str = ""
+    extent_cell: str = ""
+
+
 def _strip_outer_uk_quotes(text: str) -> str:
     stripped = " ".join(text.split()).strip()
     quote_pairs = (("\u201c", "\u201d"), ("\u2018", "\u2019"), ('"', '"'), ("'", "'"))
@@ -4894,6 +4906,101 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
         extent_cell=extent_cell,
         occurrence=occurrence,
         end_occurrence=end_occurrence,
+    )
+
+
+def _uk_repeal_table_clause_is_structural_repeal(extent_clause: str) -> bool:
+    """Return true for repeal-table clauses that claim whole target provisions."""
+    text = " ".join((extent_clause or "").split()).strip()
+    if not text:
+        return False
+    norm = text.lower()
+    if re.search(r"\b(?:word|words|definition|entry|entries)\b", norm):
+        return False
+    return bool(
+        re.search(
+            r"\b(?:section|sections|schedule|schedules|paragraph|paragraphs|"
+            r"subsection|subsections|sub-?paragraph|sub-?paragraphs)\b",
+            norm,
+        )
+    )
+
+
+def _uk_table_driven_repeal_table_structural_repeal(
+    *,
+    effect: UKEffectRecord,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    source_root: Optional[ET.Element],
+    target: LegalAddress,
+) -> _UKRepealTableStructuralRepeal:
+    """Resolve repeal-schedule rows that exactly corroborate a provision repeal."""
+    effect_type = str(effect.effect_type or "").strip().lower()
+    if effect_type not in {"repealed", "omitted", "revoked"}:
+        return _UKRepealTableStructuralRepeal(recognized=False)
+    if str(target.special or "") == "whole_act":
+        return _UKRepealTableStructuralRepeal(recognized=False)
+    source_text = " ".join((extracted_text or "").split()).lower()
+    if "extent of repeal" not in source_text:
+        return _UKRepealTableStructuralRepeal(recognized=False)
+    search_roots = [root for root in (extracted_el, source_root) if root is not None]
+    if not search_roots:
+        return _UKRepealTableStructuralRepeal(recognized=False)
+
+    matches: list[tuple[int, str, str, str]] = []
+    tables = []
+    seen_table_ids: set[int] = set()
+    for root in search_roots:
+        for el in root.iter():
+            if _tag(el).lower() != "table" or id(el) in seen_table_ids:
+                continue
+            seen_table_ids.add(id(el))
+            columns = _uk_table_is_repeal_extent_source_table(el)
+            if columns is not None:
+                tables.append((el, columns))
+    for table_index, (table, (enactment_idx, extent_idx)) in enumerate(tables):
+        rows = _uk_table_rows_with_rowspans(table)
+        for row in rows[1:]:
+            if len(row) <= max(enactment_idx, extent_idx):
+                continue
+            enactment_cell = row[enactment_idx]
+            extent_cell = row[extent_idx]
+            if not _uk_repeal_table_enactment_matches_effect(enactment_cell, effect):
+                continue
+            for extent_clause in _uk_repeal_table_extent_clauses(extent_cell):
+                if not _uk_repeal_table_clause_is_structural_repeal(extent_clause):
+                    continue
+                if not _uk_table_cell_mentions_target(
+                    extent_clause,
+                    target=target,
+                    affected_year=str(effect.affected_year or ""),
+                ):
+                    continue
+                matches.append(
+                    (
+                        table_index,
+                        " | ".join((enactment_cell, extent_clause)),
+                        enactment_cell,
+                        extent_clause,
+                    )
+                )
+
+    if len(matches) != 1:
+        return _UKRepealTableStructuralRepeal(
+            recognized=True,
+            reason_code="no_unique_matching_repeal_table_structural_row",
+            match_count=len(matches),
+        )
+
+    table_index, row_text, enactment_cell, extent_cell = matches[0]
+    return _UKRepealTableStructuralRepeal(
+        recognized=True,
+        reason_code="",
+        match_count=1,
+        table_index=table_index,
+        row_text=row_text,
+        enactment_cell=enactment_cell,
+        extent_cell=extent_cell,
     )
 
 
@@ -9679,6 +9786,95 @@ def compile_effect_to_ir_ops(
                     ),
                     witness_rule_id=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
                 )
+            )
+            continue
+        repeal_table_structural_repeal = _uk_table_driven_repeal_table_structural_repeal(
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            source_root=source_root,
+            target=target,
+        )
+        if repeal_table_structural_repeal.recognized and repeal_table_structural_repeal.match_count == 1:
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID,
+                family="source_repeal_table_elaboration",
+                reason_code="unique_repeal_table_extent_row_structural_repeal",
+                reason=(
+                    "UK repeal-table source row matched the affected Act and "
+                    "provision exactly, and its extent cell names a whole "
+                    "provision repeal; lowering emits a typed exact-target "
+                    "repeal instead of replaying the broad repeal schedule."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "target": str(target),
+                    "table_index": repeal_table_structural_repeal.table_index,
+                    "row_text": repeal_table_structural_repeal.row_text,
+                    "enactment_cell": repeal_table_structural_repeal.enactment_cell,
+                    "extent_cell": repeal_table_structural_repeal.extent_cell,
+                },
+            )
+            src = OperationSource(
+                statute_id=effect.affecting_act_id,
+                title=effect.affecting_title,
+                effective=effect_witness.applicability.effective_date or "",
+                raw_text=extraction_witness.extracted_text,
+            )
+            target_expansion_witness = _uk_target_expansion_witness(
+                t_str,
+                [t_str],
+                original_targets_str=original_targets_str,
+            )
+            lowered_witness = UKLoweredOperationWitness(
+                op_id=effect.effect_id,
+                sequence=sequence,
+                action=StructuralAction.REPEAL,
+                target=target,
+                payload=None,
+                source=src,
+                effect_witness=effect_witness,
+                extraction_witness=extraction_witness,
+                target_expansion_witness=target_expansion_witness,
+                text_rewrite_witness=None,
+                insertion_anchor_witness=None,
+            )
+            ops.append(
+                LegalOperation(
+                    op_id=lowered_witness.op_id,
+                    sequence=lowered_witness.sequence,
+                    action=StructuralAction.REPEAL,
+                    target=target,
+                    payload=None,
+                    source=src,
+                    group_id=_uk_temporal_group_id(effect),
+                    provenance_tags=_uk_lowered_op_provenance_tags(lowered_witness),
+                    witness_rule_id=_UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID,
+                )
+            )
+            continue
+        if repeal_table_structural_repeal.recognized:
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id=f"{_UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID}_unresolved",
+                family="source_repeal_table_elaboration",
+                reason_code=repeal_table_structural_repeal.reason_code,
+                reason=(
+                    "UK repeal-table source could not be resolved to one "
+                    "exact structural extent row for the affected target."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "target": str(target),
+                    "match_count": repeal_table_structural_repeal.match_count,
+                },
             )
             continue
         repeal_table_text_repeal = _uk_table_driven_repeal_table_quoted_words_text_repeal(
