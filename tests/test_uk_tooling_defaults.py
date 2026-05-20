@@ -539,6 +539,22 @@ def test_uk_replay_commencement_summary_preserves_observation_rules() -> None:
     ]
 
 
+def test_uk_replay_commencement_summary_can_use_replay_compare_oracle_surface() -> None:
+    summary = uk_replay._uk_commencement_score_summary(
+        enabled=True,
+        applicability_mode="effective_date_plus_feed_applied",
+        commenced_eids={"schedule-2", "schedule-2-paragraph-1"},
+        commenced_enacted_eids={"schedule-2", "schedule-2-paragraph-1"},
+        commenced_replayed_eids={"schedule-2"},
+        commenced_oracle_eids={"schedule-2", "schedule-2-paragraph-1"},
+        replay_commencement_oracle_eids={"schedule-2"},
+    )
+
+    assert summary["commencement_score"] == 1.0
+    assert summary["replay_commencement_score"] == 1.0
+    assert summary["commenced_replayed_common_count"] == 1
+
+
 def test_uk_effects_parser_accepts_diagnostic_family_filters() -> None:
     parser = cli._build_parser()
 

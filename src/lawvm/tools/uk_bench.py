@@ -1329,14 +1329,21 @@ def _score_statute(
                     _replayed_eids_all = _collect_eids(replayed_ir.body.children)
                     for s in replayed_ir.supplements:
                         _replayed_eids_all.update(_collect_eids([s]))
-                    commenced_replayed = _replayed_eids_all & commenced
-                    replay_commencement_score = _score_commenced_eids(commenced_replayed, commenced_oracle)
+                    commenced_replayed_raw = _replayed_eids_all & commenced
+                    commenced_replayed, commenced_oracle_for_replay = normalize_uk_replay_compare_eids(
+                        commenced_replayed_raw,
+                        commenced_oracle,
+                    )
+                    replay_commencement_score = _score_commenced_eids(
+                        commenced_replayed,
+                        commenced_oracle_for_replay,
+                    )
                     score_witness_rows.extend(
                         _build_eid_score_witness_rows(
                             comparison_scope="replay_commencement",
                             left_side="only_in_commenced_replay",
                             left_eids=commenced_replayed,
-                            right_eids=commenced_oracle,
+                            right_eids=commenced_oracle_for_replay,
                         )
                     )
             except Exception as comm_exc:

@@ -283,8 +283,8 @@ def normalize_uk_replay_compare_eids(
     - case-only EID drift (`2a` vs `2A`)
     - source URI ordinal drift for generic UK containers (`part-n2` vs
       `part-2`, `schedule-paragraph-1` vs `schedule-1-paragraph-1`)
-    - replay-only descendant nodes under a `section` / `article` root when
-      oracle exposes only the collapsed root text and no child EIDs
+    - replay-only descendant nodes under a `section` / `article` / `schedule`
+      root when oracle exposes only the collapsed root text and no child EIDs
     - replay-only wrapper paragraph nodes under `part` / `crossheading` parents
       where oracle collapses the paragraph into the parent node
     - replay-only wrapper nodes whose descendants exist in oracle but the
@@ -301,7 +301,7 @@ def normalize_uk_replay_compare_eids(
     oracle_has_table_eids = any(_uk_compare_eid_has_table_segment(eid) for eid in oracle_norm)
 
     for root in oracle_norm:
-        if not root.startswith(("section-", "article-", "crossheading-")):
+        if not root.startswith(("section-", "article-", "schedule-", "crossheading-")):
             continue
         if any(other.startswith(root + "-") for other in oracle_norm):
             continue

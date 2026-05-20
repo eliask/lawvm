@@ -99,11 +99,13 @@ def _uk_commencement_score_summary(
     commenced_enacted_eids: Set[str] | None = None,
     commenced_replayed_eids: Set[str] | None = None,
     commenced_oracle_eids: Set[str] | None = None,
+    replay_commencement_oracle_eids: Set[str] | None = None,
 ) -> dict[str, object]:
     commenced_eids = set(commenced_eids or set())
     commenced_enacted_eids = set(commenced_enacted_eids or set())
     commenced_replayed_eids = set(commenced_replayed_eids or set())
     commenced_oracle_eids = set(commenced_oracle_eids or set())
+    replay_commencement_oracle_eids = set(replay_commencement_oracle_eids or commenced_oracle_eids)
     observation_rows = [dict(row) for row in observations]
     return {
         "enabled": enabled,
@@ -131,7 +133,7 @@ def _uk_commencement_score_summary(
             else None
         ),
         "commenced_replayed_common_count": (
-            len(commenced_replayed_eids & commenced_oracle_eids)
+            len(commenced_replayed_eids & replay_commencement_oracle_eids)
             if enabled and not unavailable_reason
             else None
         ),
@@ -141,7 +143,7 @@ def _uk_commencement_score_summary(
             else None
         ),
         "replay_commencement_score": (
-            _score_commenced_eids(commenced_replayed_eids, commenced_oracle_eids)
+            _score_commenced_eids(commenced_replayed_eids, replay_commencement_oracle_eids)
             if enabled and not unavailable_reason
             else None
         ),
@@ -1038,8 +1040,12 @@ def main(args: "argparse.Namespace") -> None:
                     observations_out=commencement_observations,
                 )
                 commenced_enacted = base_eids & commenced
-                commenced_replayed = replayed_eids & commenced
+                commenced_replayed_raw = replayed_eids & commenced
                 commenced_oracle = _commenced_oracle_eids(current_eids, commenced)
+                commenced_replayed, commenced_oracle_for_replay = normalize_uk_replay_compare_eids(
+                    commenced_replayed_raw,
+                    commenced_oracle,
+                )
                 uk_commencement_summary = _uk_commencement_score_summary(
                     enabled=True,
                     applicability_mode=applicability_mode,
@@ -1048,6 +1054,7 @@ def main(args: "argparse.Namespace") -> None:
                     commenced_enacted_eids=commenced_enacted,
                     commenced_replayed_eids=commenced_replayed,
                     commenced_oracle_eids=commenced_oracle,
+                    replay_commencement_oracle_eids=commenced_oracle_for_replay,
                 )
 
     # ── 5. Timeline compilation ───────────────────────────────────────────
