@@ -623,6 +623,7 @@ def _looks_like_instruction_text(text: str) -> bool:
         re.search(
             r"\b("
             r"insert|substitute|omit|repeal|renumber|after|before|at the end|"
+            r"become|becomes|"
             r"in subsection|in paragraph|in sub-paragraph|in section|for paragraphs|for sub-paragraphs"
             r")\b",
             norm,
