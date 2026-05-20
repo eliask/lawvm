@@ -5481,6 +5481,12 @@ def _synthesize_whole_schedule_payload_descendant_eids(
         kind_name = str(child.kind or "").lower()
         raw_label = str(child.label or "").strip()
         clean_label = _clean_num(raw_label).strip("().")
+        if kind_name == "crossheading":
+            heading_text = " ".join(str(child.text or raw_label).split()).strip()
+            heading_slug = re.sub(r"[^a-zA-Z0-9]+", "-", heading_text.lower()).strip("-")
+            if heading_slug:
+                return f"crossheading-{heading_slug}"
+            return ""
         if (
             raw_label
             and kind_name in {"subparagraph", "item", "point"}
@@ -5498,6 +5504,7 @@ def _synthesize_whole_schedule_payload_descendant_eids(
     def _walk(parent_eid: str, current: UKMutableNode) -> None:
         nonlocal skipped_ambiguous, skipped_duplicate
         for child in current.children:
+            child_kind_name = str(child.kind or "").lower()
             existing_eid = str(child.attrs.get("eId") or child.attrs.get("id") or "")
             child_parent_eid = existing_eid or parent_eid
             if existing_eid:
@@ -5515,6 +5522,8 @@ def _synthesize_whole_schedule_payload_descendant_eids(
                         continue
                     used_eids.add(child_parent_eid)
                     child.attrs["eId"] = child_parent_eid
+                    if child_kind_name == "crossheading":
+                        child_parent_eid = parent_eid
                     synthesized.append(
                         {
                             "kind": str(child.kind),

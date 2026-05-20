@@ -20037,12 +20037,12 @@ def test_compile_synthesizes_local_eids_for_inserted_schedule_payload_descendant
     assert schedule.attrs["eId"] == "schedule-10a"
     assert paragraph.attrs["eId"] == "schedule-10a-paragraph-1"
     assert item.attrs["eId"] == "schedule-10a-paragraph-1-a"
-    assert "eId" not in crossheading.attrs
+    assert crossheading.attrs["eId"] == "schedule-10a-crossheading-unlabelled-heading"
     assert crossheading_paragraph.attrs["eId"] == "schedule-10a-paragraph-2"
     assert lowering_records[0]["rule_id"] == "uk_whole_schedule_payload_descendant_eid_synthesis"
     assert lowering_records[0]["phase"] == "payload_normalization"
     assert lowering_records[0]["blocking"] is False
-    assert lowering_records[0]["synthesized_count"] == 3
+    assert lowering_records[0]["synthesized_count"] == 4
 
 
 def test_compile_skips_duplicate_synthetic_schedule_descendant_eids() -> None:
