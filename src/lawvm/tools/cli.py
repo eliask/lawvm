@@ -4036,6 +4036,14 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     uk_candidates_p.add_argument(
+        "--replay-adjudication-evidence-jsonl",
+        metavar="PATH",
+        help=(
+            "write selected saved-run replay adjudications as JSONL review work "
+            "items; combines with --replay-adjudication-kind"
+        ),
+    )
+    uk_candidates_p.add_argument(
         "--replay-adjudication-sample-limit",
         type=int,
         default=5,

@@ -3881,6 +3881,141 @@ def test_uk_candidates_fast_json_exposes_duplication_warning_sample_detail(
     assert sample["excerpt"].startswith("duplicated words in the replay output")
 
 
+def test_uk_candidates_fast_json_exports_replay_adjudication_evidence_jsonl(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    out_path = tmp_path / "replay" / "adjudications.jsonl"
+    rows = [
+        SimpleNamespace(
+            statute_id="ukpga/2000/1",
+            status="OK",
+            year=2000,
+            act_type="ukpga",
+            score=0.8,
+            replay_score=0.8,
+            commencement_score=-1.0,
+            replay_commencement_score=-1.0,
+            n_commenced_eids=0,
+            comparison_class="commensurable",
+            n_enacted_eids=10,
+            n_oracle_eids=12,
+            n_effects=1,
+            n_effect_rows=1,
+            n_effect_feed_pages=1,
+            enacted_source_status="available",
+            enacted_source_size=123,
+            enacted_source_sha256="enacted-sha",
+            enacted_source_url="https://example.test/enacted.xml",
+            oracle_source_status="available",
+            oracle_source_size=456,
+            oracle_source_sha256="oracle-sha",
+            oracle_source_url="https://example.test/current.xml",
+            uk_metadata_backfill_enabled=False,
+            uk_oracle_alignment_enabled=False,
+            uk_metadata_only_effects_enabled=False,
+            uk_applicability_mode="effective_date_only",
+            uk_authority_mode="source_text_only",
+            uk_source_purity_lane="source_backed_effects_assisted",
+            uk_source_semantics_clean=True,
+            uk_source_first_candidate=True,
+            uk_source_first_candidate_reasons=(),
+            replay_adjudication_count=2,
+            replay_adjudication_kind_counts={
+                "text_duplication_warning": 1,
+                "uk_replay_target_not_found": 1,
+            },
+            uk_residual_claim_tier="UNRESOLVED",
+            uk_residual_claim_kind="uk_mixed_residual_eids",
+            uk_residual_claim_comparison_class="commensurable",
+            uk_residual_claim_core_comparison=True,
+            uk_residual_only_in_replayed_count=0,
+            uk_residual_only_in_oracle_count=0,
+            uk_residual_section_claim_count=0,
+            uk_residual_section_claim_emitted=False,
+            replay_adjudications=(
+                {
+                    "kind": "text_duplication_warning",
+                    "message": "Replay output contains a suspicious duplicated text tract.",
+                    "source_statute": "ukpga/2000/1",
+                    "op_id": "",
+                    "detail": {
+                        "blocking": False,
+                        "kind": "duplicate_suffix_text",
+                        "path": "body/section:1",
+                        "left": "subsection:1",
+                        "right": "subsection:2",
+                        "shared_token_count": 19,
+                        "excerpt": "duplicated words in replay output",
+                    },
+                },
+                {
+                    "kind": "uk_replay_target_not_found",
+                    "message": "target not found",
+                    "source_statute": "ukpga/2001/2",
+                    "op_id": "op-1",
+                    "detail": {"blocking": True, "target": "section:99"},
+                },
+            ),
+        ),
+    ]
+    monkeypatch.setattr("lawvm.tools.uk_bench._load_run", lambda label: rows)
+
+    uk_candidates.main(
+        Namespace(
+            label="demo",
+            top=10,
+            fast=True,
+            effect_budget=None,
+            residual_budget=None,
+            score_mode="auto",
+            residual_only=False,
+            json=True,
+            summary_only=False,
+            min_year=None,
+            max_year=None,
+            types=None,
+            db=None,
+            replay_adjudication_kind=["text_duplication_warning"],
+            replay_adjudication_sample_limit=1,
+            replay_adjudication_evidence_jsonl=str(out_path),
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    evidence_rows = [
+        json.loads(line) for line in out_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert payload["replay_adjudication_evidence_jsonl"] == {
+        "path": str(out_path),
+        "rows": 1,
+        "kinds": ["text_duplication_warning"],
+    }
+    assert evidence_rows[0]["schema"] == "lawvm.uk_replay_adjudication_frontier.v1"
+    assert evidence_rows[0]["rule_id"] == "uk_replay_adjudication_frontier_workqueue"
+    assert evidence_rows[0]["work_item_kind"] == "replay_adjudication_review"
+    assert evidence_rows[0]["claim_status"] == "unresolved_work_item"
+    assert evidence_rows[0]["validator_status"] == "not_validated"
+    assert evidence_rows[0]["work_item_id"].startswith("uk-replay-adjudication-")
+    assert evidence_rows[0]["bench_label"] == "demo"
+    assert evidence_rows[0]["statute_id"] == "ukpga/2000/1"
+    assert evidence_rows[0]["adjudication_kind"] == "text_duplication_warning"
+    assert evidence_rows[0]["adjudication_bucket"] == "nonblocking_observation"
+    assert evidence_rows[0]["blocking"] is False
+    assert evidence_rows[0]["detail"]["path"] == "body/section:1"
+    assert evidence_rows[0]["uk_replay_regime"] == {
+        "allow_metadata_backfill": False,
+        "allow_metadata_only_effects": False,
+        "allow_oracle_alignment": False,
+        "applicability_mode": "effective_date_only",
+        "authority_mode": "source_text_only",
+    }
+    assert evidence_rows[0]["enacted_source"]["sha256"] == "enacted-sha"
+    assert evidence_rows[0]["oracle_source"]["sha256"] == "oracle-sha"
+
+
 def test_format_replay_adjudication_sample_includes_duplication_context() -> None:
     rendered = uk_candidates._format_replay_adjudication_sample(
         {

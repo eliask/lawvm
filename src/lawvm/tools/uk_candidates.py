@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import sys
@@ -632,6 +633,120 @@ def _replay_adjudication_sample_omitted(
         if not kinds or str(record.get("kind") or "") in kinds:
             total += 1
     return max(0, total - sampled_count)
+
+
+def _replay_adjudication_work_item_id(
+    *,
+    label: str,
+    statute_id: str,
+    record: Mapping[str, Any],
+) -> str:
+    detail = record.get("detail")
+    detail_payload = detail if isinstance(detail, Mapping) else {}
+    parts = (
+        label,
+        statute_id,
+        str(record.get("kind") or ""),
+        str(record.get("source_statute") or ""),
+        str(record.get("op_id") or ""),
+        str(record.get("message") or ""),
+        json.dumps(dict(detail_payload), ensure_ascii=False, sort_keys=True),
+    )
+    digest = hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:16]
+    return f"uk-replay-adjudication-{digest}"
+
+
+def _replay_adjudication_evidence_row_jsonable(
+    result,  # noqa: ANN001
+    *,
+    label: str,
+    record: Mapping[str, Any],
+    score_mode: str,
+) -> dict[str, Any]:
+    from lawvm.uk_legislation.source_adjudication import (
+        classify_uk_replay_adjudication_bucket,
+    )
+
+    kind = str(record.get("kind") or "unknown")
+    detail = record.get("detail")
+    detail_payload = dict(detail) if isinstance(detail, Mapping) else {}
+    return {
+        "schema": "lawvm.uk_replay_adjudication_frontier.v1",
+        "rule_id": "uk_replay_adjudication_frontier_workqueue",
+        "family": "replay_adjudication_frontier",
+        "phase": "replay_adjudication",
+        "jurisdiction": "uk",
+        "work_item_kind": "replay_adjudication_review",
+        "claim_kind": "replay_adjudication",
+        "claim_status": "unresolved_work_item",
+        "validator_status": "not_validated",
+        "work_item_id": _replay_adjudication_work_item_id(
+            label=label,
+            statute_id=str(result.statute_id),
+            record=record,
+        ),
+        "bench_label": label,
+        "statute_id": str(result.statute_id),
+        "score_mode": score_mode,
+        "frontier_score": _primary_frontier_score(result, score_mode=score_mode),
+        "raw_score": float(getattr(result, "score", -1.0)),
+        "replay_score": float(getattr(result, "replay_score", -1.0)),
+        "commencement_score": float(getattr(result, "commencement_score", -1.0)),
+        "replay_commencement_score": float(
+            getattr(result, "replay_commencement_score", -1.0)
+        ),
+        "comparison_class": _effective_comparison_class(result),
+        "core_benchmark": _effective_core_benchmark(result),
+        "adjudication_kind": kind,
+        "adjudication_bucket": classify_uk_replay_adjudication_bucket(kind),
+        "message": _short_replay_adjudication_sample_value(record.get("message"), limit=500),
+        "source_statute": str(record.get("source_statute") or ""),
+        "op_id": str(record.get("op_id") or ""),
+        "detail": detail_payload,
+        "blocking": is_blocking_compile_record(
+            {"rule_id": kind, **detail_payload, "kind": kind}
+        ),
+        "strict_disposition": str(detail_payload.get("strict_disposition") or "record"),
+        "quirks_disposition": str(detail_payload.get("quirks_disposition") or "record"),
+        "uk_replay_regime": _uk_replay_regime_kwargs_from_bench_row(result),
+        "uk_replay_regime_claim": _uk_replay_regime_claim_from_bench_row(result),
+        "uk_residual_claim": _uk_residual_claim_from_bench_row(result),
+        "enacted_source": {
+            "status": str(getattr(result, "enacted_source_status", "") or "unknown"),
+            "size": int(getattr(result, "enacted_source_size", 0) or 0),
+            "sha256": str(getattr(result, "enacted_source_sha256", "") or ""),
+            "url": str(getattr(result, "enacted_source_url", "") or ""),
+        },
+        "oracle_source": {
+            "status": str(getattr(result, "oracle_source_status", "") or "unknown"),
+            "size": int(getattr(result, "oracle_source_size", 0) or 0),
+            "sha256": str(getattr(result, "oracle_source_sha256", "") or ""),
+            "url": str(getattr(result, "oracle_source_url", "") or ""),
+        },
+    }
+
+
+def _replay_adjudication_evidence_rows(
+    results: Sequence[object],
+    *,
+    label: str,
+    kinds: set[str],
+    score_mode: str,
+) -> tuple[dict[str, Any], ...]:
+    rows: list[dict[str, Any]] = []
+    for result in results:
+        for record in _replay_adjudication_records_from_result(result):
+            if kinds and str(record.get("kind") or "") not in kinds:
+                continue
+            rows.append(
+                _replay_adjudication_evidence_row_jsonable(
+                    result,
+                    label=label,
+                    record=record,
+                    score_mode=score_mode,
+                )
+            )
+    return tuple(rows)
 
 
 def _replay_adjudication_fields_from_result(
@@ -2057,6 +2172,26 @@ def _write_jsonl_rows(path: Path, rows: Sequence[Mapping[str, Any]]) -> int:
     return len(rows)
 
 
+def _attach_replay_adjudication_evidence_report(
+    report: dict[str, Any],
+    evidence_report: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if evidence_report is not None:
+        report["replay_adjudication_evidence_jsonl"] = dict(evidence_report)
+    return report
+
+
+def _format_replay_adjudication_evidence_report(
+    evidence_report: Mapping[str, Any],
+) -> str:
+    kinds = ",".join(str(kind) for kind in evidence_report.get("kinds") or [])
+    return (
+        "Replay adjudication evidence JSONL: "
+        f"{evidence_report.get('path')} rows={evidence_report.get('rows')} "
+        f"kinds={kinds}"
+    )
+
+
 def _replay_applicable_effects_with_budget(
     effects,  # noqa: ANN001
     *,
@@ -2365,6 +2500,14 @@ def main(args: "argparse.Namespace") -> None:
         if manual_compile_evidence_jsonl_arg
         else None
     )
+    replay_adjudication_evidence_jsonl_arg = (
+        getattr(args, "replay_adjudication_evidence_jsonl", "") or ""
+    )
+    replay_adjudication_evidence_jsonl_path = (
+        Path(replay_adjudication_evidence_jsonl_arg)
+        if replay_adjudication_evidence_jsonl_arg
+        else None
+    )
     manual_compile_evidence_statuses = _manual_compile_evidence_statuses_from_args(
         getattr(args, "manual_compile_evidence_status", None)
     )
@@ -2422,6 +2565,26 @@ def main(args: "argparse.Namespace") -> None:
             )
         ]
     frontier = matching_frontier[:top]
+    replay_adjudication_evidence_jsonl_count = 0
+    if replay_adjudication_evidence_jsonl_path is not None:
+        replay_adjudication_evidence_jsonl_count = _write_jsonl_rows(
+            replay_adjudication_evidence_jsonl_path,
+            _replay_adjudication_evidence_rows(
+                frontier,
+                label=label,
+                kinds=replay_adjudication_kinds,
+                score_mode=score_mode,
+            ),
+        )
+    replay_adjudication_evidence_jsonl_report = (
+        {
+            "path": str(replay_adjudication_evidence_jsonl_path),
+            "rows": replay_adjudication_evidence_jsonl_count,
+            "kinds": sorted(replay_adjudication_kinds),
+        }
+        if replay_adjudication_evidence_jsonl_path is not None
+        else None
+    )
     filters_json = _uk_candidates_filters_jsonable(
         top=top,
         score_mode=score_mode,
@@ -2491,6 +2654,10 @@ def main(args: "argparse.Namespace") -> None:
                     "rows": manual_compile_evidence_jsonl_count,
                     "statuses": sorted(manual_compile_evidence_statuses),
                 }
+            _attach_replay_adjudication_evidence_report(
+                report,
+                replay_adjudication_evidence_jsonl_report,
+            )
             print(json.dumps(
                 report,
                 ensure_ascii=False,
@@ -2503,6 +2670,15 @@ def main(args: "argparse.Namespace") -> None:
                 f"{manual_compile_evidence_jsonl_path} "
                 f"rows={manual_compile_evidence_jsonl_count} "
                 f"statuses={','.join(sorted(manual_compile_evidence_statuses))}"
+            )
+        if (
+            not json_output
+            and replay_adjudication_evidence_jsonl_report is not None
+        ):
+            print(
+                _format_replay_adjudication_evidence_report(
+                    replay_adjudication_evidence_jsonl_report
+                )
             )
         return
     if not json_output:
@@ -2869,8 +3045,7 @@ def main(args: "argparse.Namespace") -> None:
                     print(f"  status:   {status}")
                     print()
             if json_output:
-                print(json.dumps(
-                    _uk_candidates_report_jsonable(
+                report = _uk_candidates_report_jsonable(
                         label=label,
                         rows=report_rows,
                         filters=filters_json,
@@ -2878,11 +3053,23 @@ def main(args: "argparse.Namespace") -> None:
                         matched_frontier_count=len(matching_frontier),
                         replay_adjudication_prefilter_count=replay_adjudication_prefilter_count,
                         summary_only=summary_only,
-                    ),
+                    )
+                _attach_replay_adjudication_evidence_report(
+                    report,
+                    replay_adjudication_evidence_jsonl_report,
+                )
+                print(json.dumps(
+                    report,
                     ensure_ascii=False,
                     indent=2,
                     sort_keys=True,
                 ))
+            elif replay_adjudication_evidence_jsonl_report is not None:
+                print(
+                    _format_replay_adjudication_evidence_report(
+                        replay_adjudication_evidence_jsonl_report
+                    )
+                )
             return
 
         report_rows = []
@@ -3091,8 +3278,7 @@ def main(args: "argparse.Namespace") -> None:
             print("  status:   frontier prefilter only")
             print()
         if json_output:
-            print(json.dumps(
-                _uk_candidates_report_jsonable(
+            report = _uk_candidates_report_jsonable(
                     label=label,
                     rows=report_rows,
                     filters=filters_json,
@@ -3100,11 +3286,24 @@ def main(args: "argparse.Namespace") -> None:
                     matched_frontier_count=len(matching_frontier),
                     replay_adjudication_prefilter_count=replay_adjudication_prefilter_count,
                     summary_only=summary_only,
-                ),
+                )
+            _attach_replay_adjudication_evidence_report(
+                report,
+                replay_adjudication_evidence_jsonl_report,
+            )
+            print(json.dumps(
+                report,
                 ensure_ascii=False,
                 indent=2,
                 sort_keys=True,
             ))
+        elif replay_adjudication_evidence_jsonl_report is not None:
+            print()
+            print(
+                _format_replay_adjudication_evidence_report(
+                    replay_adjudication_evidence_jsonl_report
+                )
+            )
         return
 
     from farchive import Farchive
@@ -3486,6 +3685,10 @@ def main(args: "argparse.Namespace") -> None:
                 "rows": manual_compile_evidence_jsonl_count,
                 "statuses": sorted(manual_compile_evidence_statuses),
             }
+        _attach_replay_adjudication_evidence_report(
+            report,
+            replay_adjudication_evidence_jsonl_report,
+        )
         print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     else:
         print()
@@ -3495,6 +3698,12 @@ def main(args: "argparse.Namespace") -> None:
                 f"{manual_compile_evidence_jsonl_path} "
                 f"rows={manual_compile_evidence_jsonl_count} "
                 f"statuses={','.join(sorted(manual_compile_evidence_statuses))}"
+            )
+        if replay_adjudication_evidence_jsonl_report is not None:
+            print(
+                _format_replay_adjudication_evidence_report(
+                    replay_adjudication_evidence_jsonl_report
+                )
             )
         _print_uk_candidates_text_summary(
             _uk_candidates_report_jsonable(

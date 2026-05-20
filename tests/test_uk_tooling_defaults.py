@@ -541,6 +541,27 @@ def test_uk_candidates_parser_accepts_manual_compile_evidence_jsonl() -> None:
     assert args.manual_compile_evidence_status is None
 
 
+def test_uk_candidates_parser_accepts_replay_adjudication_evidence_jsonl() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(
+        [
+            "uk-candidates",
+            "--label",
+            "demo",
+            "--replay-adjudication-kind",
+            "text_duplication_warning",
+            "--replay-adjudication-evidence-jsonl",
+            ".tmp/uk-replay-adjudications.jsonl",
+        ]
+    )
+
+    assert args.replay_adjudication_kind == ["text_duplication_warning"]
+    assert args.replay_adjudication_evidence_jsonl == (
+        ".tmp/uk-replay-adjudications.jsonl"
+    )
+
+
 def test_uk_candidates_parser_accepts_manual_compile_evidence_statuses() -> None:
     parser = cli._build_parser()
 
