@@ -4801,6 +4801,104 @@ def test_replay_prepare_allows_same_source_disjoint_ordinal_patch() -> None:
     )
 
 
+def test_replay_prepare_preserves_duplicate_effect_id_structural_ops_with_text_before_edges() -> None:
+    statute = IRStatute(
+        statute_id="asp/2000/4",
+        title="Adults with Incapacity (Scotland) Act 2000",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="47",
+                    text="",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="alpha ticketing scheme beta quality partnership scheme gamma scheme",
+                        ),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="87",
+                    text="",
+                    children=(
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="2", text="two"),
+                        IRNode(kind=IRNodeKind.SUBSECTION, label="3", text="three"),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    source = OperationSource(statute_id="asp/2003/13", effective="2005-10-05")
+    target_text = LegalAddress(path=(("section", "47"), ("subsection", "1")))
+    ops = [
+        LegalOperation(
+            op_id="uk_test_disjoint_ordinal",
+            sequence=0,
+            action=StructuralAction.TEXT_REPLACE,
+            target=target_text,
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="scheme", occurrence=1),
+                replacement="scheme or framework",
+            ),
+            source=source,
+        ),
+        LegalOperation(
+            op_id="uk_test_broad_scheme",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=target_text,
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="quality partnership scheme", occurrence=0),
+                replacement="partnership scheme",
+            ),
+            source=source,
+        ),
+        LegalOperation(
+            op_id="uk_test_same_effect",
+            sequence=2,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "87"), ("subsection", "2"))),
+            source=source,
+        ),
+        LegalOperation(
+            op_id="uk_test_same_effect",
+            sequence=3,
+            action=StructuralAction.REPEAL,
+            target=LegalAddress(path=(("section", "87"), ("subsection", "3"))),
+            source=source,
+        ),
+    ]
+
+    prepared = _prepare_replay_uk_ops(ops, base_ir=statute)
+
+    assert [str(op.target) for op in prepared.accepted_ops] == [
+        "section:47/subsection:1",
+        "section:47/subsection:1",
+        "section:87/subsection:2",
+        "section:87/subsection:3",
+    ]
+
+    adjudications: list[CompileAdjudication] = []
+    replayed = replay_uk_ops(statute, ops, adjudications_out=adjudications)
+
+    section_87 = replayed.body.children[1]
+    assert section_87.kind is IRNodeKind.SECTION
+    assert section_87.children == ()
+    assert "uk_replay_same_source_text_patch_overlap_disjoint" in {
+        adjudication.kind for adjudication in adjudications
+    }
+    assert "uk_replay_repealed_target_gap" not in {adjudication.kind for adjudication in adjudications}
+
+
 def test_executor_applies_before_definition_insert_at_explicit_definition_anchor() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(
