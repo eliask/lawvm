@@ -22106,6 +22106,292 @@ def test_source_pathology_classifies_becomes_instruction_text_payload() -> None:
     )
 
 
+def test_compile_source_parent_substitution_range_payload_lowers_replace_and_tail_repeals() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-3-paragraph-23-6">
+          <Pnumber>6</Pnumber>
+          <P2para>
+            <Text>In schedule 1 (managers of an establishment), for paragraphs (d) to (g) there is substituted—</Text>
+            <BlockAmendment>
+              <P3>
+                <Pnumber>d</Pnumber>
+                <P3para>
+                  <Text>in relation to a care service or limited registration service—</Text>
+                </P3para>
+              </P3>
+              <P4>
+                <Pnumber>i</Pnumber>
+                <P4para><Text>the person identified under section 7(2)(b);</Text></P4para>
+              </P4>
+              <P4>
+                <Pnumber>ii</Pnumber>
+                <P4para><Text>if the application is made under section 33(1); or</Text></P4para>
+              </P4>
+              <P4>
+                <Pnumber>iii</Pnumber>
+                <P4para><Text>if another person has been identified under section 29(7)(j),</Text></P4para>
+              </P4>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_range_payload",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2017-04-24",
+        affected_uri="/id/asp/2000/4/schedule/1/paragraph/d",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="4",
+        affected_provisions="Sch. 1 para. (d)",
+        affecting_uri="/id/asp/2001/8/schedule/3/paragraph/23",
+        affecting_class="ScottishAct",
+        affecting_year="2001",
+        affecting_number="8",
+        affecting_provisions="Sch. 3 para. 23(6)",
+        affecting_title="Regulation of Care (Scotland) Act 2001",
+        in_force_dates=[],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert [op.action for op in ops] == [
+        StructuralAction.REPLACE,
+        StructuralAction.REPEAL,
+        StructuralAction.REPEAL,
+        StructuralAction.REPEAL,
+    ]
+    assert [str(op.target) for op in ops] == [
+        "schedule:1/paragraph:d",
+        "schedule:1/paragraph:e",
+        "schedule:1/paragraph:f",
+        "schedule:1/paragraph:g",
+    ]
+    assert ops[0].witness_rule_id == "uk_effect_source_parent_substitution_range_payload_lowered"
+    assert all(op.witness_rule_id == "uk_effect_source_parent_substitution_range_payload_lowered" for op in ops[1:])
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind == IRNodeKind.ITEM
+    assert ops[0].payload.label == "d"
+    assert [child.label for child in ops[0].payload.children] == ["i", "ii", "iii"]
+    assert [row["rule_id"] for row in observations if row["rule_id"].endswith("_rejected")] == []
+    source_parent_rows = [
+        row for row in observations if row["rule_id"] == "uk_effect_source_parent_substitution_range_payload_lowered"
+    ]
+    assert source_parent_rows == [
+        {
+            "rule_id": "uk_effect_source_parent_substitution_range_payload_lowered",
+            "family": "source_context_elaboration",
+            "phase": "lowering",
+            "effect_id": "uk_test_source_parent_range_payload",
+            "affecting_act_id": "asp/2001/8",
+            "affected_provisions": "Sch. 1 para. (d)",
+            "affecting_provisions": "Sch. 3 para. 23(6)",
+            "effect_type": "",
+            "reason": (
+                "UK effect feed row has no effect type and the extracted BlockAmendment contains only "
+                "the replacement payload, but the source-local parent instruction explicitly substitutes "
+                "a bounded sibling range; lowering combines those facts into one source-owned replacement "
+                "plus explicit trailing repeals."
+            ),
+            "reason_code": "payload_fragment_combined_with_parent_substitution_range",
+            "blocking": False,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+            "extracted_tag": "BlockAmendment",
+            "has_extracted_source": True,
+            "extracted_text_preview": (
+                "d in relation to a care service or limited registration service— i the person identified "
+                "under section 7(2)(b); ii if the application is made under section 33(1); or iii if "
+                "another person has been identified under section 29(7)(j),"
+            ),
+            "source_parent_id": "schedule-3-paragraph-23-6",
+            "source_parent_instruction": (
+                "In schedule 1 (managers of an establishment), for paragraphs (d) to (g) there is substituted—"
+            ),
+            "target_ref": "Sch. 1 para. (d)",
+            "target": "schedule:1/paragraph:d",
+            "start_label": "d",
+            "end_label": "g",
+            "trailing_refs": ("Sch. 1 para. (e)", "Sch. 1 para. (f)", "Sch. 1 para. (g)"),
+            "payload_label": "d",
+            "payload_labels": ("d",),
+            "payload_tag": "P3",
+            "payload_tags": ("P3",),
+        }
+    ]
+
+
+def test_compile_source_parent_substitution_range_payload_lowers_multi_payload_front_and_tail_repeals() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-3-paragraph-23-2-a">
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>in subsection (1), for paragraphs (a) to (g) there is substituted—</Text>
+            <BlockAmendment>
+              <P3><Pnumber>a</Pnumber><P3para><Text>a health service hospital;</Text></P3para></P3>
+              <P3><Pnumber>b</Pnumber><P3para><Text>an independent hospital or private psychiatric hospital;</Text></P3para></P3>
+              <P3><Pnumber>c</Pnumber><P3para><Text>a State hospital;</Text></P3para></P3>
+              <P3><Pnumber>d</Pnumber><P3para><Text>a care home service; and</Text></P3para></P3>
+              <P3><Pnumber>e</Pnumber><P3para><Text>a limited registration service.</Text></P3para></P3>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_range_multi_payload",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2017-04-24",
+        affected_uri="/id/asp/2000/4/section/35/subsection/1/paragraph/a",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="4",
+        affected_provisions="s. 35(1)(a)-(e)",
+        affecting_uri="/id/asp/2001/8/schedule/3/paragraph/23",
+        affecting_class="ScottishAct",
+        affecting_year="2001",
+        affecting_number="8",
+        affecting_provisions="Sch. 3 para. 23(2)(a)",
+        affecting_title="Regulation of Care (Scotland) Act 2001",
+        in_force_dates=[],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert [op.action for op in ops] == [
+        StructuralAction.REPLACE,
+        StructuralAction.REPLACE,
+        StructuralAction.REPLACE,
+        StructuralAction.REPLACE,
+        StructuralAction.REPLACE,
+        StructuralAction.REPEAL,
+        StructuralAction.REPEAL,
+    ]
+    assert [str(op.target) for op in ops] == [
+        "section:35/subsection:1/paragraph:a",
+        "section:35/subsection:1/paragraph:b",
+        "section:35/subsection:1/paragraph:c",
+        "section:35/subsection:1/paragraph:d",
+        "section:35/subsection:1/paragraph:e",
+        "section:35/subsection:1/paragraph:f",
+        "section:35/subsection:1/paragraph:g",
+    ]
+    assert [op.payload.label if op.payload is not None else None for op in ops[:5]] == [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+    ]
+    assert all(op.witness_rule_id == "uk_effect_source_parent_substitution_range_payload_lowered" for op in ops)
+    source_parent_rows = [
+        row for row in observations if row["rule_id"] == "uk_effect_source_parent_substitution_range_payload_lowered"
+    ]
+    assert len(source_parent_rows) == 1
+    assert source_parent_rows[0]["source_parent_id"] == "schedule-3-paragraph-23-2-a"
+    assert source_parent_rows[0]["source_parent_instruction"] == (
+        "in subsection (1), for paragraphs (a) to (g) there is substituted—"
+    )
+    assert source_parent_rows[0]["payload_labels"] == ("a", "b", "c", "d", "e")
+    assert source_parent_rows[0]["trailing_refs"] == ("s. 35(1)(f)", "s. 35(1)(g)")
+
+
+def test_compile_source_parent_at_end_added_payload_lowers_insert() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-3-paragraph-23-2-d">
+          <Pnumber>d</Pnumber>
+          <P3para>
+            <Text>at the end there is added—</Text>
+            <BlockAmendment>
+              <P2>
+                <Pnumber>6</Pnumber>
+                <P2para>
+                  <Text>Expressions used in subsection (1) and in the Regulation of Care (Scotland) Act 2001 have the same meanings in that subsection as in that Act.</Text>
+                </P2para>
+              </P2>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}BlockAmendment")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_parent_at_end_added_payload",
+        effect_type="",
+        applied=True,
+        requires_applied=True,
+        modified="2017-04-24",
+        affected_uri="/id/asp/2000/4/section/35/subsection/6",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="4",
+        affected_provisions="s. 35(6)",
+        affecting_uri="/id/asp/2001/8/schedule/3/paragraph/23",
+        affecting_class="ScottishAct",
+        affecting_year="2001",
+        affecting_number="8",
+        affecting_provisions="Sch. 3 para. 23(2)(d)",
+        affecting_title="Regulation of Care (Scotland) Act 2001",
+        in_force_dates=[],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert str(ops[0].target) == "section:35/subsection:6"
+    assert ops[0].witness_rule_id == "uk_effect_source_parent_at_end_added_payload_lowered"
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind == IRNodeKind.SUBSECTION
+    assert ops[0].payload.label == "6"
+    assert [row["rule_id"] for row in observations if row["rule_id"].endswith("_rejected")] == []
+    source_parent_rows = [
+        row for row in observations if row["rule_id"] == "uk_effect_source_parent_at_end_added_payload_lowered"
+    ]
+    assert len(source_parent_rows) == 1
+    assert source_parent_rows[0]["source_parent_id"] == "schedule-3-paragraph-23-2-d"
+    assert source_parent_rows[0]["source_parent_instruction"] == "at the end there is added—"
+    assert source_parent_rows[0]["target_ref"] == "s. 35(6)"
+    assert source_parent_rows[0]["target"] == "section:35/subsection:6"
+    assert source_parent_rows[0]["payload_kind"] == "subsection"
+    assert source_parent_rows[0]["payload_label"] == "6"
+    assert source_parent_rows[0]["payload_tag"] == "P2"
+
+
 def test_pipeline_compile_ops_blocks_range_to_container_substitution_until_owned(monkeypatch) -> None:
     effect = UKEffectRecord(
         effect_id="uk_test_range_to_container_skip",

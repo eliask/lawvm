@@ -213,6 +213,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_schedule_list_entry_repeal_resolved",
         "uk_replay_schedule_list_entry_table_rows_insert_resolved",
         "uk_replay_schedule_table_end_rows_insert_resolved",
+        "uk_replay_schedule_item_target_from_parent_substitution_resolved",
         "uk_replay_schedule_p1group_paragraph_wrapper_resolved",
         "uk_replay_source_anchored_order_observed",
         "uk_replay_source_carried_table_entry_paragraph_substitution_resolved",
@@ -968,6 +969,11 @@ def classify_uk_effect_source_pathology(
     targets = [path for path in target_paths if path]
     lowering_rules = {str(rule_id or "") for rule_id in lowering_rule_ids}
 
+    if {
+        "uk_effect_source_parent_substitution_range_payload_lowered",
+        "uk_effect_source_parent_at_end_added_payload_lowered",
+    } & lowering_rules:
+        return ""
     if not norm_text and not actions and not is_structural:
         return "nonstructural_root_gap"
     if not norm_text and not actions:

@@ -2165,6 +2165,31 @@ Current block-substitution context invariant:
   - `asp/2001/2` affected `s. 82(1)` by `asp/2005/12` s. 51(8)(c): parent says
     `after "authority" there is inserted`; payload contains `; or` plus a new
     child `b` row.
+- A narrower payload-only `BlockAmendment` family is deterministic when the
+  source-local parent instruction explicitly substitutes a bounded sibling
+  range and the payload owns a contiguous front of that replacement range.
+  Lowering records `uk_effect_source_parent_substitution_range_payload_lowered`,
+  emits one replacement per payload sibling, and emits explicit repeals for
+  any trailing source-named siblings not present in the payload. Replay may
+  then use `uk_replay_schedule_item_target_from_parent_substitution_resolved`
+  to resolve a feed shape such as `Sch. 1 para. (d)` to a unique schedule item
+  `(d)` only for operations carrying that lowering witness. Strict mode should
+  block that target recovery; quirks replay may apply it with the adjudication.
+  Current witness: `asp/2000/4` affected Sch. 1 para. (d) by `asp/2001/8`
+  Sch. 3 para. 23(6), where the parent says `for paragraphs (d) to (g) there
+  is substituted-` and the payload contains new item `(d)(i)-(iii)`. A second
+  witness is `asp/2000/4` affected `s. 35(1)(a)-(e)` by `asp/2001/8` Sch. 3
+  para. 23(2)(a), where the parent range is `(a)` to `(g)` and the payload
+  owns replacement paragraphs `(a)` to `(e)`.
+- A related payload-only `BlockAmendment` family is deterministic when the
+  source-local parent instruction explicitly says `at the end there is added`
+  or `inserted`, and the sole structural payload child exactly matches the
+  metadata target kind and label. Lowering records
+  `uk_effect_source_parent_at_end_added_payload_lowered` and emits a single
+  `INSERT`; replay still requires the target to be absent and the parent to
+  exist, so the parent instruction does not authorize target hijacking or
+  replacement of an existing sibling. Current witness: `asp/2000/4` affected
+  `s. 35(6)` by `asp/2001/8` Sch. 3 para. 23(2)(d).
 - source text that targets `heading`, `title`, or `sidenote` facets lowers
   when it is an explicit word substitution/omission with a concrete old text
   selector, an explicit `at the end insert ...` append, or an explicit

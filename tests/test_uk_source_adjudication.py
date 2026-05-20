@@ -86,6 +86,7 @@ def test_classify_uk_replay_adjudication_bucket() -> None:
         "uk_replay_schedule_list_entry_table_anchor_citation_short_title_normalized": "nonblocking_observation",
         "uk_replay_schedule_list_entry_table_rows_insert_resolved": "nonblocking_observation",
         "uk_replay_schedule_table_end_rows_insert_resolved": "nonblocking_observation",
+        "uk_replay_schedule_item_target_from_parent_substitution_resolved": "nonblocking_observation",
         "uk_replay_schedule_p1group_paragraph_wrapper_resolved": "nonblocking_observation",
         "uk_effect_table_entry_row_insert": "nonblocking_observation",
         "uk_replay_table_entry_multi_cell_text_patch_resolved": "nonblocking_observation",
@@ -1841,6 +1842,44 @@ def test_classify_uk_effect_payload_fragment_without_action_formula_block_payloa
 
     assert pathology == "payload_fragment_without_action_formula"
     assert is_core_uk_effect_source_candidate(pathology) is False
+
+
+def test_classify_uk_effect_source_parent_substitution_range_payload_is_owned() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="BlockAmendment",
+        extracted_text=(
+            "d in relation to a care service or limited registration service- "
+            "i the person identified under section 7(2)(b); ii if the application is made under section 33(1)."
+        ),
+        op_actions=["replace", "repeal"],
+        payload_kinds=["item"],
+        payload_texts=["d in relation to a care service or limited registration service"],
+        lowering_rule_ids=["uk_effect_source_parent_substitution_range_payload_lowered"],
+        effect_type="",
+        is_structural=True,
+    )
+
+    assert pathology == ""
+    assert is_core_uk_effect_source_candidate(pathology) is True
+
+
+def test_classify_uk_effect_source_parent_at_end_added_payload_is_owned() -> None:
+    pathology = classify_uk_effect_source_pathology(
+        extracted_tag="BlockAmendment",
+        extracted_text=(
+            "6 Expressions used in subsection (1) and in the Regulation of Care "
+            "(Scotland) Act 2001 have the same meanings in that subsection as in that Act."
+        ),
+        op_actions=["insert"],
+        payload_kinds=["subsection"],
+        payload_texts=["Expressions used in subsection (1) and in the Regulation of Care (Scotland) Act 2001"],
+        lowering_rule_ids=["uk_effect_source_parent_at_end_added_payload_lowered"],
+        effect_type="",
+        is_structural=True,
+    )
+
+    assert pathology == ""
+    assert is_core_uk_effect_source_candidate(pathology) is True
 
 
 def test_classify_uk_effect_source_carried_multi_subunit_text_rewrite() -> None:
