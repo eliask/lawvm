@@ -2035,7 +2035,8 @@ Current block-substitution context invariant:
   when it is an explicit word substitution/omission with a concrete old text
   selector, an explicit `at the end insert ...` append, or an explicit
   `after "X" insert "Y"` insertion against a quoted heading anchor. Explicit
-  full-facet forms such as `the section heading becomes "X"` lower as
+  full-facet forms such as `the section heading becomes "X"` and
+  `the title to the section becomes "X"` lower as
   `uk_effect_heading_facet_full_replacement_lowered` with a `TEXT_ALL` selector
   only when the affected target itself is a heading/title/sidenote facet; this
   is not a fallback for ordinary section replacement. Replay then
