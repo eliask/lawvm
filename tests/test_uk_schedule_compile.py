@@ -33,6 +33,7 @@ from lawvm.uk_legislation.uk_amendment_replay import (
     _NOTE_METADATA_SOURCE_FALLBACK,
     _NOTE_FRAGMENT_SUB,
     _NOTE_TABLE_CELL_SELECTOR,
+    _NOTE_TABLE_ROW_INSERT_SELECTOR,
     _NOTE_REWRITE_WITNESS,
     _NOTE_TEXT_REWRITE_RULE,
     _NOTE_PRECEDING_EID,
@@ -10229,6 +10230,239 @@ def test_compile_direct_table_after_that_entry_instruction_rejects_row_insert() 
     assert rejection["target_ref"] == "s. 174(1) Table"
     assert rejection["entry_shape"] == "deictic_table_entry"
     assert rejection["blocking"] is True
+
+
+def test_compile_table_entry_ordinal_column_row_insert_uses_owned_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>i</Pnumber>
+          <Text>after the third entry in the second column relating to the Auditor General for Wales insert\u2014
+          Functions under Chapter 1A of Part 6 of this Act (special inspections of performance of corporate joint committees)</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_row_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-12-01",
+        affected_uri="/id/asc/2021/1/section/159",
+        affected_class="WelshParliamentAct",
+        affected_year="2021",
+        affected_number="1",
+        affected_provisions="s. 159(5) Table 2",
+        affecting_uri="/id/wsi/2022/797",
+        affecting_class="WelshStatutoryInstrument",
+        affecting_year="2022",
+        affecting_number="797",
+        affecting_provisions="reg. 7(c)(i)",
+        affecting_title="Test Amendment Regulations",
+        in_force_dates=[{"date": "2022-12-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "159"), ("subsection", "5"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.ROW
+    assert [child.text for child in ops[0].payload.children] == [
+        "",
+        "Functions under Chapter 1A of Part 6 of this Act "
+        "(special inspections of performance of corporate joint committees)",
+    ]
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_entry_row_insert"
+    assert selector["direction"] == "after"
+    assert selector["column_index"] == 2
+    assert selector["entry_index"] == 3
+    assert selector["relating_text"] == "Auditor General for Wales"
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["reason_code"] == "explicit_table_entry_row_insert_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_replay_table_entry_ordinal_column_row_insert_mutates_table_only() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_row_insert",
+        "direction": "after",
+        "column_index": 2,
+        "entry_index": 3,
+        "relating_text": "Auditor General for Wales",
+        "inserted_text": "Functions under Chapter 1A of Part 6 of this Act",
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_row_insert",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "159"), ("subsection", "5"))),
+        payload=IRNode(
+            kind=IRNodeKind.ROW,
+            children=(
+                IRNode(kind=IRNodeKind.CELL, text=""),
+                IRNode(kind=IRNodeKind.CELL, text="Functions under Chapter 1A of Part 6 of this Act"),
+            ),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_ROW_INSERT_SELECTOR}{json.dumps(selector)}",),
+    )
+    base = IRStatute(
+        statute_id="asc/2021/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="159",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            text="The following table has effect.",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(
+                                                    kind=IRNodeKind.CELL,
+                                                    text="Auditor General for Wales",
+                                                    attrs={"rowspan": "3"},
+                                                ),
+                                                IRNode(kind=IRNodeKind.CELL, text="Functions under section 13"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(IRNode(kind=IRNodeKind.CELL, text="Functions under section 15"),),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="Functions under Chapter 1 of Part 6"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="Her Majesty's Chief Inspector"),
+                                                IRNode(kind=IRNodeKind.CELL, text="Inspection functions"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    subsection = replayed.body.children[0].children[0]
+    table = subsection.children[0]
+    assert subsection.text == "The following table has effect."
+    assert len(table.children) == 5
+    assert [cell.text for cell in table.children[3].children] == [
+        "",
+        "Functions under Chapter 1A of Part 6 of this Act",
+    ]
+    assert table.children[2].children[0].text == "Functions under Chapter 1 of Part 6"
+    assert table.children[4].children[0].text == "Her Majesty's Chief Inspector"
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_effect_table_entry_row_insert"
+    ]
+    assert adjudications[0].detail["blocking"] is False
+
+
+def test_replay_table_entry_row_insert_blocks_ambiguous_table() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_row_insert",
+        "direction": "after",
+        "column_index": 2,
+        "entry_index": 1,
+        "relating_text": "Auditor General for Wales",
+        "inserted_text": "new function",
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_row_insert_ambiguous",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "159"), ("subsection", "5"))),
+        payload=IRNode(
+            kind=IRNodeKind.ROW,
+            children=(
+                IRNode(kind=IRNodeKind.CELL, text=""),
+                IRNode(kind=IRNodeKind.CELL, text="new function"),
+            ),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_ROW_INSERT_SELECTOR}{json.dumps(selector)}",),
+    )
+    table = IRNode(
+        kind=IRNodeKind.TABLE,
+        children=(
+            IRNode(
+                kind=IRNodeKind.ROW,
+                children=(
+                    IRNode(kind=IRNodeKind.CELL, text="Auditor General for Wales"),
+                    IRNode(kind=IRNodeKind.CELL, text="existing function"),
+                ),
+            ),
+        ),
+    )
+    base = IRStatute(
+        statute_id="asc/2021/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="159",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            children=(table, table),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    replayed_tables = replayed.body.children[0].children[0].children
+    assert [len(replayed_table.children) for replayed_table in replayed_tables] == [1, 1]
+    unresolved = next(
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind == "uk_replay_table_entry_row_insert_unresolved"
+    )
+    assert unresolved.detail["reason_code"] == "table_not_unique"
+    assert unresolved.detail["blocking"] is True
 
 
 def test_compile_direct_table_between_columns_instruction_rejects_column_insert() -> None:
