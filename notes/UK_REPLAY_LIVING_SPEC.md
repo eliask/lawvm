@@ -3028,6 +3028,10 @@ Current bench replay-regime invariant:
   `uk_manual_frontier_application_modification_payload_out_of_scope`. The
   payload may be useful for a future scoped application/temporal model, but it
   must not be replayed as a direct current-text insertion.
+- Generic `uk_effect_lowering_no_ops_rejected` is a fallback, not a duplicate
+  wrapper for every failed compile. If `compile_effect_to_ir_ops` already
+  emitted a blocking lowering record for the effect, the pipeline must preserve
+  that specific record and not add a second generic structural no-op rejection.
 - `uk-replay` text diagnostics should label the all-row lowering histogram as
   `lowering observation rules`; `blocking lowering rules` is the replay-blocking
   subset.

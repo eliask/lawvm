@@ -16488,6 +16488,51 @@ def test_pipeline_compile_ops_records_structural_effect_lowered_to_no_ops(monkey
     ]
 
 
+def test_append_no_ops_skips_generic_when_compile_recorded_specific_rejection() -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_specific_lowering_rejection",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/asp/2001/2",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 48(1)",
+        affecting_uri="/id/asp/2019/17",
+        affecting_class="ScottishAct",
+        affecting_year="2019",
+        affecting_number="17",
+        affecting_provisions="sch. para. 3(6)(a)(iii)",
+        affecting_title="Test Act",
+        in_force_dates=[],
+    )
+    lowering_rejections: list[dict[str, Any]] = [
+        {
+            "rule_id": "uk_effect_overlap_substitution_unlowered",
+            "effect_id": "uk_test_specific_lowering_rejection",
+            "blocking": True,
+        }
+    ]
+
+    appended = uk_replay_mod.append_no_ops_lowering_rejections(
+        effect,
+        structural_for_replay=True,
+        lowering_rejections_out=lowering_rejections,
+        compile_recorded_lowering_rejection=True,
+    )
+
+    assert appended is False
+    assert lowering_rejections == [
+        {
+            "rule_id": "uk_effect_overlap_substitution_unlowered",
+            "effect_id": "uk_test_specific_lowering_rejection",
+            "blocking": True,
+        }
+    ]
+
+
 def test_pipeline_compile_ops_records_nonstructural_replay_candidates_lowered_to_no_ops(monkeypatch) -> None:
     revoked_effect = UKEffectRecord(
         effect_id="uk_test_nonstructural_revoked_no_ops",

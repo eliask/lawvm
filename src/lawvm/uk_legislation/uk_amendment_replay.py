@@ -2292,8 +2292,9 @@ def append_structural_no_ops_lowering_rejection(
     lowering_rejections_out: Optional[list[dict[str, Any]]],
     compile_recorded_lowering_rejection: bool,
 ) -> bool:
-    del compile_recorded_lowering_rejection
     if not structural_for_replay or lowering_rejections_out is None:
+        return False
+    if compile_recorded_lowering_rejection:
         return False
     if any(
         rejection.get("rule_id") == "uk_effect_lowering_no_ops_rejected"
