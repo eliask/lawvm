@@ -1986,6 +1986,51 @@ def test_uk_bench_diagnostics_preserve_nonblocking_source_acquisition_observatio
     ]
 
 
+def test_uk_bench_diagnostics_use_lane_aware_blocking_for_manual_frontier() -> None:
+    result = _BenchResult(
+        statute_id="ukpga/2000/1",
+        act_type="ukpga",
+        year=2000,
+        n_effects=0,
+        n_enacted_eids=0,
+        n_oracle_eids=0,
+        n_common=0,
+        score=0.0,
+        status="OK",
+        effect_diagnostics=(
+            {
+                "rule_id": "uk_effect_source_pathology_classified",
+                "phase": "lowering",
+                "source_pathology": "missing_extracted_source",
+            },
+            {
+                "rule_id": "uk_manual_compile_frontier_classified",
+                "phase": "lowering",
+                "manual_compile_status": "manual_compile_candidate",
+                "manual_compile_rule_id": "uk_manual_frontier_heading_facet_candidate",
+                "strict_disposition": "record",
+            },
+            {
+                "rule_id": "uk_manual_compile_frontier_classified",
+                "phase": "lowering",
+                "manual_compile_status": "manual_compile_candidate",
+                "manual_compile_rule_id": "uk_manual_frontier_crossheading_candidate",
+            },
+        ),
+    )
+
+    rows = uk_bench._bench_diagnostic_rows_for_result(result, "demo")
+
+    assert [
+        (row["diagnostic_lane"], row["index"], row["rule_id"], row["blocking"])
+        for row in rows
+    ] == [
+        ("effect_source_pathology", 0, "uk_effect_source_pathology_classified", True),
+        ("manual_compile_frontier", 0, "uk_manual_compile_frontier_classified", False),
+        ("manual_compile_frontier", 1, "uk_manual_compile_frontier_classified", True),
+    ]
+
+
 def test_uk_bench_report_prints_replay_and_commencement_error_lanes(capsys) -> None:
     result = _BenchResult(
         statute_id="ukpga/2000/1",

@@ -2814,7 +2814,12 @@ def _bench_diagnostic_rows_for_result(result: _BenchResult, label: str) -> list[
         return "effect_diagnostic"
 
     def _diagnostic_row_blocking(lane: str, record: dict[str, Any]) -> bool:
-        if lane == "effect_feed":
+        if lane in {
+            "effect_feed",
+            "source_acquisition",
+            "effect_source_pathology",
+            "manual_compile_frontier",
+        }:
             return is_blocking_compile_record(record)
         if "blocking" in record or record.get("strict_disposition"):
             return is_blocking_compile_record(record)
