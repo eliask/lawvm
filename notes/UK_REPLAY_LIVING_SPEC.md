@@ -3543,8 +3543,9 @@ Current bench replay-regime invariant:
   not replay permission to retarget a source-backed amendment.
 - The UK grafter records this as
   `uk_oracle_physical_parent_eid_drift_aligned` when the official EID and the
-  physical ancestry-derived EID have the same root provision and leaf label but
-  disagree on the intermediate parent path. The record carries
+  physical ancestry-derived EID have the same non-empty section/article/rule/
+  regulation root and leaf label but disagree on the intermediate parent path.
+  The record carries
   `original_eid`, `physical_eid`, `xml_tag`, and `physical_path_key`; strict
   disposition is `block`, quirks disposition is `record`.
 - Replay comparison may use the emitted alias only as a comparison
@@ -3555,6 +3556,11 @@ Current bench replay-regime invariant:
   `section-5-1-aa`. The affecting source `asp/2006/14 s. 25` explicitly
   targets `section 5(4)(aa)`, so LawVM keeps the replay node
   `section-5-4-aa` and classifies the mismatch as oracle identity drift.
+- The rule must not alias schedule paragraph wrapper drift merely because both
+  EIDs lack a section/article root. UK schedule IDs such as
+  `schedule-1-paragraph-12n3` versus `schedule-1-paragraph-12C-1` can encode
+  wrapper/display-number differences that need separate schedule-aware
+  comparison handling.
 
 ## UK Current Projection Surfaces
 
