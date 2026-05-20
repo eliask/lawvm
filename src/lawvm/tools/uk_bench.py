@@ -2756,6 +2756,27 @@ def _print_report(
             base += _replay_fragment_for_row(r)
             print(base)
             print(_source_line(r))
+
+    worst_replay_score_label = "replay commenced EID score" if has_commencement else "replay EID score"
+    replay_core = [r for r in core if _primary_replay_score_for_row(r) >= 0.0]
+    worst_replay_core = sorted(
+        [r for r in replay_core if _primary_replay_score_for_row(r) < 1.0],
+        key=_primary_replay_score_for_row,
+    )[:15]
+    if worst_replay_core:
+        print(f"\nWorst {len(worst_replay_core)} core replay rows (by {worst_replay_score_label}):")
+        for r in worst_replay_core:
+            base = (
+                f"  {r.statute_id:<30} {_score_fragment_for_row(r)}  "
+                f"enacted={r.n_enacted_eids:4d} oracle={r.n_oracle_eids:4d} "
+                f"common={r.n_common:4d} effect_rows={r.n_effect_rows:4d} "
+                f"effect_pages={(r.n_effect_feed_pages or r.n_effects):4d} "
+                f"class={r.comparison_class}"
+            )
+            base += _replay_fragment_for_row(r)
+            print(base)
+            print(_source_line(r))
+
     worst_noncore = sorted(noncore, key=_primary_score_for_row)[:10]
     if worst_noncore:
         print(f"\nWorst {len(worst_noncore)} non-core rows:")
