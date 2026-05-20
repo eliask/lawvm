@@ -8399,7 +8399,11 @@ def _fragment_substitution_source_carried_definition_child_text_omission(
     ancestors = _source_ancestor_chain(source_root, extracted_el)
     if not ancestors:
         return None
-    term = _source_definition_term_from_ancestors(ancestors)
+    term = _source_definition_term_from_local_ancestor_context(
+        ancestors,
+        start_index=0,
+        extracted_el=extracted_el,
+    )
     if not term:
         return None
     parent = ancestors[0]

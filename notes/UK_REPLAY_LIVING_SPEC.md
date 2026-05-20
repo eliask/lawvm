@@ -3094,6 +3094,12 @@ Current bench replay-regime invariant:
     because short words such as `or` can otherwise corrupt unrelated words such
     as `authority`, `transport`, or `charging`. Current corpus witness:
     `asp/2001/2` affected by `ssi/2024/161` `art. 6(2)(a)`.
+    The parent definition context is deliberately local: broad containers such
+    as a `Pblock`/`Body` containing unrelated sibling amendment paragraphs must
+    not donate a definition term to a normal structural paragraph row. Current
+    negative corpus witness: `ukpga/2022/10` affected by `ukpga/2023/56`
+    `s. 175(b)`, where `in paragraph (b), omit "or continued"` remains an
+    ordinary paragraph-b text omission rather than a definition-child selector.
   - bilingual definition headings such as `“private sector employer”
     (“cyflogwr sector preifat”) means...` preserve the first/source-language
     quoted term as `definition_term`; the parenthesized translation is source

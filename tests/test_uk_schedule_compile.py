@@ -5584,6 +5584,81 @@ def test_compile_source_carried_definition_child_text_omission_from_parent_conte
     assert lowering_observations[0]["source_child_label"] == "a"
 
 
+def test_compile_source_carried_definition_child_omission_ignores_unrelated_broad_ancestor_definition() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <Pblock>
+              <P1 id="section-174">
+                <Pnumber>174</Pnumber>
+                <P1para>
+                  <Text>In the definition of “relevant person”, omit paragraph (b).</Text>
+                </P1para>
+              </P1>
+              <P1 id="section-175">
+                <Pnumber>175</Pnumber>
+                <P1para>
+                  <Text>In section 39 of the Economic Crime (Transparency and Enforcement) Act 2022
+                    (financial penalties), in subsection (4)—</Text>
+                  <P3 id="section-175-b">
+                    <Pnumber>b</Pnumber>
+                    <P3para><Text>b in paragraph (b), omit “or continued”.</Text></P3para>
+                  </P3>
+                </P1para>
+              </P1>
+            </Pblock>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='section-175-b']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-40e419a99251d5ed79ae7daca46ac7ef",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-01-27",
+        affected_uri="/id/ukpga/2022/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2022",
+        affected_number="10",
+        affected_provisions="s. 39(4)(b)",
+        affecting_uri="/id/ukpga/2023/56",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2023",
+        affecting_number="56",
+        affecting_provisions="s. 175(b)",
+        affecting_title="Economic Crime and Corporate Transparency Act 2023",
+        in_force_dates=[{"date": "2023-10-26", "prospective": "false"}],
+    )
+    lowering_observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPEAL
+    assert ops[0].target.path == (("section", "39"), ("subsection", "4"), ("paragraph", "b"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "or continued"
+    assert (
+        "TEXT_IN_DEFINITION_CHILD_PARAGRAPH"
+        not in ops[0].text_patch.selector.match_text
+    )
+    assert [
+        record["rule_id"]
+        for record in lowering_observations
+        if record["rule_id"] == "uk_effect_source_carried_definition_child_text_omission_text_patch"
+    ] == []
+
+
 def test_compile_source_carried_child_tail_repeal_from_exact_subsection_context() -> None:
     extracted_el = ET.fromstring(
         f"""
