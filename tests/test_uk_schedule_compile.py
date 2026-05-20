@@ -1757,6 +1757,73 @@ def test_split_metadata_parenthesized_roman_range_precedes_alpha_stem_range() ->
     ]
 
 
+def test_split_metadata_adjacent_roman_suffix_siblings_expand_after_fixed_context() -> None:
+    parts = _split_metadata_provisions("s. 5(12)(a)(iii)(iv)")
+
+    assert parts == [
+        "s. 5(12)(a)(iii)",
+        "s. 5(12)(a)(iv)",
+    ]
+    assert [_parse_affected_target(part).path for part in parts] == [
+        (("section", "5"), ("subsection", "12"), ("paragraph", "a"), ("subparagraph", "iii")),
+        (("section", "5"), ("subsection", "12"), ("paragraph", "a"), ("subparagraph", "iv")),
+    ]
+
+
+def test_compile_adjacent_roman_suffix_insert_uses_source_owned_sibling_payloads() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}">
+          <Pnumber>iii</Pnumber>
+          <P4para>
+            <Text>iii after sub-paragraph (ii) insert—</Text>
+            <BlockAmendment>
+              <P4>
+                <Pnumber>iii</Pnumber>
+                <P4para>
+                  <Text>the Electoral Management Board for Scotland, and</Text>
+                </P4para>
+              </P4>
+              <P4>
+                <Pnumber>iv</Pnumber>
+                <P4para>
+                  <Text>where the scheme was proposed by an electoral registration officer, that officer, and</Text>
+                </P4para>
+              </P4>
+            </BlockAmendment>
+          </P4para>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_adjacent_roman_suffix_insert",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-09-19",
+        affected_uri="/id/asp/2002/1/section/5",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="1",
+        affected_provisions="s. 5(12)(a)(iii)(iv)",
+        affecting_uri="/id/asp/2025/4",
+        affecting_class="ScottishAct",
+        affecting_year="2025",
+        affecting_number="4",
+        affecting_provisions="s. 39(2)(h)(iii)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2025-04-14", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert [op.target.path for op in ops] == [
+        (("section", "5"), ("subsection", "12"), ("paragraph", "a"), ("subparagraph", "iii")),
+        (("section", "5"), ("subsection", "12"), ("paragraph", "a"), ("subparagraph", "iv")),
+    ]
+    assert [op.payload.label for op in ops if op.payload is not None] == ["iii", "iv"]
+
+
 def test_compile_same_prefix_alpha_range_does_not_emit_dash_item_target() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -19925,6 +19992,30 @@ def test_executor_target_eid_preserves_lettered_body_item_suffix() -> None:
             LegalAddress(path=(("section", "88"), ("subsection", "3C"), ("paragraph", "c")))
         )
         == "section-88-3c-c"
+    )
+
+
+def test_executor_target_eid_preserves_deep_body_subparagraph_suffix() -> None:
+    statute = IRStatute(
+        statute_id="asp/2002/1",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute)
+
+    assert (
+        executor._derive_target_eid(
+            LegalAddress(
+                path=(
+                    ("section", "5"),
+                    ("subsection", "12"),
+                    ("paragraph", "a"),
+                    ("subparagraph", "iii"),
+                )
+            )
+        )
+        == "section-5-12-a-iii"
     )
 
 

@@ -1708,13 +1708,24 @@ def _fallback_target_eid(addr: LegalAddress) -> str:
 
     if section:
         parts.append(f"section-{_clean_num(section)}")
-    subsection = _addr_field(addr, "subsection")
-    if subsection:
-        parts.append(_clean_num(subsection))
-    paras = [label for kind, label in addr.path if kind == "paragraph"]
-    for item_label in paras[:1]:
-        parts.append(_canonicalize_eid_tail_label(item_label))
+    for suffix_label in _body_target_eid_suffixes(addr):
+        parts.append(_canonicalize_eid_tail_label(suffix_label))
     return "-".join(part for part in parts if part)
+
+
+def _body_target_eid_suffixes(addr: LegalAddress) -> list[str]:
+    """Return body descendant labels in UK eId order after the section root."""
+    suffixes: list[str] = []
+    seen_section_root = False
+    for kind, label in addr.path:
+        if kind in {"section", "article", "rule", "regulation"}:
+            seen_section_root = True
+            continue
+        if not seen_section_root:
+            continue
+        if kind in {"subsection", "paragraph", "subparagraph", "item", "point"} and label:
+            suffixes.append(label)
+    return suffixes
 
 
 def _source_before_insertion_anchor(
@@ -5699,6 +5710,13 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
     def _is_sibling_group_family(groups: list[str]) -> bool:
         if all(group.isdigit() for group in groups):
             return True
+        roman_values = [_shared_roman_to_arabic(group) for group in groups]
+        if (
+            len(groups) >= 2
+            and all(_looks_like_roman_subitem_label(group) for group in groups)
+            and all(value is not None for value in roman_values)
+        ):
+            return True
         if all(re.fullmatch(r"\d+[A-Z]*", group, re.I) for group in groups):
             return True
         if all(re.fullmatch(r"[A-Z]+", group, re.I) for group in groups):
@@ -5909,8 +5927,10 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
                 for split_at in range(1, len(all_groups) - 1):
                     fixed_groups = all_groups[:split_at]
                     sibling_groups = all_groups[split_at:]
-                    if _looks_like_lettered_item_label(sibling_groups[0]) and any(
-                        _looks_like_roman_subitem_label(group) for group in sibling_groups[1:]
+                    if (
+                        _looks_like_lettered_item_label(sibling_groups[0])
+                        and not _looks_like_roman_subitem_label(sibling_groups[0])
+                        and any(_looks_like_roman_subitem_label(group) for group in sibling_groups[1:])
                     ):
                         continue
                     if not _is_sibling_group_family(sibling_groups):
@@ -18757,22 +18777,12 @@ class UKReplayExecutor:
         section = _addr_field(addr, "schedule") or _addr_field(addr, "section")
         part = _addr_field(addr, "part")
         chapter = _addr_field(addr, "chapter")
-        # subsection is in path as ("subsection", lbl); item is ("paragraph", lbl).
-        # For schedule paths there is no "subsection" kind — both levels use "paragraph".
         if container == "schedule":
             paragraph, subsection, item_labels = _schedule_target_levels(addr)
         else:
             paragraph = None
+            subsection = None
             item_labels = []
-            paras = [lbl for k, lbl in addr.path if k == "paragraph"]
-            _subsec_direct = _addr_field(addr, "subsection")
-            if _subsec_direct:
-                subsection = _subsec_direct
-                item_labels = paras[:1]
-            else:
-                subsection = paras[0] if paras else None
-                item_labels = paras[1:2] if len(paras) > 1 else []
-        item = item_labels[0] if item_labels else None
 
         def _get_candidates():
             parts: list[str] = []
@@ -18816,10 +18826,8 @@ class UKReplayExecutor:
                     parts = []
                     if section:
                         parts.append(f"{prefix}-{_clean_num(section)}")
-                        if subsection:
-                            parts.append(_clean_num(subsection))
-                        if item:
-                            parts.append(_canonicalize_eid_tail_label(item))
+                        for suffix_label in _body_target_eid_suffixes(addr):
+                            parts.append(_canonicalize_eid_tail_label(suffix_label))
                     yield "-".join(parts)
 
         for full_key in _get_candidates():
