@@ -1,0 +1,304 @@
+"""UK heading-facet and crossheading source-text helpers.
+
+These helpers classify affected-provision strings and extract explicit text
+patch fragments. They do not resolve targets against live state or mutate IR.
+"""
+from __future__ import annotations
+
+import re
+from typing import Any, Optional
+
+from lawvm.core.ir import LegalAddress
+from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
+from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
+from lawvm.uk_legislation.uk_grafter import _clean_num
+
+
+def _is_heading_only_ref(ref: str) -> bool:
+    ref_clean = ref.strip().lower()
+    if "cross-heading" in ref_clean or "cross heading" in ref_clean or "crossheading" in ref_clean:
+        return False
+    return ref_clean.endswith(" heading") or ref_clean.endswith(" title") or ref_clean.endswith(" sidenote")
+
+
+def _expand_heading_facet_section_range_ref(ref: str) -> list[str]:
+    """Expand explicit section-title/heading ranges into heading facet refs."""
+    ref_clean = " ".join(str(ref or "").split()).strip()
+    if not ref_clean:
+        return []
+    if "cross-heading" in ref_clean.lower() or "cross heading" in ref_clean.lower():
+        return []
+    match = re.fullmatch(
+        r"(?P<prefix>s\.|ss\.|section|sections)\s+"
+        r"(?P<start>\d+[A-Z]?)\s*(?:-|to)\s*(?P<end>\d+[A-Z]?)\s+"
+        r"(?P<facet>heading|headings|title|titles|sidenote|sidenotes)",
+        ref_clean,
+        flags=re.I,
+    )
+    if match is None:
+        return []
+    start_label = match.group("start")
+    end_label = match.group("end")
+    start_num_match = re.fullmatch(r"(\d+)([A-Z]?)", start_label, flags=re.I)
+    end_num_match = re.fullmatch(r"(\d+)([A-Z]?)", end_label, flags=re.I)
+    if start_num_match is None or end_num_match is None:
+        return []
+    start_num = int(start_num_match.group(1))
+    end_num = int(end_num_match.group(1))
+    if end_num < start_num or end_num - start_num >= 100:
+        return []
+
+    start_suffix = start_num_match.group(2).upper()
+    end_suffix = end_num_match.group(2).upper()
+    labels = [str(value) for value in range(start_num, end_num + 1)]
+    if end_suffix:
+        if end_num == start_num:
+            suffix_start = start_suffix or "A"
+            if ord(end_suffix) < ord(suffix_start):
+                return []
+            labels = [f"{start_num}{chr(code)}" for code in range(ord(suffix_start), ord(end_suffix) + 1)]
+        else:
+            labels.extend(f"{end_num}{chr(code)}" for code in range(ord("A"), ord(end_suffix) + 1))
+    facet = match.group("facet").lower()
+    singular_facet = "sidenote" if facet.startswith("sidenote") else "heading" if facet.startswith("heading") else "title"
+    return [f"s. {label} {singular_facet}" for label in labels]
+
+
+def _mixed_heading_structural_insert_ref(ref: str, *, action: str) -> str:
+    """Return the structural component of ``X and heading`` insert targets.
+
+    UK effects sometimes report an inserted structural payload plus its heading
+    carrier as one affected-provision string, e.g. ``s. 61(2A)(2B) and
+    heading``. The heading suffix is not a body target, but it also must not
+    block the source-owned inserted children.
+    """
+    if action != "insert":
+        return ""
+    ref_clean = " ".join(str(ref or "").split()).strip()
+    if not re.search(r"\s+and\s+heading\s*$", ref_clean, flags=re.I):
+        return ""
+    if "cross-heading" in ref_clean.lower() or "cross heading" in ref_clean.lower():
+        return ""
+    structural_ref = re.sub(r"\s+and\s+heading\s*$", "", ref_clean, flags=re.I).strip()
+    if "(" not in structural_ref or ")" not in structural_ref:
+        return ""
+    return structural_ref
+
+
+def _heading_facet_append_fragment(extracted_text: Optional[str]) -> Optional[dict[str, Any]]:
+    for fragment in parse_fragment_substitution(extracted_text or ""):
+        if str(fragment.get("original") or "") == "TEXT_FROM__TO_END":
+            replacement = str(fragment.get("replacement") or "")
+            if replacement:
+                return fragment
+    return None
+
+
+def _heading_facet_after_anchor_insert_fragment(extracted_text: Optional[str]) -> Optional[dict[str, Any]]:
+    """Return a bounded heading/title insertion after an explicit quoted anchor."""
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return None
+    match = re.search(
+        r"\bafter\s+[“\"'‘](?P<anchor>.*?)[”\"'’],?\s+"
+        r"(?:there\s+(?:is|are|shall\s+be)\s+inserted|insert)"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
+        text,
+        flags=re.I | re.S,
+    )
+    if match is None:
+        return None
+    anchor = match.group("anchor").strip()
+    inserted = match.group("inserted").strip()
+    if not anchor or not inserted:
+        return None
+    joiner = "" if anchor.endswith((" ", "\t", "\n", "\r")) or inserted.startswith((" ", ",", ".", ";", ":", ")")) else " "
+    return {
+        "original": anchor,
+        "replacement": f"{anchor}{joiner}{inserted}",
+        "rule_id": "uk_effect_heading_facet_after_anchor_insert_text_patch",
+    }
+
+
+def _heading_facet_full_replacement_fragment(extracted_text: Optional[str]) -> Optional[dict[str, Any]]:
+    """Return an explicit full heading/title/sidenote replacement fragment."""
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return None
+    match = re.search(
+        r"\b(?:the\s+)?(?:section\s+)?(?:heading|title|sidenote)"
+        r"(?:\s+to\s+the\s+section)?\s+becomes\s+(?P<replacement>.+)$",
+        text,
+        flags=re.I | re.S,
+    )
+    if match is None:
+        match = re.search(
+            r"\bfor\s+the\s+(?:(?:section|part|chapter|schedule|article|rule|regulation)\s+)?"
+            r"(?:heading|title)"
+            r"(?:\s+of\s+(?:the\s+)?(?:section|part|chapter|schedule|article|rule|regulation)"
+            r"\s+[0-9A-Za-z]+)?"
+            r"\s+substitute\s*[—–-]?\s*(?P<replacement>.+)$",
+            text,
+            flags=re.I | re.S,
+        )
+    if match is None:
+        return None
+    replacement = match.group("replacement").strip()
+    replacement = replacement.strip(" “”\"'‘’")
+    replacement = re.sub(r"^(?:\.\s*)+", "", replacement).strip(" “”\"'‘’")
+    replacement = re.sub(r"(?:\s*\.)+$", "", replacement).strip(" “”\"'‘’")
+    if not replacement:
+        return None
+    return {
+        "original": "TEXT_ALL",
+        "replacement": replacement,
+        "rule_id": "uk_effect_heading_facet_full_replacement_text_patch",
+    }
+
+
+def _is_heading_facet_word_patch_supported(effect_type: str, extracted_text: Optional[str] = None) -> bool:
+    """Return whether a UK heading-facet effect can carry an explicit text patch."""
+    normalized = " ".join((effect_type or "").lower().split())
+    if normalized in {"substituted", "replaced"}:
+        return _heading_facet_full_replacement_fragment(extracted_text) is not None
+    if normalized in {
+        "words substituted",
+        "word substituted",
+        "words omitted",
+        "word omitted",
+        "words repealed",
+        "word repealed",
+    }:
+        return True
+    if normalized in {"words inserted", "word inserted"}:
+        return (
+            _heading_facet_append_fragment(extracted_text) is not None
+            or _heading_facet_after_anchor_insert_fragment(extracted_text) is not None
+        )
+    return False
+
+
+def _is_direct_section_paragraph_ref(ref: str) -> bool:
+    ref_clean = " ".join(str(ref or "").strip().lower().split())
+    return bool(re.search(r"\b(?:s|section)\.?\s+\d+[a-z]?\s*\(\s*[a-z]\s*\)", ref_clean))
+
+
+def _is_schedule_part_abbreviation_ref(ref: str) -> bool:
+    ref_clean = " ".join(str(ref or "").strip().lower().split())
+    return bool(re.search(r"\bsch(?:edule)?\.?\s+[0-9a-z]+\s+pt\s+[0-9ivxlcdm]+[a-z]?\b", ref_clean))
+
+
+def _is_crossheading_ref(ref: str) -> bool:
+    ref_clean = str(ref or "").strip().lower()
+    return "cross-heading" in ref_clean or "cross heading" in ref_clean or "crossheading" in ref_clean
+
+
+def _is_schedule_note_ref(ref: str) -> bool:
+    ref_clean = " ".join(str(ref or "").strip().lower().split())
+    return bool(re.search(r"\bsch(?:edule)?\.?\s+[0-9a-z]+(?:\s+|\s+pt\.\s+[0-9a-z]+\s+)note(?:\s+\d+)?\b", ref_clean))
+
+
+_CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE = "uk_effect_crossheading_before_anchor_replacement_text_patch"
+_CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE = "uk_effect_crossheading_before_anchor_text_patch"
+_CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE = (
+    "uk_effect_crossheading_and_structural_replacement_split_lowered"
+)
+_CROSSHEADING_AND_STRUCTURAL_REPEAL_RULE = "uk_effect_crossheading_and_structural_repeal_lowered"
+_UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_RESOLVED_RULE_ID = (
+    "uk_replay_crossheading_and_structural_repeal_resolved"
+)
+_UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_UNRESOLVED_RULE_ID = (
+    "uk_replay_crossheading_and_structural_repeal_unresolved"
+)
+
+
+def _crossheading_before_anchor_replacement_text(extracted_text: Optional[str]) -> Optional[str]:
+    """Return explicit replacement text for ``heading before paragraph X`` cross-heading claims."""
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    match = re.search(
+        r"\bfor\s+(?:the\s+)?(?:italic\s+)?(?:heading|cross-heading|cross heading)\s+"
+        r"before\s+(?:paragraph|section|article)\s+[0-9A-Za-z().]+\s+"
+        r"substitute\s*[—-]?\s+(.+?)\s*$",
+        text,
+        re.I,
+    )
+    if match is None:
+        return None
+    replacement = match.group(1).strip()
+    replacement = re.sub(r"\s+\.$", "", replacement).strip()
+    return replacement or None
+
+
+def _crossheading_before_anchor_text_patch_fragment(extracted_text: Optional[str]) -> Optional[dict[str, str]]:
+    """Return a quoted text patch for ``cross-heading before section X`` claims."""
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    if not re.search(
+        r"\b(?:heading|cross-heading|cross heading)\s+before\s+(?:paragraph|section|article)\s+[0-9A-Za-z().]+",
+        text,
+        flags=re.I,
+    ):
+        return None
+    fragments = parse_fragment_substitution(text)
+    if len(fragments) != 1:
+        return None
+    fragment = dict(fragments[0])
+    original = str(fragment.get("original") or "").strip()
+    replacement = str(fragment.get("replacement") or "").strip()
+    if not original or replacement == "":
+        return None
+    return {
+        "original": original,
+        "replacement": replacement,
+        "rule_id": _CROSSHEADING_BEFORE_ANCHOR_TEXT_PATCH_RULE,
+    }
+
+
+def _crossheading_and_structural_repeal_selector(
+    *,
+    affected_ref: str,
+    effect_type: str,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, Any]]:
+    """Return an explicit selector for ``paragraph X and the heading above it`` repeals."""
+    if not _is_crossheading_ref(affected_ref):
+        return None
+    effect_type_norm = " ".join((effect_type or "").lower().split())
+    if effect_type_norm not in {"repealed", "omitted", "revoked", "repealed in part"}:
+        return None
+    target_kind = _addr_leaf_kind(target)
+    target_label = _clean_num(_addr_leaf_label(target) or "")
+    if target_kind not in {"section", "article", "paragraph"} or not target_label:
+        return None
+    text = " ".join((extracted_text or "").split())
+    if not text:
+        return None
+    noun_by_kind = {
+        "section": "section",
+        "article": "article",
+        "paragraph": "paragraph",
+    }
+    noun = noun_by_kind[target_kind]
+    label_rx = re.escape(target_label)
+    if not re.search(
+        rf"\b{noun}\s+{label_rx}\b"
+        rf"(?:(?!\b(?:section|article|paragraph)\s+[0-9A-Za-z]+).){{0,320}}?"
+        rf"\band\s+the\s+(?:italic\s+)?(?:heading|cross-heading|cross heading)\s+above\s+it\b"
+        rf"(?:(?!\.).){{0,240}}?\b(?:is|are)\s+(?:repealed|omitted|revoked)\b",
+        text,
+        flags=re.I,
+    ):
+        return None
+    return {
+        "rule_id": _CROSSHEADING_AND_STRUCTURAL_REPEAL_RULE,
+        "selector_mode": "structural_with_heading_above_repeal",
+        "heading_anchor_direction": "above",
+        "target_ref": affected_ref,
+        "structural_target": str(target),
+        "source_target_kind": target_kind,
+        "source_target_label": target_label,
+    }
