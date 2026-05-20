@@ -1725,12 +1725,18 @@ Current block-substitution context invariant:
   text; row/cell fallback identity is not a comparable benchmark surface until
   both sides expose stable table EIDs.
 - source text that says `at the appropriate place, insert-` or `at an
-  appropriate place, in alphabetical order, insert-` is classified as source
-  pathology `appropriate_place_insert_unsupported` and manual frontier
-  `uk_manual_frontier_appropriate_place_candidate` while UK lacks a safe
-  placement model for that source shape. It is not a generic parser miss
-  because replay must not pick an insertion point by alphabetical coincidence
-  or live-tree uniqueness.
+  appropriate place, in alphabetical order, insert-` is classified as an
+  explicit source-pathology frontier while UK lacks a safe placement model for
+  that source shape. Generic placement rows use
+  `appropriate_place_insert_unsupported` and
+  `uk_manual_frontier_appropriate_place_candidate`. Definition-entry payloads
+  such as `"X" means...` or `"X" is to be construed...` use the narrower
+  `appropriate_place_definition_entry_insert_unsupported` and
+  `uk_manual_frontier_appropriate_place_definition_entry_candidate`, because
+  they are plausible semantic-compile work items but still lack a source-named
+  insertion anchor. It is not a generic parser miss because replay must not
+  pick an insertion point by alphabetical coincidence, oracle order, or
+  live-tree uniqueness.
 - repeal schedules, table parts, or grouped repeal source fragments that expose
   an `Enactment / Extent of repeal` surface but do not yet identify the specific
   target row/cell for the affected provision are classified as

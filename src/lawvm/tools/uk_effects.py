@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -944,6 +945,63 @@ def _manual_compile_source_jsonable(source: Mapping[str, Any]) -> dict[str, Any]
     return payload
 
 
+def _manual_compile_suggested_claim_template(
+    *,
+    statute_id: str,
+    row: _EffectReportRow,
+) -> dict[str, Any]:
+    """Return a non-executable semantic-claim template for known manual families."""
+    summary = row.summary
+    effect = row.effect
+    if (
+        summary.manual_compile_rule_id
+        != "uk_manual_frontier_appropriate_place_definition_entry_candidate"
+    ):
+        return {}
+    source_preview = summary.source_extracted_text_preview or ""
+    source_norm = " ".join(source_preview.split())
+    match = re.search(
+        r"\bat\s+(?:an?|the)\s+appropriate\s+place,?\s+"
+        r"(?:in\s+alphabetical\s+order,?\s+)?insert\s*[—–-]\s*(?P<payload>.+)$",
+        source_norm,
+        flags=re.I | re.S,
+    )
+    if match is None:
+        return {}
+    payload = " ".join(match.group("payload").split()).strip()
+    term_match = re.search(r"[\"“]\s*(?P<term>[^\"”]{1,160}?)\s*[\"”]", payload)
+    term = " ".join(str(term_match.group("term") if term_match else "").split()).strip()
+    return {
+        "schema": "lawvm.uk_semantic_compile_claim_template.v1",
+        "claim_kind": "semantic_compile",
+        "claim_status": "template_only_not_validated",
+        "action_family": "definition_entry_insert",
+        "placement_family": "appropriate_place_requires_anchor_claim",
+        "jurisdiction": "uk",
+        "statute_id": statute_id,
+        "effect_id": effect.effect_id,
+        "affected_provisions": effect.affected_provisions,
+        "affecting_act_id": effect.affecting_act_id,
+        "affecting_provisions": effect.affecting_provisions,
+        "source_pathology": summary.source_pathology or "",
+        "source_preview_sha256": hashlib.sha256(source_preview.encode("utf-8")).hexdigest()
+        if source_preview
+        else "",
+        "inserted_definition_term": term,
+        "inserted_definition_entry_preview": payload[:500],
+        "candidate_target_surface": effect.affected_provisions,
+        "required_validator_checks": [
+            "source_witness_contains_exact_appropriate_place_instruction",
+            "payload_is_complete_definition_entry",
+            "claim_supplies_exact_definition_entry_anchor_or_insertion_index",
+            "target_subtree_contains_definition_list_surface",
+            "inserted_term_is_not_already_present_in_target_at_effective_preimage",
+            "changed_paths_remain_inside_claimed_interpretation_target",
+        ],
+        "executable": False,
+    }
+
+
 def _uk_replay_regime_jsonable(regime: Any) -> dict[str, Any]:
     return {
         "allow_metadata_backfill": bool(regime.allow_metadata_backfill),
@@ -964,6 +1022,10 @@ def _manual_compile_evidence_row_jsonable(
     effect_payload = _effect_report_row_jsonable(row)
     summary = row.summary
     effect = row.effect
+    suggested_claim_template = _manual_compile_suggested_claim_template(
+        statute_id=statute_id,
+        row=row,
+    )
     replay_regime_payload = {
         str(key): value
         for key, value in dict(replay_regime or {}).items()
@@ -1005,6 +1067,7 @@ def _manual_compile_evidence_row_jsonable(
         "manual_compile_blocking_lowering_rule_ids": list(
             summary.manual_compile_blocking_lowering_rule_ids
         ),
+        "suggested_claim_template": suggested_claim_template,
         "source_pathology": summary.source_pathology or "",
         "source": _manual_compile_source_jsonable(effect_payload["source"]),
         "affecting_source_witness": effect_payload["affecting_source_witness"],

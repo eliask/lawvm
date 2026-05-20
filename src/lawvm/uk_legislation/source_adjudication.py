@@ -41,6 +41,7 @@ UK_EFFECT_SOURCE_PATHOLOGY_CLASSES = frozenset(
         "source_carried_child_tail_text_rewrite_unsupported",
         "instruction_text_reused_as_payload",
         "broad_source_reused_as_payload",
+        "appropriate_place_definition_entry_insert_unsupported",
         "appropriate_place_insert_unsupported",
         "repeal_schedule_table_source_unsupported",
         "as_if_application_modification_unsupported",
@@ -677,6 +678,22 @@ def _looks_like_appropriate_place_insert_instruction(text: str) -> bool:
     )
 
 
+def _looks_like_appropriate_place_definition_entry_insert_instruction(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    if not _looks_like_appropriate_place_insert_instruction(norm):
+        return False
+    if not re.search(r"\binsert(?:ed|ion)?\b", norm):
+        return False
+    return bool(
+        re.search(
+            r"[\"“][^\"”]{1,160}[\"”]\s*(?:,\s*[^;]{1,180})?\s+"
+            r"(?:means|has\s+the\s+same\s+meaning|has\s+the\s+meaning|"
+            r"is\s+to\s+be\s+construed|shall\s+be\s+construed|includes)\b",
+            norm,
+        )
+    )
+
+
 def _looks_like_repeal_schedule_table_source(
     *,
     extracted_tag: str | None,
@@ -835,6 +852,8 @@ def classify_uk_effect_source_pathology(
             return "schedule_list_entry_target_unsupported"
         if _looks_like_structural_sibling_insert_instruction(norm_text):
             return "structural_sibling_insert_unsupported"
+        if _looks_like_appropriate_place_definition_entry_insert_instruction(norm_text):
+            return "appropriate_place_definition_entry_insert_unsupported"
         if _looks_like_appropriate_place_insert_instruction(norm_text):
             return "appropriate_place_insert_unsupported"
         if _looks_like_repeal_schedule_table_source(
@@ -1082,6 +1101,13 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_schedule_list_entry_candidate",
             "reason": "The source targets a schedule/list entry by anchor entry text; a claim or future list-entry compiler must identify the entry carrier and sibling insertion point rather than mutating collapsed schedule text.",
+        }
+
+    if source_pathology_norm == "appropriate_place_definition_entry_insert_unsupported":
+        return {
+            "status": "manual_compile_candidate",
+            "rule_id": "uk_manual_frontier_appropriate_place_definition_entry_candidate",
+            "reason": "The source inserts a definition entry at an appropriate place without naming an anchor; a claim or future placement compiler must supply and validate the exact definition-entry insertion point instead of inferring it from live text.",
         }
 
     if source_pathology_norm == "appropriate_place_insert_unsupported":
