@@ -611,6 +611,7 @@ def main(args: "argparse.Namespace") -> None:
     from farchive import Farchive
     from lawvm.uk_legislation.source_adjudication import (
         classify_uk_bench_comparison,
+        classify_uk_commencement_current_projection,
         classify_uk_current_projection_eid_shape,
         is_core_uk_comparison,
         normalize_uk_replay_compare_eids,
@@ -672,6 +673,10 @@ def main(args: "argparse.Namespace") -> None:
     only_in_oracle_count: int | None = None
     only_in_replayed_sample: list[str] = []
     only_in_oracle_sample: list[str] = []
+    replay_compare_eids: set[str] = set()
+    oracle_compare_eids: set[str] = set()
+    commenced_replayed: set[str] = set()
+    commenced_oracle_for_replay: set[str] = set()
     replay_adjudications: list = []
     oracle_alignment_events: list[dict[str, Any]] = []
     source_parse_rejections: list[dict[str, object]] = []
@@ -1014,8 +1019,6 @@ def main(args: "argparse.Namespace") -> None:
             oracle_compare_eid_count = len(oracle_compare_eids)
             common_eid_count = len(common)
             _out(f"Full EID Similarity: {similarity:.1%}")
-            if comparison_class:
-                _out(f"Comparison class: {comparison_class}  core={'yes' if core_benchmark else 'no'}")
             only_in_replayed = replay_compare_eids - oracle_compare_eids
             only_in_oracle = oracle_compare_eids - replay_compare_eids
             only_in_replayed_count = len(only_in_replayed)
@@ -1067,6 +1070,18 @@ def main(args: "argparse.Namespace") -> None:
                     commenced_oracle_eids=commenced_oracle,
                     replay_commencement_oracle_eids=commenced_oracle_for_replay,
                 )
+                commencement_projection_shape = classify_uk_commencement_current_projection(
+                    replay_compare_eids=replay_compare_eids,
+                    oracle_compare_eids=oracle_compare_eids,
+                    commenced_replay_eids=commenced_replayed,
+                    commenced_oracle_eids=commenced_oracle_for_replay,
+                )
+                if commencement_projection_shape and comparison_class == "commensurable":
+                    comparison_class = commencement_projection_shape
+                    core_benchmark = is_core_uk_comparison(comparison_class)
+
+        if current_ir is not None and comparison_class:
+            _out(f"Comparison class: {comparison_class}  core={'yes' if core_benchmark else 'no'}")
 
     # ── 5. Timeline compilation ───────────────────────────────────────────
     # Two paths:

@@ -3575,3 +3575,14 @@ Current bench replay-regime invariant:
   provision identities. Oracle EID extraction already excludes them; replay
   comparison normalization also drops them so score residuals stay about legal
   units rather than inline text spans.
+- Some current XML surfaces are broad commencement projections rather than
+  small spent-amending-act projections. If the full oracle EID set is a strict
+  subset of replay and the independently computed commencement lens exactly
+  agrees (`commenced_replay == commenced_oracle`), the benchmark/CLI may
+  classify the row as `commencement_current_projection`. This is also
+  comparison-only and non-core: replay does not delete replay-extra future or
+  uncommenced structure merely to match the current XML view.
+- Witness: `asc/2023/1` has 421 replay comparison EIDs and 284 current-oracle
+  EIDs with no oracle-only residuals after comparison normalization. The
+  commencement replay/oracle lens is 100%, so the low full-score row is a
+  current projection surface, not a replay mutation gap.
