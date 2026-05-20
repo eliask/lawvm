@@ -3843,6 +3843,7 @@ def build_uk_evidence_bundle(
     )
     from lawvm.uk_legislation.source_adjudication import (
         classify_uk_bench_comparison,
+        classify_uk_current_projection_eid_shape,
         classify_uk_replay_adjudication_bucket,
         classify_uk_replay_residual,
         is_core_uk_comparison,
@@ -4197,6 +4198,12 @@ def build_uk_evidence_bundle(
         n_effects=n_effects,
         raw_score=similarity,
     )
+    current_projection_shape = classify_uk_current_projection_eid_shape(
+        enacted_eids=base_eids,
+        oracle_eids=oracle_eids,
+    )
+    if current_projection_shape and comparison_class == "commensurable":
+        comparison_class = current_projection_shape
     only_in_replayed = sorted(compare_replayed - compare_oracle)
     only_in_oracle = sorted(compare_oracle - compare_replayed)
     core_comparison = is_core_uk_comparison(comparison_class)

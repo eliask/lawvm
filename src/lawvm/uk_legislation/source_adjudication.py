@@ -350,6 +350,33 @@ def normalize_uk_replay_compare_eids(
     return kept, oracle_norm
 
 
+def classify_uk_current_projection_eid_shape(
+    *,
+    enacted_eids: Iterable[str],
+    oracle_eids: Iterable[str],
+) -> str:
+    """Classify current-oracle projections that are not replay-frontier claims."""
+    enacted_norm = {_normalize_uk_source_container_eid(eid) for eid in enacted_eids if eid}
+    oracle_norm = {_normalize_uk_source_container_eid(eid) for eid in oracle_eids if eid}
+    if not enacted_norm or not oracle_norm:
+        return ""
+    if not oracle_norm < enacted_norm:
+        return ""
+    if len(oracle_norm) > 5:
+        return ""
+    if len(enacted_norm) < 3 * len(oracle_norm):
+        return ""
+    roots: set[str] = set()
+    for eid in oracle_norm:
+        match = re.match(r"^(section|article|rule|regulation)-([^-]+)", eid)
+        if match is None:
+            return ""
+        roots.add(f"{match.group(1)}-{match.group(2)}")
+    if len(roots) != 1:
+        return ""
+    return "spent_amending_act_current_projection"
+
+
 def _normalize_uk_source_container_eid(eid: str) -> str:
     parts = [part for part in str(eid or "").lower().split("-") if part]
     if not parts:
@@ -1604,6 +1631,7 @@ __all__ = [
     "build_uk_source_adjudication",
     "classify_uk_effect_compare_shape",
     "classify_uk_effect_source_pathology",
+    "classify_uk_current_projection_eid_shape",
     "classify_uk_manual_compile_frontier",
     "classify_uk_replay_adjudication_bucket",
     "classify_uk_replay_residual",

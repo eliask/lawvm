@@ -3555,3 +3555,19 @@ Current bench replay-regime invariant:
   `section-5-1-aa`. The affecting source `asp/2006/14 s. 25` explicitly
   targets `section 5(4)(aa)`, so LawVM keeps the replay node
   `section-5-4-aa` and classifies the mismatch as oracle identity drift.
+
+## UK Current Projection Surfaces
+
+- Some UK current XML surfaces for small amending Acts retain only the citation
+  and commencement section while hiding spent amending provisions. This is a
+  current projection/oracle-surface shape, not a replay instruction to delete
+  source-backed amendment sections.
+- The benchmark classifier may mark this as
+  `spent_amending_act_current_projection` when the oracle EID set is a small
+  single-root strict subset of the enacted EID set. This is non-core for replay
+  fidelity scoring; replay still preserves source-backed enacted provisions
+  unless a source effect repeals them.
+- Witness: `asp/2002/2` current XML retains only section 3 and descendants.
+  The effect feed repeals section 2, but it does not provide a source-backed
+  repeal for section 1. LawVM therefore keeps section 1 in replay and treats
+  the current XML's omission as current-projection evidence.

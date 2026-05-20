@@ -611,6 +611,7 @@ def main(args: "argparse.Namespace") -> None:
     from farchive import Farchive
     from lawvm.uk_legislation.source_adjudication import (
         classify_uk_bench_comparison,
+        classify_uk_current_projection_eid_shape,
         is_core_uk_comparison,
         normalize_uk_replay_compare_eids,
     )
@@ -921,6 +922,12 @@ def main(args: "argparse.Namespace") -> None:
                     n_effects=n_effects,
                     raw_score=(len(base_eids & current_eids) / max(len(base_eids), len(current_eids), 1)),
                 )
+                current_projection_shape = classify_uk_current_projection_eid_shape(
+                    enacted_eids=base_eids,
+                    oracle_eids=current_eids,
+                )
+                if current_projection_shape and comparison_class == "commensurable":
+                    comparison_class = current_projection_shape
                 core_benchmark = is_core_uk_comparison(comparison_class)
 
         # ── 3. Replay ─────────────────────────────────────────────────────
