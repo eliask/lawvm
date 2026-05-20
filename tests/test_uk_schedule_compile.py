@@ -10585,6 +10585,44 @@ def test_compile_metadata_sibling_renumber_lowers_typed_destination_op() -> None
     assert lowering_records[0]["strict_disposition"] == "record"
 
 
+def test_compile_metadata_words_in_renumber_strips_scope_phrase_from_source_target() -> None:
+    effect = UKEffectRecord(
+        effect_id="key-test-renumber-words-in",
+        effect_type="words in Sch. 22 para. 72 renumbered as Sch. 22 para. 72(a)",
+        applied=True,
+        requires_applied=True,
+        modified="2025-04-25",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="Sch. 22 para. 72(a)",
+        affecting_uri="/id/ukpga/2021/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="11",
+        affecting_provisions="Sch. 13 para. 11(20)(k)(i)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2021-06-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+    extracted_el = ET.fromstring(
+        '<P4>i the words from "in the definition" to the end become sub-paragraph (a);</P4>'
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.RENUMBER
+    assert ops[0].target.path == (("schedule", "22"), ("paragraph", "72"))
+    assert ops[0].destination is not None
+    assert ops[0].destination.path == (("schedule", "22"), ("paragraph", "72"), ("item", "a"))
+    assert ops[0].witness_rule_id == "uk_effect_metadata_renumber_lowered"
+    assert lowering_records[0]["rule_id"] == "uk_effect_metadata_renumber_lowered"
+    assert lowering_records[0]["source_target"] == "schedule:22/paragraph:72"
+    assert lowering_records[0]["destination"] == "schedule:22/paragraph:72/item:a"
+
+
 def test_replay_text_end_append_preserves_existing_target_text() -> None:
     statute = IRStatute(
         statute_id="ukpga/2024/3",
