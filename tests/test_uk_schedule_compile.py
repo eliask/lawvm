@@ -6451,6 +6451,129 @@ def test_replay_table_entry_relating_text_patch_mutates_unique_cell() -> None:
     assert table.children[1].children[0].text == "electronic compliance monitoring requirement"
 
 
+def test_compile_table_entry_for_column_omit_uses_owned_cell_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <Text>2 In the table in section 160(2) (list of forfeiture powers),
+          in the entry for section 23A of the Terrorism Act 2000, in the second
+          column, omit “specified in Schedule 1 to this Act”.</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_for_column_omit",
+        effect_type="words omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2021-04-30",
+        affected_uri="/id/ukpga/2020/17/section/160",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 160(2) table",
+        affecting_uri="/id/ukpga/2021/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="11",
+        affecting_provisions="Sch. 13 para. 6(2)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2021-04-30", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "160"), ("subsection", "2"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "specified in Schedule 1 to this Act"
+    assert ops[0].text_patch.replacement is None
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_entry_relating_column_text_patch"
+    assert selector["selector_mode"] == "unique_relating_cell"
+    assert selector["relating_text"] == "section 23A of the Terrorism Act 2000"
+    assert selector["column_index"] == 2
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_relating_column_text_patch"
+        and record["reason_code"] == "explicit_table_entry_column_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_replay_table_entry_for_column_omit_mutates_selected_cell_only() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_relating_column_text_patch",
+        "selector_mode": "unique_relating_cell",
+        "relating_text": "section 23A of the Terrorism Act 2000",
+        "column_index": 2,
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_for_column_omit",
+        sequence=1,
+        action=StructuralAction.TEXT_REPEAL,
+        target=LegalAddress(path=(("section", "160"), ("subsection", "2"))),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.DELETE,
+            selector=TextSelector(match_text="specified in Schedule 1 to this Act", occurrence=0),
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="160",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="2",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="section 23A of the Terrorism Act 2000"),
+                                                IRNode(
+                                                    kind=IRNodeKind.CELL,
+                                                    text="power specified in Schedule 1 to this Act",
+                                                ),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="section 24"),
+                                                IRNode(kind=IRNodeKind.CELL, text="unchanged power"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+
+    table = replayed.body.children[0].children[0].children[0]
+    assert table.children[0].children[1].text == "power "
+    assert table.children[1].children[1].text == "unchanged power"
+
+
 def test_compile_source_carried_table_entry_subparagraph_substitution() -> None:
     source_root = ET.fromstring(
         f"""
