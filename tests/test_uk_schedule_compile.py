@@ -43,6 +43,7 @@ from lawvm.uk_legislation.uk_amendment_replay import (
     _split_metadata_provisions,
     _parse_ref,
     _parse_affected_target,
+    commencement_eid_set,
     compile_effect_to_ir_ops,
     extract_provision_element_from_bytes,
     load_effects_for_statute,
@@ -9825,6 +9826,167 @@ def test_compile_coming_into_force_list_item_is_skipped() -> None:
     )
 
     assert compile_effect_to_ir_ops(effect, extracted_el, sequence=0) == []
+
+
+def test_commencement_eid_set_matches_enum_nodes_under_structural_containers() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/test/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="PART 1",
+                    attrs={"eId": "part-1"},
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CHAPTER,
+                            label="CHAPTER 1",
+                            attrs={"eId": "part-1-chapter-1"},
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.CROSSHEADING,
+                                    text="General",
+                                    attrs={"eId": "part-1-chapter-1-crossheading-general"},
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.SECTION,
+                                            label="1",
+                                            attrs={"eId": "section-1"},
+                                            children=(
+                                                IRNode(
+                                                    kind=IRNodeKind.SUBSECTION,
+                                                    label="1",
+                                                    attrs={"eId": "section-1-1"},
+                                                ),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.SECTION,
+                                            label="2",
+                                            attrs={"eId": "section-2"},
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.SECTION,
+                                            label="3",
+                                            attrs={"eId": "section-3"},
+                                            children=(
+                                                IRNode(
+                                                    kind=IRNodeKind.SUBSECTION,
+                                                    label="1",
+                                                    attrs={"eId": "section-3-1"},
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=[
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 1",
+                attrs={"eId": "schedule-1"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="18",
+                        attrs={"eId": "schedule-1-paragraph-18"},
+                    ),
+                ),
+            )
+        ],
+    )
+    effects = [
+        UKEffectRecord(
+            effect_id="uk_test_commence_section",
+            effect_type="coming into force",
+            applied=True,
+            requires_applied=False,
+            modified="2025-01-01",
+            affected_uri="/id/ukpga/test/1",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="2025",
+            affected_number="1",
+            affected_provisions="s. 1",
+            affecting_uri="/id/uksi/2025/1",
+            affecting_class="UnitedKingdomStatutoryInstrument",
+            affecting_year="2025",
+            affecting_number="1",
+            affecting_provisions="art. 2(a)",
+            affecting_title="Test Commencement Order",
+            in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+        ),
+        UKEffectRecord(
+            effect_id="uk_test_commencement_feed_unapplied_section",
+            effect_type="coming into force",
+            applied=False,
+            requires_applied=False,
+            modified="2025-01-01",
+            affected_uri="/id/ukpga/test/1",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="2025",
+            affected_number="1",
+            affected_provisions="s. 2",
+            affecting_uri="/id/uksi/2025/1",
+            affecting_class="UnitedKingdomStatutoryInstrument",
+            affecting_year="2025",
+            affecting_number="1",
+            affecting_provisions="art. 2(a)",
+            affecting_title="Test Commencement Order",
+            in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+        ),
+        UKEffectRecord(
+            effect_id="uk_test_commence_subsection",
+            effect_type="coming into force",
+            applied=True,
+            requires_applied=False,
+            modified="2025-01-01",
+            affected_uri="/id/ukpga/test/1",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="2025",
+            affected_number="1",
+            affected_provisions="s. 3(1)",
+            affecting_uri="/id/uksi/2025/1",
+            affecting_class="UnitedKingdomStatutoryInstrument",
+            affecting_year="2025",
+            affecting_number="1",
+            affecting_provisions="art. 2(a)",
+            affecting_title="Test Commencement Order",
+            in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+        ),
+        UKEffectRecord(
+            effect_id="uk_test_commence_schedule_paragraph",
+            effect_type="coming into force",
+            applied=True,
+            requires_applied=False,
+            modified="2025-01-01",
+            affected_uri="/id/ukpga/test/1",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="2025",
+            affected_number="1",
+            affected_provisions="Sch. 1 para. 18",
+            affecting_uri="/id/uksi/2025/1",
+            affecting_class="UnitedKingdomStatutoryInstrument",
+            affecting_year="2025",
+            affecting_number="1",
+            affecting_provisions="art. 2(b)",
+            affecting_title="Test Commencement Order",
+            in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+        ),
+    ]
+
+    commenced = commencement_eid_set(effects, statute)
+
+    assert {"section-1", "section-1-1", "schedule-1-paragraph-18"} <= commenced
+    assert {"section-3", "section-3-1", "schedule-1"} <= commenced
+    assert {"part-1", "part-1-chapter-1", "part-1-chapter-1-crossheading-general"} <= commenced
+    assert "section-2" not in commenced
 
 
 def test_compile_empty_effect_type_does_not_infer_range_from_word_fragments() -> None:

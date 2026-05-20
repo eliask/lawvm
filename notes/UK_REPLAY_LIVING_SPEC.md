@@ -743,6 +743,15 @@ Current tooling-consistency invariant:
     produces at least one commenced EID for the statute. An empty commenced
     set is "not computed", not a zero-score primary headline; otherwise small
     samples with no commencement evidence hide the raw replay/oracle signal.
+  - UK commencement EID matching is a temporal/applicability comparison lane,
+    not structural replay. It must match enum-backed IR nodes by normalized
+    legal kind, descend through structural containers when a section-level
+    commencement target is named under a part/chapter/crossheading, consume
+    named schedule roots when present, and bubble commenced descendants to
+    their structural ancestors so oracle-visible parent EIDs are counted. Under
+    the default replay lens it must also respect feed applicability
+    (`effective_date_plus_feed_applied`) instead of treating unapplied
+    commencement rows as current law merely because they carry a date.
   - `uk-bench --compare` must also summarize saved enacted/oracle and
     replay/oracle text-score fields over common statutes when present. EID
     agreement and text agreement are different evidence lanes.

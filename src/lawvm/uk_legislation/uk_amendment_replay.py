@@ -19257,6 +19257,29 @@ _ADDR_KIND_ALIASES: dict[str, set[str]] = {
 }
 
 
+def _normalize_commencement_match_label(kind: str, label: str) -> str:
+    """Normalize UK source labels for commencement address matching only."""
+    text = str(label or "").strip().replace("\u00a0", " ").lower()
+    text = re.sub(r"\s+", " ", text).strip()
+    text = text.strip("()")
+    if kind == "schedule":
+        text = re.sub(r"^schedule\s+", "", text)
+    elif kind == "part":
+        text = re.sub(r"^part\s+", "", text)
+    elif kind == "chapter":
+        text = re.sub(r"^chapter\s+", "", text)
+    elif kind in {"section", "article", "rule", "regulation", "p1group"}:
+        text = re.sub(r"^(?:section|article|rule|regulation|s\.)\s*", "", text)
+    elif kind in {"paragraph", "p1", "p2", "p3", "subparagraph"}:
+        text = re.sub(r"^(?:paragraph|para\.)\s*", "", text)
+    text = text.strip("() ")
+    return text.lstrip("0") or text
+
+
+def _uk_commencement_container_descends_without_consuming(kind: str) -> bool:
+    return kind in {"part", "chapter", "wrapper", "hcontainer"} or uk_is_transparent_wrapper_kind(kind)
+
+
 def _collect_all_eids(node: "IRNode") -> set[str]:
     """Recursively collect all eId/id attrs from a node and its descendants."""
     result: set[str] = set()
@@ -19299,20 +19322,24 @@ def _nodes_matching_address(
 
     matched: list["IRNode"] = []
     for node in nodes:
-        # Always descend transparently into structural containers
-        if uk_should_descend_transparently(node):
-            matched.extend(_nodes_matching_address(node.children, path, depth))
-            continue
+        node_kind = _uk_kind_value(node.kind)
 
-        if node.kind not in non_transparent_accepted:
+        if node_kind not in non_transparent_accepted:
+            # Commencement addresses often name sections beneath parts,
+            # chapters, and crossheadings.  Those containers are structural
+            # context, not a reason to drop the named section.
+            if _uk_commencement_container_descends_without_consuming(node_kind):
+                matched.extend(_nodes_matching_address(node.children, path, depth))
             continue
 
         # Normalise label for comparison: strip leading zeros, lowercase
-        node_label = (node.label or "").strip().lower().lstrip("0") or (node.label or "").strip().lower()
-        # Also normalise addr_label the same way
-        addr_lbl_norm = addr_label.strip().lower().lstrip("0") or addr_label.strip().lower()
+        node_label = _normalize_commencement_match_label(node_kind, node.label or "")
+        # Also normalise addr_label the same way.
+        addr_lbl_norm = _normalize_commencement_match_label(node_kind, addr_label)
 
         if node_label != addr_lbl_norm:
+            if _uk_commencement_container_descends_without_consuming(node_kind):
+                matched.extend(_nodes_matching_address(node.children, path, depth))
             continue
 
         # This node matches this path component — descend for the rest
@@ -19333,6 +19360,8 @@ def _nodes_matching_address(
 def commencement_eid_set(
     effects: list["UKEffectRecord"],
     statute_ir: "IRStatute",
+    *,
+    applicability_mode: str = "effective_date_plus_feed_applied",
 ) -> set[str]:
     """Return the set of EIDs that have been brought into force.
 
@@ -19341,8 +19370,9 @@ def commencement_eid_set(
     their descendants, AND any structural ancestor nodes (part, chapter,
     crossheading) that contain at least one commenced provision.
 
-    An EID is "commenced" when at least one "coming into force" effect with
-    a non-empty effective date covers the provision (or any ancestor).
+    An EID is "commenced" when at least one replay-applicable "coming into
+    force" effect with a non-empty effective date covers the provision (or any
+    ancestor).
 
     If no commencement effects are found at all, returns the full set of EIDs
     from the statute (treat all provisions as in force — self-commencement).
@@ -19350,7 +19380,9 @@ def commencement_eid_set(
     comm_effects = [
         e
         for e in effects
-        if e.effect_type.lower() in _COMMENCEMENT_EFFECT_TYPES and e.effective_date  # must have a real date
+        if e.effect_type.lower() in _COMMENCEMENT_EFFECT_TYPES
+        and e.effective_date  # must have a real date
+        and e.is_applicable_for_replay(applicability_mode=applicability_mode)
     ]
 
     all_ir_nodes: list["IRNode"] = list(statute_ir.body.children)
