@@ -3768,6 +3768,94 @@ def test_replay_prepare_blocks_same_source_ordinal_patch_overlapping_broader_sel
     assert adjudications[0].detail["strict_disposition"] == "block"
 
 
+def test_replay_prepare_allows_same_source_disjoint_ordinal_patch() -> None:
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Transport (Scotland) Act 2001",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="47",
+                    text="",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "Alpha quality partnership scheme, beta quality contract scheme "
+                                "gamma ticketing scheme delta scheme epsilon scheme."
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    target = LegalAddress(path=(("section", "47"), ("subsection", "1")))
+    source = OperationSource(statute_id="asp/2019/17", effective="2023-12-04")
+    ops = [
+        LegalOperation(
+            op_id="uk_test_disjoint_broad_first",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=target,
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="quality partnership scheme,", occurrence=0),
+                replacement="partnership scheme",
+            ),
+            source=source,
+        ),
+        LegalOperation(
+            op_id="uk_test_disjoint_broad_second",
+            sequence=2,
+            action=StructuralAction.TEXT_REPLACE,
+            target=target,
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="quality contract scheme", occurrence=0),
+                replacement="franchising framework",
+            ),
+            source=source,
+        ),
+        LegalOperation(
+            op_id="uk_test_disjoint_ordinal",
+            sequence=3,
+            action=StructuralAction.TEXT_REPLACE,
+            target=target,
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="scheme", occurrence=4),
+                replacement="scheme or framework",
+            ),
+            source=source,
+        ),
+    ]
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(statute, ops, adjudications_out=adjudications)
+
+    text = replayed.body.children[0].children[0].text
+    assert "partnership scheme" in text
+    assert "franchising framework" in text
+    assert "delta scheme or framework" in text
+    assert "epsilon scheme." in text
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_same_source_text_patch_overlap_disjoint"
+    ]
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["ordered_before_op_ids"] == (
+        "uk_test_disjoint_broad_first",
+        "uk_test_disjoint_broad_second",
+    )
+
+
 def test_executor_applies_before_definition_insert_at_explicit_definition_anchor() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

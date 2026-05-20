@@ -678,6 +678,112 @@ class UKReplayPrepareResult:
     rejected_adjudications: tuple[CompileAdjudication, ...]
 
 
+def _literal_text_spans_in_subtree(
+    node: UKMutableNode,
+    needle: str,
+) -> list[tuple[tuple[int, ...], int, int]]:
+    spans: list[tuple[tuple[int, ...], int, int]] = []
+    if not needle:
+        return spans
+
+    def _walk(current: UKMutableNode, path: tuple[int, ...] = ()) -> None:
+        text = current.text or ""
+        start = 0
+        while True:
+            pos = text.find(needle, start)
+            if pos == -1:
+                break
+            end = pos + len(needle)
+            spans.append((path, pos, end))
+            start = end
+        for index, child in enumerate(current.children):
+            _walk(child, path + (index,))
+
+    _walk(node)
+    return spans
+
+
+def _spans_overlap(
+    left: tuple[tuple[int, ...], int, int],
+    right: tuple[tuple[int, ...], int, int],
+) -> bool:
+    left_path, left_start, left_end = left
+    right_path, right_start, right_end = right
+    return left_path == right_path and left_start < right_end and right_start < left_end
+
+
+def _same_source_ordinal_text_patch_overlap_status(
+    op: LegalOperation,
+    broader_ops: Sequence[LegalOperation],
+    *,
+    base_executor: Optional[UKReplayExecutor],
+) -> str:
+    """Classify whether an ordinal text patch overlaps broader same-source patches."""
+    if base_executor is None or op.text_patch is None:
+        return "unknown"
+    occurrence = op.text_patch.selector.occurrence
+    if occurrence <= 0:
+        return "unknown"
+    node, _, _ = base_executor._find_node_by_target(op.target)
+    if node is None:
+        return "unknown"
+    match_text = op.text_patch.selector.match_text
+    match_spans = _literal_text_spans_in_subtree(node, match_text)
+    if len(match_spans) < occurrence:
+        return "unknown"
+    claimed_span = match_spans[occurrence - 1]
+    saw_unknown = False
+    for broader_op in broader_ops:
+        if broader_op.text_patch is None:
+            saw_unknown = True
+            continue
+        broader_match = broader_op.text_patch.selector.match_text
+        broader_spans = _literal_text_spans_in_subtree(node, broader_match)
+        if not broader_spans:
+            saw_unknown = True
+            continue
+        if any(_spans_overlap(claimed_span, broader_span) for broader_span in broader_spans):
+            return "overlap"
+    if saw_unknown:
+        return "unknown"
+    return "disjoint"
+
+
+def _order_ops_by_before_edges(
+    ops: Sequence[LegalOperation],
+    before_edges: dict[str, set[str]],
+) -> list[LegalOperation]:
+    if not before_edges:
+        return list(ops)
+    op_ids = {op.op_id for op in ops}
+    successors: dict[str, set[str]] = {op.op_id: set() for op in ops}
+    predecessors: dict[str, set[str]] = {op.op_id: set() for op in ops}
+    for before_id, after_ids in before_edges.items():
+        if before_id not in op_ids:
+            continue
+        for after_id in after_ids:
+            if after_id not in op_ids or after_id == before_id:
+                continue
+            successors[before_id].add(after_id)
+            predecessors[after_id].add(before_id)
+
+    original_index = {op.op_id: index for index, op in enumerate(ops)}
+    ready = [op.op_id for op in ops if not predecessors[op.op_id]]
+    ordered_ids: list[str] = []
+    while ready:
+        ready.sort(key=original_index.__getitem__)
+        op_id = ready.pop(0)
+        ordered_ids.append(op_id)
+        for successor in sorted(successors[op_id], key=original_index.__getitem__):
+            predecessors[successor].discard(op_id)
+            if not predecessors[successor]:
+                ready.append(successor)
+    if len(ordered_ids) != len(ops):
+        return list(ops)
+    by_id = {op.op_id: op for op in ops}
+    return [by_id[op_id] for op_id in ordered_ids]
+
+
 @dataclass(frozen=True)
 class UKMetadataRenumberTargets:
     source_target: LegalAddress
@@ -10135,6 +10241,7 @@ class UKReplayPipeline:
         )
         prepared_ops = _prepare_replay_uk_ops(
             ops,
+            base_ir=base_ir,
             verbose=verbose,
             adjudications_out=adjudications_out,
         )
@@ -17870,11 +17977,15 @@ def commencement_eid_set(
 def _prepare_replay_uk_ops(
     ops: list[LegalOperation],
     *,
+    base_ir: Optional[IRStatute] = None,
     verbose: bool = False,
     adjudications_out: Optional[list[CompileAdjudication]] = None,
 ) -> UKReplayPrepareResult:
     """Normalize replay ops so every entry point applies the same semantics."""
+    base_executor: Optional[UKReplayExecutor] = UKReplayExecutor(base_ir) if base_ir is not None else None
     overlapping_text_patch_op_ids: set[str] = set()
+    disjoint_text_patch_overlap_op_ids: set[str] = set()
+    disjoint_text_patch_before_edges: dict[str, set[str]] = {}
     grouped_text_ops: dict[tuple[str, str, str, tuple[tuple[str, str], ...]], list[LegalOperation]] = {}
     for op in ops:
         if _action_name(op.action) != "text_replace" or op.text_patch is None:
@@ -17900,6 +18011,7 @@ def _prepare_replay_uk_ops(
             match_text = op.text_patch.selector.match_text
             if len(match_text.strip()) < 3:
                 continue
+            broader_ops: list[LegalOperation] = []
             for other in group_ops:
                 if other is op or other.text_patch is None:
                     continue
@@ -17909,8 +18021,21 @@ def _prepare_replay_uk_ops(
                 if len(other_match) <= len(match_text):
                     continue
                 if match_text.strip() in other_match:
-                    overlapping_text_patch_op_ids.add(op.op_id)
-                    break
+                    broader_ops.append(other)
+            if not broader_ops:
+                continue
+            overlap_status = _same_source_ordinal_text_patch_overlap_status(
+                op,
+                broader_ops,
+                base_executor=base_executor,
+            )
+            if overlap_status == "disjoint":
+                disjoint_text_patch_overlap_op_ids.add(op.op_id)
+                disjoint_text_patch_before_edges.setdefault(op.op_id, set()).update(
+                    broader_op.op_id for broader_op in broader_ops
+                )
+            else:
+                overlapping_text_patch_op_ids.add(op.op_id)
 
     filtered_ops: list[LegalOperation] = []
     rejected_adjudications: list[CompileAdjudication] = []
@@ -17937,6 +18062,33 @@ def _prepare_replay_uk_ops(
                 },
             ))
             continue
+        if op.op_id in disjoint_text_patch_overlap_op_ids:
+            match_text = op.text_patch.selector.match_text if op.text_patch is not None else ""
+            occurrence = op.text_patch.selector.occurrence if op.text_patch is not None else 0
+            _append_uk_replay_adjudication(
+                adjudications_out,
+                kind="uk_replay_same_source_text_patch_overlap_disjoint",
+                message=(
+                    "UK replay allowed an ordinal text patch whose selector text appears "
+                    "inside broader same-source patches because the claimed occurrence is "
+                    "disjoint in the base target text."
+                ),
+                op=op,
+                detail={
+                    "action": _action_name(op.action),
+                    "target": str(op.target),
+                    "match_text": match_text,
+                    "occurrence": occurrence,
+                    "ordered_before_op_ids": tuple(
+                        sorted(disjoint_text_patch_before_edges.get(op.op_id, ()))
+                    ),
+                    "reason": "base_target_occurrence_disjoint_from_broader_same_source_patch",
+                    "family": "text_patch_overlap_resolution",
+                    "blocking": False,
+                    "strict_disposition": "record",
+                    "quirks_disposition": "record",
+                },
+            )
         if op.op_id in overlapping_text_patch_op_ids:
             if verbose:
                 print("  replay_uk_ops: skipping overlapping same-source ordinal text patch")
@@ -17982,6 +18134,7 @@ def _prepare_replay_uk_ops(
             ))
             continue
         filtered_ops.append(op)
+    filtered_ops = _order_ops_by_before_edges(filtered_ops, disjoint_text_patch_before_edges)
     return UKReplayPrepareResult(
         accepted_ops=tuple(filtered_ops),
         rejected_adjudications=tuple(rejected_adjudications),
@@ -18035,6 +18188,7 @@ def replay_uk_ops(
         print(f"  replay_uk_ops: applying {len(ops)} ops to {base.statute_id}")
     prepared_ops = _prepare_replay_uk_ops(
         ops,
+        base_ir=base,
         verbose=verbose,
         adjudications_out=adjudications_out,
     )
