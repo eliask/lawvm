@@ -2145,8 +2145,12 @@ Current block-substitution context invariant:
   metadata such as `s. 61(2A)(2B) and heading` is normalized only if the source
   payload proves sibling expansion; otherwise the row stays blocked as a heading
   facet candidate rather than synthesizing a nested `2A/2B` target. Witnesses:
-  `ukpga/2020/17`, affected by `ukpga/2022/32 s. 159(2)` and
-  `ukpga/2022/32 Sch. 15 para. 3`.
+  `ukpga/2020/17`, affected by `ukpga/2021/11 Sch. 13 para. 11(4)(b)`,
+  `ukpga/2022/32 s. 159(2)`, and `ukpga/2022/32 Sch. 15 para. 3`. Source
+  payloads may expose the inserted siblings directly or through a subordinate
+  `P2group` / `P3group` / `P4group` heading carrier, but lowering still emits
+  one structural operation per proved child and keeps the shared heading facet
+  unresolved.
 - Flat `BlockAmendment/P1para` schedule paragraph insert payloads may lower
   only when a direct source text run begins with the exact target paragraph
   label. The rule is

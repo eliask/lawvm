@@ -6814,11 +6814,27 @@ def _expand_sibling_targets_from_extracted(
         "P3",
         "Schedule",
     }
+    group_structural_children = {
+        "P2group": {"P2", "Subsection"},
+        "P3group": {"P3"},
+        "P4group": {"P4"},
+    }
+
     child_nums: list[str] = []
     child_raw_nums: list[str] = []
+    source_children: list[ET.Element] = []
     for child in list(extracted_el):
-        if _tag(child) not in structural_tags:
+        child_tag = _tag(child)
+        if child_tag in group_structural_children:
+            for group_child in list(child):
+                if _tag(group_child) in group_structural_children[child_tag]:
+                    source_children.append(group_child)
             continue
+        if child_tag not in structural_tags:
+            continue
+        source_children.append(child)
+
+    for child in source_children:
         num_el = child.find(f"./{{{_LEG_NS}}}Pnumber")
         if num_el is None:
             num_el = child.find(f"./{{{_LEG_NS}}}Number")
