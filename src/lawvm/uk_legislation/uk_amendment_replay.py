@@ -764,6 +764,9 @@ _UK_SOURCE_TEXT_SCHEDULE_PARAGRAPH_TARGET_OVERRIDE_RULE_ID = (
 _UK_REPLAY_SOURCE_LABEL_CHANGING_SUBSTITUTION_RESOLVED_RULE_ID = (
     "uk_replay_source_label_changing_substitution_resolved"
 )
+_UK_REPLAY_SOURCE_CARRIED_LABELED_CHILD_TEXT_SUBSTITUTION_RULE_ID = (
+    "uk_replay_source_carried_labeled_child_text_substitution_recovered"
+)
 _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_quoted_words_text_repeal"
 )
@@ -8741,6 +8744,60 @@ def _fragment_substitution_source_carried_quoted_text_substitution(
             "rule_id": "uk_effect_source_carried_quoted_text_substitution_text_patch",
         }
     return None
+
+
+_ROMAN_CHILD_LABEL_RE = re.compile(
+    r"(?P<prefix>^|(?:[;]\s*(?:and|or)?\s+)|(?:\b(?:and|or)\s+))"
+    r"(?P<label>viii|vii|vi|iv|iii|ii|ix|x|v|i)\s+",
+    flags=re.I,
+)
+
+
+def _source_carried_labeled_child_replacement_parts(
+    replacement: str,
+    *,
+    parent_kind: str,
+) -> tuple[str, tuple[tuple[str, str], ...]]:
+    """Split a source-carried flat child run like ``i ...; or ii ...``.
+
+    This is intentionally narrow: it only recognizes a consecutive roman
+    child run starting at ``i`` under a paragraph-like parent.  The source
+    witness is the visible child labels in the amendment payload, not oracle
+    shape or live-state guessing.
+    """
+    parent_kind_norm = str(parent_kind or "").lower()
+    if parent_kind_norm not in {"paragraph", "subparagraph", "item"}:
+        return "", ()
+    text = " ".join(str(replacement or "").split()).strip()
+    if not text:
+        return "", ()
+    matches = list(_ROMAN_CHILD_LABEL_RE.finditer(text))
+    if len(matches) < 2 or matches[0].start() != 0:
+        return "", ()
+    labels = tuple(match.group("label").lower() for match in matches)
+    label_ordinals = tuple(_shared_roman_to_arabic(label) for label in labels)
+    if any(value is None for value in label_ordinals):
+        return "", ()
+    ordinals = tuple(cast(int, value) for value in label_ordinals)
+    if ordinals != tuple(range(1, len(ordinals) + 1)):
+        return "", ()
+
+    if parent_kind_norm == "paragraph":
+        child_kind = "subparagraph"
+    elif parent_kind_norm == "subparagraph":
+        child_kind = "item"
+    else:
+        child_kind = "point"
+
+    parts: list[tuple[str, str]] = []
+    for index, match in enumerate(matches):
+        start = match.end()
+        end = matches[index + 1].start("label") if index + 1 < len(matches) else len(text)
+        body = " ".join(text[start:end].split()).strip()
+        if not body:
+            return "", ()
+        parts.append((labels[index], body))
+    return child_kind, tuple(parts)
 
 
 def _fragment_substitution_source_carried_child_tail_repeal(
@@ -16952,6 +17009,119 @@ class UKReplayExecutor:
         )
         return True
 
+    def _recover_source_carried_labeled_child_text_substitution(
+        self,
+        op: LegalOperation,
+        target: LegalAddress,
+        node: UKMutableNode,
+        text_patch: TextPatchSpec,
+        replacement: str,
+    ) -> bool:
+        if text_patch.kind is not TextPatchKindEnum.REPLACE:
+            return False
+        if text_patch.selector.end_occurrence:
+            return False
+        if (
+            "uk_effect_source_carried_quoted_text_substitution_text_patch"
+            not in _text_rewrite_rule_ids_for_op(op)
+        ):
+            return False
+        if target.special is not None:
+            return False
+        parent_kind = _addr_leaf_kind(target) or ""
+        child_kind, parts = _source_carried_labeled_child_replacement_parts(
+            replacement,
+            parent_kind=parent_kind,
+        )
+        if not child_kind or not parts:
+            return False
+        if getattr(node, "children", None):
+            return False
+        text = node.text or ""
+        if not text:
+            return False
+        match_text = text_patch.selector.match_text
+        if not match_text or match_text.startswith("TEXT_"):
+            return False
+
+        ordinal = text_patch.selector.occurrence if text_patch.selector.occurrence > 0 else 1
+
+        def _find_span(pattern: str, *, flags: int = 0) -> tuple[int, int] | None:
+            matches = list(re.finditer(pattern, text, flags=flags))
+            if text_patch.selector.occurrence == 0 and len(matches) != 1:
+                return None
+            if len(matches) < ordinal:
+                return None
+            selected = matches[ordinal - 1]
+            return selected.start(), selected.end()
+
+        literal_span = _find_span(re.escape(match_text))
+        span = literal_span
+        if span is None:
+            span = _find_span(
+                _text_patch_pattern(match_text, allow_punctuation_spacing=True),
+                flags=re.I | re.S,
+            )
+        if span is None and _text_match_has_word_punctuation_elision_candidate(match_text):
+            span = _find_span(
+                _text_patch_pattern(match_text, allow_word_punctuation_elision=True),
+                flags=re.I | re.S,
+            )
+        if span is None:
+            return False
+
+        before = text[: span[0]].rstrip()
+        after = text[span[1] :].strip()
+        # Do not smuggle unrelated parent-tail text into a child-materialization recovery.
+        if after and not re.fullmatch(r"[\.,;:]+", after):
+            return False
+        rebuilt_text = before.rstrip(" ,;:")
+        parent_eid = str(node.attrs.get("eId") or node.attrs.get("id") or "")
+        children: list[UKMutableNode] = []
+        for label, child_text in parts:
+            child_target = LegalAddress(path=(*tuple(target.path), (child_kind, label)), special=None)
+            child_eid = self._derive_target_eid(child_target)
+            attrs = {"source_rule_id": _UK_REPLAY_SOURCE_CARRIED_LABELED_CHILD_TEXT_SUBSTITUTION_RULE_ID}
+            if child_eid:
+                attrs["eId"] = child_eid
+            elif parent_eid:
+                attrs["eId"] = f"{parent_eid}-{label}"
+            children.append(
+                UKMutableNode(
+                    kind=IRNodeKind(child_kind),
+                    label=label,
+                    text=child_text,
+                    attrs=attrs,
+                )
+            )
+        if not children:
+            return False
+
+        self._replace_text_and_children(node, text=rebuilt_text, children=children)
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind=_UK_REPLAY_SOURCE_CARRIED_LABELED_CHILD_TEXT_SUBSTITUTION_RULE_ID,
+            message=(
+                "UK replay materialized visible labelled child provisions from a "
+                "source-carried quoted substitution payload."
+            ),
+            op=op,
+            detail={
+                "action": _action_name(op.action),
+                "target": str(target),
+                "text_match": match_text,
+                "replacement_text": replacement,
+                "child_kind": child_kind,
+                "child_labels": tuple(label for label, _ in parts),
+                "family": "source_carried_labeled_child_text_substitution",
+                "source_shape": "flat_replacement_payload_with_visible_child_labels",
+                "blocking": False,
+                "strict_disposition": "block",
+                "quirks_disposition": "apply",
+            },
+        )
+        return True
+
     def _annex_schedule_mismatch_gap(self, op: LegalOperation) -> bool:
         target = getattr(op, "target", None)
         path = tuple(getattr(target, "path", ()) or ())
@@ -19027,6 +19197,19 @@ class UKReplayExecutor:
                             },
                         )
                         return
+                elif (
+                    heading_carrier is None
+                    and text_patch.kind is TextPatchKindEnum.REPLACE
+                    and self._recover_source_carried_labeled_child_text_substitution(
+                        op,
+                        target,
+                        node,
+                        text_patch,
+                        replacement,
+                    )
+                ):
+                    applied = True
+                    applied_rule_id = _UK_REPLAY_SOURCE_CARRIED_LABELED_CHILD_TEXT_SUBSTITUTION_RULE_ID
                 elif heading_carrier is not None and text_patch.kind is TextPatchKindEnum.APPEND:
                     node, applied = self._apply_text_append_on_node_text_only(
                         heading_carrier,
