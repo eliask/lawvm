@@ -72,6 +72,7 @@ from lawvm.roman import (
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.uk_legislation.source_state import (
     uk_affecting_act_current_shell_enacted_source_selected,
+    uk_affecting_act_enacted_schedule_table_row_source_extracted,
     uk_affecting_act_missing_current_enacted_source_selected,
     uk_affecting_act_nonaddressable_schedule_part_context_ignored,
     uk_affecting_act_parenthesized_range_source_extracted,
@@ -759,6 +760,9 @@ _UK_SCHEDULE_LIST_ENTRY_TABLE_ROWS_RULE_ID = "uk_effect_schedule_list_entry_tabl
 _UK_SCHEDULE_TABLE_END_ROWS_RULE_ID = "uk_effect_schedule_table_end_rows_lowered"
 _UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID = "uk_effect_schedule_list_entry_repeal"
 _UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID = "uk_effect_schedule_list_entry_replace"
+_UK_ENACTED_SCHEDULE_TABLE_ROW_PART_TARGET_RULE_ID = (
+    "uk_effect_enacted_schedule_table_row_part_target_refined"
+)
 _UK_NUMBERED_SCHEDULE_ENTRY_REPEAL_TARGET_REFINED_RULE_ID = (
     "uk_effect_numbered_schedule_entry_repeal_target_refined"
 )
@@ -3713,6 +3717,146 @@ def _extract_parenthesized_range_source(
     return wrapper, (observation,)
 
 
+def _schedule_paragraph_ref_parts(ref: str) -> tuple[str, str] | None:
+    match = re.match(
+        r"^\s*sch(?:edule)?\.?\s+(?P<schedule>[0-9A-Za-z]+)\s+"
+        r"para(?:graph)?\.?\s+(?P<paragraph>[0-9A-Za-z]+)\s*$",
+        " ".join((ref or "").split()),
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    schedule = _clean_num(match.group("schedule"))
+    paragraph = _clean_num(match.group("paragraph"))
+    if not schedule or not paragraph:
+        return None
+    return schedule, paragraph
+
+
+def _schedule_ref_label(ref: str) -> str:
+    match = re.match(
+        r"^\s*sch(?:edule)?\.?\s+(?P<schedule>[0-9A-Za-z]+)\s*$",
+        " ".join((ref or "").split()),
+        flags=re.I,
+    )
+    if match is None:
+        return ""
+    return _clean_num(match.group("schedule"))
+
+
+def _schedule_table_row_label_key(label: str) -> str:
+    return re.sub(r"\s+", "", _clean_num(label))
+
+
+def _source_part_label_from_element(part_el: ET.Element) -> str:
+    number_text = _text_content(part_el.find(f"./{{{_LEG_NS}}}Number"))
+    match = re.search(r"\bpart\s+(?P<label>[0-9A-Za-zIVXLC]+)\b", number_text, flags=re.I)
+    if match is not None:
+        return _clean_num(match.group("label"))
+    part_id = str(part_el.get("id") or part_el.get("Id") or "")
+    tokens = _get_id_sequence(part_id)
+    for index, token in enumerate(tokens[:-1]):
+        if token == "part":
+            return _clean_num(tokens[index + 1])
+    return ""
+
+
+def _direct_table_row_cells(row: ET.Element) -> tuple[ET.Element, ...]:
+    return tuple(
+        child
+        for child in list(row)
+        if _tag(child).lower() in {"td", "entry", "cell"}
+    )
+
+
+def _synthetic_schedule_table_row_paragraph_source(
+    *,
+    schedule_label: str,
+    part_label: str,
+    target_label: str,
+    row: ET.Element,
+    cells: Sequence[ET.Element],
+) -> ET.Element | None:
+    if len(cells) < 2:
+        return None
+    payload_text = " ".join(_text_content(cell) for cell in cells[1:]).strip()
+    if not payload_text:
+        return None
+    p1 = ET.Element(f"{{{_LEG_NS}}}P1")
+    p1.set("id", f"schedule-{schedule_label}-paragraph-{target_label}")
+    p1.set("source_rule_id", "uk_affecting_act_enacted_schedule_table_row_source_extracted")
+    p1.set("source_part_label", part_label)
+    p1.set("source_row_text", _text_content(row))
+    pnumber = ET.SubElement(p1, f"{{{_LEG_NS}}}Pnumber")
+    pnumber.text = target_label
+    text = ET.SubElement(p1, f"{{{_LEG_NS}}}Text")
+    text.text = payload_text
+    return p1
+
+
+def _extract_enacted_schedule_table_row_source(
+    context: UKAffectingSourceContext,
+    effect: UKEffectRecord,
+) -> tuple[Optional[ET.Element], tuple[dict[str, Any], ...]]:
+    effect_type = (effect.effect_type or "").strip().lower()
+    if effect_type not in {"added", "inserted"}:
+        return None, ()
+    target_parts = _schedule_paragraph_ref_parts(str(effect.affected_provisions or ""))
+    if target_parts is None:
+        return None, ()
+    target_schedule_label, target_paragraph_label = target_parts
+    source_schedule_label = _schedule_ref_label(str(effect.affecting_provisions or ""))
+    if source_schedule_label != target_schedule_label:
+        return None, ()
+    schedule_el = _extract_from_affecting_source_context(context, effect.affecting_provisions)
+    if schedule_el is None or _tag(schedule_el) != "Schedule":
+        return None, ()
+
+    matches: list[tuple[ET.Element, tuple[ET.Element, ...], str, str]] = []
+    for part in schedule_el.iter():
+        if _tag(part) != "Part":
+            continue
+        part_label = _source_part_label_from_element(part)
+        if not part_label:
+            continue
+        for row in part.iter():
+            if _tag(row).lower() != "tr":
+                continue
+            cells = _direct_table_row_cells(row)
+            if len(cells) < 2:
+                continue
+            row_label_text = _text_content(cells[0]).strip().rstrip(".")
+            row_label = _schedule_table_row_label_key(row_label_text)
+            if row_label == target_paragraph_label:
+                matches.append((row, cells, part_label, target_paragraph_label.upper()))
+    if len(matches) != 1:
+        return None, ()
+
+    row, cells, part_label, source_label_text = matches[0]
+    synthetic = _synthetic_schedule_table_row_paragraph_source(
+        schedule_label=target_schedule_label,
+        part_label=part_label,
+        target_label=source_label_text,
+        row=row,
+        cells=cells,
+    )
+    if synthetic is None:
+        return None, ()
+    observation = uk_affecting_act_enacted_schedule_table_row_source_extracted(
+        effect_id=str(effect.effect_id or ""),
+        affecting_act_id=str(effect.affecting_act_id or ""),
+        affected_provisions=str(effect.affected_provisions or ""),
+        affecting_provisions=str(effect.affecting_provisions or ""),
+        locator=context.locator,
+        authority_layer=context.authority_layer,
+        schedule_label=target_schedule_label,
+        part_label=part_label,
+        target_label=target_paragraph_label,
+        source_row_text=_text_content(row),
+    )
+    return synthetic, (observation,)
+
+
 def _extract_from_affecting_source_context_with_observations(
     context: UKAffectingSourceContext,
     effect: UKEffectRecord,
@@ -3788,8 +3932,6 @@ def _select_enacted_source_for_current_shell(
     )
     if not current_missing and not current_shell:
         return current_context, current_el, ()
-    if current_missing and current_context.root is None:
-        return current_context, current_el, ()
 
     act_id = str(effect.affecting_act_id or "")
     if not act_id:
@@ -3804,6 +3946,19 @@ def _select_enacted_source_for_current_shell(
             authority_layer="AFFECTING_ACT_ENACTED_TEXT",
         )
         enacted_context_cache[act_id] = enacted_context
+
+    schedule_row_el, schedule_row_observations = _extract_enacted_schedule_table_row_source(
+        enacted_context,
+        effect,
+    )
+    if schedule_row_el is not None:
+        return enacted_context, schedule_row_el, schedule_row_observations
+    if (
+        current_missing
+        and _schedule_paragraph_ref_parts(str(effect.affected_provisions or "")) is not None
+        and _schedule_ref_label(str(effect.affecting_provisions or ""))
+    ):
+        return current_context, current_el, ()
 
     enacted_el = _extract_from_affecting_source_context(enacted_context, effect.affecting_provisions)
     enacted_text = _extracted_element_text(enacted_el)
@@ -10667,6 +10822,55 @@ def compile_effect_to_ir_ops(
             continue
         parsed_target = _parse_affected_target(t_str)
         target = parsed_target if _is_direct_section_paragraph_ref(t_str) else canonicalize_uk_address(parsed_target)
+        source_schedule_table_row_part_label = (
+            str(extracted_el.get("source_part_label") or "")
+            if extracted_el is not None
+            and str(extracted_el.get("source_rule_id") or "")
+            == "uk_affecting_act_enacted_schedule_table_row_source_extracted"
+            else ""
+        )
+        if (
+            action == "insert"
+            and source_schedule_table_row_part_label
+            and _addr_container(target) == "schedule"
+            and _addr_field(target, "part") is None
+            and _addr_leaf_kind(target) == "paragraph"
+        ):
+            original_target = target
+            schedule_label = _addr_field(target, "schedule") or ""
+            paragraph_label = _addr_leaf_label(target) or ""
+            target = canonicalize_uk_address(
+                LegalAddress(
+                    path=(
+                        ("schedule", schedule_label),
+                        ("part", source_schedule_table_row_part_label),
+                        ("paragraph", paragraph_label),
+                    )
+                )
+            )
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_UK_ENACTED_SCHEDULE_TABLE_ROW_PART_TARGET_RULE_ID,
+                family="target_resolution_recovery",
+                reason_code="source_enacted_schedule_table_row_part_context",
+                reason=(
+                    "UK enacted affecting source exposed the added schedule "
+                    "paragraph as a unique row under a schedule Part; lowering "
+                    "refines the metadata paragraph target to that source-owned "
+                    "Part instead of inserting under the schedule root."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": t_str,
+                    "metadata_target": str(original_target),
+                    "refined_target": str(target),
+                    "source_part_label": source_schedule_table_row_part_label,
+                    "source_rule_id": str(extracted_el.get("source_rule_id") or ""),
+                    "source_row_text": str(extracted_el.get("source_row_text") or ""),
+                },
+            )
         label_changing_substitution = next(
             (
                 substitution

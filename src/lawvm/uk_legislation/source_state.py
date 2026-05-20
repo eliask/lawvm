@@ -16,6 +16,7 @@ UK_AFFECTING_ACT_XML_SOURCE_RULE_IDS = frozenset(
         "uk_affecting_act_missing_current_enacted_source_selected",
         "uk_affecting_act_nonaddressable_schedule_part_context_ignored",
         "uk_affecting_act_parenthesized_range_source_extracted",
+        "uk_affecting_act_enacted_schedule_table_row_source_extracted",
     }
 )
 
@@ -293,6 +294,46 @@ def uk_affecting_act_parenthesized_range_source_extracted(
             "children are addressable in the affecting XML; LawVM extracted only the "
             "bounded child range into a synthetic source wrapper instead of widening "
             "to the whole parent provision."
+        ),
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+
+
+def uk_affecting_act_enacted_schedule_table_row_source_extracted(
+    *,
+    effect_id: str,
+    affecting_act_id: str,
+    affected_provisions: str,
+    affecting_provisions: str,
+    locator: str,
+    authority_layer: str,
+    schedule_label: str,
+    part_label: str,
+    target_label: str,
+    source_row_text: str,
+) -> dict[str, Any]:
+    return {
+        "rule_id": "uk_affecting_act_enacted_schedule_table_row_source_extracted",
+        "family": "source_lane_selection",
+        "phase": "extraction",
+        "effect_id": effect_id,
+        "affecting_act_id": affecting_act_id,
+        "affected_provisions": affected_provisions,
+        "affecting_provisions": affecting_provisions,
+        "locator": locator,
+        "authority_layer": authority_layer,
+        "schedule_label": schedule_label,
+        "part_label": part_label,
+        "target_label": target_label,
+        "source_row_text": source_row_text,
+        "reason": (
+            "UK current affecting-act XML was unavailable, while the official enacted "
+            "source exposed a unique table row under the affected schedule Part whose "
+            "first cell exactly names the added schedule paragraph; LawVM extracted "
+            "only that row as a synthetic paragraph payload instead of admitting the "
+            "whole schedule source."
         ),
         "blocking": False,
         "strict_disposition": "record",

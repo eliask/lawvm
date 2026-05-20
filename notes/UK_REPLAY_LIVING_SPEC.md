@@ -1787,6 +1787,19 @@ Current block-substitution context invariant:
   `uk_replay_schedule_table_end_rows_insert_unresolved`. This is not a generic
   words-inserted recovery and must not synthesize schedule paragraphs from
   table-cell prose.
+  Enacted-source schedule table row recovery is a separate source-lane rule:
+  `uk_affecting_act_enacted_schedule_table_row_source_extracted` may fire when
+  current affecting XML is unavailable, the official enacted source exposes the
+  broad affected Schedule, the effect target is one added schedule paragraph,
+  and exactly one table row under exactly one source Part has a first-cell label
+  matching that paragraph. LawVM synthesizes only a single `P1` paragraph
+  payload from that row and records the source row text, Part label, and enacted
+  locator; it must not admit the whole schedule as payload. Lowering then emits
+  `uk_effect_enacted_schedule_table_row_part_target_refined` to refine the
+  metadata target from `schedule:N/paragraph:X` to the source-owned
+  `schedule:N/part:P/paragraph:X`; ambiguous or missing rows remain blocked as
+  missing source payloads. Current witness: `asp/2002/13` Schedule 1 additions
+  by `ssi/2008/297 Sch. 1`.
   Current witnesses: `asp/2000/7` affected `sch. 3` by `asp/2002/3`,
   `asp/2005/6`, and `asp/2010/8`; partition refinement witness:
   `asp/2002/11` affected `Sch. 2 Pt. 2` by `ssi/2002/468 art. 2`;
