@@ -652,6 +652,9 @@ _UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_RESOLVED_RULE_ID = (
 _UK_REPLAY_SCHEDULE_ENTRY_REPEAL_GRANULARITY_BLOCKED_RULE_ID = (
     "uk_replay_schedule_entry_repeal_granularity_blocked"
 )
+_UK_REPLAY_SCHEDULE_P1GROUP_PARAGRAPH_WRAPPER_RESOLVED_RULE_ID = (
+    "uk_replay_schedule_p1group_paragraph_wrapper_resolved"
+)
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_ANCHOR_PREFIX_NORMALIZED_RULE_ID = (
     "uk_replay_schedule_list_entry_anchor_prefix_normalized"
 )
@@ -14602,6 +14605,7 @@ class UKReplayExecutor:
         *,
         allow_compound_subsection_alias: bool = False,
         allow_recursive_match: bool = True,
+        target_resolution_op: LegalOperation | None = None,
     ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
         """Find a node and its parent by LegalAddress path."""
         def _find(address: LegalAddress) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
@@ -14651,6 +14655,35 @@ class UKReplayExecutor:
                             p_label=p_label,
                         )
                         if ordinal_matches:
+                            if target_resolution_op is not None:
+                                for resolved_node, resolved_parent, _resolved_idx in ordinal_matches:
+                                    if (
+                                        _uk_kind_value(resolved_node.kind) == "paragraph"
+                                        and resolved_parent is not None
+                                        and _uk_kind_value(resolved_parent.kind) == "p1group"
+                                        and not _clean_num(str(resolved_parent.label or ""))
+                                    ):
+                                        _append_uk_replay_adjudication(
+                                            self.adjudications_out,
+                                            kind=_UK_REPLAY_SCHEDULE_P1GROUP_PARAGRAPH_WRAPPER_RESOLVED_RULE_ID,
+                                            message=(
+                                                "UK replay resolved an explicit schedule paragraph "
+                                                "target through an unlabeled p1group wrapper with a "
+                                                "single exactly labelled paragraph child."
+                                            ),
+                                            op=target_resolution_op,
+                                            detail={
+                                                "action": _action_name(target_resolution_op.action),
+                                                "target": str(target),
+                                                "paragraph_label": str(p_label),
+                                                "wrapper_kind": "p1group",
+                                                "family": "target_resolution_recovery",
+                                                "blocking": False,
+                                                "strict_disposition": "record",
+                                                "quirks_disposition": "apply",
+                                            },
+                                        )
+                                        break
                             next_cands = ordinal_matches
                     if not next_cands:
                         for curr_node, _, _ in curr_cands:
@@ -14907,6 +14940,7 @@ class UKReplayExecutor:
                 target,
                 allow_compound_subsection_alias=allow_compound_subsection_alias,
                 allow_recursive_match=_action_name(op.action) != "insert",
+                target_resolution_op=op,
             )
         insert_existing_target_resolution = ""
         if not node:

@@ -3137,6 +3137,16 @@ Current bench replay-regime invariant:
   `uk_replay_schedule_p1group_wrapper_carrier_gap`. This identifies a legacy
   XML wrapper/ontology problem without silently rebinding the operation through
   that wrapper.
+  A narrow owned exception is
+  `uk_replay_schedule_p1group_paragraph_wrapper_resolved`: for an explicit
+  schedule paragraph target, an unlabeled ordinal `p1group` may be traversed
+  only when it has exactly one paragraph child and that child's label exactly
+  matches the requested paragraph. Replay records the recovery and then applies
+  the operation to the child paragraph/descendant. Multiple paragraph children,
+  missing labels, or labelled `p1group` carriers remain blocked as wrapper
+  carrier gaps.
+  - current witness family: `asp/2002/11` / `asp/2010/11 Sch. 3 para. 13(b)`,
+    targeting `schedule:1/paragraph:4/subparagraph:2b`
 - A schedule paragraph descendant target under an unlabeled paragraph carrier is
   a source/XML ontology gap, not a malformed legal label. Replay records
   `uk_replay_schedule_unlabeled_paragraph_target_gap` and performs no mutation
