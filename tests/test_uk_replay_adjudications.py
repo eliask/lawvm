@@ -4964,6 +4964,7 @@ def test_replay_uk_ops_collects_text_duplication_warnings() -> None:
     ]
 
     assert [adjudication.detail.get("phase") for adjudication in duplication_adjudications] == ["replay_fold"]
+    assert duplication_adjudications[0].detail["root"] == "body"
     assert duplication_adjudications[0].detail["blocking"] is False
     assert duplication_adjudications[0].detail["strict_disposition"] == "record"
     assert duplication_adjudications[0].detail["quirks_disposition"] == "record"
