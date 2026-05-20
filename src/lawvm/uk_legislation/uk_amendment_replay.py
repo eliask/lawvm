@@ -17617,6 +17617,19 @@ class UKReplayExecutor:
             return rebuilt, True
 
         if match.startswith("TEXT_FROM_"):
+            if "_TO_" in match and not match.endswith("_TO_END") and node.text:
+                rebuilt, applied = self._apply_text_replace_on_node_text_only(
+                    node,
+                    match,
+                    replacement,
+                    occurrence,
+                    end_occurrence,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                if applied:
+                    return rebuilt, True
+
             full_text = " ".join(tn.text.strip() for _, tn in text_nodes if tn.text).strip()
             if not full_text:
                 return node, False
@@ -19318,20 +19331,37 @@ class UKReplayExecutor:
                         else:
                             part = f"{kind_name}-{clean_label}"
                     fallback_eid = f"{parent_eid}{'' if parent_eid.endswith('-') else '-'}{part}"
-                    node.attrs["eId"] = fallback_eid
-                    self.oracle_alignment_events.append(
-                        {
-                            "rule_id": "uk_oracle_eid_alignment_adapter",
-                            "phase": "oracle_alignment",
-                            "family": "oracle_alignment_adapter",
-                            "kind": str(node.kind),
-                            "label": node.label,
-                            "before_eid": before_eid,
-                            "after_eid": fallback_eid,
-                            "match_method": "local_fallback",
-                            "match_key": None,
-                        }
-                    )
+                    if not clean_label and kind_name not in {"schedule", "part", "chapter"}:
+                        for key in ("eId", "id"):
+                            node.attrs.pop(key, None)
+                        self.oracle_alignment_events.append(
+                            {
+                                "rule_id": "uk_oracle_eid_alignment_adapter",
+                                "phase": "oracle_alignment",
+                                "family": "oracle_alignment_adapter",
+                                "kind": str(node.kind),
+                                "label": node.label,
+                                "before_eid": before_eid,
+                                "after_eid": None,
+                                "match_method": "local_fallback_unlabeled_blocked",
+                                "match_key": None,
+                            }
+                        )
+                    else:
+                        node.attrs["eId"] = fallback_eid
+                        self.oracle_alignment_events.append(
+                            {
+                                "rule_id": "uk_oracle_eid_alignment_adapter",
+                                "phase": "oracle_alignment",
+                                "family": "oracle_alignment_adapter",
+                                "kind": str(node.kind),
+                                "label": node.label,
+                                "before_eid": before_eid,
+                                "after_eid": fallback_eid,
+                                "match_method": "local_fallback",
+                                "match_key": None,
+                            }
+                        )
 
             kind_counts = {}
             new_context = context
