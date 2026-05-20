@@ -2401,7 +2401,7 @@ def test_uk_bench_report_worst_rows_use_commencement_score_when_available(capsys
         commencement_score=0.9,
         n_commenced_eids=9,
         replay_score=0.2,
-        replay_commencement_score=0.95,
+        replay_commencement_score=0.2,
         comparison_class="commensurable",
         core_benchmark=True,
     )
@@ -2420,7 +2420,7 @@ def test_uk_bench_report_worst_rows_use_commencement_score_when_available(capsys
         commencement_score=0.4,
         n_commenced_eids=4,
         replay_score=0.85,
-        replay_commencement_score=0.45,
+        replay_commencement_score=0.95,
         comparison_class="commensurable",
         core_benchmark=True,
     )
@@ -2433,7 +2433,11 @@ def test_uk_bench_report_worst_rows_use_commencement_score_when_available(capsys
     assert worst_block.index("ukpga/2000/2") < worst_block.index("ukpga/2000/1")
     assert "ukpga/2000/2" in out
     assert "score=40.0% raw=80.0%" in out
-    assert "replay=45.0% raw_replay=85.0% ops=0" in out
+    assert "replay=95.0% raw_replay=85.0% ops=0" in out
+    assert "Worst 2 core replay rows (by replay commenced EID score):" in out
+    worst_replay_block = out.split("Worst 2 core replay rows (by replay commenced EID score):", 1)[1]
+    assert worst_replay_block.index("ukpga/2000/1") < worst_replay_block.index("ukpga/2000/2")
+    assert "replay=20.0% raw_replay=20.0% ops=0" in out
 
 
 def test_uk_bench_report_prints_source_unavailable_rows(capsys) -> None:
