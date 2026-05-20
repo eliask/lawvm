@@ -24476,6 +24476,180 @@ def test_pipeline_compile_ops_records_nonaddressable_schedule_part_context(
     )
 
 
+def test_pipeline_compile_ops_extracts_parenthesized_source_range(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_source_range_context",
+        effect_type="",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="Sch. 2 Pt. 2-4",
+        affecting_uri="/id/uksi/2024/13",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2024",
+        affecting_number="13",
+        affecting_provisions="art. 2(4)(c)-(e)",
+        affecting_title="Range Source Instrument",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+    current_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="article-2">
+          <Pnumber>2</Pnumber>
+          <P1para>
+            <P2 id="article-2-4">
+              <Pnumber>4</Pnumber>
+              <P2para>
+                <P3 id="article-2-4-b"><Pnumber>b</Pnumber><Text>b ignored.</Text></P3>
+                <P3 id="article-2-4-c"><Pnumber>c</Pnumber><Text>c selected.</Text></P3>
+                <P3 id="article-2-4-d"><Pnumber>d</Pnumber><Text>d selected.</Text></P3>
+                <P3 id="article-2-4-e"><Pnumber>e</Pnumber><Text>e selected.</Text></P3>
+                <P3 id="article-2-4-f"><Pnumber>f</Pnumber><Text>f ignored.</Text></P3>
+              </P2para>
+            </P2>
+          </P1para>
+        </P1>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    compile_calls: list[dict[str, str]] = []
+
+    def fake_compile(effect_arg, extracted_el, sequence=0, **kwargs):
+        compile_calls.append(
+            {
+                "tag": uk_replay_mod._tag(extracted_el) if extracted_el is not None else "",
+                "text": uk_replay_mod._text_content(extracted_el) if extracted_el is not None else "",
+                "authority": kwargs.get("source_authority_layer", ""),
+            }
+        )
+        return [
+            LegalOperation(
+                op_id=effect_arg.effect_id,
+                sequence=sequence,
+                action=StructuralAction.REPLACE,
+                target=LegalAddress(path=(("schedule", "2"),)),
+                payload=IRNode(kind=IRNodeKind.SCHEDULE, label="2"),
+                source=OperationSource(statute_id=effect_arg.affecting_act_id),
+            )
+        ]
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: current_xml,
+    )
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", fake_compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    compiled = UKReplayPipeline(Path(".")).compile_ops_for_statute(
+        "ukpga/2000/10",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    )
+
+    assert len(compiled) == 1
+    assert compile_calls[0]["tag"] == "SourceRange"
+    assert compile_calls[0]["authority"] == "AFFECTING_ACT_TEXT"
+    assert "c selected." in compile_calls[0]["text"]
+    assert "d selected." in compile_calls[0]["text"]
+    assert "e selected." in compile_calls[0]["text"]
+    assert "b ignored." not in compile_calls[0]["text"]
+    assert "f ignored." not in compile_calls[0]["text"]
+    assert any(
+        row.get("rule_id") == "uk_affecting_act_parenthesized_range_source_extracted"
+        and row.get("affecting_provisions") == "art. 2(4)(c)-(e)"
+        and row.get("normalized_parent_ref") == "art. 2(4)"
+        and row.get("extracted_element_ids")
+        == ["article-2-4-c", "article-2-4-d", "article-2-4-e"]
+        for row in diagnostics
+    )
+
+
+def test_pipeline_compile_ops_does_not_extract_incomplete_parenthesized_source_range(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_incomplete_source_range_context",
+        effect_type="",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/10",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="10",
+        affected_provisions="Sch. 2 Pt. 2-4",
+        affecting_uri="/id/uksi/2024/13",
+        affecting_class="UnitedKingdomStatutoryInstrument",
+        affecting_year="2024",
+        affecting_number="13",
+        affecting_provisions="art. 2(4)(c)-(e)",
+        affecting_title="Range Source Instrument",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+    current_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Body>
+        <P1 id="article-2">
+          <Pnumber>2</Pnumber>
+          <P1para>
+            <P2 id="article-2-4">
+              <Pnumber>4</Pnumber>
+              <P2para>
+                <P3 id="article-2-4-c"><Pnumber>c</Pnumber><Text>c selected.</Text></P3>
+                <P3 id="article-2-4-e"><Pnumber>e</Pnumber><Text>e selected.</Text></P3>
+              </P2para>
+            </P2>
+          </P1para>
+        </P1>
+      </Body>
+    </Legislation>
+    """.encode("utf-8")
+    compile_calls: list[str] = []
+
+    def fake_compile(_effect_arg, extracted_el, sequence=0, **_kwargs):
+        compile_calls.append(uk_replay_mod._tag(extracted_el) if extracted_el is not None else "")
+        return []
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: current_xml,
+    )
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", fake_compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    compiled = UKReplayPipeline(Path(".")).compile_ops_for_statute(
+        "ukpga/2000/10",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    )
+
+    assert compiled == []
+    assert compile_calls == [""]
+    assert all(
+        row.get("rule_id") != "uk_affecting_act_parenthesized_range_source_extracted"
+        for row in diagnostics
+    )
+
+
 def test_pipeline_compile_ops_blocks_schedule_part_context_when_ancestor_differs(
     monkeypatch,
 ) -> None:

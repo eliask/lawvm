@@ -2528,6 +2528,11 @@ Current bench replay-regime invariant:
   when oracle alignment is enabled and an oracle map is available. Otherwise
   `uk-replay` advertises the oracle adapter but compares ungrounded replay
   IDs, which turns bounded oracle identity drift into false replay residuals.
+- Affecting-provision refs with parenthesized child ranges such as
+  `art. 2(4)(c)-(g)` must not be widened to the whole parent. If the child
+  endpoints are addressable in the affecting XML, extraction may return a
+  synthetic bounded source wrapper containing only the named children and must
+  emit `uk_affecting_act_parenthesized_range_source_extracted`.
 - UK bench rows must also persist replay lowering rejection totals, including
   the blocking subset. A replay score without its unsupported/no-op lowering
   surface is not a coverage metric; it hides which source effects were parsed

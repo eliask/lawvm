@@ -24,6 +24,7 @@ Current status:
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -73,6 +74,7 @@ from lawvm.uk_legislation.source_state import (
     uk_affecting_act_current_shell_enacted_source_selected,
     uk_affecting_act_missing_current_enacted_source_selected,
     uk_affecting_act_nonaddressable_schedule_part_context_ignored,
+    uk_affecting_act_parenthesized_range_source_extracted,
     uk_affecting_act_xml_missing_rejection,
     uk_affecting_act_xml_parse_rejection,
     uk_affecting_act_xml_too_small_rejection,
@@ -3622,6 +3624,95 @@ def _has_matching_part_ancestor(
     return False
 
 
+def _parenthesized_range_source_ref(provision_ref: str) -> tuple[str, str, str] | None:
+    match = re.match(
+        r"^(?P<parent>.+?)\((?P<start>[0-9A-Za-zivxlcdm]+)\)\s*-\s*\((?P<end>[0-9A-Za-zivxlcdm]+)\)$",
+        " ".join((provision_ref or "").split()).strip(),
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    parent_ref = match.group("parent").strip()
+    start = match.group("start").strip()
+    end = match.group("end").strip()
+    if not parent_ref or not start or not end:
+        return None
+    return parent_ref, start, end
+
+
+def _expand_source_child_label_range(start: str, end: str) -> tuple[str, ...]:
+    start_clean = _source_parent_range_label(start)
+    end_clean = _source_parent_range_label(end)
+    if not start_clean or not end_clean:
+        return ()
+    if len(start_clean) == 1 and len(end_clean) == 1 and start_clean.isalpha() and end_clean.isalpha():
+        if ord(end_clean) < ord(start_clean) or ord(end_clean) - ord(start_clean) > 100:
+            return ()
+        return tuple(chr(code) for code in range(ord(start_clean), ord(end_clean) + 1))
+    if start_clean.isdigit() and end_clean.isdigit():
+        start_int = int(start_clean)
+        end_int = int(end_clean)
+        if end_int < start_int or end_int - start_int > 100:
+            return ()
+        return tuple(str(value) for value in range(start_int, end_int + 1))
+    start_roman = _shared_roman_to_arabic(start_clean)
+    end_roman = _shared_roman_to_arabic(end_clean)
+    if start_roman is not None and end_roman is not None and end_roman >= start_roman and end_roman - start_roman <= 100:
+        return tuple(_shared_arabic_to_roman(value).lower() for value in range(start_roman, end_roman + 1))
+    return ()
+
+
+def _extract_parenthesized_range_source(
+    context: UKAffectingSourceContext,
+    effect: UKEffectRecord,
+) -> tuple[Optional[ET.Element], tuple[dict[str, Any], ...]]:
+    parsed = _parenthesized_range_source_ref(str(effect.affecting_provisions or ""))
+    if parsed is None:
+        return None, ()
+    parent_ref, start_label, end_label = parsed
+    wanted_labels = _expand_source_child_label_range(start_label, end_label)
+    if not wanted_labels:
+        return None, ()
+    parent_el = _extract_from_affecting_source_context(context, parent_ref)
+    if parent_el is None:
+        return None, ()
+    by_label: dict[str, ET.Element] = {}
+    for child in parent_el.iter():
+        if child is parent_el:
+            continue
+        if _tag(child) not in {"P1", "P2", "P3", "P4", "P5", "P6", "Section", "Subsection", "Paragraph"}:
+            continue
+        label = _source_parent_range_label(_direct_structural_num(child))
+        if label and label not in by_label:
+            by_label[label] = child
+    selected: list[ET.Element] = []
+    for label in wanted_labels:
+        child = by_label.get(label)
+        if child is None:
+            return None, ()
+        selected.append(child)
+    wrapper = ET.Element("SourceRange")
+    wrapper.set("rule_id", "uk_affecting_act_parenthesized_range_source_extracted")
+    wrapper.set("source_ref", str(effect.affecting_provisions or ""))
+    wrapper.set("parent_ref", parent_ref)
+    wrapper.set("start_label", wanted_labels[0])
+    wrapper.set("end_label", wanted_labels[-1])
+    for child in selected:
+        wrapper.append(copy.deepcopy(child))
+    observation = uk_affecting_act_parenthesized_range_source_extracted(
+        effect_id=str(effect.effect_id or ""),
+        affecting_act_id=str(effect.affecting_act_id or ""),
+        affecting_provisions=str(effect.affecting_provisions or ""),
+        locator=context.locator,
+        authority_layer=context.authority_layer,
+        normalized_parent_ref=parent_ref,
+        requested_start_label=wanted_labels[0],
+        requested_end_label=wanted_labels[-1],
+        extracted_element_ids=[str(child.get("id") or child.get("Id") or "") for child in selected],
+    )
+    return wrapper, (observation,)
+
+
 def _extract_from_affecting_source_context_with_observations(
     context: UKAffectingSourceContext,
     effect: UKEffectRecord,
@@ -3630,6 +3721,10 @@ def _extract_from_affecting_source_context_with_observations(
     el = _extract_from_affecting_source_context(context, provision_ref)
     if el is not None:
         return el, ()
+
+    range_el, range_observations = _extract_parenthesized_range_source(context, effect)
+    if range_el is not None:
+        return range_el, range_observations
 
     normalized = _schedule_part_context_normalized_ref(provision_ref)
     if normalized is None:
