@@ -1179,6 +1179,61 @@ def test_executor_classifies_absent_sibling_range_gap_separately_from_repeal() -
     assert [child.label for child in statute.body.children[0].children] == ["1", "3"]
 
 
+def test_executor_preserves_direct_section_paragraph_descendant_target_shape() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Direct Section Paragraph Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="399",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.PARAGRAPH,
+                            label="c",
+                            text="a sentence is required by one of the following provisions—",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.SUBPARAGRAPH,
+                                    label="ii",
+                                    text="ii\n\nsection 312(2) minimum sentence.",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_direct_section_paragraph_descendant_patch",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "399"), ("paragraph", "c"), ("subparagraph", "ii"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="312(2)", occurrence=0),
+                replacement="312(2) or (2A)",
+            ),
+            source=_source(),
+            witness_rule_id="uk_effect_direct_section_paragraph_target_normalized",
+        )
+    )
+
+    subparagraph = executor.statute.body.children[0].children[0].children[0]
+    assert subparagraph.text == "ii\n\nsection 312(2) or (2A) minimum sentence."
+    assert adjudications == []
+
+
 def test_executor_classifies_missing_schedule_range_gap_separately_from_repeal() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(
