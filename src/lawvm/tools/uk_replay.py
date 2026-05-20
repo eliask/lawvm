@@ -873,6 +873,7 @@ def main(args: "argparse.Namespace") -> None:
         eid_map: dict[str, str] = {}
         text_map: dict[str, str] = {}
         oracle_physical_eid_aliases: dict[str, str] = {}
+        oracle_visible_number_eid_aliases: dict[str, str] = {}
         current_ir = None
         current_eids: Set[str] = set()
         effect_count_parse_rejections: list[dict[str, object]] = []
@@ -918,6 +919,7 @@ def main(args: "argparse.Namespace") -> None:
                 eid_map = oracle_data.get("eid_map", {})
                 text_map = oracle_data.get("text_map", {})
                 oracle_physical_eid_aliases = oracle_data.get("physical_eid_aliases", {})
+                oracle_visible_number_eid_aliases = oracle_data.get("visible_number_eid_aliases", {})
                 current_eids = set(eid_map.values())
                 if verbose:
                     print(f"Oracle EID map entries: {len(eid_map)}", file=sys.stderr)
@@ -1012,6 +1014,7 @@ def main(args: "argparse.Namespace") -> None:
                 replayed_eids,
                 current_eids,
                 oracle_physical_eid_aliases=oracle_physical_eid_aliases,
+                oracle_visible_number_eid_aliases=oracle_visible_number_eid_aliases,
             )
             common = replay_compare_eids & oracle_compare_eids
             similarity = len(common) / max(len(replay_compare_eids), len(oracle_compare_eids), 1)
@@ -1059,6 +1062,7 @@ def main(args: "argparse.Namespace") -> None:
                     commenced_replayed_raw,
                     commenced_oracle,
                     oracle_physical_eid_aliases=oracle_physical_eid_aliases,
+                    oracle_visible_number_eid_aliases=oracle_visible_number_eid_aliases,
                 )
                 uk_commencement_summary = _uk_commencement_score_summary(
                     enabled=True,

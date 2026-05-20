@@ -966,6 +966,7 @@ def _score_statute(
             raise
         oracle_eids: Set[str] = set(oracle_eid_data.get("eid_map", {}).values())
         oracle_physical_eid_aliases = oracle_eid_data.get("physical_eid_aliases", {})
+        oracle_visible_number_eid_aliases = oracle_eid_data.get("visible_number_eid_aliases", {})
 
         enacted_eids = _collect_eids(enacted_ir.body.children)
         for s in enacted_ir.supplements:
@@ -1213,6 +1214,7 @@ def _score_statute(
                     replayed_eids,
                     oracle_eids,
                     oracle_physical_eid_aliases=oracle_physical_eid_aliases,
+                    oracle_visible_number_eid_aliases=oracle_visible_number_eid_aliases,
                 )
                 replay_common = replay_compare_eids & oracle_compare_eids
                 n_replay_common = len(replay_common)
@@ -1351,6 +1353,7 @@ def _score_statute(
                         commenced_replayed_raw,
                         commenced_oracle,
                         oracle_physical_eid_aliases=oracle_physical_eid_aliases,
+                        oracle_visible_number_eid_aliases=oracle_visible_number_eid_aliases,
                     )
                     replay_commencement_score = _score_commenced_eids(
                         commenced_replayed,
