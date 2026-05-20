@@ -4139,6 +4139,64 @@ def test_executor_applies_after_definition_insert_to_comma_separated_definition_
     assert adjudications == []
 
 
+def test_executor_applies_at_end_definition_insert_to_named_definition_only() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="23",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "In this Act— "
+                                "“person aggrieved” means a person who has made a complaint, "
+                                "“request” means a request for a review,"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_in_definition_at_end_insert",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "23"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="TEXT_IN_DEFINITION_person aggrieved\x1fAT_END",
+                    occurrence=0,
+                ),
+                replacement="or (as the case may be) section 6A(5)",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "In this Act— "
+        "“person aggrieved” means a person who has made a complaint "
+        "or (as the case may be) section 6A(5), "
+        "“request” means a request for a review,"
+    )
+    assert adjudications == []
+
+
 def test_executor_applies_definition_child_repeal_without_bare_term_deletion() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

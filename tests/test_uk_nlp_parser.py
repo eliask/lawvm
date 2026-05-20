@@ -884,6 +884,23 @@ def test_parse_fragment_substitution_handles_for_the_words_substitute() -> None:
     ]
 
 
+def test_parse_fragment_substitution_handles_child_qualified_quoted_substitution() -> None:
+    subs = parse_fragment_substitution(
+        "8 In schedule 2, for the words \u201cScottish Homes\u201d in paragraph 44 "
+        "substitute \u201c The Scottish Housing Regulator \u201d ."
+    )
+
+    assert subs == [
+        {
+            "original": "Scottish Homes",
+            "replacement": "The Scottish Housing Regulator",
+            "source_child_kind": "paragraph",
+            "source_child_label": "44",
+            "rule_id": "uk_effect_child_qualified_quoted_substitution_text_patch",
+        },
+    ]
+
+
 def test_parse_fragment_substitution_handles_range_from_first_occurrence() -> None:
     subs = parse_fragment_substitution(
         "a in sub-paragraph (b), for the words from \u201ca\u201d where it first occurs "
@@ -1070,6 +1087,21 @@ def test_parse_fragment_substitution_handles_at_end_of_that_paragraph_insert() -
             "original": "TEXT_FROM__TO_END",
             "replacement": "or is Scottish Water,",
             "rule_id": "uk_effect_at_end_text_insertion_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_at_end_of_definition_insert() -> None:
+    subs = parse_fragment_substitution(
+        "6 In section 23(1), at the end of the definition of \u201cperson aggrieved\u201d "
+        "insert \u201cor (as the case may be) section 6A(5)\u201d."
+    )
+
+    assert subs == [
+        {
+            "original": "TEXT_IN_DEFINITION_person aggrieved\x1fAT_END",
+            "replacement": "or (as the case may be) section 6A(5)",
+            "rule_id": "uk_effect_in_definition_at_end_insert_text_patch",
         }
     ]
 

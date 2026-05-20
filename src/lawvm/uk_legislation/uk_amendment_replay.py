@@ -17362,6 +17362,96 @@ class UKReplayExecutor:
 
         if match.startswith("TEXT_IN_DEFINITION_") and not match.startswith("TEXT_IN_DEFINITION_CHILD_"):
             parts = match[len("TEXT_IN_DEFINITION_") :].split(US)
+            if len(parts) == 2 and parts[1] == "AT_END":
+                term = parts[0].strip()
+                if not term:
+                    return node, False
+
+                def _insert_at_end_of_definition(text: str) -> tuple[str, bool]:
+                    term_pattern = _text_patch_pattern(
+                        term,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    definition_start_pattern = re.compile(
+                        rf"""
+                        (?P<prefix>(?:^|[;\.,\u2014\u2013-]\s*))
+                        [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                        (?:\s*\([^;]*?\))*
+                        \s+
+                        (?:
+                            means
+                            |has\s+the\s+same\s+meaning\s+as
+                            |has\s+the\s+meaning
+                            |is\s+to\s+be\s+construed
+                            |shall\s+be\s+construed
+                            |includes
+                        )\b
+                        """,
+                        flags=re.I | re.S | re.X,
+                    )
+                    starts = list(definition_start_pattern.finditer(text))
+                    if len(starts) != 1:
+                        return text, False
+                    definition_start = starts[0]
+                    next_definition_pattern = re.compile(
+                        r"""
+                        [;\.,]\s*
+                        [“"'\u2018][^”"'\u2019;]{1,160}[”"'\u2019]
+                        (?:\s*\([^;]*?\))*
+                        \s+
+                        (?:
+                            means
+                            |has\s+the\s+same\s+meaning\s+as
+                            |has\s+the\s+meaning
+                            |is\s+to\s+be\s+construed
+                            |shall\s+be\s+construed
+                            |includes
+                        )\b
+                        """,
+                        flags=re.I | re.S | re.X,
+                    )
+                    next_definition = next_definition_pattern.search(text, definition_start.end())
+                    if next_definition is not None:
+                        insert_at = next_definition.start()
+                    else:
+                        terminal = re.search(r"\s*[;,.]\s*$", text)
+                        insert_at = terminal.start() if terminal is not None else len(text)
+                    joiner = (
+                        ""
+                        if insert_at == 0
+                        or text[:insert_at].endswith((" ", "\t", "\n", "\r"))
+                        or replacement.startswith((" ", ",", ".", ";", ":", ")"))
+                        else " "
+                    )
+                    new_text = f"{text[:insert_at]}{joiner}{replacement}{text[insert_at:]}"
+                    return " ".join(new_text.split()).strip(), True
+
+                if node.text:
+                    new_text, changed = _insert_at_end_of_definition(node.text)
+                    if changed:
+                        rebuilt = dc_replace(node, text=new_text)
+                        self._replace_node_in_statute(node, rebuilt)
+                        return rebuilt, True
+
+                candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+                for path, text_node in text_nodes:
+                    if not text_node.text:
+                        continue
+                    new_text, changed = _insert_at_end_of_definition(text_node.text)
+                    if changed:
+                        candidate_paths.append((path, text_node, new_text))
+                if len(candidate_paths) != 1:
+                    return node, False
+                path, text_node, new_text = candidate_paths[0]
+                rebuilt = self._replace_descendant_at_path(
+                    node,
+                    path,
+                    dc_replace(text_node, text=new_text),
+                )
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
             if len(parts) == 4 and parts[1] == "FROM" and parts[3] == "TO_END":
                 term = parts[0].strip()
                 start_anchor = parts[2].strip()
@@ -18184,7 +18274,7 @@ class UKReplayExecutor:
                     )
                     definition_start_pattern = re.compile(
                         rf"""
-                        (?P<prefix>(?:^|[;\.,]\s*))
+                        (?P<prefix>(?:^|[;\.,\u2014\u2013-]\s*))
                         [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
                         (?P<parenthetical_translation>(?:\s*\([^;]*?\))*)
                         \s+

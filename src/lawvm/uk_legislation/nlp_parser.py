@@ -148,6 +148,25 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
                 }
             )
 
+    matches_child_qualified_quoted_substituted = re.finditer(
+        r"for (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’]\s+"
+        r"in\s+(?P<child_kind>paragraph|sub-paragraph|subsection|section)\s+"
+        r"\(?(?P<child_label>[0-9A-Za-z]+)\)?\s+"
+        r"substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_child_qualified_quoted_substituted:
+        subs.append(
+            {
+                "original": m.group("original").strip(),
+                "replacement": m.group("replacement").strip(),
+                "source_child_kind": m.group("child_kind").strip().lower(),
+                "source_child_label": m.group("child_label").strip(),
+                "rule_id": "uk_effect_child_qualified_quoted_substitution_text_patch",
+            }
+        )
+
     # Pattern 1: Substitution (Multiple possible)
     # Use non-greedy match for the fragments.
     # Allow an optional comma (and whitespace) between the quoted original and “substitute”,
@@ -1032,6 +1051,25 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
                     ),
                     "replacement": inserted,
                     "rule_id": "uk_effect_after_definition_child_text_insertion_patch",
+                }
+            )
+
+    matches_definition_at_end_insert = re.finditer(
+        r"at\s+the\s+end\s+of\s+the\s+definition\s+of\s+[“\"'‘](?P<term>.*?)[”\"'’],?\s+"
+        r"(?:insert|there is inserted|there are inserted|there shall be inserted)"
+        r"(?:\s+(?:the\s+)?words?)?\s+[“\"'‘](?P<inserted>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_definition_at_end_insert:
+        inserted = m.group("inserted").strip()
+        term = m.group("term").strip()
+        if inserted and term:
+            subs.append(
+                {
+                    "original": f"TEXT_IN_DEFINITION_{term}{US}AT_END",
+                    "replacement": inserted,
+                    "rule_id": "uk_effect_in_definition_at_end_insert_text_patch",
                 }
             )
 

@@ -3347,6 +3347,12 @@ Current bench replay-regime invariant:
   text append to the source-owned definition child, not an address-only insert
   into a synthetic `section/paragraph/subparagraph` path that the enacted tree
   does not expose.
+  Direct source text of the form `at the end of the definition of "D" insert
+  "X"` lowers to `TEXT_IN_DEFINITION_D AT_END` with
+  `uk_effect_in_definition_at_end_insert_text_patch`. Replay must resolve
+  exactly one definition entry and insert before the next definition separator
+  in comma/semicolon-separated interpretation lists; it must not append to the
+  whole subsection tail when the definition boundary is ambiguous.
 - UK quoted text-patch lowering also owns the common bounded occurrence
   variants when the source names an explicit affected target. `for "X", in
   each/both place(s) it occurs, substitute "Y"` and parenthesized variants such
@@ -3357,6 +3363,10 @@ Current bench replay-regime invariant:
   `after "X", in the first/second/... place it occurs, insert "Y"` lower with
   an explicit occurrence index. The equivalent prefixed form `after the
   first/second/... "X" insert "Y"` is the same bounded text-patch family.
+  `for the words "X" in paragraph N substitute "Y"` lowers as
+  `uk_effect_child_qualified_quoted_substitution_text_patch` when the effect
+  feed already targets that child; the source child qualifier is preserved as
+  evidence and does not authorize widening or rebinding the feed target.
   `omit the final "X"` lowers with the final-occurrence selector
   `occurrence=-1`, not all-occurrences deletion, so earlier conjunctions or
   repeated words remain intact.
