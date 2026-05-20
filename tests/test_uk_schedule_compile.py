@@ -8633,6 +8633,83 @@ def test_compile_after_quoted_insert_scopes_to_source_parent_definition() -> Non
     assert observations[0]["source_unscoped_match_text"] == "by"
 
 
+def test_compile_direct_section_paragraph_after_insert_scopes_to_source_definition_child() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P2 id="section-51-2">
+              <Pnumber>2</Pnumber>
+              <Text>In section 48 (interpretation of Part 2 (bus services)), in the definition of “relevant general policies” in paragraph (a)—</Text>
+              <P3 id="section-51-2-a">
+                <Pnumber>a</Pnumber>
+                <Text>after second “authority” there is inserted “ (i) ” ; and</Text>
+              </P3>
+            </P2>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='section-51-2-a']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-259a386240ffcc043cf39d2fb13bc38f",
+        effect_type="word inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-08-04",
+        affected_uri="/id/asp/2001/2/section/48/a",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 48(a)",
+        affecting_uri="/id/asp/2005/12",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="12",
+        affecting_provisions="s. 51(2)(a)",
+        affecting_title="Transport (Scotland) Act 2005",
+        in_force_dates=[{"date": "2005-08-04", "prospective": "false"}],
+    )
+    lowering_observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "48"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        "TEXT_IN_DEFINITION_CHILD_PARAGRAPH_relevant general policies"
+        f"{US}a{US}AFTER{US}"
+        "authority"
+    )
+    assert ops[0].text_patch.selector.occurrence == 2
+    assert ops[0].text_patch.replacement == "authority (i) "
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_parent_definition_child_after_quoted_anchor_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_source_parent_definition_child_target_refined"
+        and record["source_definition_term"] == "relevant general policies"
+        and record["source_child_label"] == "a"
+        for record in lowering_observations
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_source_parent_definition_child_after_quoted_anchor_insert_text_patch"
+        and record["source_definition_term"] == "relevant general policies"
+        and record["source_child_label"] == "a"
+        and record["source_unscoped_match_text"] == "authority"
+        for record in lowering_observations
+    )
+
+
 def test_compile_after_quoted_insert_does_not_scope_to_remote_definition_context() -> None:
     source_root = ET.fromstring(
         f"""

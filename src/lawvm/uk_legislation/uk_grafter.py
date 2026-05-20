@@ -216,6 +216,7 @@ def _definition_ordered_list_term(parent_el: ET.Element, list_el: ET.Element) ->
     quoted_match = re.search(
         r"[“\"'\u2018]\s*(?P<term>[^”\"'\u2019;]{1,160}?)\s*[”\"'\u2019]\s*"
         r"(?:\([^)]{1,200}\)\s*)?"
+        r"(?:,\s*[^;]{1,240}?)?"
         r"(?:means|includes|has\s+the\s+same\s+meaning\s+as|has\s+the\s+meaning|is\s+to\s+be\s+construed)\b",
         before_text,
         flags=re.I,

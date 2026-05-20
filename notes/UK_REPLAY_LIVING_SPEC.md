@@ -2623,6 +2623,15 @@ Current bench replay-regime invariant:
   `s.51(8)(a)-(b)`. These are source-context elaborations, not live-text
   guesses: strict mode records the source parent context and blocks if replay
   cannot find exactly one matching definition entry.
+  If the same parent instruction also says the definition child is paragraph
+  `(a)` and the effect feed target is `s. N(a)`, the row lowers to
+  `TEXT_IN_DEFINITION_CHILD_PARAGRAPH_<term>/a/AFTER/<anchor>` under
+  `uk_effect_source_parent_definition_child_after_quoted_anchor_insert_text_patch`.
+  Lowering separately records
+  `uk_effect_source_parent_definition_child_target_refined`: the operation
+  targets only the containing section, while the selector retains the child
+  paragraph scope. This is a source-context elaboration, not a replay fallback.
+  Current witness: `asp/2001/2` `key-259a386240ffcc043cf39d2fb13bc38f`.
 - Parser lowering may inherit definition-list context for child rows that only
   contain a quoted term. If the parent source instruction explicitly says
   `omit the definitions of-` and each child row is just `"X",`, the child row
@@ -3140,7 +3149,11 @@ Current bench replay-regime invariant:
   re-canonicalizing it into subsection/paragraph shape during target lookup.
   If that paragraph is not represented as an addressable XML carrier under the
   section, replay emits `uk_replay_direct_section_paragraph_carrier_gap`
-  rather than falling back to a subsection or whole-section text patch.
+  rather than falling back to a subsection or whole-section text patch. The
+  exception is source-proven definition-child context: if the affecting source
+  parent explicitly says that the paragraph is inside a named definition in the
+  same section, lowering keeps that fact as a definition-child selector and
+  records `uk_effect_source_parent_definition_child_target_refined`.
 - Source wording such as `in sub-paragraph (2), paragraph (b) is repealed`
   is nested context, not a sibling list. Sibling expansion must not split it
   into `.../subparagraph:2` plus `.../item:b`; it must preserve the metadata
