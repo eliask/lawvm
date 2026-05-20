@@ -593,6 +593,9 @@ _NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR = "schedule_list_entry_repeal_selector
 _NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR = "schedule_list_entry_replace_selector:"
 
 _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID = "uk_effect_table_entry_inline_text_insertion"
+_UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID = "uk_effect_table_entry_relating_text_patch"
+_UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID = "uk_effect_table_entry_label_text_patch"
+_UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID = "uk_effect_table_column_heading_text_patch"
 _UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID = "uk_effect_table_column_text_patch"
 _UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID = "uk_effect_table_entry_instruction_rejected"
 _UK_REPLAY_TABLE_ENTRY_INLINE_UNRESOLVED_RULE_ID = "uk_replay_table_entry_inline_text_insertion_unresolved"
@@ -4620,6 +4623,62 @@ def _uk_table_entry_inline_text_selector(
     text = " ".join((extracted_text or "").split())
     if not text or "table" not in " ".join((target_ref, str(target))).lower():
         return None
+    fragments = parse_fragment_substitution(text)
+    primary_fragment = fragments[0] if len(fragments) == 1 else None
+    original_text = str(primary_fragment.get("original") or "") if primary_fragment is not None else ""
+    heading_match = re.search(
+        r"\bin\s+the\s+heading\s+of\s+the\s+"
+        r"(?P<column>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+"
+        r"column\b",
+        text,
+        re.I,
+    )
+    if heading_match is not None and original_text:
+        column_index = _uk_ordinal_to_int(heading_match.group("column"))
+        if column_index is not None and column_index >= 1:
+            return {
+                "rule_id": _UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID,
+                "selector_mode": "unique_column_text",
+                "column_index": column_index,
+                "match_text": original_text,
+                "table_label": "",
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
+    relating_match = re.search(
+        r"\bin\s+the\s+entry\s+relating\s+to\s+(?:the\s+)?(?P<relating>.*?)(?:,\s+for\b|,\s+after\b|,\s+omit\b|,\s+insert\b|$)",
+        text,
+        re.I,
+    )
+    if relating_match is not None and original_text:
+        relating_text = " ".join(relating_match.group("relating").split()).strip(" ,;.")
+        if relating_text:
+            return {
+                "rule_id": _UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID,
+                "selector_mode": "unique_relating_text",
+                "relating_text": relating_text,
+                "match_text": original_text,
+                "table_label": "",
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
+    entry_label_match = re.search(
+        r"\bin\s+entry\s+(?P<entry>[0-9A-Z]+)\s+in\s+the\s+table\b",
+        text,
+        re.I,
+    )
+    if entry_label_match is not None and original_text:
+        entry_label = _clean_num(entry_label_match.group("entry"))
+        if entry_label:
+            return {
+                "rule_id": _UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID,
+                "selector_mode": "unique_entry_text",
+                "entry_label": entry_label,
+                "match_text": original_text,
+                "table_label": "",
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
     match = re.search(
         r"\bin\s+the\s+(?P<column>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+column,\s+"
         r"in\s+the\s+(?P<entry>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+entry\s+"
@@ -7613,11 +7672,20 @@ def compile_effect_to_ir_ops(
         if table_cell_selector is not None:
             selector_rule_id = str(table_cell_selector.get("rule_id") or _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID)
             selector_mode = str(table_cell_selector.get("selector_mode") or "")
-            parent_target = (
-                target
-                if selector_mode == "unique_column_text"
-                else _uk_parent_target_before_table_marker(target)
-            )
+            table_marker_parent = _uk_parent_target_before_table_marker(target)
+            parent_target = target if selector_mode == "unique_column_text" and table_marker_parent is None else table_marker_parent
+            if (
+                parent_target is not None
+                and len(parent_target.path) >= 2
+                and parent_target.path[-1] == ("subsection", "1")
+                and parent_target.path[-2][0] == "section"
+            ):
+                table_cell_selector = {
+                    **table_cell_selector,
+                    "allow_implicit_subsection_one_table": True,
+                    "table_marker_parent_target": str(parent_target),
+                }
+                parent_target = LegalAddress(path=parent_target.path[:-1], special=parent_target.special)
             if parent_target is None:
                 _append_uk_effect_lowering_rejection(
                     lowering_rejections_out,
@@ -9980,6 +10048,8 @@ class UKReplayExecutor:
         """Resolve a source-owned "nth entry in column N relating to X" table cell."""
         if str(selector.get("selector_mode") or "") == "unique_column_text":
             return self._resolve_unique_table_column_text_cell(node, selector)
+        if str(selector.get("selector_mode") or "") in {"unique_relating_text", "unique_entry_text"}:
+            return self._resolve_unique_table_entry_text_cell(node, selector)
 
         try:
             column_index = int(selector.get("column_index") or 0)
@@ -9990,13 +10060,9 @@ class UKReplayExecutor:
         if column_index < 1 or entry_index < 1 or not relating_norm:
             return None, "invalid_selector", {}
 
-        tables = [
-            child
-            for child in node.children
-            if _uk_kind_value(child.kind).lower() == "table"
-        ]
+        tables, carrier_detail = self._table_selector_tables(node, selector)
         if len(tables) != 1:
-            return None, "table_not_unique", {"table_count": len(tables)}
+            return None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
 
         matching_cells: list[UKMutableNode] = []
         matching_rows: list[str] = []
@@ -10024,10 +10090,93 @@ class UKReplayExecutor:
             return None, "entry_not_found", {
                 "matching_entry_count": len(matching_cells),
                 "matching_rows": tuple(matching_rows[:5]),
+                **carrier_detail,
             }
         return matching_cells[entry_index - 1], "", {
             "matching_entry_count": len(matching_cells),
             "matched_row": matching_rows[entry_index - 1] if entry_index - 1 < len(matching_rows) else "",
+            **carrier_detail,
+        }
+
+    def _table_selector_tables(
+        self,
+        node: UKMutableNode,
+        selector: dict[str, Any],
+    ) -> tuple[list[UKMutableNode], dict[str, Any]]:
+        tables = [
+            child
+            for child in node.children
+            if _uk_kind_value(child.kind).lower() == "table"
+        ]
+        if tables or not bool(selector.get("allow_implicit_subsection_one_table")):
+            return tables, {"table_carrier": "target"}
+        subsection_ones = [
+            child
+            for child in node.children
+            if _uk_kind_value(child.kind).lower() == "subsection" and _clean_num(child.label or "") == "1"
+        ]
+        if len(subsection_ones) != 1:
+            return [], {"table_carrier": "implicit_subsection_one", "subsection_one_count": len(subsection_ones)}
+        tables = [
+            child
+            for child in subsection_ones[0].children
+            if _uk_kind_value(child.kind).lower() == "table"
+        ]
+        return tables, {"table_carrier": "implicit_subsection_one", "subsection_one_count": 1}
+
+    def _resolve_unique_table_entry_text_cell(
+        self,
+        node: UKMutableNode,
+        selector: dict[str, Any],
+    ) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
+        match_norm = _compact_normalized_text(str(selector.get("match_text") or ""))
+        selector_mode = str(selector.get("selector_mode") or "")
+        relating_norm = _compact_normalized_text(str(selector.get("relating_text") or ""))
+        entry_label_norm = _compact_normalized_text(str(selector.get("entry_label") or ""))
+        if not match_norm or (
+            selector_mode == "unique_relating_text" and not relating_norm
+        ) or (selector_mode == "unique_entry_text" and not entry_label_norm):
+            return None, "invalid_selector", {}
+
+        tables, carrier_detail = self._table_selector_tables(node, selector)
+        if len(tables) != 1:
+            return None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
+
+        matching_cells: list[UKMutableNode] = []
+        matching_rows: list[str] = []
+        for row_cells in self._expanded_table_rows(tables[0]):
+            row_texts = [
+                str(row_cells[col].text or "")
+                for col in sorted(row_cells)
+                if str(row_cells[col].text or "")
+            ]
+            if selector_mode == "unique_relating_text" and not any(
+                _compact_normalized_text(text).find(relating_norm) >= 0
+                or _compact_normalized_text(text).find(match_norm) >= 0
+                for text in row_texts
+            ):
+                continue
+            if selector_mode == "unique_entry_text" and not any(
+                _compact_normalized_text(text) == entry_label_norm for text in row_texts
+            ):
+                continue
+            for cell in row_cells.values():
+                if _compact_normalized_text(cell.text or "").find(match_norm) < 0:
+                    continue
+                if not matching_cells or matching_cells[-1] is not cell:
+                    matching_cells.append(cell)
+                    matching_rows.append(" | ".join(row_texts)[:240])
+        if len(matching_cells) == 1:
+            return matching_cells[0], "", {
+                "matching_cell_count": 1,
+                "matched_row": matching_rows[0] if matching_rows else "",
+                **carrier_detail,
+            }
+        reason = "cell_text_not_found" if not matching_cells else "cell_text_ambiguous"
+        return None, reason, {
+            "matching_cell_count": len(matching_cells),
+            "matching_rows": tuple(matching_rows[:5]),
+            **carrier_detail,
         }
 
     def _resolve_unique_table_column_text_cell(
@@ -10043,13 +10192,9 @@ class UKReplayExecutor:
         if column_index < 1 or not match_norm:
             return None, "invalid_selector", {}
 
-        tables = [
-            child
-            for child in node.children
-            if _uk_kind_value(child.kind).lower() == "table"
-        ]
+        tables, carrier_detail = self._table_selector_tables(node, selector)
         if len(tables) != 1:
-            return None, "table_not_unique", {"table_count": len(tables)}
+            return None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
 
         matching_cells: list[UKMutableNode] = []
         matching_rows: list[str] = []
@@ -10073,11 +10218,13 @@ class UKReplayExecutor:
             return matching_cells[0], "", {
                 "matching_cell_count": 1,
                 "matched_row": matching_rows[0] if matching_rows else "",
+                **carrier_detail,
             }
         reason = "cell_text_not_found" if not matching_cells else "cell_text_ambiguous"
         return None, reason, {
             "matching_cell_count": len(matching_cells),
             "matching_rows": tuple(matching_rows[:5]),
+            **carrier_detail,
         }
 
     def _heading_facet_carrier_for_target(
