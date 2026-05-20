@@ -5626,6 +5626,7 @@ def _uk_table_entry_row_insert_selector(
         )
         relating_text = " ".join(str(entry_context.get("relating_text") or "").split()).strip(" ,;.")
         if relating_text:
+            group_payload = _uk_single_logical_table_entry_group_payload(extracted_el)
             return {
                 "rule_id": _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
                 "selector_mode": "relating_entry",
@@ -5633,7 +5634,14 @@ def _uk_table_entry_row_insert_selector(
                 "column_index": 1,
                 "entry_index": 1,
                 "relating_text": relating_text,
-                "source_payload_mode": "single_table_row",
+                "source_payload_mode": "logical_table_entry_group"
+                if group_payload is not None
+                else "single_table_row",
+                **(
+                    {"logical_payload_row_count": len(group_payload.children)}
+                    if group_payload is not None
+                    else {}
+                ),
                 "source_names_table": source_names_table,
                 "original_target": str(target),
                 "target_ref": target_ref,
@@ -5991,6 +5999,47 @@ def _uk_single_table_row_payload(extracted_el: Optional[ET.Element]) -> IRNode |
     if len(rows) != 1:
         return None
     return rows[0]
+
+
+def _uk_single_logical_table_entry_group_payload(extracted_el: Optional[ET.Element]) -> IRNode | None:
+    """Return one logical table entry encoded as multiple source rows via rowspan."""
+    table_node = _uk_schedule_list_entry_table_payload(extracted_el)
+    if table_node is None:
+        return None
+    rows = tuple(
+        child for child in table_node.children if _uk_kind_value(child.kind).lower() == "row"
+    )
+    if len(rows) <= 1:
+        return None
+    first_row_cells = tuple(
+        child
+        for child in rows[0].children
+        if _uk_kind_value(child.kind).lower() in {"cell", "header_cell"}
+    )
+    if len(first_row_cells) < 2:
+        return None
+    first_cell = first_row_cells[0]
+    try:
+        rowspan = int(str(first_cell.attrs.get("rowspan") or "1"))
+    except ValueError:
+        rowspan = 1
+    try:
+        morerows = int(str(first_cell.attrs.get("morerows") or "0"))
+    except ValueError:
+        morerows = 0
+    if morerows:
+        rowspan = max(rowspan, morerows + 1)
+    if rowspan != len(rows):
+        return None
+    for row in rows[1:]:
+        row_cells = tuple(
+            child
+            for child in row.children
+            if _uk_kind_value(child.kind).lower() in {"cell", "header_cell"}
+        )
+        if not row_cells:
+            return None
+    return table_node
 
 
 def _uk_single_table_column_payload(extracted_el: Optional[ET.Element]) -> IRNode | None:
@@ -10432,6 +10481,10 @@ def compile_effect_to_ir_ops(
                 str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
                 and str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows"
             )
+            logical_entry_group_payload = (
+                str(table_row_insert_selector.get("source_payload_mode") or "")
+                == "logical_table_entry_group"
+            )
             needs_single_source_row_payload = (
                 str(table_row_insert_selector.get("source_payload_mode") or "") == "single_table_row"
                 or (
@@ -10447,6 +10500,11 @@ def compile_effect_to_ir_ops(
             source_table_payload = (
                 _uk_schedule_list_entry_table_payload(extracted_el)
                 if str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows"
+                else None
+            )
+            source_logical_entry_group_payload = (
+                _uk_single_logical_table_entry_group_payload(extracted_el)
+                if logical_entry_group_payload
                 else None
             )
             if needs_single_source_row_payload and source_row_payload is None:
@@ -10478,6 +10536,29 @@ def compile_effect_to_ir_ops(
                             == "single_table_row"
                             else "numbered_entry"
                         ),
+                        **table_row_insert_selector,
+                    },
+                )
+                continue
+            if logical_entry_group_payload and source_logical_entry_group_payload is None:
+                _append_uk_effect_lowering_rejection(
+                    lowering_rejections_out,
+                    rule_id=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+                    family="source_table_elaboration",
+                    reason_code="deictic_table_entry_insert_without_single_logical_entry_payload",
+                    reason=(
+                        "UK table-row insertion resolves a deictic table-entry "
+                        "anchor, but the source table payload is not exactly one "
+                        "logical entry group owned by a rowspanning first cell."
+                    ),
+                    effect=effect,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    detail={
+                        "target_ref": t_str,
+                        "original_target": str(target),
+                        "containing_target": str(parent_target),
+                        "entry_shape": "deictic_logical_table_entry_group",
                         **table_row_insert_selector,
                     },
                 )
@@ -10550,6 +10631,17 @@ def compile_effect_to_ir_ops(
                                 ),
                             }
                         ),
+                    },
+                )
+            elif logical_entry_group_payload:
+                assert source_logical_entry_group_payload is not None
+                payload_node = dc_replace(
+                    source_logical_entry_group_payload,
+                    attrs={
+                        **dict(source_logical_entry_group_payload.attrs or {}),
+                        "source_rule_id": "uk_table_entry_logical_group_insert_payload",
+                        "relating_text": str(table_row_insert_selector["relating_text"]),
+                        "source_context": str(table_row_insert_selector.get("source_context") or ""),
                     },
                 )
             elif (
@@ -14134,9 +14226,16 @@ class UKReplayExecutor:
             if target_cell is last_target_cell:
                 continue
             last_target_cell = target_cell
+            insert_index = row_index + 1
+            if (
+                selector_mode == "relating_entry"
+                and str(selector.get("source_payload_mode") or "") == "logical_table_entry_group"
+            ):
+                rowspan, _colspan = self._table_cell_span(target_cell)
+                insert_index = min(len(table.children), row_index + max(rowspan, 1))
             matching_rows.append(
                 (
-                    row_index,
+                    insert_index,
                     " | ".join(
                         str(row_cells[col].text or "")
                         for col in sorted(row_cells)
@@ -14157,8 +14256,8 @@ class UKReplayExecutor:
                 "matching_rows": tuple(row[1] for row in matching_rows[:5]),
                 **carrier_detail,
             }
-        row_index, row_preview = matching_rows[required_entry_index - 1]
-        return table, row_index + 1, "", {
+        insert_index, row_preview = matching_rows[required_entry_index - 1]
+        return table, insert_index, "", {
             "matching_entry_count": len(matching_rows),
             "matched_row": row_preview,
             **carrier_detail,
