@@ -6405,6 +6405,16 @@ _SOURCE_FOR_DEFINITION_SUBSTITUTE_RE = re.compile(
     r"(?:there\s+is\s+substituted|there\s+shall\s+be\s+substituted|substitute)",
     flags=re.I | re.S,
 )
+_SOURCE_AFTER_QUOTED_ANCHOR_INSERT_RE = re.compile(
+    r"\bafter\s+[“\"'‘](?P<anchor>.*?)[”\"'’],?\s+"
+    r"(?:there\s+is\s+inserted|there\s+are\s+inserted|there\s+shall\s+be\s+inserted|insert)",
+    flags=re.I | re.S,
+)
+_SOURCE_FOR_QUOTED_TEXT_SUBSTITUTE_RE = re.compile(
+    r"\bfor\s+[“\"'‘](?P<original>.*?)[”\"'’],?\s+"
+    r"(?:there\s+is\s+substituted|there\s+shall\s+be\s+substituted|substitute)",
+    flags=re.I | re.S,
+)
 _SOURCE_DEFINITION_TERM_RE = re.compile(
     r"\bin\s+the\s+definition\s+of\s+[“\"'‘](?P<term>.*?)[”\"'’]",
     flags=re.I | re.S,
@@ -6607,6 +6617,85 @@ def _fragment_substitution_source_carried_definition_entry_substitution(
             "source_parent_id": source_parent_id,
             "source_original_definition_term": original_term,
             "rule_id": "uk_effect_source_carried_definition_entry_substitution_text_patch",
+        }
+    return None
+
+
+def _fragment_substitution_source_carried_after_quoted_anchor_insert(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve block payloads whose parent instruction gives the after-anchor."""
+    inserted = " ".join((extracted_text or "").split()).strip()
+    if not inserted:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        candidate_text = _instruction_text_before_amendment_container(ancestor)
+        if not candidate_text:
+            candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
+        if not candidate_text:
+            continue
+        match = _SOURCE_AFTER_QUOTED_ANCHOR_INSERT_RE.search(candidate_text)
+        if match is None:
+            return None
+        anchor = " ".join(match.group("anchor").split()).strip()
+        if not anchor:
+            return None
+        source_parent_id = str(ancestor.get("id") or "")
+        if not source_parent_id:
+            source_parent_id = next(
+                (str(candidate.get("id")) for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")),
+                "",
+            )
+        joiner = "" if inserted.startswith((" ", ",", ".", ";", ":", ")")) else " "
+        return {
+            "original": anchor,
+            "replacement": f"{anchor}{joiner}{inserted}",
+            "source_parent_id": source_parent_id,
+            "source_anchor_text": anchor,
+            "rule_id": "uk_effect_source_carried_after_quoted_anchor_insert_text_patch",
+        }
+    return None
+
+
+def _fragment_substitution_source_carried_quoted_text_substitution(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve block payloads whose parent instruction gives the quoted preimage."""
+    replacement = " ".join((extracted_text or "").split()).strip()
+    if not replacement:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        candidate_text = _instruction_text_before_amendment_container(ancestor)
+        if not candidate_text:
+            candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
+        if not candidate_text:
+            continue
+        match = _SOURCE_FOR_QUOTED_TEXT_SUBSTITUTE_RE.search(candidate_text)
+        if match is None:
+            return None
+        original = " ".join(match.group("original").split()).strip()
+        if not original:
+            return None
+        source_parent_id = str(ancestor.get("id") or "")
+        if not source_parent_id:
+            source_parent_id = next(
+                (str(candidate.get("id")) for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")),
+                "",
+            )
+        return {
+            "original": original,
+            "replacement": replacement,
+            "source_parent_id": source_parent_id,
+            "source_original_text": original,
+            "rule_id": "uk_effect_source_carried_quoted_text_substitution_text_patch",
         }
     return None
 
@@ -8540,6 +8629,26 @@ def compile_effect_to_ir_ops(
                     if source_carried_definition_entry_substitution is not None:
                         subs = [source_carried_definition_entry_substitution]
                 if not subs:
+                    source_carried_after_anchor_insert = (
+                        _fragment_substitution_source_carried_after_quoted_anchor_insert(
+                            extracted_el=extracted_el,
+                            source_root=source_root,
+                            extracted_text=extracted_text,
+                        )
+                    )
+                    if source_carried_after_anchor_insert is not None:
+                        subs = [source_carried_after_anchor_insert]
+                if not subs:
+                    source_carried_quoted_text_substitution = (
+                        _fragment_substitution_source_carried_quoted_text_substitution(
+                            extracted_el=extracted_el,
+                            source_root=source_root,
+                            extracted_text=extracted_text,
+                        )
+                    )
+                    if source_carried_quoted_text_substitution is not None:
+                        subs = [source_carried_quoted_text_substitution]
+                if not subs:
                     source_carried_child_tail_repeal = (
                         _fragment_substitution_source_carried_child_tail_repeal(
                             extracted_text=extracted_text,
@@ -8937,6 +9046,48 @@ def compile_effect_to_ir_ops(
                                 "source_original_definition_term": str(
                                     definition_entry_context_fragment.get("source_original_definition_term") or ""
                                 ),
+                                "text_match": op_text_match,
+                                "replacement": op_text_replacement,
+                            },
+                        )
+                    for source_carried_context_fragment in fragment_subs:
+                        source_carried_rule_id = str(source_carried_context_fragment.get("rule_id") or "")
+                        if source_carried_rule_id not in {
+                            "uk_effect_source_carried_after_quoted_anchor_insert_text_patch",
+                            "uk_effect_source_carried_quoted_text_substitution_text_patch",
+                        }:
+                            continue
+                        reason_code = (
+                            "quoted_insert_anchor_resolved_from_parent_source"
+                            if source_carried_rule_id
+                            == "uk_effect_source_carried_after_quoted_anchor_insert_text_patch"
+                            else "quoted_substitution_preimage_resolved_from_parent_source"
+                        )
+                        reason = (
+                            "UK source payload contains only the inserted text, while "
+                            "the parent source instruction names the quoted after-anchor; "
+                            "lowering combines those source-local facts instead of guessing "
+                            "the anchor from live text."
+                            if source_carried_rule_id
+                            == "uk_effect_source_carried_after_quoted_anchor_insert_text_patch"
+                            else "UK source payload contains only the replacement text, while "
+                            "the parent source instruction names the quoted preimage; lowering "
+                            "combines those source-local facts instead of guessing the old text "
+                            "from live state."
+                        )
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id=source_carried_rule_id,
+                            family="source_context_elaboration",
+                            reason_code=reason_code,
+                            reason=reason,
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "source_parent_id": str(source_carried_context_fragment.get("source_parent_id") or ""),
                                 "text_match": op_text_match,
                                 "replacement": op_text_replacement,
                             },
