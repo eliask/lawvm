@@ -1842,6 +1842,11 @@ Current block-substitution context invariant:
   in the named column whose earlier columns match `X`; relating-entry selectors
   require exactly one row whose cell text matches `X`; entry-label selectors
   require exactly one row whose first logical cell is the explicit anchor label.
+  Deictic `after that entry insert-` may also carry a single logical entry
+  group encoded as multiple physical source rows, but only when the first source
+  cell rowspans across every source row; replay records
+  `source_payload_mode=logical_table_entry_group` and inserts after the matched
+  anchor cell's whole rowspanned group rather than after its first physical row.
   Ambiguous tables/rows emit `uk_replay_table_entry_row_insert_unresolved`.
   Source-owned between-column insertions such as `between the second and third
   columns, insert-` may lower under `uk_effect_table_column_insert` only when
@@ -1967,11 +1972,15 @@ Current block-substitution context invariant:
 - Direct table-row inserts shaped as `after that entry insert- ...` may lower
   only when the previous source sibling explicitly identifies the table entry
   (for example `in the entry relating to X, for "Y" substitute "Z"`) and the
-  current source row carries exactly one table-row payload. The selector records
-  the source-owned relation text plus any `Y`/`Z` row-anchor alternates from the
-  sibling substitution; replay must still resolve exactly one table row before
-  inserting. Current witness: `ukpga/2020/17` `s. 174(1) Table` by
-  `ukpga/2022/32 Sch. 17 para. 4(3)(b)`.
+  current source row carries either exactly one table-row payload or exactly one
+  logical table-entry group owned by a rowspanning first cell. The selector
+  records the source-owned relation text plus any `Y`/`Z` row-anchor alternates
+  from the sibling substitution; replay must still resolve exactly one table
+  row or logical row group before inserting. Current witnesses:
+  `ukpga/2020/17` `s. 174(1) Table` by `ukpga/2022/32 Sch. 17 para. 4(3)(b)`,
+  `s. 190(3) Table` by `Sch. 17 para. 7(b)`, `Sch. 7 para. 27(6) Table` by
+  `Sch. 17 para. 13(3)(b)`, and `Sch. 8 para. 11(4) Table` by
+  `Sch. 17 para. 14(4)(b)`.
 - UK source/oracle XML table structure is preserved by the grafter under the
   named family `uk_table_xml_structure_preserved`: `<Table>` / `<Tgroup>` /
   `<Thead>` / `<Tbody>` / `<Row>` / `<Entry>` become `table` / `row` /

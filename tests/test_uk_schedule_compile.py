@@ -12568,6 +12568,97 @@ def test_compile_direct_table_after_that_entry_insert_uses_previous_source_sibli
     )
 
 
+def test_compile_direct_table_after_that_entry_insert_preserves_logical_row_group_payload() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <P2para xmlns="{_LEG_NS}" xmlns:html="http://www.w3.org/1999/xhtml">
+          <P3 id="schedule-17-paragraph-7-a">
+            <Pnumber>a</Pnumber>
+            <P3para>
+              <Text>in the entry relating to an electronic monitoring requirement, in the first column,
+              for \u201cAn electronic monitoring requirement\u201d substitute
+              \u201cAn electronic compliance monitoring requirement\u201d, and</Text>
+            </P3para>
+          </P3>
+          <P3 id="schedule-17-paragraph-7-b">
+            <Pnumber>b</Pnumber>
+            <P3para>
+              <Text>after that entry insert\u2014</Text>
+              <BlockAmendment>
+                <Tabular>
+                  <html:table cols="2">
+                    <html:tbody>
+                      <html:tr>
+                        <html:td rowspan="2">An electronic whereabouts monitoring requirement</html:td>
+                        <html:td>Any person responsible for the electronic monitoring</html:td>
+                      </html:tr>
+                      <html:tr>
+                        <html:td>Any person whose consent is required</html:td>
+                      </html:tr>
+                    </html:tbody>
+                  </html:table>
+                </Tabular>
+              </BlockAmendment>
+            </P3para>
+          </P3>
+        </P2para>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='schedule-17-paragraph-7-b']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_direct_table_after_that_entry_group_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2020/17/section/190",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 190(3) Table",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="Sch. 17 para. 7(b)",
+        affecting_title="Police, Crime, Sentencing and Courts Act 2022",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "190"), ("subsection", "3"))
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.TABLE
+    assert [row.children[0].text for row in ops[0].payload.children] == [
+        "An electronic whereabouts monitoring requirement",
+        "Any person whose consent is required",
+    ]
+    assert ops[0].payload.children[0].children[0].attrs["rowspan"] == "2"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    assert selector["selector_mode"] == "relating_entry"
+    assert selector["source_payload_mode"] == "logical_table_entry_group"
+    assert selector["logical_payload_row_count"] == 2
+    assert selector["relating_text"] == "an electronic monitoring requirement, in the first column"
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["reason_code"] == "explicit_table_entry_row_insert_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_table_entry_ordinal_column_row_insert_uses_owned_selector() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -13425,6 +13516,113 @@ def test_replay_table_entry_relating_row_insert_uses_source_sibling_anchor_alter
     assert [adjudication.kind for adjudication in adjudications] == [
         "uk_effect_table_entry_row_insert"
     ]
+
+
+def test_replay_table_entry_logical_group_insert_after_rowspanned_anchor_group() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_row_insert",
+        "selector_mode": "relating_entry",
+        "direction": "after",
+        "column_index": 1,
+        "entry_index": 1,
+        "relating_text": "electronic monitoring requirement",
+        "source_payload_mode": "logical_table_entry_group",
+        "row_anchor_texts": (
+            "An electronic monitoring requirement",
+            "An electronic compliance monitoring requirement",
+        ),
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_relating_entry_group_insert",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "190"), ("subsection", "3"))),
+        payload=IRNode(
+            kind=IRNodeKind.TABLE,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.CELL,
+                            text="An electronic whereabouts monitoring requirement",
+                            attrs={"rowspan": "2"},
+                        ),
+                        IRNode(kind=IRNodeKind.CELL, text="Responsible person"),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(IRNode(kind=IRNodeKind.CELL, text="Consent person"),),
+                ),
+            ),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_ROW_INSERT_SELECTOR}{json.dumps(selector)}",),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="190",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="3",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(
+                                                    kind=IRNodeKind.CELL,
+                                                    text="An electronic monitoring requirement",
+                                                    attrs={"rowspan": "2"},
+                                                ),
+                                                IRNode(kind=IRNodeKind.CELL, text="Responsible old person"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(IRNode(kind=IRNodeKind.CELL, text="Consent old person"),),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(IRNode(kind=IRNodeKind.CELL, text="Drug rehabilitation requirement"),),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    table = replayed.body.children[0].children[0].children[0]
+    assert [row.children[0].text for row in table.children] == [
+        "An electronic monitoring requirement",
+        "Consent old person",
+        "An electronic whereabouts monitoring requirement",
+        "Consent person",
+        "Drug rehabilitation requirement",
+    ]
+    assert table.children[2].children[0].attrs["rowspan"] == "2"
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_effect_table_entry_row_insert"
+    ]
+    assert adjudications[0].detail["insert_index"] == 2
+    assert adjudications[0].detail["inserted_row_count"] == 2
 
 
 def test_replay_table_entry_row_insert_blocks_ambiguous_table() -> None:
