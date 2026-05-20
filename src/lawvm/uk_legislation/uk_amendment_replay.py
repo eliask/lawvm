@@ -12374,6 +12374,7 @@ class UKReplayExecutor:
         target: LegalAddress,
         *,
         allow_compound_subsection_alias: bool = False,
+        allow_recursive_match: bool = True,
     ) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
         """Find a node and its parent by LegalAddress path."""
         def _find(address: LegalAddress) -> tuple[Optional[UKMutableNode], Optional[UKMutableNode], Optional[int]]:
@@ -12426,12 +12427,13 @@ class UKReplayExecutor:
                             next_cands = ordinal_matches
                     if not next_cands:
                         for curr_node, _, _ in curr_cands:
-                            for child in curr_node.children:
-                                res_node, res_p, res_i = self._find_recursive_match(
-                                    cast(UKMutableNode, child), p_kind, p_label
-                                )
-                                if res_node:
-                                    next_cands.append((res_node, res_p, res_i))
+                            if allow_recursive_match:
+                                for child in curr_node.children:
+                                    res_node, res_p, res_i = self._find_recursive_match(
+                                        cast(UKMutableNode, child), p_kind, p_label
+                                    )
+                                    if res_node:
+                                        next_cands.append((res_node, res_p, res_i))
                 if not next_cands:
                     return None, None, None
                 curr_cands = next_cands
@@ -12675,6 +12677,7 @@ class UKReplayExecutor:
             node, parent, idx = self._find_node_by_target(
                 target,
                 allow_compound_subsection_alias=allow_compound_subsection_alias,
+                allow_recursive_match=_action_name(op.action) != "insert",
             )
         target_found = node is not None
         if not target_found and self._empty_schedule_root_shape_gap(target):
