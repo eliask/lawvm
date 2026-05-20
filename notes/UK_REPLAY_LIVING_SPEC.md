@@ -340,8 +340,13 @@ frontend cannot yet lower them safely:
   otherwise the row remains blocked rather than guessed into the target section.
 - `at the appropriate place` insertions, until a placement compiler can prove
   the target anchor without guessing from live text
-- grouped title/heading substitutions such as `In the titles to sections 10
-  and 11, for "X" substitute "Y"`
+- grouped title/heading substitutions that do not name exact old and new text
+  for each executable patch. Explicit ranges such as `In the titles to sections
+  10 to 14 "A" and "B", wherever these expressions occur, become,
+  respectively, "C" and "D"` lower under
+  `uk_effect_heading_facet_range_expanded` plus
+  `uk_effect_respectively_all_occurrences_substitution_text_patch`; each
+  section heading receives one all-occurrences text patch per quoted pair.
 
 Deterministic substituted-series lowering:
 
@@ -2205,6 +2210,15 @@ Current block-substitution context invariant:
   `text_rewrite_lowering` observation for explicit all-occurrences rules so the
   executable rewrite is visible in reports, not only encoded in operation
   provenance.
+- source text that says a quoted pair `A` and `B`, wherever those expressions
+  occur, become respectively `C` and `D` lowers as two independent
+  all-occurrences text patches under
+  `uk_effect_respectively_all_occurrences_substitution_text_patch`. If an
+  individual heading carrier lacks one of the paired preimages, replay records
+  `uk_replay_heading_respectively_all_occurrences_absent_observed` instead of
+  `uk_replay_heading_text_preimage_gap`; this nonblocking treatment is limited
+  to the explicit respectively/all-occurrences rule, because the legal
+  instruction is conditional on occurrence.
 - source text that says `from "X" to the end substitute-` followed by an
   unquoted block lowers under
   `uk_effect_anchor_to_end_block_substitution_text_patch`. The rule is limited
