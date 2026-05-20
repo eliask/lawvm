@@ -24375,6 +24375,267 @@ def test_pipeline_compile_ops_selects_enacted_source_when_current_extract_missin
     )
 
 
+def test_pipeline_compile_ops_extracts_enacted_schedule_table_row_when_current_missing(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_enacted_schedule_table_row",
+        effect_type="added",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/asp/2002/13",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="13",
+        affected_provisions="sch. 1 para. 32B",
+        affecting_uri="/id/ssi/2008/297",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2008",
+        affecting_number="297",
+        affecting_provisions="Sch. 1",
+        affecting_title="Current Missing Schedule Source Instrument",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+    enacted_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Schedules>
+        <Schedule id="schedule-1">
+          <Number>SCHEDULE 1</Number>
+          <ScheduleBody>
+            <Part id="schedule-1-part-4">
+              <Number>PART 4</Number>
+              <Title>THE NATIONAL HEALTH SERVICE</Title>
+              <Tabular>
+                <table>
+                  <tbody>
+                    <tr><td>32A</td><td>NHS Education for Scotland</td></tr>
+                    <tr><td>32B</td><td>NHS Health Scotland</td></tr>
+                    <tr><td>32C</td><td>NHS Quality Improvement Scotland</td></tr>
+                  </tbody>
+                </table>
+              </Tabular>
+            </Part>
+          </ScheduleBody>
+        </Schedule>
+      </Schedules>
+    </Legislation>
+    """.encode("utf-8")
+    compile_calls: list[dict[str, str]] = []
+
+    def fake_compile(effect_arg, extracted_el, sequence=0, **kwargs):
+        compile_calls.append(
+            {
+                "tag": uk_replay_mod._tag(extracted_el) if extracted_el is not None else "",
+                "id": str(extracted_el.get("id") or "") if extracted_el is not None else "",
+                "source_rule_id": str(extracted_el.get("source_rule_id") or "")
+                if extracted_el is not None
+                else "",
+                "source_part_label": str(extracted_el.get("source_part_label") or "")
+                if extracted_el is not None
+                else "",
+                "text": uk_replay_mod._text_content(extracted_el) if extracted_el is not None else "",
+                "authority": kwargs.get("source_authority_layer", ""),
+            }
+        )
+        return [
+            LegalOperation(
+                op_id=effect_arg.effect_id,
+                sequence=sequence,
+                action=StructuralAction.INSERT,
+                target=LegalAddress(path=(("schedule", "1"), ("part", "4"), ("paragraph", "32B"))),
+                payload=IRNode(kind=IRNodeKind.PARAGRAPH, label="32B"),
+                source=OperationSource(statute_id=effect_arg.affecting_act_id),
+            )
+        ]
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: None,
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_enacted_xml_from_archive",
+        lambda _aid, _archive: enacted_xml,
+    )
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", fake_compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    compiled = UKReplayPipeline(Path(".")).compile_ops_for_statute(
+        "asp/2002/13",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    )
+
+    assert len(compiled) == 1
+    assert compile_calls == [
+        {
+            "tag": "P1",
+            "id": "schedule-1-paragraph-32B",
+            "source_rule_id": "uk_affecting_act_enacted_schedule_table_row_source_extracted",
+            "source_part_label": "4",
+            "text": "32B NHS Health Scotland",
+            "authority": "AFFECTING_ACT_ENACTED_TEXT",
+        }
+    ]
+    assert any(
+        row.get("rule_id") == "uk_affecting_act_enacted_schedule_table_row_source_extracted"
+        and row.get("affected_provisions") == "sch. 1 para. 32B"
+        and row.get("affecting_provisions") == "Sch. 1"
+        and row.get("part_label") == "4"
+        and row.get("target_label") == "32b"
+        and row.get("source_row_text") == "32B NHS Health Scotland"
+        for row in diagnostics
+    )
+
+
+def test_compile_enacted_schedule_table_row_refines_target_to_source_part() -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_enacted_schedule_table_row_lowering",
+        effect_type="added",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/asp/2002/13",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="13",
+        affected_provisions="sch. 1 para. 32B",
+        affecting_uri="/id/ssi/2008/297",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2008",
+        affecting_number="297",
+        affecting_provisions="Sch. 1",
+        affecting_title="Current Missing Schedule Source Instrument",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+    source_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-1-paragraph-32B"
+            source_rule_id="uk_affecting_act_enacted_schedule_table_row_source_extracted"
+            source_part_label="4"
+            source_row_text="32B NHS Health Scotland">
+          <Pnumber>32B</Pnumber>
+          <Text>NHS Health Scotland</Text>
+        </P1>
+        """.encode("utf-8")
+    )
+    lowering: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        source_el,
+        sequence=0,
+        lowering_rejections_out=lowering,
+        source_root=source_el,
+        source_authority_layer="AFFECTING_ACT_ENACTED_TEXT",
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert str(ops[0].target) == "schedule:1/part:4/paragraph:32b"
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.PARAGRAPH
+    assert ops[0].payload.label == "32B"
+    assert ops[0].payload.text == "NHS Health Scotland"
+    assert any(
+        row.get("rule_id") == "uk_effect_enacted_schedule_table_row_part_target_refined"
+        and row.get("metadata_target") == "schedule:1/paragraph:32b"
+        and row.get("refined_target") == "schedule:1/part:4/paragraph:32b"
+        and row.get("source_part_label") == "4"
+        for row in lowering
+    )
+
+
+def test_pipeline_compile_ops_does_not_extract_ambiguous_enacted_schedule_table_row(
+    monkeypatch,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id="uk_test_ambiguous_enacted_schedule_table_row",
+        effect_type="added",
+        applied=True,
+        requires_applied=False,
+        modified="2024-01-01",
+        affected_uri="/id/asp/2002/13",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="13",
+        affected_provisions="sch. 1 para. 32B",
+        affecting_uri="/id/ssi/2008/297",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2008",
+        affecting_number="297",
+        affecting_provisions="Sch. 1",
+        affecting_title="Current Missing Schedule Source Instrument",
+        in_force_dates=[{"date": "2024-01-01", "prospective": "false"}],
+    )
+    enacted_xml = f"""
+    <Legislation xmlns="{_LEG_NS}">
+      <Schedules>
+        <Schedule id="schedule-1">
+          <Number>SCHEDULE 1</Number>
+          <ScheduleBody>
+            <Part id="schedule-1-part-4">
+              <Number>PART 4</Number>
+              <Tabular><table><tbody>
+                <tr><td>32B</td><td>NHS Health Scotland</td></tr>
+              </tbody></table></Tabular>
+            </Part>
+            <Part id="schedule-1-part-7">
+              <Number>PART 7</Number>
+              <Tabular><table><tbody>
+                <tr><td>32B</td><td>Duplicate row</td></tr>
+              </tbody></table></Tabular>
+            </Part>
+          </ScheduleBody>
+        </Schedule>
+      </Schedules>
+    </Legislation>
+    """.encode("utf-8")
+    compile_calls: list[str] = []
+
+    def fake_compile(_effect_arg, extracted_el, sequence=0, **_kwargs):
+        compile_calls.append(uk_replay_mod._tag(extracted_el) if extracted_el is not None else "")
+        return []
+
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda _sid, _archive: [effect],
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_xml_from_archive",
+        lambda _aid, _archive: None,
+    )
+    monkeypatch.setattr(
+        uk_replay_mod,
+        "get_affecting_act_enacted_xml_from_archive",
+        lambda _aid, _archive: enacted_xml,
+    )
+    monkeypatch.setattr(uk_replay_mod, "compile_effect_to_ir_ops", fake_compile)
+
+    diagnostics: list[dict[str, Any]] = []
+    compiled = UKReplayPipeline(Path(".")).compile_ops_for_statute(
+        "asp/2002/13",
+        archive=object(),
+        effect_diagnostics_out=diagnostics,
+    )
+
+    assert compiled == []
+    assert compile_calls == [""]
+    assert all(
+        row.get("rule_id") != "uk_affecting_act_enacted_schedule_table_row_source_extracted"
+        for row in diagnostics
+    )
+
+
 def test_pipeline_compile_ops_records_nonaddressable_schedule_part_context(
     monkeypatch,
 ) -> None:
