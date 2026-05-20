@@ -3130,6 +3130,112 @@ def test_compile_words_inserted_before_definition_entry_for_anchor() -> None:
     )
 
 
+def test_compile_child_qualified_quoted_substitution() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}" id="schedule-2-paragraph-8">
+          <Pnumber>8</Pnumber>
+          <P1para>
+            <Text>8 In schedule 2, for the words “Scottish Homes” in paragraph 44 substitute “ The Scottish Housing Regulator ” .</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_child_qualified_quoted_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2018-08-11",
+        affected_uri="/id/asp/2002/11",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="sch. 2 para. 44",
+        affecting_uri="/id/asp/2010/17",
+        affecting_class="ScottishAct",
+        affecting_year="2010",
+        affecting_number="17",
+        affecting_provisions="Sch. 2 para. 8",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2011-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert lowering_records == []
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("schedule", "2"), ("paragraph", "44"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "Scottish Homes"
+    assert ops[0].text_patch.replacement == "The Scottish Housing Regulator"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_child_qualified_quoted_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+
+
+def test_compile_at_end_definition_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="article-3-6">
+          <Pnumber>6</Pnumber>
+          <P2para>
+            <Text>6 In section 23(1), at the end of the definition of “person aggrieved” insert “or (as the case may be) section 6A(5)”.</Text>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_at_end_definition_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2020-01-20",
+        affected_uri="/id/asp/2002/11",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="s. 23(1)",
+        affecting_uri="/id/ssi/2020/5",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2020",
+        affecting_number="5",
+        affecting_provisions="art. 3(6)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2020-01-08", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert lowering_records == []
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "23"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == (
+        "TEXT_IN_DEFINITION_person aggrieved\x1fAT_END"
+    )
+    assert ops[0].text_patch.replacement == "or (as the case may be) section 6A(5)"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_in_definition_at_end_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+
+
 def test_compile_words_inserted_after_definitions_with_block_payload() -> None:
     extracted_el = ET.fromstring(
         f"""
