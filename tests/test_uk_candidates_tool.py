@@ -3833,7 +3833,6 @@ def test_uk_candidates_fast_json_exposes_duplication_warning_sample_detail(
                         "blocking": False,
                         "kind": "duplicate_suffix_text",
                         "path": "schedule/paragraph:1",
-                        "root": "schedule:SCHEDULE 1",
                         "left": "paragraph:1",
                         "right": "paragraph:2",
                         "shared_token_count": 19,
@@ -3874,7 +3873,7 @@ def test_uk_candidates_fast_json_exposes_duplication_warning_sample_detail(
     assert sample["kind"] == "text_duplication_warning"
     assert sample["duplicate_kind"] == "duplicate_suffix_text"
     assert sample["path"] == "schedule/paragraph:1"
-    assert sample["root"] == "schedule:SCHEDULE 1"
+    assert "root" not in sample
     assert sample["left"] == "paragraph:1"
     assert sample["right"] == "paragraph:2"
     assert sample["shared_token_count"] == "19"
@@ -4014,6 +4013,86 @@ def test_uk_candidates_fast_json_exports_replay_adjudication_evidence_jsonl(
     }
     assert evidence_rows[0]["enacted_source"]["sha256"] == "enacted-sha"
     assert evidence_rows[0]["oracle_source"]["sha256"] == "oracle-sha"
+
+
+def test_uk_candidates_fast_json_infers_body_root_for_old_duplication_samples(
+    monkeypatch,
+    capsys,
+) -> None:
+    rows = [
+        SimpleNamespace(
+            statute_id="ukpga/2000/1",
+            status="OK",
+            year=2000,
+            act_type="ukpga",
+            score=0.8,
+            replay_score=0.8,
+            commencement_score=-1.0,
+            replay_commencement_score=-1.0,
+            n_commenced_eids=0,
+            comparison_class="commensurable",
+            n_effects=1,
+            n_effect_rows=1,
+            n_effect_feed_pages=1,
+            uk_source_purity_lane="source_backed_effects_assisted",
+            uk_source_semantics_clean=True,
+            uk_source_first_candidate=True,
+            uk_source_first_candidate_reasons=(),
+            replay_adjudication_count=1,
+            replay_adjudication_kind_counts={"text_duplication_warning": 1},
+            uk_residual_claim_tier="UNRESOLVED",
+            uk_residual_claim_kind="uk_mixed_residual_eids",
+            uk_residual_claim_comparison_class="commensurable",
+            uk_residual_claim_core_comparison=True,
+            uk_residual_only_in_replayed_count=0,
+            uk_residual_only_in_oracle_count=0,
+            uk_residual_section_claim_count=0,
+            uk_residual_section_claim_emitted=False,
+            replay_adjudications=(
+                {
+                    "kind": "text_duplication_warning",
+                    "message": "Replay output contains a suspicious duplicated text tract.",
+                    "source_statute": "ukpga/2000/1",
+                    "op_id": "",
+                    "detail": {
+                        "blocking": False,
+                        "kind": "duplicate_suffix_text",
+                        "path": "body/part:Part 1/section:1",
+                        "left": "subsection:1",
+                        "right": "subsection:2",
+                        "shared_token_count": 19,
+                    },
+                },
+            ),
+        ),
+    ]
+    monkeypatch.setattr("lawvm.tools.uk_bench._load_run", lambda label: rows)
+
+    uk_candidates.main(
+        Namespace(
+            label="demo",
+            top=10,
+            fast=True,
+            effect_budget=None,
+            residual_budget=None,
+            score_mode="auto",
+            residual_only=False,
+            json=True,
+            summary_only=False,
+            min_year=None,
+            max_year=None,
+            types=None,
+            db=None,
+            replay_adjudication_kind=["text_duplication_warning"],
+            replay_adjudication_sample_limit=1,
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    sample = payload["rows"][0]["replay_adjudication_samples"][0]
+
+    assert sample["path"] == "body/part:Part 1/section:1"
+    assert sample["root"] == "body"
 
 
 def test_format_replay_adjudication_sample_includes_duplication_context() -> None:
