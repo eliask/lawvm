@@ -157,6 +157,35 @@ from lawvm.uk_legislation.provision_extractor import (
     extract_provision_element,
     extract_provision_element_from_bytes,
 )
+from lawvm.uk_legislation.provenance_notes import (
+    NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR as _NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR,
+    NOTE_EFFECT_TYPE as _NOTE_EFFECT_TYPE,
+    NOTE_FRAGMENT_SUB as _NOTE_FRAGMENT_SUB,
+    NOTE_METADATA_SOURCE_FALLBACK as _NOTE_METADATA_SOURCE_FALLBACK,
+    NOTE_ORIGINAL_REF as _NOTE_ORIGINAL_REF,
+    NOTE_PRECEDING_EID as _NOTE_PRECEDING_EID,
+    NOTE_RAW_TEXT as _NOTE_RAW_TEXT,
+    NOTE_REWRITE_WITNESS as _NOTE_REWRITE_WITNESS,
+    NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR as _NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR,
+    NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR as _NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR,
+    NOTE_SCHEDULE_LIST_ENTRY_SELECTOR as _NOTE_SCHEDULE_LIST_ENTRY_SELECTOR,
+    NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR as _NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR,
+    NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR as _NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR,
+    NOTE_SOURCE_LABEL_CHANGE_SUBSTITUTION as _NOTE_SOURCE_LABEL_CHANGE_SUBSTITUTION,
+    NOTE_TABLE_CELL_SELECTOR as _NOTE_TABLE_CELL_SELECTOR,
+    NOTE_TABLE_COLUMN_INSERT_SELECTOR as _NOTE_TABLE_COLUMN_INSERT_SELECTOR,
+    NOTE_TABLE_ROW_INSERT_SELECTOR as _NOTE_TABLE_ROW_INSERT_SELECTOR,
+    NOTE_TEXT_REWRITE_RULE as _NOTE_TEXT_REWRITE_RULE,
+    _crossheading_group_repeal_selector,
+    _schedule_list_entry_repeal_selector,
+    _schedule_list_entry_replace_selector,
+    _schedule_list_entry_selector,
+    _schedule_list_entry_table_rows_selector,
+    _schedule_table_end_rows_selector,
+    _table_cell_selector,
+    _table_column_insert_selector,
+    _table_row_insert_selector,
+)
 from lawvm.uk_legislation.replay_text import (
     _append_definition_child_suffix_text,
     _article_phrase_content_word_present,
@@ -315,26 +344,6 @@ def _retarget_instruction_element_to_target(
         child.tail = ""
     return clone
 
-
-# Note-key constants for structured data encoded in LegalOperation.provenance_tags
-_NOTE_FRAGMENT_SUB = "fragment_substitution:"
-_NOTE_EFFECT_TYPE = "uk_effect_type:"
-_NOTE_ORIGINAL_REF = "original_ref:"
-_NOTE_RAW_TEXT = "raw_text:"
-_NOTE_REWRITE_WITNESS = "rewrite_witness:"
-_NOTE_TEXT_REWRITE_RULE = "text_rewrite_rule:"
-_NOTE_PRECEDING_EID = "preceding_eid:"
-_NOTE_METADATA_SOURCE_FALLBACK = "metadata_source_fallback:"
-_NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR = "crossheading_group_repeal_selector:"
-_NOTE_TABLE_CELL_SELECTOR = "table_cell_selector:"
-_NOTE_TABLE_ROW_INSERT_SELECTOR = "table_row_insert_selector:"
-_NOTE_TABLE_COLUMN_INSERT_SELECTOR = "table_column_insert_selector:"
-_NOTE_SCHEDULE_LIST_ENTRY_SELECTOR = "schedule_list_entry_selector:"
-_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR = "schedule_list_entry_table_rows_selector:"
-_NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR = "schedule_table_end_rows_selector:"
-_NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR = "schedule_list_entry_repeal_selector:"
-_NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR = "schedule_list_entry_replace_selector:"
-_NOTE_SOURCE_LABEL_CHANGE_SUBSTITUTION = "source_label_change_substitution:"
 
 _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID = "uk_effect_table_entry_inline_text_insertion"
 _UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID = "uk_effect_table_entry_relating_text_patch"
@@ -1079,132 +1088,6 @@ def _text_rewrite_rule_ids_for_op(op: LegalOperation) -> tuple[str, ...]:
         if rule_id and rule_id not in rule_ids:
             rule_ids.append(rule_id)
     return tuple(rule_ids)
-
-
-def _table_cell_selector(op: LegalOperation) -> dict[str, Any] | None:
-    """Return UK table-cell selector data carried on a lowered text op."""
-    for note in getattr(op, "provenance_tags", ()) or ():
-        if not str(note).startswith(_NOTE_TABLE_CELL_SELECTOR):
-            continue
-        try:
-            payload = json.loads(str(note)[len(_NOTE_TABLE_CELL_SELECTOR) :])
-        except json.JSONDecodeError:
-            return None
-        if isinstance(payload, dict):
-            return payload
-    return None
-
-
-def _crossheading_group_repeal_selector(op: LegalOperation) -> dict[str, Any] | None:
-    """Return UK cross-heading group repeal selector data."""
-    for note in getattr(op, "provenance_tags", ()) or ():
-        if not str(note).startswith(_NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR):
-            continue
-        try:
-            payload = json.loads(str(note)[len(_NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR) :])
-        except json.JSONDecodeError:
-            return None
-        if isinstance(payload, dict):
-            return payload
-    return None
-
-
-def _table_row_insert_selector(op: LegalOperation) -> dict[str, Any] | None:
-    """Return UK table-row insertion selector data carried on a lowered insert op."""
-    for note in getattr(op, "provenance_tags", ()) or ():
-        if not str(note).startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR):
-            continue
-        try:
-            payload = json.loads(str(note)[len(_NOTE_TABLE_ROW_INSERT_SELECTOR) :])
-        except json.JSONDecodeError:
-            return None
-        if isinstance(payload, dict):
-            return payload
-    return None
-
-
-def _table_column_insert_selector(op: LegalOperation) -> dict[str, Any] | None:
-    """Return UK table-column insertion selector data carried on a lowered insert op."""
-    for note in getattr(op, "provenance_tags", ()) or ():
-        if not str(note).startswith(_NOTE_TABLE_COLUMN_INSERT_SELECTOR):
-            continue
-        try:
-            payload = json.loads(str(note)[len(_NOTE_TABLE_COLUMN_INSERT_SELECTOR) :])
-        except json.JSONDecodeError:
-            return None
-        if isinstance(payload, dict):
-            return payload
-    return None
-
-
-def _schedule_list_entry_table_rows_selector(op: LegalOperation) -> dict[str, Any] | None:
-    """Return UK schedule-list table-row insertion selector data."""
-    for note in getattr(op, "provenance_tags", ()) or ():
-        if not str(note).startswith(_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR):
-            continue
-        try:
-            payload = json.loads(str(note)[len(_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR) :])
-        except json.JSONDecodeError:
-            return None
-        if isinstance(payload, dict):
-            return payload
-    return None
-
-
-def _schedule_table_end_rows_selector(op: LegalOperation) -> dict[str, Any] | None:
-    """Return UK schedule table end-row insertion selector data."""
-    for note in getattr(op, "provenance_tags", ()) or ():
-        if not str(note).startswith(_NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR):
-            continue
-        try:
-            payload = json.loads(str(note)[len(_NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR) :])
-        except json.JSONDecodeError:
-            return None
-        if isinstance(payload, dict):
-            return payload
-    return None
-
-
-def _schedule_list_entry_selector(op: LegalOperation) -> dict[str, Any] | None:
-    """Return UK schedule-list-entry selector data carried on a lowered insert op."""
-    for note in getattr(op, "provenance_tags", ()) or ():
-        if not str(note).startswith(_NOTE_SCHEDULE_LIST_ENTRY_SELECTOR):
-            continue
-        try:
-            payload = json.loads(str(note)[len(_NOTE_SCHEDULE_LIST_ENTRY_SELECTOR) :])
-        except json.JSONDecodeError:
-            return None
-        if isinstance(payload, dict):
-            return payload
-    return None
-
-
-def _schedule_list_entry_repeal_selector(op: LegalOperation) -> dict[str, Any] | None:
-    """Return UK schedule-list-entry selector data carried on a lowered repeal op."""
-    for note in getattr(op, "provenance_tags", ()) or ():
-        if not str(note).startswith(_NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR):
-            continue
-        try:
-            payload = json.loads(str(note)[len(_NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR) :])
-        except json.JSONDecodeError:
-            return None
-        if isinstance(payload, dict):
-            return payload
-    return None
-
-
-def _schedule_list_entry_replace_selector(op: LegalOperation) -> dict[str, Any] | None:
-    """Return UK schedule-list-entry selector data carried on a lowered replace op."""
-    for note in getattr(op, "provenance_tags", ()) or ():
-        if not str(note).startswith(_NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR):
-            continue
-        try:
-            payload = json.loads(str(note)[len(_NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR) :])
-        except json.JSONDecodeError:
-            return None
-        if isinstance(payload, dict):
-            return payload
-    return None
 
 
 def _looks_like_schedule_entry_repeal_text(text: str) -> bool:
