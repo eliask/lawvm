@@ -4167,6 +4167,122 @@ def test_executor_records_definition_anchor_education_lexical_variant_recovery()
     assert adjudications[0].detail["strict_disposition"] == "block"
 
 
+def test_executor_applies_after_definition_insert_for_conjoined_qualified_anchor() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/11",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="31",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "\u201cdirected\u201d and \u201cintrusive\u201d, in relation to surveillance, "
+                                "shall be construed in accordance with section 1; "
+                                "\u201cordinary Surveillance Commissioner\u201d means a Commissioner;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_after_definition_conjoined_qualified_anchor",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "31"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="TEXT_AFTER_DEFINITION_intrusive", occurrence=0),
+                replacement=(
+                    "\u201cjoint surveillance operation\u201d means a case involving two forces;"
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "\u201cdirected\u201d and \u201cintrusive\u201d, in relation to surveillance, "
+        "shall be construed in accordance with section 1; "
+        "\u201cjoint surveillance operation\u201d means a case involving two forces; "
+        "\u201cordinary Surveillance Commissioner\u201d means a Commissioner;"
+    )
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_definition_anchor_qualifier_phrase_normalized",
+        "uk_replay_definition_anchor_conjoined_term_normalized",
+    ]
+    assert adjudications[0].detail["family"] == "target_resolution_recovery"
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[1].detail["family"] == "target_resolution_recovery"
+    assert adjudications[1].detail["strict_disposition"] == "record"
+
+
+def test_executor_does_not_apply_after_definition_insert_for_unbounded_conjoined_anchor() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2000/11",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="31",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "The words directed and intrusive appear in prose; "
+                                "\u201cordinary Surveillance Commissioner\u201d means a Commissioner;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_after_definition_unbounded_conjoined_anchor",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "31"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="TEXT_AFTER_DEFINITION_intrusive", occurrence=0),
+                replacement="\u201cjoint surveillance operation\u201d means a case;",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "The words directed and intrusive appear in prose; "
+        "\u201cordinary Surveillance Commissioner\u201d means a Commissioner;"
+    )
+    assert [row.kind for row in adjudications] == ["uk_replay_text_match_synthetic_selector_gap"]
+
+
 def test_executor_normalizes_space_before_nested_quote_in_text_match() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

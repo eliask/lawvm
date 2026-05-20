@@ -19279,6 +19279,20 @@ class UKReplayExecutor:
                         )
                         family = "target_resolution_recovery"
                         strict_disposition = "record"
+                    elif recovery_rule_id == "uk_replay_definition_anchor_qualifier_phrase_normalized":
+                        message = (
+                            "UK replay applied definition-anchor text op after recognizing "
+                            "a qualifier phrase between the anchor term and predicate."
+                        )
+                        family = "target_resolution_recovery"
+                        strict_disposition = "record"
+                    elif recovery_rule_id == "uk_replay_definition_anchor_conjoined_term_normalized":
+                        message = (
+                            "UK replay applied definition-anchor text op after recognizing "
+                            "the anchor as the final term in a conjoined definition entry."
+                        )
+                        family = "target_resolution_recovery"
+                        strict_disposition = "record"
                     else:
                         message = (
                             "UK replay applied text-based op after normalizing "
@@ -21322,6 +21336,8 @@ class UKReplayExecutor:
                 definition_start: Optional[re.Match[str]] = None
                 recovered_anchor = False
                 recovered_parenthetical_translation = False
+                recovered_qualifier_phrase = False
+                recovered_conjoined_term = False
                 for candidate_term in (term, *_uk_definition_term_lexical_variants(term)):
                     term_pattern = _text_patch_pattern(
                         candidate_term,
@@ -21330,9 +21346,10 @@ class UKReplayExecutor:
                     )
                     definition_start_pattern = re.compile(
                         rf"""
-                        (?P<prefix>(?:^|[;\.,\u2014\u2013-]\s*))
+                        (?P<prefix>(?:^|[;\.,\u2014\u2013-]\s*|(?:\band\b|\bor\b)\s+))
                         [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
                         (?P<parenthetical_translation>(?:\s*\([^;]*?\))*)
+                        (?P<qualifier>\s*,\s*[^;]{{1,240}}?\s*,)?
                         \s+
                         (?:
                             means
@@ -21352,6 +21369,16 @@ class UKReplayExecutor:
                     recovered_anchor = candidate_term != term
                     recovered_parenthetical_translation = bool(
                         str(definition_start.group("parenthetical_translation") or "").strip()
+                    )
+                    recovered_qualifier_phrase = bool(
+                        str(definition_start.group("qualifier") or "").strip()
+                    )
+                    recovered_conjoined_term = bool(
+                        re.fullmatch(
+                            r"\s*(?:and|or)\s+",
+                            str(definition_start.group("prefix") or ""),
+                            flags=re.I,
+                        )
                     )
                     break
                 if definition_start is None:
@@ -21387,6 +21414,14 @@ class UKReplayExecutor:
                 if recovered_parenthetical_translation and recovery_rule_ids_out is not None:
                     recovery_rule_ids_out.append(
                         "uk_replay_definition_anchor_parenthetical_translation_normalized"
+                    )
+                if recovered_qualifier_phrase and recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_definition_anchor_qualifier_phrase_normalized"
+                    )
+                if recovered_conjoined_term and recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_definition_anchor_conjoined_term_normalized"
                     )
                 return " ".join(new_text.split()).strip(), True
 
