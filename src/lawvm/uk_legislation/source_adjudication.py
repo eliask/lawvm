@@ -85,6 +85,7 @@ UK_COMPARE_CHAINED_TEXT_REWRITE_RULE_IDS = frozenset(
     {
         "uk_effect_after_quoted_anchor_all_occurrences_insert_text_patch",
         "uk_effect_all_occurrences_substitution_text_patch",
+        "uk_effect_respectively_all_occurrences_substitution_text_patch",
         "uk_effect_wherever_occurring_substitution_text_patch",
     }
 )
@@ -190,6 +191,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "text_duplication_warning",
         "uk_replay_contextual_word_anchor_kind_normalized",
         "uk_replay_definition_anchor_parenthetical_translation_normalized",
+        "uk_replay_definition_entry_already_absent_observed",
         "uk_replay_definition_predicate_shall_construed_normalized",
         "uk_replay_direct_section_paragraph_child_text_recovered",
         "uk_replay_empty_descendant_parent_text_recovered",
@@ -221,6 +223,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_text_match_punctuation_space_normalized",
         "uk_replay_text_match_rotated_trailing_comma_omission",
         "uk_replay_text_match_word_punctuation_elided",
+        "uk_replay_heading_respectively_all_occurrences_absent_observed",
     }
 )
 

@@ -14099,6 +14099,17 @@ def _normalized_text_match_present(match_text: str, node: IRNode | UKMutableNode
     return bool(target_norm) and match_norm in target_norm
 
 
+def _definition_entry_term_absent(match_text: str, node: IRNode | UKMutableNode) -> bool:
+    if not match_text.startswith("TEXT_DEFINITION_ENTRY_"):
+        return False
+    term = match_text[len("TEXT_DEFINITION_ENTRY_") :].strip()
+    term_norm = _compact_normalized_text(term)
+    if len(term_norm) < 3:
+        return False
+    target_norm = _compact_normalized_text(_normalized_replay_subtree_text(node))
+    return bool(target_norm) and term_norm not in target_norm
+
+
 def _normalized_replacement_text_present(replacement_text: str, node: IRNode | UKMutableNode) -> bool:
     replacement_norm = _compact_normalized_text(replacement_text)
     if len(replacement_norm) < 3:
@@ -19304,6 +19315,16 @@ class UKReplayExecutor:
                             "UK replay skipped text-based op: text_match missing but "
                             "the normalized replacement text is already present in target subtree."
                         )
+                    elif (
+                        text_patch.selector.match_text.startswith("TEXT_DEFINITION_ENTRY_")
+                        and text_patch.kind is TextPatchKindEnum.DELETE
+                        and _definition_entry_term_absent(text_patch.selector.match_text, node)
+                    ):
+                        kind = "uk_replay_definition_entry_already_absent_observed"
+                        message = (
+                            "UK replay observed a definition-entry repeal whose named "
+                            "definition term is already absent from the target subtree."
+                        )
                     elif text_patch.selector.match_text.startswith("TEXT_DEFINITION_ENTRY_"):
                         kind = "uk_replay_definition_entry_shape_gap"
                         message = (
@@ -19513,6 +19534,8 @@ class UKReplayExecutor:
                                 if kind == "uk_replay_heading_text_preimage_gap"
                                 else "respectively_all_occurrences_heading_preimage_absent"
                                 if kind == "uk_replay_heading_respectively_all_occurrences_absent_observed"
+                                else "definition_entry_already_absent"
+                                if kind == "uk_replay_definition_entry_already_absent_observed"
                                 else "insert_anchor_preimage_absent"
                                 if kind == "uk_replay_text_insert_anchor_preimage_gap"
                                 else "monetary_amount_preimage_absent"
