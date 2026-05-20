@@ -15254,6 +15254,16 @@ def test_pipeline_compile_ops_blocks_range_to_container_substitution_until_owned
     assert lowering_rejections[-1]["rule_id"] == "uk_effect_range_to_container_substitution_rejected"
     assert lowering_rejections[-1]["blocking"] is True
     assert lowering_rejections[-1]["source_pathology"] == "range_to_container_target_unsupported"
+    assert lowering_rejections[-1]["source_range_kind"] == "section"
+    assert lowering_rejections[-1]["source_range_start"] == "3"
+    assert lowering_rejections[-1]["source_range_end"] == "12"
+    assert lowering_rejections[-1]["compiled_targets"] == ("part:2/chapter:1",)
+    assert lowering_rejections[-1]["required_ownership"] == (
+        "source_range",
+        "container_payload",
+        "lineage_or_migration_events",
+        "mutation_boundary",
+    )
     manual_rows = [
         row
         for row in diagnostics
