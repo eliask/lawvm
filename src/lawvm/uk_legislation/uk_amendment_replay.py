@@ -821,6 +821,7 @@ class UKMetadataRenumberTargets:
     rule_id: str
     reason_code: str
     reason: str
+    metadata_destination: Optional[LegalAddress] = None
 
 
 def _build_uk_replay_adjudication(
@@ -4272,6 +4273,49 @@ def _uk_metadata_renumber_targets(effect: UKEffectRecord) -> Optional[UKMetadata
             ),
         )
     return None
+
+
+def _uk_source_text_corrected_renumber_targets(
+    metadata_targets: Optional[UKMetadataRenumberTargets],
+    extracted_text: Optional[str],
+) -> Optional[UKMetadataRenumberTargets]:
+    if metadata_targets is None:
+        return None
+    text = " ".join(str(extracted_text or "").replace("\u00a0", " ").split())
+    match = re.search(
+        r"\bbecomes?\s+(?:paragraph|sub-?paragraph|subsection|section)\s+\(?(?P<label>[0-9A-Za-z]+)\)?",
+        text,
+        flags=re.I,
+    )
+    if match is None:
+        return metadata_targets
+    source_label = _clean_num(match.group("label"))
+    if not source_label:
+        return metadata_targets
+    destination_leaf_kind, destination_leaf_label = metadata_targets.destination.path[-1]
+    if _clean_num(destination_leaf_label) == source_label:
+        return metadata_targets
+    if metadata_targets.destination.path[:-1] != metadata_targets.source_target.path:
+        return metadata_targets
+    corrected_destination = LegalAddress(
+        path=(
+            *metadata_targets.source_target.path,
+            (destination_leaf_kind, source_label),
+        )
+    )
+    return UKMetadataRenumberTargets(
+        source_target=metadata_targets.source_target,
+        destination=corrected_destination,
+        rule_id="uk_effect_source_text_renumber_destination_corrected",
+        reason_code="source_text_destination_label_overrides_effect_metadata",
+        reason=(
+            "UK effect metadata supplies a descendant renumber destination, "
+            "but the extracted operative source text states a different "
+            "destination label; lowering preserves the source-stated label "
+            "and records the metadata destination as a corrected witness."
+        ),
+        metadata_destination=metadata_targets.destination,
+    )
 
 
 def _select_whole_schedule_element(
@@ -7889,6 +7933,10 @@ def compile_effect_to_ir_ops(
     if not action and metadata_renumber_targets is not None:
         action = "renumber"
     extracted_text = _text_content(extracted_el) if extracted_el is not None else None
+    metadata_renumber_targets = _uk_source_text_corrected_renumber_targets(
+        metadata_renumber_targets,
+        extracted_text,
+    )
 
     # Infer missing action from text heuristics if metadata is empty.
     # For empty effect_type we require a clear structural verb — if none is found
@@ -8017,6 +8065,11 @@ def compile_effect_to_ir_ops(
             detail={
                 "source_target": str(source_target),
                 "destination": str(destination),
+                "metadata_destination": (
+                    str(metadata_renumber_targets.metadata_destination)
+                    if metadata_renumber_targets.metadata_destination is not None
+                    else ""
+                ),
                 "affected_provisions": effect.affected_provisions,
             },
         )

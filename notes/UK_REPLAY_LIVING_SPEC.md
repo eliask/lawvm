@@ -3550,6 +3550,13 @@ Current bench replay-regime invariant:
   source target remains `X`, while the destination still controls the new
   descendant label. Current witnesses include `ukpga/2020/17` Schedule 22
   paragraph 72(a), paragraph 43(a), and paragraph 54(a).
+- If extracted operative text and effect metadata disagree on the new
+  descendant label, source text controls. The rule
+  `uk_effect_source_text_renumber_destination_corrected` applies only when the
+  metadata row is already a narrow descendant renumber and source text says
+  e.g. `become paragraph (a)` while metadata says destination `(b)`. Lowering
+  records both the source-stated destination and the corrected metadata
+  destination witness.
 - Explicit UK effect metadata of the form `X(n) renumbered as X(m)` also lowers
   to typed `RENUMBER` when source and destination are same-parent, same-kind
   siblings and the labels differ. The lowering emits

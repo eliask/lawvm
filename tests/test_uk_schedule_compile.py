@@ -13974,6 +13974,51 @@ def test_compile_metadata_words_in_renumber_strips_scope_phrase_from_source_targ
     assert lowering_records[0]["destination"] == "schedule:22/paragraph:72/item:a"
 
 
+def test_compile_metadata_renumber_uses_source_text_destination_label_when_metadata_conflicts() -> None:
+    effect = UKEffectRecord(
+        effect_id="key-test-renumber-source-label",
+        effect_type="words in s. 19(8) renumbered as s. 19(8)(b)",
+        applied=True,
+        requires_applied=True,
+        modified="2018-08-11",
+        affected_uri="/id/asp/2002/11/section/19/subsection/8/paragraph/b",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="s. 19(8)(a)",
+        affecting_uri="/id/asp/2002/13",
+        affecting_class="ScottishAct",
+        affecting_year="2002",
+        affecting_number="13",
+        affecting_provisions="Sch. 4 para. 1(a)",
+        affecting_title="Freedom of Information (Scotland) Act 2002",
+        in_force_dates=[{"date": "2005-01-01", "prospective": "false"}],
+    )
+    extracted_el = ET.fromstring(
+        "<P3>a the words from “the Information Commissioner” to "
+        "“Freedom of Information Act 2000 (c.36)” become paragraph (a); and</P3>"
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.RENUMBER
+    assert ops[0].target.path == (("section", "19"), ("subsection", "8"))
+    assert ops[0].destination is not None
+    assert ops[0].destination.path == (
+        ("section", "19"),
+        ("subsection", "8"),
+        ("paragraph", "a"),
+    )
+    assert ops[0].witness_rule_id == "uk_effect_source_text_renumber_destination_corrected"
+    assert lowering_records[0]["rule_id"] == "uk_effect_source_text_renumber_destination_corrected"
+    assert lowering_records[0]["reason_code"] == "source_text_destination_label_overrides_effect_metadata"
+    assert lowering_records[0]["metadata_destination"] == "section:19/subsection:8/paragraph:b"
+    assert lowering_records[0]["destination"] == "section:19/subsection:8/paragraph:a"
+    assert lowering_records[0]["strict_disposition"] == "record"
+
+
 def test_replay_text_end_append_preserves_existing_target_text() -> None:
     statute = IRStatute(
         statute_id="ukpga/2024/3",
