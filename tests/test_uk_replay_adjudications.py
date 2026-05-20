@@ -772,6 +772,99 @@ def test_executor_does_not_word_punctuation_recover_across_whitespace() -> None:
     ]
 
 
+def test_executor_records_rotated_trailing_comma_omission_recovery() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text=(
+                        "Schedule 15 (life sentence for second offence: "
+                        "listed offences), Part 4 is amended as follows."
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_rotated_trailing_comma_omission",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="Part 4,", occurrence=0),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].text == (
+        "Schedule 15 (life sentence for second offence: listed offences), "
+        "is amended as follows."
+    )
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_text_match_rotated_trailing_comma_omission"
+    ]
+    assert str(adjudications[0].detail["applied_match"]).strip() == "Part 4"
+    assert adjudications[0].detail["source_shape"] == "trailing_comma_rotated_before_phrase"
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["family"] == "text_match_recovery"
+
+
+def test_executor_does_not_rotate_trailing_comma_omission_when_phrase_is_not_unique() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="Before Part 4 and, Part 4 is amended as follows.",
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_rotated_trailing_comma_omission_not_unique",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.DELETE,
+                selector=TextSelector(match_text="Part 4,", occurrence=0),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].text == "Before Part 4 and, Part 4 is amended as follows."
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_text_match_normalized_preimage_present_gap"
+    ]
+    assert adjudications[0].detail["blocking"] is True
+
+
 def test_executor_classifies_text_match_already_rewritten() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

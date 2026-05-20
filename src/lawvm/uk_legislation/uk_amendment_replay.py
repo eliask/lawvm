@@ -3803,6 +3803,47 @@ def _text_match_has_word_punctuation_elision_candidate(match: str) -> bool:
     return bool(re.search(r"(?<=[A-Za-z0-9_])['’‘\-‐‑‒–—](?=[A-Za-z0-9_])", match))
 
 
+def _rotated_trailing_comma_omission_match(match: str, node: UKMutableNode) -> Optional[str]:
+    """Return a unique `X` preimage for a quoted omission selector shaped as `X,`.
+
+    Some UK effect/source surfaces quote the logical omitted phrase with a
+    trailing comma even when the replay text carries that comma before the
+    phrase, e.g. omit "Part 4," against "... offences), Part 4 is amended".
+    This is not a general normalized-text recovery: only simple alphanumeric
+    phrases are eligible, and the rotated preimage must occur exactly once in
+    the explicit target subtree. The host comma is preserved.
+    """
+
+    normalized_match = " ".join((match or "").split())
+    if not normalized_match.endswith(","):
+        return None
+    body = normalized_match[:-1].strip()
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9 ]{1,80}", body):
+        return None
+
+    body_pattern = re.escape(body).replace(r"\ ", r"\s+")
+    rotated_pattern = re.compile(
+        rf",\s+(?P<delete>{body_pattern}(?![A-Za-z0-9])\s*)",
+        flags=re.I,
+    )
+    body_pattern_re = re.compile(rf"(?<![A-Za-z0-9]){body_pattern}(?![A-Za-z0-9])", flags=re.I)
+    rotated_matches: list[str] = []
+    body_matches = 0
+
+    def _walk(current: UKMutableNode) -> None:
+        nonlocal body_matches
+        text = current.text or ""
+        rotated_matches.extend(match_obj.group("delete") for match_obj in rotated_pattern.finditer(text))
+        body_matches += len(tuple(body_pattern_re.finditer(text)))
+        for child in current.children:
+            _walk(child)
+
+    _walk(node)
+    if len(rotated_matches) != 1 or body_matches != 1:
+        return None
+    return rotated_matches[0]
+
+
 def _norm_prov_ref(ref: str) -> str:
     """Normalise a provision reference for comparison."""
     return "".join(re.findall(r"[0-9a-zA-Z]", ref)).lower()
@@ -17961,6 +18002,59 @@ class UKReplayExecutor:
                                 "quirks_disposition": "record",
                             },
                         )
+                if (
+                    not applied
+                    and text_patch.kind is TextPatchKindEnum.DELETE
+                    and not replacement
+                    and text_patch.selector.occurrence == 0
+                    and text_patch.selector.end_occurrence == 0
+                ):
+                    rotated_match = _rotated_trailing_comma_omission_match(
+                        text_patch.selector.match_text,
+                        heading_carrier if heading_carrier is not None else node,
+                    )
+                    if rotated_match:
+                        if heading_carrier is not None:
+                            heading_carrier, rotated_comma_applied = self._apply_text_replace_on_node_text_only(
+                                heading_carrier,
+                                rotated_match,
+                                replacement,
+                                0,
+                                0,
+                            )
+                        else:
+                            node, rotated_comma_applied = self._apply_text_replace_on_subtree(
+                                node,
+                                rotated_match,
+                                replacement,
+                                0,
+                                0,
+                            )
+                        if rotated_comma_applied:
+                            applied = True
+                            applied_match = rotated_match
+                            applied_rule_id = "uk_replay_text_match_rotated_trailing_comma_omission"
+                            _append_uk_replay_adjudication(
+                                self.adjudications_out,
+                                kind=applied_rule_id,
+                                message=(
+                                    "UK replay applied omission after proving a unique "
+                                    "rotated trailing-comma selector preimage."
+                                ),
+                                op=op,
+                                detail={
+                                    "action": _action_name(op.action),
+                                    "target": str(target),
+                                    "text_match": text_patch.selector.match_text,
+                                    "applied_match": rotated_match,
+                                    "replacement_text": replacement,
+                                    "family": "text_match_recovery",
+                                    "source_shape": "trailing_comma_rotated_before_phrase",
+                                    "blocking": False,
+                                    "strict_disposition": "record",
+                                    "quirks_disposition": "record",
+                                },
+                            )
                 if not applied:
                     for frag_sub in _fragment_substitution(op) or []:
                         alt_match = str(frag_sub.get("original") or "").strip()
