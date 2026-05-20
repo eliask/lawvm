@@ -1720,8 +1720,8 @@ def test_compile_substituted_for_label_change_targets_source_old_sibling() -> No
     assert ops[0].witness_rule_id == "uk_effect_substituted_for_label_changing_target_rebound"
     assert any(
         record["rule_id"] == "uk_effect_substituted_for_label_changing_target_rebound"
-        and record["source_target"] == "schedule:4/paragraph:1/item:b"
-        and record["replacement_target"] == "schedule:4/paragraph:1/item:c"
+        and record["substitutions"][0]["source_target"] == "schedule:4/paragraph:1/item:b"
+        and record["substitutions"][0]["replacement_target"] == "schedule:4/paragraph:1/item:c"
         for record in lowering_records
     )
 
@@ -9809,7 +9809,9 @@ def test_compile_substituted_for_old_subsection_series_retargets_first_anchor_an
         in_force_dates=[{"date": "2005-12-05", "prospective": "false"}],
     )
 
-    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
 
     assert len(ops) == 2
     assert [op.action.value for op in ops] == ["replace", "repeal"]
@@ -9821,6 +9823,12 @@ def test_compile_substituted_for_old_subsection_series_retargets_first_anchor_an
     assert ops[0].payload.kind == IRNodeKind.SUBSECTION
     assert ops[0].payload.label == "5a"
     assert ops[0].witness_rule_id == "uk_effect_substituted_for_label_changing_target_rebound"
+    assert any(
+        record["rule_id"] == "uk_effect_substituted_for_label_changing_target_rebound"
+        and record["substitutions"][0]["source_target"] == "section:3/subsection:5"
+        and record["substitutions"][0]["replacement_target"] == "section:3/subsection:5a"
+        for record in lowering_records
+    )
 
 
 def test_replay_substituted_for_old_subsection_series_replaces_first_anchor_and_removes_tail() -> None:
@@ -9889,6 +9897,66 @@ def test_replay_substituted_for_old_subsection_series_replaces_first_anchor_and_
 
     section = replayed.body.children[0]
     assert [child.label for child in section.children] == ["5a", "7"]
+
+
+def test_compile_substituted_for_old_new_sibling_series_rebinds_each_target() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <BlockAmendment xmlns="{_LEG_NS}">
+          <P2>
+            <Pnumber>2A</Pnumber>
+            <Text>A person who has held office as Ombudsman is ineligible for reappointment.</Text>
+          </P2>
+          <P2>
+            <Pnumber>2B</Pnumber>
+            <Text>Such a person is eligible for appointment to the other office.</Text>
+          </P2>
+        </BlockAmendment>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_substituted_for_old_new_sibling_series",
+        effect_type="substituted for sch. 1 para. 4(2)(3)",
+        applied=True,
+        requires_applied=True,
+        modified="2018-08-11",
+        affected_uri="/id/asp/2002/11/schedule/1/paragraph/4/subparagraph/2B",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="sch. 1 para. 4(2A)(2B)",
+        affecting_uri="/id/asp/2010/11",
+        affecting_class="ScottishAct",
+        affecting_year="2010",
+        affecting_number="11",
+        affecting_provisions="sch. 3 para. 13(b)",
+        affecting_title="Public Services Reform (Scotland) Act 2010",
+        in_force_dates=[{"date": "2011-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert [op.action for op in ops] == [StructuralAction.REPLACE, StructuralAction.REPLACE]
+    assert [op.target.path for op in ops] == [
+        (("schedule", "1"), ("paragraph", "4"), ("subparagraph", "2")),
+        (("schedule", "1"), ("paragraph", "4"), ("subparagraph", "3")),
+    ]
+    assert [op.payload.label for op in ops if op.payload is not None] == ["2a", "2b"]
+    assert all(op.witness_rule_id == "uk_effect_substituted_for_label_changing_target_rebound" for op in ops)
+    label_change_record = next(
+        record
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_substituted_for_label_changing_target_rebound"
+    )
+    assert [item["source_target"] for item in label_change_record["substitutions"]] == [
+        "schedule:1/paragraph:4/subparagraph:2",
+        "schedule:1/paragraph:4/subparagraph:3",
+    ]
+    assert [item["replacement_target"] for item in label_change_record["substitutions"]] == [
+        "schedule:1/paragraph:4/subparagraph:2a",
+        "schedule:1/paragraph:4/subparagraph:2b",
+    ]
 
 
 def test_compile_substituted_for_single_schedule_item_with_new_sibling_lowers_insert() -> None:

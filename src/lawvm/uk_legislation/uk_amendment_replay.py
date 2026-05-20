@@ -6414,6 +6414,34 @@ def _source_label_changing_substitution(
     )
 
 
+def _source_label_changing_substitution_series(
+    effect_type: str,
+    target_refs: list[str],
+) -> tuple[UKSourceLabelChangingSubstitution, ...]:
+    raw = (effect_type or "").strip()
+    if not raw.lower().startswith("substituted for ") or raw.lower() == "substituted for words":
+        return ()
+    anchor_refs = _split_metadata_provisions(raw[len("substituted for ") :].strip())
+    if not anchor_refs:
+        return ()
+    if len(target_refs) == 1:
+        single = _source_label_changing_substitution(effect_type, target_refs)
+        return (single,) if single is not None else ()
+    if len(anchor_refs) != len(target_refs):
+        return ()
+
+    substitutions: list[UKSourceLabelChangingSubstitution] = []
+    for source_ref, replacement_ref in zip(anchor_refs, target_refs):
+        single = _source_label_changing_substitution(
+            f"substituted for {source_ref}",
+            [replacement_ref],
+        )
+        if single is None:
+            return ()
+        substitutions.append(single)
+    return tuple(substitutions)
+
+
 def _source_text_schedule_paragraph_target_override(
     *,
     extracted_text: Optional[str],
@@ -8239,20 +8267,18 @@ def compile_effect_to_ir_ops(
     trailing_repeal_refs: list[str] = []
     replacement_leaf_override: Optional[str] = None
     replacement_leaf_kind: Optional[str] = None
-    label_changing_substitution: Optional[UKSourceLabelChangingSubstitution] = None
+    label_changing_substitutions: tuple[UKSourceLabelChangingSubstitution, ...] = ()
     if action == "replace":
         # Keep the replacement target labels authoritative. The older anchor-
         # retarget heuristic rewrites live replacement labels back to the
         # legacy anchor series, which is exactly the kind of compatibility
         # slop we do not want to keep around.
-        label_changing_substitution = _source_label_changing_substitution(
+        label_changing_substitutions = _source_label_changing_substitution_series(
             effect.effect_type,
             original_targets_str,
         )
-        if label_changing_substitution is not None:
-            targets_str = [label_changing_substitution.source_ref]
-            replacement_leaf_override = _addr_leaf_label(label_changing_substitution.replacement_target)
-            replacement_leaf_kind = _addr_leaf_kind(label_changing_substitution.replacement_target)
+        if label_changing_substitutions:
+            targets_str = [substitution.source_ref for substitution in label_changing_substitutions]
             _append_uk_effect_lowering_observation(
                 lowering_rejections_out,
                 rule_id=_UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID,
@@ -8269,17 +8295,22 @@ def compile_effect_to_ir_ops(
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
                 detail={
-                    "source_ref": label_changing_substitution.source_ref,
-                    "source_target": str(label_changing_substitution.source_target),
-                    "replacement_ref": label_changing_substitution.replacement_ref,
-                    "replacement_target": str(label_changing_substitution.replacement_target),
+                    "substitutions": [
+                        {
+                            "source_ref": substitution.source_ref,
+                            "source_target": str(substitution.source_target),
+                            "replacement_ref": substitution.replacement_ref,
+                            "replacement_target": str(substitution.replacement_target),
+                        }
+                        for substitution in label_changing_substitutions
+                    ],
                 },
             )
         trailing_repeal_refs = _repeal_tail_for_substituted_series_replacement(
             effect.effect_type,
             original_targets_str,
         )
-        if trailing_repeal_refs and original_targets_str and label_changing_substitution is None:
+        if trailing_repeal_refs and original_targets_str and not label_changing_substitutions:
             try:
                 replacement_target = _parse_affected_target(original_targets_str[0])
             except Exception:
@@ -8465,6 +8496,19 @@ def compile_effect_to_ir_ops(
             continue
         parsed_target = _parse_affected_target(t_str)
         target = parsed_target if _is_direct_section_paragraph_ref(t_str) else canonicalize_uk_address(parsed_target)
+        label_changing_substitution = next(
+            (
+                substitution
+                for substitution in label_changing_substitutions
+                if tuple(target.path) == tuple(substitution.source_target.path)
+            ),
+            None,
+        )
+        target_replacement_leaf_override = replacement_leaf_override
+        target_replacement_leaf_kind = replacement_leaf_kind
+        if label_changing_substitution is not None:
+            target_replacement_leaf_override = _addr_leaf_label(label_changing_substitution.replacement_target)
+            target_replacement_leaf_kind = _addr_leaf_kind(label_changing_substitution.replacement_target)
         source_text_target_override = (
             _source_text_schedule_paragraph_target_override(
                 extracted_text=extracted_text,
@@ -8495,12 +8539,9 @@ def compile_effect_to_ir_ops(
                     "metadata_target": str(original_target),
                     "source_target": str(target),
                 },
-            )
+        )
         payload_match_target = target
-        if (
-            label_changing_substitution is not None
-            and tuple(target.path) == tuple(label_changing_substitution.source_target.path)
-        ):
+        if label_changing_substitution is not None:
             payload_match_target = label_changing_substitution.replacement_target
         crossheading_replacement_text = (
             _crossheading_before_anchor_replacement_text(extracted_text)
@@ -11002,11 +11043,11 @@ def compile_effect_to_ir_ops(
             payload_node_mut: Optional[UKMutableNode] = _to_mutable_node(content_ir) if content_ir else None
             if (
                 payload_node_mut is not None
-                and replacement_leaf_override
-                and replacement_leaf_kind
-                and str(payload_node_mut.kind).lower() == replacement_leaf_kind
+                and target_replacement_leaf_override
+                and target_replacement_leaf_kind
+                and str(payload_node_mut.kind).lower() == target_replacement_leaf_kind
             ):
-                payload_node_mut.label = replacement_leaf_override
+                payload_node_mut.label = target_replacement_leaf_override
             if payload_node_mut is not None and curr_action == "insert":
                 leaf_kind = _addr_leaf_kind(target) or ""
                 leaf_label = _addr_leaf_label(target) or ""
