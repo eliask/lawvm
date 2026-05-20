@@ -1771,9 +1771,12 @@ Current block-substitution context invariant:
   parser gaps or become text appends to the enclosing subsection. Current
   witness: `asp/2001/2` affected `s. 82(1)` by `ssi/2024/161 art. 6(2)(b)-(c)`.
 - `before sub-paragraph (i) insert- <new sibling block>` inside an inserted or
-  nested paragraph is also a structural-sibling frontier. It is classified as
-  `structural_sibling_insert_unsupported` rather than a parser miss until a
-  compiler can own the parent context, sibling anchor, and inserted payload.
+  nested paragraph is an amendment-program frontier, not an ordinary base-tree
+  structural-sibling insert. The source is amending the payload of an amendment
+  instruction (`the inserted paragraph (d)`), so LawVM classifies it as
+  `amendment_text_target_unsupported` until a compiler owns the inserted-parent
+  context, sibling anchor, and inserted payload without applying the row to an
+  unrelated live base-law parent.
   Current witnesses: `ukpga/2020/17` affected `Sch. 22 para. 21(2)(a)` and
   `Sch. 22 para. 21(3)(a)` by `ukpga/2022/32` `Sch. 14 para. 14(2)(a)-(b)`.
 - definition-scoped all-occurrence insertions such as `in the definition of
