@@ -622,6 +622,7 @@ _UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID = "uk_effect_table_entry_relating_text_pat
 _UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_relating_column_text_patch"
 _UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID = "uk_effect_table_entry_label_text_patch"
 _UK_TABLE_ENTRY_LABEL_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_label_column_text_patch"
+_UK_TABLE_ENTRY_LABELS_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_labels_column_text_patch"
 _UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID = (
     "uk_effect_source_carried_table_entry_paragraph_substitution_text_patch"
 )
@@ -5331,6 +5332,34 @@ def _uk_table_entry_inline_text_selector(
                 "rule_id": _UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID,
                 "selector_mode": "unique_relating_cell",
                 "relating_text": relating_text,
+                "column_index": column_index,
+                "table_label": "",
+                "original_target": str(target),
+                "target_ref": target_ref,
+            }
+    entry_labels_column_match = re.search(
+        r"\bin\s+entries\s+(?P<entries>[0-9A-Z]+(?:\s*(?:,|and)\s*[0-9A-Z]+)+),?\s+in\s+"
+        r"(?:(?:the\s+)?(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
+        r"column\s+(?P<column_number>\d+))\b",
+        text,
+        re.I,
+    )
+    if entry_labels_column_match is not None:
+        entry_labels = tuple(
+            _clean_num(label)
+            for label in re.split(r"\s*(?:,|and)\s*", entry_labels_column_match.group("entries"))
+            if _clean_num(label)
+        )
+        column_token = (
+            entry_labels_column_match.group("column_ordinal")
+            or entry_labels_column_match.group("column_number")
+        )
+        column_index = _uk_ordinal_to_int(column_token or "")
+        if len(entry_labels) >= 2 and column_index is not None and column_index >= 1:
+            return {
+                "rule_id": _UK_TABLE_ENTRY_LABELS_COLUMN_TEXT_RULE_ID,
+                "selector_mode": "unique_entry_cells",
+                "entry_labels": entry_labels,
                 "column_index": column_index,
                 "table_label": "",
                 "original_target": str(target),
@@ -13512,6 +13541,62 @@ class UKReplayExecutor:
             **carrier_detail,
         }
 
+    def _resolve_unique_table_entry_cells(
+        self,
+        node: UKMutableNode,
+        selector: dict[str, Any],
+    ) -> tuple[list[UKMutableNode], str, dict[str, Any]]:
+        try:
+            column_index = int(selector.get("column_index") or 0)
+        except (TypeError, ValueError):
+            return [], "invalid_selector", {}
+        raw_labels = selector.get("entry_labels")
+        if not isinstance(raw_labels, (list, tuple)) or not raw_labels:
+            return [], "invalid_selector", {}
+        entry_labels = tuple(_compact_normalized_text(str(label or "")) for label in raw_labels)
+        if column_index < 1 or not entry_labels or any(not label for label in entry_labels):
+            return [], "invalid_selector", {}
+
+        tables, carrier_detail = self._table_selector_tables(node, selector)
+        if len(tables) != 1:
+            return [], "table_not_unique", {"table_count": len(tables), **carrier_detail}
+
+        matches_by_label: dict[str, list[tuple[UKMutableNode, str]]] = {label: [] for label in entry_labels}
+        for row_cells in self._expanded_table_rows(tables[0]):
+            row_texts = [
+                str(row_cells[col].text or "")
+                for col in sorted(row_cells)
+                if str(row_cells[col].text or "")
+            ]
+            target_cell = row_cells.get(column_index)
+            if target_cell is None:
+                continue
+            for label in entry_labels:
+                if not any(_compact_normalized_text(text) == label for text in row_texts):
+                    continue
+                row_preview = " | ".join(row_texts)[:240]
+                if not matches_by_label[label] or matches_by_label[label][-1][0] is not target_cell:
+                    matches_by_label[label].append((target_cell, row_preview))
+
+        missing = tuple(label for label, matches in matches_by_label.items() if not matches)
+        ambiguous = tuple(label for label, matches in matches_by_label.items() if len(matches) > 1)
+        if missing or ambiguous:
+            return [], "entry_cells_not_unique", {
+                "missing_entry_labels": missing,
+                "ambiguous_entry_labels": ambiguous,
+                "matching_rows": tuple(
+                    row_preview
+                    for matches in matches_by_label.values()
+                    for _cell, row_preview in matches[:2]
+                )[:5],
+                **carrier_detail,
+            }
+        return [matches_by_label[label][0][0] for label in entry_labels], "", {
+            "matching_cell_count": len(entry_labels),
+            "matched_rows": tuple(matches_by_label[label][0][1] for label in entry_labels),
+            **carrier_detail,
+        }
+
     def _table_selector_tables(
         self,
         node: UKMutableNode,
@@ -13979,6 +14064,24 @@ class UKReplayExecutor:
         rebuilt = dc_replace(node, text=f"{text}{joiner}{insertion}")
         self._replace_node_in_statute(node, rebuilt)
         return rebuilt, True
+
+    def _node_text_patch_preimage_present(
+        self,
+        node: UKMutableNode,
+        match: str,
+        occurrence: int,
+        end_occurrence: int = 0,
+    ) -> bool:
+        """Preflight the simple node-local text patches used for multi-cell table edits."""
+        if occurrence != 0 or end_occurrence != 0:
+            return False
+        text = node.text or ""
+        if not text or not match:
+            return False
+        if match in text:
+            return True
+        pattern = _text_patch_pattern(match)
+        return re.search(pattern, text, flags=re.I) is not None
 
     def _apply_text_append_on_subtree_text_end(
         self,
@@ -17089,6 +17192,147 @@ class UKReplayExecutor:
                     return
                 table_cell_selector = _table_cell_selector(op)
                 if table_cell_selector is not None:
+                    if str(table_cell_selector.get("selector_mode") or "") == "unique_entry_cells":
+                        table_cells, table_cell_reason, table_cell_detail = self._resolve_unique_table_entry_cells(
+                            node,
+                            table_cell_selector,
+                        )
+                        if not table_cells:
+                            _append_uk_replay_adjudication(
+                                self.adjudications_out,
+                                kind=_UK_REPLAY_TABLE_ENTRY_INLINE_UNRESOLVED_RULE_ID,
+                                message=(
+                                    "UK replay skipped multi-entry table text op: the "
+                                    "source-owned table cell selector did not resolve."
+                                ),
+                                op=op,
+                                detail={
+                                    "action": _action_name(op.action),
+                                    "target": str(target),
+                                    "text_match": text_patch.selector.match_text,
+                                    "replacement_text": replacement,
+                                    "selector": dict(table_cell_selector),
+                                    "reason_code": table_cell_reason,
+                                    **table_cell_detail,
+                                    "family": "source_table_elaboration",
+                                    "blocking": True,
+                                    "strict_disposition": "block",
+                                    "quirks_disposition": "record",
+                                },
+                            )
+                            return
+                        if text_patch.kind not in {TextPatchKindEnum.REPLACE, TextPatchKindEnum.DELETE}:
+                            _append_uk_replay_adjudication(
+                                self.adjudications_out,
+                                kind=_UK_REPLAY_TABLE_ENTRY_INLINE_UNRESOLVED_RULE_ID,
+                                message="UK replay skipped multi-entry table text op: unsupported text-patch kind.",
+                                op=op,
+                                detail={
+                                    "action": _action_name(op.action),
+                                    "target": str(target),
+                                    "text_match": text_patch.selector.match_text,
+                                    "replacement_text": replacement,
+                                    "selector": dict(table_cell_selector),
+                                    "reason_code": "unsupported_multi_cell_text_patch_kind",
+                                    **table_cell_detail,
+                                    "family": "source_table_elaboration",
+                                    "blocking": True,
+                                    "strict_disposition": "block",
+                                    "quirks_disposition": "record",
+                                },
+                            )
+                            return
+                        preimage_gaps = [
+                            str(cell.text or "")[:240]
+                            for cell in table_cells
+                            if not self._node_text_patch_preimage_present(
+                                cell,
+                                text_patch.selector.match_text,
+                                text_patch.selector.occurrence,
+                                text_patch.selector.end_occurrence,
+                            )
+                        ]
+                        if preimage_gaps:
+                            _append_uk_replay_adjudication(
+                                self.adjudications_out,
+                                kind=_UK_REPLAY_TABLE_ENTRY_INLINE_PREIMAGE_GAP_RULE_ID,
+                                message=(
+                                    "UK replay skipped multi-entry table text op: at least one "
+                                    "selected table cell lacked the source text preimage."
+                                ),
+                                op=op,
+                                detail={
+                                    "action": _action_name(op.action),
+                                    "target": str(target),
+                                    "text_match": text_patch.selector.match_text,
+                                    "replacement_text": replacement,
+                                    "selector": dict(table_cell_selector),
+                                    "reason_code": "multi_cell_text_preimage_gap",
+                                    "preimage_gap_cells": tuple(preimage_gaps),
+                                    **table_cell_detail,
+                                    "family": "source_table_elaboration",
+                                    "blocking": True,
+                                    "strict_disposition": "block",
+                                    "quirks_disposition": "record",
+                                },
+                            )
+                            return
+                        for table_cell in table_cells:
+                            _new_cell, applied = self._apply_text_replace_on_node_text_only(
+                                table_cell,
+                                text_patch.selector.match_text,
+                                replacement,
+                                text_patch.selector.occurrence,
+                                text_patch.selector.end_occurrence,
+                            )
+                            if not applied:
+                                _append_uk_replay_adjudication(
+                                    self.adjudications_out,
+                                    kind=_UK_REPLAY_TABLE_ENTRY_INLINE_PREIMAGE_GAP_RULE_ID,
+                                    message=(
+                                        "UK replay skipped multi-entry table text op: "
+                                        "preflight passed but apply failed."
+                                    ),
+                                    op=op,
+                                    detail={
+                                        "action": _action_name(op.action),
+                                        "target": str(target),
+                                        "text_match": text_patch.selector.match_text,
+                                        "replacement_text": replacement,
+                                        "selector": dict(table_cell_selector),
+                                        "reason_code": "multi_cell_text_apply_gap",
+                                        **table_cell_detail,
+                                        "family": "source_table_elaboration",
+                                        "blocking": True,
+                                        "strict_disposition": "block",
+                                        "quirks_disposition": "record",
+                                    },
+                                )
+                                return
+                        _append_uk_replay_adjudication(
+                            self.adjudications_out,
+                            kind="uk_replay_table_entry_multi_cell_text_patch_resolved",
+                            message="UK replay applied a source-owned text patch to multiple table cells.",
+                            op=op,
+                            detail={
+                                "action": _action_name(op.action),
+                                "target": str(target),
+                                "text_match": text_patch.selector.match_text,
+                                "replacement_text": replacement,
+                                "selector": dict(table_cell_selector),
+                                **table_cell_detail,
+                                "family": "source_table_elaboration",
+                                "blocking": False,
+                                "strict_disposition": "record",
+                                "quirks_disposition": "apply",
+                            },
+                        )
+                        target_key = str(target)
+                        if target_key:
+                            self._applied_text_patch_targets.setdefault(target_key, []).append(op.op_id)
+                        self._record_invariant_violations(op)
+                        self._emit_top_section_snapshot(op)
+                        return
                     table_cell, table_cell_reason, table_cell_detail = self._resolve_table_entry_inline_cell(
                         node,
                         table_cell_selector,

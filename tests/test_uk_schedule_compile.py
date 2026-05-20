@@ -7042,6 +7042,222 @@ def test_replay_table_entry_label_column_append_mutates_selected_cell_only() -> 
     assert table.children[1].children[2].text == "two-thirds"
 
 
+def test_compile_table_entry_labels_column_substitution_uses_owned_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>i</Pnumber>
+          <Text>i in entries 3 and 5, in the third column, for “half”
+          substitute “two-thirds of” ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_labels_column_substitution",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-06-28",
+        affected_uri="/id/ukpga/2020/17/section/166",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 166(5) Table",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="s. 140(2)(a)(i)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2022-06-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "166"), ("subsection", "5"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "half"
+    assert ops[0].text_patch.replacement == "two-thirds of"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_entry_labels_column_text_patch"
+    assert selector["selector_mode"] == "unique_entry_cells"
+    assert selector["entry_labels"] == ["3", "5"]
+    assert selector["column_index"] == 3
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_labels_column_text_patch"
+        and record["reason_code"] == "explicit_table_entry_column_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_replay_table_entry_labels_column_substitution_mutates_all_selected_cells() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_labels_column_text_patch",
+        "selector_mode": "unique_entry_cells",
+        "entry_labels": ["3", "5"],
+        "column_index": 3,
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_labels_column_substitution",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "166"), ("subsection", "5"))),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="half", occurrence=0),
+            replacement="two-thirds of",
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="166",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="3"),
+                                                IRNode(kind=IRNodeKind.CELL, text="detention"),
+                                                IRNode(kind=IRNodeKind.CELL, text="half the sentence"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="4"),
+                                                IRNode(kind=IRNodeKind.CELL, text="other"),
+                                                IRNode(kind=IRNodeKind.CELL, text="half the sentence"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="5"),
+                                                IRNode(kind=IRNodeKind.CELL, text="imprisonment"),
+                                                IRNode(kind=IRNodeKind.CELL, text="half the sentence"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    table = replayed.body.children[0].children[0].children[0]
+    assert table.children[0].children[2].text == "two-thirds of the sentence"
+    assert table.children[1].children[2].text == "half the sentence"
+    assert table.children[2].children[2].text == "two-thirds of the sentence"
+    resolved = next(
+        row
+        for row in adjudications
+        if row.kind == "uk_replay_table_entry_multi_cell_text_patch_resolved"
+    )
+    assert resolved.detail["blocking"] is False
+
+
+def test_replay_table_entry_labels_column_substitution_blocks_without_partial_mutation() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_labels_column_text_patch",
+        "selector_mode": "unique_entry_cells",
+        "entry_labels": ["3", "5"],
+        "column_index": 3,
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_labels_column_substitution_gap",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "166"), ("subsection", "5"))),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="half", occurrence=0),
+            replacement="two-thirds of",
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="166",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="5",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="3"),
+                                                IRNode(kind=IRNodeKind.CELL, text="detention"),
+                                                IRNode(kind=IRNodeKind.CELL, text="half the sentence"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="5"),
+                                                IRNode(kind=IRNodeKind.CELL, text="imprisonment"),
+                                                IRNode(kind=IRNodeKind.CELL, text="two-thirds already"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    table = replayed.body.children[0].children[0].children[0]
+    assert table.children[0].children[2].text == "half the sentence"
+    assert table.children[1].children[2].text == "two-thirds already"
+    unresolved = next(
+        row
+        for row in adjudications
+        if row.kind == "uk_replay_table_entry_inline_text_preimage_gap"
+    )
+    assert unresolved.detail["reason_code"] == "multi_cell_text_preimage_gap"
+    assert unresolved.detail["blocking"] is True
+
+
 def test_compile_repeal_table_quoted_words_text_repeal() -> None:
     source_root = ET.fromstring(
         """
