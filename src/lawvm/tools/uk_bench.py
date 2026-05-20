@@ -1711,7 +1711,10 @@ def _classify_uk_residual_claim_for_bench(
 
 _UK_REPLAY_TEXT_PATCH_PREIMAGE_FRONTIER_KINDS = frozenset(
     {
+        "uk_replay_heading_text_preimage_gap",
+        "uk_replay_text_insert_anchor_preimage_gap",
         "uk_replay_text_monetary_amount_preimage_gap",
+        "uk_replay_text_parenthetical_omission_preimage_gap",
         "uk_replay_text_patch_preimage_drift",
         "uk_replay_text_patch_preimage_drift_multi_prior_same_target",
     }

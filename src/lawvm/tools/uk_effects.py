@@ -78,6 +78,8 @@ class _EffectSummary:
     manual_compile_status: str = ""
     manual_compile_rule_id: str = ""
     manual_compile_reason: str = ""
+    manual_compile_lowering_rule_ids: tuple[str, ...] = ()
+    manual_compile_blocking_lowering_rule_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -522,6 +524,23 @@ def summarize_uk_effect(
         manual_compile_status=manual_frontier["status"],
         manual_compile_rule_id=manual_frontier["rule_id"],
         manual_compile_reason=manual_frontier["reason"],
+        manual_compile_lowering_rule_ids=tuple(
+            sorted(
+                {
+                    str(row.get("rule_id") or "unknown")
+                    for row in lowering_rejections
+                }
+            )
+        ),
+        manual_compile_blocking_lowering_rule_ids=tuple(
+            sorted(
+                {
+                    str(row.get("rule_id") or "unknown")
+                    for row in lowering_rejections
+                    if is_blocking_compile_record(row)
+                }
+            )
+        ),
     )
 
 
@@ -859,6 +878,10 @@ def _effect_report_row_jsonable(row: _EffectReportRow) -> dict[str, Any]:
             "status": summary.manual_compile_status or "",
             "rule_id": summary.manual_compile_rule_id or "",
             "reason": summary.manual_compile_reason or "",
+            "lowering_rule_ids": list(summary.manual_compile_lowering_rule_ids),
+            "blocking_lowering_rule_ids": list(
+                summary.manual_compile_blocking_lowering_rule_ids
+            ),
         },
         "candidate": summary.candidate,
         "compiled_op_count": summary.n_ops,
@@ -976,6 +999,12 @@ def _manual_compile_evidence_row_jsonable(
         "manual_compile_status": summary.manual_compile_status or "",
         "manual_compile_rule_id": summary.manual_compile_rule_id or "",
         "manual_compile_reason": summary.manual_compile_reason or "",
+        "manual_compile_lowering_rule_ids": list(
+            summary.manual_compile_lowering_rule_ids
+        ),
+        "manual_compile_blocking_lowering_rule_ids": list(
+            summary.manual_compile_blocking_lowering_rule_ids
+        ),
         "source_pathology": summary.source_pathology or "",
         "source": _manual_compile_source_jsonable(effect_payload["source"]),
         "affecting_source_witness": effect_payload["affecting_source_witness"],

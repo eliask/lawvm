@@ -15160,6 +15160,8 @@ def test_pipeline_compile_ops_skips_instruction_text_reused_as_payload_rows(monk
                 "The blocking row is dominated by source-shape pathology rather than "
                 "an unambiguous manual compilation opportunity."
             ),
+            "lowering_rule_ids": ("uk_effect_instruction_text_payload_rejected",),
+            "blocking_lowering_rule_ids": ("uk_effect_instruction_text_payload_rejected",),
             "source_pathology": "instruction_text_reused_as_payload",
             "structural_for_replay": True,
             "replay_applicable": True,
@@ -15286,6 +15288,12 @@ def test_pipeline_compile_ops_blocks_range_to_container_substitution_until_owned
     ]
     assert manual_rows[-1]["manual_compile_status"] == "manual_compile_candidate"
     assert manual_rows[-1]["manual_compile_rule_id"] == "uk_manual_frontier_range_to_container_candidate"
+    assert manual_rows[-1]["lowering_rule_ids"] == (
+        "uk_effect_range_to_container_substitution_rejected",
+    )
+    assert manual_rows[-1]["blocking_lowering_rule_ids"] == (
+        "uk_effect_range_to_container_substitution_rejected",
+    )
 
 
 def test_pipeline_compile_ops_records_replay_applicability_filter_for_compiled_ops(monkeypatch) -> None:

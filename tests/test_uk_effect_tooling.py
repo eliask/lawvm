@@ -1321,6 +1321,10 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
             manual_compile_status="manual_compile_candidate",
             manual_compile_rule_id="uk_manual_frontier_heading_facet_candidate",
             manual_compile_reason="Heading facet requires an explicit manual claim.",
+            manual_compile_lowering_rule_ids=("uk_effect_heading_only_ref_rejected",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_heading_only_ref_rejected",
+            ),
         ),
     )
 
@@ -1330,6 +1334,8 @@ def test_uk_effect_row_json_exposes_manual_compile_frontier() -> None:
         "status": "manual_compile_candidate",
         "rule_id": "uk_manual_frontier_heading_facet_candidate",
         "reason": "Heading facet requires an explicit manual claim.",
+        "lowering_rule_ids": ["uk_effect_heading_only_ref_rejected"],
+        "blocking_lowering_rule_ids": ["uk_effect_heading_only_ref_rejected"],
     }
     assert payload["source"] == {
         "extracted": True,
@@ -1392,6 +1398,10 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
             manual_compile_status="manual_compile_candidate",
             manual_compile_rule_id="uk_manual_frontier_heading_facet_candidate",
             manual_compile_reason="Heading facet requires an explicit manual claim.",
+            manual_compile_lowering_rule_ids=("uk_effect_heading_only_ref_rejected",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_heading_only_ref_rejected",
+            ),
         ),
     )
     context = _EffectSummaryContext(
@@ -1453,6 +1463,12 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
     assert payload["affecting_uri"] == "/id/ukpga/2025/1"
     assert payload["manual_compile_status"] == "manual_compile_candidate"
     assert payload["manual_compile_rule_id"] == "uk_manual_frontier_heading_facet_candidate"
+    assert payload["manual_compile_lowering_rule_ids"] == [
+        "uk_effect_heading_only_ref_rejected"
+    ]
+    assert payload["manual_compile_blocking_lowering_rule_ids"] == [
+        "uk_effect_heading_only_ref_rejected"
+    ]
     assert payload["source"]["extracted"] is True
     assert payload["source"]["text_preview_sha256"] == hashlib.sha256(
         'In the title, for "old" substitute "new".'.encode("utf-8")
