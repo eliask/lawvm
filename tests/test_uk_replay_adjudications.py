@@ -4076,6 +4076,69 @@ def test_executor_applies_before_definition_insert_when_term_has_comma_qualifier
     assert adjudications == []
 
 
+def test_executor_applies_after_definition_insert_to_comma_separated_definition_list() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="23",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "In this Act, unless the context otherwise requires— "
+                                "“action” includes failure to act, "
+                                "“the Ombudsman” means the Scottish Public Services Ombudsman, "
+                                "“request” means a request for a review,"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_after_definition_insert_comma_list",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "23"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="TEXT_AFTER_DEFINITION_the Ombudsman",
+                    occurrence=0,
+                ),
+                replacement=(
+                    "\u201c the Ombudsman's functions \u201d includes the Ombudsman's functions "
+                    "under the 2015 Act,"
+                ),
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "In this Act, unless the context otherwise requires— "
+        "“action” includes failure to act, "
+        "“the Ombudsman” means the Scottish Public Services Ombudsman, "
+        "“ the Ombudsman's functions ” includes the Ombudsman's functions under the 2015 Act, "
+        "“request” means a request for a review,"
+    )
+    assert adjudications == []
+
+
 def test_executor_applies_definition_child_repeal_without_bare_term_deletion() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

@@ -2036,6 +2036,10 @@ def _print_report(
     print(f"Row statuses: {dict(sorted(row_status_counts.items()))}")
     print(f"Comparison classes: {dict(sorted(comparison_class_counts.items()))}")
     print(f"Core benchmark rows: {sum(1 for r in results if r.core_benchmark)}")
+    if replayed:
+        print(f"Score mode: enacted baseline + replay ({len(replayed)} replayed rows)")
+    else:
+        print("Score mode: enacted baseline only (pass --replay for amendment replay)")
     enacted_source_counts = Counter(r.enacted_source_status for r in results)
     oracle_source_counts = Counter(r.oracle_source_status for r in results)
     source_parse_observation_rows = sum(1 for r in results if r.source_parse_observation_count > 0)
