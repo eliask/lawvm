@@ -3361,6 +3361,11 @@ Current bench replay-regime invariant:
   `uk_replay_text_match_multi_fragment_selector_gap`. Replay must not delete or
   substitute separated spans from a collapsed selector; lowering must emit
   separately owned operations or a manual compile claim.
+  A deterministic subfamily is now owned for `the words "A", "B" and "C" are
+  repealed/omitted`: lowering emits
+  `uk_effect_multi_quoted_word_repeal_text_patches` and one text delete per
+  quoted fragment. Current witness: `asp/2000/4` affected `s. 70(1)` by
+  `asp/2007/10` s. 60(8)(a).
 - When a text operation reaches a live target but the target subtree has no
   replay-visible text at all, replay records
   `uk_replay_text_target_empty_surface_gap`. This is distinct from ordinary

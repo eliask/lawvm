@@ -772,6 +772,9 @@ _UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID = (
 _UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID = (
     "uk_effect_after_paragraph_insert_labelled_series_lowered"
 )
+_UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID = (
+    "uk_effect_multi_quoted_word_repeal_text_patches"
+)
 _UK_SOURCE_TEXT_SCHEDULE_PARAGRAPH_TARGET_OVERRIDE_RULE_ID = (
     "uk_effect_source_text_schedule_paragraph_target_overrides_metadata"
 )
@@ -1958,6 +1961,28 @@ def _separate_all_occurrences_text_replace_fragments(
             {
                 "original": original,
                 "replacement": replacement,
+                "rule_id": rule_id,
+            }
+        )
+    return tuple(fragments)
+
+
+def _separate_multi_quoted_word_repeal_fragments(
+    fragment_subs: Optional[list],
+) -> tuple[dict[str, str], ...]:
+    if not fragment_subs or len(fragment_subs) <= 1:
+        return ()
+    fragments: list[dict[str, str]] = []
+    for item in fragment_subs:
+        original = str(item.get("original") or "")
+        replacement = str(item.get("replacement") or "")
+        rule_id = str(item.get("rule_id") or "")
+        if rule_id != _UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID or replacement or not original:
+            return ()
+        fragments.append(
+            {
+                "original": original,
+                "replacement": "",
                 "rule_id": rule_id,
             }
         )
@@ -9586,6 +9611,38 @@ def _source_after_paragraph_insert_labelled_series(
     }
 
 
+def _multi_quoted_word_repeal_fragments(
+    *,
+    extracted_text: Optional[str],
+    effect_type: str,
+) -> tuple[dict[str, str], ...]:
+    norm_effect_type = (effect_type or "").strip().lower()
+    if norm_effect_type not in {"words repealed", "word repealed", "words omitted", "word omitted"}:
+        return ()
+    text = " ".join((extracted_text or "").split()).strip()
+    if not text:
+        return ()
+    if not re.search(r"\bthe\s+words?\b", text, flags=re.I):
+        return ()
+    if not re.search(r"\b(?:are|is)\s+(?:repealed|omitted)\b", text, flags=re.I):
+        return ()
+    quoted = tuple(
+        match.group("curly") if match.group("curly") is not None else match.group("double")
+        for match in re.finditer(r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\")", text)
+    )
+    quoted = tuple(" ".join(fragment.split()).strip() for fragment in quoted if " ".join(fragment.split()).strip())
+    if len(quoted) < 2:
+        return ()
+    return tuple(
+        {
+            "original": fragment,
+            "replacement": "",
+            "rule_id": _UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
+        }
+        for fragment in quoted
+    )
+
+
 _DEFINITION_LIST_OMISSION_CONTEXT_RE = re.compile(
     r"(?:^|\b)omit\s+(?:the\s+)?definitions?\s+of(?:\b|[\u2014-])",
     flags=re.I,
@@ -12802,6 +12859,16 @@ def compile_effect_to_ir_ops(
                     if heading_full_replacement is not None
                     else parse_fragment_substitution(extracted_text)
                 )
+                multi_quoted_word_repeals = _multi_quoted_word_repeal_fragments(
+                    extracted_text=extracted_text,
+                    effect_type=effect.effect_type,
+                )
+                if (
+                    multi_quoted_word_repeals
+                    and len(subs) == 1
+                    and _multi_fragment_text_selector(str(subs[0].get("original") or ""))
+                ):
+                    subs = list(multi_quoted_word_repeals)
                 if not subs:
                     after_inserted_by_sibling = _fragment_substitution_after_words_inserted_by_sibling(
                         extracted_el=extracted_el,
@@ -13320,6 +13387,26 @@ def compile_effect_to_ir_ops(
                                 "source_section_label": str(primary.get("source_section_label") or ""),
                             },
                         )
+                    if _UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID in _fragment_rule_ids(fragment_subs):
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id=_UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
+                            family="text_rewrite_lowering",
+                            reason_code="multi_quoted_word_repeal_split",
+                            reason=(
+                                "UK source text repeals multiple separately quoted word "
+                                "fragments; lowering emits one bounded text delete per "
+                                "quoted fragment instead of replaying a collapsed selector."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "fragments": tuple(str(item.get("original") or "") for item in fragment_subs),
+                            },
+                        )
                     if "uk_effect_amendment_inserted_text_substitution_text_patch" in _fragment_rule_ids(fragment_subs):
                         _append_uk_effect_lowering_observation(
                             lowering_rejections_out,
@@ -13809,8 +13896,23 @@ def compile_effect_to_ir_ops(
             separate_definition_repeals = _separate_definition_repeal_fragments(fragment_subs)
             separate_occurrence_replacements = _separate_occurrence_text_replace_fragments(fragment_subs)
             separate_all_occurrences_replacements = _separate_all_occurrences_text_replace_fragments(fragment_subs)
+            separate_multi_quoted_word_repeals = _separate_multi_quoted_word_repeal_fragments(fragment_subs)
             if curr_action == "text_repeal" and separate_definition_repeals:
                 for fragment in separate_definition_repeals:
+                    text_patch_items.append(
+                        (
+                            TextPatchSpec(
+                                kind=TextPatchKindEnum.DELETE,
+                                selector=TextSelector(
+                                    match_text=fragment["original"],
+                                    occurrence=0,
+                                ),
+                            ),
+                            [fragment],
+                        )
+                    )
+            elif curr_action == "text_repeal" and separate_multi_quoted_word_repeals:
+                for fragment in separate_multi_quoted_word_repeals:
                     text_patch_items.append(
                         (
                             TextPatchSpec(
