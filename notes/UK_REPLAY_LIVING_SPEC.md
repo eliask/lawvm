@@ -1781,9 +1781,10 @@ Current block-substitution context invariant:
   nested paragraph is an amendment-program frontier, not an ordinary base-tree
   structural-sibling insert. The source is amending the payload of an amendment
   instruction (`the inserted paragraph (d)`), so LawVM classifies it as
-  `amendment_text_target_unsupported` until a compiler owns the inserted-parent
-  context, sibling anchor, and inserted payload without applying the row to an
-  unrelated live base-law parent.
+  `amendment_text_target_unsupported` and lowering emits blocking
+  `uk_effect_amendment_program_inserted_parent_structural_insert_rejected`
+  until a compiler owns the inserted-parent context, sibling anchor, and
+  inserted payload without applying the row to an unrelated live base-law parent.
   Current witnesses: `ukpga/2020/17` affected `Sch. 22 para. 21(2)(a)` and
   `Sch. 22 para. 21(3)(a)` by `ukpga/2022/32` `Sch. 14 para. 14(2)(a)-(b)`.
 - definition-scoped all-occurrence insertions such as `in the definition of
