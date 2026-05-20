@@ -621,7 +621,7 @@ def main(args: "argparse.Namespace") -> None:
         parse_uk_statute_ir_bytes,
     )
     from lawvm.uk_legislation import uk_amendment_replay as uk_replay_module
-    from lawvm.uk_legislation.uk_amendment_replay import load_effects_for_statute_from_archive
+    from lawvm.uk_legislation.effects import load_effects_for_statute_from_archive
     from lawvm.core.timeline import compile_timelines, materialize_pit
     from lawvm.core.timeline_consistency import ingest_uk_snapshots
     from lawvm.tools.replay_payloads import build_uk_replay_payload

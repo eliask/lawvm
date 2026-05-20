@@ -134,7 +134,7 @@ def test_fetch_missing_for_statute_skips_permanently_missing_without_network(mon
     calls: list[str] = []
 
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         lambda _sid, _archive, **_kwargs: _make_structural_effects(act_id),
     )
     monkeypatch.setattr(uk_prefetch.time, "sleep", lambda _secs: None)
@@ -158,11 +158,11 @@ def test_fetch_missing_for_statute_marks_404_as_missing_marker(monkeypatch) -> N
     archive = _FakeArchive()
 
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         lambda _sid, _archive, **_kwargs: _make_structural_effects(act_id),
     )
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.get_affecting_act_xml_from_archive",
+        "lawvm.uk_legislation.effects.get_affecting_act_xml_from_archive",
         lambda _act_id, _archive: None,
     )
     monkeypatch.setattr(uk_prefetch.time, "sleep", lambda _secs: None)
@@ -192,11 +192,11 @@ def test_fetch_missing_for_statute_marks_410_as_missing_marker(monkeypatch) -> N
     archive = _FakeArchive()
 
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         lambda _sid, _archive, **_kwargs: _make_structural_effects(act_id),
     )
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.get_affecting_act_xml_from_archive",
+        "lawvm.uk_legislation.effects.get_affecting_act_xml_from_archive",
         lambda _act_id, _archive: None,
     )
     monkeypatch.setattr(uk_prefetch.time, "sleep", lambda _secs: None)
@@ -218,11 +218,11 @@ def test_fetch_missing_for_statute_records_http_error_event(monkeypatch) -> None
     archive = _FakeArchive()
 
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         lambda _sid, _archive, **_kwargs: _make_structural_effects(act_id),
     )
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.get_affecting_act_xml_from_archive",
+        "lawvm.uk_legislation.effects.get_affecting_act_xml_from_archive",
         lambda _act_id, _archive: None,
     )
     monkeypatch.setattr(uk_prefetch.time, "sleep", lambda _secs: None)
@@ -274,11 +274,11 @@ def test_fetch_missing_for_statute_uses_shared_too_small_source_threshold(monkey
             return data
 
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         lambda _sid, _archive, **_kwargs: _make_structural_effects(act_id),
     )
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.get_affecting_act_xml_from_archive",
+        "lawvm.uk_legislation.effects.get_affecting_act_xml_from_archive",
         lambda _act_id, _archive: None,
     )
     monkeypatch.setattr(uk_prefetch.time, "sleep", lambda _secs: None)
@@ -315,11 +315,11 @@ def test_fetch_missing_for_statute_stores_shared_available_threshold_boundary(mo
             return "https://www.legislation.gov.uk/ukpga/1995/18/data.xml"
 
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         lambda _sid, _archive, **_kwargs: _make_structural_effects(act_id),
     )
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.get_affecting_act_xml_from_archive",
+        "lawvm.uk_legislation.effects.get_affecting_act_xml_from_archive",
         lambda _act_id, _archive: None,
     )
     monkeypatch.setattr(uk_prefetch.time, "sleep", lambda _secs: None)
@@ -342,11 +342,11 @@ def test_fetch_missing_for_statute_includes_supported_nonstructural_replay_famil
     archive = _FakeArchive()
 
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         lambda _sid, _archive, **_kwargs: [_make_nonstructural_candidate_effect(act_id)],
     )
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.get_affecting_act_xml_from_archive",
+        "lawvm.uk_legislation.effects.get_affecting_act_xml_from_archive",
         lambda _act_id, _archive: None,
     )
 
@@ -393,11 +393,11 @@ def test_fetch_missing_for_statute_records_successful_fetch_source_witness(monke
             return "https://www.legislation.gov.uk/ukpga/1995/15/data.xml?view=extent"
 
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         lambda _sid, _archive, **_kwargs: _make_structural_effects(act_id),
     )
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.get_affecting_act_xml_from_archive",
+        "lawvm.uk_legislation.effects.get_affecting_act_xml_from_archive",
         lambda _act_id, _archive: None,
     )
     monkeypatch.setattr(uk_prefetch.time, "sleep", lambda _secs: None)
@@ -437,11 +437,11 @@ def test_fetch_missing_for_statute_records_cached_source_witness(monkeypatch) ->
     data = b"<Legislation>cached affecting source</Legislation>"
 
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         lambda _sid, _archive, **_kwargs: _make_structural_effects(act_id),
     )
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.get_affecting_act_xml_from_archive",
+        "lawvm.uk_legislation.effects.get_affecting_act_xml_from_archive",
         lambda _act_id, _archive: data,
     )
     monkeypatch.setattr(
@@ -483,15 +483,15 @@ def test_fetch_missing_for_statute_can_fetch_enacted_affecting_lane(monkeypatch)
     enacted_data = b"<Legislation>" + (b"fetched enacted affecting source" * 4) + b"</Legislation>"
 
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         lambda _sid, _archive, **_kwargs: _make_structural_effects(act_id),
     )
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.get_affecting_act_xml_from_archive",
+        "lawvm.uk_legislation.effects.get_affecting_act_xml_from_archive",
         lambda _act_id, _archive: current_data,
     )
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.get_affecting_act_enacted_xml_from_archive",
+        "lawvm.uk_legislation.effects.get_affecting_act_enacted_xml_from_archive",
         lambda _act_id, _archive: None,
     )
     monkeypatch.setattr(uk_prefetch.time, "sleep", lambda _secs: None)
@@ -543,7 +543,7 @@ def test_fetch_missing_for_statute_skips_unsupported_commencement_rows(monkeypat
     archive = _FakeArchive()
 
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         lambda _sid, _archive, **_kwargs: [_make_commencement_effect(act_id)],
     )
 
@@ -551,7 +551,7 @@ def test_fetch_missing_for_statute_skips_unsupported_commencement_rows(monkeypat
         raise AssertionError("commencement rows should not be checked for affecting XML")
 
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.get_affecting_act_xml_from_archive",
+        "lawvm.uk_legislation.effects.get_affecting_act_xml_from_archive",
         fail_if_source_checked,
     )
 
@@ -582,7 +582,7 @@ def test_fetch_missing_for_statute_threads_feed_parse_rejections(monkeypatch) ->
         return []
 
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         fake_load_effects,
     )
 
@@ -630,7 +630,7 @@ def test_prefetch_report_defaults_legacy_feed_events_to_blocking(monkeypatch) ->
         return []
 
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         fake_load_effects,
     )
 

@@ -54,7 +54,7 @@ def test_uk_evidence_bundle_preserves_compile_rejection_lanes(monkeypatch, tmp_p
         lambda _data: {"eid_map": {"body:section-1": "section-1"}, "text_map": {}},
     )
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         lambda *_args, **_kwargs: [],
     )
 
@@ -367,7 +367,7 @@ def test_uk_evidence_bundle_records_initial_effect_count_failure(monkeypatch, tm
         return []
 
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         fake_load_effects,
     )
 

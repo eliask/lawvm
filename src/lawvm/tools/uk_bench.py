@@ -719,7 +719,7 @@ def _load_effect_row_counts(
     triage needs the post-parse row count because a present but malformed/empty
     feed is materially different from an actionable effect row.
     """
-    from lawvm.uk_legislation.uk_amendment_replay import load_effects_for_statute_from_archive
+    from lawvm.uk_legislation.effects import load_effects_for_statute_from_archive
 
     feed_observations: list[dict[str, Any]] = []
     effects = load_effects_for_statute_from_archive(
@@ -1316,8 +1316,10 @@ def _score_statute(
         if do_commencement:
             commencement_feed_observations: list[dict[str, Any]] = []
             try:
-                from lawvm.uk_legislation.uk_amendment_replay import (
+                from lawvm.uk_legislation.effects import (
                     load_effects_for_statute_from_archive,
+                )
+                from lawvm.uk_legislation.uk_amendment_replay import (
                     commencement_eid_set,
                 )
 

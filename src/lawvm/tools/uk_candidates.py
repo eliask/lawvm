@@ -2699,9 +2699,9 @@ def main(args: "argparse.Namespace") -> None:
             from lawvm.uk_legislation.source_adjudication import (
                 normalize_uk_replay_compare_eids,
             )
+            from lawvm.uk_legislation.effects import load_effects_for_statute_from_archive
             from lawvm.uk_legislation.uk_amendment_replay import (
                 UKReplayPipeline,
-                load_effects_for_statute_from_archive,
             )
 
             report_rows: list[dict[str, Any]] = []
@@ -3319,9 +3319,9 @@ def main(args: "argparse.Namespace") -> None:
     )
     from lawvm.tools.uk_effect import _collect_statute_eids
     from lawvm.uk_legislation.source_adjudication import normalize_uk_replay_compare_eids
+    from lawvm.uk_legislation.effects import load_effects_for_statute_from_archive
     from lawvm.uk_legislation.uk_amendment_replay import (
         UKReplayPipeline,
-        load_effects_for_statute_from_archive,
     )
 
     report_rows: list[dict[str, Any]] = []

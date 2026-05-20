@@ -244,6 +244,10 @@ def summarize_uk_effect(
         is_core_uk_effect_compare_candidate,
         is_core_uk_effect_source_candidate,
     )
+    from lawvm.uk_legislation.effects import (
+        get_affecting_act_xml_from_archive,
+        uk_effect_requires_affecting_source_for_replay,
+    )
     from lawvm.uk_legislation.uk_amendment_replay import (
         _build_affecting_source_context,
         _extract_from_affecting_source_context,
@@ -251,9 +255,7 @@ def summarize_uk_effect(
         append_source_pathology_filter_lowering_rejections,
         append_no_ops_lowering_rejections,
         compile_effect_to_ir_ops,
-        get_affecting_act_xml_from_archive,
         mark_nonreplay_lowering_rejections_nonblocking,
-        uk_effect_requires_affecting_source_for_replay,
     )
     from lawvm.tools.uk_effect import (
         _collect_target_shape,
@@ -1288,7 +1290,7 @@ def _print_uk_effects_summary(summary_counts: dict[str, Any]) -> None:
 def main(args: "argparse.Namespace") -> None:
     from farchive import Farchive
     from lawvm.tools.uk_replay_regime import normalize_uk_replay_regime
-    from lawvm.uk_legislation.uk_amendment_replay import (
+    from lawvm.uk_legislation.effects import (
         load_effects_for_statute_from_archive,
     )
 

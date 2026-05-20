@@ -83,8 +83,8 @@ def test_uk_bench_primary_score_prefers_commencement_when_active() -> None:
 
 
 def test_uk_bench_records_successful_commencement_filter_observations(monkeypatch) -> None:
-    from lawvm.uk_legislation import uk_amendment_replay as replay_mod
-    from lawvm.uk_legislation.uk_amendment_replay import UKEffectRecord
+    from lawvm.uk_legislation import effects as effects_mod
+    from lawvm.uk_legislation.effects import UKEffectRecord
 
     class FakeArchive:
         def get(self, _url: str) -> bytes:
@@ -126,7 +126,7 @@ def test_uk_bench_records_successful_commencement_filter_observations(monkeypatc
     )
     monkeypatch.setattr(uk_bench, "_load_effect_row_counts", lambda _sid, _archive: (1, 0, {}, 0, {}, ()))
     monkeypatch.setattr(
-        replay_mod,
+        effects_mod,
         "load_effects_for_statute_from_archive",
         lambda *_args, **_kwargs: [effect],
     )
@@ -190,7 +190,7 @@ def test_uk_bench_effect_feed_rows_without_blocking_default_to_rejections(monkey
         return [object()]
 
     monkeypatch.setattr(
-        "lawvm.uk_legislation.uk_amendment_replay.load_effects_for_statute_from_archive",
+        "lawvm.uk_legislation.effects.load_effects_for_statute_from_archive",
         fake_load_effects,
     )
 
@@ -3847,7 +3847,7 @@ def test_uk_bench_score_statute_preserves_compile_diagnostics_on_replay_exceptio
 def test_uk_bench_commencement_error_preserves_effect_feed_parse_observations(
     monkeypatch,
 ) -> None:
-    from lawvm.uk_legislation import uk_amendment_replay
+    from lawvm.uk_legislation import effects as effects_mod
 
     class FakeArchive:
         def get(self, _url: str) -> bytes:
@@ -3885,7 +3885,7 @@ def test_uk_bench_commencement_error_preserves_effect_feed_parse_observations(
     )
     monkeypatch.setattr(uk_bench, "_load_effect_row_counts", lambda _sid, _archive: (1, 0, {}, 0, {}, ()))
     monkeypatch.setattr(
-        uk_amendment_replay,
+        effects_mod,
         "load_effects_for_statute_from_archive",
         fake_load_effects_for_statute_from_archive,
     )
