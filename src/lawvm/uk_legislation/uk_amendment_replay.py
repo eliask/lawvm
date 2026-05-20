@@ -381,7 +381,8 @@ def _heading_facet_full_replacement_fragment(extracted_text: Optional[str]) -> O
     if not text:
         return None
     match = re.search(
-        r"\b(?:the\s+)?(?:section\s+)?(?:heading|title|sidenote)\s+becomes\s+(?P<replacement>.+)$",
+        r"\b(?:the\s+)?(?:section\s+)?(?:heading|title|sidenote)"
+        r"(?:\s+to\s+the\s+section)?\s+becomes\s+(?P<replacement>.+)$",
         text,
         flags=re.I | re.S,
     )

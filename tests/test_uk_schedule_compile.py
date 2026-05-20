@@ -15467,6 +15467,51 @@ def test_compile_heading_facet_becomes_lowers_to_full_heading_replacement() -> N
     )
 
 
+def test_compile_title_to_section_becomes_lowers_to_full_heading_replacement() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Text>d accordingly, the title to the section becomes
+          “ Decisions not to investigate or to discontinue investigations ”.</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_title_to_section_becomes",
+        effect_type="substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2018-02-21",
+        affected_uri="/id/asp/2002/11/section/11",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="s. 11 title",
+        affecting_uri="/id/asp/2010/11",
+        affecting_class="ScottishAct",
+        affecting_year="2010",
+        affecting_number="11",
+        affecting_provisions="sch. 3 para. 2(d)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2011-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(path=(("section", "11"),), special=FacetKind.HEADING)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "TEXT_ALL"
+    assert ops[0].text_patch.replacement == "Decisions not to investigate or to discontinue investigations"
+    assert any(
+        record["rule_id"] == "uk_effect_heading_facet_full_replacement_lowered"
+        for record in lowering_records
+    )
+    assert not any(record["rule_id"] == "uk_effect_heading_only_ref_rejected" for record in lowering_records)
+
+
 def test_compile_title_facet_word_substitution_does_not_create_subsection_title_target() -> None:
     extracted_el = ET.fromstring(
         f"""
