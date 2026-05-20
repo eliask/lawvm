@@ -7243,7 +7243,7 @@ def compile_effect_to_ir_ops(
                 target=target,
                 extracted_text=extracted_text,
             )
-            if action == "insert"
+            if action == "insert" and not heading_facet_target
             else None
         )
         if schedule_list_entry_selector is not None:
@@ -12462,12 +12462,21 @@ class UKReplayExecutor:
         source_node, _source_parent, _source_idx = self._find_node_by_target(source_target)
         if source_node is None:
             return False
-        destination_node, _destination_parent, _destination_idx = self._find_node_by_target(destination)
-        if destination_node is not None:
-            return False
-
         destination_kind = _addr_leaf_kind(destination) or ""
         destination_label = _addr_leaf_label(destination)
+        # Descendant renumbering creates the destination as an immediate child of
+        # the source provision.  Do not use broad recursive target lookup here:
+        # schedule item "i" may normalize like subparagraph "1", but it is not a
+        # destination collision for "paragraph 12 becomes sub-paragraph (1)".
+        for child in source_node.children:
+            child_kind = str(child.kind or "").lower()
+            child_label = _clean_num(str(child.label or ""))
+            if child_kind == destination_kind and child_label == _clean_num(destination_label or ""):
+                return False
+
+        if not destination_kind:
+            return False
+
         child = UKMutableNode(
             kind=IRNodeKind(destination_kind),
             label=destination_label,

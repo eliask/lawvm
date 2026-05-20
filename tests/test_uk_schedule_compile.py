@@ -11466,6 +11466,48 @@ def test_compile_heading_facet_after_anchor_insert_targets_heading_carrier() -> 
     ]
 
 
+def test_compile_schedule_heading_after_anchor_insert_targets_heading_carrier() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P xmlns="{_LEG_NS}">
+          <Text>In the heading, after “Offences” insert “ committed before commencement”.</Text>
+        </P>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_heading_facet_insert_after_anchor",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=False,
+        modified="2021-06-29",
+        affected_uri="/id/ukpga/2020/17/schedule/1/heading",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="Sch. 1 heading",
+        affecting_uri="/id/ukpga/2021/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="11",
+        affecting_provisions="Sch. 13 para. 6(3)(a)",
+        affecting_title="Test Act",
+        in_force_dates=[{"date": "2021-06-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].payload is None
+    assert ops[0].target == LegalAddress(path=(("schedule", "1"),), special=FacetKind.HEADING)
+    assert ops[0].text_patch == _replace_patch("Offences", "Offences committed before commencement")
+    assert not any(note.startswith("schedule_list_entry_selector:") for note in ops[0].provenance_tags)
+    assert [record["rule_id"] for record in lowering_records] == [
+        "uk_effect_heading_facet_after_anchor_insert_lowered"
+    ]
+
+
 def test_compile_heading_facet_before_anchor_insert_stays_unsupported() -> None:
     extracted_el = ET.fromstring(
         f"""
