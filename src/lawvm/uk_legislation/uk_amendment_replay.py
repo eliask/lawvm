@@ -9594,6 +9594,30 @@ def compile_effect_to_ir_ops(
                                 "occurrence": op_text_occurrence,
                             },
                         )
+                    if "uk_effect_contextual_adjacent_word_omit_text_patch" in _fragment_rule_ids(
+                        fragment_subs
+                    ):
+                        _append_uk_effect_lowering_observation(
+                            lowering_rejections_out,
+                            rule_id="uk_effect_contextual_adjacent_word_omit_text_patch",
+                            family="text_rewrite_lowering",
+                            reason_code="source_carried_contextual_adjacent_word_omission_lowered",
+                            reason=(
+                                "UK source text explicitly omits a quoted word following "
+                                "a named local child; lowering preserves that child anchor "
+                                "instead of deleting the quoted word from the whole parent."
+                            ),
+                            effect=effect,
+                            extracted_el=extracted_el,
+                            extracted_text=extracted_text,
+                            detail={
+                                "target_ref": t_str,
+                                "target": str(target),
+                                "text_match": op_text_match,
+                                "replacement": op_text_replacement,
+                                "occurrence": op_text_occurrence,
+                            },
+                        )
                     if _UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID in _fragment_rule_ids(fragment_subs):
                         _append_uk_effect_lowering_observation(
                             lowering_rejections_out,

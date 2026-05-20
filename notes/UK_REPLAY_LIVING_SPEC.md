@@ -2582,6 +2582,15 @@ Current bench replay-regime invariant:
   source-owned local anchor. Current witnesses: `asp/2000/4` affected
   `s. 19(5)` by `asp/2007/10 s. 57(4)(b)(i)` and `asp/2000/5` affected
   `s. 73(1)` by `asp/2003/9 Sch. 13 para. 13(a)(ii)`.
+- The same contextual family covers imperative omission wording such as
+  `omit the "or" following paragraph (b)`. It lowers through
+  `uk_effect_contextual_adjacent_word_omit_text_patch` to the same explicit
+  child-anchor selector rather than a bare deletion of the quoted word from
+  the whole parent target. Lowering records the rule as a nonblocking
+  `text_rewrite_lowering` observation with strict disposition `record`.
+  Current witness: `asp/2001/2` affected
+  `s. 39(1)(b)` by `asp/2019/17 Sch. para. 3(4)(a)`, where a prior `or`
+  omission must not delete citation connectors inside paragraph (b).
 - Parser lowering must not compile `the definition of "X" is repealed`,
   declarative plural wording such as `the definitions of "X" and "Y" are
   repealed`, or imperative wording such as `omit the definition(s) of "X" [and

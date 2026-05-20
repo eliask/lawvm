@@ -3034,6 +3034,70 @@ def test_compile_additional_frontier_text_patch_idioms(
     assert f"{_NOTE_TEXT_REWRITE_RULE}{expected_rule_id}" in ops[0].provenance_tags
 
 
+def test_compile_imperative_contextual_word_omission_records_child_anchor_observation() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-17-6-a">
+          <Pnumber>a</Pnumber>
+          <Text>a omit the \u201cor\u201d following paragraph (b);</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-5db16111ab979abc9c5408f7b66c0f61",
+        effect_type="word omitted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-23",
+        affected_uri="/id/asp/2001/2/section/39/subsection/1",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 39(1)",
+        affecting_uri="/id/ukpga/2017/21",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2017",
+        affecting_number="21",
+        affecting_provisions="s. 17(6)(a)",
+        affecting_title="Bus Services Act 2017",
+        in_force_dates=[{"date": "2018-06-26", "prospective": "false"}],
+    )
+    lowering_observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_observations,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action is StructuralAction.TEXT_REPEAL
+    assert op.target.path == (("section", "39"), ("subsection", "1"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "TEXT_WORD_or_IMMEDIATELY_FOLLOWING_paragraph_b"
+    assert op.text_patch.selector.occurrence == 0
+    assert op.text_patch.replacement is None
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_contextual_adjacent_word_omit_text_patch"
+        in op.provenance_tags
+    )
+
+    observations = [
+        record
+        for record in lowering_observations
+        if record["rule_id"] == "uk_effect_contextual_adjacent_word_omit_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["family"] == "text_rewrite_lowering"
+    assert observations[0]["reason_code"] == "source_carried_contextual_adjacent_word_omission_lowered"
+    assert observations[0]["blocking"] is False
+    assert observations[0]["strict_disposition"] == "record"
+    assert observations[0]["target"] == "section:39/subsection:1"
+    assert observations[0]["text_match"] == "TEXT_WORD_or_IMMEDIATELY_FOLLOWING_paragraph_b"
+
+
 def test_compile_grouped_anchor_occurrence_substitution_uses_parent_source_context() -> None:
     source_root = ET.fromstring(
         f"""
