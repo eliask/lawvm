@@ -623,6 +623,9 @@ _UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_relating_c
 _UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID = "uk_effect_table_entry_label_text_patch"
 _UK_TABLE_ENTRY_LABEL_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_label_column_text_patch"
 _UK_TABLE_ENTRY_LABELS_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_labels_column_text_patch"
+_UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID = (
+    "uk_effect_table_entry_deictic_label_column_text_patch"
+)
 _UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID = (
     "uk_effect_source_carried_table_entry_paragraph_substitution_text_patch"
 )
@@ -5272,6 +5275,8 @@ def _uk_table_entry_inline_text_selector(
     target_ref: str,
     target: LegalAddress,
     extracted_text: Optional[str],
+    extracted_el: Optional[ET.Element] = None,
+    source_root: Optional[ET.Element] = None,
 ) -> dict[str, Any] | None:
     """Extract a deterministic base-table cell selector from inline table-entry wording."""
     text = " ".join((extracted_text or "").split())
@@ -5364,6 +5369,35 @@ def _uk_table_entry_inline_text_selector(
                 "table_label": "",
                 "original_target": str(target),
                 "target_ref": target_ref,
+            }
+    deictic_entry_column_match = re.search(
+        r"\bin\s+that\s+entry,?\s+in\s+"
+        r"(?:(?:the\s+)?(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
+        r"column\s+(?P<column_number>\d+))\b",
+        text,
+        re.I,
+    )
+    if deictic_entry_column_match is not None:
+        column_token = (
+            deictic_entry_column_match.group("column_ordinal")
+            or deictic_entry_column_match.group("column_number")
+        )
+        column_index = _uk_ordinal_to_int(column_token or "")
+        entry_context = _source_previous_table_entry_label_context(
+            extracted_el=extracted_el,
+            source_root=source_root,
+        )
+        entry_label = _clean_num(entry_context.get("entry_label") or "")
+        if entry_label and column_index is not None and column_index >= 1:
+            return {
+                "rule_id": _UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID,
+                "selector_mode": "unique_entry_cell",
+                "entry_label": entry_label,
+                "column_index": column_index,
+                "table_label": "",
+                "original_target": str(target),
+                "target_ref": target_ref,
+                **entry_context,
             }
     entry_column_match = re.search(
         r"\bin\s+entry\s+(?P<entry>[0-9A-Z]+),?\s+in\s+"
@@ -7794,6 +7828,43 @@ def _previous_source_sibling_label(
     return ""
 
 
+def _source_previous_table_entry_label_context(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+) -> dict[str, str]:
+    """Return an explicit table entry label from a previous sibling source row."""
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        return {}
+    parent = ancestors[0]
+    children = list(parent)
+    extracted_id = extracted_el.get("id") if extracted_el is not None else None
+    extracted_index = -1
+    for index, child in enumerate(children):
+        if child is extracted_el or (extracted_id and child.get("id") == extracted_id):
+            extracted_index = index
+            break
+    if extracted_index <= 0:
+        return {}
+    for sibling in reversed(children[:extracted_index]):
+        sibling_text = " ".join(_text_content(sibling).split())
+        match = re.search(r"\bin\s+entry\s+(?P<label>[0-9A-Z]+)\b", sibling_text, flags=re.I)
+        if match is None:
+            continue
+        entry_label = _clean_num(match.group("label"))
+        if not entry_label:
+            continue
+        return {
+            "entry_label": entry_label,
+            "source_context_rule_id": _UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID,
+            "source_context": "previous_source_sibling_entry_label",
+            "source_sibling_label": _clean_num(_direct_structural_num(sibling)),
+            "source_sibling_id": str(sibling.get("id") or sibling.get("Id") or ""),
+        }
+    return {}
+
+
 def _fragment_substitution_source_carried_definition_child_insert(
     *,
     extracted_el: Optional[ET.Element],
@@ -10135,6 +10206,8 @@ def compile_effect_to_ir_ops(
             target_ref=t_str,
             target=target,
             extracted_text=extracted_text,
+            extracted_el=extracted_el,
+            source_root=source_root,
         )
         if table_cell_selector is None:
             table_cell_selector = _uk_table_column_text_patch_selector(
