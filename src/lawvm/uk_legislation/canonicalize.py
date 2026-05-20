@@ -67,6 +67,15 @@ def uk_should_bubble_structural_commencement(node: IRNode) -> bool:
     return uk_is_transparent_wrapper_kind(str(node.kind)) or str(node.kind or "") in {
         "part",
         "chapter",
+        "schedule",
+        "section",
+        "article",
+        "rule",
+        "regulation",
+        "subsection",
+        "paragraph",
+        "subparagraph",
+        "item",
         "wrapper",
         "hcontainer",
     }

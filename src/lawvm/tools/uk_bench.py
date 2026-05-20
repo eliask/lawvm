@@ -1265,7 +1265,11 @@ def _score_statute(
                     archive,
                     parse_rejections_out=commencement_feed_observations,
                 )
-                commenced = commencement_eid_set(all_effects, enacted_ir)
+                commenced = commencement_eid_set(
+                    all_effects,
+                    enacted_ir,
+                    applicability_mode=applicability_mode,
+                )
                 commenced_enacted = enacted_eids & commenced
                 n_commenced_eids = len(commenced_enacted)
                 commencement_score = _score_commenced_eids(commenced_enacted, oracle_eids)
