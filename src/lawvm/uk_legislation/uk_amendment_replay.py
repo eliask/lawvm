@@ -613,6 +613,7 @@ _NOTE_SCHEDULE_LIST_ENTRY_SELECTOR = "schedule_list_entry_selector:"
 _NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR = "schedule_list_entry_table_rows_selector:"
 _NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR = "schedule_list_entry_repeal_selector:"
 _NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR = "schedule_list_entry_replace_selector:"
+_NOTE_SOURCE_LABEL_CHANGE_SUBSTITUTION = "source_label_change_substitution:"
 
 _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID = "uk_effect_table_entry_inline_text_insertion"
 _UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID = "uk_effect_table_entry_relating_text_patch"
@@ -630,6 +631,12 @@ _UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID = "uk_effect_schedule_list_entry_repeal"
 _UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID = "uk_effect_schedule_list_entry_replace"
 _UK_NUMBERED_SCHEDULE_ENTRY_REPEAL_TARGET_REFINED_RULE_ID = (
     "uk_effect_numbered_schedule_entry_repeal_target_refined"
+)
+_UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID = (
+    "uk_effect_substituted_for_label_changing_target_rebound"
+)
+_UK_REPLAY_SOURCE_LABEL_CHANGING_SUBSTITUTION_RESOLVED_RULE_ID = (
+    "uk_replay_source_label_changing_substitution_resolved"
 )
 _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID = (
     "uk_effect_repeal_table_quoted_words_text_repeal"
@@ -822,6 +829,14 @@ class UKMetadataRenumberTargets:
     reason_code: str
     reason: str
     metadata_destination: Optional[LegalAddress] = None
+
+
+@dataclass(frozen=True)
+class UKSourceLabelChangingSubstitution:
+    source_ref: str
+    source_target: LegalAddress
+    replacement_ref: str
+    replacement_target: LegalAddress
 
 
 def _build_uk_replay_adjudication(
@@ -6353,6 +6368,49 @@ def _retarget_substituted_series_to_replaced_anchor(
     return retargeted
 
 
+def _source_label_changing_substitution(
+    effect_type: str,
+    target_refs: list[str],
+) -> Optional[UKSourceLabelChangingSubstitution]:
+    """Return a source-owned old-label target for a labelled substitution.
+
+    UK effects sometimes record a row as "substituted for <old sibling>" while
+    affected_provisions names the new sibling label.  The executable replace
+    target is the old sibling; the payload label remains the new sibling.
+    """
+    raw = (effect_type or "").strip()
+    if not raw.lower().startswith("substituted for ") or raw.lower() == "substituted for words":
+        return None
+    if len(target_refs) != 1:
+        return None
+    anchor_refs = _split_metadata_provisions(raw[len("substituted for ") :].strip())
+    if not anchor_refs:
+        return None
+    source_ref = anchor_refs[0]
+    replacement_ref = target_refs[0]
+    try:
+        source_target = canonicalize_uk_address(_parse_affected_target(source_ref))
+        replacement_target = canonicalize_uk_address(_parse_affected_target(replacement_ref))
+    except Exception:
+        return None
+    if tuple(source_target.path) == tuple(replacement_target.path):
+        return None
+    if tuple(source_target.path[:-1]) != tuple(replacement_target.path[:-1]):
+        return None
+    if _addr_leaf_kind(source_target) != _addr_leaf_kind(replacement_target):
+        return None
+    source_label = _clean_num(_addr_leaf_label(source_target) or "")
+    replacement_label = _clean_num(_addr_leaf_label(replacement_target) or "")
+    if not source_label or not replacement_label or source_label == replacement_label:
+        return None
+    return UKSourceLabelChangingSubstitution(
+        source_ref=source_ref,
+        source_target=source_target,
+        replacement_ref=replacement_ref,
+        replacement_target=replacement_target,
+    )
+
+
 def _repeal_tail_for_substituted_series_replacement(
     effect_type: str,
     original_target_refs: list[str],
@@ -8147,16 +8205,47 @@ def compile_effect_to_ir_ops(
     trailing_repeal_refs: list[str] = []
     replacement_leaf_override: Optional[str] = None
     replacement_leaf_kind: Optional[str] = None
+    label_changing_substitution: Optional[UKSourceLabelChangingSubstitution] = None
     if action == "replace":
         # Keep the replacement target labels authoritative. The older anchor-
         # retarget heuristic rewrites live replacement labels back to the
         # legacy anchor series, which is exactly the kind of compatibility
         # slop we do not want to keep around.
+        label_changing_substitution = _source_label_changing_substitution(
+            effect.effect_type,
+            original_targets_str,
+        )
+        if label_changing_substitution is not None:
+            targets_str = [label_changing_substitution.source_ref]
+            replacement_leaf_override = _addr_leaf_label(label_changing_substitution.replacement_target)
+            replacement_leaf_kind = _addr_leaf_kind(label_changing_substitution.replacement_target)
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=_UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID,
+                family="lineage_normalization",
+                reason_code="substituted_for_old_sibling_with_new_payload_label",
+                reason=(
+                    "UK source says a labelled sibling is substituted for an "
+                    "existing sibling, while effect metadata names the new "
+                    "payload label; lowering keeps the executable replace "
+                    "target on the source-named old sibling and preserves the "
+                    "new payload label as the replacement identity."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "source_ref": label_changing_substitution.source_ref,
+                    "source_target": str(label_changing_substitution.source_target),
+                    "replacement_ref": label_changing_substitution.replacement_ref,
+                    "replacement_target": str(label_changing_substitution.replacement_target),
+                },
+            )
         trailing_repeal_refs = _repeal_tail_for_substituted_series_replacement(
             effect.effect_type,
             original_targets_str,
         )
-        if trailing_repeal_refs and original_targets_str:
+        if trailing_repeal_refs and original_targets_str and label_changing_substitution is None:
             try:
                 replacement_target = _parse_affected_target(original_targets_str[0])
             except Exception:
@@ -8342,6 +8431,12 @@ def compile_effect_to_ir_ops(
             continue
         parsed_target = _parse_affected_target(t_str)
         target = parsed_target if _is_direct_section_paragraph_ref(t_str) else canonicalize_uk_address(parsed_target)
+        payload_match_target = target
+        if (
+            label_changing_substitution is not None
+            and tuple(target.path) == tuple(label_changing_substitution.source_target.path)
+        ):
+            payload_match_target = label_changing_substitution.replacement_target
         crossheading_replacement_text = (
             _crossheading_before_anchor_replacement_text(extracted_text)
             if action == "replace" and _is_crossheading_ref(t_str)
@@ -9354,7 +9449,7 @@ def compile_effect_to_ir_ops(
                                 "Schedule",
                             ):
                                 c_num = _direct_structural_num(child)
-                                target_num = _addr_leaf_label(target)
+                                target_num = _addr_leaf_label(payload_match_target)
                                 if not target_num or _clean_num(c_num) == _clean_num(target_num):
                                     actual_el = child
                                     break
@@ -9380,14 +9475,14 @@ def compile_effect_to_ir_ops(
                     "P4",
                     "Schedule",
                 ):
-                    target_num = _addr_leaf_label(target)
+                    target_num = _addr_leaf_label(payload_match_target)
                     extracted_num = _direct_structural_num(extracted_el)
                     if not target_num or _clean_num(extracted_num) == _clean_num(target_num):
                         actual_el = extracted_el
                     else:
                         actual_el = _retarget_instruction_element_to_target(
                             extracted_el,
-                            target,
+                            payload_match_target,
                             extracted_text,
                         )
             elif actual_el is not extracted_el:
@@ -9472,7 +9567,10 @@ def compile_effect_to_ir_ops(
                                 "heading_text_preview": inserted_heading_text[:200],
                             },
                         )
-                    source_structural_payload_matches_target = _source_payload_matches_target_leaf(content_ir, target)
+                    source_structural_payload_matches_target = _source_payload_matches_target_leaf(
+                        content_ir,
+                        payload_match_target,
+                    )
 
         if content_ir is None and t_str in mixed_heading_source_ref_by_target:
             _append_uk_effect_lowering_rejection(
@@ -10841,7 +10939,7 @@ def compile_effect_to_ir_ops(
                 payload_node_mut is not None
                 and replacement_leaf_override
                 and replacement_leaf_kind
-                and payload_node_mut.kind == replacement_leaf_kind
+                and str(payload_node_mut.kind).lower() == replacement_leaf_kind
             ):
                 payload_node_mut.label = replacement_leaf_override
             if payload_node_mut is not None and curr_action == "insert":
@@ -10863,16 +10961,17 @@ def compile_effect_to_ir_ops(
                 ):
                     payload_node_mut.kind = cast(IRNodeKind, leaf_kind)
             if payload_node_mut is not None and curr_action in ("insert", "replace"):
+                payload_identity_target = payload_match_target if curr_action == "replace" else target
                 payload_node_mut = _synthesize_whole_schedule_payload_descendant_eids(
                     payload_node_mut,
-                    target=target,
+                    target=payload_identity_target,
                     effect=effect,
                     lowering_records_out=lowering_rejections_out,
                     allow_payload_identity_synthesis=allow_payload_identity_synthesis,
                 )
                 payload_node_mut = _synthesize_payload_descendant_eids(
                     payload_node_mut,
-                    target=target,
+                    target=payload_identity_target,
                     effect=effect,
                     lowering_records_out=lowering_rejections_out,
                     allow_payload_identity_synthesis=allow_payload_identity_synthesis,
@@ -11083,6 +11182,27 @@ def compile_effect_to_ir_ops(
                         *provenance_tags,
                         f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(table_cell_selector, ensure_ascii=False)}",
                     )
+                op_witness_rule_id = None
+                if (
+                    label_changing_substitution is not None
+                    and curr_action == "replace"
+                    and tuple(target.path) == tuple(label_changing_substitution.source_target.path)
+                ):
+                    op_witness_rule_id = _UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID
+                    label_change_note = {
+                        "rule_id": _UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID,
+                        "source_target": str(label_changing_substitution.source_target),
+                        "replacement_target": str(label_changing_substitution.replacement_target),
+                        "source_ref": label_changing_substitution.source_ref,
+                        "replacement_ref": label_changing_substitution.replacement_ref,
+                    }
+                    provenance_tags = (
+                        *provenance_tags,
+                        (
+                            f"{_NOTE_SOURCE_LABEL_CHANGE_SUBSTITUTION}"
+                            f"{json.dumps(label_change_note, ensure_ascii=False)}"
+                        ),
+                    )
                 op = LegalOperation(
                     op_id=lowered_witness.op_id,
                     sequence=lowered_witness.sequence,
@@ -11093,6 +11213,7 @@ def compile_effect_to_ir_ops(
                     group_id=_uk_temporal_group_id(effect),
                     provenance_tags=provenance_tags,
                     text_patch=text_patch_item,
+                    witness_rule_id=op_witness_rule_id,
                 )
                 ops.append(op)
             if curr_action == "insert" and preceding_eid:
@@ -15461,44 +15582,61 @@ class UKReplayExecutor:
             elif op.payload is not None:
                 # Clone payload so repeated ops don't share state
                 new_node = UKMutableNode.from_dict(op.payload.to_jsonable_dict())
-                if node is None:
-                    witness = _witness_for_op(op)
-                    effect_witness = getattr(witness, "effect_witness", None)
-                    target_expansion_witness = getattr(witness, "target_expansion_witness", None)
-                    if effect_witness is not None and target_expansion_witness is not None:
-                        retargeted_refs = _retarget_substituted_series_to_replaced_anchor(
-                            str(getattr(effect_witness, "effect_type_raw", "") or ""),
-                            [str(getattr(target_expansion_witness, "original_ref", "") or "")],
-                        )
-                        if retargeted_refs:
-                            try:
-                                retargeted_target = _parse_affected_target(retargeted_refs[0])
-                            except Exception:
-                                retargeted_target = None
-                            if retargeted_target is not None:
-                                retargeted_node, retargeted_parent, retargeted_idx = self._find_node_by_target(
-                                    retargeted_target,
-                                    allow_compound_subsection_alias=True,
-                                )
-                                if retargeted_node is not None:
-                                    retargeted_leaf = _addr_leaf_label(op.target) or ""
-                                    if retargeted_leaf:
-                                        new_node.label = retargeted_leaf
-                                    node = retargeted_node
-                                    parent = retargeted_parent
-                                    idx = retargeted_idx
                 if node:
                     node_kind = str(node.kind).lower()
                     new_kind = str(new_node.kind).lower()
                     if node_kind != "content" and new_kind != "content":
+                        label_changing_substitution = (
+                            op.witness_rule_id == _UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID
+                        )
                         existing_eid = str(node.attrs.get("eId") or node.attrs.get("id") or "")
-                        if existing_eid:
+                        if existing_eid and not label_changing_substitution:
                             new_node.attrs["eId"] = existing_eid
                         if parent and idx is not None:
                             self._replace_node_in_statute(node, new_node)
+                            if label_changing_substitution:
+                                _append_uk_replay_adjudication(
+                                    self.adjudications_out,
+                                    kind=_UK_REPLAY_SOURCE_LABEL_CHANGING_SUBSTITUTION_RESOLVED_RULE_ID,
+                                    message=(
+                                        "UK replay applied a source-owned label-changing "
+                                        "substitution by replacing the old sibling with "
+                                        "the new labelled payload."
+                                    ),
+                                    op=op,
+                                    detail={
+                                        "target": str(target),
+                                        "source_label": str(node.label or ""),
+                                        "replacement_label": str(new_node.label or ""),
+                                        "family": "lineage_normalization",
+                                        "blocking": False,
+                                        "strict_disposition": "record",
+                                        "quirks_disposition": "record",
+                                    },
+                                )
                             self._record_invariant_violations(op)
                         elif idx is not None and node in self.statute.supplements:
                             self._replace_node_in_statute(node, new_node)
+                            if label_changing_substitution:
+                                _append_uk_replay_adjudication(
+                                    self.adjudications_out,
+                                    kind=_UK_REPLAY_SOURCE_LABEL_CHANGING_SUBSTITUTION_RESOLVED_RULE_ID,
+                                    message=(
+                                        "UK replay applied a source-owned label-changing "
+                                        "substitution by replacing the old sibling with "
+                                        "the new labelled payload."
+                                    ),
+                                    op=op,
+                                    detail={
+                                        "target": str(target),
+                                        "source_label": str(node.label or ""),
+                                        "replacement_label": str(new_node.label or ""),
+                                        "family": "lineage_normalization",
+                                        "blocking": False,
+                                        "strict_disposition": "record",
+                                        "quirks_disposition": "record",
+                                    },
+                                )
                             self._record_invariant_violations(op)
                     elif node_kind != "content" and new_kind == "content":
                         self._replace_text(node, new_node.text)
