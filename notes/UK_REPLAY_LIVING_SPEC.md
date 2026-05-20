@@ -1714,6 +1714,17 @@ Current block-substitution context invariant:
   `the Local Government (Scotland) Act 1973`, replay may compare it with a
   table row that abbreviates the same citation as `the 1973 Act`; the row must
   still be unique, and the resolved adjudication records the normalization rule.
+  End-of-schedule table appends are owned separately:
+  `uk_effect_schedule_table_end_rows_lowered` fires only when the source text
+  explicitly says `at the end of schedule N ... insert` and the source payload
+  is an actual `BlockAmendment/Tabular/table`. Replay then emits
+  `uk_replay_schedule_table_end_rows_insert_resolved` only when the target
+  schedule resolves to exactly one direct table and no direct schedule-entry
+  children; missing tables, non-table payloads, flattened text-only payloads,
+  or mixed carriers block under
+  `uk_replay_schedule_table_end_rows_insert_unresolved`. This is not a generic
+  words-inserted recovery and must not synthesize schedule paragraphs from
+  table-cell prose.
   Current witnesses: `asp/2000/7` affected `sch. 3` by `asp/2002/3`,
   `asp/2005/6`, and `asp/2010/8`; partition refinement witness:
   `asp/2002/11` affected `Sch. 2 Pt. 2` by `ssi/2002/468 art. 2`;
