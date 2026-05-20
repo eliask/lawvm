@@ -12517,6 +12517,82 @@ def test_compile_table_entry_label_row_insert_blocks_without_source_row_payload(
     )
 
 
+def test_compile_subsection_table_entry_group_insert_preserves_source_table_rows() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" xmlns:html="http://www.w3.org/1999/xhtml">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>In section 379(1) (other behaviour orders etc), after the entry for the Psychoactive Substances Act 2016 insert\u2014</Text>
+            <BlockAmendment>
+              <Tabular>
+                <html:table cols="3">
+                  <html:tbody>
+                    <html:tr><html:th colspan="3">Elections Act 2022</html:th></html:tr>
+                    <html:tr>
+                      <html:td>section 30</html:td>
+                      <html:td>disqualification order</html:td>
+                      <html:td>Schedule 9 offence within the meaning of section 30 of that Act.</html:td>
+                    </html:tr>
+                  </html:tbody>
+                </html:table>
+              </Tabular>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_subsection_table_entry_group_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2023-11-01",
+        affected_uri="/id/ukpga/2020/17/section/379",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 379(1)",
+        affecting_uri="/id/ukpga/2022/37",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="37",
+        affecting_provisions="Sch. 10 para. 10(2)",
+        affecting_title="Elections Act 2022",
+        in_force_dates=[{"date": "2023-11-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target.path == (("section", "379"),)
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.TABLE
+    assert [row.children[0].text for row in ops[0].payload.children] == [
+        "Elections Act 2022",
+        "section 30",
+    ]
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_ROW_INSERT_SELECTOR))
+    assert selector["selector_mode"] == "entry_group_heading"
+    assert selector["source_payload_mode"] == "table_rows"
+    assert selector["allow_implicit_subsection_one_table"] is True
+    assert selector["relating_text"] == "Psychoactive Substances Act 2016"
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_row_insert"
+        and record["reason_code"] == "explicit_table_entry_row_insert_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_replay_table_entry_ordinal_column_row_insert_mutates_table_only() -> None:
     selector = {
         "rule_id": "uk_effect_table_entry_row_insert",
@@ -12698,6 +12774,132 @@ def test_replay_table_entry_label_row_insert_mutates_table_only() -> None:
     assert [adjudication.kind for adjudication in adjudications] == [
         "uk_effect_table_entry_row_insert"
     ]
+    assert adjudications[0].detail["blocking"] is False
+
+
+def test_replay_table_entry_group_insert_inserts_source_rows_after_group() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_row_insert",
+        "selector_mode": "entry_group_heading",
+        "direction": "after",
+        "relating_text": "Psychoactive Substances Act 2016",
+        "source_payload_mode": "table_rows",
+        "allow_implicit_subsection_one_table": True,
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_group_insert",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("section", "379"),)),
+        payload=IRNode(
+            kind=IRNodeKind.TABLE,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(
+                        IRNode(kind=IRNodeKind.HEADER_CELL, text="Elections Act 2022", attrs={"colspan": "3"}),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(
+                        IRNode(kind=IRNodeKind.CELL, text="section 30"),
+                        IRNode(kind=IRNodeKind.CELL, text="disqualification order"),
+                        IRNode(
+                            kind=IRNodeKind.CELL,
+                            text="Schedule 9 offence within the meaning of section 30 of that Act.",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_ROW_INSERT_SELECTOR}{json.dumps(selector)}",),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="379",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.HEADER_CELL, text="Provision"),
+                                                IRNode(kind=IRNodeKind.HEADER_CELL, text="Type of order"),
+                                                IRNode(kind=IRNodeKind.HEADER_CELL, text="Type of offence"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(
+                                                    kind=IRNodeKind.CELL,
+                                                    text="Psychoactive Substances Act 2016",
+                                                    attrs={"colspan": "3"},
+                                                ),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="section 19"),
+                                                IRNode(kind=IRNodeKind.CELL, text="prohibition order"),
+                                                IRNode(kind=IRNodeKind.CELL, text="offence under section 4 to 8"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(
+                                                    kind=IRNodeKind.CELL,
+                                                    text="Next Act",
+                                                    attrs={"colspan": "3"},
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    rows = replayed.body.children[0].children[0].children[0].children
+    assert [row.children[0].text for row in rows] == [
+        "Provision",
+        "Psychoactive Substances Act 2016",
+        "section 19",
+        "Elections Act 2022",
+        "section 30",
+        "Next Act",
+    ]
+    assert [cell.text for cell in rows[4].children] == [
+        "section 30",
+        "disqualification order",
+        "Schedule 9 offence within the meaning of section 30 of that Act.",
+    ]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_effect_table_entry_row_insert"
+    ]
+    assert adjudications[0].detail["inserted_row_count"] == 2
     assert adjudications[0].detail["blocking"] is False
 
 
