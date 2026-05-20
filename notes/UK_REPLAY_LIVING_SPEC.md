@@ -2751,6 +2751,17 @@ Current bench replay-regime invariant:
   parent text contains the exact selector. The recovery is a nonblocking
   quirks-mode observation with `strict_disposition=block`; it does not authorize
   sibling/child mutation or any other parent fallback.
+- When the effects feed targets a direct section paragraph such as `s. 48(a)`
+  but the source XML represents the preimage inside a direct child carrier
+  instead of an addressable paragraph, replay may apply the exact text patch to
+  that child only under `uk_replay_direct_section_paragraph_child_text_recovered`.
+  Preconditions are intentionally narrow: the section exists, it has no
+  paragraph children, exactly one direct child contains enough occurrences of
+  the selector to satisfy the source ordinal, and the patch applies inside that
+  child subtree. Ambiguous child carriers still emit
+  `uk_replay_direct_section_paragraph_carrier_gap`. Current witness:
+  `asp/2001/2`, `asp/2005/12` s. 51(2)(a), "after second authority ... (i)".
+  Strict mode blocks the recovery.
 - A valid single-segment section/article/rule/regulation target is not
   malformed merely because the body tree is organized under part/chapter
   wrappers. If the target is absent but bracketed by existing section-like

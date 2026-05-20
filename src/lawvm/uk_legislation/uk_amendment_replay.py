@@ -11897,6 +11897,89 @@ class UKReplayExecutor:
         }
         return bool(child_kinds and "paragraph" not in child_kinds)
 
+    @staticmethod
+    def _subtree_text_match_count(node: UKMutableNode, needle: str) -> int:
+        normalized_needle = " ".join((needle or "").split())
+        if not normalized_needle:
+            return 0
+        pattern = re.escape(normalized_needle).replace(r"\ ", r"\s+")
+        count = 0
+        stack = [node]
+        while stack:
+            current = stack.pop()
+            text = current.text or ""
+            count += len(list(re.finditer(pattern, text, flags=re.I)))
+            stack.extend(reversed(current.children))
+        return count
+
+    def _recover_text_patch_on_direct_section_paragraph_child_text(
+        self,
+        op: LegalOperation,
+        target: LegalAddress,
+        text_patch: TextPatchSpec,
+        replacement: str,
+    ) -> bool:
+        if not self._direct_section_paragraph_carrier_gap(target):
+            return False
+        path = tuple(getattr(target, "path", ()) or ())
+        parent_target = LegalAddress(path=path[:1], special=None)
+        parent_node, _, _ = self._find_node_by_target(parent_target)
+        if parent_node is None:
+            return False
+        match_text = text_patch.selector.match_text
+        required_occurrence = text_patch.selector.occurrence if text_patch.selector.occurrence > 0 else 1
+        candidates = [
+            child
+            for child in parent_node.children
+            if self._subtree_text_match_count(child, match_text) >= required_occurrence
+        ]
+        if len(candidates) != 1:
+            return False
+        recovered_target = candidates[0]
+        rebuilt, applied = self._apply_text_replace_on_subtree(
+            recovered_target,
+            match_text,
+            replacement,
+            text_patch.selector.occurrence,
+            text_patch.selector.end_occurrence,
+        )
+        if not applied:
+            return False
+        self._log(
+            f"  EXECUTOR: text_replace direct section-paragraph child-text recovery in {rebuilt.kind} {rebuilt.label}: {match_text!r} -> {replacement!r}"
+        )
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind="uk_replay_direct_section_paragraph_child_text_recovered",
+            message=(
+                "UK replay applied a direct section-paragraph text patch to a unique "
+                "direct child because the source-targeted paragraph is not represented "
+                "as an addressable carrier."
+            ),
+            op=op,
+            detail={
+                "action": _action_name(op.action),
+                "target": str(target),
+                "recovery_target": str(
+                    LegalAddress(
+                        path=(
+                            *parent_target.path,
+                            (_uk_kind_value(recovered_target.kind), recovered_target.label or ""),
+                        ),
+                        special=None,
+                    )
+                ),
+                "text_match": match_text,
+                "replacement_text": replacement,
+                "family": "target_resolution_recovery",
+                "source_shape": "direct_section_paragraph_text_carried_by_unique_child",
+                "blocking": False,
+                "strict_disposition": "block",
+                "quirks_disposition": "apply",
+            },
+        )
+        return True
+
     def _leading_blank_subparagraph_gap(self, target: LegalAddress) -> bool:
         def _local_alnum_suffix_key(text: str) -> tuple[int, int] | None:
             m = re.fullmatch(r"(\d+)([a-z])", text.strip().lower())
@@ -14039,6 +14122,17 @@ class UKReplayExecutor:
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
                     )
+                elif self._recover_text_patch_on_direct_section_paragraph_child_text(
+                    op,
+                    target,
+                    text_patch,
+                    replacement,
+                ):
+                    target_key = str(target)
+                    if target_key:
+                        self._applied_text_patch_targets.setdefault(target_key, []).append(op.op_id)
+                    self._record_invariant_violations(op)
+                    self._emit_top_section_snapshot(op)
                 elif self._direct_section_paragraph_carrier_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
