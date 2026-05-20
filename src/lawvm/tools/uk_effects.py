@@ -953,6 +953,43 @@ def _manual_compile_suggested_claim_template(
     """Return a non-executable semantic-claim template for known manual families."""
     summary = row.summary
     effect = row.effect
+    if summary.manual_compile_rule_id == "uk_manual_frontier_range_to_container_candidate":
+        blocking_rows = tuple(
+            row
+            for row in summary.lowering_rejections
+            if str(row.get("rule_id") or "") == "uk_effect_range_to_container_substitution_rejected"
+        )
+        detail = dict(blocking_rows[0]) if blocking_rows else {}
+        return {
+            "schema": "lawvm.uk_semantic_compile_claim_template.v1",
+            "claim_kind": "semantic_compile",
+            "claim_status": "template_only_not_validated",
+            "action_family": "range_to_container_substitution",
+            "placement_family": "requires_lineage_or_migration_claim",
+            "jurisdiction": "uk",
+            "statute_id": statute_id,
+            "effect_id": effect.effect_id,
+            "affected_provisions": effect.affected_provisions,
+            "affecting_act_id": effect.affecting_act_id,
+            "affecting_provisions": effect.affecting_provisions,
+            "source_pathology": summary.source_pathology or "",
+            "source_range_kind": detail.get("source_range_kind", ""),
+            "source_range_start": detail.get("source_range_start", ""),
+            "source_range_end": detail.get("source_range_end", ""),
+            "target_container_surface": detail.get("target_container_ref", effect.affected_provisions),
+            "compiled_targets": list(detail.get("compiled_targets") or ()),
+            "payload_kinds": list(detail.get("payload_kinds") or ()),
+            "required_ownership": list(detail.get("required_ownership") or ()),
+            "required_validator_checks": [
+                "source_witness_contains_range_to_container_substitution",
+                "claim_identifies_every_replaced_source_unit_in_range",
+                "claim_identifies_container_payload_root_and_all_owned_children",
+                "claim_emits_lineage_or_migration_events_for_displaced_units",
+                "claim_preserves_crossheading_or_heading_facet_scope",
+                "changed_paths_are_within_source_range_or_declared_migration_paths",
+            ],
+            "executable": False,
+        }
     if (
         summary.manual_compile_rule_id
         != "uk_manual_frontier_appropriate_place_definition_entry_candidate"

@@ -1623,6 +1623,106 @@ def test_uk_manual_compile_evidence_jsonl_templates_appropriate_place_definition
     )
 
 
+def test_uk_manual_compile_evidence_jsonl_templates_range_to_container_claim() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-range-container",
+        effect_type="Pt. 2 Ch. 1 s. 35(2) substituted for ss. 3-12 and cross-heading",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/asp/2001/2/part/2/chapter/1",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="Pt. 2 Ch. 1",
+        affecting_uri="/id/asp/2019/17",
+        affecting_class="ScottishAct",
+        affecting_year="2019",
+        affecting_number="17",
+        affecting_provisions="s. 35(2)",
+        affecting_title="Transport (Scotland) Act 2019",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="range_to_container_target_unsupported",
+            compare_shape="range_to_container_target_absent",
+            n_ops=1,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_range_to_container_substitution_rejected",
+                    "blocking": True,
+                    "source_range_kind": "section",
+                    "source_range_start": "3",
+                    "source_range_end": "12",
+                    "target_container_ref": "Pt. 2 Ch. 1",
+                    "compiled_targets": ("part:2/chapter:1",),
+                    "payload_kinds": ("chapter",),
+                    "required_ownership": (
+                        "source_range",
+                        "container_payload",
+                        "lineage_or_migration_events",
+                        "mutation_boundary",
+                    ),
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="Chapter",
+            source_extracted_text_preview="CHAPTER 1 Bus services improvement partnerships",
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_range_to_container_candidate",
+            manual_compile_reason="Range-to-container substitution needs lineage.",
+            manual_compile_lowering_rule_ids=("uk_effect_range_to_container_substitution_rejected",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_range_to_container_substitution_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="asp/2001/2",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="asp/2001/2",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "range_to_container_substitution"
+    assert template["placement_family"] == "requires_lineage_or_migration_claim"
+    assert template["source_range_kind"] == "section"
+    assert template["source_range_start"] == "3"
+    assert template["source_range_end"] == "12"
+    assert template["target_container_surface"] == "Pt. 2 Ch. 1"
+    assert template["required_ownership"] == [
+        "source_range",
+        "container_payload",
+        "lineage_or_migration_events",
+        "mutation_boundary",
+    ]
+    assert "claim_emits_lineage_or_migration_events_for_displaced_units" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
 def test_print_uk_effects_summary_splits_blocking_lowering_rules(capsys) -> None:
     _print_uk_effects_summary(
         {
