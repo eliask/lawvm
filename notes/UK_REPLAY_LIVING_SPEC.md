@@ -2075,6 +2075,11 @@ Current nested-roman target invariant:
   - current witness: `asp/2000/1` / `ukpga/2014/2 Sch. 12 para. 47(2)`,
     where the affected metadata previously lowered one malformed target
     `section:26d/subsection:4/paragraph:b/subparagraph:-/item:bb`
+- tight abbreviation+label forms such as `para.032B` are normalized before
+  target parsing. The missing space is a metadata transport defect, and leading
+  numeric zero padding is stripped from provision labels.
+  - current witness: `asp/2002/11` / `ssi/2013/197 Sch. 2 para. 9(b)`, where
+    `Sch. 2 para.032B` previously lowered `paragraph:paragraph032b`
 - adjacent same-length multi-letter metadata suffixes that denote source
   sibling insertions must split as siblings, not nested descendants
   - examples: `Sch. 26 para. 14(aa)(bb)` becomes `Sch. 26 para. 14(aa)` and

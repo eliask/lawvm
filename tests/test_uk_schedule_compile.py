@@ -1620,6 +1620,13 @@ def test_split_metadata_parenthesized_numeric_to_alphanumeric_range_keeps_middle
     ]
 
 
+def test_parse_affected_target_normalizes_tight_zero_padded_paragraph_abbreviation() -> None:
+    assert _parse_affected_target("Sch. 2 para.032B").path == (
+        ("schedule", "2"),
+        ("paragraph", "32b"),
+    )
+
+
 def test_retarget_substituted_series_anchors_first_replacement_to_replaced_subsection() -> None:
     retargeted = _retarget_substituted_series_to_replaced_anchor(
         "substituted for s. 39(5)",

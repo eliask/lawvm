@@ -3691,6 +3691,12 @@ def _parse_ref(ref: str) -> tuple[tuple[Optional[str], str], ...]:
     """Parse 'Sch. 2 para. 2(2)' into [('schedule', '2'), ('paragraph', '2'), (None, '2')]."""
     # Normalize common abbreviations using regex for case insensitivity
     r = ref
+    r = re.sub(
+        r"\b(Sch|paras?|ss?|s|Pt|Ch|arts?|regs?)\.(?=[0-9A-Za-z])",
+        r"\1. ",
+        r,
+        flags=re.I,
+    )
     r = re.sub(r"\bSch\.", "schedule", r, flags=re.I)
     r = re.sub(r"\bSch\b", "schedule", r, flags=re.I)
     r = re.sub(r"\bpara\.", "paragraph", r, flags=re.I)
@@ -3733,6 +3739,13 @@ def _parse_ref(ref: str) -> tuple[tuple[Optional[str], str], ...]:
     }
     res = []
     i = 0
+
+    def _normalize_label_token(token: str) -> str:
+        match = re.fullmatch(r"0+([0-9]+)([a-z]*)", token, flags=re.I)
+        if match is None:
+            return token
+        return f"{int(match.group(1))}{match.group(2).lower()}"
+
     while i < len(raw_tokens):
         t = raw_tokens[i]
         if t in _stop:
@@ -3742,13 +3755,13 @@ def _parse_ref(ref: str) -> tuple[tuple[Optional[str], str], ...]:
                 res.append((t, ""))
                 i += 1
                 continue
-            res.append((t, raw_tokens[i + 1]))
+            res.append((t, _normalize_label_token(raw_tokens[i + 1])))
             i += 2
         elif t in kinds:
             res.append((t, ""))
             i += 1
         else:
-            res.append((None, t))
+            res.append((None, _normalize_label_token(t)))
             i += 1
     return tuple(res)
 
