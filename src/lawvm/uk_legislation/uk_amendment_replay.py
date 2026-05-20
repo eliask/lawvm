@@ -4159,7 +4159,8 @@ def _extract_provision_element_from_root(
         if _tag(el).lower() == "body":
             body = el
             break
-    target_node, depth_reached = _find_provision_greedy(body or root, list(path))
+    search_root = body if body is not None else root
+    target_node, depth_reached = _find_provision_greedy(search_root, list(path))
     if target_node is not None:
         rem_tokens = [tn for tk, tn in path[depth_reached:] if tn]
         for child in target_node.iter():
