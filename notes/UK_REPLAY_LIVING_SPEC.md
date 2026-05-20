@@ -758,6 +758,11 @@ Current tooling-consistency invariant:
     `uk_commencement_unnumbered_single_schedule_target_resolved` as
     `target_resolution_recovery`. Multiple schedule roots remain unresolved
     until source context disambiguates the target.
+  - UK current XML may expose provisions that are present in the instrument but
+    not yet commenced. Commencement EID scoring is therefore symmetric: compare
+    commenced enacted/replay EIDs against oracle EIDs intersected with the same
+    commenced EID set. Raw EID scoring remains the unfiltered current-XML
+    comparison lane.
   - `uk-bench --compare` must also summarize saved enacted/oracle and
     replay/oracle text-score fields over common statutes when present. EID
     agreement and text agreement are different evidence lanes.
