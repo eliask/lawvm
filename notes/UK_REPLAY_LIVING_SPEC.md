@@ -1709,6 +1709,13 @@ Current block-substitution context invariant:
   `schedule_target_previously_repealed` rather than reporting an anchor lookup
   failure. Current witness: later `asp/2010/8` Schedule 5/6 insert rows after
   the schedule expiry/repeal.
+- If a structural repeal targets a descendant of a provision already repealed
+  earlier in the replay chain, replay records nonblocking
+  `uk_replay_repeal_target_already_absent_observed` instead of a target gap.
+  This is only an idempotent structural-repeal observation; inserts,
+  replacements, and text patches under a repealed prefix remain blocking.
+  Current witness: `asp/2000/4`, where `asp/2001/8` repeals `s. 38` and
+  `asp/2003/13` Sch. 5 Pt. 1 later repeals `s. 38(4)`.
 - schedule-root repeals whose source text only claims `entry`/`entries` repeal
   must not delete the whole schedule. Replay prepare blocks this granularity
   escalation with `uk_replay_schedule_entry_repeal_granularity_blocked`.

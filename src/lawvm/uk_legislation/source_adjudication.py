@@ -211,6 +211,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_schedule_list_entry_repeal_parenthetical_paragraph_normalized",
         "uk_replay_schedule_list_entry_replace_resolved",
         "uk_replay_schedule_list_entry_repeal_resolved",
+        "uk_replay_repeal_target_already_absent_observed",
         "uk_replay_schedule_list_entry_table_rows_insert_resolved",
         "uk_replay_schedule_table_end_rows_insert_resolved",
         "uk_replay_schedule_item_target_from_parent_substitution_resolved",
