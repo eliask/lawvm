@@ -2847,6 +2847,19 @@ Current bench replay-regime invariant:
   arbitrary punctuation, or reordered words. This is replay evidence with
   `family=text_match_recovery`, `blocking=false`, and
   `strict_disposition=record`.
+- Replay may recover a DELETE-only omission selector when the source quotes a
+  simple phrase with a trailing comma, but the target text carries that comma
+  immediately before the phrase. Example: source says omit `Part 4,` while the
+  resolved target says `), Part 4 is amended`. The rule
+  `uk_replay_text_match_rotated_trailing_comma_omission` may delete only the
+  phrase (`Part 4`) and preserve the host comma. It requires exact structural
+  target resolution, selector `occurrence=0`, a simple alphanumeric phrase,
+  exactly one `, <phrase>` rotated preimage, and exactly one phrase preimage in
+  the explicit target subtree. Otherwise replay must leave the operation as a
+  blocking text-match gap. This is replay evidence with
+  `family=text_match_recovery`, `source_shape=trailing_comma_rotated_before_phrase`,
+  `blocking=false`, and `strict_disposition=record`. Corpus witnesses include
+  `uksi/2020/1520` regs. 5(13)(a) and 5(14)(a) against `ukpga/2020/17`.
 - Replay may recover a contextual word selector anchor kind when the explicit
   target subtree has no exact source kind but has exactly one same-label child
   among provision-like child kinds. This covers UK schedule wording such as

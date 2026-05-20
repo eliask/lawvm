@@ -93,6 +93,7 @@ def test_classify_uk_replay_adjudication_bucket() -> None:
         "uk_replay_same_source_text_patch_overlap_disjoint": "nonblocking_observation",
         "text_duplication_warning": "nonblocking_observation",
         "uk_replay_text_match_punctuation_space_normalized": "nonblocking_observation",
+        "uk_replay_text_match_rotated_trailing_comma_omission": "nonblocking_observation",
         "uk_replay_text_match_replacement_normalized_present": "nonblocking_observation",
         "uk_replay_future_kind": "unknown",
         "": "unknown",
