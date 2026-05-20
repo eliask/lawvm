@@ -1907,9 +1907,11 @@ Current block-substitution context invariant:
   for "Y" substitute "Z"`, `uk_effect_table_entry_label_text_patch` for
   `in entry 1A in the table`, `uk_effect_table_entry_relating_column_text_patch`
   for `in the entry for X, in the Nth column`,
-  `uk_effect_table_entry_label_column_text_patch` for `in entry X, in column Y`, and
+  `uk_effect_table_entry_label_column_text_patch` for `in entry X, in column Y`,
   `uk_effect_table_entry_labels_column_text_patch` for `in entries X and Y,
-  in column Z`, and
+  in column Z`, `uk_effect_table_entry_deictic_label_column_text_patch` for
+  `in that entry, in column Z` only when the previous source sibling explicitly
+  names the table entry, and
   `uk_effect_table_column_heading_text_patch` for `in the heading of the
   second column`
   - replay mutates only a uniquely resolved table cell; ambiguous tables,

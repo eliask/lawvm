@@ -7258,6 +7258,115 @@ def test_replay_table_entry_labels_column_substitution_blocks_without_partial_mu
     assert unresolved.detail["blocking"] is True
 
 
+def test_compile_table_entry_deictic_column_substitution_uses_previous_source_sibling() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <P3 id="section-24-5-a-ii">
+            <Pnumber>ii</Pnumber>
+            <Text>ii in entry 6B, in column 2, at the end insert
+            “by virtue of subsection (4) or (5) of that section” ;</Text>
+          </P3>
+          <P3 id="section-24-5-a-iii">
+            <Pnumber>iii</Pnumber>
+            <Text>iii in that entry, in column 3, for “two-thirds”
+            substitute “one-half” ;</Text>
+          </P3>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='section-24-5-a-iii']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_deictic_column_substitution",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-03-06",
+        affected_uri="/id/ukpga/2020/17/section/166",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 166(5) table",
+        affecting_uri="/id/ukpga/2026/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2026",
+        affecting_number="2",
+        affecting_provisions="s. 24(5)(a)(iii)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2026-03-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "166"), ("subsection", "5"))
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "two-thirds"
+    assert ops[0].text_patch.replacement == "one-half"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_entry_deictic_label_column_text_patch"
+    assert selector["selector_mode"] == "unique_entry_cell"
+    assert selector["entry_label"] == "6b"
+    assert selector["column_index"] == 3
+    assert selector["source_context"] == "previous_source_sibling_entry_label"
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_deictic_label_column_text_patch"
+        and record["reason_code"] == "source_parent_table_entry_paragraph_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_table_entry_deictic_column_substitution_blocks_without_source_context() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>iii</Pnumber>
+          <Text>iii in that entry, in column 3, for “two-thirds”
+          substitute “one-half” ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_deictic_column_without_context",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-03-06",
+        affected_uri="/id/ukpga/2020/17/section/166",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 166(5) table",
+        affecting_uri="/id/ukpga/2026/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2026",
+        affecting_number="2",
+        affecting_provisions="s. 24(5)(a)(iii)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2026-03-06", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_instruction_rejected"
+        and record["reason_code"] == "table_entry_instruction_without_cell_target"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_quoted_words_text_repeal() -> None:
     source_root = ET.fromstring(
         """
