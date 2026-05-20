@@ -5,6 +5,7 @@ from pathlib import Path
 
 from lawvm.uk_legislation import source_adjudication as sa
 from lawvm.uk_legislation.source_adjudication import (
+    classify_uk_commencement_current_projection,
     classify_uk_current_projection_eid_shape,
     classify_uk_effect_compare_shape,
     classify_uk_effect_source_pathology,
@@ -2946,6 +2947,89 @@ def test_classify_uk_current_projection_eid_shape_keeps_multi_root_oracle_core()
                 "section-4-1",
             },
             oracle_eids={"section-3", "section-4"},
+        )
+        == ""
+    )
+
+
+def test_classify_uk_commencement_current_projection_marks_commenced_subset_surface() -> None:
+    classification = classify_uk_commencement_current_projection(
+        replay_compare_eids={
+            "section-1",
+            "section-1-1",
+            "section-2",
+            "section-2-1",
+            "section-3",
+            "section-3-1",
+            "section-4",
+            "section-4-1",
+            "section-5",
+            "section-5-1",
+            "section-6",
+            "section-6-1",
+            "schedule-1",
+            "schedule-1-paragraph-1",
+            "schedule-1-paragraph-2",
+            "schedule-2",
+            "schedule-2-paragraph-1",
+        },
+        oracle_compare_eids={
+            "section-1",
+            "section-1-1",
+            "section-2",
+            "section-2-1",
+            "section-3",
+        },
+        commenced_replay_eids={
+            "section-1",
+            "section-1-1",
+            "section-2",
+            "section-2-1",
+        },
+        commenced_oracle_eids={
+            "section-1",
+            "section-1-1",
+            "section-2",
+            "section-2-1",
+        },
+    )
+
+    assert classification == "commencement_current_projection"
+    assert is_core_uk_comparison(classification) is False
+
+
+def test_classify_uk_commencement_current_projection_rejects_oracle_only_gap() -> None:
+    assert (
+        classify_uk_commencement_current_projection(
+            replay_compare_eids={"section-1", "section-2"},
+            oracle_compare_eids={"section-1", "section-3"},
+            commenced_replay_eids={"section-1"},
+            commenced_oracle_eids={"section-1"},
+        )
+        == ""
+    )
+
+
+def test_classify_uk_commencement_current_projection_rejects_commencement_disagreement() -> None:
+    assert (
+        classify_uk_commencement_current_projection(
+            replay_compare_eids={
+                "section-1",
+                "section-2",
+                "section-3",
+                "section-4",
+                "section-5",
+                "section-6",
+                "section-7",
+                "section-8",
+                "section-9",
+                "section-10",
+                "section-11",
+                "section-12",
+            },
+            oracle_compare_eids={"section-1"},
+            commenced_replay_eids={"section-1", "section-2"},
+            commenced_oracle_eids={"section-1"},
         )
         == ""
     )

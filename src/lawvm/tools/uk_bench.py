@@ -49,6 +49,7 @@ from lawvm.uk_legislation.uk_grafter import (
 )
 from lawvm.uk_legislation.source_adjudication import (
     classify_uk_bench_comparison,
+    classify_uk_commencement_current_projection,
     classify_uk_current_projection_eid_shape,
     classify_uk_replay_adjudication_bucket,
     classify_uk_replay_residual,
@@ -993,6 +994,8 @@ def _score_statute(
         replay_score = -1.0
         replay_text_score = -1.0
         replay_error = ""
+        replay_compare_eids: set[str] = set()
+        oracle_compare_eids: set[str] = set()
         replay_adjudication_count = 0
         replay_adjudication_kind_counts: dict[str, int] = {}
         replay_adjudications: list[Any] = []
@@ -1305,6 +1308,8 @@ def _score_statute(
         n_commenced_eids = 0
         replay_commencement_score = -1.0
         commencement_error = ""
+        commenced_replayed: set[str] = set()
+        commenced_oracle_for_replay: set[str] = set()
 
         if do_commencement:
             commencement_feed_observations: list[dict[str, Any]] = []
@@ -1400,6 +1405,33 @@ def _score_statute(
         )
         if current_projection_shape and comparison_class == "commensurable":
             comparison_class = current_projection_shape
+        commencement_projection_shape = classify_uk_commencement_current_projection(
+            replay_compare_eids=replay_compare_eids,
+            oracle_compare_eids=oracle_compare_eids,
+            commenced_replay_eids=commenced_replayed,
+            commenced_oracle_eids=commenced_oracle_for_replay,
+        )
+        if commencement_projection_shape and comparison_class == "commensurable":
+            comparison_class = commencement_projection_shape
+        if (
+            commencement_projection_shape
+            and uk_residual_claim_comparison_class == "commensurable"
+        ):
+            uk_residual_claim_comparison_class = commencement_projection_shape
+            uk_residual_claim_core_comparison = is_core_uk_comparison(
+                uk_residual_claim_comparison_class
+            )
+            (
+                uk_residual_claim_tier,
+                uk_residual_claim_kind,
+                uk_residual_section_claim_count,
+            ) = _classify_uk_residual_claim_for_bench(
+                comparison_class=uk_residual_claim_comparison_class,
+                only_in_replayed=replay_compare_eids - oracle_compare_eids,
+                only_in_oracle=oracle_compare_eids - replay_compare_eids,
+                replay_adjudication_kind_counts=replay_adjudication_kind_counts,
+            )
+            uk_residual_section_claim_emitted = bool(uk_residual_section_claim_count)
         source_parse_rejections = _blocking_source_parse_rows(source_parse_observations)
 
         return _BenchResult(

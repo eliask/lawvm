@@ -380,6 +380,43 @@ def classify_uk_current_projection_eid_shape(
     return "spent_amending_act_current_projection"
 
 
+def classify_uk_commencement_current_projection(
+    *,
+    replay_compare_eids: Iterable[str],
+    oracle_compare_eids: Iterable[str],
+    commenced_replay_eids: Iterable[str],
+    commenced_oracle_eids: Iterable[str],
+) -> str:
+    """Classify current-oracle surfaces that project a commenced subset.
+
+    This is a benchmark/adjudication classifier, not a replay normalizer. It
+    applies only when the full oracle EID surface is contained in replay, while
+    the independently computed commencement lens exactly agrees. In that shape
+    the remaining full-score deficit is replay-extra future/uncommenced
+    structure, not an unsupported mutation.
+    """
+    replay_norm = {_normalize_uk_source_container_eid(eid) for eid in replay_compare_eids if eid}
+    oracle_norm = {_normalize_uk_source_container_eid(eid) for eid in oracle_compare_eids if eid}
+    commenced_replay_norm = {
+        _normalize_uk_source_container_eid(eid) for eid in commenced_replay_eids if eid
+    }
+    commenced_oracle_norm = {
+        _normalize_uk_source_container_eid(eid) for eid in commenced_oracle_eids if eid
+    }
+    if not replay_norm or not oracle_norm or not commenced_oracle_norm:
+        return ""
+    if not oracle_norm < replay_norm:
+        return ""
+    if commenced_replay_norm != commenced_oracle_norm:
+        return ""
+    if not commenced_oracle_norm <= oracle_norm:
+        return ""
+    replay_extra_count = len(replay_norm - oracle_norm)
+    if replay_extra_count < max(10, len(oracle_norm) // 10):
+        return ""
+    return "commencement_current_projection"
+
+
 def _normalize_uk_source_container_eid(eid: str) -> str:
     parts = [part for part in str(eid or "").lower().split("-") if part]
     if not parts:
