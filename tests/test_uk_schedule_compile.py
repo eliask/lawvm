@@ -35,6 +35,7 @@ from lawvm.uk_legislation.uk_amendment_replay import (
     _NOTE_FRAGMENT_SUB,
     _NOTE_TABLE_CELL_SELECTOR,
     _NOTE_TABLE_ROW_INSERT_SELECTOR,
+    _NOTE_TABLE_COLUMN_INSERT_SELECTOR,
     _NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR,
     _NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR,
     _NOTE_REWRITE_WITNESS,
@@ -14131,7 +14132,79 @@ def test_replay_schedule_list_entry_table_rows_blocks_duplicate_anchor() -> None
     assert adjudications[0].detail["blocking"] is True
 
 
-def test_compile_direct_table_between_columns_instruction_rejects_column_insert() -> None:
+def test_compile_direct_table_between_columns_instruction_lowers_column_insert() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>between the second and third columns, insert\u2014</Text>
+            <BlockAmendment>
+              <Tabular>
+                <table xmlns="http://www.w3.org/1999/xhtml">
+                  <thead>
+                    <tr><th>Offence committed on or after 1 May 1984 and before 1 October 1992</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>\u00a350</td></tr>
+                    <tr><td>\u00a3100</td></tr>
+                  </tbody>
+                </table>
+              </Tabular>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_direct_table_between_columns_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-01-01",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 122(1) Table",
+        affecting_uri="/id/ukpga/2020/17",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2020",
+        affecting_number="17",
+        affecting_provisions="Sch. 21 para. 3(b)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target == LegalAddress((("section", "122"),))
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.TABLE
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_COLUMN_INSERT_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_COLUMN_INSERT_SELECTOR))
+    assert selector["selector_mode"] == "between_columns"
+    assert selector["after_column_index"] == 2
+    assert selector["before_column_index"] == 3
+    assert selector["source_payload_mode"] == "single_column_table"
+    assert selector["allow_implicit_subsection_one_table"] is True
+    assert any(
+        record["rule_id"] == "uk_effect_table_column_insert"
+        and record["reason_code"] == "explicit_between_columns_table_column_insert_selector"
+        and record["blocking"] is False
+        for record in lowering_rejections
+    )
+
+
+def test_compile_direct_table_between_columns_blocks_without_source_table_payload() -> None:
     extracted_el = ET.fromstring(
         f"""
         <P3 xmlns="{_LEG_NS}">
@@ -14141,7 +14214,7 @@ def test_compile_direct_table_between_columns_instruction_rejects_column_insert(
         """
     )
     effect = UKEffectRecord(
-        effect_id="uk_test_direct_table_between_columns_insert",
+        effect_id="uk_test_direct_table_between_columns_insert_no_payload",
         effect_type="words inserted",
         applied=True,
         requires_applied=True,
@@ -14176,6 +14249,122 @@ def test_compile_direct_table_between_columns_instruction_rejects_column_insert(
     assert rejection["rule_id"] == "uk_effect_table_entry_instruction_rejected"
     assert rejection["entry_shape"] == "between_columns"
     assert rejection["blocking"] is True
+
+
+def test_replay_table_column_insert_adjusts_spanning_header_and_rows() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_column_insert",
+        "selector_mode": "between_columns",
+        "after_column_index": 2,
+        "before_column_index": 3,
+        "source_payload_mode": "single_column_table",
+        "payload_row_count": 3,
+        "allow_implicit_subsection_one_table": True,
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_column_insert_apply",
+        sequence=0,
+        action=StructuralAction.INSERT,
+        target=LegalAddress((("section", "122"),)),
+        payload=IRNode(
+            kind=IRNodeKind.TABLE,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.HEADER_CELL,
+                            text="Offence committed on or after 1 May 1984 and before 1 October 1992",
+                        ),
+                    ),
+                ),
+                IRNode(kind=IRNodeKind.ROW, children=(IRNode(kind=IRNodeKind.CELL, text="\u00a350"),)),
+                IRNode(kind=IRNodeKind.ROW, children=(IRNode(kind=IRNodeKind.CELL, text="\u00a3100"),)),
+            ),
+        ),
+        provenance_tags=(f"{_NOTE_TABLE_COLUMN_INSERT_SELECTOR}{json.dumps(selector)}",),
+        source=OperationSource(statute_id="ukpga/2022/32"),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="122",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.TABLE,
+                                    children=(
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(
+                                                    kind=IRNodeKind.HEADER_CELL,
+                                                    text="Level on the scale",
+                                                    attrs={"rowspan": "2"},
+                                                ),
+                                                IRNode(
+                                                    kind=IRNodeKind.HEADER_CELL,
+                                                    text="Amount of fine",
+                                                    attrs={"colspan": "2"},
+                                                ),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.HEADER_CELL, text="1983 to 1984"),
+                                                IRNode(kind=IRNodeKind.HEADER_CELL, text="after 1992"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="1"),
+                                                IRNode(kind=IRNodeKind.CELL, text="\u00a325"),
+                                                IRNode(kind=IRNodeKind.CELL, text="\u00a3200"),
+                                            ),
+                                        ),
+                                        IRNode(
+                                            kind=IRNodeKind.ROW,
+                                            children=(
+                                                IRNode(kind=IRNodeKind.CELL, text="2"),
+                                                IRNode(kind=IRNodeKind.CELL, text="\u00a350"),
+                                                IRNode(kind=IRNodeKind.CELL, text="\u00a3500"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    table = replayed.body.children[0].children[0].children[0]
+    assert table.children[0].children[1].attrs["colspan"] == "3"
+    assert [cell.text for cell in table.children[1].children] == [
+        "1983 to 1984",
+        "Offence committed on or after 1 May 1984 and before 1 October 1992",
+        "after 1992",
+    ]
+    assert [cell.text for cell in table.children[2].children] == ["1", "\u00a325", "\u00a350", "\u00a3200"]
+    assert [cell.text for cell in table.children[3].children] == ["2", "\u00a350", "\u00a3100", "\u00a3500"]
+    assert [adjudication.kind for adjudication in adjudications] == ["uk_effect_table_column_insert"]
+    assert adjudications[0].detail["adjusted_spans"] == 1
+    assert adjudications[0].detail["inserted_cells"] == 3
 
 
 def test_compile_direct_table_relating_entry_instruction_uses_owned_selector() -> None:
