@@ -1745,7 +1745,10 @@ Current block-substitution context invariant:
   they are plausible semantic-compile work items but still lack a source-named
   insertion anchor. It is not a generic parser miss because replay must not
   pick an insertion point by alphabetical coincidence, oracle order, or
-  live-tree uniqueness.
+  live-tree uniqueness. Lowering records these rows under
+  `uk_effect_appropriate_place_definition_entry_insert_rejected` rather than
+  the generic overlap-substitution parser-miss rule so work queues can route
+  them to a placement-claim validator.
 - repeal schedules, table parts, or grouped repeal source fragments that expose
   an `Enactment / Extent of repeal` surface but do not yet identify the specific
   target row/cell for the affected provision are classified as
