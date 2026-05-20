@@ -1690,6 +1690,22 @@ Current block-substitution context invariant:
   `uk_replay_table_entry_inline_text_insertion_unresolved` or
   `uk_replay_table_entry_inline_text_preimage_gap` adjudication. This is a
   deterministic table compiler, not a fallback from a missing target path.
+- direct table-marker word patches may lower to source-owned table-cell
+  selectors when the source supplies enough row/cell evidence:
+  `uk_effect_table_entry_relating_text_patch` for `in the entry relating to X,
+  for "Y" substitute "Z"`, `uk_effect_table_entry_label_text_patch` for
+  `in entry 1A in the table`, and `uk_effect_table_column_heading_text_patch`
+  for `in the heading of the second column`
+  - replay mutates only a uniquely resolved table cell; ambiguous tables,
+    ambiguous cells, or missing preimages remain blocking table-cell
+    adjudications
+  - `s. N(1) Table` may be carried by a section-level table in the source XML
+    or by a subsection `(1)` table. Lowering records this as an implicit
+    subsection-one table carrier in the selector rather than changing legal
+    scope silently.
+  - current witnesses: `ukpga/2020/17` `s. 174(1) Table` by `ukpga/2022/32
+    Sch. 17 para. 4(3)(a)`, `s. 122(1) Table` by `ukpga/2022/32 Sch. 21
+    para. 3(a)`, and `s. 166(5) Table` by `ukpga/2026/2 s. 7(9)(d)`
 - UK source/oracle XML table structure is preserved by the grafter under the
   named family `uk_table_xml_structure_preserved`: `<Table>` / `<Tgroup>` /
   `<Thead>` / `<Tbody>` / `<Row>` / `<Entry>` become `table` / `row` /

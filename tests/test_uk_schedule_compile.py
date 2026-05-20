@@ -4917,6 +4917,206 @@ def test_replay_broad_schedule_table_column_text_patch_blocks_ambiguous_cell() -
     assert adjudications[0].detail["blocking"] is True
 
 
+def test_compile_table_entry_relating_text_patch_uses_owned_cell_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>a in the entry relating to electronic monitoring requirements,
+          for “electronic monitoring requirement” substitute
+          “electronic compliance monitoring requirement”, and</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_relating_text_patch",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-04-28",
+        affected_uri="/id/ukpga/2020/17/section/174",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 174(1) Table",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="Sch. 17 para. 4(3)(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2022-04-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "174"),)
+    assert ops[0].text_patch is not None
+    assert ops[0].text_patch.selector.match_text == "electronic monitoring requirement"
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_entry_relating_text_patch"
+    assert selector["selector_mode"] == "unique_relating_text"
+    assert selector["allow_implicit_subsection_one_table"] is True
+    assert any(
+        record["rule_id"] == "uk_effect_table_entry_relating_text_patch"
+        and record["reason_code"] == "explicit_table_entry_column_selector"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_replay_table_entry_relating_text_patch_mutates_unique_cell() -> None:
+    selector = {
+        "rule_id": "uk_effect_table_entry_relating_text_patch",
+        "selector_mode": "unique_relating_text",
+        "relating_text": "electronic monitoring requirements",
+        "match_text": "electronic monitoring requirement",
+        "allow_implicit_subsection_one_table": True,
+    }
+    op = LegalOperation(
+        op_id="uk_test_table_entry_relating_text_patch",
+        sequence=1,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "174"),)),
+        provenance_tags=(f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(selector)}",),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="electronic monitoring requirement", occurrence=0),
+            replacement="electronic compliance monitoring requirement",
+        ),
+    )
+    base = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="174",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.TABLE,
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(
+                                        IRNode(kind=IRNodeKind.CELL, text="activity requirement"),
+                                        IRNode(kind=IRNodeKind.CELL, text="Part 1"),
+                                    ),
+                                ),
+                                IRNode(
+                                    kind=IRNodeKind.ROW,
+                                    children=(
+                                        IRNode(kind=IRNodeKind.CELL, text="electronic monitoring requirement"),
+                                        IRNode(kind=IRNodeKind.CELL, text="Part 17"),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+
+    replayed = replay_uk_ops(base, [op])
+
+    table = replayed.body.children[0].children[0]
+    assert table.children[0].children[0].text == "activity requirement"
+    assert table.children[1].children[0].text == "electronic compliance monitoring requirement"
+
+
+def test_compile_table_column_heading_text_patch_uses_owned_cell_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>a</Pnumber>
+          <Text>a in the heading of the second column, for “1 October 1992”
+          substitute “1 May 1984” ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_column_heading_text_patch",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2022-06-28",
+        affected_uri="/id/ukpga/2020/17/section/122",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 122(1) Table",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="Sch. 21 para. 3(a)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2022-06-28", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el)
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "122"),)
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_column_heading_text_patch"
+    assert selector["selector_mode"] == "unique_column_text"
+    assert selector["column_index"] == 2
+    assert selector["match_text"] == "1 October 1992"
+    assert selector["allow_implicit_subsection_one_table"] is True
+
+
+def test_compile_table_entry_label_text_patch_uses_owned_cell_selector() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}">
+          <Pnumber>d</Pnumber>
+          <Text>d in section 166(5), in entry 1A in the table, for
+          “terrorist” substitute “certain” ;</Text>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_table_entry_label_text_patch",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-03-06",
+        affected_uri="/id/ukpga/2020/17/section/166",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 166(5) Table",
+        affecting_uri="/id/ukpga/2026/2",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2026",
+        affecting_number="2",
+        affecting_provisions="s. 7(9)(d)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2026-03-06", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el)
+
+    assert len(ops) == 1
+    assert ops[0].target.path == (("section", "166"), ("subsection", "5"))
+    selector_tag = next(tag for tag in ops[0].provenance_tags if tag.startswith(_NOTE_TABLE_CELL_SELECTOR))
+    selector = json.loads(selector_tag.removeprefix(_NOTE_TABLE_CELL_SELECTOR))
+    assert selector["rule_id"] == "uk_effect_table_entry_label_text_patch"
+    assert selector["selector_mode"] == "unique_entry_text"
+    assert selector["entry_label"] == "1a"
+    assert selector["match_text"] == "terrorist"
+    assert "allow_implicit_subsection_one_table" not in selector
+
+
 def test_compile_repeal_table_quoted_words_text_repeal() -> None:
     source_root = ET.fromstring(
         """
