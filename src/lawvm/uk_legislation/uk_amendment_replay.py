@@ -5509,6 +5509,8 @@ def _uk_table_entry_row_insert_selector(
     target_ref: str,
     target: LegalAddress,
     extracted_text: Optional[str],
+    extracted_el: Optional[ET.Element] = None,
+    source_root: Optional[ET.Element] = None,
 ) -> dict[str, Any] | None:
     """Extract an explicit table-row insertion selector from ordinal entry wording."""
     text = " ".join((extracted_text or "").split())
@@ -5525,6 +5527,32 @@ def _uk_table_entry_row_insert_selector(
         and not (_addr_leaf_kind(target) == "subsection" and implicit_subsection_entry_group is not None)
     ):
         return None
+    target_names_table = "table" in f"{target_ref} {target}".lower()
+    deictic_previous_entry_insert = re.search(
+        r"\bafter\s+that\s+entry\s+insert(?:ed)?\s*[—–-]?",
+        text,
+        re.I,
+    )
+    if target_names_table and deictic_previous_entry_insert is not None:
+        entry_context = _source_previous_table_entry_relating_context(
+            extracted_el=extracted_el,
+            source_root=source_root,
+        )
+        relating_text = " ".join(str(entry_context.get("relating_text") or "").split()).strip(" ,;.")
+        if relating_text:
+            return {
+                "rule_id": _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+                "selector_mode": "relating_entry",
+                "direction": "after",
+                "column_index": 1,
+                "entry_index": 1,
+                "relating_text": relating_text,
+                "source_payload_mode": "single_table_row",
+                "source_names_table": source_names_table,
+                "original_target": str(target),
+                "target_ref": target_ref,
+                **entry_context,
+            }
     entry_label_match = re.search(
         r"\bafter\s+entry\s+(?P<anchor>[0-9A-Z]+)\s+in\s+the\s+table\s+"
         r"insert(?:ed)?\s*[—–-]?",
@@ -5545,7 +5573,6 @@ def _uk_table_entry_row_insert_selector(
                 "original_target": str(target),
                 "target_ref": target_ref,
             }
-    target_names_table = "table" in f"{target_ref} {target}".lower()
     numbered_target_table_match = re.search(
         r"\bafter\s+entry\s+(?P<anchor>[0-9A-Z]+)\s+"
         r"insert(?:ed)?\s*[—–-]?",
@@ -8020,6 +8047,55 @@ def _source_previous_table_entry_label_context(
     return {}
 
 
+def _source_previous_table_entry_relating_context(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+) -> dict[str, Any]:
+    """Return a source-owned table-entry relation from a previous sibling row."""
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        return {}
+    parent = ancestors[0]
+    children = list(parent)
+    extracted_id = extracted_el.get("id") if extracted_el is not None else None
+    extracted_index = -1
+    for index, child in enumerate(children):
+        if child is extracted_el or (extracted_id and child.get("id") == extracted_id):
+            extracted_index = index
+            break
+    if extracted_index <= 0:
+        return {}
+    for sibling in reversed(children[:extracted_index]):
+        sibling_text = " ".join(_text_content(sibling).split())
+        match = re.search(
+            r"\bin\s+the\s+entry\s+(?:relating\s+to|for)\s+(?:the\s+)?(?P<relating>.*?)(?:,\s+(?:for|after|omit|insert|substitute)\b|$)",
+            sibling_text,
+            flags=re.I,
+        )
+        if match is None:
+            continue
+        relating_text = " ".join(match.group("relating").split()).strip(" ,;.")
+        if not relating_text:
+            continue
+        row_anchor_texts: list[str] = []
+        for fragment in parse_fragment_substitution(sibling_text):
+            original = " ".join(str(fragment.get("original") or "").split()).strip(" ,;.")
+            replacement = " ".join(str(fragment.get("replacement") or "").split()).strip(" ,;.")
+            for candidate in (original, replacement):
+                if candidate and candidate not in row_anchor_texts:
+                    row_anchor_texts.append(candidate)
+        return {
+            "relating_text": relating_text,
+            "row_anchor_texts": tuple(row_anchor_texts),
+            "source_context_rule_id": _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+            "source_context": "previous_source_sibling_entry_relating_text",
+            "source_sibling_label": _clean_num(_direct_structural_num(sibling)),
+            "source_sibling_id": str(sibling.get("id") or sibling.get("Id") or ""),
+        }
+    return {}
+
+
 def _fragment_substitution_source_carried_definition_child_insert(
     *,
     extracted_el: Optional[ET.Element],
@@ -10007,6 +10083,8 @@ def compile_effect_to_ir_ops(
                 target_ref=t_str,
                 target=target,
                 extracted_text=extracted_text,
+                extracted_el=extracted_el,
+                source_root=source_root,
             )
             if action == "insert"
             else None
@@ -10060,10 +10138,16 @@ def compile_effect_to_ir_ops(
                 str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
                 and str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows"
             )
+            needs_single_source_row_payload = (
+                str(table_row_insert_selector.get("source_payload_mode") or "") == "single_table_row"
+                or (
+                    str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
+                    and not entry_label_table_rows
+                )
+            )
             source_row_payload = (
                 _uk_single_table_row_payload(extracted_el)
-                if str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
-                and not entry_label_table_rows
+                if needs_single_source_row_payload
                 else None
             )
             source_table_payload = (
@@ -10071,18 +10155,18 @@ def compile_effect_to_ir_ops(
                 if str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows"
                 else None
             )
-            if (
-                str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
-                and not entry_label_table_rows
-                and source_row_payload is None
-            ):
+            if needs_single_source_row_payload and source_row_payload is None:
                 _append_uk_effect_lowering_rejection(
                     lowering_rejections_out,
                     rule_id=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
                     family="source_table_elaboration",
-                    reason_code="explicit_table_entry_label_insert_without_single_row_payload",
+                    reason_code=(
+                        "explicit_table_entry_label_insert_without_single_row_payload"
+                        if str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
+                        else "deictic_table_entry_insert_without_single_row_payload"
+                    ),
                     reason=(
-                        "UK table-row insertion names an entry anchor, but "
+                        "UK table-row insertion resolves a table-entry anchor, but "
                         "the source does not carry exactly one BlockAmendment "
                         "table row payload; lowering blocks instead of "
                         "inventing a row from flattened text."
@@ -10094,6 +10178,12 @@ def compile_effect_to_ir_ops(
                         "target_ref": t_str,
                         "original_target": str(target),
                         "containing_target": str(parent_target),
+                        "entry_shape": (
+                            "deictic_table_entry"
+                            if str(table_row_insert_selector.get("source_payload_mode") or "")
+                            == "single_table_row"
+                            else "numbered_entry"
+                        ),
                         **table_row_insert_selector,
                     },
                 )
@@ -10168,14 +10258,30 @@ def compile_effect_to_ir_ops(
                         ),
                     },
                 )
-            elif str(table_row_insert_selector.get("selector_mode") or "") == "entry_label":
+            elif (
+                str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
+                or str(table_row_insert_selector.get("source_payload_mode") or "") == "single_table_row"
+            ):
                 assert source_row_payload is not None
                 payload_node = dc_replace(
                     source_row_payload,
                     attrs={
                         **dict(source_row_payload.attrs or {}),
                         "source_rule_id": "uk_table_entry_row_insert_payload",
-                        "anchor_entry_label": str(table_row_insert_selector["anchor_entry_label"]),
+                        **(
+                            {
+                                "anchor_entry_label": str(
+                                    table_row_insert_selector["anchor_entry_label"]
+                                ),
+                            }
+                            if str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
+                            else {
+                                "relating_text": str(table_row_insert_selector["relating_text"]),
+                                "source_context": str(
+                                    table_row_insert_selector.get("source_context") or ""
+                                ),
+                            }
+                        ),
                     },
                 )
             else:
@@ -13588,6 +13694,12 @@ class UKReplayExecutor:
         except (TypeError, ValueError):
             return None, None, "invalid_selector", {}
         relating_norm = _compact_normalized_text(str(selector.get("relating_text") or ""))
+        row_anchor_norms = tuple(
+            anchor_norm
+            for anchor in selector.get("row_anchor_texts") or ()
+            for anchor_norm in (_compact_normalized_text(str(anchor or "")),)
+            if anchor_norm
+        )
         anchor_entry_label = _clean_num(str(selector.get("anchor_entry_label") or ""))
         direction = str(selector.get("direction") or "")
         selector_mode = str(selector.get("selector_mode") or "ordinal_column")
@@ -13672,6 +13784,10 @@ class UKReplayExecutor:
                     cell
                     for _col, cell in sorted(row_cells.items())
                     if _compact_normalized_text(cell.text or "").find(relating_norm) >= 0
+                    or any(
+                        _compact_normalized_text(cell.text or "").find(anchor_norm) >= 0
+                        for anchor_norm in row_anchor_norms
+                    )
                 ]
                 if not row_match_cells:
                     continue

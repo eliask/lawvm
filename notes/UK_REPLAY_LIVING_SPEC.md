@@ -1948,6 +1948,14 @@ Current block-substitution context invariant:
   - current witnesses: `ukpga/2020/17` `s. 174(1) Table` by `ukpga/2022/32
     Sch. 17 para. 4(3)(a)`, `s. 122(1) Table` by `ukpga/2022/32 Sch. 21
     para. 3(a)`, and `s. 166(5) Table` by `ukpga/2026/2 s. 7(9)(d)`
+- Direct table-row inserts shaped as `after that entry insert- ...` may lower
+  only when the previous source sibling explicitly identifies the table entry
+  (for example `in the entry relating to X, for "Y" substitute "Z"`) and the
+  current source row carries exactly one table-row payload. The selector records
+  the source-owned relation text plus any `Y`/`Z` row-anchor alternates from the
+  sibling substitution; replay must still resolve exactly one table row before
+  inserting. Current witness: `ukpga/2020/17` `s. 174(1) Table` by
+  `ukpga/2022/32 Sch. 17 para. 4(3)(b)`.
 - UK source/oracle XML table structure is preserved by the grafter under the
   named family `uk_table_xml_structure_preserved`: `<Table>` / `<Tgroup>` /
   `<Thead>` / `<Tbody>` / `<Row>` / `<Entry>` become `table` / `row` /
@@ -2023,11 +2031,12 @@ Current block-substitution context invariant:
   `after entry 6A insert- ...`, `after the entry in the table relating to ...`,
   `at the appropriate place insert- ...` inside a table, or `between the second
   and third columns, insert- ...` are the same table-entry/table-column
-  frontier. Lowering emits
-  blocking `uk_effect_table_entry_instruction_rejected` with an entry-shape
-  witness instead of leaving these rows as generic overlap-substitution parser
-  failures. This is only diagnostic ownership; replay still requires a typed
-  table row/cell model before mutating legal text.
+  frontier unless the row/cell compiler proves the antecedent and payload.
+  Lowering emits blocking `uk_effect_table_entry_instruction_rejected` or, for
+  guarded row-insert selectors whose source lacks a single row payload,
+  blocking `uk_effect_table_entry_row_insert` with an entry-shape witness. This
+  is only diagnostic ownership; replay still requires a typed table row/cell
+  model before mutating legal text.
 - source text shaped as `shall have effect as if ...` is classified as
   `as_if_application_modification_unsupported` and manual frontier
   `uk_manual_frontier_as_if_application_modification_out_of_scope`. That family
