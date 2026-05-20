@@ -2961,6 +2961,11 @@ Current bench replay-regime invariant:
   `TEXT_BEFORE_DEFINITION_X`; `in the definition of "D", after "A" insert "B"`
   lowers to `TEXT_IN_DEFINITION_D_AFTER_A` using an internal selector separator
   so the replay executor rewrites only the uniquely bounded definition entry.
+  A before-definition anchor may match the first entry after an interpretation
+  dash and a definition term followed by a qualifier comma or colon, such as
+  `"X", in relation to ...`, because the source target is still the explicit
+  definition term and replay inserts before the term boundary rather than
+  guessing a placement from live text.
   `after "A", in both places insert "B"` remains an all-occurrences text patch
   over the explicit target subtree. Ambiguous definition entries, missing
   anchors, and source text saying only `at the appropriate place(s)` are not
