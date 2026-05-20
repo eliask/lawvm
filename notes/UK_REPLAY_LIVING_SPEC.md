@@ -3399,6 +3399,12 @@ Current bench replay-regime invariant:
   `uk_replay_same_source_text_patch_overlap_disjoint`, orders that ordinal patch
   before the broader same-source patches that would disturb its base-text
   occurrence count, and allows the operation.
+  This prepare-time ordering is instance-preserving: repeated effect-feed IDs
+  may lower to multiple legal operations, and topological ordering must never
+  collapse those operation instances by `op_id`. Current witness:
+  `asp/2000/4`, where unrelated same-source text ordering previously caused
+  duplicate repeal-table targets from `asp/2003/13` Sch. 5 Pt. 1 to replay as
+  repeated copies of the last target.
   If the base target cannot witness disjointness, or the claimed occurrence
   overlaps a broader same-source patch, replay still blocks under
   `uk_replay_same_source_text_patch_overlap_blocked`.

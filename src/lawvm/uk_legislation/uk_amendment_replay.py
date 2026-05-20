@@ -955,33 +955,39 @@ def _order_ops_by_before_edges(
 ) -> list[LegalOperation]:
     if not before_edges:
         return list(ops)
-    op_ids = {op.op_id for op in ops}
-    successors: dict[str, set[str]] = {op.op_id: set() for op in ops}
-    predecessors: dict[str, set[str]] = {op.op_id: set() for op in ops}
+    op_indices_by_id: dict[str, list[int]] = {}
+    for index, op in enumerate(ops):
+        op_indices_by_id.setdefault(op.op_id, []).append(index)
+    successors: dict[int, set[int]] = {index: set() for index, _op in enumerate(ops)}
+    predecessors: dict[int, set[int]] = {index: set() for index, _op in enumerate(ops)}
     for before_id, after_ids in before_edges.items():
-        if before_id not in op_ids:
+        before_indices = op_indices_by_id.get(before_id)
+        if not before_indices:
             continue
         for after_id in after_ids:
-            if after_id not in op_ids or after_id == before_id:
+            after_indices = op_indices_by_id.get(after_id)
+            if not after_indices:
                 continue
-            successors[before_id].add(after_id)
-            predecessors[after_id].add(before_id)
+            for before_index in before_indices:
+                for after_index in after_indices:
+                    if after_index == before_index:
+                        continue
+                    successors[before_index].add(after_index)
+                    predecessors[after_index].add(before_index)
 
-    original_index = {op.op_id: index for index, op in enumerate(ops)}
-    ready = [op.op_id for op in ops if not predecessors[op.op_id]]
-    ordered_ids: list[str] = []
+    ready = [index for index in range(len(ops)) if not predecessors[index]]
+    ordered_indices: list[int] = []
     while ready:
-        ready.sort(key=original_index.__getitem__)
-        op_id = ready.pop(0)
-        ordered_ids.append(op_id)
-        for successor in sorted(successors[op_id], key=original_index.__getitem__):
-            predecessors[successor].discard(op_id)
+        ready.sort()
+        index = ready.pop(0)
+        ordered_indices.append(index)
+        for successor in sorted(successors[index]):
+            predecessors[successor].discard(index)
             if not predecessors[successor]:
                 ready.append(successor)
-    if len(ordered_ids) != len(ops):
+    if len(ordered_indices) != len(ops):
         return list(ops)
-    by_id = {op.op_id: op for op in ops}
-    return [by_id[op_id] for op_id in ordered_ids]
+    return [ops[index] for index in ordered_indices]
 
 
 @dataclass(frozen=True)
