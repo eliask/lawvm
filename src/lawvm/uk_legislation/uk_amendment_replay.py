@@ -6652,6 +6652,23 @@ _SOURCE_AMENDMENT_INSERTED_TEXT_SUBSTITUTION_RE = re.compile(
 )
 
 
+def _looks_like_appropriate_place_definition_entry_insert_text(text: str) -> bool:
+    norm = " ".join((text or "").split())
+    if not re.search(r"\bat\s+(?:an?|the)\s+appropriate\s+places?\b", norm, flags=re.I):
+        return False
+    if not re.search(r"\binsert(?:ed|ion)?\b", norm, flags=re.I):
+        return False
+    return bool(
+        re.search(
+            r"[\"“][^\"”]{1,160}[\"”]\s*(?:,\s*[^;]{1,180})?\s+"
+            r"(?:means|has\s+the\s+same\s+meaning|has\s+the\s+meaning|"
+            r"is\s+to\s+be\s+construed|shall\s+be\s+construed|includes)\b",
+            norm,
+            flags=re.I,
+        )
+    )
+
+
 def _source_definition_term_from_ancestors(ancestors: tuple[ET.Element, ...]) -> str:
     for ancestor in ancestors:
         candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
@@ -10401,15 +10418,35 @@ def compile_effect_to_ir_ops(
                 chained_insert_preceding_eid = None
                 chained_insert_preceding_eid_source = "effect_comments_after_clause"
     if not ops and unlowered_overlap_substitution_targets:
-        _append_uk_effect_lowering_rejection(
-            lowering_rejections_out,
-            rule_id="uk_effect_overlap_substitution_unlowered",
-            family="lowering_filter",
-            reason_code=unlowered_overlap_substitution_reason,
-            reason=(
+        appropriate_place_definition_entry = _looks_like_appropriate_place_definition_entry_insert_text(
+            extracted_text or ""
+        )
+        lowering_rule_id = (
+            "uk_effect_appropriate_place_definition_entry_insert_rejected"
+            if appropriate_place_definition_entry
+            else "uk_effect_overlap_substitution_unlowered"
+        )
+        reason_code = (
+            "appropriate_place_definition_entry_requires_anchor_claim"
+            if appropriate_place_definition_entry
+            else unlowered_overlap_substitution_reason
+        )
+        reason = (
+            "UK source inserts a definition entry at an appropriate place without "
+            "naming an anchor; lowering requires a validated placement claim and "
+            "must not infer an insertion point from live text or oracle order."
+            if appropriate_place_definition_entry
+            else (
                 "UK word-level overlap substitution lowered to no replay operations "
                 "because the source instruction could not be parsed into a safe text patch"
-            ),
+            )
+        )
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id=lowering_rule_id,
+            family="lowering_filter",
+            reason_code=reason_code,
+            reason=reason,
             effect=effect,
             extracted_el=extracted_el,
             extracted_text=extracted_text,
@@ -10420,6 +10457,11 @@ def compile_effect_to_ir_ops(
                 "unlowered_target_candidates": unlowered_overlap_substitution_targets,
                 "target_candidate_count": len(targets_str),
                 "parser": "parse_fragment_substitution",
+                "placement_family": (
+                    "appropriate_place_definition_entry_requires_anchor_claim"
+                    if appropriate_place_definition_entry
+                    else ""
+                ),
             },
         )
     if action == "replace" and trailing_repeal_refs:

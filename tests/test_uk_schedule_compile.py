@@ -10008,6 +10008,61 @@ def test_compile_malformed_overlap_substitution_records_unlowered_rejection() ->
     assert "relevant words are changed" in rejection["extracted_text_preview"]
 
 
+def test_compile_appropriate_place_definition_entry_records_specific_rejection() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}">
+          <Pnumber>iii</Pnumber>
+          <P4para>
+            <Text>iii at the appropriate place insert— “ operational service standard ”
+            is to be construed in accordance with section 3C(1)(b), ,</Text>
+          </P4para>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-204fe09078e12afe4f77f4ca0ffb4a16",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-23",
+        affected_uri="/id/asp/2001/2/section/48/1",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 48(1)",
+        affecting_uri="/id/asp/2019/17",
+        affecting_class="ScottishAct",
+        affecting_year="2019",
+        affecting_number="17",
+        affecting_provisions="sch. para. 3(6)(a)(iii)",
+        affecting_title="Transport (Scotland) Act 2019",
+        in_force_dates=[{"date": "2023-12-04", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    assert (
+        compile_effect_to_ir_ops(
+            effect,
+            extracted_el,
+            sequence=0,
+            lowering_rejections_out=lowering_rejections,
+        )
+        == []
+    )
+
+    assert len(lowering_rejections) == 1
+    rejection = lowering_rejections[0]
+    assert rejection["rule_id"] == "uk_effect_appropriate_place_definition_entry_insert_rejected"
+    assert rejection["reason_code"] == "appropriate_place_definition_entry_requires_anchor_claim"
+    assert rejection["placement_family"] == "appropriate_place_definition_entry_requires_anchor_claim"
+    assert rejection["unlowered_target_candidates"] == ["s. 48(1)"]
+    assert rejection["blocking"] is True
+    assert rejection["strict_disposition"] == "block"
+    assert rejection["quirks_disposition"] == "record"
+    assert "operational service standard" in rejection["extracted_text_preview"]
+
+
 def test_compile_broad_table_entry_instruction_rejects_host_repeal() -> None:
     extracted_el = ET.fromstring(
         f"""
