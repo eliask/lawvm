@@ -1640,13 +1640,20 @@ Current block-substitution context invariant:
   only the target amendment instruction's payload after its own `insert-` verb.
   If the source context does not match the feed target, the row remains an
   amendment-program frontier instead of becoming a base-law text guess.
-- source text that targets a table entry or table column, for example
-  `after entry 4 in the table insert-` or `after the third entry in the
-  second column ... insert-`, is classified as
-  `table_entry_target_unsupported` and
-  `uk_manual_frontier_table_entry_candidate`. The claim/compiler must identify
-  the table row and cell; replay must not flatten the amendment into the host
-  provision body just to remove a benchmark residual.
+- source text that targets a table entry or table column remains manual unless
+  the claim/compiler owns the row/cell model. The deterministic exception is
+  explicit ordinal-column row insertion, for example `after the third entry in
+  the second column relating to X insert- Y`: lowering emits
+  `uk_effect_table_entry_row_insert`, carries a table-row selector, and replay
+  must resolve exactly one table, expand rowspans, count only entries in the
+  named column whose earlier columns match `X`, and insert a row payload after
+  the selected physical row. Ambiguous tables/rows emit
+  `uk_replay_table_entry_row_insert_unresolved`. Other table-entry claims such
+  as `after entry 4 in the table insert-`, `after that entry insert-`,
+  between-column insertions, and appropriate-place table insertions remain
+  `table_entry_target_unsupported` /
+  `uk_manual_frontier_table_entry_candidate`. Replay must not flatten any table
+  amendment into the host provision body just to remove a benchmark residual.
 - if such wording appears while metadata names only a broad schedule, part, or
   provision target, lowering emits
   `uk_effect_table_entry_instruction_rejected` instead of coercing the row into
