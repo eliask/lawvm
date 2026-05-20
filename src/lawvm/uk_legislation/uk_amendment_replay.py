@@ -219,9 +219,25 @@ def _canonicalize_eid_tail_label(label: Optional[str]) -> str:
 
 def _order_schedule_materialization_ops(ops: list[LegalOperation]) -> list[LegalOperation]:
     """Prioritize materializing structural ops before dependent text edits within a source."""
+    structural_materialization_targets = {
+        (
+            str(getattr(op.source, "effective", "") or ""),
+            str(getattr(op.source, "statute_id", "") or ""),
+            tuple(op.target.path or ()),
+        )
+        for op in ops
+        if _action_name(op.action) in {"insert", "replace"}
+    }
 
     def _rank(op: LegalOperation) -> int:
         if op.target.special is FacetKind.HEADING and _action_name(op.action) in {"text_replace", "text_repeal"}:
+            structural_key = (
+                str(getattr(op.source, "effective", "") or ""),
+                str(getattr(op.source, "statute_id", "") or ""),
+                tuple(op.target.path or ()),
+            )
+            if structural_key in structural_materialization_targets:
+                return 1
             return -1
         if _action_name(op.action) in {"insert", "replace", "repeal", "renumber"}:
             return 0
@@ -3252,7 +3268,7 @@ def _inserted_section_p1group_heading_text(
     extracted_el: ET.Element,
     target: LegalAddress,
 ) -> Optional[str]:
-    """Return a source-owned P1group title for an inserted section payload.
+    """Return a source-owned P1group title for an inserted provision payload.
 
     UK affecting XML often encodes an inserted section as:
 
@@ -3260,12 +3276,12 @@ def _inserted_section_p1group_heading_text(
 
     When the effect row targets only the inserted P1, lowering must not later
     use the live parent P1group heading carrier because that parent may also
-    contain neighbouring sections. This helper only accepts the direct source
-    wrapper whose child is the exact section target.
+    contain neighbouring provisions. This helper only accepts the direct source
+    wrapper whose child is the exact target provision.
     """
     if _tag(actual_el) not in {"P1", "Section", "Article", "Rule"}:
         return None
-    if (_addr_leaf_kind(target) or "") != "section":
+    if (_addr_leaf_kind(target) or "") not in {"section", "paragraph"}:
         return None
     target_label = _addr_leaf_label(target) or ""
     actual_label = _direct_structural_num(actual_el)
@@ -3286,9 +3302,10 @@ def _prepend_inserted_section_heading_carrier(
     content_ir: dict[str, Any],
     *,
     heading_text: str,
+    source_rule_id: str = "uk_inserted_section_p1group_heading_carrier",
 ) -> bool:
-    """Prepend an explicit heading child to a section payload if absent."""
-    if str(content_ir.get("kind") or "") != IRNodeKind.SECTION.value:
+    """Prepend an explicit heading child to a provision payload if absent."""
+    if str(content_ir.get("kind") or "") not in {IRNodeKind.SECTION.value, IRNodeKind.PARAGRAPH.value}:
         return False
     children = list(content_ir.get("children") or [])
     if any(str(child.get("kind") or "") == IRNodeKind.HEADING.value for child in children):
@@ -3299,7 +3316,7 @@ def _prepend_inserted_section_heading_carrier(
         "text": heading_text,
         "attrs": {
             "source_tag": "P1group",
-            "source_rule_id": "uk_inserted_section_p1group_heading_carrier",
+            "source_rule_id": source_rule_id,
         },
         "children": [],
     }
@@ -7997,17 +8014,29 @@ def compile_effect_to_ir_ops(
                     if direct_text:
                         content_ir["text"] = direct_text
                     inserted_heading_text = _inserted_section_p1group_heading_text(actual_el, extracted_el, target)
+                    target_leaf_kind = _addr_leaf_kind(target) or ""
+                    heading_source_rule_id = (
+                        "uk_inserted_section_p1group_heading_carrier"
+                        if target_leaf_kind == "section"
+                        else "uk_inserted_p1group_heading_carrier"
+                    )
+                    heading_observation_rule_id = (
+                        "uk_effect_inserted_section_p1group_heading_carrier_lowered"
+                        if target_leaf_kind == "section"
+                        else "uk_effect_inserted_p1group_heading_carrier_lowered"
+                    )
                     if inserted_heading_text and _prepend_inserted_section_heading_carrier(
                         content_ir,
                         heading_text=inserted_heading_text,
+                        source_rule_id=heading_source_rule_id,
                     ):
                         _append_uk_effect_lowering_observation(
                             lowering_rejections_out,
-                            rule_id="uk_effect_inserted_section_p1group_heading_carrier_lowered",
+                            rule_id=heading_observation_rule_id,
                             family="payload_normalization",
-                            reason_code="inserted_section_wrapped_by_p1group_title",
+                            reason_code=f"inserted_{target_leaf_kind}_wrapped_by_p1group_title",
                             reason=(
-                                "UK inserted-section payload is wrapped by a P1group "
+                                "UK inserted provision payload is wrapped by a P1group "
                                 "Title; lowering preserves that title as a target-owned "
                                 "heading carrier instead of relying on a shared live parent group"
                             ),
@@ -11612,6 +11641,77 @@ class UKReplayExecutor:
         )
         return True
 
+    def _implicit_first_subparagraph_parent_text_gap(self, target: LegalAddress) -> bool:
+        path = tuple(getattr(target, "path", ()) or ())
+        if len(path) < 2:
+            return False
+        leaf_kind = str(path[-1][0] or "").lower()
+        leaf_label = _clean_num(str(path[-1][1] or ""))
+        if leaf_kind != "subparagraph" or leaf_label != "1":
+            return False
+        parent_target = LegalAddress(path=path[:-1], special=None)
+        parent_node, _, _ = self._find_node_by_target(parent_target)
+        if parent_node is None or _uk_kind_value(parent_node.kind).lower() != "paragraph":
+            return False
+        for child in getattr(parent_node, "children", []) or []:
+            child_kind = _uk_kind_value(child.kind).lower()
+            child_label = _clean_num(str(child.label or ""))
+            if child_kind == "subparagraph" and child_label == "1":
+                return False
+        return bool(parent_node.text or "")
+
+    def _recover_text_patch_on_implicit_first_subparagraph_parent_text(
+        self,
+        op: LegalOperation,
+        target: LegalAddress,
+        text_patch: TextPatchSpec,
+        replacement: str,
+    ) -> bool:
+        if not self._implicit_first_subparagraph_parent_text_gap(target):
+            return False
+        parent_target = LegalAddress(path=tuple(target.path[:-1]), special=None)
+        parent_node, _, _ = self._find_node_by_target(parent_target)
+        if parent_node is None:
+            return False
+        match_text = text_patch.selector.match_text
+        if not self._node_text_contains_text(parent_node, match_text):
+            return False
+        rebuilt, applied = self._apply_text_replace_on_node_text_only(
+            parent_node,
+            match_text,
+            replacement,
+            text_patch.selector.occurrence,
+            text_patch.selector.end_occurrence,
+        )
+        if not applied:
+            return False
+        self._log(
+            f"  EXECUTOR: text_replace implicit first-subparagraph parent-text recovery in {rebuilt.kind} {rebuilt.label}: {match_text!r} -> {replacement!r}"
+        )
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind="uk_replay_implicit_first_subparagraph_parent_text_recovered",
+            message=(
+                "UK replay applied a text patch to the paragraph intro text because "
+                "the source-targeted first subparagraph is represented as parent text "
+                "rather than a structural child."
+            ),
+            op=op,
+            detail={
+                "action": _action_name(op.action),
+                "target": str(target),
+                "recovery_target": str(parent_target),
+                "text_match": match_text,
+                "replacement_text": replacement,
+                "family": "target_resolution_recovery",
+                "source_shape": "implicit_first_subparagraph_parent_text",
+                "blocking": False,
+                "strict_disposition": "block",
+                "quirks_disposition": "apply",
+            },
+        )
+        return True
+
     def _source_following_anchor_structured_substitution_anchor(self, op: LegalOperation) -> str:
         witness = _witness_for_op(op)
         extraction = getattr(witness, "extraction_witness", None)
@@ -13315,6 +13415,21 @@ class UKReplayExecutor:
                         },
                     )
                     return
+                if (
+                    target.special is None
+                    and self._recover_text_patch_on_implicit_first_subparagraph_parent_text(
+                        op,
+                        target,
+                        text_patch,
+                        replacement,
+                    )
+                ):
+                    target_key = str(target)
+                    if target_key:
+                        self._applied_text_patch_targets.setdefault(target_key, []).append(op.op_id)
+                    self._record_invariant_violations(op)
+                    self._emit_top_section_snapshot(op)
+                    return
                 table_cell_selector = _table_cell_selector(op)
                 if table_cell_selector is not None:
                     table_cell, table_cell_reason, table_cell_detail = self._resolve_table_entry_inline_cell(
@@ -13812,6 +13927,17 @@ class UKReplayExecutor:
             else:
                 self._log(f"  EXECUTOR: WARN text_replace target not found: {op.target}")
                 if self._recover_text_patch_on_empty_descendant_parent(op, target, text_patch, replacement):
+                    target_key = str(target)
+                    if target_key:
+                        self._applied_text_patch_targets.setdefault(target_key, []).append(op.op_id)
+                    self._record_invariant_violations(op)
+                    self._emit_top_section_snapshot(op)
+                elif self._recover_text_patch_on_implicit_first_subparagraph_parent_text(
+                    op,
+                    target,
+                    text_patch,
+                    replacement,
+                ):
                     target_key = str(target)
                     if target_key:
                         self._applied_text_patch_targets.setdefault(target_key, []).append(op.op_id)

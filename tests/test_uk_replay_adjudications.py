@@ -320,6 +320,69 @@ def test_executor_records_text_match_missing() -> None:
     assert adjudications[0].detail["text_match"] == "does-not-exist"
 
 
+def test_executor_recovers_implicit_first_subparagraph_parent_text_patch() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, label=None, text="", children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="6",
+                text="",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="43A",
+                        text=(
+                            "Where a youth rehabilitation order imposes an "
+                            "electronic monitoring requirement, the offender must comply."
+                        ),
+                        children=(
+                            IRNode(kind=IRNodeKind.ITEM, label="i", text="a separate item"),
+                            IRNode(kind=IRNodeKind.ITEM, label="a", text="first item"),
+                            IRNode(kind=IRNodeKind.ITEM, label="b", text="second item"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_implicit_first_subparagraph_parent_text",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(
+                path=(
+                    ("schedule", "6"),
+                    ("paragraph", "43A"),
+                    ("subparagraph", "1"),
+                ),
+            ),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="electronic monitoring requirement", occurrence=0),
+                replacement="electronic compliance monitoring requirement",
+            ),
+            source=_source(),
+        )
+    )
+
+    paragraph = executor.statute.supplements[0].children[0]
+    assert "electronic compliance monitoring requirement" in paragraph.text
+    assert [child.label for child in paragraph.children] == ["i", "a", "b"]
+    assert paragraph.children[0].text == "a separate item"
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_implicit_first_subparagraph_parent_text_recovered"
+    assert adjudications[0].detail["target"] == "schedule:6/paragraph:43A/subparagraph:1"
+    assert adjudications[0].detail["recovery_target"] == "schedule:6/paragraph:43A"
+    assert adjudications[0].detail["strict_disposition"] == "block"
+
+
 def test_executor_records_punctuation_spacing_text_match_recovery() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

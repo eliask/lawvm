@@ -939,6 +939,68 @@ def test_compile_inserted_section_p1group_title_becomes_heading_carrier() -> Non
     assert lowering_records[0]["blocking"] is False
 
 
+def test_compile_inserted_schedule_paragraph_p1group_title_becomes_heading_carrier() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>1</Pnumber>
+          <Text>After paragraph 43 insert-</Text>
+          <BlockAmendment>
+            <P1group>
+              <Title>Electronic monitoring: general</Title>
+              <P1 eId="schedule-6-paragraph-43A">
+                <Pnumber>43A</Pnumber>
+                <Text>Where a youth rehabilitation order imposes an electronic monitoring requirement.</Text>
+              </P1>
+            </P1group>
+          </BlockAmendment>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_inserted_schedule_paragraph_p1group_heading",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-04-25",
+        affected_uri="/id/ukpga/2020/17/schedule/6",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="Sch. 6 para. 43A and cross-heading",
+        affecting_uri="/id/ukpga/2022/32",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2022",
+        affecting_number="32",
+        affecting_provisions="Sch. 17 para. 1",
+        affecting_title="Police, Crime, Sentencing and Courts Act 2022",
+        comments="",
+        in_force_dates=[{"date": "2022-06-28", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].target == LegalAddress((("schedule", "6"), ("paragraph", "43a")))
+    payload = ops[0].payload
+    assert payload is not None
+    assert payload.kind is IRNodeKind.PARAGRAPH
+    assert payload.label == "43A"
+    assert payload.children[0].kind is IRNodeKind.HEADING
+    assert payload.children[0].text == "Electronic monitoring: general"
+    assert payload.children[0].attrs == {
+        "source_tag": "P1group",
+        "source_rule_id": "uk_inserted_p1group_heading_carrier",
+    }
+    assert any(
+        record["rule_id"] == "uk_effect_inserted_p1group_heading_carrier_lowered"
+        and record["reason_code"] == "inserted_paragraph_wrapped_by_p1group_title"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
 def test_compile_inserted_section_without_p1group_title_does_not_invent_heading_carrier() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -10782,6 +10844,44 @@ def test_order_schedule_materialization_ops_keeps_heading_facet_patch_before_str
     ordered = _order_schedule_materialization_ops(ops)
 
     assert [op.op_id for op in ordered] == ["heading", "insert", "body"]
+
+
+def test_order_schedule_materialization_ops_places_same_target_insert_before_heading_patch() -> None:
+    source = OperationSource(statute_id="ukpga/2022/32", title="Test Source", effective="2022-06-28")
+    target = LegalAddress(path=(("schedule", "6"), ("paragraph", "43a")))
+    ops = [
+        LegalOperation(
+            op_id="heading",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=target.path, special=FacetKind.HEADING),
+            source=source,
+            text_patch=_replace_patch("Electronic monitoring", "Electronic compliance monitoring requirement"),
+        ),
+        LegalOperation(
+            op_id="body",
+            sequence=2,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(*target.path, ("subparagraph", "1"))),
+            source=source,
+            text_patch=_replace_patch(
+                "electronic monitoring requirement",
+                "electronic compliance monitoring requirement",
+            ),
+        ),
+        LegalOperation(
+            op_id="insert",
+            sequence=3,
+            action=StructuralAction.INSERT,
+            target=target,
+            source=source,
+            payload=IRNode(kind=IRNodeKind.PARAGRAPH, label="43A", text="Electronic monitoring: general"),
+        ),
+    ]
+
+    ordered = _order_schedule_materialization_ops(ops)
+
+    assert [op.op_id for op in ordered] == ["insert", "heading", "body"]
 
 
 def test_order_schedule_materialization_ops_places_shape_creation_before_dependent_text_edit() -> None:
