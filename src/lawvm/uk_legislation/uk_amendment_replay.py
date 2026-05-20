@@ -4098,6 +4098,7 @@ class _UKTableDrivenWordSubstitution:
 class _UKRepealTableQuotedWordsTextRepeal:
     recognized: bool
     original: Optional[str] = None
+    additional_originals: tuple[str, ...] = ()
     rule_id: str = _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID
     reason_code: str = ""
     match_count: int = 0
@@ -4246,32 +4247,59 @@ def _uk_repeal_table_quoted_words_selector(extent_cell: str) -> tuple[str, int, 
     return " ".join(original.split()).strip(), 0, 0
 
 
-def _uk_repeal_table_definition_entry_selector(extent_cell: str) -> str:
+def _uk_repeal_table_definition_entry_selectors(extent_cell: str) -> tuple[str, ...]:
     text = " ".join(extent_cell.split()).strip()
     if not text:
-        return ""
+        return ()
     match = re.search(
         r"\b(?:the\s+)?(?:definition\s+of|entry\s+for)\s+"
         r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\"|'(?P<single>.*?)')",
         text,
         re.I,
     )
-    if match is None:
-        return ""
-    tail = text[match.end() :]
-    if re.search(r"\b(?:paragraph|paragraphs|sub-?paragraph|sub-?paragraphs|head|heads)\b", tail, re.I):
-        return ""
-    term = next(
-        group.strip()
-        for group in (
-            match.group("curly"),
-            match.group("double"),
-            match.group("single"),
+    if match is not None:
+        tail = text[match.end() :]
+        if re.search(r"\b(?:paragraph|paragraphs|sub-?paragraph|sub-?paragraphs|head|heads)\b", tail, re.I):
+            return ()
+        term = next(
+            group.strip()
+            for group in (
+                match.group("curly"),
+                match.group("double"),
+                match.group("single"),
+            )
+            if group is not None
         )
-        if group is not None
+        term = " ".join(term.split()).strip()
+        return (f"TEXT_DEFINITION_ENTRY_{term}",) if term else ()
+    plural_match = re.search(
+        r"\b(?:the\s+)?entries\s+for\s+(?P<body>.+?)(?:\.|$)",
+        text,
+        re.I,
     )
-    term = " ".join(term.split()).strip()
-    return f"TEXT_DEFINITION_ENTRY_{term}" if term else ""
+    if plural_match is None:
+        return ()
+    body = plural_match.group("body")
+    if re.search(r"\b(?:paragraph|paragraphs|sub-?paragraph|sub-?paragraphs|head|heads)\b", body, re.I):
+        return ()
+    terms: list[str] = []
+    for term_match in re.finditer(
+        r"(?:\u201c(?P<curly>.*?)\u201d|\"(?P<double>.*?)\"|'(?P<single>.*?)')",
+        body,
+    ):
+        term = next(
+            group.strip()
+            for group in (
+                term_match.group("curly"),
+                term_match.group("double"),
+                term_match.group("single"),
+            )
+            if group is not None
+        )
+        term = " ".join(term.split()).strip()
+        if term:
+            terms.append(f"TEXT_DEFINITION_ENTRY_{term}")
+    return tuple(terms)
 
 
 def _uk_repeal_table_extent_clauses(extent_cell: str) -> list[str]:
@@ -4339,7 +4367,7 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
     if not search_roots:
         return _UKRepealTableQuotedWordsTextRepeal(recognized=False)
 
-    matches: list[tuple[int, str, int, int, str, str, str, str]] = []
+    matches: list[tuple[int, str, tuple[str, ...], int, int, str, str, str, str]] = []
     tables = []
     seen_table_ids: set[int] = set()
     for root in search_roots:
@@ -4367,16 +4395,22 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
                 ):
                     continue
                 original, occurrence, end_occurrence = _uk_repeal_table_quoted_words_selector(extent_clause)
+                additional_originals: tuple[str, ...] = ()
                 rule_id = _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID
-                if not original:
-                    original = _uk_repeal_table_definition_entry_selector(extent_clause)
-                    rule_id = _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID
+                target_kinds = {kind.lower() for kind, _ in target.path}
+                if not original and "section" in target_kinds:
+                    definition_originals = _uk_repeal_table_definition_entry_selectors(extent_clause)
+                    if definition_originals:
+                        original = definition_originals[0]
+                        additional_originals = definition_originals[1:]
+                        rule_id = _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID
                 if not original:
                     continue
                 matches.append(
                     (
                         table_index,
                         original,
+                        additional_originals,
                         occurrence,
                         end_occurrence,
                         rule_id,
@@ -4393,10 +4427,11 @@ def _uk_table_driven_repeal_table_quoted_words_text_repeal(
             match_count=len(matches),
         )
 
-    table_index, original, occurrence, end_occurrence, rule_id, row_text, enactment_cell, extent_cell = matches[0]
+    table_index, original, additional_originals, occurrence, end_occurrence, rule_id, row_text, enactment_cell, extent_cell = matches[0]
     return _UKRepealTableQuotedWordsTextRepeal(
         recognized=True,
         original=original,
+        additional_originals=additional_originals,
         rule_id=rule_id,
         reason_code="",
         match_count=1,
@@ -7610,7 +7645,7 @@ def compile_effect_to_ir_ops(
                 reason = (
                     "UK repeal-table source row matched the affected Act and "
                     "provision exactly, and its extent cell names a definition "
-                    "entry repeal; lowering emits a definition-entry text delete "
+                    "entry repeal; lowering emits definition-entry text deletes "
                     "instead of replaying the broad repeal schedule."
                 )
             else:
@@ -7621,22 +7656,9 @@ def compile_effect_to_ir_ops(
                     "word-level repeal; lowering emits a text delete instead "
                     "of replaying the broad repeal schedule."
                 )
-            fragment_subs = [
-                {
-                    "original": repeal_table_text_repeal.original,
-                    "replacement": "",
-                    "rule_id": repeal_table_rule_id,
-                    "occurrence": str(repeal_table_text_repeal.occurrence),
-                    "end_occurrence": str(repeal_table_text_repeal.end_occurrence),
-                }
-            ]
-            text_patch = TextPatchSpec(
-                kind=TextPatchKindEnum.DELETE,
-                selector=TextSelector(
-                    match_text=repeal_table_text_repeal.original,
-                    occurrence=repeal_table_text_repeal.occurrence,
-                    end_occurrence=repeal_table_text_repeal.end_occurrence,
-                ),
+            repeal_table_originals = (
+                repeal_table_text_repeal.original,
+                *repeal_table_text_repeal.additional_originals,
             )
             _append_uk_effect_lowering_observation(
                 lowering_rejections_out,
@@ -7655,6 +7677,7 @@ def compile_effect_to_ir_ops(
                     "enactment_cell": repeal_table_text_repeal.enactment_cell,
                     "extent_cell": repeal_table_text_repeal.extent_cell,
                     "original": repeal_table_text_repeal.original,
+                    "originals": repeal_table_originals,
                     "occurrence": repeal_table_text_repeal.occurrence,
                     "end_occurrence": repeal_table_text_repeal.end_occurrence,
                 },
@@ -7670,41 +7693,63 @@ def compile_effect_to_ir_ops(
                 [t_str],
                 original_targets_str=original_targets_str,
             )
-            text_rewrite_witness = _uk_text_rewrite_spec(
-                fragment_subs=fragment_subs,
-                text_patch=text_patch,
-                op_text_match=repeal_table_text_repeal.original,
-                op_text_replacement="",
-                op_text_occurrence=repeal_table_text_repeal.occurrence,
-                op_text_end_occurrence=repeal_table_text_repeal.end_occurrence,
-            )
-            lowered_witness = UKLoweredOperationWitness(
-                op_id=effect.effect_id,
-                sequence=sequence,
-                action=StructuralAction.TEXT_REPEAL,
-                target=target,
-                payload=None,
-                source=src,
-                effect_witness=effect_witness,
-                extraction_witness=extraction_witness,
-                target_expansion_witness=target_expansion_witness,
-                text_rewrite_witness=text_rewrite_witness,
-                insertion_anchor_witness=None,
-            )
-            ops.append(
-                LegalOperation(
-                    op_id=lowered_witness.op_id,
-                    sequence=lowered_witness.sequence,
+            for original_index, original in enumerate(repeal_table_originals):
+                fragment_subs = [
+                    {
+                        "original": original,
+                        "replacement": "",
+                        "rule_id": repeal_table_rule_id,
+                        "occurrence": str(repeal_table_text_repeal.occurrence),
+                        "end_occurrence": str(repeal_table_text_repeal.end_occurrence),
+                    }
+                ]
+                text_patch = TextPatchSpec(
+                    kind=TextPatchKindEnum.DELETE,
+                    selector=TextSelector(
+                        match_text=original,
+                        occurrence=repeal_table_text_repeal.occurrence,
+                        end_occurrence=repeal_table_text_repeal.end_occurrence,
+                    ),
+                )
+                text_rewrite_witness = _uk_text_rewrite_spec(
+                    fragment_subs=fragment_subs,
+                    text_patch=text_patch,
+                    op_text_match=original,
+                    op_text_replacement="",
+                    op_text_occurrence=repeal_table_text_repeal.occurrence,
+                    op_text_end_occurrence=repeal_table_text_repeal.end_occurrence,
+                )
+                lowered_witness = UKLoweredOperationWitness(
+                    op_id=(
+                        effect.effect_id
+                        if len(repeal_table_originals) == 1
+                        else f"{effect.effect_id}_{original_index}"
+                    ),
+                    sequence=sequence,
                     action=StructuralAction.TEXT_REPEAL,
                     target=target,
                     payload=None,
                     source=src,
-                    group_id=_uk_temporal_group_id(effect),
-                    provenance_tags=_uk_lowered_op_provenance_tags(lowered_witness),
-                    text_patch=text_patch,
-                    witness_rule_id=repeal_table_rule_id,
+                    effect_witness=effect_witness,
+                    extraction_witness=extraction_witness,
+                    target_expansion_witness=target_expansion_witness,
+                    text_rewrite_witness=text_rewrite_witness,
+                    insertion_anchor_witness=None,
                 )
-            )
+                ops.append(
+                    LegalOperation(
+                        op_id=lowered_witness.op_id,
+                        sequence=lowered_witness.sequence,
+                        action=StructuralAction.TEXT_REPEAL,
+                        target=target,
+                        payload=None,
+                        source=src,
+                        group_id=_uk_temporal_group_id(effect),
+                        provenance_tags=_uk_lowered_op_provenance_tags(lowered_witness),
+                        text_patch=text_patch,
+                        witness_rule_id=repeal_table_rule_id,
+                    )
+                )
             continue
         if repeal_table_text_repeal.recognized:
             _append_uk_effect_lowering_rejection(
