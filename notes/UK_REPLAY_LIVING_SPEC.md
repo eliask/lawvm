@@ -3406,6 +3406,14 @@ Current bench replay-regime invariant:
   - current witness family: `asp/2002/11`, where later schedule repeals lower
     to paths such as `schedule:2/paragraph:80` although the live schedule is
     partitioned
+- A metadata/source reference such as `Sch. 4 Pt 1` names a schedule part. It
+  must lower to `schedule:4/part:1`, not to a paragraph/subparagraph chain
+  formed from the literal token `Pt`.
+  - rule: `uk_effect_schedule_part_abbreviation_target_normalized`
+  - family: `target_shape_normalization`
+  - strict disposition is `record`
+  - current witness: `asp/2001/4` / `ssi/2002/134` `art. 2(7)`, where the
+    affected provisions field is `Sch. 4 Pt 1`
 - A schedule paragraph descendant target whose paragraph carrier is absent or
   represented by a legacy wrapper records
   `uk_replay_schedule_paragraph_carrier_gap`, not a generic missing-parent

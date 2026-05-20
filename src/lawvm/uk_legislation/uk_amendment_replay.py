@@ -481,6 +481,11 @@ def _is_direct_section_paragraph_ref(ref: str) -> bool:
     return bool(re.search(r"\b(?:s|section)\.?\s+\d+[a-z]?\s*\(\s*[a-z]\s*\)", ref_clean))
 
 
+def _is_schedule_part_abbreviation_ref(ref: str) -> bool:
+    ref_clean = " ".join(str(ref or "").strip().lower().split())
+    return bool(re.search(r"\bsch(?:edule)?\.?\s+[0-9a-z]+\s+pt\s+[0-9ivxlcdm]+[a-z]?\b", ref_clean))
+
+
 def _is_crossheading_ref(ref: str) -> bool:
     ref_clean = str(ref or "").strip().lower()
     return "cross-heading" in ref_clean or "cross heading" in ref_clean or "crossheading" in ref_clean
@@ -4151,6 +4156,7 @@ def _parse_ref(ref: str) -> tuple[tuple[Optional[str], str], ...]:
     r = re.sub(r"\bs\.", "section", r, flags=re.I)
     r = re.sub(r"\bss\.", "section", r, flags=re.I)
     r = re.sub(r"\bPt\.", "part", r, flags=re.I)
+    r = re.sub(r"\bPt\b", "part", r, flags=re.I)
     r = re.sub(r"\bCh\.", "chapter", r, flags=re.I)
     r = re.sub(r"\barts\.", "article", r, flags=re.I)
     r = re.sub(r"\bart\.", "article", r, flags=re.I)
@@ -9995,6 +10001,22 @@ def compile_effect_to_ir_ops(
                     "UK affected-provision reference uses section-number plus "
                     "an alphabetic bracket, which denotes a direct section "
                     "paragraph rather than an alphabetic subsection."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={"target_ref": t_str, "target": str(target)},
+            )
+        if _is_schedule_part_abbreviation_ref(t_str) and any(kind == "part" for kind, _label in target.path):
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id="uk_effect_schedule_part_abbreviation_target_normalized",
+                family="target_shape_normalization",
+                reason_code="explicit_schedule_part_abbreviation_ref",
+                reason=(
+                    "UK affected-provision reference uses a schedule Part abbreviation; "
+                    "lowering preserves it as an explicit schedule part target rather "
+                    "than treating the abbreviation as a paragraph label."
                 ),
                 effect=effect,
                 extracted_el=extracted_el,
