@@ -22459,6 +22459,65 @@ def test_compile_after_paragraph_insert_labelled_series_lowers_semicolon_and_sib
     assert [payload["label"] for payload in series_rows[0]["payloads"]] == ["c", "d", "e"]
 
 
+def test_compile_multi_quoted_word_repeal_lowers_separate_text_deletes() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="section-60-8-a">
+          <Pnumber>a</Pnumber>
+          <P3para>
+            <Text>a in subsection (1), the words “or by any other person”, “or other person” and “or any person named in the order” are repealed,</Text>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_multi_quoted_word_repeal",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2017-04-24",
+        affected_uri="/id/asp/2000/4/section/70/subsection/1",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="4",
+        affected_provisions="s. 70(1)",
+        affecting_uri="/id/asp/2007/10/section/60",
+        affecting_class="ScottishAct",
+        affecting_year="2007",
+        affecting_number="10",
+        affecting_provisions="s. 60(8)(a)",
+        affecting_title="Adult Support and Protection (Scotland) Act 2007",
+        in_force_dates=[],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=observations)
+
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPEAL,
+        StructuralAction.TEXT_REPEAL,
+        StructuralAction.TEXT_REPEAL,
+    ]
+    assert [str(op.target) for op in ops] == ["section:70/subsection:1"] * 3
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
+        "or by any other person",
+        "or other person",
+        "or any person named in the order",
+    ]
+    assert all(op.text_patch is not None and op.text_patch.kind is TextPatchKindEnum.DELETE for op in ops)
+    assert [row["rule_id"] for row in observations if row["rule_id"].endswith("_rejected")] == []
+    split_rows = [
+        row for row in observations if row["rule_id"] == "uk_effect_multi_quoted_word_repeal_text_patches"
+    ]
+    assert len(split_rows) == 1
+    assert split_rows[0]["target"] == "section:70/subsection:1"
+    assert split_rows[0]["fragments"] == (
+        "or by any other person",
+        "or other person",
+        "or any person named in the order",
+    )
+
+
 def test_pipeline_compile_ops_blocks_range_to_container_substitution_until_owned(monkeypatch) -> None:
     effect = UKEffectRecord(
         effect_id="uk_test_range_to_container_skip",
