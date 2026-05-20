@@ -7569,6 +7569,12 @@ _SOURCE_AFTER_QUOTED_ANCHOR_INSERT_RE = re.compile(
     r"(?:there\s+is\s+inserted|there\s+are\s+inserted|there\s+shall\s+be\s+inserted|insert)",
     flags=re.I | re.S,
 )
+_SOURCE_AFTER_QUOTED_ANCHOR_INLINE_INSERT_RE = re.compile(
+    r"\bafter\s+[“\"'‘](?P<anchor>.*?)[”\"'’],?\s+"
+    r"(?:there\s+is\s+inserted|there\s+are\s+inserted|there\s+shall\s+be\s+inserted|insert)"
+    r"\s*(?:[—–-]\s*)?[“\"'‘](?P<inserted>.*?)[”\"'’]",
+    flags=re.I | re.S,
+)
 _SOURCE_FOR_QUOTED_TEXT_SUBSTITUTE_RE = re.compile(
     r"\bfor\s+[“\"'‘](?P<original>.*?)[”\"'’],?\s+"
     r"(?:there\s+is\s+substituted|there\s+shall\s+be\s+substituted|substitute)",
@@ -7692,6 +7698,31 @@ def _looks_like_appropriate_place_definition_entry_insert_text(text: str) -> boo
 def _source_definition_term_from_ancestors(ancestors: tuple[ET.Element, ...]) -> str:
     for ancestor in ancestors:
         candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
+        if not candidate_text:
+            candidate_text = _instruction_text_before_amendment_container(ancestor)
+        match = _SOURCE_DEFINITION_TERM_RE.search(candidate_text)
+        if match is not None:
+            return " ".join(match.group("term").split()).strip()
+    return ""
+
+
+def _source_definition_term_from_local_ancestor_context(
+    ancestors: tuple[ET.Element, ...],
+    *,
+    start_index: int,
+    extracted_el: Optional[ET.Element],
+) -> str:
+    """Find a definition term only in local instruction context for a child row.
+
+    This deliberately avoids broad containers such as ``Pblock`` because they
+    can contain unrelated sibling amendment paragraphs whose definition context
+    must not be smuggled into the current row.
+    """
+
+    for ancestor in ancestors[start_index:]:
+        if _tag(ancestor) not in {"P1para", "P2para", "P3para", "P4para", "P5para"}:
+            continue
+        candidate_text = _source_text_before_extracted_child(ancestor, extracted_el)
         if not candidate_text:
             candidate_text = _instruction_text_before_amendment_container(ancestor)
         match = _SOURCE_DEFINITION_TERM_RE.search(candidate_text)
@@ -8222,29 +8253,41 @@ def _fragment_substitution_source_carried_after_quoted_anchor_insert(
             candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
         if not candidate_text:
             continue
-        match = _SOURCE_AFTER_QUOTED_ANCHOR_INSERT_RE.search(candidate_text)
+        inline_match = _SOURCE_AFTER_QUOTED_ANCHOR_INLINE_INSERT_RE.search(candidate_text)
+        match = inline_match or _SOURCE_AFTER_QUOTED_ANCHOR_INSERT_RE.search(candidate_text)
         if match is None:
             return None
         anchor = " ".join(match.group("anchor").split()).strip()
         if not anchor:
             return None
+        inline_inserted = (
+            " ".join(inline_match.group("inserted").split()).strip()
+            if inline_match is not None
+            else ""
+        )
+        inserted_text = inline_inserted or inserted
         source_parent_id = str(ancestor.get("id") or "")
         if not source_parent_id:
             source_parent_id = next(
                 (str(candidate.get("id")) for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")),
                 "",
             )
-        joiner = "" if inserted.startswith((" ", ",", ".", ";", ":", ")")) else " "
-        definition_term = _source_definition_term_from_ancestors(ancestors[ancestor_index:])
+        joiner = "" if inserted_text.startswith((" ", ",", ".", ";", ":", ")")) else " "
+        definition_term = _source_definition_term_from_local_ancestor_context(
+            ancestors,
+            start_index=ancestor_index,
+            extracted_el=extracted_el,
+        )
         original = anchor
         if definition_term:
             original = f"TEXT_IN_DEFINITION_{definition_term}{US}AFTER{US}{anchor}"
         return {
             "original": original,
-            "replacement": f"{anchor}{joiner}{inserted}",
+            "replacement": f"{anchor}{joiner}{inserted_text}",
             "source_parent_id": source_parent_id,
             "source_anchor_text": anchor,
             "source_definition_term": definition_term,
+            "source_inserted_text": inserted_text,
             "rule_id": "uk_effect_source_carried_after_quoted_anchor_insert_text_patch",
         }
     return None
@@ -12134,6 +12177,9 @@ def compile_effect_to_ir_ops(
                                 "source_parent_id": str(source_carried_context_fragment.get("source_parent_id") or ""),
                                 "source_definition_term": str(
                                     source_carried_context_fragment.get("source_definition_term") or ""
+                                ),
+                                "source_inserted_text": str(
+                                    source_carried_context_fragment.get("source_inserted_text") or ""
                                 ),
                                 "text_match": op_text_match,
                                 "replacement": op_text_replacement,

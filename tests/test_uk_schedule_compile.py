@@ -10579,6 +10579,76 @@ def test_compile_after_quoted_insert_scopes_to_source_parent_definition() -> Non
     assert observations[0]["source_unscoped_match_text"] == "by"
 
 
+def test_compile_inline_after_quoted_insert_uses_parent_inserted_text_not_target_row() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <P1 id="schedule-22-paragraph-83">
+              <Pnumber>83</Pnumber>
+              <P1para>
+                <Text>In each of the following provisions, after “weapon” insert “ or corrosive substance ”</Text>
+                <P3 id="schedule-22-paragraph-83-a">
+                  <Pnumber>a</Pnumber>
+                  <Text>section 73(4) (reduction in sentences for guilty pleas);</Text>
+                </P3>
+              </P1para>
+            </P1>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(f".//{{{_LEG_NS}}}P3[@id='schedule-22-paragraph-83-a']")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-956522aa5e0b30d2ac55286b097cf05b",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-04-25",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 73(4)",
+        affecting_uri="/id/ukpga/2020/17",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2020",
+        affecting_number="17",
+        affecting_provisions="Sch. 22 para. 83(a)",
+        affecting_title="Sentencing Act 2020",
+        in_force_dates=[{"date": "2022-04-06", "prospective": "false"}],
+    )
+    lowering_observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].text_patch is not None
+    assert ops[0].target == LegalAddress(path=(("section", "73"), ("subsection", "4")))
+    assert ops[0].text_patch.selector.match_text == "weapon"
+    assert ops[0].text_patch.replacement == "weapon or corrosive substance"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_source_carried_after_quoted_anchor_insert_text_patch"
+        in ops[0].provenance_tags
+    )
+    observations = [
+        record
+        for record in lowering_observations
+        if record["rule_id"] == "uk_effect_source_carried_after_quoted_anchor_insert_text_patch"
+    ]
+    assert len(observations) == 1
+    assert observations[0]["source_definition_term"] == ""
+    assert observations[0]["source_inserted_text"] == "or corrosive substance"
+    assert observations[0]["replacement"] == "weapon or corrosive substance"
+
+
 def test_compile_direct_section_paragraph_after_insert_scopes_to_source_definition_child() -> None:
     source_root = ET.fromstring(
         f"""
