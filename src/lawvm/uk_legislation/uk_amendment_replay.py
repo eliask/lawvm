@@ -17968,11 +17968,14 @@ def replay_uk_ops(
 
     if adjudications_out is not None:
         frozen_statute = executor.statute.to_irstatute()
-        duplicate_findings = build_text_duplication_findings(
-            frozen_statute.body,
-            phase="replay_fold",
-            source_statute=base.statute_id,
-        )
+        duplicate_findings = [
+            dc_replace(finding, detail={**finding.detail, "root": "body"})
+            for finding in build_text_duplication_findings(
+                frozen_statute.body,
+                phase="replay_fold",
+                source_statute=base.statute_id,
+            )
+        ]
         for schedule in frozen_statute.supplements:
             schedule_findings = build_text_duplication_findings(
                 schedule,
@@ -17980,7 +17983,10 @@ def replay_uk_ops(
                 source_statute=base.statute_id,
             )
             patched_schedule_findings = [
-                dc_replace(finding, detail={"root": f"schedule:{schedule.label or '?'}", **finding.detail})
+                dc_replace(
+                    finding,
+                    detail={**finding.detail, "root": f"schedule:{schedule.label or '?'}"},
+                )
                 for finding in schedule_findings
             ]
             duplicate_findings.extend(patched_schedule_findings)
