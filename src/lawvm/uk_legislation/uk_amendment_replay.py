@@ -4788,7 +4788,7 @@ def _uk_schedule_list_entry_insert_selector(
         return selector
 
     match = re.search(
-        r"\bat\s+the\s+appropriate\s+place,?\s+in\s+alphabetical\s+order,?\s+"
+        r"\bat\s+(?:an?|the)\s+appropriate\s+place,?\s+in\s+alphabetical\s+order,?\s+"
         r"insert\s*[—–-]?\s*(?P<payload>.+)$",
         text,
         re.I,
