@@ -5364,7 +5364,8 @@ def _uk_table_entry_row_insert_selector(
 ) -> dict[str, Any] | None:
     """Extract an explicit table-row insertion selector from ordinal entry wording."""
     text = " ".join((extracted_text or "").split())
-    if not text or "table" not in " ".join((target_ref, str(target))).lower():
+    source_names_table = "table" in text.lower()
+    if not text or "table" not in " ".join((target_ref, str(target), text)).lower():
         return None
     match = re.search(
         r"\bafter\s+the\s+"
@@ -5376,30 +5377,57 @@ def _uk_table_entry_row_insert_selector(
         text,
         re.I,
     )
-    if match is None:
-        return None
-    entry_index = _uk_ordinal_to_int(match.group("entry"))
-    column_index = _uk_ordinal_to_int(match.group("column"))
-    relating_text = " ".join(match.group("relating").split()).strip(" ,;.")
-    inserted_text = _strip_schedule_entry_payload(match.group("payload"))
-    if (
-        entry_index is None
-        or column_index is None
-        or entry_index < 1
-        or column_index < 2
-        or not relating_text
-        or not inserted_text
-    ):
-        return None
     table_match = re.search(r"\btable\s+([0-9A-Za-z]+)\b", target_ref, re.I)
+    if match is not None:
+        entry_index = _uk_ordinal_to_int(match.group("entry"))
+        column_index = _uk_ordinal_to_int(match.group("column"))
+        relating_text = " ".join(match.group("relating").split()).strip(" ,;.")
+        inserted_text = _strip_schedule_entry_payload(match.group("payload"))
+        if (
+            entry_index is None
+            or column_index is None
+            or entry_index < 1
+            or column_index < 2
+            or not relating_text
+            or not inserted_text
+        ):
+            return None
+        return {
+            "rule_id": _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+            "selector_mode": "ordinal_column",
+            "direction": "after",
+            "column_index": column_index,
+            "entry_index": entry_index,
+            "relating_text": relating_text,
+            "inserted_text": inserted_text,
+            "table_label": table_match.group(1) if table_match is not None else "",
+            "source_names_table": source_names_table,
+            "original_target": str(target),
+            "target_ref": target_ref,
+        }
+    relating_match = re.search(
+        r"\bafter\s+(?:the\s+)?entry\s+in\s+the\s+table\s+"
+        r"relating\s+to\s+(?:the\s+)?(?P<relating>.+?)\s+"
+        r"insert(?:ed)?\s*[—–-]?\s*(?P<payload>.+)$",
+        text,
+        re.I,
+    )
+    if relating_match is None:
+        return None
+    relating_text = " ".join(relating_match.group("relating").split()).strip(" ,;.")
+    inserted_text = _strip_schedule_entry_payload(relating_match.group("payload"))
+    if not relating_text or not inserted_text:
+        return None
     return {
         "rule_id": _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+        "selector_mode": "relating_entry",
         "direction": "after",
-        "column_index": column_index,
-        "entry_index": entry_index,
+        "column_index": 1,
+        "entry_index": 1,
         "relating_text": relating_text,
         "inserted_text": inserted_text,
         "table_label": table_match.group(1) if table_match is not None else "",
+        "source_names_table": source_names_table,
         "original_target": str(target),
         "target_ref": target_ref,
     }
@@ -6281,6 +6309,9 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
         if m:
             kind_abbr = m.group(1)
             nums = re.findall(r"[0-9A-Z]+", p_for_space_list[len(kind_abbr) :], re.I)
+            if any(num.lower() == "table" for num in nums):
+                expanded_parts.append(p)
+                continue
             for n in nums:
                 expanded_parts.append(f"{kind_abbr} {n}")
             continue
@@ -6292,6 +6323,9 @@ def _split_metadata_provisions(prov_str: str) -> list[str]:
         if m:
             prefix = m.group(1)
             nums = re.findall(r"[0-9A-Z]+", p_for_space_list[len(prefix) :], re.I)
+            if any(num.lower() == "table" for num in nums):
+                expanded_parts.append(p)
+                continue
             for n in nums:
                 expanded_parts.append(f"{prefix}{n}".strip())
         else:
@@ -9669,6 +9703,13 @@ def compile_effect_to_ir_ops(
         if table_row_insert_selector is not None:
             table_marker_parent = _uk_parent_target_before_table_marker(target)
             parent_target = table_marker_parent
+            if (
+                parent_target is None
+                and table_row_insert_selector.get("source_names_table")
+                and _addr_leaf_kind(target)
+                in {"section", "subsection", "paragraph", "schedule", "part", "chapter"}
+            ):
+                parent_target = target
             if (
                 parent_target is not None
                 and len(parent_target.path) >= 2
@@ -13123,7 +13164,14 @@ class UKReplayExecutor:
             return None, None, "invalid_selector", {}
         relating_norm = _compact_normalized_text(str(selector.get("relating_text") or ""))
         direction = str(selector.get("direction") or "")
-        if column_index < 2 or entry_index < 1 or not relating_norm or direction != "after":
+        selector_mode = str(selector.get("selector_mode") or "ordinal_column")
+        if entry_index < 1 or not relating_norm or direction != "after":
+            return None, None, "invalid_selector", {}
+        if selector_mode == "ordinal_column" and column_index < 2:
+            return None, None, "invalid_selector", {}
+        if selector_mode == "relating_entry" and column_index != 1:
+            return None, None, "invalid_selector", {}
+        if selector_mode not in {"ordinal_column", "relating_entry"}:
             return None, None, "invalid_selector", {}
 
         tables, carrier_detail = self._table_selector_tables(node, selector)
@@ -13134,15 +13182,27 @@ class UKReplayExecutor:
         matching_rows: list[tuple[int, str]] = []
         last_target_cell: UKMutableNode | None = None
         for row_index, row_cells in self._expanded_table_rows_with_physical_index(table):
-            target_cell = row_cells.get(column_index)
-            if target_cell is None or target_cell is last_target_cell:
-                continue
-            relation_cells = [
-                cell
-                for col, cell in sorted(row_cells.items())
-                if col < column_index and _compact_normalized_text(cell.text or "").find(relating_norm) >= 0
-            ]
-            if not relation_cells:
+            if selector_mode == "relating_entry":
+                row_match_cells = [
+                    cell
+                    for _col, cell in sorted(row_cells.items())
+                    if _compact_normalized_text(cell.text or "").find(relating_norm) >= 0
+                ]
+                if not row_match_cells:
+                    continue
+                target_cell = row_match_cells[0]
+            else:
+                target_cell = row_cells.get(column_index)
+                if target_cell is None:
+                    continue
+                relation_cells = [
+                    cell
+                    for col, cell in sorted(row_cells.items())
+                    if col < column_index and _compact_normalized_text(cell.text or "").find(relating_norm) >= 0
+                ]
+                if not relation_cells:
+                    continue
+            if target_cell is last_target_cell:
                 continue
             last_target_cell = target_cell
             matching_rows.append(
@@ -13248,7 +13308,7 @@ class UKReplayExecutor:
             kind=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
             message=(
                 "UK replay inserted a table row after resolving an explicit "
-                "ordinal-column table-entry selector."
+                "table-entry selector."
             ),
             op=op,
             detail={
