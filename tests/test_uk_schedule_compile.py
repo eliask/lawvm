@@ -17957,6 +17957,51 @@ def test_compile_heading_facet_becomes_lowers_to_full_heading_replacement() -> N
     )
 
 
+def test_compile_schedule_part_heading_substitute_lowers_to_full_heading_replacement() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Text>4 For the heading of Part 6 substitute “Powers to amend this Schedule” .</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-dba8effcd5f2a0ad6c2ff29b5fd99bea",
+        effect_type="substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2026-01-27",
+        affected_uri="/id/ukpga/2022/10/schedule/2/part/6/heading",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2022",
+        affected_number="10",
+        affected_provisions="Sch. 2 Pt. 6 heading",
+        affecting_uri="/id/ukpga/2023/56",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2023",
+        affecting_number="56",
+        affecting_provisions="s. 161(4)",
+        affecting_title="Economic Crime and Corporate Transparency Act 2023",
+        in_force_dates=[{"date": "2023-10-26", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target == LegalAddress(
+        path=(("schedule", "2"), ("part", "6")),
+        special=FacetKind.HEADING,
+    )
+    assert ops[0].text_patch == _replace_patch("TEXT_ALL", "Powers to amend this Schedule")
+    assert any(
+        record["rule_id"] == "uk_effect_heading_facet_full_replacement_lowered"
+        for record in lowering_records
+    )
+    assert not any(record["rule_id"] == "uk_effect_heading_only_ref_rejected" for record in lowering_records)
+
+
 def test_compile_title_to_section_becomes_lowers_to_full_heading_replacement() -> None:
     extracted_el = ET.fromstring(
         f"""
