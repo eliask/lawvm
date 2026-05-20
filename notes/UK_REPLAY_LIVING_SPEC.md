@@ -2115,6 +2115,22 @@ Current nested-roman target invariant:
   - current witness: `asp/2001/8` / `ssi/2009/131 art. 4`, where affected
     metadata `s. 25(3)(a)(i)-(iv)` previously produced bogus subparagraph
     labels such as `ia`, `ib`, and `ic`
+- adjacent roman metadata suffixes may form a same-depth sibling family once a
+  fixed parent context has already been established
+  - example: `s. 5(12)(a)(iii)(iv)` becomes `s. 5(12)(a)(iii)` and
+    `s. 5(12)(a)(iv)`, not a nested `item iv` under subparagraph `iii`
+  - current witness: `asp/2002/1` / `asp/2025/4 s. 39(2)(h)(iii)`, where the
+    effects feed compacted two source-owned inserted `P4` sibling payloads into
+    one affected-provisions string
+  - the existing nested guard remains binding: `letter + roman` shapes such as
+    `(b)(ii)` or `(a)(zi)` stay nested unless a separate source-owned rule
+    proves sibling scope
+- body target identity must preserve every descendant suffix after the section
+  root when deriving fallback/oracle EIDs
+  - example: `section:5/subsection:12/paragraph:a/subparagraph:iii` derives
+    `section-5-12-a-iii`, not `section-5-12-a`
+  - this matters for chained same-source inserts because later sibling anchors
+    must point at the prior generated target, not at the shared parent
 - tight abbreviation+label forms such as `para.032B` are normalized before
   target parsing. The missing space is a metadata transport defect, and leading
   numeric zero padding is stripped from provision labels.
