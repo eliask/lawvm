@@ -1905,11 +1905,16 @@ Current block-substitution context invariant:
   selectors when the source supplies enough row/cell evidence:
   `uk_effect_table_entry_relating_text_patch` for `in the entry relating to X,
   for "Y" substitute "Z"`, `uk_effect_table_entry_label_text_patch` for
-  `in entry 1A in the table`, and `uk_effect_table_column_heading_text_patch`
-  for `in the heading of the second column`
+  `in entry 1A in the table`, `uk_effect_table_entry_label_column_text_patch`
+  for `in entry X, in column Y`, and
+  `uk_effect_table_column_heading_text_patch` for `in the heading of the
+  second column`
   - replay mutates only a uniquely resolved table cell; ambiguous tables,
     ambiguous cells, or missing preimages remain blocking table-cell
     adjudications
+  - `TEXT_END` appends inside a source-owned table-cell selector append to the
+    selected cell only; replay must not append to the containing provision or
+    table wrapper
   - `s. N(1) Table` may be carried by a section-level table in the source XML
     or by a subsection `(1)` table. Lowering records this as an implicit
     subsection-one table carrier in the selector rather than changing legal
