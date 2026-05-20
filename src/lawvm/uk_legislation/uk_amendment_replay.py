@@ -7863,6 +7863,35 @@ def _source_lead_text_before_subordinate_rows(el: ET.Element) -> str:
     return " ".join(" ".join(parts).split())
 
 
+def _source_has_subordinate_row_scope(el: ET.Element) -> bool:
+    """Return true when an ancestor can contain unrelated sibling amendment rows."""
+    if _tag(el) in {"Legislation", "Body", "Pblock"}:
+        return True
+    for child in el:
+        child_tag = _tag(child)
+        if child_tag in _SOURCE_SUBORDINATE_ROW_TAGS:
+            return True
+        if child_tag.endswith("para"):
+            if any(_tag(grandchild) in _SOURCE_SUBORDINATE_ROW_TAGS for grandchild in child):
+                return True
+    return False
+
+
+def _source_local_instruction_text_for_carried_payload(ancestor: ET.Element) -> str:
+    """Collect only source-local instruction text for a carried BlockAmendment.
+
+    Broad containers such as Pblock/P1/P1para may contain earlier sibling rows
+    with unrelated definition instructions. Those rows cannot supply the anchor
+    for the current payload.
+    """
+    lead_text = _source_lead_text_before_subordinate_rows(ancestor)
+    if lead_text:
+        return lead_text
+    if _source_has_subordinate_row_scope(ancestor):
+        return ""
+    return _instruction_text_before_amendment_container(ancestor)
+
+
 def _fragment_substitution_grouped_anchor_occurrence(
     *,
     extracted_el: Optional[ET.Element],
@@ -8543,16 +8572,15 @@ def _fragment_substitution_source_carried_definition_entry_insert(
     inserted = " ".join((extracted_text or "").split()).strip()
     if not inserted or not re.search(
         r"[“\"'‘].+?[”\"'’](?:\s*\([^;]*?\))*[^;]{0,240}?"
-        r"\b(?:means|has\s+the\s+same\s+meaning|is\s+to\s+be\s+construed|shall\s+be\s+construed)\b",
+        r"\b(?:means|has\s+the\s+same\s+meaning|has\s+the\s+meaning|"
+        r"is\s+to\s+be\s+construed|shall\s+be\s+construed)\b",
         inserted,
         re.I | re.S,
     ):
         return None
     ancestors = _source_ancestor_chain(source_root, extracted_el)
     for ancestor_index, ancestor in enumerate(ancestors):
-        candidate_text = _instruction_text_before_amendment_container(ancestor)
-        if not candidate_text:
-            candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
+        candidate_text = _source_local_instruction_text_for_carried_payload(ancestor)
         match = _SOURCE_AFTER_DEFINITION_INSERT_RE.search(candidate_text)
         if match is None:
             continue
@@ -8593,9 +8621,7 @@ def _fragment_substitution_source_carried_definition_entry_substitution(
         return None
     ancestors = _source_ancestor_chain(source_root, extracted_el)
     for ancestor_index, ancestor in enumerate(ancestors):
-        candidate_text = _instruction_text_before_amendment_container(ancestor)
-        if not candidate_text:
-            candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
+        candidate_text = _source_local_instruction_text_for_carried_payload(ancestor)
         match = _SOURCE_FOR_DEFINITION_SUBSTITUTE_RE.search(candidate_text)
         if match is None:
             continue

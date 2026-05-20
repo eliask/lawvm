@@ -4361,6 +4361,96 @@ def test_compile_source_carried_definition_entry_insert_from_parent_context() ->
     assert observations[0]["blocking"] is False
 
 
+def test_compile_source_carried_definition_entry_insert_does_not_smuggle_sibling_substitution_context() -> None:
+    source_root = ET.fromstring(
+        f"""
+        <Legislation xmlns="{_LEG_NS}">
+          <Body>
+            <Pblock id="schedule-1-crossheading-adults">
+              <P1 id="schedule-1-paragraph-28">
+                <Pnumber>28</Pnumber>
+                <P1para>
+                  <P2 id="schedule-1-paragraph-28-8">
+                    <Pnumber>8</Pnumber>
+                    <P2para>
+                      <Text>for the definition of “hospital” substitute—</Text>
+                      <BlockAmendment>
+                        <UnorderedList Class="Definition">
+                          <ListItem><Para><Text>“hospital” has the meaning given by another Act;</Text></Para></ListItem>
+                        </UnorderedList>
+                      </BlockAmendment>
+                    </P2para>
+                  </P2>
+                  <P2 id="schedule-1-paragraph-28-9">
+                    <Pnumber>9</Pnumber>
+                    <P2para>
+                      <Text>In section 87(1) (interpretation) after the definition of “Mental Welfare Commission” insert—</Text>
+                      <BlockAmendment>
+                        <UnorderedList Class="Definition">
+                          <ListItem><Para><Text>“named person” has the meaning given by section 329 of the 2003 Act;</Text></Para></ListItem>
+                        </UnorderedList>
+                      </BlockAmendment>
+                    </P2para>
+                  </P2>
+                </P1para>
+              </P1>
+            </Pblock>
+          </Body>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(
+        f".//{{{_LEG_NS}}}P2[@id='schedule-1-paragraph-28-9']"
+        f"//{{{_LEG_NS}}}BlockAmendment"
+    )
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="key-source-carried-definition-entry-insert-has-meaning",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-09-27",
+        affected_uri="/id/asp/2000/4",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="4",
+        affected_provisions="s. 87(1)",
+        affecting_uri="/id/ssi/2005/465",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2005",
+        affecting_number="465",
+        affecting_provisions="Sch. 1 para. 28(9)",
+        affecting_title="Mental Health (Care and Treatment) (Scotland) Act 2003 (Consequential Provisions) Order 2005",
+        in_force_dates=[{"date": "2005-09-27", "prospective": "false"}],
+    )
+    observations: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=observations,
+        source_root=source_root,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "87"), ("subsection", "1"))
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_AFTER_DEFINITION_Mental Welfare Commission"
+    )
+    assert (
+        ops[0].text_patch.replacement
+        == "“named person” has the meaning given by section 329 of the 2003 Act;"
+    )
+    assert [record["rule_id"] for record in observations] == [
+        "uk_effect_source_carried_definition_entry_insert_text_patch"
+    ]
+    assert observations[0]["source_anchor_definition_term"] == "Mental Welfare Commission"
+
+
 def test_compile_source_carried_definition_entry_insert_rejects_non_definition_payload() -> None:
     source_root = ET.fromstring(
         f"""
