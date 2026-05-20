@@ -36,6 +36,7 @@ from lawvm.uk_legislation.uk_amendment_replay import (
     _NOTE_TABLE_CELL_SELECTOR,
     _NOTE_TABLE_ROW_INSERT_SELECTOR,
     _NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR,
+    _NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR,
     _NOTE_REWRITE_WITNESS,
     _NOTE_TEXT_REWRITE_RULE,
     _NOTE_PRECEDING_EID,
@@ -11669,6 +11670,270 @@ def test_compile_schedule_list_entry_table_payload_preserves_rows() -> None:
         and record["blocking"] is False
         for record in lowering_records
     )
+
+
+def test_compile_schedule_table_end_rows_preserves_tabular_payload() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>4</Pnumber>
+          <P1para>
+            <Text>At the end of schedule 5 (disclosure of information by the Ombudsman) insert—</Text>
+            <BlockAmendment>
+              <Tabular>
+                <table>
+                  <tbody>
+                    <tr>
+                      <td>The Scottish Social Services Council</td>
+                      <td>A matter in respect of which the Scottish Social Services Council could exercise a registration power.</td>
+                    </tr>
+                    <tr>
+                      <td>Social Care and Social Work Improvement Scotland</td>
+                      <td>A matter in respect of which Social Care and Social Work Improvement Scotland could exercise an inspection power.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </Tabular>
+            </BlockAmendment>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_table_end_rows_insert",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2018-08-11",
+        affected_uri="/id/asp/2002/11/schedule/5",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="Sch. 5",
+        affecting_uri="/id/ssi/2016/157",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2016",
+        affecting_number="157",
+        affecting_provisions="art. 4",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2017-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.INSERT
+    assert ops[0].target == LegalAddress(path=(("schedule", "5"),))
+    assert ops[0].payload is not None
+    assert ops[0].payload.kind is IRNodeKind.TABLE
+    assert [row.children[0].text for row in ops[0].payload.children] == [
+        "The Scottish Social Services Council",
+        "Social Care and Social Work Improvement Scotland",
+    ]
+    selector_tag = next(
+        tag
+        for tag in ops[0].provenance_tags
+        if tag.startswith(_NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR)
+    )
+    selector = json.loads(selector_tag.removeprefix(_NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR))
+    assert selector["direction"] == "end"
+    assert ops[0].witness_rule_id == "uk_effect_schedule_table_end_rows_lowered"
+    assert any(
+        record["rule_id"] == "uk_effect_schedule_table_end_rows_lowered"
+        and record["reason_code"] == "explicit_schedule_end_insert_table_payload"
+        and record["blocking"] is False
+        for record in lowering_records
+    )
+
+
+def test_compile_schedule_table_end_rows_blocks_flattened_payload() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{_LEG_NS}">
+          <Pnumber>4</Pnumber>
+          <P1para>
+            <Text>At the end of schedule 5 insert The Scottish Social Services Council.</Text>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_table_end_rows_insert_flat",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2018-08-11",
+        affected_uri="/id/asp/2002/11/schedule/5",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="Sch. 5",
+        affecting_uri="/id/ssi/2016/157",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2016",
+        affecting_number="157",
+        affecting_provisions="art. 4",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2017-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_schedule_table_end_rows_lowered"
+        and record["reason_code"] == "explicit_schedule_end_insert_without_table_payload"
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
+def test_replay_schedule_table_end_rows_appends_to_unique_table() -> None:
+    selector = {
+        "rule_id": "uk_effect_schedule_table_end_rows_lowered",
+        "direction": "end",
+        "target": "schedule:5",
+        "target_ref": "Sch. 5",
+    }
+    op = LegalOperation(
+        op_id="uk_test_schedule_table_end_rows_insert",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("schedule", "5"),)),
+        payload=IRNode(
+            kind=IRNodeKind.TABLE,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(
+                        IRNode(kind=IRNodeKind.CELL, text="The Scottish Social Services Council"),
+                        IRNode(kind=IRNodeKind.CELL, text="Registration powers."),
+                    ),
+                ),
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(
+                        IRNode(kind=IRNodeKind.CELL, text="Social Care and Social Work Improvement Scotland"),
+                        IRNode(kind=IRNodeKind.CELL, text="Inspection powers."),
+                    ),
+                ),
+            ),
+        ),
+        provenance_tags=(
+            f"{_NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR}{json.dumps(selector)}",
+        ),
+    )
+    base = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="5",
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.TABLE,
+                        children=(
+                            IRNode(
+                                kind=IRNodeKind.ROW,
+                                children=(
+                                    IRNode(kind=IRNodeKind.HEADER_CELL, text="Authority"),
+                                    IRNode(kind=IRNodeKind.HEADER_CELL, text="Matter"),
+                                ),
+                            ),
+                            IRNode(
+                                kind=IRNodeKind.ROW,
+                                children=(
+                                    IRNode(kind=IRNodeKind.CELL, text="NHS Education for Scotland"),
+                                    IRNode(kind=IRNodeKind.CELL, text="Training functions."),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    rows = replayed.supplements[0].children[0].children
+    assert [row.children[0].text for row in rows] == [
+        "Authority",
+        "NHS Education for Scotland",
+        "The Scottish Social Services Council",
+        "Social Care and Social Work Improvement Scotland",
+    ]
+    assert [adjudication.kind for adjudication in adjudications] == [
+        "uk_replay_schedule_table_end_rows_insert_resolved"
+    ]
+    assert adjudications[0].detail["reason_code"] == "explicit_schedule_end_unique_table"
+    assert adjudications[0].detail["blocking"] is False
+
+
+def test_replay_schedule_table_end_rows_blocks_non_table_carrier() -> None:
+    selector = {
+        "rule_id": "uk_effect_schedule_table_end_rows_lowered",
+        "direction": "end",
+        "target": "schedule:5",
+        "target_ref": "Sch. 5",
+    }
+    op = LegalOperation(
+        op_id="uk_test_schedule_table_end_rows_insert_no_table",
+        sequence=1,
+        action=StructuralAction.INSERT,
+        target=LegalAddress(path=(("schedule", "5"),)),
+        payload=IRNode(
+            kind=IRNodeKind.TABLE,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.ROW,
+                    children=(IRNode(kind=IRNodeKind.CELL, text="New authority"),),
+                ),
+            ),
+        ),
+        provenance_tags=(
+            f"{_NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR}{json.dumps(selector)}",
+        ),
+    )
+    base = IRStatute(
+        statute_id="asp/2002/11",
+        title="Test Act",
+        body=IRNode(kind=IRNodeKind.BODY, children=()),
+        supplements=(
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="5",
+                children=(IRNode(kind=IRNodeKind.PARAGRAPH, label="1", text="Not a table."),),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, [op], adjudications_out=adjudications)
+
+    assert len(replayed.supplements[0].children) == 1
+    unresolved = next(
+        adjudication
+        for adjudication in adjudications
+        if adjudication.kind == "uk_replay_schedule_table_end_rows_insert_unresolved"
+    )
+    assert unresolved.detail["reason_code"] == "schedule_not_single_table_backed"
+    assert unresolved.detail["blocking"] is True
 
 
 def test_replay_schedule_list_entry_table_rows_insert_mutates_table_only() -> None:
