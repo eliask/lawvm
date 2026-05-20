@@ -750,6 +750,77 @@ def test_compile_mixed_heading_structural_insert_expands_source_owned_siblings()
     assert not any(record.get("blocking") is True for record in lowering_records)
 
 
+def test_compile_mixed_heading_structural_insert_expands_source_owned_p2group_children() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P3 xmlns="{_LEG_NS}" id="schedule-13-paragraph-11-4-b">
+          <Pnumber>b</Pnumber>
+          <P3para>
+            <Text>after subsection (2) insert—</Text>
+            <BlockAmendment>
+              <P2group>
+                <Title>Serious terrorism sentence: determination of appropriate custodial term</Title>
+                <P2>
+                  <Pnumber>2A</Pnumber>
+                  <P2para>
+                    <Text>Subsection (2B) applies where a court is required to impose a serious terrorism sentence for an offence.</Text>
+                  </P2para>
+                </P2>
+                <P2>
+                  <Pnumber>2B</Pnumber>
+                  <P2para>
+                    <Text>In determining the appropriate custodial term, section 60 applies to the court.</Text>
+                  </P2para>
+                </P2>
+              </P2group>
+            </BlockAmendment>
+          </P3para>
+        </P3>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_mixed_heading_structural_insert_p2group",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2021-06-29",
+        affected_uri="/id/ukpga/2020/17",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2020",
+        affected_number="17",
+        affected_provisions="s. 61(2A)(2B) and heading",
+        affecting_uri="/id/ukpga/2021/11",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2021",
+        affecting_number="11",
+        affecting_provisions="Sch. 13 para. 11(4)(b)",
+        affecting_title="Counter-Terrorism and Sentencing Act 2021",
+        comments="",
+        in_force_dates=[{"date": "2021-06-29", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 2
+    assert [op.target for op in ops] == [
+        LegalAddress((("section", "61"), ("subsection", "2a"))),
+        LegalAddress((("section", "61"), ("subsection", "2b"))),
+    ]
+    assert [op.payload.label if op.payload is not None else "" for op in ops] == ["2A", "2B"]
+    assert any(
+        record["rule_id"] == "uk_effect_mixed_heading_structural_insert_target_normalized"
+        and record["heading_facet_status"] == "unresolved"
+        for record in lowering_records
+    )
+    assert not any(record.get("blocking") is True for record in lowering_records)
+
+
 def test_compile_mixed_heading_structural_insert_blocks_without_source_payload() -> None:
     extracted_el = ET.fromstring(
         f"""
