@@ -9970,7 +9970,7 @@ def test_commencement_eid_set_matches_enum_nodes_under_structural_containers() -
             affected_class="UnitedKingdomPublicGeneralAct",
             affected_year="2025",
             affected_number="1",
-            affected_provisions="Sch. 1 para. 18",
+            affected_provisions="Sch. para. 18",
             affecting_uri="/id/uksi/2025/1",
             affecting_class="UnitedKingdomStatutoryInstrument",
             affecting_year="2025",
@@ -9981,12 +9981,95 @@ def test_commencement_eid_set_matches_enum_nodes_under_structural_containers() -
         ),
     ]
 
-    commenced = commencement_eid_set(effects, statute)
+    observations: list[dict[str, Any]] = []
+    commenced = commencement_eid_set(effects, statute, observations_out=observations)
 
     assert {"section-1", "section-1-1", "schedule-1-paragraph-18"} <= commenced
     assert {"section-3", "section-3-1", "schedule-1"} <= commenced
     assert {"part-1", "part-1-chapter-1", "part-1-chapter-1-crossheading-general"} <= commenced
     assert "section-2" not in commenced
+    assert observations == [
+        {
+            "rule_id": "uk_commencement_unnumbered_single_schedule_target_resolved",
+            "family": "target_resolution_recovery",
+            "phase": "commencement_filter",
+            "effect_id": "uk_test_commence_schedule_paragraph",
+            "affecting_act_id": "uksi/2025/1",
+            "affected_provisions": "Sch. para. 18",
+            "affecting_provisions": "art. 2(b)",
+            "effect_type": "coming into force",
+            "reason": (
+                "UK commencement metadata named an unnumbered schedule target; "
+                "the enacted source has exactly one schedule root."
+            ),
+            "source_ref": "Sch. para. 18",
+            "blocking": False,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
+def test_commencement_eid_set_does_not_guess_unnumbered_schedule_when_multiple_exist() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/test/2",
+        title="Two Schedule Test Act",
+        body=IRNode(kind=IRNodeKind.BODY),
+        supplements=[
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 1",
+                attrs={"eId": "schedule-1"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="18",
+                        attrs={"eId": "schedule-1-paragraph-18"},
+                    ),
+                ),
+            ),
+            IRNode(
+                kind=IRNodeKind.SCHEDULE,
+                label="SCHEDULE 2",
+                attrs={"eId": "schedule-2"},
+                children=(
+                    IRNode(
+                        kind=IRNodeKind.PARAGRAPH,
+                        label="18",
+                        attrs={"eId": "schedule-2-paragraph-18"},
+                    ),
+                ),
+            ),
+        ],
+    )
+    effects = [
+        UKEffectRecord(
+            effect_id="uk_test_ambiguous_unnumbered_schedule",
+            effect_type="coming into force",
+            applied=True,
+            requires_applied=False,
+            modified="2025-01-01",
+            affected_uri="/id/ukpga/test/2",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="2025",
+            affected_number="2",
+            affected_provisions="Sch. para. 18",
+            affecting_uri="/id/uksi/2025/1",
+            affecting_class="UnitedKingdomStatutoryInstrument",
+            affecting_year="2025",
+            affecting_number="1",
+            affecting_provisions="art. 2(b)",
+            affecting_title="Test Commencement Order",
+            in_force_dates=[{"date": "2025-01-01", "prospective": "false"}],
+        ),
+    ]
+
+    observations: list[dict[str, Any]] = []
+    commenced = commencement_eid_set(effects, statute, observations_out=observations)
+
+    assert "schedule-1-paragraph-18" not in commenced
+    assert "schedule-2-paragraph-18" not in commenced
+    assert observations == []
 
 
 def test_compile_empty_effect_type_does_not_infer_range_from_word_fragments() -> None:

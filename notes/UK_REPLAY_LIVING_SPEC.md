@@ -752,6 +752,12 @@ Current tooling-consistency invariant:
     the default replay lens it must also respect feed applicability
     (`effective_date_plus_feed_applied`) instead of treating unapplied
     commencement rows as current law merely because they carry a date.
+  - UK commencement metadata may name an unnumbered schedule target, e.g.
+    `Sch. para. 18`. LawVM may resolve this only when the enacted source has
+    exactly one schedule root, recording
+    `uk_commencement_unnumbered_single_schedule_target_resolved` as
+    `target_resolution_recovery`. Multiple schedule roots remain unresolved
+    until source context disambiguates the target.
   - `uk-bench --compare` must also summarize saved enacted/oracle and
     replay/oracle text-score fields over common statutes when present. EID
     agreement and text agreement are different evidence lanes.

@@ -1269,6 +1269,7 @@ def _score_statute(
                     all_effects,
                     enacted_ir,
                     applicability_mode=applicability_mode,
+                    observations_out=commencement_feed_observations,
                 )
                 commenced_enacted = enacted_eids & commenced
                 n_commenced_eids = len(commenced_enacted)
@@ -2667,29 +2668,52 @@ def _print_report(
         else:
             print(f"  {t:<8} N={len(grp):5d}  avg={a:.1%}  perfect={p}")
 
-    # Worst rows: separate core replay frontier from non-core structural/no-truth rows
-    worst_core = sorted([r for r in core if r.score < 1.0], key=lambda r: r.score)[:15]
+    def _primary_score_for_row(r: _BenchResult) -> float:
+        if has_commencement and r.commencement_score >= 0.0:
+            return r.commencement_score
+        return r.score
+
+    def _primary_replay_score_for_row(r: _BenchResult) -> float:
+        if has_commencement and r.replay_commencement_score >= 0.0:
+            return r.replay_commencement_score
+        return r.replay_score
+
+    def _score_fragment_for_row(r: _BenchResult) -> str:
+        primary = _primary_score_for_row(r)
+        if has_commencement and r.commencement_score >= 0.0:
+            return f"score={primary:.1%} raw={r.score:.1%}"
+        return f"score={primary:.1%}"
+
+    def _replay_fragment_for_row(r: _BenchResult) -> str:
+        primary_replay = _primary_replay_score_for_row(r)
+        if primary_replay < 0.0:
+            return ""
+        if has_commencement and r.replay_commencement_score >= 0.0:
+            return f"  replay={primary_replay:.1%} raw_replay={r.replay_score:.1%} ops={r.n_ops}"
+        return f"  replay={primary_replay:.1%} ops={r.n_ops}"
+
+    # Worst rows: separate core replay frontier from non-core structural/no-truth rows.
+    worst_score_label = "commenced EID score" if has_commencement else "EID score"
+    worst_core = sorted([r for r in core if _primary_score_for_row(r) < 1.0], key=_primary_score_for_row)[:15]
     if worst_core:
-        has_replay = any(r.replay_score >= 0.0 for r in worst_core)
-        print(f"\nWorst {len(worst_core)} core rows (by EID score):")
+        print(f"\nWorst {len(worst_core)} core rows (by {worst_score_label}):")
         for r in worst_core:
             base = (
-                f"  {r.statute_id:<30} score={r.score:.1%}  "
+                f"  {r.statute_id:<30} {_score_fragment_for_row(r)}  "
                 f"enacted={r.n_enacted_eids:4d} oracle={r.n_oracle_eids:4d} "
                 f"common={r.n_common:4d} effect_rows={r.n_effect_rows:4d} "
                 f"effect_pages={(r.n_effect_feed_pages or r.n_effects):4d} "
                 f"class={r.comparison_class}"
             )
-            if has_replay and r.replay_score >= 0.0:
-                base += f"  replay={r.replay_score:.1%} ops={r.n_ops}"
+            base += _replay_fragment_for_row(r)
             print(base)
             print(_source_line(r))
-    worst_noncore = sorted(noncore, key=lambda r: r.score)[:10]
+    worst_noncore = sorted(noncore, key=_primary_score_for_row)[:10]
     if worst_noncore:
         print(f"\nWorst {len(worst_noncore)} non-core rows:")
         for r in worst_noncore:
             print(
-                f"  {r.statute_id:<30} score={r.score:.1%} "
+                f"  {r.statute_id:<30} {_score_fragment_for_row(r)} "
                 f"enacted={r.n_enacted_eids:4d} oracle={r.n_oracle_eids:4d} "
                 f"effect_rows={r.n_effect_rows:4d} effect_pages={(r.n_effect_feed_pages or r.n_effects):4d} "
                 f"class={r.comparison_class}"
