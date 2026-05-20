@@ -13042,6 +13042,74 @@ def test_compile_substituted_for_parenthesized_sibling_range_uses_extracted_chil
     assert [payload.label for payload in payloads] == ["g", "h", "ha"]
 
 
+def test_compile_substitution_range_expands_from_source_payload_children_and_inserts_extra_sibling() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}">
+          <Pnumber>2</Pnumber>
+          <P2para>
+            <Text>In schedule 4 in paragraph 11 for paragraphs (a) and (b) substitute–</Text>
+            <BlockAmendment>
+              <P3><Pnumber>a</Pnumber><P3para><Text>section 51 of the 2003 Act;</Text></P3para></P3>
+              <P3><Pnumber>b</Pnumber><P3para><Text>section 81 of that Act;</Text></P3para></P3>
+              <P3><Pnumber>ba</Pnumber><P3para><Text>section 143 of that Act;</Text></P3para></P3>
+            </BlockAmendment>
+          </P2para>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_schedule_range_extra_sibling",
+        effect_type="substituted for Sch. 4 para. 11(a)(b)",
+        applied=True,
+        requires_applied=True,
+        modified="2005-09-27",
+        affected_uri="/id/asp/2002/11/schedule/4/paragraph/11/item/ba",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="11",
+        affected_provisions="Sch. 4 para. 11(a)-(ba)",
+        affecting_uri="/id/ssi/2005/465",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2005",
+        affecting_number="465",
+        affecting_provisions="Sch. 1 para. 31(2)",
+        affecting_title="Test Regulations",
+        in_force_dates=[{"date": "2005-09-27", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0, lowering_rejections_out=lowering_records)
+
+    assert [op.action for op in ops] == [
+        StructuralAction.REPLACE,
+        StructuralAction.REPLACE,
+        StructuralAction.INSERT,
+    ]
+    assert [op.target.path for op in ops] == [
+        (("schedule", "4"), ("paragraph", "11"), ("item", "a")),
+        (("schedule", "4"), ("paragraph", "11"), ("item", "b")),
+        (("schedule", "4"), ("paragraph", "11"), ("item", "ba")),
+    ]
+    assert [op.payload.label for op in ops if op.payload is not None] == ["a", "b", "ba"]
+    assert any(
+        record["rule_id"] == "uk_effect_source_payload_sibling_range_expanded"
+        and record["expanded_targets"]
+        == [
+            "Sch. 4 para. 11(a)",
+            "Sch. 4 para. 11(b)",
+            "Sch. 4 para. 11(ba)",
+        ]
+        for record in lowering_records
+    )
+    assert any(
+        record["rule_id"] == "uk_effect_substituted_range_extra_payload_sibling_insert_lowered"
+        and record["target"] == "schedule:4/paragraph:11/item:ba"
+        and record["replaced_sibling_count"] == 2
+        for record in lowering_records
+    )
+
+
 def test_pipeline_replays_nonstructural_multi_sibling_substituted_for_ops() -> None:
     extracted_el = ET.fromstring(
         f"""
