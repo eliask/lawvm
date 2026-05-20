@@ -5380,6 +5380,75 @@ def test_compile_repeal_table_singular_entry_for_text_repeal() -> None:
     assert ops[0].witness_rule_id == "uk_effect_repeal_table_definition_entry_text_repeal"
 
 
+def test_compile_repeal_table_plural_entries_for_text_repeal() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Regulation of Investigatory Powers (Scotland) Act 2000 (asp 11)</td>
+                  <td>In section 31(1), the entries for “joint surveillance operation” and “police member”.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_plural_entries_for",
+        effect_type="words repealed",
+        applied=True,
+        requires_applied=False,
+        modified="2013-04-01",
+        affected_uri="/id/asp/2000/11",
+        affected_class="ScottishAct",
+        affected_year="2000",
+        affected_number="11",
+        affected_provisions="s. 31(1)",
+        affecting_uri="/id/asp/2012/8",
+        affecting_class="ScottishAct",
+        affecting_year="2012",
+        affecting_number="8",
+        affecting_provisions="Sch. 8 Pt. 1",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2013-04-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert [op.op_id for op in ops] == [
+        "uk_test_repeal_table_plural_entries_for_0",
+        "uk_test_repeal_table_plural_entries_for_1",
+    ]
+    assert [op.text_patch.selector.match_text for op in ops if op.text_patch is not None] == [
+        "TEXT_DEFINITION_ENTRY_joint surveillance operation",
+        "TEXT_DEFINITION_ENTRY_police member",
+    ]
+    assert all(op.witness_rule_id == "uk_effect_repeal_table_definition_entry_text_repeal" for op in ops)
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_definition_entry_text_repeal"
+        and tuple(record["originals"])
+        == (
+            "TEXT_DEFINITION_ENTRY_joint surveillance operation",
+            "TEXT_DEFINITION_ENTRY_police member",
+        )
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_definition_child_remains_unresolved() -> None:
     source_root = ET.fromstring(
         """

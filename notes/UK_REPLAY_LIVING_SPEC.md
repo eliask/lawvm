@@ -1757,11 +1757,12 @@ Current block-substitution context invariant:
 - bounded repeal-table definition-entry rows are owned separately by
   `uk_effect_repeal_table_definition_entry_text_repeal`: after the same unique
   affected-Act row and affected-provision clause matching, an extent clause of
-  the form `the definition of "X"` or singular `the entry for "X"` lowers to
-  the existing `TEXT_DEFINITION_ENTRY_X` delete selector. This rule does not
-  authorize whole-provision repeals, table-entry repeals, plural entry lists, or
-  definition-child removals; those remain explicit manual/frontier cases until
-  their target granularity is owned.
+  the form `the definition of "X"`, singular `the entry for "X"`, or a bounded
+  quoted plural list `the entries for "X" and "Y"` lowers to existing
+  `TEXT_DEFINITION_ENTRY_X` delete selectors. This rule does not authorize
+  whole-provision repeals, table-entry repeals, unquoted/plural entry
+  descriptions, or definition-child removals; those remain explicit
+  manual/frontier cases until their target granularity is owned.
 - table-entry source that says a named entry/column is `added` or `amended`
   remains in `table_entry_target_unsupported` until a table compiler owns the
   row/cell and any referenced amount schedule. It is not a generic parser miss.
