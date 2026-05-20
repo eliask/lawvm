@@ -850,6 +850,17 @@ def _looks_like_structural_sibling_insert_instruction(text: str) -> bool:
     )
 
 
+def _looks_like_amendment_program_inserted_parent_instruction(text: str) -> bool:
+    norm = _normalize_effect_text(text)
+    return bool(
+        re.search(r"\bin\s+the\s+inserted\s+(?:paragraph|sub-?paragraph|subsection)\b", norm)
+        and re.search(
+            r"\b(?:after|before)\s+(?:paragraph|sub-?paragraph|subsection)\s*\([0-9A-Za-z]+\)\s+insert(?:\b|\s*[—-])",
+            norm,
+        )
+    )
+
+
 def _looks_like_non_substantive_shell(text: str) -> bool:
     norm = " ".join((text or "").split()).strip()
     if not norm:
@@ -981,6 +992,8 @@ def classify_uk_effect_source_pathology(
             return "table_entry_target_unsupported"
         if _looks_like_schedule_list_entry_instruction(norm_text):
             return "schedule_list_entry_target_unsupported"
+        if _looks_like_amendment_program_inserted_parent_instruction(norm_text):
+            return "amendment_text_target_unsupported"
         if _looks_like_structural_sibling_insert_instruction(norm_text):
             return "structural_sibling_insert_unsupported"
         if _looks_like_appropriate_place_definition_entry_insert_instruction(norm_text):
