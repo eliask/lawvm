@@ -5410,11 +5410,12 @@ def _uk_table_cell_mentions_target(
             rf"\b(?:section|sections|s)\.?\s*{section_pat}\b",
             text,
         )
+        section_range_match = _uk_section_label_in_simple_range(text, section)
         listed_section_match = (
             re.search(r"\bsections\b", text) is not None
             and re.search(rf"\b{section_pat}\s*\(", text) is not None
         )
-        if not direct_section_match and not listed_section_match:
+        if not direct_section_match and not section_range_match and not listed_section_match:
             return False
         descendant_labels = [label for label in (subsection, paragraph, subparagraph) if label]
         if descendant_labels and not _uk_cell_has_section_descendant_scope(
@@ -5438,6 +5439,26 @@ def _uk_table_cell_mentions_target(
                 return False
         return True
 
+    return False
+
+
+def _uk_section_label_in_simple_range(text: str, label: str) -> bool:
+    """Return true when a numeric section label falls inside `sections 26 to 31`."""
+
+    if not re.fullmatch(r"\d+", label or ""):
+        return False
+    wanted = int(label)
+    for match in re.finditer(
+        r"\bsections?\s+(?P<start>\d+)\s*(?:to|-|–|—)\s*(?P<end>\d+)\b",
+        text or "",
+        flags=re.I,
+    ):
+        start = int(match.group("start"))
+        end = int(match.group("end"))
+        low = min(start, end)
+        high = max(start, end)
+        if low <= wanted <= high:
+            return True
     return False
 
 

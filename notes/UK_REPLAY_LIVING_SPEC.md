@@ -2096,7 +2096,11 @@ Current block-substitution context invariant:
   words, definitions, entries, or table-entry surfaces remain outside this
   rule; non-unique or unmatched rows emit
   `uk_effect_repeal_table_structural_repeal_unresolved` rather than replaying a
-  broad repeal schedule or table row as host text.
+  broad repeal schedule or table row as host text. A unique section-range cell
+  such as `Sections 26 to 31.` may corroborate each feed-expanded numeric
+  section target inside that range; targets outside the range remain
+  unresolved. Current witness: `asp/2000/6` / `asp/2006/8` schedule repeal of
+  sections `26` to `31`.
 - bounded repeal-table definition-entry rows are owned separately by
   `uk_effect_repeal_table_definition_entry_text_repeal`: after the same unique
   affected-Act row and affected-provision clause matching, an extent clause of
