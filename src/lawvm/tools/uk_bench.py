@@ -1344,28 +1344,28 @@ def _score_statute(
                     f"  COMMENCEMENT ERROR {sid}: {type(comm_exc).__name__}: {comm_exc}",
                     file=sys.stderr,
                 )
-                if commencement_feed_observations:
-                    commencement_blocking_feed_observations = [
-                        obs for obs in commencement_feed_observations if is_blocking_compile_record(obs)
-                    ]
-                    effect_feed_rejection_count += len(commencement_blocking_feed_observations)
-                    effect_feed_observation_count += len(commencement_feed_observations)
-                    effect_feed_observations = (
-                        *effect_feed_observations,
-                        *(dict(obs) for obs in commencement_feed_observations),
-                    )
-                    effect_feed_rejection_counter = Counter(effect_feed_rejection_rule_counts)
-                    effect_feed_rejection_counter.update(
-                        str(obs.get("rule_id") or "unknown")
-                        for obs in commencement_blocking_feed_observations
-                    )
-                    effect_feed_rejection_rule_counts = dict(effect_feed_rejection_counter)
-                    effect_feed_observation_counter = Counter(effect_feed_observation_rule_counts)
-                    effect_feed_observation_counter.update(
-                        str(obs.get("rule_id") or "unknown") for obs in commencement_feed_observations
-                    )
-                    effect_feed_observation_rule_counts = dict(effect_feed_observation_counter)
                 commencement_error = f"{type(comm_exc).__name__}: {comm_exc}"[:200]
+            if commencement_feed_observations:
+                commencement_blocking_feed_observations = [
+                    obs for obs in commencement_feed_observations if is_blocking_compile_record(obs)
+                ]
+                effect_feed_rejection_count += len(commencement_blocking_feed_observations)
+                effect_feed_observation_count += len(commencement_feed_observations)
+                effect_feed_observations = (
+                    *effect_feed_observations,
+                    *(dict(obs) for obs in commencement_feed_observations),
+                )
+                effect_feed_rejection_counter = Counter(effect_feed_rejection_rule_counts)
+                effect_feed_rejection_counter.update(
+                    str(obs.get("rule_id") or "unknown")
+                    for obs in commencement_blocking_feed_observations
+                )
+                effect_feed_rejection_rule_counts = dict(effect_feed_rejection_counter)
+                effect_feed_observation_counter = Counter(effect_feed_observation_rule_counts)
+                effect_feed_observation_counter.update(
+                    str(obs.get("rule_id") or "unknown") for obs in commencement_feed_observations
+                )
+                effect_feed_observation_rule_counts = dict(effect_feed_observation_counter)
 
         comparison_class = classify_uk_bench_comparison(
             n_enacted_eids=len(enacted_eids),

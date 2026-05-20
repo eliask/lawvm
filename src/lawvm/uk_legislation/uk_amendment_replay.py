@@ -19241,9 +19241,13 @@ class UKReplayExecutor:
 
 _COMMENCEMENT_EFFECT_TYPES = frozenset(
     {
+        "appointed day(s)",
         "coming into force",
         "commencement order",
     }
+)
+_UK_COMMENCEMENT_UNDATED_EFFECTS_RULE_ID = (
+    "uk_commencement_undated_effects_block_self_commencement"
 )
 _UK_COMMENCEMENT_UNNUMBERED_SINGLE_SCHEDULE_RULE_ID = (
     "uk_commencement_unnumbered_single_schedule_target_resolved"
@@ -19438,18 +19442,24 @@ def commencement_eid_set(
     their descendants, AND any structural ancestor nodes (part, chapter,
     crossheading) that contain at least one commenced provision.
 
-    An EID is "commenced" when at least one replay-applicable "coming into
-    force" effect with a non-empty effective date covers the provision (or any
+    An EID is "commenced" when at least one replay-applicable commencement-like
+    effect with a non-empty effective date covers the provision (or any
     ancestor).
 
     If no commencement effects are found at all, returns the full set of EIDs
     from the statute (treat all provisions as in force — self-commencement).
+    If commencement-like rows exist but none has a replay-applicable date,
+    returns an empty set and emits an observation instead of guessing.
     """
-    comm_effects = [
+    commencement_like_effects = [
         e
         for e in effects
         if e.effect_type.lower() in _COMMENCEMENT_EFFECT_TYPES
-        and e.effective_date  # must have a real date
+    ]
+    comm_effects = [
+        e
+        for e in commencement_like_effects
+        if e.effective_date  # must have a real date
         and e.is_applicable_for_replay(applicability_mode=applicability_mode)
     ]
 
@@ -19458,6 +19468,32 @@ def commencement_eid_set(
         all_ir_nodes.append(sched)
 
     if not comm_effects:
+        if commencement_like_effects:
+            if observations_out is not None:
+                observations_out.append(
+                    {
+                        "rule_id": _UK_COMMENCEMENT_UNDATED_EFFECTS_RULE_ID,
+                        "family": "temporal_recovery",
+                        "phase": "commencement_filter",
+                        "effect_count": len(commencement_like_effects),
+                        "effect_types": sorted(
+                            {
+                                (effect.effect_type or "").strip()
+                                for effect in commencement_like_effects
+                                if (effect.effect_type or "").strip()
+                            }
+                        ),
+                        "reason": (
+                            "UK source has commencement-style effect rows, but none "
+                            "has a replay-applicable effective date; LawVM will not "
+                            "silently treat the whole instrument as commenced."
+                        ),
+                        "blocking": False,
+                        "strict_disposition": "record",
+                        "quirks_disposition": "record",
+                    }
+                )
+            return set()
         # No commencement orders found → treat all provisions as in force.
         all_eids: set[str] = set()
         for node in all_ir_nodes:

@@ -82,6 +82,76 @@ def test_uk_bench_primary_score_prefers_commencement_when_active() -> None:
     assert round(average, 6) == 0.85
 
 
+def test_uk_bench_records_successful_commencement_filter_observations(monkeypatch) -> None:
+    from lawvm.uk_legislation import uk_amendment_replay as replay_mod
+    from lawvm.uk_legislation.uk_amendment_replay import UKEffectRecord
+
+    class FakeArchive:
+        def get(self, _url: str) -> bytes:
+            return b"<xml>" + (b"x" * 200)
+
+    statute = IRStatute(
+        statute_id="asp/test/1",
+        title="Demo",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(IRNode(kind=IRNodeKind.SECTION, attrs={"eId": "section-1"}),),
+        ),
+    )
+    effect = UKEffectRecord(
+        effect_id="undated-appointed-day",
+        effect_type="Appointed Day(s)",
+        applied=True,
+        requires_applied=False,
+        modified="",
+        affected_uri="/id/asp/test/1",
+        affected_class="ScottishAct",
+        affected_year="2025",
+        affected_number="1",
+        affected_provisions="specified provision(s)",
+        affecting_uri="/id/ssi/2025/1",
+        affecting_class="ScottishStatutoryInstrument",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="art. 2",
+        affecting_title="Test Appointed Day Order",
+        in_force_dates=[],
+    )
+
+    monkeypatch.setattr(uk_bench, "parse_uk_statute_ir_bytes", lambda *args, **kwargs: statute)
+    monkeypatch.setattr(
+        uk_bench,
+        "extract_eid_map_bytes",
+        lambda _data: {"eid_map": {"section-1": "section-1"}, "text_map": {}},
+    )
+    monkeypatch.setattr(uk_bench, "_load_effect_row_counts", lambda _sid, _archive: (1, 0, {}, 0, {}, ()))
+    monkeypatch.setattr(
+        replay_mod,
+        "load_effects_for_statute_from_archive",
+        lambda *_args, **_kwargs: [effect],
+    )
+
+    result = uk_bench._score_statute(
+        {
+            "statute_id": "asp/test/1",
+            "type": "asp",
+            "year": 2025,
+            "n_effects": 1,
+            "n_effect_feed_pages": 1,
+            "enacted_url": "https://www.legislation.gov.uk/asp/test/1/enacted/data.xml",
+            "current_url": "https://www.legislation.gov.uk/asp/test/1/data.xml",
+        },
+        cast(Farchive, FakeArchive()),
+        do_commencement=True,
+    )
+
+    assert result.commencement_score == -1.0
+    assert result.effect_feed_observation_count == 1
+    assert result.effect_feed_observation_rule_counts == {
+        "uk_commencement_undated_effects_block_self_commencement": 1,
+    }
+
+
 def test_uk_bench_score_witness_helper_is_bounded_and_deterministic() -> None:
     rows = uk_bench._build_eid_score_witness_rows(
         comparison_scope="raw",

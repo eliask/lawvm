@@ -10072,6 +10072,66 @@ def test_commencement_eid_set_does_not_guess_unnumbered_schedule_when_multiple_e
     assert observations == []
 
 
+def test_commencement_eid_set_does_not_self_commence_when_only_undated_rows_exist() -> None:
+    statute = IRStatute(
+        statute_id="asp/test/1",
+        title="Undated Commencement Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    attrs={"eId": "section-1"},
+                ),
+            ),
+        ),
+    )
+    effects = [
+        UKEffectRecord(
+            effect_id="uk_test_undated_appointed_day",
+            effect_type="Appointed Day(s)",
+            applied=True,
+            requires_applied=False,
+            modified="",
+            affected_uri="/id/asp/test/1",
+            affected_class="ScottishAct",
+            affected_year="2025",
+            affected_number="1",
+            affected_provisions="specified provision(s)",
+            affecting_uri="/id/ssi/2025/1",
+            affecting_class="ScottishStatutoryInstrument",
+            affecting_year="2025",
+            affecting_number="1",
+            affecting_provisions="art. 2",
+            affecting_title="Test Appointed Day Order",
+            in_force_dates=[],
+        ),
+    ]
+
+    observations: list[dict[str, Any]] = []
+    commenced = commencement_eid_set(effects, statute, observations_out=observations)
+
+    assert commenced == set()
+    assert observations == [
+        {
+            "rule_id": "uk_commencement_undated_effects_block_self_commencement",
+            "family": "temporal_recovery",
+            "phase": "commencement_filter",
+            "effect_count": 1,
+            "effect_types": ["Appointed Day(s)"],
+            "reason": (
+                "UK source has commencement-style effect rows, but none "
+                "has a replay-applicable effective date; LawVM will not "
+                "silently treat the whole instrument as commenced."
+            ),
+            "blocking": False,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+        }
+    ]
+
+
 def test_compile_empty_effect_type_does_not_infer_range_from_word_fragments() -> None:
     extracted_el = ET.fromstring(
         f"""
