@@ -302,13 +302,13 @@ from lawvm.uk_legislation.source_definition_context import (
 )
 from lawvm.uk_legislation.source_definition_fragments import (
     _fragment_substitution_source_carried_after_quoted_anchor_insert,
-    _fragment_substitution_source_carried_definition_child_at_end_insert,
     _fragment_substitution_source_carried_definition_child_insert,
     _fragment_substitution_source_carried_definition_child_text_omission,
     _fragment_substitution_source_carried_definition_entry_insert,
     _fragment_substitution_source_carried_definition_entry_substitution,
     _fragment_substitution_source_carried_following_words_repeal,
     _fragment_substitution_source_carried_quoted_text_substitution,
+    lower_source_carried_definition_child_at_end_insert,
     lower_source_carried_definition_child_text_omission,
 )
 from lawvm.uk_legislation.source_fragment_context import (
@@ -1306,93 +1306,33 @@ def compile_effect_to_ir_ops(
             extracted_text=extracted_text,
             lowering_rejections_out=lowering_rejections_out,
         )
+        target = definition_child_text_omission_lowering.target
         curr_action = definition_child_text_omission_lowering.curr_action
         content_ir = definition_child_text_omission_lowering.content_ir
         fragment_subs = definition_child_text_omission_lowering.fragment_subs
         op_text_match = definition_child_text_omission_lowering.op_text_match
         op_text_replacement = definition_child_text_omission_lowering.op_text_replacement
 
-        source_carried_definition_child_at_end_insert = (
-            _fragment_substitution_source_carried_definition_child_at_end_insert(
-                extracted_el=extracted_el,
-                source_root=source_root,
-                extracted_text=extracted_text,
-            )
-            if extracted_text and curr_action == "insert"
-            else None
+        definition_child_at_end_insert_lowering = lower_source_carried_definition_child_at_end_insert(
+            effect=effect,
+            curr_action=curr_action,
+            content_ir=content_ir,
+            fragment_subs=fragment_subs,
+            op_text_match=op_text_match,
+            op_text_replacement=op_text_replacement,
+            target=target,
+            target_ref=t_str,
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
         )
-        if source_carried_definition_child_at_end_insert is not None:
-            fragment_subs = [source_carried_definition_child_at_end_insert]
-            content_ir = None
-            op_text_match = source_carried_definition_child_at_end_insert["original"]
-            op_text_replacement = source_carried_definition_child_at_end_insert["replacement"]
-            curr_action = "text_replace"
-            source_definition_child_refined_target = _source_definition_child_refined_target(
-                target=target,
-                fragment=source_carried_definition_child_at_end_insert,
-            )
-            if source_definition_child_refined_target is not None:
-                _append_uk_effect_lowering_observation(
-                    lowering_rejections_out,
-                    rule_id="uk_effect_source_parent_definition_child_target_refined",
-                    family="source_context_elaboration",
-                    reason_code="source_parent_definition_child_refines_direct_section_paragraph",
-                    reason=(
-                        "UK affected-provision metadata names a direct section paragraph, "
-                        "while the source parent explicitly says that paragraph is inside "
-                        "a named definition entry; lowering targets the containing section "
-                        "and preserves the child paragraph as a scoped text selector."
-                    ),
-                    effect=effect,
-                    extracted_el=extracted_el,
-                    extracted_text=extracted_text,
-                    detail={
-                        "target_ref": t_str,
-                        "original_target": str(target),
-                        "refined_target": str(source_definition_child_refined_target),
-                        "source_definition_term": str(
-                            source_carried_definition_child_at_end_insert.get("source_definition_term") or ""
-                        ),
-                        "source_child_label": str(
-                            source_carried_definition_child_at_end_insert.get("source_child_label") or ""
-                        ),
-                    },
-                )
-                target = source_definition_child_refined_target
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id="uk_effect_source_carried_definition_child_at_end_insert_text_patch",
-                family="source_context_elaboration",
-                reason_code="definition_child_at_end_insert_resolved_from_parent_source",
-                reason=(
-                    "UK source payload contains only the inserted definition-child tail, "
-                    "while the parent source instruction names the definition term and "
-                    "paragraph; lowering combines those source-local facts into a bounded "
-                    "definition-child text append instead of inserting an unreachable "
-                    "address-only subparagraph."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "target_ref": t_str,
-                    "target": str(target),
-                    "source_parent_id": str(
-                        source_carried_definition_child_at_end_insert.get("source_parent_id") or ""
-                    ),
-                    "source_definition_term": str(
-                        source_carried_definition_child_at_end_insert.get("source_definition_term") or ""
-                    ),
-                    "source_child_label": str(
-                        source_carried_definition_child_at_end_insert.get("source_child_label") or ""
-                    ),
-                    "source_child_sublabel": str(
-                        source_carried_definition_child_at_end_insert.get("source_child_sublabel") or ""
-                    ),
-                    "text_match": op_text_match,
-                    "replacement": op_text_replacement,
-                },
-            )
+        target = definition_child_at_end_insert_lowering.target
+        curr_action = definition_child_at_end_insert_lowering.curr_action
+        content_ir = definition_child_at_end_insert_lowering.content_ir
+        fragment_subs = definition_child_at_end_insert_lowering.fragment_subs
+        op_text_match = definition_child_at_end_insert_lowering.op_text_match
+        op_text_replacement = definition_child_at_end_insert_lowering.op_text_replacement
 
         word_level_text_patch_required = (
             is_word_level
