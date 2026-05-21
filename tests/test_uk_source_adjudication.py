@@ -247,6 +247,21 @@ def test_classify_uk_replay_adjudication_bucket() -> None:
         assert sa.classify_uk_replay_adjudication_bucket(kind) == expected_bucket
 
 
+def test_classify_uk_replay_adjudication_bucket_is_exhaustive_for_owned_kinds() -> None:
+    owned_buckets = (
+        (sa.UK_REPLAY_BUG_ADJUDICATION_KINDS, "replay_bug"),
+        (sa.UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS, "source_shape"),
+        (sa.UK_REPLAY_TEXT_SURFACE_ADJUDICATION_KINDS, "text_surface"),
+        (sa.UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS, "nonblocking_observation"),
+    )
+    seen: set[str] = set()
+    for kinds, expected_bucket in owned_buckets:
+        assert sorted(seen & kinds) == []
+        seen.update(kinds)
+        for kind in kinds:
+            assert sa.classify_uk_replay_adjudication_bucket(kind) == expected_bucket
+
+
 def test_classify_uk_no_oracle_as_non_core() -> None:
     comparison = classify_uk_bench_comparison(
         n_enacted_eids=72,
