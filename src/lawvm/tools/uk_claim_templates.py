@@ -9,12 +9,15 @@ UK_CLAIM_TEMPLATE_RULE_IDS = frozenset(
     {
         "uk_manual_frontier_appropriate_place_candidate",
         "uk_manual_frontier_appropriate_place_definition_entry_candidate",
+        "uk_manual_frontier_amendment_program_target_candidate",
         "uk_manual_frontier_crossheading_candidate",
         "uk_manual_frontier_heading_facet_candidate",
         "uk_manual_frontier_range_to_container_candidate",
         "uk_manual_frontier_repeal_table_candidate",
         "uk_manual_frontier_schedule_list_entry_candidate",
         "uk_manual_frontier_schedule_note_candidate",
+        "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate",
+        "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
         "uk_manual_frontier_source_carried_structured_text_patch_candidate",
         "uk_manual_frontier_structural_sibling_insert_candidate",
         "uk_manual_frontier_table_appropriate_place_candidate",
@@ -254,6 +257,26 @@ def manual_compile_suggested_claim_template(
                 "changed_paths_are_within_declared_sibling_insertion_boundary",
             ],
         )
+    if summary.manual_compile_rule_id == "uk_manual_frontier_amendment_program_target_candidate":
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="amendment_program_target_mutation",
+            placement_family="inserted_parent_instruction_context_required",
+            required_ownership=[
+                "source_amendment_program_context",
+                "inserted_parent_instruction",
+                "derived_child_target_boundary",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_targets_text_inserted_by_same_amending_program",
+                "claim_identifies_the_parent_instruction_that_created_the_target",
+                "claim_identifies_exact_inserted_parent_or_child_boundary",
+                "claim_preserves_unclaimed_inserted_payload_and_live_target_text",
+                "changed_paths_are_within_declared_amendment_program_target",
+            ],
+        )
     if summary.manual_compile_rule_id == "uk_manual_frontier_repeal_table_candidate":
         return _bounded_mutation_claim_template(
             statute_id=statute_id,
@@ -272,6 +295,52 @@ def manual_compile_suggested_claim_template(
                 "claim_identifies_every_repealed_row_column_or_cell",
                 "claim_preserves_unclaimed_table_rows_columns_and_cells",
                 "changed_paths_are_within_declared_table_repeal_boundary",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate"
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="source_carried_multi_subunit_text_rewrite",
+            placement_family="source_named_child_units_required",
+            required_ownership=[
+                "source_named_child_unit_set",
+                "per_child_text_preimage",
+                "per_child_replacement_or_repeal_payload",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_names_each_child_unit_to_mutate",
+                "claim_splits_the_parent_formula_into_bounded_child_operations",
+                "claim_text_preimage_matches_each_declared_child_surface",
+                "claim_preserves_unclaimed_child_units_and_parent_text",
+                "changed_paths_are_within_declared_child_unit_boundaries",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate"
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="source_carried_child_tail_text_rewrite",
+            placement_family="source_named_child_tail_required",
+            required_ownership=[
+                "source_named_child_anchor",
+                "tail_text_preimage_or_repeal_scope",
+                "replacement_or_repeal_payload",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_names_the_child_anchor_and_tail_scope",
+                "claim_targets_only_the_tail_text_following_that_child",
+                "claim_text_preimage_matches_the_declared_tail_surface",
+                "claim_preserves_child_body_and_unclaimed_parent_text",
+                "changed_paths_are_within_declared_child_tail_boundary",
             ],
         )
     if (

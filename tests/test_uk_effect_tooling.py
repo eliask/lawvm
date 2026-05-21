@@ -50,12 +50,15 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
     assert UK_CLAIM_TEMPLATE_RULE_IDS == {
         "uk_manual_frontier_appropriate_place_candidate",
         "uk_manual_frontier_appropriate_place_definition_entry_candidate",
+        "uk_manual_frontier_amendment_program_target_candidate",
         "uk_manual_frontier_crossheading_candidate",
         "uk_manual_frontier_heading_facet_candidate",
         "uk_manual_frontier_range_to_container_candidate",
         "uk_manual_frontier_repeal_table_candidate",
         "uk_manual_frontier_schedule_list_entry_candidate",
         "uk_manual_frontier_schedule_note_candidate",
+        "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate",
+        "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
         "uk_manual_frontier_source_carried_structured_text_patch_candidate",
         "uk_manual_frontier_structural_sibling_insert_candidate",
         "uk_manual_frontier_table_appropriate_place_candidate",
@@ -2377,6 +2380,119 @@ def test_uk_manual_compile_evidence_jsonl_templates_source_carried_structured_pa
     assert "claim_rejects_flattening_structured_payload_into_host_text" in (
         template["required_validator_checks"]
     )
+    assert template["executable"] is False
+
+
+@pytest.mark.parametrize(
+    (
+        "rule_id",
+        "expected_action_family",
+        "expected_placement_family",
+        "expected_ownership",
+        "expected_validator_check",
+    ),
+    [
+        (
+            "uk_manual_frontier_amendment_program_target_candidate",
+            "amendment_program_target_mutation",
+            "inserted_parent_instruction_context_required",
+            "source_amendment_program_context",
+            "claim_identifies_the_parent_instruction_that_created_the_target",
+        ),
+        (
+            "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
+            "source_carried_multi_subunit_text_rewrite",
+            "source_named_child_units_required",
+            "source_named_child_unit_set",
+            "claim_splits_the_parent_formula_into_bounded_child_operations",
+        ),
+        (
+            "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate",
+            "source_carried_child_tail_text_rewrite",
+            "source_named_child_tail_required",
+            "source_named_child_anchor",
+            "claim_targets_only_the_tail_text_following_that_child",
+        ),
+    ],
+)
+def test_uk_manual_compile_evidence_jsonl_templates_source_carried_frontier_claims(
+    rule_id: str,
+    expected_action_family: str,
+    expected_placement_family: str,
+    expected_ownership: str,
+    expected_validator_check: str,
+) -> None:
+    effect = UKEffectRecord(
+        effect_id=f"eff-{rule_id}",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/1/section/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 9",
+        affecting_uri="/id/ukpga/2024/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="s. 9",
+        affecting_title="Test Act 2024",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="unhandled_instruction_text",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_overlap_substitution_unlowered", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="BlockAmendment",
+            source_extracted_text_preview='In paragraphs (a) and (b), for "old" substitute "new".',
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="deterministic_frontend_candidate",
+            manual_compile_rule_id=rule_id,
+            manual_compile_reason="Source-carried target requires bounded claim.",
+            manual_compile_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_overlap_substitution_unlowered",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    assert payload["suggested_claim_template_status"] == "available"
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == expected_action_family
+    assert template["placement_family"] == expected_placement_family
+    assert expected_ownership in template["required_ownership"]
+    assert expected_validator_check in template["required_validator_checks"]
     assert template["executable"] is False
 
 
