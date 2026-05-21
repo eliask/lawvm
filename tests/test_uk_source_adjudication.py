@@ -105,6 +105,17 @@ def test_uk_replay_source_shape_residual_table_is_owned() -> None:
     assert sorted(sa.UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS - mapped - defaulted) == []
 
 
+def test_uk_replay_text_surface_residual_table_is_owned() -> None:
+    mapped = {
+        adjudication_kind
+        for adjudication_kind, _ in sa._UK_REPLAY_TEXT_SURFACE_RESIDUAL_KIND_PRIORITY
+    }
+
+    assert len(mapped) == len(sa._UK_REPLAY_TEXT_SURFACE_RESIDUAL_KIND_PRIORITY)
+    assert sorted(mapped - sa.UK_REPLAY_TEXT_SURFACE_ADJUDICATION_KINDS) == []
+    assert sorted(sa.UK_REPLAY_TEXT_SURFACE_ADJUDICATION_KINDS - mapped) == []
+
+
 def test_classify_uk_replay_adjudication_bucket() -> None:
     cases = {
         "uk_replay_target_not_found": "replay_bug",

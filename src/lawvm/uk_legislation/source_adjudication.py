@@ -521,6 +521,45 @@ _UK_REPLAY_SOURCE_SHAPE_RESIDUAL_DEFAULT_ADJUDICATION_KINDS = frozenset(
     }
 )
 
+_UK_REPLAY_TEXT_SURFACE_RESIDUAL_KIND_PRIORITY: tuple[tuple[str, str], ...] = (
+    (
+        "uk_replay_text_match_already_rewritten",
+        "uk_text_match_already_rewritten",
+    ),
+    (
+        "uk_replay_text_patch_preimage_drift",
+        "uk_text_patch_preimage_drift",
+    ),
+    (
+        "uk_replay_heading_text_preimage_gap",
+        "uk_heading_text_preimage_gap",
+    ),
+    (
+        "uk_replay_text_insert_anchor_preimage_gap",
+        "uk_text_insert_anchor_preimage_gap",
+    ),
+    (
+        "uk_replay_text_monetary_amount_preimage_gap",
+        "uk_text_monetary_amount_preimage_gap",
+    ),
+    (
+        "uk_replay_text_parenthetical_omission_preimage_gap",
+        "uk_text_parenthetical_omission_preimage_gap",
+    ),
+    (
+        "uk_replay_text_match_citation_connector_surface_gap",
+        "uk_text_match_citation_connector_surface_gap",
+    ),
+    (
+        "uk_replay_text_match_article_phrase_surface_gap",
+        "uk_text_match_article_phrase_surface_gap",
+    ),
+    (
+        "uk_replay_text_match_missing",
+        "uk_text_match_missing",
+    ),
+)
+
 
 def classify_uk_replay_adjudication_bucket(kind: str) -> str:
     """Classify an emitted UK replay adjudication into an evidence bucket."""
@@ -770,6 +809,21 @@ def is_core_uk_comparison(comparison_class: str) -> bool:
     return comparison_class in UK_CORE_COMPARISON_CLASSES
 
 
+def _uk_replay_residual_kind_for_side(
+    base_kind: str,
+    *,
+    replay_only: list[str],
+    oracle_only: list[str],
+) -> str:
+    if replay_only and oracle_only:
+        return f"{base_kind}_mixed_residual_eids"
+    if replay_only:
+        return f"{base_kind}_replay_only_residual_eids"
+    if oracle_only:
+        return f"{base_kind}_oracle_only_residual_eids"
+    return base_kind
+
+
 def classify_uk_replay_residual(
     *,
     only_in_replayed: Iterable[str] = (),
@@ -799,78 +853,17 @@ def classify_uk_replay_residual(
             if adjudication_kind in adjudications:
                 return ("UNRESOLVED", residual_kind)
         return ("UNRESOLVED", _UK_REPLAY_SOURCE_SHAPE_RESIDUAL_DEFAULT_KIND)
-    if "uk_replay_text_match_already_rewritten" in adjudications:
-        if replay_only and oracle_only:
-            return ("UNRESOLVED", "uk_text_match_already_rewritten_mixed_residual_eids")
-        if replay_only:
-            return ("UNRESOLVED", "uk_text_match_already_rewritten_replay_only_residual_eids")
-        if oracle_only:
-            return ("UNRESOLVED", "uk_text_match_already_rewritten_oracle_only_residual_eids")
-        return ("UNRESOLVED", "uk_text_match_already_rewritten")
-    if "uk_replay_text_patch_preimage_drift" in adjudications:
-        if replay_only and oracle_only:
-            return ("UNRESOLVED", "uk_text_patch_preimage_drift_mixed_residual_eids")
-        if replay_only:
-            return ("UNRESOLVED", "uk_text_patch_preimage_drift_replay_only_residual_eids")
-        if oracle_only:
-            return ("UNRESOLVED", "uk_text_patch_preimage_drift_oracle_only_residual_eids")
-        return ("UNRESOLVED", "uk_text_patch_preimage_drift")
-    if "uk_replay_heading_text_preimage_gap" in adjudications:
-        if replay_only and oracle_only:
-            return ("UNRESOLVED", "uk_heading_text_preimage_gap_mixed_residual_eids")
-        if replay_only:
-            return ("UNRESOLVED", "uk_heading_text_preimage_gap_replay_only_residual_eids")
-        if oracle_only:
-            return ("UNRESOLVED", "uk_heading_text_preimage_gap_oracle_only_residual_eids")
-        return ("UNRESOLVED", "uk_heading_text_preimage_gap")
-    if "uk_replay_text_insert_anchor_preimage_gap" in adjudications:
-        if replay_only and oracle_only:
-            return ("UNRESOLVED", "uk_text_insert_anchor_preimage_gap_mixed_residual_eids")
-        if replay_only:
-            return ("UNRESOLVED", "uk_text_insert_anchor_preimage_gap_replay_only_residual_eids")
-        if oracle_only:
-            return ("UNRESOLVED", "uk_text_insert_anchor_preimage_gap_oracle_only_residual_eids")
-        return ("UNRESOLVED", "uk_text_insert_anchor_preimage_gap")
-    if "uk_replay_text_monetary_amount_preimage_gap" in adjudications:
-        if replay_only and oracle_only:
-            return ("UNRESOLVED", "uk_text_monetary_amount_preimage_gap_mixed_residual_eids")
-        if replay_only:
-            return ("UNRESOLVED", "uk_text_monetary_amount_preimage_gap_replay_only_residual_eids")
-        if oracle_only:
-            return ("UNRESOLVED", "uk_text_monetary_amount_preimage_gap_oracle_only_residual_eids")
-        return ("UNRESOLVED", "uk_text_monetary_amount_preimage_gap")
-    if "uk_replay_text_parenthetical_omission_preimage_gap" in adjudications:
-        if replay_only and oracle_only:
-            return ("UNRESOLVED", "uk_text_parenthetical_omission_preimage_gap_mixed_residual_eids")
-        if replay_only:
-            return ("UNRESOLVED", "uk_text_parenthetical_omission_preimage_gap_replay_only_residual_eids")
-        if oracle_only:
-            return ("UNRESOLVED", "uk_text_parenthetical_omission_preimage_gap_oracle_only_residual_eids")
-        return ("UNRESOLVED", "uk_text_parenthetical_omission_preimage_gap")
-    if "uk_replay_text_match_citation_connector_surface_gap" in adjudications:
-        if replay_only and oracle_only:
-            return ("UNRESOLVED", "uk_text_match_citation_connector_surface_gap_mixed_residual_eids")
-        if replay_only:
-            return ("UNRESOLVED", "uk_text_match_citation_connector_surface_gap_replay_only_residual_eids")
-        if oracle_only:
-            return ("UNRESOLVED", "uk_text_match_citation_connector_surface_gap_oracle_only_residual_eids")
-        return ("UNRESOLVED", "uk_text_match_citation_connector_surface_gap")
-    if "uk_replay_text_match_article_phrase_surface_gap" in adjudications:
-        if replay_only and oracle_only:
-            return ("UNRESOLVED", "uk_text_match_article_phrase_surface_gap_mixed_residual_eids")
-        if replay_only:
-            return ("UNRESOLVED", "uk_text_match_article_phrase_surface_gap_replay_only_residual_eids")
-        if oracle_only:
-            return ("UNRESOLVED", "uk_text_match_article_phrase_surface_gap_oracle_only_residual_eids")
-        return ("UNRESOLVED", "uk_text_match_article_phrase_surface_gap")
-    if "uk_replay_text_match_missing" in adjudications:
-        if replay_only and oracle_only:
-            return ("UNRESOLVED", "uk_text_match_missing_mixed_residual_eids")
-        if replay_only:
-            return ("UNRESOLVED", "uk_text_match_missing_replay_only_residual_eids")
-        if oracle_only:
-            return ("UNRESOLVED", "uk_text_match_missing_oracle_only_residual_eids")
-        return ("UNRESOLVED", "uk_text_match_missing")
+    if adjudications & UK_REPLAY_TEXT_SURFACE_ADJUDICATION_KINDS:
+        for adjudication_kind, residual_kind in _UK_REPLAY_TEXT_SURFACE_RESIDUAL_KIND_PRIORITY:
+            if adjudication_kind in adjudications:
+                return (
+                    "UNRESOLVED",
+                    _uk_replay_residual_kind_for_side(
+                        residual_kind,
+                        replay_only=replay_only,
+                        oracle_only=oracle_only,
+                    ),
+                )
     if replay_only and oracle_only:
         return ("UNRESOLVED", "uk_mixed_residual_eids")
     if replay_only:
