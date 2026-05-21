@@ -8057,6 +8057,68 @@ def test_compile_repeal_table_structural_part_clause_after_word_clause() -> None
     )
 
 
+def test_compile_repeal_table_mixed_structural_and_word_repeal_stays_unresolved() -> None:
+    source_root = ET.fromstring(
+        """
+        <Legislation>
+          <Schedule>
+            <Table>
+              <thead><tr><th>Enactment</th><th>Extent of repeal</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>Transport (Scotland) Act 2001 (asp 2)</td>
+                  <td>Section 69(3)(b) and the word “and” immediately preceding it.</td>
+                </tr>
+              </tbody>
+            </Table>
+          </Schedule>
+        </Legislation>
+        """
+    )
+    extracted_el = source_root.find(".//Schedule")
+    assert extracted_el is not None
+    effect = UKEffectRecord(
+        effect_id="uk_test_repeal_table_mixed_structural_word",
+        effect_type="repealed",
+        applied=True,
+        requires_applied=False,
+        modified="2008-02-11",
+        affected_uri="/id/asp/2001/2/section/69/subsection/3/paragraph/b",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 69(3)(b) and word",
+        affecting_uri="/id/asp/2008/1",
+        affecting_class="ScottishAct",
+        affecting_year="2008",
+        affecting_number="1",
+        affecting_provisions="sch. 2",
+        affecting_title="Test Repeal Act",
+        in_force_dates=[{"date": "2008-02-11", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+        source_root=source_root,
+    )
+
+    assert ops == []
+    assert any(
+        record["rule_id"] == "uk_effect_repeal_table_structural_repeal_unresolved"
+        and record["reason_code"] == "mixed_structural_and_word_repeal_requires_split"
+        and record["target"] == "section:69/subsection:3/paragraph:b"
+        and record["match_count"] == 0
+        and record["extent_cell"]
+        == "Section 69(3)(b) and the word “and” immediately preceding it."
+        and record["blocking"] is True
+        for record in lowering_records
+    )
+
+
 def test_compile_repeal_table_structural_part_list_non_member_unresolved() -> None:
     source_root = ET.fromstring(
         """
