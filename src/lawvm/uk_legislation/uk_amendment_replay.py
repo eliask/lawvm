@@ -367,6 +367,7 @@ from lawvm.uk_legislation.replay_target_gaps import (
     uk_malformed_target_placeholder_label_gap,
     uk_malformed_target_schedule_root_label_gap,
     uk_malformed_target_sectionlike_label_gap,
+    uk_missing_source_target_gap,
     uk_paragraph_order_shape_gap,
     uk_part_order_shape_gap,
     uk_payload_container_shape_gap,
@@ -374,6 +375,7 @@ from lawvm.uk_legislation.replay_target_gaps import (
     uk_repeated_form_label_payload_shape_gap,
     uk_replace_payload_kind_mismatch_gap,
     uk_section_order_shape_gap,
+    uk_source_anchored_order_observation,
     uk_subparagraph_order_shape_gap,
     uk_table_target_shape_gap,
 )
@@ -6327,31 +6329,6 @@ class UKReplayExecutor:
                 violations.add(f"{root_name}:{violation}")
         return violations
 
-    def _source_anchored_order_observation(self, op: LegalOperation, scoped_violation: str) -> bool:
-        if _action_name(op.action) != "insert":
-            return False
-        if " out of order:" not in str(scoped_violation or "").lower():
-            return False
-        witness = _witness_for_op(op)
-        insertion_anchor_witness = getattr(witness, "insertion_anchor_witness", None)
-        if insertion_anchor_witness is None:
-            return False
-        if not (
-            getattr(insertion_anchor_witness, "preceding_eid", None)
-            or getattr(insertion_anchor_witness, "following_eid", None)
-        ):
-            return False
-        target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
-        if not target_path:
-            return False
-        target_kind = str(target_path[-1][0] or "").lower()
-        target_label = _clean_num(str(target_path[-1][1] or ""))
-        if not target_kind or not target_label:
-            return False
-        if f"{target_kind} out of order:" not in str(scoped_violation or "").lower():
-            return False
-        return target_label in _clean_num(scoped_violation)
-
     def _record_invariant_violations(self, op: LegalOperation) -> None:
         current_violations = self._collect_invariant_violations()
         payload_shape_violations = uk_payload_shape_invariant_violations(op)
@@ -6424,7 +6401,7 @@ class UKReplayExecutor:
                         "violation": scoped_violation,
                     },
                 )
-            elif self._source_anchored_order_observation(op, scoped_violation):
+            elif uk_source_anchored_order_observation(op, scoped_violation):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_source_anchored_order_observed",
@@ -6932,18 +6909,6 @@ class UKReplayExecutor:
         if self._malformed_target_gap(target):
             return "uk_replay_malformed_target_granularity_collapse_gap"
         return "uk_replay_malformed_target_gap"
-
-    def _missing_source_target_gap(self, op: LegalOperation) -> bool:
-        witness = _witness_for_op(op)
-        extraction = getattr(witness, "extraction_witness", None)
-        authority_layer = str(getattr(extraction, "authority_layer", "") or "")
-        extraction_failure_kind = str(getattr(extraction, "extraction_failure_kind", "") or "")
-        extracted_source_present = bool(getattr(extraction, "extracted_source_present", False))
-        return (
-            authority_layer == "EFFECT_FEED_INDEX"
-            and not extracted_source_present
-            and extraction_failure_kind == "missing_extracted_source"
-        )
 
     def _empty_descendant_shape_gap(self, target: LegalAddress) -> bool:
         path = tuple(getattr(target, "path", ()) or ())
@@ -8604,7 +8569,7 @@ class UKReplayExecutor:
                         op=op,
                         detail={"action": _action_name(op.action), "target": str(target)},
                     )
-                elif self._missing_source_target_gap(op):
+                elif uk_missing_source_target_gap(op):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
                         kind="uk_replay_missing_source_target_gap",

@@ -15,6 +15,7 @@ from lawvm.uk_legislation.canonicalize import uk_kind_matches
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.replay_text import _normalized_replay_subtree_text
 from lawvm.uk_legislation.uk_grafter import _clean_num
+from lawvm.uk_legislation.witness_sidecars import _witness_for_op
 
 
 def uk_table_target_shape_gap(target: LegalAddress) -> bool:
@@ -117,6 +118,45 @@ def uk_replace_payload_kind_mismatch_gap(op: LegalOperation, scoped_violation: s
             and payload_kind in {"item", "point"}
             and "duplicate " in scoped_violation.lower()
         )
+    )
+
+
+def uk_source_anchored_order_observation(op: LegalOperation, scoped_violation: str) -> bool:
+    if _action_name(op.action) != "insert":
+        return False
+    if " out of order:" not in str(scoped_violation or "").lower():
+        return False
+    witness = _witness_for_op(op)
+    insertion_anchor_witness = getattr(witness, "insertion_anchor_witness", None)
+    if insertion_anchor_witness is None:
+        return False
+    if not (
+        getattr(insertion_anchor_witness, "preceding_eid", None)
+        or getattr(insertion_anchor_witness, "following_eid", None)
+    ):
+        return False
+    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    if not target_path:
+        return False
+    target_kind = str(target_path[-1][0] or "").lower()
+    target_label = _clean_num(str(target_path[-1][1] or ""))
+    if not target_kind or not target_label:
+        return False
+    if f"{target_kind} out of order:" not in str(scoped_violation or "").lower():
+        return False
+    return target_label in _clean_num(scoped_violation)
+
+
+def uk_missing_source_target_gap(op: LegalOperation) -> bool:
+    witness = _witness_for_op(op)
+    extraction = getattr(witness, "extraction_witness", None)
+    authority_layer = str(getattr(extraction, "authority_layer", "") or "")
+    extraction_failure_kind = str(getattr(extraction, "extraction_failure_kind", "") or "")
+    extracted_source_present = bool(getattr(extraction, "extracted_source_present", False))
+    return (
+        authority_layer == "EFFECT_FEED_INDEX"
+        and not extracted_source_present
+        and extraction_failure_kind == "missing_extracted_source"
     )
 
 
