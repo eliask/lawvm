@@ -1476,6 +1476,12 @@ Current block-substitution context invariant:
   parser/extraction work for `uk_effect_overlap_substitution_unlowered`, not as
   an unclassified frontier. Witness pattern: `For the period ... there is
   substituted the period of four years.`
+- the parser may lower after-anchor insertions with adverbial ordinal wording
+  such as `after "board", where secondly occurring, there is inserted "..."` to
+  `uk_effect_after_quoted_anchor_where_ordinal_insert_text_patch`, preserving
+  `occurrence=2`. This is only allowed for explicit quoted anchors and quoted
+  insertion payloads. Current witness: `asp/2003/1` affected `s. 61(c)(iv)` by
+  `asp/2005/12 Sch. 1 para. 15(5)`.
 - the parser may lower `after the definition of "X" insert- <block text>` and
   `after the definition of "X", insert- <block text>` to a
   `TEXT_AFTER_DEFINITION_X` patch using the named rule
