@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import warnings
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from lawvm.core.ir import IRNode, IRStatute
 from lawvm.core.semantic_types import IRNodeKind
@@ -115,3 +115,36 @@ class UKMutableStatute:
             supplements=[UKMutableNode.from_irnode(supplement) for supplement in statute.supplements],
             metadata=dict(statute.metadata),
         )
+
+
+def uk_replace_children(node: UKMutableNode, new_children: list[UKMutableNode]) -> bool:
+    node.children = list(new_children)
+    return True
+
+
+def uk_replace_text(node: UKMutableNode, new_text: str) -> bool:
+    node.text = new_text
+    return True
+
+
+def uk_replace_text_and_children(
+    node: UKMutableNode,
+    *,
+    text: str,
+    children: list[UKMutableNode],
+) -> bool:
+    node.text = text
+    node.children = list(children)
+    return True
+
+
+def uk_insert_child_sorted(parent: UKMutableNode, new_node: UKMutableNode) -> bool:
+    from lawvm.uk_legislation.canonicalize import uk_insert_into_children
+    from lawvm.uk_legislation.ordering import _label_sort_key
+
+    uk_insert_into_children(
+        cast(list[IRNode], parent.children),
+        cast(IRNode, new_node),
+        label_sort_key=_label_sort_key,
+    )
+    return True
