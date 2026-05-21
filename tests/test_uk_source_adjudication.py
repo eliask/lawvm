@@ -30,6 +30,20 @@ def _uk_replay_string_constants(path: Path) -> set[str]:
     }
 
 
+def _function_return_string_constants(path: Path, function_name: str) -> set[str]:
+    tree = ast.parse(path.read_text())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == function_name:
+            return {
+                child.value.value
+                for child in ast.walk(node)
+                if isinstance(child, ast.Return)
+                and isinstance(child.value, ast.Constant)
+                and isinstance(child.value.value, str)
+            }
+    raise AssertionError(f"function not found: {function_name}")
+
+
 def test_uk_replay_emitted_adjudication_kinds_are_explicitly_owned() -> None:
     replay_path = Path(__file__).parents[1] / "src/lawvm/uk_legislation/uk_amendment_replay.py"
     emitted = _uk_replay_string_constants(replay_path)
@@ -41,6 +55,20 @@ def test_uk_replay_emitted_adjudication_kinds_are_explicitly_owned() -> None:
     )
 
     assert sorted(emitted - owned) == []
+
+
+def test_uk_effect_source_pathology_classes_are_explicitly_owned() -> None:
+    source_path = Path(__file__).parents[1] / "src/lawvm/uk_legislation/source_adjudication.py"
+    emitted = {
+        value
+        for value in _function_return_string_constants(
+            source_path,
+            "classify_uk_effect_source_pathology",
+        )
+        if value
+    }
+
+    assert sorted(emitted - sa.UK_EFFECT_SOURCE_PATHOLOGY_CLASSES) == []
 
 
 def test_classify_uk_replay_adjudication_bucket() -> None:
