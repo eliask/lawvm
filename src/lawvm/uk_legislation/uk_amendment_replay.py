@@ -1065,6 +1065,43 @@ def _source_context_for_effect(
     return source_context
 
 
+def _classify_compiled_effect_source_pathology(
+    *,
+    effect: UKEffectRecord,
+    extracted_tag: Optional[str],
+    extracted_text: str,
+    compiled_ops: list[LegalOperation],
+    lowering_rejections: Optional[list[dict[str, Any]]],
+    lowering_rejection_start_index: int,
+    structural_for_replay: bool,
+) -> str:
+    from lawvm.uk_legislation.source_adjudication import classify_uk_effect_source_pathology
+
+    return classify_uk_effect_source_pathology(
+        extracted_tag=extracted_tag,
+        extracted_text=extracted_text,
+        op_actions=[_action_name(op.action) for op in compiled_ops],
+        payload_kinds=[
+            str(op.payload.kind) for op in compiled_ops if op.payload is not None
+        ],
+        payload_texts=[
+            op.payload.text or "" for op in compiled_ops if op.payload is not None
+        ],
+        target_paths=[
+            "/".join(f"{kind}:{label}" for kind, label in op.target.path)
+            for op in compiled_ops
+        ],
+        lowering_rule_ids=[]
+        if lowering_rejections is None
+        else [
+            str(row.get("rule_id") or "")
+            for row in lowering_rejections[lowering_rejection_start_index:]
+        ],
+        effect_type=effect.effect_type,
+        is_structural=structural_for_replay,
+    )
+
+
 class UKReplayPipeline:
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root
@@ -1126,8 +1163,6 @@ class UKReplayPipeline:
             diagnostics_out=effect_diagnostics_out,
             lowering_observations_out=lowering_rejections_out,
         )
-
-        from lawvm.uk_legislation.source_adjudication import classify_uk_effect_source_pathology
 
         ops = []
         extraction_cache: dict[str, UKAffectingSourceContext] = {}
@@ -1199,19 +1234,14 @@ class UKReplayPipeline:
                 )
             extracted_tag = el.tag.rsplit("}", 1)[-1] if el is not None else None
             extracted_text = " ".join(t.strip() for t in el.itertext() if t and t.strip()) if el is not None else ""
-            source_pathology = classify_uk_effect_source_pathology(
+            source_pathology = _classify_compiled_effect_source_pathology(
+                effect=e,
                 extracted_tag=extracted_tag,
                 extracted_text=extracted_text,
-                op_actions=[_action_name(op.action) for op in compiled],
-                payload_kinds=[str(op.payload.kind) for op in compiled if op.payload is not None],
-                payload_texts=[op.payload.text or "" for op in compiled if op.payload is not None],
-                target_paths=["/".join(f"{kind}:{label}" for kind, label in op.target.path) for op in compiled],
-                lowering_rule_ids=[] if lowering_rejections_out is None else [
-                    str(row.get("rule_id") or "")
-                    for row in lowering_rejections_out[lowering_rejection_count_before:]
-                ],
-                effect_type=e.effect_type,
-                is_structural=structural_for_replay,
+                compiled_ops=compiled,
+                lowering_rejections=lowering_rejections_out,
+                lowering_rejection_start_index=lowering_rejection_count_before,
+                structural_for_replay=structural_for_replay,
             )
             append_source_pathology_classified_diagnostic(
                 effect_diagnostics_out,
