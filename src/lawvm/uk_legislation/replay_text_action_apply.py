@@ -540,6 +540,14 @@ class UKReplayTextActionApplyMixin:
                     family = "text_rewrite_recovery"
                     strict_disposition = "record"
                     source_shape = "source_carried_after_child_selector"
+                elif recovery_rule_id == "uk_replay_source_carried_multi_child_text_rewrite_applied":
+                    message = (
+                        "UK replay applied a source-carried multi-child text rewrite "
+                        "after proving every named child target is present and unique."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "source_carried_multi_child_selector"
                 else:
                     message = (
                         "UK replay applied text-based op after normalizing "
