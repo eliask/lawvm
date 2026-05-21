@@ -158,6 +158,7 @@ from lawvm.uk_legislation.lowering_actions import (
 )
 from lawvm.uk_legislation.metadata_rewrites import (
     UKMetadataRenumberTargets,
+    _renumbered_descendant_text,
     _select_whole_schedule_element,
     _uk_metadata_renumber_targets,
     _uk_source_text_corrected_renumber_targets,
@@ -9220,22 +9221,6 @@ class UKReplayExecutor:
                 )
             )
 
-    def _renumbered_descendant_text(
-        self,
-        text: str,
-        *,
-        source_label: Optional[str],
-        destination_label: Optional[str],
-    ) -> str:
-        source_clean = _clean_num(source_label or "")
-        destination_clean = _clean_num(destination_label or "")
-        if not text or not source_clean or not destination_clean:
-            return text
-        pattern = re.compile(rf"^\s*{re.escape(source_clean)}(?![0-9A-Za-z])[\s\u00a0]*")
-        if pattern.search(text):
-            return pattern.sub(destination_clean, text, count=1)
-        return text
-
     def _apply_same_provision_descendant_renumber(self, op: LegalOperation) -> bool:
         source_target = canonicalize_uk_address(op.target)
         destination = canonicalize_uk_address(op.destination) if op.destination is not None else None
@@ -9265,7 +9250,7 @@ class UKReplayExecutor:
         child = UKMutableNode(
             kind=IRNodeKind(destination_kind),
             label=destination_label,
-            text=self._renumbered_descendant_text(
+            text=_renumbered_descendant_text(
                 source_node.text or "",
                 source_label=source_node.label,
                 destination_label=destination_label,
@@ -9305,7 +9290,7 @@ class UKReplayExecutor:
         moved = dc_replace(
             source_node,
             label=destination_label,
-            text=self._renumbered_descendant_text(
+            text=_renumbered_descendant_text(
                 source_node.text or "",
                 source_label=source_node.label,
                 destination_label=destination_label,
