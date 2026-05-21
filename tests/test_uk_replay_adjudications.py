@@ -23,6 +23,7 @@ from lawvm.uk_legislation.replay_text_apply import (
     _rewrite_definition_range_text,
     _rewrite_definition_range_to_end_text,
     _rewrite_each_anchor_in_definition_entry_text,
+    _rewrite_flat_definition_child_inner_text,
     _rewrite_flat_definition_child_ordinal_text,
 )
 from lawvm.uk_legislation.source_adjudication import classify_uk_replay_adjudication_bucket
@@ -402,6 +403,77 @@ def test_rewrite_flat_definition_child_ordinal_text_rejects_missing_child() -> N
         term="review partner",
         child_label="c",
         replacement="an integrated care board, or",
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is False
+    assert rewritten == original
+
+
+def test_rewrite_flat_definition_child_inner_text_appends_at_child_end() -> None:
+    rewritten, applied = _rewrite_flat_definition_child_inner_text(
+        (
+            '"relevant policies" means first policy; second policy; '
+            '"other" means another value;'
+        ),
+        term="relevant policies",
+        child_label="b",
+        pattern="",
+        replacement_text="including local plans",
+        child_after_anchor=False,
+        child_at_end=True,
+        occurrence=0,
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is True
+    assert rewritten == (
+        '"relevant policies" means first policy;second policy; including local plans '
+        '"other" means another value;'
+    )
+
+
+def test_rewrite_flat_definition_child_inner_text_replaces_unique_child_witness() -> None:
+    rewritten, applied = _rewrite_flat_definition_child_inner_text(
+        (
+            '"relevant policies" means first policy; second policy applies; '
+            '"other" means another value;'
+        ),
+        term="relevant policies",
+        child_label="b",
+        pattern="applies",
+        replacement_text="is relevant",
+        child_after_anchor=False,
+        child_at_end=False,
+        occurrence=0,
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is True
+    assert rewritten == (
+        '"relevant policies" means first policy; second policy is relevant; '
+        '"other" means another value;'
+    )
+
+
+def test_rewrite_flat_definition_child_inner_text_rejects_ambiguous_child_witness() -> None:
+    original = (
+        '"relevant policies" means first policy; second policy and policy; '
+        '"other" means another value;'
+    )
+
+    rewritten, applied = _rewrite_flat_definition_child_inner_text(
+        original,
+        term="relevant policies",
+        child_label="b",
+        pattern="policy",
+        replacement_text="plan",
+        child_after_anchor=False,
+        child_at_end=False,
+        occurrence=0,
         allow_punctuation_spacing=False,
         allow_word_punctuation_elision=False,
     )

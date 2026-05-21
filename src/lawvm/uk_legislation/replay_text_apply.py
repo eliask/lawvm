@@ -305,6 +305,60 @@ def _rewrite_flat_definition_child_ordinal_text(
     return " ".join(new_text.split()).strip(), True
 
 
+def _rewrite_flat_definition_child_inner_text(
+    text: str,
+    *,
+    term: str,
+    child_label: str,
+    pattern: str,
+    replacement_text: str,
+    child_after_anchor: bool,
+    child_at_end: bool,
+    occurrence: int,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[str, bool]:
+    bounds = _flat_definition_child_bounds(
+        text,
+        term=term,
+        child_label=child_label,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    if bounds is None:
+        return text, False
+    ordinal, body_start, entry_end, semicolons = bounds
+    segment_start = body_start
+    if ordinal > 1:
+        segment_start = body_start + semicolons[ordinal - 2].end()
+    search_end = (
+        body_start + semicolons[ordinal - 1].end()
+        if child_after_anchor
+        else body_start + semicolons[ordinal].end()
+        if len(semicolons) > ordinal
+        else entry_end
+    )
+    segment = text[segment_start:search_end]
+    if child_at_end:
+        new_segment = _append_definition_child_suffix_text(segment, replacement_text)
+        new_text = f"{text[:segment_start]}{new_segment}{text[search_end:]}"
+        return " ".join(new_text.split()).strip(), True
+    matches = list(re.finditer(pattern, segment, flags=re.I | re.S))
+    if child_after_anchor:
+        required_occurrence = occurrence if occurrence > 0 else 1
+        if len(matches) < required_occurrence:
+            return text, False
+        match_obj = matches[required_occurrence - 1]
+    else:
+        if len(matches) != 1:
+            return text, False
+        match_obj = matches[0]
+    absolute_start = segment_start + match_obj.start()
+    absolute_end = segment_start + match_obj.end()
+    new_text = f"{text[:absolute_start]}{replacement_text}{text[absolute_end:]}"
+    return " ".join(new_text.split()).strip(), True
+
+
 def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
     current = n
     for index in path:
@@ -1663,52 +1717,22 @@ class UKReplayTextApplyMixin:
                     )
                 return rebuilt, True
 
-            def _rewrite_flat_definition_child(text: str) -> tuple[str, bool]:
-                bounds = _flat_definition_child_bounds(
-                    text,
-                    term=term,
-                    child_label=child_label,
-                    allow_punctuation_spacing=allow_punctuation_spacing,
-                    allow_word_punctuation_elision=allow_word_punctuation_elision,
-                )
-                if bounds is None:
-                    return text, False
-                ordinal, body_start, entry_end, semicolons = bounds
-                segment_start = body_start
-                if ordinal > 1:
-                    segment_start = body_start + semicolons[ordinal - 2].end()
-                search_end = (
-                    body_start + semicolons[ordinal - 1].end()
-                    if child_after_anchor
-                    else body_start + semicolons[ordinal].end()
-                    if len(semicolons) > ordinal
-                    else entry_end
-                )
-                segment = text[segment_start:search_end]
-                if child_at_end:
-                    new_segment = _append_definition_child_suffix_text(segment, replacement_text)
-                    new_text = f"{text[:segment_start]}{new_segment}{text[search_end:]}"
-                    return " ".join(new_text.split()).strip(), True
-                matches = list(re.finditer(pattern, segment, flags=re.I | re.S))
-                if child_after_anchor:
-                    required_occurrence = occurrence if occurrence > 0 else 1
-                    if len(matches) < required_occurrence:
-                        return text, False
-                    match_obj = matches[required_occurrence - 1]
-                else:
-                    if len(matches) != 1:
-                        return text, False
-                    match_obj = matches[0]
-                absolute_start = segment_start + match_obj.start()
-                absolute_end = segment_start + match_obj.end()
-                new_text = f"{text[:absolute_start]}{replacement_text}{text[absolute_end:]}"
-                return " ".join(new_text.split()).strip(), True
-
             candidate_rewrites: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
             for text_path, text_node in text_nodes:
                 if not text_node.text:
                     continue
-                new_text, changed = _rewrite_flat_definition_child(text_node.text)
+                new_text, changed = _rewrite_flat_definition_child_inner_text(
+                    text_node.text,
+                    term=term,
+                    child_label=child_label,
+                    pattern=pattern,
+                    replacement_text=replacement_text,
+                    child_after_anchor=bool(child_after_anchor),
+                    child_at_end=child_at_end,
+                    occurrence=occurrence,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
                 if changed:
                     candidate_rewrites.append((text_path, text_node, new_text))
             if len(candidate_rewrites) != 1:
