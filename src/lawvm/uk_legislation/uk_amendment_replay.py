@@ -93,6 +93,10 @@ from lawvm.uk_legislation.effect_lowering_tail import (
     build_trailing_repeal_ops,
 )
 from lawvm.uk_legislation.effect_operation_builder import build_lowered_operation_provenance
+from lawvm.uk_legislation.effect_payload_rejections import (
+    reject_missing_structural_payload,
+    reject_mixed_heading_structural_insert_missing_payload,
+)
 from lawvm.uk_legislation.effect_crossheading_prelude import (
     build_crossheading_context,
     build_crossheading_compound_heading_op,
@@ -1115,27 +1119,15 @@ def compile_effect_to_ir_ops(
                         payload_match_target,
                     )
 
-        if content_ir is None and t_str in mixed_heading_source_ref_by_target:
-            _append_uk_effect_lowering_rejection(
-                lowering_rejections_out,
-                rule_id="uk_effect_mixed_heading_structural_insert_payload_unresolved",
-                family="source_shape_filter",
-                reason_code="mixed_heading_structural_insert_payload_missing",
-                reason=(
-                    "UK mixed structural-plus-heading insert target was "
-                    "normalized to its structural component, but no matching "
-                    "source-owned structural payload was found; lowering must "
-                    "not synthesize inserted body text from the heading-qualified "
-                    "metadata string."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "original_target_ref": mixed_heading_source_ref_by_target[t_str],
-                    "structural_target_ref": t_str,
-                },
-            )
+        if reject_mixed_heading_structural_insert_missing_payload(
+            effect=effect,
+            t_str=t_str,
+            mixed_heading_source_ref_by_target=mixed_heading_source_ref_by_target,
+            content_ir=content_ir,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        ):
             continue
 
         if content_ir is None:
@@ -1148,32 +1140,15 @@ def compile_effect_to_ir_ops(
                 ),
             )
 
-        # Safety guard: if extraction failed (extracted_el is None) and the action is a
-        # structural replace or insert, we have no payload text.  Applying a replace with an
-        # empty-text node would silently erase real content, which is worse than a no-op.
-        # Repeal is fine (no payload needed).  Word-level effects (text_replace/text_repeal)
-        # are handled via fragment_subs and don't reach here with a structural payload.
-        if (
-            extracted_el is None
-            and action in ("replace", "insert")
-            and not extracted_text
-            and not use_metadata_fallback
+        if reject_missing_structural_payload(
+            effect=effect,
+            action=action,
+            t_str=t_str,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            use_metadata_fallback=use_metadata_fallback,
+            lowering_rejections_out=lowering_rejections_out,
         ):
-            _append_uk_effect_lowering_rejection(
-                lowering_rejections_out,
-                rule_id="uk_effect_missing_structural_payload_rejected",
-                family="source_pathology_filter",
-                reason_code="missing_extracted_payload",
-                reason=(
-                    "UK structural effect has no extracted source payload; "
-                    "lowering cannot emit an empty replace or insert without "
-                    "risking destructive replay"
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={"target_ref": t_str, "action": action},
-            )
             continue
 
         curr_action = action
