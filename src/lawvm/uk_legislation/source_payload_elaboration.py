@@ -211,7 +211,7 @@ def _substituted_series_new_sibling_insert_detail(
     try:
         anchor_target = _parse_affected_target(anchor_refs[0])
         first_target = _parse_affected_target(original_target_refs[0])
-    except Exception:
+    except ValueError:
         return None
     if tuple(anchor_target.path) != tuple(first_target.path):
         return None

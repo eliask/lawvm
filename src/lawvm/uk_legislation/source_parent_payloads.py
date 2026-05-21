@@ -149,7 +149,7 @@ def _source_parent_substitution_range_payload(
     target_ref = target_refs[0]
     try:
         targets = tuple(_parse_affected_target(ref) for ref in target_refs)
-    except Exception:
+    except ValueError:
         return None
     target_labels = tuple(_source_parent_range_label(_addr_leaf_label(target) or "") for target in targets)
     if not target_labels or any(not label for label in target_labels):
@@ -243,7 +243,7 @@ def _source_parent_at_end_added_payload(
     target_ref = target_refs[0]
     try:
         target = canonicalize_uk_address(_parse_affected_target(target_ref))
-    except Exception:
+    except ValueError:
         return None
     target_label = _source_parent_range_label(_addr_leaf_label(target) or "")
     target_kind = _addr_leaf_kind(target) or ""

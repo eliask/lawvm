@@ -118,7 +118,7 @@ def plan_replace_effect_prelude(
     ):
         try:
             replacement_target = _parse_affected_target(original_targets_str[0])
-        except Exception:
+        except ValueError:
             replacement_target = None
         if replacement_target is not None:
             replacement_leaf_override = _addr_leaf_label(replacement_target)
