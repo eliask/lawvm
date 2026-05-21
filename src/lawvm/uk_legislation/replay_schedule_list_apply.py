@@ -12,9 +12,12 @@ from typing import Any
 
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.uk_legislation.addressing import _action_name, _uk_kind_value
+from lawvm.uk_legislation.addressing import _uk_kind_value
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_replace_children
-from lawvm.uk_legislation.replay_records import _append_uk_replay_adjudication
+from lawvm.uk_legislation.replay_records import (
+    _append_uk_replay_adjudication,
+    uk_replay_action_target_detail,
+)
 from lawvm.uk_legislation.replay_table_geometry import (
     expanded_uk_table_rows_with_physical_index,
     strip_uk_identity_attrs_recursive,
@@ -83,6 +86,42 @@ _UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_NUMBERED_ANCHOR_RULE_ID = (
 )
 
 
+def _schedule_table_detail(
+    op: LegalOperation,
+    target: LegalAddress,
+    selector: dict[str, Any],
+    *,
+    blocking: bool,
+    **extra: Any,
+) -> dict[str, Any]:
+    return uk_replay_action_target_detail(
+        op,
+        target,
+        blocking=blocking,
+        selector=dict(selector),
+        family="source_table_elaboration",
+        **extra,
+    )
+
+
+def _schedule_entry_detail(
+    op: LegalOperation,
+    target: LegalAddress,
+    selector: dict[str, Any],
+    *,
+    blocking: bool,
+    **extra: Any,
+) -> dict[str, Any]:
+    return uk_replay_action_target_detail(
+        op,
+        target,
+        blocking=blocking,
+        selector=dict(selector),
+        family="source_schedule_list_entry_elaboration",
+        **extra,
+    )
+
+
 class UKReplayScheduleListApplyMixin:
     adjudications_out: list[CompileAdjudication]
 
@@ -111,16 +150,14 @@ class UKReplayScheduleListApplyMixin:
                 kind=unresolved_rule_id,
                 message="UK replay skipped schedule-list table-row insert: payload was not a table.",
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "payload_not_table",
-                    "payload_kind": _uk_kind_value(new_node.kind),
-                    "family": "source_table_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_table_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=True,
+                    reason_code="payload_not_table",
+                    payload_kind=_uk_kind_value(new_node.kind),
+                ),
             )
             return False
         schedule_node, _, _ = self._find_node_by_target(target)
@@ -133,15 +170,13 @@ class UKReplayScheduleListApplyMixin:
                     "did not resolve to a schedule carrier."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "schedule_target_unresolved",
-                    "family": "source_table_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_table_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=True,
+                    reason_code="schedule_target_unresolved",
+                ),
             )
             return False
         direct_tables = [
@@ -164,17 +199,15 @@ class UKReplayScheduleListApplyMixin:
                     "direct schedule-entry children."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "schedule_not_single_table_backed",
-                    "table_count": len(direct_tables),
-                    "direct_entry_count": len(direct_entries),
-                    "family": "source_table_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_table_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=True,
+                    reason_code="schedule_not_single_table_backed",
+                    table_count=len(direct_tables),
+                    direct_entry_count=len(direct_entries),
+                ),
             )
             return False
         anchor_text = str(selector.get("anchor_text") or "")
@@ -187,15 +220,13 @@ class UKReplayScheduleListApplyMixin:
                 kind=unresolved_rule_id,
                 message="UK replay skipped schedule-list table-row insert: selector was invalid.",
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "invalid_selector",
-                    "family": "source_table_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_table_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=True,
+                    reason_code="invalid_selector",
+                ),
             )
             return False
         table = direct_tables[0]
@@ -214,16 +245,14 @@ class UKReplayScheduleListApplyMixin:
                         "payload rows were absent."
                     ),
                     op=op,
-                    detail={
-                        "target": str(target),
-                        "selector": dict(selector),
-                        "reason_code": "payload_empty",
-                        "payload_row_count": len(payload_rows),
-                        "family": "source_table_elaboration",
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                    },
+                    detail=_schedule_table_detail(
+                        op,
+                        target,
+                        selector,
+                        blocking=True,
+                        reason_code="payload_empty",
+                        payload_row_count=len(payload_rows),
+                    ),
                 )
                 return False
             insert_index = len(table.children)
@@ -240,17 +269,15 @@ class UKReplayScheduleListApplyMixin:
                     "the end of the unique table-backed schedule carrier."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "explicit_schedule_end_unique_table",
-                    "insert_index": insert_index,
-                    "payload_row_count": len(payload_rows),
-                    "family": "source_table_elaboration",
-                    "blocking": False,
-                    "strict_disposition": "record",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_table_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=False,
+                    reason_code="explicit_schedule_end_unique_table",
+                    insert_index=insert_index,
+                    payload_row_count=len(payload_rows),
+                ),
             )
             return True
         matched_rows: list[tuple[int, str, str]] = []
@@ -292,18 +319,16 @@ class UKReplayScheduleListApplyMixin:
                     "row did not resolve uniquely or payload rows were absent."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "anchor_not_unique_or_payload_empty",
-                    "anchor_match_count": len(matched_rows),
-                    "payload_row_count": len(payload_rows),
-                    "matching_rows": tuple(row[2] for row in matched_rows[:5]),
-                    "family": "source_table_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_table_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=True,
+                    reason_code="anchor_not_unique_or_payload_empty",
+                    anchor_match_count=len(matched_rows),
+                    payload_row_count=len(payload_rows),
+                    matching_rows=tuple(row[2] for row in matched_rows[:5]),
+                ),
             )
             return False
         row_index, match_mode, row_preview = matched_rows[0]
@@ -321,24 +346,22 @@ class UKReplayScheduleListApplyMixin:
                 "resolving an explicit schedule-list entry anchor in the table."
             ),
             op=op,
-            detail={
-                "target": str(target),
-                "selector": dict(selector),
-                "reason_code": "explicit_entry_anchor_unique_in_schedule_table",
-                "match_mode": match_mode,
-                "matched_row": row_preview,
-                "anchor_normalization_rule_id": (
+            detail=_schedule_table_detail(
+                op,
+                target,
+                selector,
+                blocking=False,
+                reason_code="explicit_entry_anchor_unique_in_schedule_table",
+                match_mode=match_mode,
+                matched_row=row_preview,
+                anchor_normalization_rule_id=(
                     _UK_REPLAY_SCHEDULE_LIST_ENTRY_TABLE_ANCHOR_CITATION_SHORT_TITLE_RULE_ID
                     if "citation_short_title" in match_mode
                     else ""
                 ),
-                "insert_index": insert_index,
-                "payload_row_count": len(payload_rows),
-                "family": "source_table_elaboration",
-                "blocking": False,
-                "strict_disposition": "record",
-                "quirks_disposition": "record",
-            },
+                insert_index=insert_index,
+                payload_row_count=len(payload_rows),
+            ),
         )
         return True
 
@@ -363,16 +386,13 @@ class UKReplayScheduleListApplyMixin:
                         "target was already repealed earlier in the chain."
                     ),
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(target),
-                        "selector": dict(selector),
-                        "reason_code": "schedule_target_previously_repealed",
-                        "family": "source_schedule_list_entry_elaboration",
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                    },
+                    detail=_schedule_entry_detail(
+                        op,
+                        target,
+                        selector,
+                        blocking=True,
+                        reason_code="schedule_target_previously_repealed",
+                    ),
                 )
                 return False
             _append_uk_replay_adjudication(
@@ -383,15 +403,13 @@ class UKReplayScheduleListApplyMixin:
                     "not resolve to a schedule or schedule-partition carrier."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "schedule_target_unresolved",
-                    "family": "source_schedule_list_entry_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=True,
+                    reason_code="schedule_target_unresolved",
+                ),
             )
             return False
         anchor_norm = _compact_normalized_text(str(selector.get("anchor_text") or ""))
@@ -405,15 +423,13 @@ class UKReplayScheduleListApplyMixin:
                     "missing a valid anchor or direction."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "invalid_selector",
-                    "family": "source_schedule_list_entry_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=True,
+                    reason_code="invalid_selector",
+                ),
             )
             return False
 
@@ -438,17 +454,15 @@ class UKReplayScheduleListApplyMixin:
                         "inserted entry text was missing or already present."
                     ),
                     op=op,
-                    detail={
-                        "target": str(target),
-                        "selector": dict(selector),
-                        "reason_code": "alphabetical_position_duplicate_or_empty",
-                        "entry_count": len(entry_rows),
-                        "duplicate_match_count": len(duplicate_matches),
-                        "family": "source_schedule_list_entry_elaboration",
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                    },
+                    detail=_schedule_entry_detail(
+                        op,
+                        target,
+                        selector,
+                        blocking=True,
+                        reason_code="alphabetical_position_duplicate_or_empty",
+                        entry_count=len(entry_rows),
+                        duplicate_match_count=len(duplicate_matches),
+                    ),
                 )
                 return False
             insert_index = len(carrier_node.children)
@@ -465,17 +479,15 @@ class UKReplayScheduleListApplyMixin:
                     "source's explicit alphabetical-order instruction."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "explicit_alphabetical_order",
-                    "entry_count": len(entry_rows),
-                    "insert_index": insert_index,
-                    "family": "source_schedule_list_entry_elaboration",
-                    "blocking": False,
-                    "strict_disposition": "record",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=False,
+                    reason_code="explicit_alphabetical_order",
+                    entry_count=len(entry_rows),
+                    insert_index=insert_index,
+                ),
             )
             for key in ("eId", "id"):
                 new_node.attrs.pop(key, None)
@@ -582,23 +594,21 @@ class UKReplayScheduleListApplyMixin:
                         "a schedule child group and inserted into that same group."
                     ),
                     op=op,
-                    detail={
-                        "target": str(target),
-                        "selector": dict(selector),
-                        "reason_code": "anchor_unique_in_schedule_child_group",
-                        "group_index": group_idx,
-                        "group_kind": _uk_kind_value(group_node.kind),
-                        "group_label": group_node.label or "",
-                        "group_text": (group_node.text or "")[:200],
-                        "group_entry_index": child_idx,
-                        "group_insert_index": insert_index,
-                        "grouped_entry_count": len(grouped_entry_rows),
-                        "match_mode": grouped_match_mode,
-                        "family": "source_schedule_list_entry_elaboration",
-                        "blocking": False,
-                        "strict_disposition": "record",
-                        "quirks_disposition": "record",
-                    },
+                    detail=_schedule_entry_detail(
+                        op,
+                        target,
+                        selector,
+                        blocking=False,
+                        reason_code="anchor_unique_in_schedule_child_group",
+                        group_index=group_idx,
+                        group_kind=_uk_kind_value(group_node.kind),
+                        group_label=group_node.label or "",
+                        group_text=(group_node.text or "")[:200],
+                        group_entry_index=child_idx,
+                        group_insert_index=insert_index,
+                        grouped_entry_count=len(grouped_entry_rows),
+                        match_mode=grouped_match_mode,
+                    ),
                 )
                 for key in ("eId", "id"):
                     new_node.attrs.pop(key, None)
@@ -616,18 +626,16 @@ class UKReplayScheduleListApplyMixin:
                     "did not resolve uniquely."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "anchor_not_unique",
-                    "anchor_match_count": len(matches),
-                    "entry_count": len(entry_rows),
-                    "grouped_entry_count": len(grouped_entry_rows) if "grouped_entry_rows" in locals() else 0,
-                    "family": "source_schedule_list_entry_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=True,
+                    reason_code="anchor_not_unique",
+                    anchor_match_count=len(matches),
+                    entry_count=len(entry_rows),
+                    grouped_entry_count=len(grouped_entry_rows) if "grouped_entry_rows" in locals() else 0,
+                ),
             )
             return False
         if article_normalized:
@@ -639,17 +647,15 @@ class UKReplayScheduleListApplyMixin:
                     "normalizing a leading article."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "anchor_leading_article_unique",
-                    "anchor_match_count": len(matches),
-                    "entry_count": len(entry_rows),
-                    "family": "source_schedule_list_entry_elaboration",
-                    "blocking": False,
-                    "strict_disposition": "record",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=False,
+                    reason_code="anchor_leading_article_unique",
+                    anchor_match_count=len(matches),
+                    entry_count=len(entry_rows),
+                ),
             )
         if prefix_normalized:
             _append_uk_replay_adjudication(
@@ -660,17 +666,15 @@ class UKReplayScheduleListApplyMixin:
                     "unique prefix of a longer source entry."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "anchor_prefix_unique",
-                    "anchor_match_count": len(matches),
-                    "entry_count": len(entry_rows),
-                    "family": "source_schedule_list_entry_elaboration",
-                    "blocking": False,
-                    "strict_disposition": "record",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=False,
+                    reason_code="anchor_prefix_unique",
+                    anchor_match_count=len(matches),
+                    entry_count=len(entry_rows),
+                ),
             )
         if parenthetical_paragraph_normalized:
             _append_uk_replay_adjudication(
@@ -681,17 +685,15 @@ class UKReplayScheduleListApplyMixin:
                     "after validating its parenthetical paragraph label."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "anchor_parenthetical_paragraph_unique",
-                    "anchor_match_count": len(matches),
-                    "entry_count": len(entry_rows),
-                    "family": "source_schedule_list_entry_elaboration",
-                    "blocking": False,
-                    "strict_disposition": "record",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=False,
+                    reason_code="anchor_parenthetical_paragraph_unique",
+                    anchor_match_count=len(matches),
+                    entry_count=len(entry_rows),
+                ),
             )
 
         anchor_index = matches[0][0]
@@ -720,15 +722,13 @@ class UKReplayScheduleListApplyMixin:
                     "not resolve to a schedule or schedule-partition carrier."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "schedule_target_unresolved",
-                    "family": "source_schedule_list_entry_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=True,
+                    reason_code="schedule_target_unresolved",
+                ),
             )
             return False
         raw_anchors = selector.get("anchors")
@@ -740,15 +740,13 @@ class UKReplayScheduleListApplyMixin:
                 kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_UNRESOLVED_RULE_ID,
                 message="UK replay skipped schedule-list-entry repeal: selector had no entry anchors.",
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "invalid_selector",
-                    "family": "source_schedule_list_entry_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=True,
+                    reason_code="invalid_selector",
+                ),
             )
             return False
         entry_rows: list[tuple[UKMutableNode, int, UKMutableNode]] = []
@@ -863,19 +861,17 @@ class UKReplayScheduleListApplyMixin:
                         "anchor did not resolve uniquely."
                     ),
                     op=op,
-                    detail={
-                        "target": str(target),
-                        "selector": dict(selector),
-                        "anchor": anchor,
-                        "reason_code": "anchor_not_unique",
-                        "anchor_match_count": len(matches),
-                        "entry_count": len(entry_rows),
-                        "carrier_kind": carrier_kind,
-                        "family": "source_schedule_list_entry_elaboration",
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                    },
+                    detail=_schedule_entry_detail(
+                        op,
+                        target,
+                        selector,
+                        blocking=True,
+                        anchor=anchor,
+                        reason_code="anchor_not_unique",
+                        anchor_match_count=len(matches),
+                        entry_count=len(entry_rows),
+                        carrier_kind=carrier_kind,
+                    ),
                 )
                 return False
             matched_rows.append(matches[0])
@@ -890,17 +886,15 @@ class UKReplayScheduleListApplyMixin:
                     "anchors resolved to the same entry child."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "anchor_collision",
-                    "matched_indices": tuple(idx for _parent, idx, _child in matched_rows),
-                    "carrier_kind": carrier_kind,
-                    "family": "source_schedule_list_entry_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=True,
+                    reason_code="anchor_collision",
+                    matched_indices=tuple(idx for _parent, idx, _child in matched_rows),
+                    carrier_kind=carrier_kind,
+                ),
             )
             return False
         rows_by_parent: dict[int, tuple[UKMutableNode, list[int]]] = {}
@@ -922,13 +916,15 @@ class UKReplayScheduleListApplyMixin:
                 "source entry anchor resolved to exactly one direct schedule child."
             ),
             op=op,
-            detail={
-                "target": str(target),
-                "selector": dict(selector),
-                "reason_code": "explicit_entry_anchors_unique",
-                "matched_indices": tuple(idx for _parent, idx, _child in matched_rows),
-                "match_modes": match_modes,
-                "normalization_rule_ids": tuple(
+            detail=_schedule_entry_detail(
+                op,
+                target,
+                selector,
+                blocking=False,
+                reason_code="explicit_entry_anchors_unique",
+                matched_indices=tuple(idx for _parent, idx, _child in matched_rows),
+                match_modes=match_modes,
+                normalization_rule_ids=tuple(
                     (
                         _UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_PARENTHETICAL_PARAGRAPH_RULE_ID
                         if mode == "parenthetical_paragraph"
@@ -937,14 +933,10 @@ class UKReplayScheduleListApplyMixin:
                     for mode in match_modes.values()
                     if mode in {"parenthetical_paragraph", "numbered", "numbered_article"}
                 ),
-                "entry_count": len(entry_rows),
-                "deleted_count": len(matched_rows),
-                "carrier_kind": carrier_kind,
-                "family": "source_schedule_list_entry_elaboration",
-                "blocking": False,
-                "strict_disposition": "record",
-                "quirks_disposition": "record",
-            },
+                entry_count=len(entry_rows),
+                deleted_count=len(matched_rows),
+                carrier_kind=carrier_kind,
+            ),
         )
         return True
 
@@ -965,15 +957,13 @@ class UKReplayScheduleListApplyMixin:
                     "did not resolve to a schedule carrier."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "schedule_target_unresolved",
-                    "family": "source_schedule_list_entry_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=True,
+                    reason_code="schedule_target_unresolved",
+                ),
             )
             return False
         anchor = str(selector.get("anchor") or "")
@@ -983,15 +973,13 @@ class UKReplayScheduleListApplyMixin:
                 kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID,
                 message="UK replay skipped schedule-list-entry replacement: selector had no entry anchor.",
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "invalid_selector",
-                    "family": "source_schedule_list_entry_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=True,
+                    reason_code="invalid_selector",
+                ),
             )
             return False
         entry_rows: list[tuple[int, UKMutableNode]] = [
@@ -1034,18 +1022,16 @@ class UKReplayScheduleListApplyMixin:
                     "anchor did not resolve uniquely."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "anchor": anchor,
-                    "reason_code": "anchor_not_unique",
-                    "anchor_match_count": len(matches),
-                    "entry_count": len(entry_rows),
-                    "family": "source_schedule_list_entry_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=True,
+                    anchor=anchor,
+                    reason_code="anchor_not_unique",
+                    anchor_match_count=len(matches),
+                    entry_count=len(entry_rows),
+                ),
             )
             return False
         replace_idx = matches[0][0]
@@ -1058,17 +1044,15 @@ class UKReplayScheduleListApplyMixin:
                     "unique prefix of a longer source entry."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "anchor_prefix_unique",
-                    "anchor_match_count": len(matches),
-                    "entry_count": len(entry_rows),
-                    "family": "source_schedule_list_entry_elaboration",
-                    "blocking": False,
-                    "strict_disposition": "record",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=False,
+                    reason_code="anchor_prefix_unique",
+                    anchor_match_count=len(matches),
+                    entry_count=len(entry_rows),
+                ),
             )
         elif match_mode == "article":
             _append_uk_replay_adjudication(
@@ -1079,17 +1063,15 @@ class UKReplayScheduleListApplyMixin:
                     "normalizing a leading article."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "anchor_leading_article_unique",
-                    "anchor_match_count": len(matches),
-                    "entry_count": len(entry_rows),
-                    "family": "source_schedule_list_entry_elaboration",
-                    "blocking": False,
-                    "strict_disposition": "record",
-                    "quirks_disposition": "record",
-                },
+                detail=_schedule_entry_detail(
+                    op,
+                    target,
+                    selector,
+                    blocking=False,
+                    reason_code="anchor_leading_article_unique",
+                    anchor_match_count=len(matches),
+                    entry_count=len(entry_rows),
+                ),
             )
         for key in ("eId", "id"):
             new_node.attrs.pop(key, None)
@@ -1104,18 +1086,15 @@ class UKReplayScheduleListApplyMixin:
                 "source entry anchor resolved to exactly one direct schedule child."
             ),
             op=op,
-            detail={
-                "target": str(target),
-                "selector": dict(selector),
-                "reason_code": "explicit_entry_anchor_unique",
-                "matched_index": replace_idx,
-                "match_mode": match_mode,
-                "entry_count": len(entry_rows),
-                "family": "source_schedule_list_entry_elaboration",
-                "blocking": False,
-                "strict_disposition": "record",
-                "quirks_disposition": "record",
-            },
+            detail=_schedule_entry_detail(
+                op,
+                target,
+                selector,
+                blocking=False,
+                reason_code="explicit_entry_anchor_unique",
+                matched_index=replace_idx,
+                match_mode=match_mode,
+                entry_count=len(entry_rows),
+            ),
         )
         return True
-

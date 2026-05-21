@@ -14572,6 +14572,8 @@ def test_replay_schedule_table_end_rows_appends_to_unique_table() -> None:
     assert [adjudication.kind for adjudication in adjudications] == [
         "uk_replay_schedule_table_end_rows_insert_resolved"
     ]
+    assert adjudications[0].detail["action"] == "insert"
+    assert adjudications[0].detail["target"] == "schedule:5"
     assert adjudications[0].detail["reason_code"] == "explicit_schedule_end_unique_table"
     assert adjudications[0].detail["blocking"] is False
 
@@ -14623,8 +14625,11 @@ def test_replay_schedule_table_end_rows_blocks_non_table_carrier() -> None:
         for adjudication in adjudications
         if adjudication.kind == "uk_replay_schedule_table_end_rows_insert_unresolved"
     )
+    assert unresolved.detail["action"] == "insert"
+    assert unresolved.detail["target"] == "schedule:5"
     assert unresolved.detail["reason_code"] == "schedule_not_single_table_backed"
     assert unresolved.detail["blocking"] is True
+    assert unresolved.detail["strict_disposition"] == "block"
 
 
 def test_replay_schedule_list_entry_table_rows_insert_mutates_table_only() -> None:
@@ -14710,6 +14715,8 @@ def test_replay_schedule_list_entry_table_rows_insert_mutates_table_only() -> No
     assert [adjudication.kind for adjudication in adjudications] == [
         "uk_replay_schedule_list_entry_table_rows_insert_resolved"
     ]
+    assert adjudications[0].detail["action"] == "insert"
+    assert adjudications[0].detail["target"] == "schedule:5"
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "record"
 
@@ -14844,6 +14851,8 @@ def test_replay_schedule_list_entry_table_rows_blocks_duplicate_anchor() -> None
         "uk_replay_schedule_list_entry_table_rows_insert_unresolved"
     ]
     assert adjudications[0].detail["reason_code"] == "anchor_not_unique_or_payload_empty"
+    assert adjudications[0].detail["action"] == "insert"
+    assert adjudications[0].detail["target"] == "schedule:5"
     assert adjudications[0].detail["blocking"] is True
 
 
