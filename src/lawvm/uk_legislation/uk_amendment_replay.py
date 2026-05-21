@@ -88,6 +88,8 @@ from lawvm.uk_legislation.effect_special_lowering import (
     lower_uk_metadata_renumber_effect,
 )
 from lawvm.uk_legislation.effect_lowering_tail import (
+    append_no_targets_rejection,
+    append_source_parent_at_end_added_observation,
     append_unlowered_overlap_substitution_rejection,
     build_crossheading_insert_ops,
     build_trailing_repeal_ops,
@@ -587,28 +589,13 @@ def compile_effect_to_ir_ops(
         replacement_leaf_override = replace_prelude.replacement_leaf_override
         replacement_leaf_kind = replace_prelude.replacement_leaf_kind
         label_changing_substitutions = replace_prelude.label_changing_substitutions
-    if source_parent_at_end_added_payload is not None:
-        _append_uk_effect_lowering_observation(
-            lowering_rejections_out,
-            rule_id=_UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID,
-            family="source_context_elaboration",
-            reason_code="payload_fragment_combined_with_parent_at_end_added",
-            reason=(
-                "UK effect feed row has no effect type and the extracted "
-                "BlockAmendment contains only an inserted structural payload, "
-                "but the source-local parent instruction explicitly adds it at "
-                "the end of the affected provision; lowering keeps the metadata "
-                "target and payload identity as one source-owned insert."
-            ),
-            effect=effect,
-            extracted_el=extracted_el,
-            extracted_text=extracted_text,
-            detail={
-                key: value
-                for key, value in source_parent_at_end_added_payload.items()
-                if key != "rule_id"
-            },
-        )
+    append_source_parent_at_end_added_observation(
+        lowering_rejections_out,
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        source_parent_at_end_added_payload=source_parent_at_end_added_payload,
+    )
     target_prelude = expand_single_target_prelude(
         effect=effect,
         action=action,
@@ -644,19 +631,11 @@ def compile_effect_to_ir_ops(
             },
         )
     if not targets_str:
-        _append_uk_effect_lowering_rejection(
+        append_no_targets_rejection(
             lowering_rejections_out,
-            rule_id="uk_effect_lowering_no_targets_rejected",
-            family="target_resolution_recovery",
-            reason_code="no_affected_targets",
-            reason=(
-                "UK effect lowered to no replay operations because affected "
-                "provisions produced no target candidates"
-            ),
             effect=effect,
             extracted_el=extracted_el,
             extracted_text=extracted_text,
-            detail={"original_affected_provisions": effect.affected_provisions},
         )
         return []
 
