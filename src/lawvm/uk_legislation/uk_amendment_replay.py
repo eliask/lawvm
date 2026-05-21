@@ -229,6 +229,7 @@ from lawvm.uk_legislation.replay_text import (
     _replay_subtree_text_preview,
     _schedule_entry_parenthetical_paragraph_anchor,
     _subtree_contains_text,
+    _subtree_text_match_count,
     _synthetic_text_selector,
     _text_patch_replacement_preserves_anchor,
 )
@@ -7888,21 +7889,6 @@ class UKReplayExecutor:
         }
         return bool(child_kinds and "paragraph" not in child_kinds)
 
-    @staticmethod
-    def _subtree_text_match_count(node: UKMutableNode, needle: str) -> int:
-        normalized_needle = " ".join((needle or "").split())
-        if not normalized_needle:
-            return 0
-        pattern = re.escape(normalized_needle).replace(r"\ ", r"\s+")
-        count = 0
-        stack = [node]
-        while stack:
-            current = stack.pop()
-            text = current.text or ""
-            count += len(list(re.finditer(pattern, text, flags=re.I)))
-            stack.extend(reversed(current.children))
-        return count
-
     def _recover_text_patch_on_direct_section_paragraph_child_text(
         self,
         op: LegalOperation,
@@ -7922,7 +7908,7 @@ class UKReplayExecutor:
         candidates = [
             child
             for child in parent_node.children
-            if self._subtree_text_match_count(child, match_text) >= required_occurrence
+            if _subtree_text_match_count(child, match_text) >= required_occurrence
         ]
         if len(candidates) != 1:
             return False
