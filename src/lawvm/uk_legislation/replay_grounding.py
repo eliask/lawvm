@@ -14,6 +14,41 @@ from lawvm.uk_legislation.replay_text import _normalize_text_for_grounding
 from lawvm.uk_legislation.uk_grafter import _clean_num, _semantic_hash
 
 
+def _grounding_eid(node: UKMutableNode) -> Optional[str]:
+    """Return the EID/id from a node's attrs, accepting both UK XML spellings."""
+    return _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
+
+
+def _grounding_clean_label(kind_name: str, label: Optional[str]) -> str:
+    clean_label = _clean_num(label) if label else ""
+    if not clean_label:
+        return ""
+    kind_prefix = str(kind_name or "").lower()
+    if kind_prefix in {"part", "chapter"}:
+        stripped = re.sub(rf"^{re.escape(kind_prefix)}\s+", "", clean_label).strip()
+        if stripped:
+            return stripped
+    return clean_label
+
+
+def _slugify_grounding_heading(text: str) -> str:
+    if not text:
+        return ""
+    return re.sub(r"[^a-zA-Z0-9]+", "-", text.lower()).strip("-")
+
+
+def _grounding_node_full_text(node: UKMutableNode) -> str:
+    """Collect normalized full-subtree text for a node, matching oracle text_map."""
+    parts = []
+    if node.text:
+        parts.append(node.text.strip())
+    for child in node.children:
+        text = _grounding_node_full_text(child)
+        if text:
+            parts.append(text)
+    return _normalize_text_for_grounding(" ".join(parts))
+
+
 class UKReplayGroundingMixin:
     statute: UKMutableStatute
     eid_map: dict[str, str]
@@ -35,32 +70,8 @@ class UKReplayGroundingMixin:
         # potentially mis-re-grounded to a different oracle EID.
         seen_oracle_ids: set = set()
 
-        def _get_eid(node: UKMutableNode) -> Optional[str]:
-            """Return the EID/id from a node's attrs (handles both 'eId' and 'id' keys)."""
-            return _uk_eid_value(node.attrs.get("eId") or node.attrs.get("id"))
-
-        def _set_eid(node: UKMutableNode, eid: str) -> None:
-            """Set an EID on a node, using whichever key the node already uses."""
-            if "eId" in node.attrs:
-                node.attrs["eId"] = eid
-            else:
-                # Node uses 'id' key (UK legislation XML) or has no EID attr yet.
-                # Use 'eId' as the canonical key going forward.
-                node.attrs["eId"] = eid
-
-        def _grounding_clean_label(kind_name: str, label: Optional[str]) -> str:
-            clean_label = _clean_num(label) if label else ""
-            if not clean_label:
-                return ""
-            kind_prefix = str(kind_name or "").lower()
-            if kind_prefix in {"part", "chapter"}:
-                stripped = re.sub(rf"^{re.escape(kind_prefix)}\s+", "", clean_label).strip()
-                if stripped:
-                    return stripped
-            return clean_label
-
         def _preseed_correct_eids(node: UKMutableNode) -> None:
-            eid = _get_eid(node)
+            eid = _grounding_eid(node)
             if eid and eid in oracle_id_values:
                 seen_oracle_ids.add(eid)
             for c in node.children:
@@ -73,7 +84,7 @@ class UKReplayGroundingMixin:
 
         def _clear_eids(node: UKMutableNode) -> None:
             """Clear EIDs that are NOT already in oracle (those stay for matching)."""
-            eid = _get_eid(node)
+            eid = _grounding_eid(node)
             if eid and eid not in oracle_id_values:
                 # Non-canonical EID — clear it so the grounding pass can assign
                 # the correct oracle ID.
@@ -111,23 +122,6 @@ class UKReplayGroundingMixin:
             _ensure_local_eid(self.statute.body)
         for sch in self.statute.supplements:
             _ensure_local_eid(sch)
-
-        def _slugify(text: str) -> str:
-            if not text:
-                return ""
-            return re.sub(r"[^a-zA-Z0-9]+", "-", text.lower()).strip("-")
-
-        def _node_full_text(node: UKMutableNode) -> str:
-            """Collect normalized full-subtree text for a node (matches oracle text_map)."""
-            parts = []
-            if node.text:
-                parts.append(node.text.strip())
-            for child in node.children:
-                t = _node_full_text(child)
-                if t:
-                    parts.append(t)
-            raw = " ".join(parts)
-            return _normalize_text_for_grounding(raw)
 
         def _ground_node(node: UKMutableNode, parent_path_key, parent_eid=None, ordinal=1, context="body"):
             nonlocal seen_oracle_ids
@@ -176,7 +170,7 @@ class UKReplayGroundingMixin:
                 and len(node.text) < 200
             ):
                 heading = node.text
-            slug = _slugify(heading)
+            slug = _slugify_grounding_heading(heading)
 
             node_key_part = f"{kind_name}-{clean_label}" if clean_label else (f"{kind_name}-{slug}" if slug else kind_name)
 
@@ -408,7 +402,7 @@ class UKReplayGroundingMixin:
                         oracle_text = self.text_map.get(candidate_id, "")
                         accept = True
                         if oracle_text:
-                            node_full = _node_full_text(node)
+                            node_full = _grounding_node_full_text(node)
                             if node_full and len(node_full) > 20 and len(oracle_text) > 20:
                                 max_len = max(len(node_full), len(oracle_text))
                                 min_len = min(len(node_full), len(oracle_text))
