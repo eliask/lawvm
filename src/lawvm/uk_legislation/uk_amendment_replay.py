@@ -333,10 +333,15 @@ from lawvm.uk_legislation.replay_records import (
 from lawvm.uk_legislation.replay_table_geometry import (
     expanded_uk_table_rows,
     expanded_uk_table_rows_with_physical_index,
+    resolve_unique_uk_table_column_text_cell,
+    resolve_unique_uk_table_entry_cell,
+    resolve_unique_uk_table_entry_text_cell,
+    resolve_unique_uk_table_relating_cell,
     strip_uk_identity_attrs_recursive,
     uk_table_column_insert_plans,
     uk_table_column_payload_cells,
     uk_table_cell_span,
+    uk_table_selector_tables,
 )
 from lawvm.uk_legislation.schedule_list_selectors import (
     UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID as _UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
@@ -5588,7 +5593,7 @@ class UKReplayExecutor:
         if selector_mode not in {"ordinal_column", "relating_entry", "entry_label", "entry_group_heading"}:
             return None, None, "invalid_selector", {}
 
-        tables, carrier_detail = self._table_selector_tables(node, selector)
+        tables, carrier_detail = uk_table_selector_tables(node, selector)
         if len(tables) != 1:
             return None, None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
 
@@ -5753,7 +5758,7 @@ class UKReplayExecutor:
             detail: dict[str, Any] = {}
             table = None
         else:
-            tables, carrier_detail = self._table_selector_tables(node, selector)
+            tables, carrier_detail = uk_table_selector_tables(node, selector)
             table = tables[0] if len(tables) == 1 else None
             reason = "" if table is not None else "table_not_unique"
             detail = {"table_count": len(tables), **carrier_detail} if table is None else carrier_detail
@@ -6086,13 +6091,13 @@ class UKReplayExecutor:
     ) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
         """Resolve a source-owned "nth entry in column N relating to X" table cell."""
         if str(selector.get("selector_mode") or "") == "unique_column_text":
-            return self._resolve_unique_table_column_text_cell(node, selector)
+            return resolve_unique_uk_table_column_text_cell(node, selector)
         if str(selector.get("selector_mode") or "") == "unique_relating_cell":
-            return self._resolve_unique_table_relating_cell(node, selector)
+            return resolve_unique_uk_table_relating_cell(node, selector)
         if str(selector.get("selector_mode") or "") in {"unique_relating_text", "unique_entry_text"}:
-            return self._resolve_unique_table_entry_text_cell(node, selector)
+            return resolve_unique_uk_table_entry_text_cell(node, selector)
         if str(selector.get("selector_mode") or "") == "unique_entry_cell":
-            return self._resolve_unique_table_entry_cell(node, selector)
+            return resolve_unique_uk_table_entry_cell(node, selector)
 
         try:
             column_index = int(selector.get("column_index") or 0)
@@ -6103,7 +6108,7 @@ class UKReplayExecutor:
         if column_index < 1 or entry_index < 1 or not relating_norm:
             return None, "invalid_selector", {}
 
-        tables, carrier_detail = self._table_selector_tables(node, selector)
+        tables, carrier_detail = uk_table_selector_tables(node, selector)
         if len(tables) != 1:
             return None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
 
@@ -6157,7 +6162,7 @@ class UKReplayExecutor:
         if column_index < 1 or not entry_labels or any(not label for label in entry_labels):
             return [], "invalid_selector", {}
 
-        tables, carrier_detail = self._table_selector_tables(node, selector)
+        tables, carrier_detail = uk_table_selector_tables(node, selector)
         if len(tables) != 1:
             return [], "table_not_unique", {"table_count": len(tables), **carrier_detail}
 
@@ -6194,231 +6199,6 @@ class UKReplayExecutor:
         return [matches_by_label[label][0][0] for label in entry_labels], "", {
             "matching_cell_count": len(entry_labels),
             "matched_rows": tuple(matches_by_label[label][0][1] for label in entry_labels),
-            **carrier_detail,
-        }
-
-    def _table_selector_tables(
-        self,
-        node: UKMutableNode,
-        selector: dict[str, Any],
-    ) -> tuple[list[UKMutableNode], dict[str, Any]]:
-        tables = [
-            child
-            for child in node.children
-            if _uk_kind_value(child.kind).lower() == "table"
-        ]
-        if tables or not bool(selector.get("allow_implicit_subsection_one_table")):
-            return tables, {"table_carrier": "target"}
-        subsection_ones = [
-            child
-            for child in node.children
-            if _uk_kind_value(child.kind).lower() == "subsection" and _clean_num(child.label or "") == "1"
-        ]
-        if len(subsection_ones) != 1:
-            return [], {"table_carrier": "implicit_subsection_one", "subsection_one_count": len(subsection_ones)}
-        tables = [
-            child
-            for child in subsection_ones[0].children
-            if _uk_kind_value(child.kind).lower() == "table"
-        ]
-        return tables, {"table_carrier": "implicit_subsection_one", "subsection_one_count": 1}
-
-    def _resolve_unique_table_relating_cell(
-        self,
-        node: UKMutableNode,
-        selector: dict[str, Any],
-    ) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
-        try:
-            column_index = int(selector.get("column_index") or 0)
-        except (TypeError, ValueError):
-            return None, "invalid_selector", {}
-        relating_norm = _compact_normalized_text(str(selector.get("relating_text") or ""))
-        if column_index < 1 or not relating_norm:
-            return None, "invalid_selector", {}
-
-        tables, carrier_detail = self._table_selector_tables(node, selector)
-        if len(tables) != 1:
-            return None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
-
-        matching_cells: list[UKMutableNode] = []
-        matching_rows: list[str] = []
-        for row_cells in expanded_uk_table_rows(tables[0]):
-            row_texts = [
-                str(row_cells[col].text or "")
-                for col in sorted(row_cells)
-                if str(row_cells[col].text or "")
-            ]
-            if not any(_compact_normalized_text(text).find(relating_norm) >= 0 for text in row_texts):
-                continue
-            target_cell = row_cells.get(column_index)
-            if target_cell is None:
-                continue
-            if not matching_cells or matching_cells[-1] is not target_cell:
-                matching_cells.append(target_cell)
-                matching_rows.append(" | ".join(row_texts)[:240])
-        if len(matching_cells) == 1:
-            return matching_cells[0], "", {
-                "matching_cell_count": 1,
-                "matched_row": matching_rows[0] if matching_rows else "",
-                **carrier_detail,
-            }
-        reason = "relating_cell_not_found" if not matching_cells else "relating_cell_ambiguous"
-        return None, reason, {
-            "matching_cell_count": len(matching_cells),
-            "matching_rows": tuple(matching_rows[:5]),
-            **carrier_detail,
-        }
-
-    def _resolve_unique_table_entry_text_cell(
-        self,
-        node: UKMutableNode,
-        selector: dict[str, Any],
-    ) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
-        match_norm = _compact_normalized_text(str(selector.get("match_text") or ""))
-        selector_mode = str(selector.get("selector_mode") or "")
-        relating_norm = _compact_normalized_text(str(selector.get("relating_text") or ""))
-        entry_label_norm = _compact_normalized_text(str(selector.get("entry_label") or ""))
-        if not match_norm or (
-            selector_mode == "unique_relating_text" and not relating_norm
-        ) or (selector_mode == "unique_entry_text" and not entry_label_norm):
-            return None, "invalid_selector", {}
-
-        tables, carrier_detail = self._table_selector_tables(node, selector)
-        if len(tables) != 1:
-            return None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
-
-        matching_cells: list[UKMutableNode] = []
-        matching_rows: list[str] = []
-        for row_cells in expanded_uk_table_rows(tables[0]):
-            row_texts = [
-                str(row_cells[col].text or "")
-                for col in sorted(row_cells)
-                if str(row_cells[col].text or "")
-            ]
-            if selector_mode == "unique_relating_text" and not any(
-                _compact_normalized_text(text).find(relating_norm) >= 0
-                or _compact_normalized_text(text).find(match_norm) >= 0
-                for text in row_texts
-            ):
-                continue
-            if selector_mode == "unique_entry_text" and not any(
-                _compact_normalized_text(text) == entry_label_norm for text in row_texts
-            ):
-                continue
-            for cell in row_cells.values():
-                if _compact_normalized_text(cell.text or "").find(match_norm) < 0:
-                    continue
-                if not matching_cells or matching_cells[-1] is not cell:
-                    matching_cells.append(cell)
-                    matching_rows.append(" | ".join(row_texts)[:240])
-        if len(matching_cells) == 1:
-            return matching_cells[0], "", {
-                "matching_cell_count": 1,
-                "matched_row": matching_rows[0] if matching_rows else "",
-                **carrier_detail,
-            }
-        reason = "cell_text_not_found" if not matching_cells else "cell_text_ambiguous"
-        return None, reason, {
-            "matching_cell_count": len(matching_cells),
-            "matching_rows": tuple(matching_rows[:5]),
-            **carrier_detail,
-        }
-
-    def _resolve_unique_table_entry_cell(
-        self,
-        node: UKMutableNode,
-        selector: dict[str, Any],
-    ) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
-        try:
-            column_index = int(selector.get("column_index") or 0)
-        except (TypeError, ValueError):
-            return None, "invalid_selector", {}
-        entry_label_norm = _compact_normalized_text(str(selector.get("entry_label") or ""))
-        if column_index < 1 or not entry_label_norm:
-            return None, "invalid_selector", {}
-
-        tables, carrier_detail = self._table_selector_tables(node, selector)
-        if len(tables) != 1:
-            return None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
-
-        matching_cells: list[UKMutableNode] = []
-        matching_rows: list[str] = []
-        for row_cells in expanded_uk_table_rows(tables[0]):
-            if not any(
-                _compact_normalized_text(cell.text or "") == entry_label_norm
-                for cell in row_cells.values()
-            ):
-                continue
-            target_cell = row_cells.get(column_index)
-            if target_cell is None:
-                continue
-            if not matching_cells or matching_cells[-1] is not target_cell:
-                matching_cells.append(target_cell)
-                matching_rows.append(
-                    " | ".join(
-                        str(row_cells[col].text or "")
-                        for col in sorted(row_cells)
-                        if str(row_cells[col].text or "")
-                    )[:240]
-                )
-        if len(matching_cells) == 1:
-            return matching_cells[0], "", {
-                "matching_cell_count": 1,
-                "matched_row": matching_rows[0] if matching_rows else "",
-                **carrier_detail,
-            }
-        reason = "entry_cell_not_found" if not matching_cells else "entry_cell_ambiguous"
-        return None, reason, {
-            "matching_cell_count": len(matching_cells),
-            "matching_rows": tuple(matching_rows[:5]),
-            **carrier_detail,
-        }
-
-    def _resolve_unique_table_column_text_cell(
-        self,
-        node: UKMutableNode,
-        selector: dict[str, Any],
-    ) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
-        try:
-            column_index = int(selector.get("column_index") or 0)
-        except (TypeError, ValueError):
-            return None, "invalid_selector", {}
-        match_norm = _compact_normalized_text(str(selector.get("match_text") or ""))
-        if column_index < 1 or not match_norm:
-            return None, "invalid_selector", {}
-
-        tables, carrier_detail = self._table_selector_tables(node, selector)
-        if len(tables) != 1:
-            return None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
-
-        matching_cells: list[UKMutableNode] = []
-        matching_rows: list[str] = []
-        for row_cells in expanded_uk_table_rows(tables[0]):
-            target_cell = row_cells.get(column_index)
-            if target_cell is None:
-                continue
-            if _compact_normalized_text(target_cell.text or "").find(match_norm) < 0:
-                continue
-            if not matching_cells or matching_cells[-1] is not target_cell:
-                matching_cells.append(target_cell)
-                matching_rows.append(
-                    " | ".join(
-                        str(row_cells[col].text or "")
-                        for col in sorted(row_cells)
-                        if str(row_cells[col].text or "")
-                    )[:240]
-                )
-
-        if len(matching_cells) == 1:
-            return matching_cells[0], "", {
-                "matching_cell_count": 1,
-                "matched_row": matching_rows[0] if matching_rows else "",
-                **carrier_detail,
-            }
-        reason = "cell_text_not_found" if not matching_cells else "cell_text_ambiguous"
-        return None, reason, {
-            "matching_cell_count": len(matching_cells),
-            "matching_rows": tuple(matching_rows[:5]),
             **carrier_detail,
         }
 
