@@ -22,6 +22,7 @@ from lawvm.core.semantic_types import FacetKind, IRNodeKind, TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.source_adjudication import classify_uk_effect_source_pathology
 from lawvm.uk_legislation.nlp_parser import US
+from lawvm.uk_legislation.replay_applicability import should_replay_nonstructural_ops
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKEffectRecord,
     UKReplayPipeline,
@@ -1483,7 +1484,7 @@ def test_compile_added_type_requires_source_and_replays_verified_insert_payload(
         (("section", "3"), ("subsection", "9")),
     ]
     assert all(op.payload is not None for op in ops)
-    assert UKReplayPipeline._should_replay_nonstructural_ops(effect, ops) is True
+    assert should_replay_nonstructural_ops(effect, ops) is True
     assert any(
         row.get("rule_id") == "uk_effect_added_type_source_structuralized"
         and row.get("target_refs") == ["s. 3(7)", "s. 3(8)", "s. 3(9)"]
@@ -16625,7 +16626,7 @@ def test_pipeline_replays_nonstructural_multi_sibling_substituted_for_ops() -> N
 
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
-    assert UKReplayPipeline._should_replay_nonstructural_ops(effect, ops)
+    assert should_replay_nonstructural_ops(effect, ops)
 
 
 def test_pipeline_replays_nonstructural_substituted_series_replace_plus_tail_repeal() -> None:
@@ -16670,7 +16671,7 @@ def test_pipeline_replays_nonstructural_substituted_series_replace_plus_tail_rep
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert [op.action.value for op in ops] == ["replace", "repeal"]
-    assert UKReplayPipeline._should_replay_nonstructural_ops(effect, ops)
+    assert should_replay_nonstructural_ops(effect, ops)
 
 
 def test_pipeline_skips_unapplied_nonstructural_substituted_series() -> None:
@@ -16711,7 +16712,7 @@ def test_pipeline_skips_unapplied_nonstructural_substituted_series() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert [op.action.value for op in ops] == ["replace", "insert"]
-    assert UKReplayPipeline._should_replay_nonstructural_ops(effect, ops) is False
+    assert should_replay_nonstructural_ops(effect, ops) is False
 
 
 def test_pipeline_replays_nonstructural_revoked_repeal_ops() -> None:
@@ -16746,7 +16747,7 @@ def test_pipeline_replays_nonstructural_revoked_repeal_ops() -> None:
     ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
 
     assert [op.action.value for op in ops] == ["repeal", "repeal", "repeal"]
-    assert UKReplayPipeline._should_replay_nonstructural_ops(effect, ops)
+    assert should_replay_nonstructural_ops(effect, ops)
 
 
 def test_compile_ceases_to_have_effect_as_repeal() -> None:
@@ -16801,7 +16802,7 @@ def test_pipeline_replays_nonstructural_ceases_to_have_effect_repeal_ops() -> No
     ops = compile_effect_to_ir_ops(effect, None, sequence=0)
 
     assert [op.action.value for op in ops] == ["repeal"]
-    assert UKReplayPipeline._should_replay_nonstructural_ops(effect, ops)
+    assert should_replay_nonstructural_ops(effect, ops)
 
 
 def test_compile_plain_text_body_sibling_omit_expands_targets() -> None:
