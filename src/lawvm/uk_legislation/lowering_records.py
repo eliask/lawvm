@@ -5,9 +5,13 @@ import xml.etree.ElementTree as ET
 import re
 from typing import Any, Optional, Sequence
 
+from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.ir import IRNode, LegalOperation
 from lawvm.uk_legislation.addressing import _action_name
-from lawvm.uk_legislation.effects import UKEffectRecord
+from lawvm.uk_legislation.effects import _COMMENCEMENT_EFFECT_TYPES, UKEffectRecord, uk_nonstructural_replay_candidate_family
+from lawvm.uk_legislation.source_payload_helpers import (
+    UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID,
+)
 
 
 def _append_uk_effect_lowering_rejection(
@@ -129,6 +133,218 @@ def _range_to_container_substitution_detail(
             }
         )
     return detail
+
+
+def append_structural_no_ops_lowering_rejection(
+    effect: UKEffectRecord,
+    *,
+    structural_for_replay: bool,
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+    compile_recorded_lowering_rejection: bool,
+) -> bool:
+    if not structural_for_replay or lowering_rejections_out is None:
+        return False
+    if compile_recorded_lowering_rejection:
+        return False
+    if any(
+        rejection.get("rule_id") == "uk_effect_lowering_no_ops_rejected"
+        and str(rejection.get("effect_id") or "") == str(effect.effect_id or "")
+        for rejection in lowering_rejections_out
+    ):
+        return False
+    lowering_rejections_out.append(
+        {
+            "rule_id": "uk_effect_lowering_no_ops_rejected",
+            "family": "lowering_filter",
+            "phase": "lowering",
+            "effect_id": effect.effect_id,
+            "affecting_act_id": effect.affecting_act_id,
+            "affected_provisions": effect.affected_provisions,
+            "affecting_provisions": effect.affecting_provisions,
+            "effect_type": effect.effect_type,
+            "reason": "UK structural effect lowered to no replay operations",
+            "blocking": True,
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    )
+    return True
+
+
+def append_source_pathology_filter_lowering_rejections(
+    effect: UKEffectRecord,
+    *,
+    source_pathology: str,
+    structural_for_replay: bool,
+    compiled_ops: Sequence[LegalOperation],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> bool:
+    """Append blocking lowering records for source pathology filters.
+
+    These filters are shared by replay and effect-inspection tooling. They do
+    not repair the row; they make the rejected semantic lane visible.
+    """
+    if lowering_rejections_out is None:
+        return False
+    appended = False
+    if (
+        structural_for_replay
+        and source_pathology == "instruction_text_reused_as_payload"
+        and any(_action_name(op.action) in {"insert", "replace"} for op in compiled_ops)
+        and not any(
+            op.witness_rule_id == UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID
+            for op in compiled_ops
+        )
+    ):
+        lowering_rejections_out.append(
+            {
+                "rule_id": "uk_effect_instruction_text_payload_rejected",
+                "family": "source_pathology_filter",
+                "phase": "lowering",
+                "effect_id": effect.effect_id,
+                "affecting_act_id": effect.affecting_act_id,
+                "affected_provisions": effect.affected_provisions,
+                "affecting_provisions": effect.affecting_provisions,
+                "effect_type": effect.effect_type,
+                "reason": "UK effect payload reused instruction text rather than source legal payload",
+                "blocking": True,
+                "strict_disposition": "block",
+                "quirks_disposition": "record",
+                "source_pathology": source_pathology,
+            }
+        )
+        appended = True
+    if source_pathology == "range_to_container_target_unsupported":
+        lowering_rejections_out.append(
+            {
+                "rule_id": "uk_effect_range_to_container_substitution_rejected",
+                "family": "source_pathology_filter",
+                "phase": "lowering",
+                "effect_id": effect.effect_id,
+                "affecting_act_id": effect.affecting_act_id,
+                "affected_provisions": effect.affected_provisions,
+                "affecting_provisions": effect.affecting_provisions,
+                "effect_type": effect.effect_type,
+                "reason": (
+                    "UK source substitutes a section range into a container payload; "
+                    "lowering must own range replacement and lineage before replay"
+                ),
+                "blocking": True,
+                "strict_disposition": "block",
+                "quirks_disposition": "record",
+                "source_pathology": source_pathology,
+                **_range_to_container_substitution_detail(effect, compiled_ops),
+            }
+        )
+        appended = True
+    return appended
+
+
+def append_no_ops_lowering_rejections(
+    effect: UKEffectRecord,
+    *,
+    structural_for_replay: bool,
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+    compile_recorded_lowering_rejection: bool,
+    applicability_mode: str = "effective_date_plus_feed_applied",
+) -> bool:
+    """Append owned lowering rejections for replay-relevant effect rows with no ops."""
+    appended = append_structural_no_ops_lowering_rejection(
+        effect,
+        structural_for_replay=structural_for_replay,
+        lowering_rejections_out=lowering_rejections_out,
+        compile_recorded_lowering_rejection=compile_recorded_lowering_rejection,
+    )
+    if structural_for_replay or lowering_rejections_out is None or compile_recorded_lowering_rejection:
+        return appended
+    nonstructural_candidate_family = uk_nonstructural_replay_candidate_family(
+        effect,
+        applicability_mode=applicability_mode,
+    )
+    if nonstructural_candidate_family:
+        lowering_rejections_out.append(
+            {
+                "rule_id": "uk_effect_nonstructural_lowering_no_ops_rejected",
+                "family": "lowering_filter",
+                "phase": "lowering",
+                "effect_id": effect.effect_id,
+                "affecting_act_id": effect.affecting_act_id,
+                "affected_provisions": effect.affected_provisions,
+                "affecting_provisions": effect.affecting_provisions,
+                "effect_type": effect.effect_type,
+                "reason": "UK nonstructural effect row may be replayable but lowered to no replay operations",
+                "blocking": True,
+                "strict_disposition": "block",
+                "quirks_disposition": "record",
+                "nonstructural_replay_candidate_family": nonstructural_candidate_family,
+            }
+        )
+        return True
+    if (
+        (effect.effect_type or "").strip().lower() not in _COMMENCEMENT_EFFECT_TYPES
+        and effect.is_applicable_for_replay(applicability_mode=applicability_mode)
+    ):
+        lowering_rejections_out.append(
+            {
+                "rule_id": "uk_effect_nonstructural_unsupported_no_ops_observed",
+                "family": "nonstructural_replay_observation",
+                "phase": "lowering",
+                "effect_id": effect.effect_id,
+                "affecting_act_id": effect.affecting_act_id,
+                "affected_provisions": effect.affected_provisions,
+                "affecting_provisions": effect.affecting_provisions,
+                "effect_type": effect.effect_type,
+                "reason": (
+                    "UK applicable nonstructural effect row is not replay-supported "
+                    "under the selected replay lens and lowered to no replay operations"
+                ),
+                "blocking": False,
+                "strict_disposition": "record",
+                "quirks_disposition": "record",
+            }
+        )
+        return True
+    return appended
+
+
+def mark_nonreplay_lowering_rejections_nonblocking(
+    effect: UKEffectRecord,
+    *,
+    structural_for_replay: bool,
+    applicability_mode: str,
+    lowering_rejections: list[dict[str, Any]],
+    start_index: int,
+) -> bool:
+    """Mark compile-time lowering diagnostics nonblocking when replay cannot use the row.
+
+    `compile_effect_to_ir_ops` is intentionally source-local and may emit a
+    blocking rejection before the caller has applied the replay lens. The caller
+    owns this phase-boundary reclassification so nonstructural, unsupported rows
+    remain visible without masquerading as replay blockers.
+    """
+    if structural_for_replay:
+        return False
+    if uk_nonstructural_replay_candidate_family(effect, applicability_mode=applicability_mode):
+        return False
+    if start_index >= len(lowering_rejections):
+        return False
+    changed = False
+    for rejection in lowering_rejections[start_index:]:
+        if not is_blocking_compile_record(rejection):
+            continue
+        rejection["blocking"] = False
+        rejection["strict_disposition"] = "record"
+        rejection["nonblocking_reclassification_rule_id"] = (
+            "uk_effect_nonreplay_lowering_observed"
+        )
+        rejection["replay_relevance"] = "nonstructural_unsupported"
+        rejection["reclassification_reason"] = (
+            "The selected replay lens does not support or admit this "
+            "nonstructural effect row; the lowering diagnostic is evidence, "
+            "not a replay blocker."
+        )
+        changed = True
+    return changed
 
 
 def _range_to_container_payload_root_summary(payload: IRNode) -> dict[str, Any]:
