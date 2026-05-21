@@ -9,15 +9,19 @@ from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
 from lawvm.core.semantic_types import StructuralAction
 from lawvm.uk_legislation.canonicalize import canonicalize_uk_address
 from lawvm.uk_legislation.effects import UKEffectRecord
-from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_rejection
+from lawvm.uk_legislation.lowering_records import (
+    _append_uk_effect_lowering_observation,
+    _append_uk_effect_lowering_rejection,
+)
+from lawvm.uk_legislation.source_parent_payloads import (
+    UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID as _UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID,
+    UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID as _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID,
+)
 from lawvm.uk_legislation.source_definition_fragments import (
     _looks_like_appropriate_place_definition_entry_insert_text,
 )
 from lawvm.uk_legislation.source_payload_elaboration import (
     _extract_crossheading_payload_from_extracted,
-)
-from lawvm.uk_legislation.source_parent_payloads import (
-    UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID as _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID,
 )
 from lawvm.uk_legislation.target_parser import _parse_affected_target
 from lawvm.uk_legislation.witness_builders import (
@@ -92,6 +96,62 @@ def append_unlowered_overlap_substitution_rejection(
                 else ""
             ),
         },
+    )
+
+
+def append_source_parent_at_end_added_observation(
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+    *,
+    effect: UKEffectRecord,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    source_parent_at_end_added_payload: Optional[dict[str, Any]],
+) -> None:
+    if source_parent_at_end_added_payload is None:
+        return
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID,
+        family="source_context_elaboration",
+        reason_code="payload_fragment_combined_with_parent_at_end_added",
+        reason=(
+            "UK effect feed row has no effect type and the extracted "
+            "BlockAmendment contains only an inserted structural payload, "
+            "but the source-local parent instruction explicitly adds it at "
+            "the end of the affected provision; lowering keeps the metadata "
+            "target and payload identity as one source-owned insert."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            key: value
+            for key, value in source_parent_at_end_added_payload.items()
+            if key != "rule_id"
+        },
+    )
+
+
+def append_no_targets_rejection(
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+    *,
+    effect: UKEffectRecord,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> None:
+    _append_uk_effect_lowering_rejection(
+        lowering_rejections_out,
+        rule_id="uk_effect_lowering_no_targets_rejected",
+        family="target_resolution_recovery",
+        reason_code="no_affected_targets",
+        reason=(
+            "UK effect lowered to no replay operations because affected "
+            "provisions produced no target candidates"
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={"original_affected_provisions": effect.affected_provisions},
     )
 
 
