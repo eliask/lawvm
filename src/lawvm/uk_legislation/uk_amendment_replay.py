@@ -314,6 +314,7 @@ from lawvm.uk_legislation.source_definition_fragments import (
     refine_source_definition_child_target,
 )
 from lawvm.uk_legislation.source_fragment_context import (
+    append_source_fragment_context_observations,
     _fragment_substitution_after_words_inserted_by_sibling,
     _fragment_substitution_grouped_anchor_occurrence,
 )
@@ -1657,67 +1658,18 @@ def compile_effect_to_ir_ops(
                         extracted_text=extracted_text,
                         lowering_rejections_out=lowering_rejections_out,
                     )
-                    for sibling_context_fragment in fragment_subs:
-                        if (
-                            str(sibling_context_fragment.get("rule_id") or "")
-                            != "uk_effect_after_words_inserted_by_sibling_text_patch"
-                        ):
-                            continue
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id="uk_effect_after_words_inserted_by_sibling_text_patch",
-                            family="source_context_elaboration",
-                            reason_code="text_insert_anchor_resolved_from_named_source_sibling",
-                            reason=(
-                                "UK source inserts words after the words inserted by a named "
-                                "sibling sub-paragraph; lowering resolves that anchor from the "
-                                "cited sibling source instruction instead of guessing from live text."
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "target": str(target),
-                                "source_sibling_label": str(
-                                    sibling_context_fragment.get("source_sibling_label") or ""
-                                ),
-                                "source_sibling_rule_id": str(
-                                    sibling_context_fragment.get("source_sibling_rule_id") or ""
-                                ),
-                                "text_match": op_text_match,
-                                "replacement": op_text_replacement,
-                            },
-                        )
-                    for grouped_context_fragment in fragment_subs:
-                        if (
-                            str(grouped_context_fragment.get("rule_id") or "")
-                            != "uk_effect_grouped_anchor_occurrence_substitution_text_patch"
-                        ):
-                            continue
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id="uk_effect_grouped_anchor_occurrence_substitution_text_patch",
-                            family="source_context_elaboration",
-                            reason_code="text_substitution_anchor_resolved_from_group_parent",
-                            reason=(
-                                "UK source child gives only the ordinal occurrence to replace, "
-                                "while its parent instruction explicitly carries the quoted "
-                                "anchor. Lowering combines those source-local facts instead of "
-                                "guessing the anchor from live text."
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "target": str(target),
-                                "source_parent_id": str(grouped_context_fragment.get("source_parent_id") or ""),
-                                "text_match": op_text_match,
-                                "replacement": op_text_replacement,
-                                "occurrence": op_text_occurrence,
-                            },
-                        )
+                    append_source_fragment_context_observations(
+                        effect=effect,
+                        target=target,
+                        target_ref=t_str,
+                        fragment_subs=fragment_subs,
+                        op_text_match=op_text_match,
+                        op_text_replacement=op_text_replacement,
+                        op_text_occurrence=op_text_occurrence,
+                        extracted_el=extracted_el,
+                        extracted_text=extracted_text,
+                        lowering_rejections_out=lowering_rejections_out,
+                    )
                 else:
                     # Fallback regex for simple omissions not caught by NLP
                     _OPEN_Q = "\"\u201c\u2018'"

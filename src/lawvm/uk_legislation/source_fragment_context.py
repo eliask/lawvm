@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from typing import Optional
+from typing import Any, Optional
 
+from lawvm.core.ir import LegalAddress
+from lawvm.uk_legislation.effects import UKEffectRecord
+from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
 from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
 from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
 from lawvm.uk_legislation.provision_extractor import _instruction_text_before_amendment_container
@@ -34,6 +37,78 @@ _GROUPED_ANCHOR_OCCURRENCE_PARENT_RE = re.compile(
 )
 
 _SOURCE_SUBORDINATE_ROW_TAGS = frozenset({"P1", "P2", "P3", "P4", "P5", "P6"})
+
+
+def append_source_fragment_context_observations(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    target_ref: str,
+    fragment_subs: Optional[list[dict[str, Any]]],
+    op_text_match: Optional[str],
+    op_text_replacement: Optional[str],
+    op_text_occurrence: int,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> None:
+    for sibling_context_fragment in fragment_subs or []:
+        if (
+            str(sibling_context_fragment.get("rule_id") or "")
+            != "uk_effect_after_words_inserted_by_sibling_text_patch"
+        ):
+            continue
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_after_words_inserted_by_sibling_text_patch",
+            family="source_context_elaboration",
+            reason_code="text_insert_anchor_resolved_from_named_source_sibling",
+            reason=(
+                "UK source inserts words after the words inserted by a named "
+                "sibling sub-paragraph; lowering resolves that anchor from the "
+                "cited sibling source instruction instead of guessing from live text."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "source_sibling_label": str(sibling_context_fragment.get("source_sibling_label") or ""),
+                "source_sibling_rule_id": str(sibling_context_fragment.get("source_sibling_rule_id") or ""),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+            },
+        )
+    for grouped_context_fragment in fragment_subs or []:
+        if (
+            str(grouped_context_fragment.get("rule_id") or "")
+            != "uk_effect_grouped_anchor_occurrence_substitution_text_patch"
+        ):
+            continue
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_grouped_anchor_occurrence_substitution_text_patch",
+            family="source_context_elaboration",
+            reason_code="text_substitution_anchor_resolved_from_group_parent",
+            reason=(
+                "UK source child gives only the ordinal occurrence to replace, "
+                "while its parent instruction explicitly carries the quoted "
+                "anchor. Lowering combines those source-local facts instead of "
+                "guessing the anchor from live text."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "source_parent_id": str(grouped_context_fragment.get("source_parent_id") or ""),
+                "text_match": op_text_match,
+                "replacement": op_text_replacement,
+                "occurrence": op_text_occurrence,
+            },
+        )
 
 
 def _fragment_substitution_after_words_inserted_by_sibling(
