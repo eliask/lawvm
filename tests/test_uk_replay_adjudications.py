@@ -18,7 +18,11 @@ from lawvm.uk_legislation.replay_text_apply import (
     _insert_at_end_of_definition_text,
     _insert_after_definition_text,
     _remove_trailing_context_word,
+    _rewrite_anchor_in_definition_entry_text,
     _rewrite_definition_entry_text,
+    _rewrite_definition_range_text,
+    _rewrite_definition_range_to_end_text,
+    _rewrite_each_anchor_in_definition_entry_text,
     _rewrite_flat_definition_child_ordinal_text,
 )
 from lawvm.uk_legislation.source_adjudication import classify_uk_replay_adjudication_bucket
@@ -209,6 +213,87 @@ def test_insert_at_end_of_definition_text_rejects_ambiguous_definition() -> None
 
     assert applied is False
     assert rewritten == original
+
+
+def test_rewrite_definition_range_to_end_text_preserves_entry_terminator() -> None:
+    rewritten, applied = _rewrite_definition_range_to_end_text(
+        (
+            '"primary legislation" means an Act, Measure or Order; '
+            '"secondary legislation" means regulations;'
+        ),
+        term="primary legislation",
+        start_anchor="Measure",
+        replacement="instrument",
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is True
+    assert rewritten == (
+        '"primary legislation" means an Act, instrument; '
+        '"secondary legislation" means regulations;'
+    )
+
+
+def test_rewrite_definition_range_text_uses_requested_occurrence_pair() -> None:
+    rewritten, applied = _rewrite_definition_range_text(
+        '"entity" means firm, body, firm or partnership;',
+        term="entity",
+        start_anchor="firm",
+        end_anchor="partnership",
+        replacement="company",
+        occurrence=2,
+        end_occurrence=1,
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is True
+    assert rewritten == '"entity" means firm, body, company;'
+
+
+def test_rewrite_each_anchor_in_definition_entry_text_rewrites_all_matches() -> None:
+    rewritten, applied = _rewrite_each_anchor_in_definition_entry_text(
+        '"entity" means firm, body, firm or partnership;',
+        term="entity",
+        anchor="firm",
+        replacement="company",
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is True
+    assert rewritten == '"entity" means company, body, company or partnership;'
+
+
+def test_rewrite_anchor_in_definition_entry_text_rejects_ambiguous_anchor() -> None:
+    original = '"entity" means firm, body, firm or partnership;'
+
+    rewritten, applied = _rewrite_anchor_in_definition_entry_text(
+        original,
+        term="entity",
+        anchor="firm",
+        replacement="company",
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is False
+    assert rewritten == original
+
+
+def test_rewrite_anchor_in_definition_entry_text_rewrites_unique_anchor() -> None:
+    rewritten, applied = _rewrite_anchor_in_definition_entry_text(
+        '"entity" means firm, body or partnership;',
+        term="entity",
+        anchor="body",
+        replacement="company",
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is True
+    assert rewritten == '"entity" means firm, company or partnership;'
 
 
 def test_definition_child_insert_payload_preserves_ordered_list_metadata() -> None:

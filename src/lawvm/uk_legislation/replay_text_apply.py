@@ -494,6 +494,173 @@ def _insert_at_end_of_definition_text(
     return " ".join(new_text.split()).strip(), True
 
 
+def _rewrite_definition_range_to_end_text(
+    text: str,
+    *,
+    term: str,
+    start_anchor: str,
+    replacement: str,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[str, bool]:
+    definition_pattern = _compile_definition_entry_range_pattern(
+        term,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    definition_matches = list(definition_pattern.finditer(text))
+    if len(definition_matches) != 1:
+        return text, False
+    definition_match = definition_matches[0]
+    entry_text = definition_match.group(0)
+    start_pattern = _text_patch_pattern(
+        start_anchor,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    start_matches = list(re.finditer(start_pattern, entry_text, flags=re.I | re.S))
+    if len(start_matches) != 1:
+        return text, False
+    start_match = start_matches[0]
+    terminator = str(definition_match.group("terminator") or "")
+    replacement_text = replacement.strip()
+    if terminator and not replacement_text.endswith(terminator):
+        replacement_text = f"{replacement_text}{terminator}"
+    rewritten_entry = entry_text[: start_match.start()].rstrip()
+    joiner = (
+        ""
+        if not rewritten_entry
+        or rewritten_entry.endswith((" ", "\t", "\n", "\r"))
+        or replacement_text.startswith((" ", ",", ".", ";", ":", ")"))
+        else " "
+    )
+    rewritten_entry = f"{rewritten_entry}{joiner}{replacement_text}"
+    new_text = text[: definition_match.start()] + rewritten_entry + text[definition_match.end() :]
+    return " ".join(new_text.split()).strip(), True
+
+
+def _rewrite_definition_range_text(
+    text: str,
+    *,
+    term: str,
+    start_anchor: str,
+    end_anchor: str,
+    replacement: str,
+    occurrence: int,
+    end_occurrence: int,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[str, bool]:
+    definition_pattern = _compile_definition_entry_range_pattern(
+        term,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    definition_matches = list(definition_pattern.finditer(text))
+    if len(definition_matches) != 1:
+        return text, False
+    definition_match = definition_matches[0]
+    entry_text = definition_match.group(0)
+    start_pattern = _text_patch_pattern(
+        start_anchor,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    start_ordinal = occurrence if occurrence > 0 else 1
+    start_matches = list(re.finditer(start_pattern, entry_text, flags=re.I | re.S))
+    if len(start_matches) < start_ordinal:
+        return text, False
+    start_match = start_matches[start_ordinal - 1]
+    end_pattern = _text_patch_pattern(
+        end_anchor,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    end_matches = [
+        candidate
+        for candidate in re.finditer(end_pattern, entry_text, flags=re.I | re.S)
+        if candidate.start() >= start_match.end()
+    ]
+    end_ordinal = end_occurrence if end_occurrence > 0 else 1
+    if len(end_matches) < end_ordinal:
+        return text, False
+    end_match = end_matches[end_ordinal - 1]
+    rewritten_entry = (
+        entry_text[: start_match.start()] + replacement + entry_text[end_match.end() :]
+    )
+    new_text = text[: definition_match.start()] + rewritten_entry + text[definition_match.end() :]
+    return " ".join(new_text.split()).strip(), True
+
+
+def _rewrite_each_anchor_in_definition_entry_text(
+    text: str,
+    *,
+    term: str,
+    anchor: str,
+    replacement: str,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[str, bool]:
+    definition_pattern = _compile_definition_entry_range_pattern(
+        term,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+        predicate_pattern=_UK_DEFINITION_PREDICATE_PATTERN_WITHOUT_SHALL,
+    )
+    definition_matches = list(definition_pattern.finditer(text))
+    if len(definition_matches) != 1:
+        return text, False
+    definition_match = definition_matches[0]
+    entry_text = definition_match.group(0)
+    anchor_pattern = _text_patch_pattern(
+        anchor,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    anchor_matches = list(re.finditer(anchor_pattern, entry_text, flags=re.I | re.S))
+    if not anchor_matches:
+        return text, False
+    rewritten_entry = re.sub(anchor_pattern, replacement, entry_text, flags=re.I | re.S)
+    new_text = f"{text[:definition_match.start()]}{rewritten_entry}{text[definition_match.end():]}"
+    return " ".join(new_text.split()).strip(), True
+
+
+def _rewrite_anchor_in_definition_entry_text(
+    text: str,
+    *,
+    term: str,
+    anchor: str,
+    replacement: str,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[str, bool]:
+    definition_pattern = _compile_definition_entry_range_pattern(
+        term,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+        predicate_pattern=_UK_DEFINITION_PREDICATE_PATTERN_WITHOUT_SHALL,
+    )
+    definition_matches = list(definition_pattern.finditer(text))
+    if len(definition_matches) != 1:
+        return text, False
+    definition_match = definition_matches[0]
+    entry_text = definition_match.group(0)
+    anchor_pattern = _text_patch_pattern(
+        anchor,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    anchor_matches = list(re.finditer(anchor_pattern, entry_text, flags=re.I | re.S))
+    if len(anchor_matches) != 1:
+        return text, False
+    anchor_match = anchor_matches[0]
+    rewritten_entry = (
+        entry_text[: anchor_match.start()] + replacement + entry_text[anchor_match.end() :]
+    )
+    new_text = f"{text[:definition_match.start()]}{rewritten_entry}{text[definition_match.end():]}"
+    return " ".join(new_text.split()).strip(), True
+
+
 class UKReplayTextApplyMixin:
     def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
         self,
@@ -1236,50 +1403,17 @@ class UKReplayTextApplyMixin:
                 if not term or not start_anchor:
                     return node, False
 
-                def _rewrite_range_to_end_in_definition(text: str) -> tuple[str, bool]:
-                    definition_pattern = _compile_definition_entry_range_pattern(
-                        term,
-                        allow_punctuation_spacing=allow_punctuation_spacing,
-                        allow_word_punctuation_elision=allow_word_punctuation_elision,
-                    )
-                    definition_matches = list(definition_pattern.finditer(text))
-                    if len(definition_matches) != 1:
-                        return text, False
-                    definition_match = definition_matches[0]
-                    entry_text = definition_match.group(0)
-                    start_pattern = _text_patch_pattern(
-                        start_anchor,
-                        allow_punctuation_spacing=allow_punctuation_spacing,
-                        allow_word_punctuation_elision=allow_word_punctuation_elision,
-                    )
-                    start_matches = list(re.finditer(start_pattern, entry_text, flags=re.I | re.S))
-                    if len(start_matches) != 1:
-                        return text, False
-                    start_match = start_matches[0]
-                    terminator = str(definition_match.group("terminator") or "")
-                    replacement_text = replacement.strip()
-                    if terminator and not replacement_text.endswith(terminator):
-                        replacement_text = f"{replacement_text}{terminator}"
-                    rewritten_entry = entry_text[: start_match.start()].rstrip()
-                    joiner = (
-                        ""
-                        if not rewritten_entry
-                        or rewritten_entry.endswith((" ", "\t", "\n", "\r"))
-                        or replacement_text.startswith((" ", ",", ".", ";", ":", ")"))
-                        else " "
-                    )
-                    rewritten_entry = f"{rewritten_entry}{joiner}{replacement_text}"
-                    new_text = (
-                        text[: definition_match.start()]
-                        + rewritten_entry
-                        + text[definition_match.end() :]
-                    )
-                    return " ".join(new_text.split()).strip(), True
-
                 rebuilt, applied = self._apply_unique_text_node_rewrite(
                     node,
                     text_nodes,
-                    _rewrite_range_to_end_in_definition,
+                    lambda text: _rewrite_definition_range_to_end_text(
+                        text,
+                        term=term,
+                        start_anchor=start_anchor,
+                        replacement=replacement,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    ),
                 )
                 if not applied:
                     return node, False
@@ -1296,57 +1430,20 @@ class UKReplayTextApplyMixin:
                 if not term or not start_anchor or not end_anchor:
                     return node, False
 
-                def _rewrite_range_in_definition(text: str) -> tuple[str, bool]:
-                    definition_pattern = _compile_definition_entry_range_pattern(
-                        term,
-                        allow_punctuation_spacing=allow_punctuation_spacing,
-                        allow_word_punctuation_elision=allow_word_punctuation_elision,
-                    )
-                    definition_matches = list(definition_pattern.finditer(text))
-                    if len(definition_matches) != 1:
-                        return text, False
-                    definition_match = definition_matches[0]
-                    entry_text = definition_match.group(0)
-                    start_pattern = _text_patch_pattern(
-                        start_anchor,
-                        allow_punctuation_spacing=allow_punctuation_spacing,
-                        allow_word_punctuation_elision=allow_word_punctuation_elision,
-                    )
-                    start_ordinal = occurrence if occurrence > 0 else 1
-                    start_matches = list(re.finditer(start_pattern, entry_text, flags=re.I | re.S))
-                    if len(start_matches) < start_ordinal:
-                        return text, False
-                    start_match = start_matches[start_ordinal - 1]
-                    end_pattern = _text_patch_pattern(
-                        end_anchor,
-                        allow_punctuation_spacing=allow_punctuation_spacing,
-                        allow_word_punctuation_elision=allow_word_punctuation_elision,
-                    )
-                    end_matches = [
-                        candidate
-                        for candidate in re.finditer(end_pattern, entry_text, flags=re.I | re.S)
-                        if candidate.start() >= start_match.end()
-                    ]
-                    end_ordinal = end_occurrence if end_occurrence > 0 else 1
-                    if len(end_matches) < end_ordinal:
-                        return text, False
-                    end_match = end_matches[end_ordinal - 1]
-                    rewritten_entry = (
-                        entry_text[: start_match.start()]
-                        + replacement
-                        + entry_text[end_match.end() :]
-                    )
-                    new_text = (
-                        text[: definition_match.start()]
-                        + rewritten_entry
-                        + text[definition_match.end() :]
-                    )
-                    return " ".join(new_text.split()).strip(), True
-
                 rebuilt, applied = self._apply_unique_text_node_rewrite(
                     node,
                     text_nodes,
-                    _rewrite_range_in_definition,
+                    lambda text: _rewrite_definition_range_text(
+                        text,
+                        term=term,
+                        start_anchor=start_anchor,
+                        end_anchor=end_anchor,
+                        replacement=replacement,
+                        occurrence=occurrence,
+                        end_occurrence=end_occurrence,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    ),
                 )
                 if not applied:
                     return node, False
@@ -1362,34 +1459,17 @@ class UKReplayTextApplyMixin:
                 if not term or not anchor:
                     return node, False
 
-                def _rewrite_each_anchor_in_definition_entry(text: str) -> tuple[str, bool]:
-                    definition_pattern = _compile_definition_entry_range_pattern(
-                        term,
-                        allow_punctuation_spacing=allow_punctuation_spacing,
-                        allow_word_punctuation_elision=allow_word_punctuation_elision,
-                        predicate_pattern=_UK_DEFINITION_PREDICATE_PATTERN_WITHOUT_SHALL,
-                    )
-                    definition_matches = list(definition_pattern.finditer(text))
-                    if len(definition_matches) != 1:
-                        return text, False
-                    definition_match = definition_matches[0]
-                    entry_text = definition_match.group(0)
-                    anchor_pattern = _text_patch_pattern(
-                        anchor,
-                        allow_punctuation_spacing=allow_punctuation_spacing,
-                        allow_word_punctuation_elision=allow_word_punctuation_elision,
-                    )
-                    anchor_matches = list(re.finditer(anchor_pattern, entry_text, flags=re.I | re.S))
-                    if not anchor_matches:
-                        return text, False
-                    rewritten_entry = re.sub(anchor_pattern, replacement, entry_text, flags=re.I | re.S)
-                    new_text = f"{text[:definition_match.start()]}{rewritten_entry}{text[definition_match.end():]}"
-                    return " ".join(new_text.split()).strip(), True
-
                 rebuilt, applied = self._apply_unique_text_node_rewrite(
                     node,
                     text_nodes,
-                    _rewrite_each_anchor_in_definition_entry,
+                    lambda text: _rewrite_each_anchor_in_definition_entry_text(
+                        text,
+                        term=term,
+                        anchor=anchor,
+                        replacement=replacement,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    ),
                 )
                 if not applied:
                     return node, False
@@ -1406,39 +1486,17 @@ class UKReplayTextApplyMixin:
             if not term or not anchor:
                 return node, False
 
-            def _rewrite_anchor_in_definition_entry(text: str) -> tuple[str, bool]:
-                definition_pattern = _compile_definition_entry_range_pattern(
-                    term,
-                    allow_punctuation_spacing=allow_punctuation_spacing,
-                    allow_word_punctuation_elision=allow_word_punctuation_elision,
-                    predicate_pattern=_UK_DEFINITION_PREDICATE_PATTERN_WITHOUT_SHALL,
-                )
-                definition_matches = list(definition_pattern.finditer(text))
-                if len(definition_matches) != 1:
-                    return text, False
-                definition_match = definition_matches[0]
-                entry_text = definition_match.group(0)
-                anchor_pattern = _text_patch_pattern(
-                    anchor,
-                    allow_punctuation_spacing=allow_punctuation_spacing,
-                    allow_word_punctuation_elision=allow_word_punctuation_elision,
-                )
-                anchor_matches = list(re.finditer(anchor_pattern, entry_text, flags=re.I | re.S))
-                if len(anchor_matches) != 1:
-                    return text, False
-                anchor_match = anchor_matches[0]
-                rewritten_entry = (
-                    entry_text[: anchor_match.start()]
-                    + replacement
-                    + entry_text[anchor_match.end() :]
-                )
-                new_text = f"{text[:definition_match.start()]}{rewritten_entry}{text[definition_match.end():]}"
-                return " ".join(new_text.split()).strip(), True
-
             rebuilt, applied = self._apply_unique_text_node_rewrite(
                 node,
                 text_nodes,
-                _rewrite_anchor_in_definition_entry,
+                lambda text: _rewrite_anchor_in_definition_entry_text(
+                    text,
+                    term=term,
+                    anchor=anchor,
+                    replacement=replacement,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                ),
             )
             if not applied:
                 return node, False
