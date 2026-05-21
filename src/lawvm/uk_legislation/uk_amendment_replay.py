@@ -276,10 +276,10 @@ from lawvm.uk_legislation.schedule_list_selectors import (
     _strip_schedule_entry_phrase,
 )
 from lawvm.uk_legislation.text_rewrite_fragments import (
-    UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS as _UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS,
     UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID as _UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
     _fragment_rule_ids,
     _fragment_substitution,
+    append_all_occurrences_text_rewrite_observations,
     lower_labeled_child_end_range_selector,
     _multi_quoted_word_repeal_fragments,
 )
@@ -1582,45 +1582,18 @@ def compile_effect_to_ir_ops(
                         curr_action = "text_repeal"
                     else:
                         curr_action = "text_replace"
-                    for rewrite_rule_id in _fragment_rule_ids(fragment_subs):
-                        if rewrite_rule_id not in _UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS:
-                            continue
-                        rewrite_fragments = [
-                            item
-                            for item in fragment_subs or []
-                            if str(item.get("rule_id") or "") == rewrite_rule_id
-                        ]
-                        if not rewrite_fragments:
-                            rewrite_fragments = [
-                                {
-                                    "original": op_text_match,
-                                    "replacement": op_text_replacement,
-                                    "occurrence": str(op_text_occurrence),
-                                }
-                            ]
-                        for rewrite_fragment in rewrite_fragments:
-                            _append_uk_effect_lowering_observation(
-                                lowering_rejections_out,
-                                rule_id=rewrite_rule_id,
-                                family="text_rewrite_lowering",
-                                reason_code="explicit_all_occurrences_text_patch",
-                                reason=(
-                                    "UK effect source explicitly applies a word-level "
-                                    "text rewrite wherever/in each place it occurs; "
-                                    "lowering preserves that as an all-occurrences "
-                                    "text patch scoped to the affected target."
-                                ),
-                                effect=effect,
-                                extracted_el=extracted_el,
-                                extracted_text=extracted_text,
-                                detail={
-                                    "target_ref": t_str,
-                                    "target": str(target),
-                                    "text_match": str(rewrite_fragment.get("original") or ""),
-                                    "replacement": str(rewrite_fragment.get("replacement") or ""),
-                                    "occurrence": int(str(rewrite_fragment.get("occurrence") or "0") or "0"),
-                                },
-                            )
+                    append_all_occurrences_text_rewrite_observations(
+                        effect=effect,
+                        target=target,
+                        target_ref=t_str,
+                        fragment_subs=fragment_subs,
+                        op_text_match=op_text_match,
+                        op_text_replacement=op_text_replacement,
+                        op_text_occurrence=op_text_occurrence,
+                        extracted_el=extracted_el,
+                        extracted_text=extracted_text,
+                        lowering_rejections_out=lowering_rejections_out,
+                    )
                     if "uk_effect_contextual_adjacent_word_omit_text_patch" in _fragment_rule_ids(
                         fragment_subs
                     ):
