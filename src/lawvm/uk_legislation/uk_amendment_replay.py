@@ -379,10 +379,12 @@ from lawvm.uk_legislation.source_payload_helpers import (
     _prepend_inserted_section_heading_carrier,
 )
 from lawvm.uk_legislation.source_payload_elaboration import (
+    _crossheading_and_structural_replacement_heading_text,
     _expand_sibling_targets_from_extracted,
     _extract_crossheading_payload_from_extracted,
     _is_broad_schedule_flat_replace_payload,
     _is_non_substantive_structural_payload,
+    _retarget_instruction_element_to_target,
     _source_payload_matches_target_leaf,
     _substituted_series_new_sibling_insert_detail,
     _with_trailing_subordinate_siblings,
@@ -432,9 +434,7 @@ from lawvm.uk_legislation.text_matching import (
     _text_patch_pattern,
 )
 from lawvm.uk_legislation.xml_helpers import (
-    _clone_element,
     _direct_structural_num,
-    _structural_children,
     _tag,
     _text_content,
     get_all_eids,
@@ -443,91 +443,6 @@ from lawvm.uk_legislation.xml_helpers import (
 # ---------------------------------------------------------------------------
 # UK replay helpers
 # ---------------------------------------------------------------------------
-
-
-def _crossheading_and_structural_replacement_heading_text(
-    *,
-    affected_ref: str,
-    extracted_el: Optional[ET.Element],
-    target: LegalAddress,
-) -> Optional[str]:
-    """Return title text for explicit ``paragraph X and cross-heading`` replacements."""
-    if extracted_el is None or "cross-heading" not in affected_ref.lower():
-        return None
-    target_label = _clean_num(_addr_leaf_label(target) or "")
-    if not target_label:
-        return None
-
-    for amendment in extracted_el.iter():
-        if _tag(amendment) not in {"BlockAmendment", "InlineAmendment"}:
-            continue
-        for wrapper in amendment.iter():
-            if _tag(wrapper) not in {"P1group", "Pblock"}:
-                continue
-            title_el = wrapper.find(f"./{{{_LEG_NS}}}Title")
-            if title_el is None:
-                continue
-            heading_text = _text_content(title_el)
-            if not heading_text:
-                continue
-            structural_children = _structural_children(wrapper)
-            if not structural_children:
-                continue
-            first_child_label = _clean_num(_direct_structural_num(structural_children[0]))
-            if first_child_label == target_label:
-                return heading_text
-    return None
-
-
-def _retarget_instruction_element_to_target(
-    extracted_el: ET.Element,
-    target: LegalAddress,
-    extracted_text: Optional[str],
-) -> Optional[ET.Element]:
-    """Retarget instruction paragraphs like '27 Section 100 ...' to the real target.
-
-    Some archive-backed affects extracts hand us the amending schedule paragraph
-    itself (`P1`, `P2`, `P3`) rather than a nested replacement node. When the
-    direct structural number on that element is the amending paragraph number,
-    but the text explicitly introduces a different target provision, using the
-    raw element as payload fabricates a subtree rooted at the amendment
-    paragraph number. In those cases, clone the element and rewrite its direct
-    number to the actual affected target label before parsing it as a payload.
-    """
-    target_kind = _addr_leaf_kind(target)
-    target_label = _addr_leaf_label(target)
-    if not target_kind or not target_label or not extracted_text:
-        return None
-
-    direct_num = _direct_structural_num(extracted_el)
-    if not direct_num or _clean_num(direct_num) == _clean_num(target_label):
-        return None
-
-    text = " ".join(extracted_text.split())
-    label_rx = re.escape(target_label)
-    target_patterns = {
-        "section": rf"\bsection\s+{label_rx}\b",
-        "article": rf"\barticle\s+{label_rx}\b",
-        "rule": rf"\brule\s+{label_rx}\b",
-        "subsection": rf"\bsubsection\s*\({label_rx}\)\b",
-        "paragraph": rf"\bparagraph\s*\({label_rx}\)\b",
-        "subparagraph": rf"\bsub-?paragraph\s*\({label_rx}\)\b",
-        "item": rf"\bitem\s*\({label_rx}\)\b",
-    }
-    pattern = target_patterns.get(target_kind)
-    if pattern is None or not re.search(pattern, text, re.I):
-        return None
-
-    clone = _clone_element(extracted_el)
-    num_el = clone.find(f"./{{{_LEG_NS}}}Pnumber")
-    if num_el is None:
-        num_el = clone.find(f"./{{{_LEG_NS}}}Number")
-    if num_el is None:
-        return None
-    num_el.text = target_label
-    for child in list(num_el):
-        child.tail = ""
-    return clone
 
 
 _UK_REPLAY_TABLE_ENTRY_INLINE_UNRESOLVED_RULE_ID = "uk_replay_table_entry_inline_text_insertion_unresolved"
