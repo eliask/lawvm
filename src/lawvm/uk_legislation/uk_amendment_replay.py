@@ -113,6 +113,7 @@ from lawvm.uk_legislation.effect_target_prelude import (
     append_target_shape_observations,
     expand_single_target_prelude,
     refine_numbered_schedule_entry_repeal_target,
+    reject_external_or_partial_whole_act_scope,
     reject_unsupported_target_facet,
     reject_schedule_entry_missing_source,
     resolve_effect_target_context,
@@ -213,8 +214,6 @@ from lawvm.uk_legislation.source_context import (
 )
 from lawvm.uk_legislation.source_action_inference import infer_uk_effect_action_from_source
 from lawvm.uk_legislation.source_text_reclassifications import (
-    _external_act_target_from_source_text,
-    _partial_whole_act_repeal_exceptions,
     _quote_only_definition_list_omission_payload_match,
     _quote_only_omission_payload_match,
     _word_level_structural_subsection_omission,
@@ -920,53 +919,15 @@ def compile_effect_to_ir_ops(
                 extracted_text=extracted_text,
                 detail={"target_ref": t_str, "target": str(target)},
             )
-        external_act_target = (
-            _external_act_target_from_source_text(extracted_text)
-            if str(target.special or "") == "whole_act"
-            else ""
-        )
-        if external_act_target:
-            _append_uk_effect_lowering_rejection(
-                lowering_rejections_out,
-                rule_id="uk_effect_external_act_target_rejected",
-                family="target_resolution_recovery",
-                reason_code="external_act_target_in_source_text",
-                reason=(
-                    "UK effect metadata points at the current Act, but the "
-                    "affecting source text names a different Act as the target"
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "target_ref": t_str,
-                    "source_named_target": external_act_target,
-                },
-            )
-            continue
-        whole_act_partial_repeal_exceptions = (
-            _partial_whole_act_repeal_exceptions(extracted_text)
-            if str(target.special or "") == "whole_act" and effect_type == "repealed in part"
-            else ""
-        )
-        if whole_act_partial_repeal_exceptions:
-            _append_uk_effect_lowering_rejection(
-                lowering_rejections_out,
-                rule_id="uk_effect_partial_whole_act_repeal_rejected",
-                family="unsupported_target_scope",
-                reason_code="partial_whole_act_repeal_unsupported",
-                reason=(
-                    "UK effect repeals the whole Act except named provisions; "
-                    "lowering cannot safely expand that broad negative scope"
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "target_ref": t_str,
-                    "exception_provisions": whole_act_partial_repeal_exceptions,
-                },
-            )
+        if reject_external_or_partial_whole_act_scope(
+            effect=effect,
+            effect_type=effect_type,
+            t_str=t_str,
+            target=target,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        ):
             continue
         parse_context = "schedule" if _addr_container(target) == "schedule" else ""
         content_ir = None

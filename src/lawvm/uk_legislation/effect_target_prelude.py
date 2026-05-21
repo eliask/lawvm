@@ -34,6 +34,10 @@ from lawvm.uk_legislation.source_payload_helpers import (
     _flat_p1para_schedule_paragraph_insert_payload,
 )
 from lawvm.uk_legislation.schedule_list_selectors import _uk_numbered_schedule_entry_repeal_target
+from lawvm.uk_legislation.source_text_reclassifications import (
+    _external_act_target_from_source_text,
+    _partial_whole_act_repeal_exceptions,
+)
 from lawvm.uk_legislation.source_payload_elaboration import _expand_sibling_targets_from_extracted
 from lawvm.uk_legislation.substitution_metadata import (
     UKSourceLabelChangingSubstitution,
@@ -248,6 +252,68 @@ def reject_schedule_entry_missing_source(
         extracted_el=extracted_el,
         extracted_text=extracted_text,
         detail={"target_ref": t_str, "target": str(target), "action": action},
+    )
+    return True
+
+
+def reject_external_or_partial_whole_act_scope(
+    *,
+    effect: UKEffectRecord,
+    effect_type: str,
+    t_str: str,
+    target: LegalAddress,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> bool:
+    external_act_target = (
+        _external_act_target_from_source_text(extracted_text)
+        if str(target.special or "") == "whole_act"
+        else ""
+    )
+    if external_act_target:
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_external_act_target_rejected",
+            family="target_resolution_recovery",
+            reason_code="external_act_target_in_source_text",
+            reason=(
+                "UK effect metadata points at the current Act, but the "
+                "affecting source text names a different Act as the target"
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": t_str,
+                "source_named_target": external_act_target,
+            },
+        )
+        return True
+
+    whole_act_partial_repeal_exceptions = (
+        _partial_whole_act_repeal_exceptions(extracted_text)
+        if str(target.special or "") == "whole_act" and effect_type == "repealed in part"
+        else ""
+    )
+    if not whole_act_partial_repeal_exceptions:
+        return False
+    _append_uk_effect_lowering_rejection(
+        lowering_rejections_out,
+        rule_id="uk_effect_partial_whole_act_repeal_rejected",
+        family="unsupported_target_scope",
+        reason_code="partial_whole_act_repeal_unsupported",
+        reason=(
+            "UK effect repeals the whole Act except named provisions; "
+            "lowering cannot safely expand that broad negative scope"
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": t_str,
+            "exception_provisions": whole_act_partial_repeal_exceptions,
+        },
     )
     return True
 
