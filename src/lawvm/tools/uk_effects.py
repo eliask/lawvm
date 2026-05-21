@@ -22,6 +22,24 @@ if TYPE_CHECKING:
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_DB = _REPO_ROOT / "data" / "uk_legislation.farchive"
 _DEFAULT_APPLICABILITY_MODE = "effective_date_plus_feed_applied"
+UK_CLAIM_TEMPLATE_RULE_IDS = frozenset(
+    {
+        "uk_manual_frontier_appropriate_place_candidate",
+        "uk_manual_frontier_appropriate_place_definition_entry_candidate",
+        "uk_manual_frontier_crossheading_candidate",
+        "uk_manual_frontier_heading_facet_candidate",
+        "uk_manual_frontier_range_to_container_candidate",
+        "uk_manual_frontier_repeal_table_candidate",
+        "uk_manual_frontier_schedule_list_entry_candidate",
+        "uk_manual_frontier_schedule_note_candidate",
+        "uk_manual_frontier_source_carried_structured_text_patch_candidate",
+        "uk_manual_frontier_structural_sibling_insert_candidate",
+        "uk_manual_frontier_table_appropriate_place_candidate",
+        "uk_manual_frontier_table_column_insert_candidate",
+        "uk_manual_frontier_table_entry_candidate",
+        "uk_manual_frontier_table_entry_deictic_candidate",
+    }
+)
 
 
 @dataclass
