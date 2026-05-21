@@ -100,13 +100,13 @@ from lawvm.uk_legislation.effect_target_prelude import (
     resolve_effect_target_context,
 )
 from lawvm.uk_legislation.addressing import (
-    _action_name,
     _order_schedule_materialization_ops,
 )
 from lawvm.uk_legislation.authority_filter import (
     _partition_uk_ops_by_authority_mode,
     _uk_authority_filter_diagnostic,
 )
+from lawvm.uk_legislation.compiled_effect_facts import uk_compiled_effect_facts
 from lawvm.uk_legislation.heading_facets import (
     _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
     _is_heading_only_ref,
@@ -1077,26 +1077,19 @@ def _classify_compiled_effect_source_pathology(
 ) -> str:
     from lawvm.uk_legislation.source_adjudication import classify_uk_effect_source_pathology
 
+    facts = uk_compiled_effect_facts(
+        ops=compiled_ops,
+        lowering_rejections=lowering_rejections or (),
+        lowering_rejection_start_index=lowering_rejection_start_index,
+    )
     return classify_uk_effect_source_pathology(
         extracted_tag=extracted_tag,
         extracted_text=extracted_text,
-        op_actions=[_action_name(op.action) for op in compiled_ops],
-        payload_kinds=[
-            str(op.payload.kind) for op in compiled_ops if op.payload is not None
-        ],
-        payload_texts=[
-            op.payload.text or "" for op in compiled_ops if op.payload is not None
-        ],
-        target_paths=[
-            "/".join(f"{kind}:{label}" for kind, label in op.target.path)
-            for op in compiled_ops
-        ],
-        lowering_rule_ids=[]
-        if lowering_rejections is None
-        else [
-            str(row.get("rule_id") or "")
-            for row in lowering_rejections[lowering_rejection_start_index:]
-        ],
+        op_actions=facts.op_actions,
+        payload_kinds=facts.payload_kinds,
+        payload_texts=facts.payload_texts,
+        target_paths=facts.target_paths,
+        lowering_rule_ids=facts.lowering_rule_ids,
         effect_type=effect.effect_type,
         is_structural=structural_for_replay,
     )
