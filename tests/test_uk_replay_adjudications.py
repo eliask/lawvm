@@ -466,6 +466,32 @@ def test_executor_records_text_match_missing() -> None:
     assert adjudications[0].detail["text_match"] == "does-not-exist"
 
 
+def test_executor_records_missing_structured_text_patch_payload() -> None:
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_text_replace_missing_structured_payload",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "1"),)),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].text == "Section one."
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_text_patch_missing_structured_payload"
+    assert adjudications[0].detail["action"] == "text_replace"
+    assert adjudications[0].detail["target"] == "section:1"
+    assert adjudications[0].detail["family"] == "unsupported_or_unresolved_action"
+    assert adjudications[0].detail["reason_code"] == "missing_structured_text_patch"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
+
+
 def test_executor_recovers_implicit_first_subparagraph_parent_text_patch() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

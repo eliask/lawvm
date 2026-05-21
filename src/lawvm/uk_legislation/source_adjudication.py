@@ -193,6 +193,7 @@ UK_REPLAY_BUG_ADJUDICATION_KINDS = frozenset(
         "uk_replay_target_not_found",
         "uk_replay_payload_mismatch",
         "uk_replay_payload_missing",
+        "uk_replay_text_patch_missing_structured_payload",
         "uk_replay_unsupported_action",
     }
 )

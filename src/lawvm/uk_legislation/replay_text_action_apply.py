@@ -84,12 +84,20 @@ class UKReplayTextActionApplyMixin:
             )
             _append_uk_replay_adjudication(
                 self.adjudications_out,
-                kind="uk_replay_text_match_missing",
-                message="UK replay skipped text-based op: text_match missing.",
+                kind="uk_replay_text_patch_missing_structured_payload",
+                message=(
+                    "UK replay skipped text-based op: the operation has no "
+                    "structured text_patch payload."
+                ),
                 op=op,
                 detail={
                     "action": _action_name(op.action),
                     "target": str(target),
+                    "family": "unsupported_or_unresolved_action",
+                    "reason_code": "missing_structured_text_patch",
+                    "blocking": True,
+                    "strict_disposition": "block",
+                    "quirks_disposition": "record",
                 },
             )
             return
