@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core.ir import LegalAddress, LegalOperation, TextPatchSpec
 from lawvm.core.semantic_types import FacetKind, TextPatchKindEnum
 from lawvm.uk_legislation.addressing import _action_name, _addr_container, _addr_leaf_kind
 from lawvm.uk_legislation.heading_facets import (
@@ -19,6 +19,7 @@ from lawvm.uk_legislation.provenance_notes import (
 )
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
+    uk_replay_action_target_detail,
     uk_replay_blocking_action_target_detail,
 )
 from lawvm.uk_legislation.replay_recovery_observations import uk_replay_recovery_observation
@@ -121,6 +122,28 @@ def _uk_replay_text_miss_source_shape(kind: str) -> str:
     return _UK_REPLAY_TEXT_MISS_SOURCE_SHAPE_BY_KIND.get(kind, "")
 
 
+def _text_patch_detail(
+    op: LegalOperation,
+    target: LegalAddress,
+    text_patch: TextPatchSpec,
+    replacement: str,
+    *,
+    blocking: bool,
+    quirks_disposition: str = "record",
+    **extra: Any,
+) -> dict[str, Any]:
+    detail = uk_replay_action_target_detail(
+        op,
+        target,
+        blocking=blocking,
+        text_match=text_patch.selector.match_text,
+        replacement_text=replacement,
+        **extra,
+    )
+    detail["quirks_disposition"] = quirks_disposition
+    return detail
+
+
 class UKReplayTextActionApplyMixin:
 
     def _apply_text_action_op(
@@ -143,15 +166,12 @@ class UKReplayTextActionApplyMixin:
                     "structured text_patch payload."
                 ),
                 op=op,
-                detail={
-                    "action": _action_name(op.action),
-                    "target": str(target),
-                    "family": "unsupported_or_unresolved_action",
-                    "reason_code": "missing_structured_text_patch",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    family="unsupported_or_unresolved_action",
+                    reason_code="missing_structured_text_patch",
+                ),
             )
             return
         replacement = (
@@ -185,15 +205,13 @@ class UKReplayTextActionApplyMixin:
                         "has no unique replay heading carrier."
                     ),
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(target),
-                        "text_match": text_patch.selector.match_text,
-                        "replacement_text": replacement,
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                    },
+                    detail=_text_patch_detail(
+                        op,
+                        target,
+                        text_patch,
+                        replacement,
+                        blocking=True,
+                    ),
                 )
                 return
             if (
@@ -227,19 +245,17 @@ class UKReplayTextActionApplyMixin:
                                 "source-owned table cell selector did not resolve."
                             ),
                             op=op,
-                            detail={
-                                "action": _action_name(op.action),
-                                "target": str(target),
-                                "text_match": text_patch.selector.match_text,
-                                "replacement_text": replacement,
-                                "selector": dict(table_cell_selector),
-                                "reason_code": table_cell_reason,
+                            detail=_text_patch_detail(
+                                op,
+                                target,
+                                text_patch,
+                                replacement,
+                                blocking=True,
+                                selector=dict(table_cell_selector),
+                                reason_code=table_cell_reason,
                                 **table_cell_detail,
-                                "family": "source_table_elaboration",
-                                "blocking": True,
-                                "strict_disposition": "block",
-                                "quirks_disposition": "record",
-                            },
+                                family="source_table_elaboration",
+                            ),
                         )
                         return
                     if text_patch.kind not in {TextPatchKindEnum.REPLACE, TextPatchKindEnum.DELETE}:
@@ -248,19 +264,17 @@ class UKReplayTextActionApplyMixin:
                             kind=_UK_REPLAY_TABLE_ENTRY_INLINE_UNRESOLVED_RULE_ID,
                             message="UK replay skipped multi-entry table text op: unsupported text-patch kind.",
                             op=op,
-                            detail={
-                                "action": _action_name(op.action),
-                                "target": str(target),
-                                "text_match": text_patch.selector.match_text,
-                                "replacement_text": replacement,
-                                "selector": dict(table_cell_selector),
-                                "reason_code": "unsupported_multi_cell_text_patch_kind",
+                            detail=_text_patch_detail(
+                                op,
+                                target,
+                                text_patch,
+                                replacement,
+                                blocking=True,
+                                selector=dict(table_cell_selector),
+                                reason_code="unsupported_multi_cell_text_patch_kind",
                                 **table_cell_detail,
-                                "family": "source_table_elaboration",
-                                "blocking": True,
-                                "strict_disposition": "block",
-                                "quirks_disposition": "record",
-                            },
+                                family="source_table_elaboration",
+                            ),
                         )
                         return
                     preimage_gaps = [
@@ -282,20 +296,18 @@ class UKReplayTextActionApplyMixin:
                                 "selected table cell lacked the source text preimage."
                             ),
                             op=op,
-                            detail={
-                                "action": _action_name(op.action),
-                                "target": str(target),
-                                "text_match": text_patch.selector.match_text,
-                                "replacement_text": replacement,
-                                "selector": dict(table_cell_selector),
-                                "reason_code": "multi_cell_text_preimage_gap",
-                                "preimage_gap_cells": tuple(preimage_gaps),
+                            detail=_text_patch_detail(
+                                op,
+                                target,
+                                text_patch,
+                                replacement,
+                                blocking=True,
+                                selector=dict(table_cell_selector),
+                                reason_code="multi_cell_text_preimage_gap",
+                                preimage_gap_cells=tuple(preimage_gaps),
                                 **table_cell_detail,
-                                "family": "source_table_elaboration",
-                                "blocking": True,
-                                "strict_disposition": "block",
-                                "quirks_disposition": "record",
-                            },
+                                family="source_table_elaboration",
+                            ),
                         )
                         return
                     for table_cell in table_cells:
@@ -315,19 +327,17 @@ class UKReplayTextActionApplyMixin:
                                     "preflight passed but apply failed."
                                 ),
                                 op=op,
-                                detail={
-                                    "action": _action_name(op.action),
-                                    "target": str(target),
-                                    "text_match": text_patch.selector.match_text,
-                                    "replacement_text": replacement,
-                                    "selector": dict(table_cell_selector),
-                                    "reason_code": "multi_cell_text_apply_gap",
+                                detail=_text_patch_detail(
+                                    op,
+                                    target,
+                                    text_patch,
+                                    replacement,
+                                    blocking=True,
+                                    selector=dict(table_cell_selector),
+                                    reason_code="multi_cell_text_apply_gap",
                                     **table_cell_detail,
-                                    "family": "source_table_elaboration",
-                                    "blocking": True,
-                                    "strict_disposition": "block",
-                                    "quirks_disposition": "record",
-                                },
+                                    family="source_table_elaboration",
+                                ),
                             )
                             return
                     _append_uk_replay_adjudication(
@@ -335,18 +345,17 @@ class UKReplayTextActionApplyMixin:
                         kind="uk_replay_table_entry_multi_cell_text_patch_resolved",
                         message="UK replay applied a source-owned text patch to multiple table cells.",
                         op=op,
-                        detail={
-                            "action": _action_name(op.action),
-                            "target": str(target),
-                            "text_match": text_patch.selector.match_text,
-                            "replacement_text": replacement,
-                            "selector": dict(table_cell_selector),
+                        detail=_text_patch_detail(
+                            op,
+                            target,
+                            text_patch,
+                            replacement,
+                            blocking=False,
+                            quirks_disposition="apply",
+                            selector=dict(table_cell_selector),
                             **table_cell_detail,
-                            "family": "source_table_elaboration",
-                            "blocking": False,
-                            "strict_disposition": "record",
-                            "quirks_disposition": "apply",
-                        },
+                            family="source_table_elaboration",
+                        ),
                     )
                     target_key = str(target)
                     if target_key:
@@ -367,19 +376,17 @@ class UKReplayTextActionApplyMixin:
                             "table cell selector did not resolve to a replay cell."
                         ),
                         op=op,
-                        detail={
-                            "action": _action_name(op.action),
-                            "target": str(target),
-                            "text_match": text_patch.selector.match_text,
-                            "replacement_text": replacement,
-                            "selector": dict(table_cell_selector),
-                            "reason_code": table_cell_reason,
+                        detail=_text_patch_detail(
+                            op,
+                            target,
+                            text_patch,
+                            replacement,
+                            blocking=True,
+                            selector=dict(table_cell_selector),
+                            reason_code=table_cell_reason,
                             **table_cell_detail,
-                            "family": "source_table_elaboration",
-                            "blocking": True,
-                            "strict_disposition": "block",
-                            "quirks_disposition": "record",
-                        },
+                            family="source_table_elaboration",
+                        ),
                     )
                     return
                 symbolic_detail: dict[str, Any] = {}
@@ -418,19 +425,18 @@ class UKReplayTextActionApplyMixin:
                                 "paragraph substitution to one resolved table cell."
                             ),
                             op=op,
-                            detail={
-                                "action": _action_name(op.action),
-                                "target": str(target),
-                                "text_match": text_patch.selector.match_text,
-                                "replacement_text": replacement,
-                                "selector": dict(table_cell_selector),
+                            detail=_text_patch_detail(
+                                op,
+                                target,
+                                text_patch,
+                                replacement,
+                                blocking=False,
+                                quirks_disposition="apply",
+                                selector=dict(table_cell_selector),
                                 **table_cell_detail,
                                 **symbolic_detail,
-                                "family": "source_table_elaboration",
-                                "blocking": False,
-                                "strict_disposition": "record",
-                                "quirks_disposition": "apply",
-                            },
+                                family="source_table_elaboration",
+                            ),
                         )
                 else:
                     _append_uk_replay_adjudication(
@@ -441,20 +447,18 @@ class UKReplayTextActionApplyMixin:
                             "table cell lacked the source text preimage."
                         ),
                         op=op,
-                        detail={
-                            "action": _action_name(op.action),
-                            "target": str(target),
-                            "text_match": text_patch.selector.match_text,
-                            "replacement_text": replacement,
-                            "selector": dict(table_cell_selector),
-                            "reason_code": symbolic_reason or "cell_text_preimage_gap",
+                        detail=_text_patch_detail(
+                            op,
+                            target,
+                            text_patch,
+                            replacement,
+                            blocking=True,
+                            selector=dict(table_cell_selector),
+                            reason_code=symbolic_reason or "cell_text_preimage_gap",
                             **table_cell_detail,
                             **symbolic_detail,
-                            "family": "source_table_elaboration",
-                            "blocking": True,
-                            "strict_disposition": "block",
-                            "quirks_disposition": "record",
-                        },
+                            family="source_table_elaboration",
+                        ),
                     )
                     return
             elif (
