@@ -85,6 +85,9 @@ from lawvm.uk_legislation.effect_special_lowering import (
     lower_uk_after_paragraph_insert_labelled_series,
     lower_uk_metadata_renumber_effect,
 )
+from lawvm.uk_legislation.effect_substitution_normalization import (
+    lower_substituted_payload_insert_normalization,
+)
 from lawvm.uk_legislation.effect_lowering_tail import (
     append_no_targets_rejection,
     append_source_parent_at_end_added_observation,
@@ -336,7 +339,6 @@ from lawvm.uk_legislation.source_payload_helpers import (
 from lawvm.uk_legislation.source_payload_elaboration import (
     _retarget_instruction_element_to_target,
     _source_payload_matches_target_leaf,
-    _substituted_series_new_sibling_insert_detail,
     _with_trailing_subordinate_siblings,
 )
 from lawvm.uk_legislation.source_parent_payloads import (
@@ -1036,61 +1038,20 @@ def compile_effect_to_ir_ops(
             fragment_subs = [crossheading_text_patch_fragment]
             op_text_match = crossheading_text_patch_fragment["original"]
             op_text_replacement = crossheading_text_patch_fragment["replacement"]
-        substituted_series_insert_detail = _substituted_series_new_sibling_insert_detail(
-            effect_type=effect.effect_type,
+        substitution_insert_normalization = lower_substituted_payload_insert_normalization(
+            effect=effect,
+            curr_action=curr_action,
             original_target_refs=original_targets_str,
             target_index=target_index,
             target_ref=t_str,
             target=target,
             content_ir=content_ir,
+            source_replaced_sibling_count=source_replaced_sibling_count,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
         )
-        if substituted_series_insert_detail is not None:
-            curr_action = "insert"
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id="uk_effect_substituted_series_new_sibling_insert_lowered",
-                family="lowering_normalization",
-                reason_code="substituted_for_single_old_target_with_new_sibling_payload",
-                reason=(
-                    "UK substituted-for row names one replaced target but the "
-                    "source-backed replacement series contains an additional "
-                    "sibling payload; lowering preserves the first target as "
-                    "replace and lowers later source-owned siblings as inserts"
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail=substituted_series_insert_detail,
-            )
-        elif (
-            source_replaced_sibling_count is not None
-            and target_index >= source_replaced_sibling_count
-            and _source_payload_matches_target_leaf(content_ir, target)
-        ):
-            curr_action = "insert"
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id="uk_effect_substituted_range_extra_payload_sibling_insert_lowered",
-                family="lowering_normalization",
-                reason_code="source_substitution_payload_contains_extra_sibling",
-                reason=(
-                    "UK source substitutes a bounded sibling range but the "
-                    "BlockAmendment contains additional source-owned sibling "
-                    "payloads beyond the replaced range; lowering keeps the "
-                    "range members as replacements and lowers the extra "
-                    "siblings as inserts."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "target_ref": t_str,
-                    "target": str(target),
-                    "replaced_sibling_count": source_replaced_sibling_count,
-                    "source_payload_kind": str(content_ir.get("kind") or "") if content_ir else "",
-                    "source_payload_label": str(content_ir.get("label") or "") if content_ir else "",
-                },
-            )
+        curr_action = substitution_insert_normalization.curr_action
 
         structural_sibling_insert = lower_source_structural_sibling_insert(
             effect=effect,
