@@ -337,6 +337,7 @@ from lawvm.uk_legislation.replay_records import (
 from lawvm.uk_legislation.replay_table_geometry import (
     expanded_uk_table_rows,
     expanded_uk_table_rows_with_physical_index,
+    resolve_uk_table_entry_row_insert_index,
     resolve_unique_uk_table_column_text_cell,
     resolve_unique_uk_table_entry_cell,
     resolve_unique_uk_table_entry_cells,
@@ -5561,172 +5562,6 @@ class UKReplayExecutor:
         node.attrs = dict(attrs)
         return True
 
-    def _resolve_table_entry_row_insert_index(
-        self,
-        node: UKMutableNode,
-        selector: dict[str, Any],
-    ) -> tuple[UKMutableNode | None, int | None, str, dict[str, Any]]:
-        try:
-            column_index = int(selector.get("column_index") or 0)
-            entry_index = int(selector.get("entry_index") or 0)
-        except (TypeError, ValueError):
-            return None, None, "invalid_selector", {}
-        relating_norm = _compact_normalized_text(str(selector.get("relating_text") or ""))
-        row_anchor_norms = tuple(
-            anchor_norm
-            for anchor in selector.get("row_anchor_texts") or ()
-            for anchor_norm in (_compact_normalized_text(str(anchor or "")),)
-            if anchor_norm
-        )
-        anchor_entry_label = _clean_num(str(selector.get("anchor_entry_label") or ""))
-        direction = str(selector.get("direction") or "")
-        selector_mode = str(selector.get("selector_mode") or "ordinal_column")
-        if direction != "after":
-            return None, None, "invalid_selector", {}
-        if selector_mode == "entry_label":
-            if not anchor_entry_label:
-                return None, None, "invalid_selector", {}
-        elif selector_mode == "entry_group_heading":
-            if not relating_norm:
-                return None, None, "invalid_selector", {}
-        elif entry_index < 1 or not relating_norm:
-            return None, None, "invalid_selector", {}
-        if selector_mode == "ordinal_column" and column_index < 2:
-            return None, None, "invalid_selector", {}
-        if selector_mode == "relating_entry" and column_index != 1:
-            return None, None, "invalid_selector", {}
-        if selector_mode not in {"ordinal_column", "relating_entry", "entry_label", "entry_group_heading"}:
-            return None, None, "invalid_selector", {}
-
-        tables, carrier_detail = uk_table_selector_tables(node, selector)
-        if len(tables) != 1:
-            return None, None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
-
-        table = tables[0]
-
-        def _unique_row_cells(row_cells: dict[int, UKMutableNode]) -> list[UKMutableNode]:
-            cells: list[UKMutableNode] = []
-            seen: set[int] = set()
-            for _col, cell in sorted(row_cells.items()):
-                cell_id = id(cell)
-                if cell_id in seen:
-                    continue
-                seen.add(cell_id)
-                cells.append(cell)
-            return cells
-
-        def _is_entry_group_heading(row_cells: dict[int, UKMutableNode]) -> bool:
-            cells = _unique_row_cells(row_cells)
-            texts = [str(cell.text or "").strip() for cell in cells]
-            if len(cells) == 1 and texts[0]:
-                return True
-            return bool(texts and texts[0] and all(not text for text in texts[1:]))
-
-        expanded_rows = expanded_uk_table_rows_with_physical_index(table)
-        if selector_mode == "entry_group_heading":
-            matching_groups: list[tuple[int, str]] = []
-            for row_position, (row_index, row_cells) in enumerate(expanded_rows):
-                if not _is_entry_group_heading(row_cells):
-                    continue
-                row_preview = " | ".join(
-                    str(cell.text or "")
-                    for cell in _unique_row_cells(row_cells)
-                    if str(cell.text or "")
-                )[:240]
-                if _compact_normalized_text(row_preview).find(relating_norm) < 0:
-                    continue
-                insert_index = len(table.children)
-                for next_row_index, next_row_cells in expanded_rows[row_position + 1 :]:
-                    if _is_entry_group_heading(next_row_cells):
-                        insert_index = next_row_index
-                        break
-                matching_groups.append((insert_index, row_preview))
-            if len(matching_groups) != 1:
-                return None, None, "entry_group_heading_not_unique", {
-                    "matching_entry_count": len(matching_groups),
-                    "matching_rows": tuple(row[1] for row in matching_groups[:5]),
-                    **carrier_detail,
-                }
-            insert_index, row_preview = matching_groups[0]
-            return table, insert_index, "", {
-                "matching_entry_count": 1,
-                "matched_row": row_preview,
-                **carrier_detail,
-            }
-
-        matching_rows: list[tuple[int, str]] = []
-        last_target_cell: UKMutableNode | None = None
-        for row_index, row_cells in expanded_rows:
-            if selector_mode == "relating_entry":
-                row_match_cells = [
-                    cell
-                    for _col, cell in sorted(row_cells.items())
-                    if _compact_normalized_text(cell.text or "").find(relating_norm) >= 0
-                    or any(
-                        _compact_normalized_text(cell.text or "").find(anchor_norm) >= 0
-                        for anchor_norm in row_anchor_norms
-                    )
-                ]
-                if not row_match_cells:
-                    continue
-                target_cell = row_match_cells[0]
-            elif selector_mode == "entry_label":
-                target_cell = row_cells.get(1)
-                if target_cell is None:
-                    continue
-                if _clean_num(target_cell.text or "") != anchor_entry_label:
-                    continue
-            else:
-                target_cell = row_cells.get(column_index)
-                if target_cell is None:
-                    continue
-                relation_cells = [
-                    cell
-                    for col, cell in sorted(row_cells.items())
-                    if col < column_index and _compact_normalized_text(cell.text or "").find(relating_norm) >= 0
-                ]
-                if not relation_cells:
-                    continue
-            if target_cell is last_target_cell:
-                continue
-            last_target_cell = target_cell
-            insert_index = row_index + 1
-            if (
-                selector_mode == "relating_entry"
-                and str(selector.get("source_payload_mode") or "") == "logical_table_entry_group"
-            ):
-                rowspan, _colspan = uk_table_cell_span(target_cell)
-                insert_index = min(len(table.children), row_index + max(rowspan, 1))
-            matching_rows.append(
-                (
-                    insert_index,
-                    " | ".join(
-                        str(row_cells[col].text or "")
-                        for col in sorted(row_cells)
-                        if str(row_cells[col].text or "")
-                    )[:240],
-                )
-            )
-        required_entry_index = 1 if selector_mode == "entry_label" else entry_index
-        if len(matching_rows) < required_entry_index:
-            return None, None, "entry_not_found", {
-                "matching_entry_count": len(matching_rows),
-                "matching_rows": tuple(row[1] for row in matching_rows[:5]),
-                **carrier_detail,
-            }
-        if selector_mode == "entry_label" and len(matching_rows) > 1:
-            return None, None, "entry_not_unique", {
-                "matching_entry_count": len(matching_rows),
-                "matching_rows": tuple(row[1] for row in matching_rows[:5]),
-                **carrier_detail,
-            }
-        insert_index, row_preview = matching_rows[required_entry_index - 1]
-        return table, insert_index, "", {
-            "matching_entry_count": len(matching_rows),
-            "matched_row": row_preview,
-            **carrier_detail,
-        }
-
     def _insert_table_column(
         self,
         target: LegalAddress,
@@ -5918,7 +5753,7 @@ class UKReplayExecutor:
                 },
             )
             return False
-        table, insert_index, reason, detail = self._resolve_table_entry_row_insert_index(node, selector)
+        table, insert_index, reason, detail = resolve_uk_table_entry_row_insert_index(node, selector)
         if table is None or insert_index is None:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
