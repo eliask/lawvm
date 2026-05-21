@@ -248,7 +248,11 @@ def _uk_lowered_op_provenance_tags(witness: UKLoweredOperationWitness) -> tuple[
         provenance_tags.append(f"{NOTE_TEXT_REWRITE_RULE}{witness.text_rewrite_witness.rewrite_source}")
     if witness.insertion_anchor_witness is not None and witness.insertion_anchor_witness.preceding_eid:
         provenance_tags.append(f"{NOTE_PRECEDING_EID}{witness.insertion_anchor_witness.preceding_eid}")
-    if witness.action is StructuralAction.RENUMBER and witness.payload is None:
+    if (
+        witness.payload is None
+        and witness.text_rewrite_witness is None
+        and witness.action in {StructuralAction.RENUMBER, StructuralAction.REPEAL}
+    ):
         witness_payload = _lowered_witness_to_payload_data(dc_replace(witness, payload=None))
         provenance_tags.append(f"{NOTE_REWRITE_WITNESS}{json.dumps(witness_payload, ensure_ascii=False)}")
     if witness.extraction_witness.metadata_fallback_used:

@@ -13,6 +13,7 @@ from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_rejection,
 )
 from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
+from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.xml_helpers import _tag, _text_content
 
 
@@ -418,7 +419,7 @@ def _uk_repeal_table_clause_is_structural_repeal(extent_clause: str) -> bool:
         return False
     return bool(
         re.search(
-            r"\b(?:section|sections|schedule|schedules|paragraph|paragraphs|"
+            r"\b(?:part|parts|chapter|chapters|section|sections|schedule|schedules|paragraph|paragraphs|"
             r"subsection|subsections|sub-?paragraph|sub-?paragraphs)\b",
             norm,
         )
@@ -570,6 +571,22 @@ def _uk_table_cell_mentions_target(
     paragraph = labels.get("paragraph", "")
     subsection = labels.get("subsection", "")
     subparagraph = labels.get("subparagraph", "")
+    part = labels.get("part", "")
+    chapter = labels.get("chapter", "")
+
+    if part:
+        return _uk_table_cell_mentions_container_label(
+            scope_text,
+            kind="part",
+            label=part,
+        )
+
+    if chapter:
+        return _uk_table_cell_mentions_container_label(
+            scope_text,
+            kind="chapter",
+            label=chapter,
+        )
 
     if section:
         section_pat = re.escape(section.lower())
@@ -606,6 +623,61 @@ def _uk_table_cell_mentions_target(
                 return False
         return True
 
+    return False
+
+
+def _uk_table_cell_mentions_container_label(
+    text: str,
+    *,
+    kind: str,
+    label: str,
+) -> bool:
+    """Match a source-owned table extent against a body container target."""
+
+    wanted = _clean_num(label)
+    if not wanted:
+        return False
+    if kind == "part":
+        word_pattern = r"(?:parts?|pts?\.?)"
+    elif kind == "chapter":
+        word_pattern = r"(?:chapters?|chs?\.?)"
+    else:
+        return False
+
+    for match in re.finditer(
+        rf"\b{word_pattern}\s+(?P<body>[^.;]+)",
+        text or "",
+        flags=re.I,
+    ):
+        body = match.group("body")
+        if _uk_container_label_body_mentions_label(body, wanted):
+            return True
+    return False
+
+
+def _uk_container_label_body_mentions_label(body: str, wanted: str) -> bool:
+    tokens = [
+        _clean_num(match.group(0))
+        for match in re.finditer(r"\b(?:[0-9]+[a-z]?|[ivxlcdm]+)\b", body, re.I)
+    ]
+    if wanted in tokens:
+        return True
+    if not wanted.isdigit():
+        return False
+    wanted_int = int(wanted)
+    for match in re.finditer(
+        r"\b(?P<start>[0-9]+|[ivxlcdm]+)\s*(?:to|-|–|—)\s*(?P<end>[0-9]+|[ivxlcdm]+)\b",
+        body or "",
+        flags=re.I,
+    ):
+        start = _clean_num(match.group("start"))
+        end = _clean_num(match.group("end"))
+        if not start.isdigit() or not end.isdigit():
+            continue
+        low = min(int(start), int(end))
+        high = max(int(start), int(end))
+        if low <= wanted_int <= high:
+            return True
     return False
 
 
