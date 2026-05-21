@@ -10,15 +10,18 @@ from lawvm.core.ir import IRNode
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
+from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
 from lawvm.uk_legislation.replay_text_apply import (
+    _collect_descendant_paths_by_label_and_kinds,
     _delete_source_carried_child_text,
     _definition_child_insert_payload,
+    _find_descendant_path_by_kind_label,
+    _find_text_range_start_index,
     _insert_at_end_of_definition_text,
     _insert_after_definition_text,
     _remove_trailing_context_word,
-    _find_text_range_start_index,
     _rewrite_after_anchor_to_end_text,
     _rewrite_anchor_in_definition_entry_text,
     _rewrite_definition_entry_text,
@@ -393,6 +396,42 @@ def test_find_text_range_start_index_rejects_missing_anchor() -> None:
 
     assert start_idx == -1
     assert recovery_rule_ids == ()
+
+
+def test_find_descendant_path_by_kind_label_returns_first_document_order_match() -> None:
+    root = UKMutableNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=[
+            UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="a"),
+            UKMutableNode(
+                kind=IRNodeKind.SUBSECTION,
+                label="1",
+                children=[UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="a")],
+            ),
+        ],
+    )
+
+    assert _find_descendant_path_by_kind_label(root, kind="paragraph", label="a") == (0,)
+    assert _find_descendant_path_by_kind_label(root, kind="paragraph", label="b") is None
+
+
+def test_collect_descendant_paths_by_label_and_kinds_preserves_document_order() -> None:
+    root = UKMutableNode(
+        kind=IRNodeKind.SECTION,
+        label="1",
+        children=[
+            UKMutableNode(kind=IRNodeKind.ITEM, label="2"),
+            UKMutableNode(kind=IRNodeKind.PARAGRAPH, label="2"),
+            UKMutableNode(kind=IRNodeKind.SUBPARAGRAPH, label="3"),
+        ],
+    )
+
+    assert _collect_descendant_paths_by_label_and_kinds(
+        root,
+        label="2",
+        allowed_kinds={"paragraph", "item"},
+    ) == [(0,), (1,)]
 
 
 def test_definition_child_insert_payload_preserves_ordered_list_metadata() -> None:
