@@ -89,6 +89,7 @@ from lawvm.uk_legislation.effect_substitution_normalization import (
     lower_substituted_payload_insert_normalization,
 )
 from lawvm.uk_legislation.effect_lowering_tail import (
+    append_chained_insertion_anchor_observation,
     append_no_targets_rejection,
     append_source_parent_at_end_added_observation,
     append_unlowered_overlap_substitution_rejection,
@@ -158,8 +159,6 @@ from lawvm.uk_legislation.heading_facets import (
     _is_heading_only_ref,
 )
 from lawvm.uk_legislation.lowering_records import (
-    _append_uk_effect_lowering_observation,
-    _append_uk_effect_lowering_rejection,
     append_manual_compile_frontier_diagnostic,
     append_metadata_only_selection_rejection,
     append_no_ops_lowering_rejections,
@@ -1657,27 +1656,17 @@ def compile_effect_to_ir_ops(
                 following_eid=following_eid,
                 anchor_source=following_eid_source or preceding_eid_source,
             )
-            if used_chained_insert_anchor:
-                _append_uk_effect_lowering_observation(
-                    lowering_rejections_out,
-                    rule_id="uk_effect_chained_insertion_anchor_lowered",
-                    family="target_resolution_recovery",
-                    reason_code="same_effect_insert_targets_ordered_by_prior_generated_target",
-                    reason=(
-                        "UK effect expands one insertion instruction into multiple sibling "
-                        "insert operations; later operations are anchored after the prior "
-                        "generated target rather than the original source anchor."
-                    ),
-                    effect=effect,
-                    extracted_el=extracted_el,
-                    extracted_text=extracted_text,
-                    detail={
-                        "target_ref": t_str,
-                        "target": str(target),
-                        "preceding_eid": preceding_eid,
-                        "preceding_eid_source": preceding_eid_source,
-                    },
-                )
+            append_chained_insertion_anchor_observation(
+                lowering_rejections_out,
+                effect=effect,
+                target_ref=t_str,
+                target=target,
+                preceding_eid=preceding_eid,
+                preceding_eid_source=preceding_eid_source,
+                used_chained_insert_anchor=used_chained_insert_anchor,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+            )
             for text_patch_item, fragment_subs_for_witness in text_patch_items:
                 text_rewrite_witness = _uk_text_rewrite_spec(
                     fragment_subs=fragment_subs_for_witness,
