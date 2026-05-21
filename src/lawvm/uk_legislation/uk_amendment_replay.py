@@ -105,6 +105,7 @@ from lawvm.uk_legislation.effect_schedule_lowering import (
     try_lower_schedule_table_end_rows_insert,
 )
 from lawvm.uk_legislation.effect_table_lowering import (
+    prepare_table_cell_text_patch_context,
     try_lower_repeal_table_effect,
     try_lower_table_column_insert,
     try_lower_table_row_insert,
@@ -219,22 +220,6 @@ from lawvm.uk_legislation.source_text_reclassifications import (
     _quote_only_definition_list_omission_payload_match,
     _quote_only_omission_payload_match,
     _word_level_structural_subsection_omission,
-)
-from lawvm.uk_legislation.table_selectors import (
-    UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID as _UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID,
-    UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID as _UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID,
-    UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID as _UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID,
-    UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID as _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID,
-    UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID as _UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID,
-    UK_TABLE_ENTRY_LABELS_COLUMN_TEXT_RULE_ID as _UK_TABLE_ENTRY_LABELS_COLUMN_TEXT_RULE_ID,
-    UK_TABLE_ENTRY_LABEL_COLUMN_TEXT_RULE_ID as _UK_TABLE_ENTRY_LABEL_COLUMN_TEXT_RULE_ID,
-    UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID as _UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID,
-    UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID as _UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID,
-    UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID as _UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID,
-    _uk_broad_table_entry_instruction,
-    _uk_parent_target_before_table_marker,
-    _uk_table_column_text_patch_selector,
-    _uk_table_entry_inline_text_selector,
 )
 from lawvm.uk_legislation.substitution_metadata import (
     UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID as _UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID,
@@ -362,7 +347,6 @@ from lawvm.uk_legislation.source_parent_payloads import (
 from lawvm.uk_legislation.source_structural_sibling import _structural_sibling_insert_from_source
 from lawvm.uk_legislation.source_table_entry_paragraph import (
     UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID as _UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID,
-    _source_carried_table_entry_paragraph_substitution,
 )
 from lawvm.uk_legislation.target_anchors import (
     _fallback_target_eid,
@@ -842,121 +826,22 @@ def compile_effect_to_ir_ops(
         if repeal_table_effect.handled:
             ops.extend(repeal_table_effect.ops)
             continue
-        table_cell_selector = _uk_table_entry_inline_text_selector(
-            target_ref=t_str,
+        table_cell_context = prepare_table_cell_text_patch_context(
+            effect=effect,
+            t_str=t_str,
             target=target,
-            extracted_text=extracted_text,
             extracted_el=extracted_el,
-            source_root=source_root,
-        )
-        if table_cell_selector is None:
-            table_cell_selector = _uk_table_column_text_patch_selector(
-                target_ref=t_str,
-                target=target,
-                extracted_text=extracted_text,
-            )
-        source_carried_table_entry_paragraph_substitution = (
-            _source_carried_table_entry_paragraph_substitution(
-                extracted_el=extracted_el,
-                source_root=source_root,
-                extracted_text=extracted_text,
-                target_ref=t_str,
-                target=target,
-            )
-            if table_cell_selector is None
-            else None
-        )
-        if source_carried_table_entry_paragraph_substitution is not None:
-            table_cell_selector = cast(
-                dict[str, Any],
-                source_carried_table_entry_paragraph_substitution["table_cell_selector"],
-            )
-        if table_cell_selector is not None:
-            selector_rule_id = str(table_cell_selector.get("rule_id") or _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID)
-            selector_mode = str(table_cell_selector.get("selector_mode") or "")
-            table_marker_parent = _uk_parent_target_before_table_marker(target)
-            parent_target = (
-                target
-                if selector_mode in {"unique_column_text", "unique_entry_cell"}
-                and table_marker_parent is None
-                else table_marker_parent
-            )
-            if (
-                parent_target is not None
-                and len(parent_target.path) >= 2
-                and parent_target.path[-1] == ("subsection", "1")
-                and parent_target.path[-2][0] == "section"
-            ):
-                table_cell_selector = {
-                    **table_cell_selector,
-                    "allow_implicit_subsection_one_table": True,
-                    "table_marker_parent_target": str(parent_target),
-                }
-                parent_target = LegalAddress(path=parent_target.path[:-1], special=parent_target.special)
-            if parent_target is None:
-                _append_uk_effect_lowering_rejection(
-                    lowering_rejections_out,
-                    rule_id="uk_effect_table_entry_inline_text_target_unresolved",
-                    family="source_table_elaboration",
-                    reason_code="table_marker_parent_missing",
-                    reason=(
-                        "UK table-entry word effect named a table cell, but "
-                        "the affected target could not be reduced to a containing "
-                        "provision for table-cell replay."
-                    ),
-                    effect=effect,
-                    extracted_el=extracted_el,
-                    extracted_text=extracted_text,
-                    detail={"target_ref": t_str, "target": str(target), **table_cell_selector},
-                )
-                continue
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id=selector_rule_id,
-                family="source_table_elaboration",
-                reason_code=(
-                    "explicit_table_column_preimage_selector"
-                    if selector_mode == "unique_column_text"
-                    else "source_parent_table_entry_paragraph_selector"
-                    if selector_mode == "unique_entry_cell"
-                    else "explicit_table_entry_column_selector"
-                ),
-                reason=(
-                    "UK table word effect lowered as a typed table-cell text "
-                    "patch; replay must resolve the source-owned table cell "
-                    "before mutating text."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "target_ref": t_str,
-                    "original_target": str(target),
-                    "containing_target": str(parent_target),
-                    **table_cell_selector,
-                },
-            )
-            target = parent_target
-        elif table_entry_instruction := _uk_broad_table_entry_instruction(
-            target_ref=t_str,
-            target=target,
             extracted_text=extracted_text,
-        ):
-            _append_uk_effect_lowering_rejection(
-                lowering_rejections_out,
-                rule_id=_UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID,
-                family="source_table_elaboration",
-                reason_code="table_entry_instruction_without_cell_target",
-                reason=(
-                    "UK source instruction targets a table entry or column, "
-                    "but effect metadata names only a broader provision; "
-                    "lowering must not replay it as a host repeal/replace."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail=table_entry_instruction,
-            )
+            source_root=source_root,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        table_cell_selector = table_cell_context.table_cell_selector
+        selector_rule_id = table_cell_context.selector_rule_id
+        source_carried_table_entry_paragraph_substitution = (
+            table_cell_context.source_carried_table_entry_paragraph_substitution
+        )
+        target = table_cell_context.target
+        if table_cell_context.handled:
             continue
         if crossheading_replacement_text is not None:
             target = LegalAddress(path=target.path, special=FacetKind.HEADING)

@@ -19,15 +19,23 @@ from lawvm.uk_legislation.provenance_notes import (
     NOTE_TABLE_COLUMN_INSERT_SELECTOR as _NOTE_TABLE_COLUMN_INSERT_SELECTOR,
     NOTE_TABLE_ROW_INSERT_SELECTOR as _NOTE_TABLE_ROW_INSERT_SELECTOR,
 )
+from lawvm.uk_legislation.source_table_entry_paragraph import (
+    _source_carried_table_entry_paragraph_substitution,
+)
 from lawvm.uk_legislation.table_selectors import (
     UK_TABLE_COLUMN_INSERT_RULE_ID as _UK_TABLE_COLUMN_INSERT_RULE_ID,
+    UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID as _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID,
+    UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID as _UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID,
     UK_TABLE_ENTRY_ROW_INSERT_RULE_ID as _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
+    _uk_broad_table_entry_instruction,
     _uk_parent_target_before_table_marker,
     _uk_schedule_list_entry_table_payload,
     _uk_single_logical_table_entry_group_payload,
     _uk_single_table_column_payload,
     _uk_single_table_row_payload,
     _uk_table_column_insert_selector,
+    _uk_table_column_text_patch_selector,
+    _uk_table_entry_inline_text_selector,
     _uk_table_entry_row_insert_selector,
 )
 from lawvm.uk_legislation.table_sources import (
@@ -63,6 +71,15 @@ class UKTableLoweringResult:
 class UKTableBatchLoweringResult:
     handled: bool
     ops: tuple[LegalOperation, ...] = ()
+
+
+@dataclass(frozen=True)
+class UKTableCellContext:
+    handled: bool
+    target: LegalAddress
+    table_cell_selector: Optional[dict[str, Any]] = None
+    selector_rule_id: str = ""
+    source_carried_table_entry_paragraph_substitution: Optional[dict[str, Any]] = None
 
 
 def try_lower_table_column_insert(
@@ -574,6 +591,145 @@ def try_lower_repeal_table_effect(
         )
         return UKTableBatchLoweringResult(handled=True)
     return UKTableBatchLoweringResult(handled=False)
+
+
+def prepare_table_cell_text_patch_context(
+    *,
+    effect: UKEffectRecord,
+    t_str: str,
+    target: LegalAddress,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    source_root: Optional[ET.Element],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKTableCellContext:
+    table_cell_selector = _uk_table_entry_inline_text_selector(
+        target_ref=t_str,
+        target=target,
+        extracted_text=extracted_text,
+        extracted_el=extracted_el,
+        source_root=source_root,
+    )
+    if table_cell_selector is None:
+        table_cell_selector = _uk_table_column_text_patch_selector(
+            target_ref=t_str,
+            target=target,
+            extracted_text=extracted_text,
+        )
+    source_carried_table_entry_paragraph_substitution = (
+        _source_carried_table_entry_paragraph_substitution(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+            target_ref=t_str,
+            target=target,
+        )
+        if table_cell_selector is None
+        else None
+    )
+    if source_carried_table_entry_paragraph_substitution is not None:
+        table_cell_selector = dict(
+            source_carried_table_entry_paragraph_substitution["table_cell_selector"]
+        )
+    if table_cell_selector is None:
+        table_entry_instruction = _uk_broad_table_entry_instruction(
+            target_ref=t_str,
+            target=target,
+            extracted_text=extracted_text,
+        )
+        if table_entry_instruction:
+            _append_uk_effect_lowering_rejection(
+                lowering_rejections_out,
+                rule_id=_UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID,
+                family="source_table_elaboration",
+                reason_code="table_entry_instruction_without_cell_target",
+                reason=(
+                    "UK source instruction targets a table entry or column, "
+                    "but effect metadata names only a broader provision; "
+                    "lowering must not replay it as a host repeal/replace."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail=table_entry_instruction,
+            )
+            return UKTableCellContext(handled=True, target=target)
+        return UKTableCellContext(handled=False, target=target)
+
+    selector_rule_id = str(table_cell_selector.get("rule_id") or _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID)
+    selector_mode = str(table_cell_selector.get("selector_mode") or "")
+    table_marker_parent = _uk_parent_target_before_table_marker(target)
+    parent_target = (
+        target
+        if selector_mode in {"unique_column_text", "unique_entry_cell"}
+        and table_marker_parent is None
+        else table_marker_parent
+    )
+    if (
+        parent_target is not None
+        and len(parent_target.path) >= 2
+        and parent_target.path[-1] == ("subsection", "1")
+        and parent_target.path[-2][0] == "section"
+    ):
+        table_cell_selector = {
+            **table_cell_selector,
+            "allow_implicit_subsection_one_table": True,
+            "table_marker_parent_target": str(parent_target),
+        }
+        parent_target = LegalAddress(path=parent_target.path[:-1], special=parent_target.special)
+    if parent_target is None:
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_table_entry_inline_text_target_unresolved",
+            family="source_table_elaboration",
+            reason_code="table_marker_parent_missing",
+            reason=(
+                "UK table-entry word effect named a table cell, but "
+                "the affected target could not be reduced to a containing "
+                "provision for table-cell replay."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={"target_ref": t_str, "target": str(target), **table_cell_selector},
+        )
+        return UKTableCellContext(handled=True, target=target)
+
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=selector_rule_id,
+        family="source_table_elaboration",
+        reason_code=(
+            "explicit_table_column_preimage_selector"
+            if selector_mode == "unique_column_text"
+            else "source_parent_table_entry_paragraph_selector"
+            if selector_mode == "unique_entry_cell"
+            else "explicit_table_entry_column_selector"
+        ),
+        reason=(
+            "UK table word effect lowered as a typed table-cell text "
+            "patch; replay must resolve the source-owned table cell "
+            "before mutating text."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": t_str,
+            "original_target": str(target),
+            "containing_target": str(parent_target),
+            **table_cell_selector,
+        },
+    )
+    return UKTableCellContext(
+        handled=False,
+        target=parent_target,
+        table_cell_selector=table_cell_selector,
+        selector_rule_id=selector_rule_id,
+        source_carried_table_entry_paragraph_substitution=(
+            source_carried_table_entry_paragraph_substitution
+        ),
+    )
 
 
 def _table_row_insert_payload(
