@@ -556,6 +556,14 @@ class UKReplayTextActionApplyMixin:
                     family = "text_rewrite_recovery"
                     strict_disposition = "record"
                     source_shape = "amendment_instruction_insert_tail_selector"
+                elif recovery_rule_id == "uk_replay_before_definition_text_rewrite_applied":
+                    message = (
+                        "UK replay applied a before-definition text rewrite after "
+                        "proving the target has a flat definition text surface."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "flat_definition_text_selector"
                 else:
                     message = (
                         "UK replay applied text-based op after normalizing "

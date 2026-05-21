@@ -5254,7 +5254,14 @@ def test_executor_applies_before_definition_insert_at_explicit_definition_anchor
         "\u201centitled to practise\u201d means authorised; "
         "\u201cqualified lawyer\u201d means a lawyer;"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_before_definition_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["text_match"] == "TEXT_BEFORE_DEFINITION_entitled to practise"
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "flat_definition_text_selector"
 
 
 def test_executor_applies_before_definition_insert_when_term_has_comma_qualifier() -> None:
@@ -5316,7 +5323,70 @@ def test_executor_applies_before_definition_insert_when_term_has_comma_qualifier
         "is to be read in accordance with section 19(2); "
         "\u201cqualified lawyer\u201d means a lawyer;"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_before_definition_text_rewrite_applied"
+    ]
+
+
+def test_executor_blocks_before_definition_insert_when_target_has_children() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2024/21",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="17",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="6",
+                            text="Definitions.",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="a",
+                                    text="\u201centitled to practise\u201d means authorised;",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_before_definition_insert_with_children",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "17"), ("subsection", "6"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="TEXT_BEFORE_DEFINITION_entitled to practise",
+                    occurrence=0,
+                ),
+                replacement="\u201cCriminal Injuries Compensation Scheme\u201d means a scheme;",
+            ),
+            source=_source(),
+        )
+    )
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "Definitions."
+    assert [child.label for child in subsection.children] == ["a"]
+    assert [finding.kind for finding in adjudications] == ["uk_replay_text_match_synthetic_selector_gap"]
+    assert adjudications[0].detail["text_match"] == "TEXT_BEFORE_DEFINITION_entitled to practise"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
 
 
 def test_executor_applies_after_definition_insert_to_comma_separated_definition_list() -> None:

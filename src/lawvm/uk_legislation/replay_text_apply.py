@@ -646,6 +646,8 @@ class UKReplayTextApplyMixin:
             term = match[len("TEXT_BEFORE_DEFINITION_") :].strip()
             if not term:
                 return node, False
+            if node.children:
+                return node, False
             full_text = " ".join(tn.text.strip() for _, tn in text_nodes if tn.text).strip()
             if not full_text:
                 return node, False
@@ -667,6 +669,8 @@ class UKReplayTextApplyMixin:
             new_text = f"{full_text[:insert_at]}{replacement}{joiner}{full_text[insert_at:]}"
             rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip(), children=[])
             self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_before_definition_text_rewrite_applied")
             return rebuilt, True
 
         if match.startswith("TEXT_IN_DEFINITION_") and not match.startswith("TEXT_IN_DEFINITION_CHILD_"):
