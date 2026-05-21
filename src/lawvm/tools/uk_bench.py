@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 import Levenshtein
 
 from lawvm.core.compile_records import is_blocking_compile_record
-from lawvm.core.ir import IRNode
+from lawvm.core.ir import IRNode, LegalAddress
 from lawvm.core.ir_helpers import is_zombie
 from lawvm.replay_adjudication import CompileAdjudication
 from farchive import Farchive
@@ -62,6 +62,7 @@ from lawvm.uk_legislation.source_state import (
     uk_source_xml_parse_rejection,
     uk_source_state_wire_tuple as _source_state,
 )
+from lawvm.uk_legislation.target_anchors import _fallback_target_eid
 from lawvm.tools.uk_replay_regime import UKReplayRegime, normalize_uk_replay_regime
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]  # LawVM/
@@ -1249,6 +1250,7 @@ def _score_statute(
                     only_in_replayed=only_in_replayed,
                     only_in_oracle=only_in_oracle,
                     replay_adjudication_kind_counts=replay_adjudication_kind_counts,
+                    lowering_observations=lowering_rejections,
                 )
                 uk_residual_only_in_replayed_count = len(only_in_replayed)
                 uk_residual_only_in_oracle_count = len(only_in_oracle)
@@ -1297,6 +1299,7 @@ def _score_statute(
                         only_in_replayed=set(),
                         only_in_oracle=set(),
                         replay_adjudication_kind_counts=replay_adjudication_kind_counts,
+                        lowering_observations=lowering_rejections,
                     )
                     uk_residual_claim_comparison_class = "replay_exception"
                     uk_residual_claim_core_comparison = False
@@ -1435,6 +1438,7 @@ def _score_statute(
                 only_in_replayed=replay_compare_eids - oracle_compare_eids,
                 only_in_oracle=oracle_compare_eids - replay_compare_eids,
                 replay_adjudication_kind_counts=replay_adjudication_kind_counts,
+                lowering_observations=lowering_rejections,
             )
             uk_residual_section_claim_emitted = bool(uk_residual_section_claim_count)
         source_parse_rejections = _blocking_source_parse_rows(source_parse_observations)
@@ -1804,12 +1808,57 @@ def _replay_adjudication_bucket_counts(
     return bucket_counts
 
 
+_UK_SOURCE_BACKED_RENUMBER_RULE_IDS = frozenset(
+    {
+        "uk_effect_metadata_sibling_renumber_lowered",
+        "uk_effect_source_text_renumber_destination_corrected",
+    }
+)
+
+
+def _uk_address_string_to_compare_eid(address: str) -> str:
+    path: list[tuple[str, str]] = []
+    for segment in str(address or "").split("/"):
+        if not segment or ":" not in segment:
+            return ""
+        kind, label = segment.split(":", 1)
+        kind = kind.strip()
+        label = label.strip()
+        if not kind:
+            return ""
+        path.append((kind, label))
+    if not path:
+        return ""
+    return _fallback_target_eid(LegalAddress(path=tuple(path), special=None))
+
+
+def _source_backed_renumber_residual_kind(
+    *,
+    only_in_replayed: Set[str],
+    only_in_oracle: Set[str],
+    lowering_observations: Sequence[dict[str, Any]],
+) -> str:
+    if not only_in_oracle:
+        return ""
+    for observation in lowering_observations:
+        if str(observation.get("rule_id") or "") not in _UK_SOURCE_BACKED_RENUMBER_RULE_IDS:
+            continue
+        source_eid = _uk_address_string_to_compare_eid(str(observation.get("source_target") or ""))
+        if not source_eid or source_eid not in only_in_oracle:
+            continue
+        if only_in_replayed:
+            return "uk_source_backed_renumber_oracle_branch_mixed_residual_eids"
+        return "uk_source_backed_renumber_oracle_only_residual_eids"
+    return ""
+
+
 def _classify_uk_residual_claim_for_bench(
     *,
     comparison_class: str,
     only_in_replayed: Set[str],
     only_in_oracle: Set[str],
     replay_adjudication_kind_counts: dict[str, int],
+    lowering_observations: Sequence[dict[str, Any]] = (),
 ) -> tuple[str, str, int]:
     """Classify replay residuals for bench reporting without changing scoring."""
     if not comparison_class:
@@ -1825,6 +1874,14 @@ def _classify_uk_residual_claim_for_bench(
             only_in_oracle=only_in_oracle,
             adjudication_kinds=adjudication_kinds,
         )
+        if tier != "PROVED_REPLAY_BUG":
+            source_backed_kind = _source_backed_renumber_residual_kind(
+                only_in_replayed=only_in_replayed,
+                only_in_oracle=only_in_oracle,
+                lowering_observations=lowering_observations,
+            )
+            if source_backed_kind:
+                return ("UNRESOLVED", source_backed_kind, 0)
         return (tier, kind, 1 if tier == "PROVED_REPLAY_BUG" else 0)
     return ("UNRESOLVED", "no_strong_claim", 0)
 
