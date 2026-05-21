@@ -7,16 +7,26 @@ and any action reclassification.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
 import xml.etree.ElementTree as ET
-from typing import Optional
+from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
+from lawvm.uk_legislation.effects import UKEffectRecord
+from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
 from lawvm.uk_legislation.provision_extractor import _instruction_text_before_amendment_container
 from lawvm.uk_legislation.source_context import _source_ancestor_chain
 from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.xml_helpers import _tag
+
+
+@dataclass(frozen=True)
+class UKTextReclassificationResult:
+    curr_action: str
+    content_ir: Optional[dict[str, Any]]
+    detail: Optional[dict[str, str]]
 
 
 def _word_level_structural_subsection_omission(
@@ -57,6 +67,46 @@ def _word_level_structural_subsection_omission(
         "source_target_label": source_label,
         "matched_instruction": match.group(0),
     }
+
+
+def reclassify_word_level_structural_subsection_omission(
+    *,
+    effect: UKEffectRecord,
+    curr_action: str,
+    content_ir: Optional[dict[str, Any]],
+    target: LegalAddress,
+    target_ref: str,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKTextReclassificationResult:
+    detail = _word_level_structural_subsection_omission(
+        effect_type=effect.effect_type,
+        extracted_text=extracted_text,
+        target=target,
+    )
+    if detail is None:
+        return UKTextReclassificationResult(curr_action=curr_action, content_ir=content_ir, detail=None)
+
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id="uk_effect_word_omission_structural_subsection_repeal_reclassified",
+        family="lowering_normalization",
+        reason_code="word_level_feed_row_explicitly_omits_target_subsection",
+        reason=(
+            "UK effect feed labels the row as word-level omission, but "
+            "the affecting source explicitly omits the exact affected subsection"
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            **detail,
+        },
+    )
+    return UKTextReclassificationResult(curr_action="repeal", content_ir=None, detail=detail)
 
 
 def _empty_effect_type_as_if_words_omitted(text: str) -> bool:

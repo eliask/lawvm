@@ -218,7 +218,7 @@ from lawvm.uk_legislation.source_action_inference import infer_uk_effect_action_
 from lawvm.uk_legislation.source_text_reclassifications import (
     _quote_only_definition_list_omission_payload_match,
     _quote_only_omission_payload_match,
-    _word_level_structural_subsection_omission,
+    reclassify_word_level_structural_subsection_omission,
 )
 from lawvm.uk_legislation.substitution_metadata import (
     UKSourceLabelChangingSubstitution,
@@ -1278,32 +1278,18 @@ def compile_effect_to_ir_ops(
             continue
 
         # Grounding 2.0: Fragment substitutions
-        structural_omission_reclassification = _word_level_structural_subsection_omission(
-            effect_type=effect.effect_type,
-            extracted_text=extracted_text,
+        structural_omission_reclassification = reclassify_word_level_structural_subsection_omission(
+            effect=effect,
+            curr_action=curr_action,
+            content_ir=content_ir,
             target=target,
+            target_ref=t_str,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
         )
-        if structural_omission_reclassification is not None:
-            curr_action = "repeal"
-            content_ir = None
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id="uk_effect_word_omission_structural_subsection_repeal_reclassified",
-                family="lowering_normalization",
-                reason_code="word_level_feed_row_explicitly_omits_target_subsection",
-                reason=(
-                    "UK effect feed labels the row as word-level omission, but "
-                    "the affecting source explicitly omits the exact affected subsection"
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "target_ref": t_str,
-                    "target": str(target),
-                    **structural_omission_reclassification,
-                },
-            )
+        curr_action = structural_omission_reclassification.curr_action
+        content_ir = structural_omission_reclassification.content_ir
 
         source_carried_definition_child_text_omission = (
             _fragment_substitution_source_carried_definition_child_text_omission(
