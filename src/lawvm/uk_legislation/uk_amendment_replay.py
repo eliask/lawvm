@@ -99,6 +99,10 @@ from lawvm.uk_legislation.effect_payload_rejections import (
     reject_mixed_heading_structural_insert_missing_payload,
     reject_non_substantive_structural_payload,
 )
+from lawvm.uk_legislation.effect_payload_normalization import (
+    lower_flat_p1para_schedule_paragraph_insert_payload,
+    prepend_inserted_p1group_heading_carrier,
+)
 from lawvm.uk_legislation.effect_crossheading_prelude import (
     build_crossheading_context,
     build_crossheading_compound_heading_op,
@@ -326,12 +330,8 @@ from lawvm.uk_legislation.source_labeled_child_parts import (
     _source_carried_labeled_child_replacement_parts,
 )
 from lawvm.uk_legislation.source_payload_helpers import (
-    UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID as _UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID,
     _direct_payload_text,
-    _flat_p1para_schedule_paragraph_insert_payload,
     infer_source_payload_from_target,
-    _inserted_section_p1group_heading_text,
-    _prepend_inserted_section_heading_carrier,
 )
 from lawvm.uk_legislation.source_payload_elaboration import (
     _retarget_instruction_element_to_target,
@@ -618,7 +618,6 @@ def compile_effect_to_ir_ops(
         target_replacement_leaf_override = target_context.target_replacement_leaf_override
         target_replacement_leaf_kind = target_context.target_replacement_leaf_kind
         flat_p1para_schedule_insert_lowered = False
-        flat_p1para_payload_detail: dict[str, Any] = {}
         append_target_shape_observations(
             effect=effect,
             t_str=t_str,
@@ -834,38 +833,19 @@ def compile_effect_to_ir_ops(
         actual_el: Optional[ET.Element] = None
         source_structural_payload_matches_target = False
         if extracted_el is not None:
-            flat_p1para_payload = None
-            if action == "insert":
-                flat_p1para_payload = _flat_p1para_schedule_paragraph_insert_payload(
-                    extracted_el,
-                    payload_match_target,
-                    fallback_target_eid=_fallback_target_eid,
-                )
-            if flat_p1para_payload is not None:
-                flat_p1para_payload_detail = dict(flat_p1para_payload.pop("_lawvm_detail", {}) or {})
-                content_ir = flat_p1para_payload
+            flat_p1para_lowering = lower_flat_p1para_schedule_paragraph_insert_payload(
+                effect=effect,
+                action=action,
+                target_ref=t_str,
+                payload_match_target=payload_match_target,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                fallback_target_eid=_fallback_target_eid,
+                lowering_rejections_out=lowering_rejections_out,
+            )
+            if flat_p1para_lowering.lowered:
+                content_ir = flat_p1para_lowering.content_ir
                 flat_p1para_schedule_insert_lowered = True
-                _append_uk_effect_lowering_observation(
-                    lowering_rejections_out,
-                    rule_id=_UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID,
-                    family="payload_normalization",
-                    reason_code="flat_blockamendment_p1para_labelled_schedule_paragraph",
-                    reason=(
-                        "UK inserted schedule paragraph source payload is a flat "
-                        "BlockAmendment/P1para with a direct text run beginning with "
-                        "the target paragraph label; lowering uses that labelled text "
-                        "as the paragraph payload and records sibling heading text as "
-                        "unresolved rather than replaying the whole instruction."
-                    ),
-                    effect=effect,
-                    extracted_el=extracted_el,
-                    extracted_text=extracted_text,
-                    detail={
-                        "target_ref": t_str,
-                        "target": str(payload_match_target),
-                        **flat_p1para_payload_detail,
-                    },
-                )
             actual_el = _select_whole_schedule_element(extracted_el, target)
             # Find any BlockAmendment or InlineAmendment in the subtree
             if content_ir is None and actual_el is None:
@@ -974,43 +954,16 @@ def compile_effect_to_ir_ops(
                     direct_text = _direct_payload_text(actual_el)
                     if direct_text:
                         content_ir["text"] = direct_text
-                    inserted_heading_text = _inserted_section_p1group_heading_text(actual_el, extracted_el, target)
-                    target_leaf_kind = _addr_leaf_kind(target) or ""
-                    heading_source_rule_id = (
-                        "uk_inserted_section_p1group_heading_carrier"
-                        if target_leaf_kind == "section"
-                        else "uk_inserted_p1group_heading_carrier"
+                    prepend_inserted_p1group_heading_carrier(
+                        effect=effect,
+                        target_ref=t_str,
+                        target=target,
+                        content_ir=content_ir,
+                        actual_el=actual_el,
+                        extracted_el=extracted_el,
+                        extracted_text=extracted_text,
+                        lowering_rejections_out=lowering_rejections_out,
                     )
-                    heading_observation_rule_id = (
-                        "uk_effect_inserted_section_p1group_heading_carrier_lowered"
-                        if target_leaf_kind == "section"
-                        else "uk_effect_inserted_p1group_heading_carrier_lowered"
-                    )
-                    if inserted_heading_text and _prepend_inserted_section_heading_carrier(
-                        content_ir,
-                        heading_text=inserted_heading_text,
-                        source_rule_id=heading_source_rule_id,
-                    ):
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id=heading_observation_rule_id,
-                            family="payload_normalization",
-                            reason_code=f"inserted_{target_leaf_kind}_wrapped_by_p1group_title",
-                            reason=(
-                                "UK inserted provision payload is wrapped by a P1group "
-                                "Title; lowering preserves that title as a target-owned "
-                                "heading carrier instead of relying on a shared live parent group"
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "target": str(target),
-                                "source_tag": "P1group",
-                                "heading_text_preview": inserted_heading_text[:200],
-                            },
-                        )
                     source_structural_payload_matches_target = _source_payload_matches_target_leaf(
                         content_ir,
                         payload_match_target,
