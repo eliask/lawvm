@@ -145,6 +145,7 @@ def test_classify_uk_replay_adjudication_bucket() -> None:
         "uk_replay_schedule_table_end_rows_insert_resolved": "nonblocking_observation",
         "uk_replay_schedule_item_target_from_parent_substitution_resolved": "nonblocking_observation",
         "uk_replay_schedule_p1group_paragraph_wrapper_resolved": "nonblocking_observation",
+        "uk_replay_body_root_fallback_insert_resolved": "nonblocking_observation",
         "uk_effect_table_entry_row_insert": "nonblocking_observation",
         "uk_replay_table_entry_multi_cell_text_patch_resolved": "nonblocking_observation",
         "uk_replay_source_label_changing_substitution_resolved": "nonblocking_observation",
