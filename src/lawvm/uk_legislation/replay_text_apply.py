@@ -123,6 +123,8 @@ class UKReplayTextApplyMixin:
             )
             rebuilt = dc_replace(node, text=f"{text[: anchor_match.end()]}{joiner}{replacement}")
             self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_after_anchor_to_end_text_rewrite_applied")
             return rebuilt, True
         if match.startswith("TEXT_FROM_") and match.endswith("_TO_END"):
             start_text = match[len("TEXT_FROM_") : -len("_TO_END")]
@@ -2021,6 +2023,8 @@ class UKReplayTextApplyMixin:
                 if changed:
                     rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip())
                     self._replace_node_in_statute(node, rebuilt)
+                    if recovery_rule_ids_out is not None:
+                        recovery_rule_ids_out.append("uk_replay_after_anchor_to_end_text_rewrite_applied")
                     return rebuilt, True
 
             candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
@@ -2039,6 +2043,8 @@ class UKReplayTextApplyMixin:
                 dc_replace(text_node, text=" ".join(new_text.split()).strip()),
             )
             self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_after_anchor_to_end_text_rewrite_applied")
             return rebuilt, True
 
         if match.startswith("TEXT_FROM_"):

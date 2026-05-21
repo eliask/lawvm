@@ -1654,7 +1654,10 @@ def test_executor_applies_after_anchor_to_end_text_patch_without_flattening_chil
     subsection = executor.statute.body.children[0].children[0]
     assert subsection.text == "imprisonment for a term of not more than 6 months or 12 months"
     assert subsection.children[0].text == "child text preserved"
-    assert adjudications == []
+    assert [row.kind for row in adjudications] == ["uk_replay_after_anchor_to_end_text_rewrite_applied"]
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "after_anchor_to_end_selector"
 
 
 def test_executor_applies_before_child_text_patch_without_flattening_children() -> None:
