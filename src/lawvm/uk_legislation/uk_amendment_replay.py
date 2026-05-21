@@ -322,7 +322,11 @@ from lawvm.uk_legislation.uk_prefetch import (
 )
 from lawvm.uk_legislation.replay_records import (
     UKReplayPrepareResult,
+    append_same_source_text_patch_overlap_blocked_adjudication,
+    append_same_source_text_patch_overlap_disjoint_adjudication,
     append_replay_fold_text_duplication_adjudications,
+    append_schedule_entry_repeal_granularity_blocked_adjudication,
+    append_unsupported_whole_act_prepare_filter_adjudication,
     _append_uk_replay_adjudication,
     _build_uk_replay_adjudication,
 )
@@ -505,9 +509,6 @@ _UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID = (
 )
 _UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_RESOLVED_RULE_ID = (
     "uk_replay_schedule_list_entry_replace_resolved"
-)
-_UK_REPLAY_SCHEDULE_ENTRY_REPEAL_GRANULARITY_BLOCKED_RULE_ID = (
-    "uk_replay_schedule_entry_repeal_granularity_blocked"
 )
 _UK_REPLAY_SCHEDULE_P1GROUP_PARAGRAPH_WRAPPER_RESOLVED_RULE_ID = (
     "uk_replay_schedule_p1group_paragraph_wrapper_resolved"
@@ -15588,77 +15589,30 @@ def _prepare_replay_uk_ops(
         if _is_unsafe_schedule_entry_repeal_op(op):
             if verbose:
                 print("  replay_uk_ops: skipping unsafe schedule-entry repeal widened to schedule")
-            rejected_adjudications.append(_append_uk_replay_adjudication(
-                adjudications_out,
-                kind=_UK_REPLAY_SCHEDULE_ENTRY_REPEAL_GRANULARITY_BLOCKED_RULE_ID,
-                message=(
-                    "UK replay prepare step skipped a schedule-root repeal "
-                    "whose source text only claims entry-level repeal."
-                ),
-                op=op,
-                detail={
-                    "action": _action_name(op.action),
-                    "target": str(op.target),
-                    "reason": "schedule_entry_repeal_widened_to_schedule",
-                    "family": "source_schedule_list_entry_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
-            ))
+            rejected_adjudications.append(
+                append_schedule_entry_repeal_granularity_blocked_adjudication(
+                    adjudications_out,
+                    op=op,
+                )
+            )
             continue
         if op.op_id in disjoint_text_patch_overlap_op_ids:
-            match_text = op.text_patch.selector.match_text if op.text_patch is not None else ""
-            occurrence = op.text_patch.selector.occurrence if op.text_patch is not None else 0
-            _append_uk_replay_adjudication(
+            append_same_source_text_patch_overlap_disjoint_adjudication(
                 adjudications_out,
-                kind="uk_replay_same_source_text_patch_overlap_disjoint",
-                message=(
-                    "UK replay allowed an ordinal text patch whose selector text appears "
-                    "inside broader same-source patches because the claimed occurrence is "
-                    "disjoint in the base target text."
-                ),
                 op=op,
-                detail={
-                    "action": _action_name(op.action),
-                    "target": str(op.target),
-                    "match_text": match_text,
-                    "occurrence": occurrence,
-                    "ordered_before_op_ids": tuple(
-                        sorted(disjoint_text_patch_before_edges.get(op.op_id, ()))
-                    ),
-                    "reason": "base_target_occurrence_disjoint_from_broader_same_source_patch",
-                    "family": "text_patch_overlap_resolution",
-                    "blocking": False,
-                    "strict_disposition": "record",
-                    "quirks_disposition": "record",
-                },
+                ordered_before_op_ids=tuple(
+                    sorted(disjoint_text_patch_before_edges.get(op.op_id, ()))
+                ),
             )
         if op.op_id in overlapping_text_patch_op_ids:
             if verbose:
                 print("  replay_uk_ops: skipping overlapping same-source ordinal text patch")
-            match_text = op.text_patch.selector.match_text if op.text_patch is not None else ""
-            occurrence = op.text_patch.selector.occurrence if op.text_patch is not None else 0
-            rejected_adjudications.append(_append_uk_replay_adjudication(
-                adjudications_out,
-                kind="uk_replay_same_source_text_patch_overlap_blocked",
-                message=(
-                    "UK replay prepare step skipped an ordinal text patch whose selector overlaps "
-                    "a broader same-source text patch on the same target."
-                ),
-                op=op,
-                detail={
-                    "action": _action_name(op.action),
-                    "target": str(op.target),
-                    "match_text": match_text,
-                    "occurrence": occurrence,
-                    "reason": "same_source_same_target_overlapping_text_patch",
-                    "family": "text_patch_overlap_resolution",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
-            ))
+            rejected_adjudications.append(
+                append_same_source_text_patch_overlap_blocked_adjudication(
+                    adjudications_out,
+                    op=op,
+                )
+            )
             continue
         if str(op.target.special or "") == "whole_act":
             if _action_name(op.action) == "repeal":
@@ -15666,17 +15620,12 @@ def _prepare_replay_uk_ops(
                 continue
             if verbose:
                 print("  replay_uk_ops: skipping unsupported whole_act op")
-            rejected_adjudications.append(_append_uk_replay_adjudication(
-                adjudications_out,
-                kind="uk_replay_unsupported_action",
-                message="UK replay prepare step skipped unsupported whole-act target before replay apply.",
-                op=op,
-                detail={
-                    "action": _action_name(op.action),
-                    "target": str(op.target),
-                    "reason": "whole_act_prepare_filter",
-                },
-            ))
+            rejected_adjudications.append(
+                append_unsupported_whole_act_prepare_filter_adjudication(
+                    adjudications_out,
+                    op=op,
+                )
+            )
             continue
         filtered_ops.append(op)
     filtered_ops = _order_ops_by_before_edges(filtered_ops, disjoint_text_patch_before_edges)
