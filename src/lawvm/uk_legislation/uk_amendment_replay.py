@@ -96,9 +96,11 @@ from lawvm.uk_legislation.effect_lowering_tail import (
 )
 from lawvm.uk_legislation.effect_replace_prelude import plan_replace_effect_prelude
 from lawvm.uk_legislation.effect_target_prelude import (
+    append_target_shape_observations,
     expand_single_target_prelude,
     refine_enacted_schedule_table_row_part_target,
     refine_flat_p1para_schedule_insert_target,
+    refine_numbered_schedule_entry_repeal_target,
     refine_source_text_schedule_paragraph_target,
     reject_unsupported_target_facet,
 )
@@ -132,7 +134,6 @@ from lawvm.uk_legislation.heading_facets import (
     _is_crossheading_ref,
     _is_direct_section_paragraph_ref,
     _is_heading_only_ref,
-    _is_schedule_part_abbreviation_ref,
 )
 from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
@@ -299,7 +300,6 @@ from lawvm.uk_legislation.schedule_list_selectors import (
     UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID as _UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID,
     _strip_schedule_entry_payload,
     _strip_schedule_entry_phrase,
-    _uk_numbered_schedule_entry_repeal_target,
     _uk_schedule_list_entry_insert_selector,
     _uk_schedule_list_entry_repeal_selector,
     _uk_schedule_list_entry_replace_selector,
@@ -414,9 +414,6 @@ from lawvm.uk_legislation.xml_helpers import (
 
 
 _UK_SCHEDULE_LIST_ENTRY_TABLE_ROWS_RULE_ID = "uk_effect_schedule_list_entry_table_rows_lowered"
-_UK_NUMBERED_SCHEDULE_ENTRY_REPEAL_TARGET_REFINED_RULE_ID = (
-    "uk_effect_numbered_schedule_entry_repeal_target_refined"
-)
 _UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID = "uk_effect_range_to_end_there_is_substituted_text_patch"
 def compile_effect_to_ir_ops(
     effect: UKEffectRecord,
@@ -796,66 +793,23 @@ def compile_effect_to_ir_ops(
                 detail={"target_ref": t_str, "target": str(target), "action": action},
             )
             continue
-        if _is_direct_section_paragraph_ref(t_str):
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id="uk_effect_direct_section_paragraph_target_normalized",
-                family="target_shape_normalization",
-                reason_code="explicit_section_paragraph_ref",
-                reason=(
-                    "UK affected-provision reference uses section-number plus "
-                    "an alphabetic bracket, which denotes a direct section "
-                    "paragraph rather than an alphabetic subsection."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={"target_ref": t_str, "target": str(target)},
-            )
-        if _is_schedule_part_abbreviation_ref(t_str) and any(kind == "part" for kind, _label in target.path):
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id="uk_effect_schedule_part_abbreviation_target_normalized",
-                family="target_shape_normalization",
-                reason_code="explicit_schedule_part_abbreviation_ref",
-                reason=(
-                    "UK affected-provision reference uses a schedule Part abbreviation; "
-                    "lowering preserves it as an explicit schedule part target rather "
-                    "than treating the abbreviation as a paragraph label."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={"target_ref": t_str, "target": str(target)},
-            )
-        if action == "repeal":
-            refined_numbered_entry_target = _uk_numbered_schedule_entry_repeal_target(
-                target=target,
-                extracted_text=extracted_text,
-            )
-            if refined_numbered_entry_target is not None:
-                original_target = target
-                target = refined_numbered_entry_target
-                _append_uk_effect_lowering_observation(
-                    lowering_rejections_out,
-                    rule_id=_UK_NUMBERED_SCHEDULE_ENTRY_REPEAL_TARGET_REFINED_RULE_ID,
-                    family="source_schedule_list_entry_elaboration",
-                    reason_code="explicit_numbered_entry_child",
-                    reason=(
-                        "UK source text claims omission/repeal of a numbered "
-                        "entry under a schedule partition; lowering refines "
-                        "the partition carrier target to the explicit numbered "
-                        "paragraph instead of deleting the carrier."
-                    ),
-                    effect=effect,
-                    extracted_el=extracted_el,
-                    extracted_text=extracted_text,
-                    detail={
-                        "target_ref": t_str,
-                        "original_target": str(original_target),
-                        "refined_target": str(target),
-                    },
-                )
+        append_target_shape_observations(
+            effect=effect,
+            t_str=t_str,
+            target=target,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        target = refine_numbered_schedule_entry_repeal_target(
+            effect=effect,
+            action=action,
+            t_str=t_str,
+            target=target,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        )
         if crossheading_compound_heading_text is not None:
             heading_target = LegalAddress(path=target.path, special=FacetKind.HEADING)
             _append_uk_effect_lowering_observation(

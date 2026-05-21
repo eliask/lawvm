@@ -19,6 +19,8 @@ from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.heading_facets import (
     _is_heading_facet_word_patch_supported,
     _is_heading_only_ref,
+    _is_direct_section_paragraph_ref,
+    _is_schedule_part_abbreviation_ref,
     _is_schedule_note_ref,
     _mixed_heading_structural_insert_ref,
 )
@@ -31,6 +33,7 @@ from lawvm.uk_legislation.source_payload_helpers import (
     UK_NONADDRESSABLE_SCHEDULE_PART_INSERT_TARGET_RULE_ID as _UK_NONADDRESSABLE_SCHEDULE_PART_INSERT_TARGET_RULE_ID,
     _flat_p1para_schedule_paragraph_insert_payload,
 )
+from lawvm.uk_legislation.schedule_list_selectors import _uk_numbered_schedule_entry_repeal_target
 from lawvm.uk_legislation.source_payload_elaboration import _expand_sibling_targets_from_extracted
 from lawvm.uk_legislation.substitution_metadata import (
     _expand_sibling_targets_from_text,
@@ -46,6 +49,9 @@ _UK_ENACTED_SCHEDULE_TABLE_ROW_PART_TARGET_RULE_ID = (
 )
 _UK_SOURCE_TEXT_SCHEDULE_PARAGRAPH_TARGET_OVERRIDE_RULE_ID = (
     "uk_effect_source_text_schedule_paragraph_target_overrides_metadata"
+)
+_UK_NUMBERED_SCHEDULE_ENTRY_REPEAL_TARGET_REFINED_RULE_ID = (
+    "uk_effect_numbered_schedule_entry_repeal_target_refined"
 )
 
 
@@ -354,6 +360,91 @@ def refine_flat_p1para_schedule_insert_target(
             "metadata_target": str(target),
             "normalized_target": str(refined_target),
             "removed_part_label": _addr_field(target, "part") or "",
+        },
+    )
+    return refined_target
+
+
+def append_target_shape_observations(
+    *,
+    effect: UKEffectRecord,
+    t_str: str,
+    target: LegalAddress,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> None:
+    if _is_direct_section_paragraph_ref(t_str):
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_direct_section_paragraph_target_normalized",
+            family="target_shape_normalization",
+            reason_code="explicit_section_paragraph_ref",
+            reason=(
+                "UK affected-provision reference uses section-number plus "
+                "an alphabetic bracket, which denotes a direct section "
+                "paragraph rather than an alphabetic subsection."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={"target_ref": t_str, "target": str(target)},
+        )
+    if _is_schedule_part_abbreviation_ref(t_str) and any(kind == "part" for kind, _label in target.path):
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_schedule_part_abbreviation_target_normalized",
+            family="target_shape_normalization",
+            reason_code="explicit_schedule_part_abbreviation_ref",
+            reason=(
+                "UK affected-provision reference uses a schedule Part abbreviation; "
+                "lowering preserves it as an explicit schedule part target rather "
+                "than treating the abbreviation as a paragraph label."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={"target_ref": t_str, "target": str(target)},
+        )
+
+
+def refine_numbered_schedule_entry_repeal_target(
+    *,
+    effect: UKEffectRecord,
+    action: str,
+    t_str: str,
+    target: LegalAddress,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> LegalAddress:
+    if action != "repeal":
+        return target
+    refined_target = _uk_numbered_schedule_entry_repeal_target(
+        target=target,
+        extracted_text=extracted_text,
+    )
+    if refined_target is None:
+        return target
+
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_NUMBERED_SCHEDULE_ENTRY_REPEAL_TARGET_REFINED_RULE_ID,
+        family="source_schedule_list_entry_elaboration",
+        reason_code="explicit_numbered_entry_child",
+        reason=(
+            "UK source text claims omission/repeal of a numbered "
+            "entry under a schedule partition; lowering refines "
+            "the partition carrier target to the explicit numbered "
+            "paragraph instead of deleting the carrier."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": t_str,
+            "original_target": str(target),
+            "refined_target": str(refined_target),
         },
     )
     return refined_target
