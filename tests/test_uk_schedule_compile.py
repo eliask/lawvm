@@ -21441,6 +21441,10 @@ def test_replay_source_label_changing_substitution_preserves_new_identity() -> N
     assert items[1].attrs["eId"] == "schedule-4-paragraph-1-c"
     assert len(adjudications) == 1
     assert adjudications[0].kind == "uk_replay_source_label_changing_substitution_resolved"
+    assert adjudications[0].detail["action"] == "replace"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
     assert adjudications[0].detail["source_label"] == "b"
     assert adjudications[0].detail["replacement_label"] == "c"
 
@@ -22182,6 +22186,7 @@ def test_executor_replace_fragment_substitution_child_range_deletion_is_observed
     assert adjudications[0].detail["removed_count"] == 2
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
 
 
 def test_executor_repeal_collapses_oracle_zombie_schedule_root() -> None:
