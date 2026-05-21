@@ -4558,6 +4558,72 @@ def test_executor_applies_in_definition_range_to_end_without_global_rewrite() ->
     assert adjudications[0].detail["source_shape"] == "definition_range_to_end_selector"
 
 
+def test_executor_applies_in_definition_bounded_range_with_observation() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/2",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="82",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text=(
+                                "\u201clocal transport strategy\u201d means a strategy in the Transport Act "
+                                "for passenger services; "
+                                "\u201ctraffic authority\u201d means the authority for the road;"
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_definition_bounded_range_substitution",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "82"), ("subsection", "1"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(
+                    match_text="TEXT_IN_DEFINITION_local transport strategy\x1fFROM\x1fin\x1fTO\x1fAct",
+                    occurrence=1,
+                ),
+                replacement="under current law",
+            ),
+            source=_source(),
+        )
+    )
+
+    assert executor.statute.body.children[0].children[0].text == (
+        "\u201clocal transport strategy\u201d means a strategy under current law for passenger "
+        "services; \u201ctraffic authority\u201d means the authority for the road;"
+    )
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_in_definition_range_text_rewrite_applied"
+    ]
+    assert (
+        adjudications[0].detail["text_match"]
+        == "TEXT_IN_DEFINITION_local transport strategy\x1fFROM\x1fin\x1fTO\x1fAct"
+    )
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "definition_range_selector"
+
+
 def test_executor_applies_after_definition_insert_to_unique_definition_text_child() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(
@@ -5987,7 +6053,13 @@ def test_executor_applies_definition_scoped_from_to_range() -> None:
         "“local transport strategy” means the strategy prepared by authority ; "
         "“local authority” means a council;"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_in_definition_range_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "definition_range_selector"
 
 
 def test_executor_applies_definition_child_scoped_word_omission() -> None:
