@@ -1176,6 +1176,49 @@ def _manual_compile_suggested_claim_template(
                 "changed_paths_are_within_declared_sibling_insertion_boundary",
             ],
         )
+    if summary.manual_compile_rule_id == "uk_manual_frontier_repeal_table_candidate":
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="table_repeal_or_omission",
+            placement_family="source_named_table_or_row_boundary_required",
+            required_ownership=[
+                "source_named_table_or_row_surface",
+                "repealed_row_column_or_cell_boundary",
+                "unclaimed_table_surface_preservation",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_targets_table_repeal_or_omission",
+                "claim_identifies_exact_table_carrier",
+                "claim_identifies_every_repealed_row_column_or_cell",
+                "claim_preserves_unclaimed_table_rows_columns_and_cells",
+                "changed_paths_are_within_declared_table_repeal_boundary",
+            ],
+        )
+    if (
+        summary.manual_compile_rule_id
+        == "uk_manual_frontier_source_carried_structured_text_patch_candidate"
+    ):
+        return _bounded_mutation_claim_template(
+            statute_id=statute_id,
+            row=row,
+            action_family="source_carried_structured_text_patch",
+            placement_family="parent_formula_anchor_with_structured_payload_required",
+            required_ownership=[
+                "source_parent_formula_anchor",
+                "source_carried_payload_units",
+                "child_target_boundaries",
+                "mutation_boundary",
+            ],
+            required_validator_checks=[
+                "source_witness_contains_parent_formula_and_structured_payload",
+                "claim_binds_payload_units_to_named_child_targets",
+                "claim_preserves_unclaimed_parent_and_sibling_text",
+                "claim_rejects_flattening_structured_payload_into_host_text",
+                "changed_paths_are_within_claimed_child_target_boundaries",
+            ],
+        )
     if summary.manual_compile_rule_id == "uk_manual_frontier_range_to_container_candidate":
         blocking_rows = tuple(
             row
