@@ -155,6 +155,42 @@ def append_no_targets_rejection(
     )
 
 
+def append_chained_insertion_anchor_observation(
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+    *,
+    effect: UKEffectRecord,
+    target_ref: str,
+    target: LegalAddress,
+    preceding_eid: Optional[str],
+    preceding_eid_source: str,
+    used_chained_insert_anchor: bool,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> None:
+    if not used_chained_insert_anchor:
+        return
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id="uk_effect_chained_insertion_anchor_lowered",
+        family="target_resolution_recovery",
+        reason_code="same_effect_insert_targets_ordered_by_prior_generated_target",
+        reason=(
+            "UK effect expands one insertion instruction into multiple sibling "
+            "insert operations; later operations are anchored after the prior "
+            "generated target rather than the original source anchor."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            "preceding_eid": preceding_eid,
+            "preceding_eid_source": preceding_eid_source,
+        },
+    )
+
+
 def build_crossheading_insert_ops(
     *,
     effect: UKEffectRecord,
