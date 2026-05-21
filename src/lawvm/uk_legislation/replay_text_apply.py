@@ -46,6 +46,16 @@ _UK_NEXT_DEFINITION_PATTERN = re.compile(
     flags=re.I | re.S | re.X,
 )
 
+_UK_NEXT_DEFINITION_PATTERN_WITHOUT_SHALL = re.compile(
+    rf"""
+    [;\.]\s*
+    [“"'\u2018][^”"'\u2019;]{{1,160}}[”"'\u2019]
+    \s+
+    (?:{_UK_DEFINITION_PREDICATE_PATTERN_WITHOUT_SHALL})\b
+    """,
+    flags=re.I | re.S | re.X,
+)
+
 
 def _definition_term_pattern(
     term: str,
@@ -109,6 +119,41 @@ def _compile_definition_entry_range_pattern(
         """,
         flags=re.I | re.S | re.X,
     )
+
+
+def _flat_definition_child_bounds(
+    text: str,
+    *,
+    term: str,
+    child_label: str,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[int, int, int, list[re.Match[str]]] | None:
+    ordinal = _child_ordinal(child_label)
+    if ordinal is None or ordinal < 1:
+        return None
+    definition_start_pattern = _compile_definition_entry_start_pattern(
+        term,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+        prefix_pattern=r"(?:^|[;\.]\s*)",
+        predicate_pattern=_UK_DEFINITION_PREDICATE_PATTERN_WITHOUT_SHALL,
+    )
+    definition_starts = list(definition_start_pattern.finditer(text))
+    if len(definition_starts) != 1:
+        return None
+    definition_start = definition_starts[0]
+    next_definition = _UK_NEXT_DEFINITION_PATTERN_WITHOUT_SHALL.search(
+        text,
+        definition_start.end(),
+    )
+    entry_end = next_definition.start() + 1 if next_definition is not None else len(text)
+    body_start = definition_start.end()
+    entry_body = text[body_start:entry_end]
+    semicolons = list(re.finditer(r";", entry_body))
+    if len(semicolons) < ordinal:
+        return None
+    return ordinal, body_start, entry_end, semicolons
 
 
 def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
@@ -1282,42 +1327,16 @@ class UKReplayTextApplyMixin:
                 return node, False
 
             def _rewrite_definition_child(text: str) -> tuple[str, bool]:
-                ordinal = _child_ordinal(child_label)
-                if ordinal is None or ordinal < 1:
-                    return text, False
-                definition_start_pattern = _compile_definition_entry_start_pattern(
-                    term,
+                bounds = _flat_definition_child_bounds(
+                    text,
+                    term=term,
+                    child_label=child_label,
                     allow_punctuation_spacing=allow_punctuation_spacing,
                     allow_word_punctuation_elision=allow_word_punctuation_elision,
-                    prefix_pattern=r"(?:^|[;\.]\s*)",
-                    predicate_pattern=_UK_DEFINITION_PREDICATE_PATTERN_WITHOUT_SHALL,
                 )
-                definition_starts = list(definition_start_pattern.finditer(text))
-                if len(definition_starts) != 1:
+                if bounds is None:
                     return text, False
-                definition_start = definition_starts[0]
-                next_definition_pattern = re.compile(
-                    r"""
-                    [;\.]\s*
-                    [“"'\u2018][^”"'\u2019;]{1,160}[”"'\u2019]
-                    \s+
-                    (?:
-                        means
-                        |has\s+the\s+same\s+meaning\s+as
-                        |has\s+the\s+meaning
-                        |is\s+to\s+be\s+construed
-                        |includes
-                    )\b
-                    """,
-                    flags=re.I | re.S | re.X,
-                )
-                next_definition = next_definition_pattern.search(text, definition_start.end())
-                entry_end = next_definition.start() + 1 if next_definition is not None else len(text)
-                body_start = definition_start.end()
-                entry_body = text[body_start:entry_end]
-                semicolons = list(re.finditer(r";", entry_body))
-                if len(semicolons) < ordinal:
-                    return text, False
+                ordinal, body_start, _entry_end, semicolons = bounds
                 segment_start = body_start
                 if ordinal > 1:
                     segment_start = body_start + semicolons[ordinal - 2].end()
@@ -1436,55 +1455,16 @@ class UKReplayTextApplyMixin:
                 return rebuilt, True
 
             def _rewrite_flat_definition_child(text: str) -> tuple[str, bool]:
-                ordinal = _child_ordinal(child_label)
-                if ordinal is None or ordinal < 1:
-                    return text, False
-                term_pattern = _text_patch_pattern(
-                    term,
+                bounds = _flat_definition_child_bounds(
+                    text,
+                    term=term,
+                    child_label=child_label,
                     allow_punctuation_spacing=allow_punctuation_spacing,
                     allow_word_punctuation_elision=allow_word_punctuation_elision,
                 )
-                definition_start_pattern = re.compile(
-                    rf"""
-                    (?P<prefix>(?:^|[;\.]\s*))
-                    [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
-                    \s+
-                    (?:
-                        means
-                        |has\s+the\s+same\s+meaning\s+as
-                        |has\s+the\s+meaning
-                        |is\s+to\s+be\s+construed
-                        |includes
-                    )\b
-                    """,
-                    flags=re.I | re.S | re.X,
-                )
-                definition_starts = list(definition_start_pattern.finditer(text))
-                if len(definition_starts) != 1:
+                if bounds is None:
                     return text, False
-                definition_start = definition_starts[0]
-                next_definition_pattern = re.compile(
-                    r"""
-                    [;\.]\s*
-                    [“"'\u2018][^”"'\u2019;]{1,160}[”"'\u2019]
-                    \s+
-                    (?:
-                        means
-                        |has\s+the\s+same\s+meaning\s+as
-                        |has\s+the\s+meaning
-                        |is\s+to\s+be\s+construed
-                        |includes
-                    )\b
-                    """,
-                    flags=re.I | re.S | re.X,
-                )
-                next_definition = next_definition_pattern.search(text, definition_start.end())
-                entry_end = next_definition.start() + 1 if next_definition is not None else len(text)
-                body_start = definition_start.end()
-                entry_body = text[body_start:entry_end]
-                semicolons = list(re.finditer(r";", entry_body))
-                if len(semicolons) < ordinal:
-                    return text, False
+                ordinal, body_start, entry_end, semicolons = bounds
                 segment_start = body_start
                 if ordinal > 1:
                     segment_start = body_start + semicolons[ordinal - 2].end()
