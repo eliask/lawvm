@@ -36,16 +36,7 @@ from lawvm.core.ir import (
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.uk_grafter import (
-    _parse_part,
-    _parse_chapter,
-    _parse_section,
-    _parse_p1group,
-    _parse_p2,
-    _parse_p3,
-    _parse_p4,
     _clean_num,
-    _parse_pblock,
-    _parse_schedule_single,
 )
 from lawvm.uk_legislation.uk_grafter import _LEG_NS as _LEG_NS  # noqa: F401
 from lawvm.uk_legislation.nlp_parser import is_whole_node_replacement, parse_fragment_substitution
@@ -82,8 +73,7 @@ from lawvm.uk_legislation.effect_payload_rejections import (
     reject_non_substantive_structural_payload,
 )
 from lawvm.uk_legislation.effect_payload_normalization import (
-    lower_flat_p1para_schedule_paragraph_insert_payload,
-    prepend_inserted_p1group_heading_carrier,
+    extract_uk_structural_payload_ir,
 )
 from lawvm.uk_legislation.effect_crossheading_prelude import (
     append_crossheading_group_repeal_observation,
@@ -116,7 +106,6 @@ from lawvm.uk_legislation.effect_target_prelude import (
 )
 from lawvm.uk_legislation.addressing import (
     _action_name,
-    _addr_container,
     _addr_leaf_kind,
     _addr_leaf_label,
     _order_schedule_materialization_ops,
@@ -146,7 +135,6 @@ from lawvm.uk_legislation.lowering_actions import (
     _uk_effect_type_action,
 )
 from lawvm.uk_legislation.metadata_rewrites import (
-    _select_whole_schedule_element,
     _uk_metadata_renumber_targets,
     _uk_source_text_corrected_renumber_targets,
 )
@@ -239,13 +227,7 @@ from lawvm.uk_legislation.source_fragment_context import (
     _fragment_substitution_grouped_anchor_occurrence,
 )
 from lawvm.uk_legislation.source_payload_helpers import (
-    _direct_payload_text,
     infer_source_payload_from_target,
-)
-from lawvm.uk_legislation.source_payload_elaboration import (
-    _retarget_instruction_element_to_target,
-    _source_payload_matches_target_leaf,
-    _with_trailing_subordinate_siblings,
 )
 from lawvm.uk_legislation.source_parent_payloads import (
     _source_after_paragraph_insert_labelled_series,
@@ -268,8 +250,6 @@ from lawvm.uk_legislation.table_sources import (
 )
 from lawvm.uk_legislation.text_patch_lowering import build_uk_text_patch_items
 from lawvm.uk_legislation.xml_helpers import (
-    _direct_structural_num,
-    _tag,
     _text_content,
 )
 
@@ -318,6 +298,7 @@ from lawvm.uk_legislation.target_parser import (  # noqa: F401
 from lawvm.uk_legislation.text_rewrite_fragments import (  # noqa: F401
     _fragment_substitution as _fragment_substitution,
 )
+from lawvm.uk_legislation.xml_helpers import _tag as _tag  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # UK replay helpers
@@ -775,146 +756,25 @@ def compile_effect_to_ir_ops(
             lowering_rejections_out=lowering_rejections_out,
         ):
             continue
-        parse_context = "schedule" if _addr_container(target) == "schedule" else ""
-        content_ir = None
-        actual_el: Optional[ET.Element] = None
-        source_structural_payload_matches_target = False
-        if extracted_el is not None:
-            flat_p1para_lowering = lower_flat_p1para_schedule_paragraph_insert_payload(
-                effect=effect,
-                action=action,
-                target_ref=t_str,
-                payload_match_target=payload_match_target,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                fallback_target_eid=_fallback_target_eid,
-                lowering_rejections_out=lowering_rejections_out,
-            )
-            if flat_p1para_lowering.lowered:
-                content_ir = flat_p1para_lowering.content_ir
-                flat_p1para_schedule_insert_lowered = True
-            actual_el = _select_whole_schedule_element(extracted_el, target)
-            # Find any BlockAmendment or InlineAmendment in the subtree
-            if content_ir is None and actual_el is None:
-                for am in extracted_el.iter():
-                    if _tag(am) in ("BlockAmendment", "InlineAmendment"):
-                        # Find the first structural node whose numbering matches the
-                        # target provision. Whole-schedule targets are handled above
-                        # so a paragraph "2" does not hijack "Sch. 2".
-                        for child in am.iter():
-                            ct = _tag(child)
-                            if ct in (
-                                "Part",
-                                "Chapter",
-                                "EUChapter",
-                                "Pblock",
-                                "P1group",
-                                "Section",
-                                "P1",
-                                "Article",
-                                "Rule",
-                                "Subsection",
-                                "P2",
-                                "P3",
-                                "P4",
-                                "Schedule",
-                            ):
-                                c_num = _direct_structural_num(child)
-                                target_num = _addr_leaf_label(payload_match_target)
-                                if not target_num or _clean_num(c_num) == _clean_num(target_num):
-                                    actual_el = child
-                                    break
-                        if actual_el is not None:
-                            actual_el = _with_trailing_subordinate_siblings(actual_el, am)
-                            break
-
-            if content_ir is None and actual_el is None:
-                # Fallback: maybe the extracted element ITSELF is the node
-                if _tag(extracted_el) in (
-                    "Part",
-                    "Chapter",
-                    "EUChapter",
-                    "Pblock",
-                    "P1group",
-                    "Section",
-                    "P1",
-                    "Article",
-                    "Rule",
-                    "Subsection",
-                    "P2",
-                    "P3",
-                    "P4",
-                    "Schedule",
-                ):
-                    target_num = _addr_leaf_label(payload_match_target)
-                    extracted_num = _direct_structural_num(extracted_el)
-                    if not target_num or _clean_num(extracted_num) == _clean_num(target_num):
-                        actual_el = extracted_el
-                    else:
-                        actual_el = _retarget_instruction_element_to_target(
-                            extracted_el,
-                            payload_match_target,
-                            extracted_text,
-                        )
-            elif content_ir is None and actual_el is not extracted_el:
-                actual_el = _with_trailing_subordinate_siblings(actual_el, extracted_el)
-
-            if content_ir is None and actual_el is not None:
-                tag = _tag(actual_el)
-                if tag == "Part":
-                    content_ir = _parse_part(
-                        actual_el, parse_context, force_active=True, pit_date=None, is_eur=False
-                    ).to_dict()
-                elif tag in ("Chapter", "EUChapter"):
-                    content_ir = _parse_chapter(
-                        actual_el, parse_context, force_active=True, pit_date=None, is_eur=False
-                    ).to_dict()
-                elif tag == "Pblock":
-                    content_ir = _parse_pblock(
-                        actual_el, parse_context, force_active=True, pit_date=None, is_eur=False
-                    ).to_dict()
-                elif tag == "P1group":
-                    content_ir = _parse_p1group(
-                        actual_el, parse_context, force_active=True, pit_date=None, is_eur=False
-                    ).to_dict()
-                elif tag in ("Section", "P1", "Article", "Rule", "ConventionRights", "EUSection"):
-                    content_ir = _parse_section(
-                        actual_el, parse_context, force_active=True, pit_date=None, is_eur=False
-                    ).to_dict()
-                elif tag in ("Subsection", "P2"):
-                    content_ir = _parse_p2(
-                        actual_el, parse_context or "body", force_active=True, pit_date=None, is_eur=False
-                    ).to_dict()
-                elif tag == "P3":
-                    content_ir = _parse_p3(
-                        actual_el, parse_context or "body", force_active=True, pit_date=None, is_eur=False
-                    ).to_dict()
-                elif tag == "P4":
-                    content_ir = _parse_p4(
-                        actual_el, parse_context or "body", force_active=True, pit_date=None, is_eur=False
-                    ).to_dict()
-                elif tag == "Schedule":
-                    content_ir = _parse_schedule_single(
-                        actual_el, "schedule", force_active=True, pit_date=None, is_eur=False
-                    ).to_dict()
-                if content_ir is not None:
-                    direct_text = _direct_payload_text(actual_el)
-                    if direct_text:
-                        content_ir["text"] = direct_text
-                    prepend_inserted_p1group_heading_carrier(
-                        effect=effect,
-                        target_ref=t_str,
-                        target=target,
-                        content_ir=content_ir,
-                        actual_el=actual_el,
-                        extracted_el=extracted_el,
-                        extracted_text=extracted_text,
-                        lowering_rejections_out=lowering_rejections_out,
-                    )
-                    source_structural_payload_matches_target = _source_payload_matches_target_leaf(
-                        content_ir,
-                        payload_match_target,
-                    )
+        structural_payload = extract_uk_structural_payload_ir(
+            effect=effect,
+            action=action,
+            target_ref=t_str,
+            target=target,
+            payload_match_target=payload_match_target,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            fallback_target_eid=_fallback_target_eid,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        content_ir = structural_payload.content_ir
+        actual_el = structural_payload.actual_el
+        flat_p1para_schedule_insert_lowered = (
+            structural_payload.flat_p1para_schedule_insert_lowered
+        )
+        source_structural_payload_matches_target = (
+            structural_payload.source_structural_payload_matches_target
+        )
 
         if reject_mixed_heading_structural_insert_missing_payload(
             effect=effect,

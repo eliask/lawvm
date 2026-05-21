@@ -7,21 +7,49 @@ import xml.etree.ElementTree as ET
 from typing import Any, Callable, Optional
 
 from lawvm.core.ir import LegalAddress
-from lawvm.uk_legislation.addressing import _addr_leaf_kind
+from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
+from lawvm.uk_legislation.metadata_rewrites import _select_whole_schedule_element
+from lawvm.uk_legislation.source_payload_elaboration import (
+    _retarget_instruction_element_to_target,
+    _source_payload_matches_target_leaf,
+    _with_trailing_subordinate_siblings,
+)
 from lawvm.uk_legislation.source_payload_helpers import (
     UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID,
+    _direct_payload_text,
     _flat_p1para_schedule_paragraph_insert_payload,
     _inserted_section_p1group_heading_text,
     _prepend_inserted_section_heading_carrier,
 )
+from lawvm.uk_legislation.uk_grafter import (
+    _clean_num,
+    _parse_chapter,
+    _parse_p1group,
+    _parse_p2,
+    _parse_p3,
+    _parse_p4,
+    _parse_part,
+    _parse_pblock,
+    _parse_schedule_single,
+    _parse_section,
+)
+from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag
 
 
 @dataclass(frozen=True)
 class UKFlatP1paraScheduleParagraphInsertLowering:
     content_ir: Optional[dict[str, Any]]
     lowered: bool = False
+
+
+@dataclass(frozen=True)
+class UKStructuralPayloadExtraction:
+    content_ir: Optional[dict[str, Any]]
+    actual_el: Optional[ET.Element]
+    flat_p1para_schedule_insert_lowered: bool
+    source_structural_payload_matches_target: bool
 
 
 def lower_flat_p1para_schedule_paragraph_insert_payload(
@@ -128,3 +156,188 @@ def prepend_inserted_p1group_heading_carrier(
         },
     )
     return True
+
+
+def extract_uk_structural_payload_ir(
+    *,
+    effect: UKEffectRecord,
+    action: str,
+    target_ref: str,
+    target: LegalAddress,
+    payload_match_target: LegalAddress,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    fallback_target_eid: Callable[[LegalAddress], str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKStructuralPayloadExtraction:
+    content_ir: Optional[dict[str, Any]] = None
+    actual_el: Optional[ET.Element] = None
+    flat_p1para_schedule_insert_lowered = False
+    source_structural_payload_matches_target = False
+    if extracted_el is None:
+        return UKStructuralPayloadExtraction(
+            content_ir=content_ir,
+            actual_el=actual_el,
+            flat_p1para_schedule_insert_lowered=flat_p1para_schedule_insert_lowered,
+            source_structural_payload_matches_target=source_structural_payload_matches_target,
+        )
+
+    flat_p1para_lowering = lower_flat_p1para_schedule_paragraph_insert_payload(
+        effect=effect,
+        action=action,
+        target_ref=target_ref,
+        payload_match_target=payload_match_target,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        fallback_target_eid=fallback_target_eid,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+    if flat_p1para_lowering.lowered:
+        content_ir = flat_p1para_lowering.content_ir
+        flat_p1para_schedule_insert_lowered = True
+
+    actual_el = _select_whole_schedule_element(extracted_el, target)
+    if content_ir is None and actual_el is None:
+        actual_el = _find_matching_structural_payload_element(
+            extracted_el=extracted_el,
+            payload_match_target=payload_match_target,
+        )
+
+    if content_ir is None and actual_el is None:
+        actual_el = _extracted_element_as_payload(
+            extracted_el=extracted_el,
+            payload_match_target=payload_match_target,
+            extracted_text=extracted_text,
+        )
+    elif content_ir is None and actual_el is not extracted_el:
+        actual_el = _with_trailing_subordinate_siblings(actual_el, extracted_el)
+
+    if content_ir is None and actual_el is not None:
+        parse_context = "schedule" if _addr_container(target) == "schedule" else ""
+        content_ir = _parse_structural_payload_element(actual_el, parse_context=parse_context)
+        if content_ir is not None:
+            direct_text = _direct_payload_text(actual_el)
+            if direct_text:
+                content_ir["text"] = direct_text
+            prepend_inserted_p1group_heading_carrier(
+                effect=effect,
+                target_ref=target_ref,
+                target=target,
+                content_ir=content_ir,
+                actual_el=actual_el,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                lowering_rejections_out=lowering_rejections_out,
+            )
+            source_structural_payload_matches_target = _source_payload_matches_target_leaf(
+                content_ir,
+                payload_match_target,
+            )
+
+    return UKStructuralPayloadExtraction(
+        content_ir=content_ir,
+        actual_el=actual_el,
+        flat_p1para_schedule_insert_lowered=flat_p1para_schedule_insert_lowered,
+        source_structural_payload_matches_target=source_structural_payload_matches_target,
+    )
+
+
+def _find_matching_structural_payload_element(
+    *,
+    extracted_el: ET.Element,
+    payload_match_target: LegalAddress,
+) -> Optional[ET.Element]:
+    for am in extracted_el.iter():
+        if _tag(am) not in ("BlockAmendment", "InlineAmendment"):
+            continue
+        for child in am.iter():
+            ct = _tag(child)
+            if ct not in _STRUCTURAL_PAYLOAD_TAGS:
+                continue
+            c_num = _direct_structural_num(child)
+            target_num = _addr_leaf_label(payload_match_target)
+            if not target_num or _clean_num(c_num) == _clean_num(target_num):
+                return _with_trailing_subordinate_siblings(child, am)
+    return None
+
+
+def _extracted_element_as_payload(
+    *,
+    extracted_el: ET.Element,
+    payload_match_target: LegalAddress,
+    extracted_text: Optional[str],
+) -> Optional[ET.Element]:
+    if _tag(extracted_el) not in _STRUCTURAL_PAYLOAD_TAGS:
+        return None
+    target_num = _addr_leaf_label(payload_match_target)
+    extracted_num = _direct_structural_num(extracted_el)
+    if not target_num or _clean_num(extracted_num) == _clean_num(target_num):
+        return extracted_el
+    return _retarget_instruction_element_to_target(
+        extracted_el,
+        payload_match_target,
+        extracted_text,
+    )
+
+
+def _parse_structural_payload_element(
+    actual_el: ET.Element,
+    *,
+    parse_context: str,
+) -> Optional[dict[str, Any]]:
+    tag = _tag(actual_el)
+    if tag == "Part":
+        return _parse_part(
+            actual_el, parse_context, force_active=True, pit_date=None, is_eur=False
+        ).to_dict()
+    if tag in ("Chapter", "EUChapter"):
+        return _parse_chapter(
+            actual_el, parse_context, force_active=True, pit_date=None, is_eur=False
+        ).to_dict()
+    if tag == "Pblock":
+        return _parse_pblock(
+            actual_el, parse_context, force_active=True, pit_date=None, is_eur=False
+        ).to_dict()
+    if tag == "P1group":
+        return _parse_p1group(
+            actual_el, parse_context, force_active=True, pit_date=None, is_eur=False
+        ).to_dict()
+    if tag in ("Section", "P1", "Article", "Rule", "ConventionRights", "EUSection"):
+        return _parse_section(
+            actual_el, parse_context, force_active=True, pit_date=None, is_eur=False
+        ).to_dict()
+    if tag in ("Subsection", "P2"):
+        return _parse_p2(
+            actual_el, parse_context or "body", force_active=True, pit_date=None, is_eur=False
+        ).to_dict()
+    if tag == "P3":
+        return _parse_p3(
+            actual_el, parse_context or "body", force_active=True, pit_date=None, is_eur=False
+        ).to_dict()
+    if tag == "P4":
+        return _parse_p4(
+            actual_el, parse_context or "body", force_active=True, pit_date=None, is_eur=False
+        ).to_dict()
+    if tag == "Schedule":
+        return _parse_schedule_single(
+            actual_el, "schedule", force_active=True, pit_date=None, is_eur=False
+        ).to_dict()
+    return None
+
+
+_STRUCTURAL_PAYLOAD_TAGS = {
+    "Part",
+    "Chapter",
+    "EUChapter",
+    "Pblock",
+    "P1group",
+    "Section",
+    "P1",
+    "Article",
+    "Rule",
+    "Subsection",
+    "P2",
+    "P3",
+    "P4",
+    "Schedule",
+}
