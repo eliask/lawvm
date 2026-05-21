@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace as dc_replace
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
 from lawvm.core.semantic_types import IRNodeKind
@@ -423,6 +423,38 @@ class UKReplayTextApplyMixin:
         self._replace_node_in_statute(node, rebuilt)
         return rebuilt, tuple(observations)
 
+    def _apply_unique_text_node_rewrite(
+        self,
+        node: UKMutableNode,
+        text_nodes: list[tuple[tuple[int, ...], UKMutableNode]],
+        rewrite: Callable[[str], tuple[str, bool]],
+    ) -> tuple[UKMutableNode, bool]:
+        """Apply a text rewrite to root text or one unique descendant text node."""
+
+        if node.text:
+            new_text, changed = rewrite(node.text)
+            if changed:
+                rebuilt = dc_replace(node, text=new_text)
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+        candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+        for path, text_node in text_nodes:
+            if not text_node.text:
+                continue
+            new_text, changed = rewrite(text_node.text)
+            if changed:
+                candidate_paths.append((path, text_node, new_text))
+        if len(candidate_paths) != 1:
+            return node, False
+        path, text_node, new_text = candidate_paths[0]
+        rebuilt = self._replace_descendant_at_path(
+            node,
+            path,
+            dc_replace(text_node, text=new_text),
+        )
+        self._replace_node_in_statute(node, rebuilt)
+        return rebuilt, True
 
     def _apply_text_replace_on_subtree(
         self,
@@ -795,31 +827,13 @@ class UKReplayTextApplyMixin:
                     new_text = f"{text[:insert_at]}{joiner}{replacement}{text[insert_at:]}"
                     return " ".join(new_text.split()).strip(), True
 
-                if node.text:
-                    new_text, changed = _insert_at_end_of_definition(node.text)
-                    if changed:
-                        rebuilt = dc_replace(node, text=new_text)
-                        self._replace_node_in_statute(node, rebuilt)
-                        if recovery_rule_ids_out is not None:
-                            recovery_rule_ids_out.append("uk_replay_in_definition_at_end_text_rewrite_applied")
-                        return rebuilt, True
-
-                candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
-                for path, text_node in text_nodes:
-                    if not text_node.text:
-                        continue
-                    new_text, changed = _insert_at_end_of_definition(text_node.text)
-                    if changed:
-                        candidate_paths.append((path, text_node, new_text))
-                if len(candidate_paths) != 1:
-                    return node, False
-                path, text_node, new_text = candidate_paths[0]
-                rebuilt = self._replace_descendant_at_path(
+                rebuilt, applied = self._apply_unique_text_node_rewrite(
                     node,
-                    path,
-                    dc_replace(text_node, text=new_text),
+                    text_nodes,
+                    _insert_at_end_of_definition,
                 )
-                self._replace_node_in_statute(node, rebuilt)
+                if not applied:
+                    return node, False
                 if recovery_rule_ids_out is not None:
                     recovery_rule_ids_out.append("uk_replay_in_definition_at_end_text_rewrite_applied")
                 return rebuilt, True
@@ -888,33 +902,13 @@ class UKReplayTextApplyMixin:
                     )
                     return " ".join(new_text.split()).strip(), True
 
-                if node.text:
-                    new_text, changed = _rewrite_range_to_end_in_definition(node.text)
-                    if changed:
-                        rebuilt = dc_replace(node, text=new_text)
-                        self._replace_node_in_statute(node, rebuilt)
-                        if recovery_rule_ids_out is not None:
-                            recovery_rule_ids_out.append(
-                                "uk_replay_in_definition_range_to_end_text_rewrite_applied"
-                            )
-                        return rebuilt, True
-
-                candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
-                for path, text_node in text_nodes:
-                    if not text_node.text:
-                        continue
-                    new_text, changed = _rewrite_range_to_end_in_definition(text_node.text)
-                    if changed:
-                        candidate_paths.append((path, text_node, new_text))
-                if len(candidate_paths) != 1:
-                    return node, False
-                path, text_node, new_text = candidate_paths[0]
-                rebuilt = self._replace_descendant_at_path(
+                rebuilt, applied = self._apply_unique_text_node_rewrite(
                     node,
-                    path,
-                    dc_replace(text_node, text=new_text),
+                    text_nodes,
+                    _rewrite_range_to_end_in_definition,
                 )
-                self._replace_node_in_statute(node, rebuilt)
+                if not applied:
+                    return node, False
                 if recovery_rule_ids_out is not None:
                     recovery_rule_ids_out.append(
                         "uk_replay_in_definition_range_to_end_text_rewrite_applied"
@@ -993,33 +987,13 @@ class UKReplayTextApplyMixin:
                     )
                     return " ".join(new_text.split()).strip(), True
 
-                if node.text:
-                    new_text, changed = _rewrite_range_in_definition(node.text)
-                    if changed:
-                        rebuilt = dc_replace(node, text=new_text)
-                        self._replace_node_in_statute(node, rebuilt)
-                        if recovery_rule_ids_out is not None:
-                            recovery_rule_ids_out.append(
-                                "uk_replay_in_definition_range_text_rewrite_applied"
-                            )
-                        return rebuilt, True
-
-                candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
-                for path, text_node in text_nodes:
-                    if not text_node.text:
-                        continue
-                    new_text, changed = _rewrite_range_in_definition(text_node.text)
-                    if changed:
-                        candidate_paths.append((path, text_node, new_text))
-                if len(candidate_paths) != 1:
-                    return node, False
-                path, text_node, new_text = candidate_paths[0]
-                rebuilt = self._replace_descendant_at_path(
+                rebuilt, applied = self._apply_unique_text_node_rewrite(
                     node,
-                    path,
-                    dc_replace(text_node, text=new_text),
+                    text_nodes,
+                    _rewrite_range_in_definition,
                 )
-                self._replace_node_in_statute(node, rebuilt)
+                if not applied:
+                    return node, False
                 if recovery_rule_ids_out is not None:
                     recovery_rule_ids_out.append(
                         "uk_replay_in_definition_range_text_rewrite_applied"
@@ -1072,33 +1046,13 @@ class UKReplayTextApplyMixin:
                     new_text = f"{text[:definition_match.start()]}{rewritten_entry}{text[definition_match.end():]}"
                     return " ".join(new_text.split()).strip(), True
 
-                if node.text:
-                    new_text, changed = _rewrite_each_anchor_in_definition_entry(node.text)
-                    if changed:
-                        rebuilt = dc_replace(node, text=new_text)
-                        self._replace_node_in_statute(node, rebuilt)
-                        if recovery_rule_ids_out is not None:
-                            recovery_rule_ids_out.append(
-                                "uk_replay_in_definition_after_each_text_rewrite_applied"
-                            )
-                        return rebuilt, True
-
-                candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
-                for path, text_node in text_nodes:
-                    if not text_node.text:
-                        continue
-                    new_text, changed = _rewrite_each_anchor_in_definition_entry(text_node.text)
-                    if changed:
-                        candidate_paths.append((path, text_node, new_text))
-                if len(candidate_paths) != 1:
-                    return node, False
-                path, text_node, new_text = candidate_paths[0]
-                rebuilt = self._replace_descendant_at_path(
+                rebuilt, applied = self._apply_unique_text_node_rewrite(
                     node,
-                    path,
-                    dc_replace(text_node, text=new_text),
+                    text_nodes,
+                    _rewrite_each_anchor_in_definition_entry,
                 )
-                self._replace_node_in_statute(node, rebuilt)
+                if not applied:
+                    return node, False
                 if recovery_rule_ids_out is not None:
                     recovery_rule_ids_out.append(
                         "uk_replay_in_definition_after_each_text_rewrite_applied"
@@ -1157,33 +1111,13 @@ class UKReplayTextApplyMixin:
                 new_text = f"{text[:definition_match.start()]}{rewritten_entry}{text[definition_match.end():]}"
                 return " ".join(new_text.split()).strip(), True
 
-            if node.text:
-                new_text, changed = _rewrite_anchor_in_definition_entry(node.text)
-                if changed:
-                    rebuilt = dc_replace(node, text=new_text)
-                    self._replace_node_in_statute(node, rebuilt)
-                    if recovery_rule_ids_out is not None:
-                        recovery_rule_ids_out.append(
-                            "uk_replay_in_definition_after_anchor_text_rewrite_applied"
-                        )
-                    return rebuilt, True
-
-            candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
-            for path, text_node in text_nodes:
-                if not text_node.text:
-                    continue
-                new_text, changed = _rewrite_anchor_in_definition_entry(text_node.text)
-                if changed:
-                    candidate_paths.append((path, text_node, new_text))
-            if len(candidate_paths) != 1:
-                return node, False
-            path, text_node, new_text = candidate_paths[0]
-            rebuilt = self._replace_descendant_at_path(
+            rebuilt, applied = self._apply_unique_text_node_rewrite(
                 node,
-                path,
-                dc_replace(text_node, text=new_text),
+                text_nodes,
+                _rewrite_anchor_in_definition_entry,
             )
-            self._replace_node_in_statute(node, rebuilt)
+            if not applied:
+                return node, False
             if recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.append(
                     "uk_replay_in_definition_after_anchor_text_rewrite_applied"
@@ -1732,30 +1666,11 @@ class UKReplayTextApplyMixin:
                     recovery_rule_ids_out.append("uk_replay_after_definition_text_insert_applied")
                 return " ".join(new_text.split()).strip(), True
 
-            if node.text:
-                new_text, changed = _insert_after_definition_in_text(node.text)
-                if changed:
-                    rebuilt = dc_replace(node, text=new_text)
-                    self._replace_node_in_statute(node, rebuilt)
-                    return rebuilt, True
-
-            candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
-            for path, text_node in text_nodes:
-                if not text_node.text:
-                    continue
-                new_text, changed = _insert_after_definition_in_text(text_node.text)
-                if changed:
-                    candidate_paths.append((path, text_node, new_text))
-            if len(candidate_paths) != 1:
-                return node, False
-            path, text_node, new_text = candidate_paths[0]
-            rebuilt = self._replace_descendant_at_path(
+            return self._apply_unique_text_node_rewrite(
                 node,
-                path,
-                dc_replace(text_node, text=new_text),
+                text_nodes,
+                _insert_after_definition_in_text,
             )
-            self._replace_node_in_statute(node, rebuilt)
-            return rebuilt, True
 
         if match.startswith("TEXT_DEFINITION_ENTRY_"):
             term = match[len("TEXT_DEFINITION_ENTRY_") :].strip()
@@ -2000,31 +1915,17 @@ class UKReplayTextApplyMixin:
                 )
                 return f"{text[: anchor_match.end()]}{joiner}{replacement}", True
 
-            if node.text:
-                new_text, changed = _rewrite_after_anchor(node.text)
-                if changed:
-                    rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip())
-                    self._replace_node_in_statute(node, rebuilt)
-                    if recovery_rule_ids_out is not None:
-                        recovery_rule_ids_out.append("uk_replay_after_anchor_to_end_text_rewrite_applied")
-                    return rebuilt, True
+            def _rewrite_after_anchor_normalized(text: str) -> tuple[str, bool]:
+                new_text, changed = _rewrite_after_anchor(text)
+                return " ".join(new_text.split()).strip(), changed
 
-            candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
-            for path, text_node in text_nodes:
-                if not text_node.text:
-                    continue
-                new_text, changed = _rewrite_after_anchor(text_node.text)
-                if changed:
-                    candidate_paths.append((path, text_node, new_text))
-            if len(candidate_paths) != 1:
-                return node, False
-            path, text_node, new_text = candidate_paths[0]
-            rebuilt = self._replace_descendant_at_path(
+            rebuilt, applied = self._apply_unique_text_node_rewrite(
                 node,
-                path,
-                dc_replace(text_node, text=" ".join(new_text.split()).strip()),
+                text_nodes,
+                _rewrite_after_anchor_normalized,
             )
-            self._replace_node_in_statute(node, rebuilt)
+            if not applied:
+                return node, False
             if recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.append("uk_replay_after_anchor_to_end_text_rewrite_applied")
             return rebuilt, True
