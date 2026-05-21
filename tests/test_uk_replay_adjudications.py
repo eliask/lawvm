@@ -6167,7 +6167,13 @@ def test_executor_applies_definition_child_scoped_word_omission() -> None:
         "a local authority;",
         "the Strathclyde Passenger Transport Authority;",
     ]
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_in_definition_child_structured_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "structured_in_definition_child_selector"
 
 
 def test_executor_applies_definition_child_scoped_word_omission_to_flat_entry() -> None:
@@ -6226,7 +6232,13 @@ def test_executor_applies_definition_child_scoped_word_omission_to_flat_entry() 
         "“local transport authority” means a local authority; the Strathclyde "
         "Passenger Transport Authority;"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_in_definition_child_flat_ordinal_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "flat_in_definition_child_ordinal_selector"
 
 
 def test_executor_applies_definition_child_scoped_after_insert_to_structured_entry() -> None:
@@ -6305,7 +6317,13 @@ def test_executor_applies_definition_child_scoped_after_insert_to_structured_ent
         "where the authority is a local authority (i) , policies;",
         "where the authority is another body, policies;",
     ]
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_in_definition_child_structured_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "structured_in_definition_child_selector"
 
 
 def test_executor_applies_definition_child_scoped_at_end_insert_to_structured_entry() -> None:
@@ -6377,7 +6395,13 @@ def test_executor_applies_definition_child_scoped_at_end_insert_to_structured_en
         "where the authority is a local authority (i), policies under section 63; "
         "or ii policies which relate to matters;"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_in_definition_child_structured_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "structured_in_definition_child_selector"
 
 
 def test_executor_applies_definition_child_scoped_after_insert_to_flat_entry() -> None:
@@ -6442,7 +6466,13 @@ def test_executor_applies_definition_child_scoped_after_insert_to_flat_entry() -
         "“relevant general policies” means where the authority is a local "
         "authority (i) , policies; where the authority is another body, policies;"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_in_definition_child_flat_ordinal_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "flat_in_definition_child_ordinal_selector"
 
 
 def test_executor_deletes_source_carried_child_tail_from_collapsed_parent_text() -> None:
