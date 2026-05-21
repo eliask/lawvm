@@ -23467,6 +23467,11 @@ def test_pipeline_compile_ops_blocks_range_to_container_substitution_until_owned
     assert lowering_rejections[-1]["source_range_kind"] == "section"
     assert lowering_rejections[-1]["source_range_start"] == "3"
     assert lowering_rejections[-1]["source_range_end"] == "12"
+    assert lowering_rejections[-1]["source_range_section_count"] == 10
+    assert lowering_rejections[-1]["source_range_sections"] == tuple(
+        {"label": str(label), "eid": ""} for label in range(3, 13)
+    )
+    assert lowering_rejections[-1]["truncated_source_range_sections"] is False
     assert lowering_rejections[-1]["compiled_targets"] == ("part:2/chapter:1",)
     assert lowering_rejections[-1]["payload_roots"] == (
         {

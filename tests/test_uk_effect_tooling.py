@@ -953,6 +953,11 @@ def test_summarize_uk_effect_surfaces_range_to_container_blocking_rejection(monk
             "source_range_kind": "section",
             "source_range_start": "3",
             "source_range_end": "12",
+            "source_range_section_count": 10,
+            "source_range_sections": tuple(
+                {"label": str(label), "eid": ""} for label in range(3, 13)
+            ),
+            "truncated_source_range_sections": False,
         },
     )
 
@@ -2818,6 +2823,11 @@ def test_uk_manual_compile_evidence_jsonl_templates_range_to_container_claim() -
                     "source_range_kind": "section",
                     "source_range_start": "3",
                     "source_range_end": "12",
+                    "source_range_section_count": 10,
+                    "source_range_sections": tuple(
+                        {"label": str(label), "eid": ""} for label in range(3, 13)
+                    ),
+                    "truncated_source_range_sections": False,
                     "target_container_ref": "Pt. 2 Ch. 1",
                     "compiled_targets": ("part:2/chapter:1",),
                     "payload_kinds": ("chapter",),
@@ -2889,6 +2899,11 @@ def test_uk_manual_compile_evidence_jsonl_templates_range_to_container_claim() -
     assert template["source_range_kind"] == "section"
     assert template["source_range_start"] == "3"
     assert template["source_range_end"] == "12"
+    assert template["source_range_section_count"] == 10
+    assert template["source_range_sections"] == [
+        {"label": str(label), "eid": ""} for label in range(3, 13)
+    ]
+    assert template["truncated_source_range_sections"] is False
     assert template["target_container_surface"] == "Pt. 2 Ch. 1"
     assert template["compiled_targets"] == ["part:2/chapter:1"]
     assert template["payload_kinds"] == ["chapter"]
