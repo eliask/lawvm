@@ -3083,10 +3083,14 @@ def test_replay_after_definition_insert_allows_parenthetical_translation_anchor(
         in replayed_text
     )
     assert [adjudication.kind for adjudication in adjudications] == [
-        "uk_replay_definition_anchor_parenthetical_translation_normalized"
+        "uk_replay_definition_anchor_parenthetical_translation_normalized",
+        "uk_replay_after_definition_text_insert_applied",
     ]
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[1].detail["blocking"] is False
+    assert adjudications[1].detail["strict_disposition"] == "record"
+    assert adjudications[1].detail["source_shape"] == "after_definition_text_insert_selector"
 
 
 def test_compile_words_inserted_after_definition_with_optional_article() -> None:
