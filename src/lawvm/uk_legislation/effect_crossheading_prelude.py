@@ -10,6 +10,7 @@ from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource, TextPat
 from lawvm.core.semantic_types import FacetKind, StructuralAction, TextPatchKindEnum
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.heading_facets import (
+    _CROSSHEADING_AND_STRUCTURAL_REPEAL_RULE,
     _CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE,
     _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
     _crossheading_and_structural_repeal_selector,
@@ -233,6 +234,32 @@ def refine_crossheading_or_heading_facet_target(
         detail={"target_ref": t_str, "target": str(refined_target)},
     )
     return refined_target
+
+
+def append_crossheading_group_repeal_observation(
+    *,
+    effect: UKEffectRecord,
+    crossheading_group_repeal_selector: dict[str, Any],
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> None:
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_CROSSHEADING_AND_STRUCTURAL_REPEAL_RULE,
+        family="target_facet_lowering",
+        reason_code="explicit_crossheading_and_structural_repeal",
+        reason=(
+            "UK source explicitly repeals the named provision and the "
+            "heading above it; lowering keeps the provision target and "
+            "carries a replay selector that may remove the heading "
+            "wrapper only if that wrapper owns exactly the target."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail=dict(crossheading_group_repeal_selector),
+    )
 
 
 def build_crossheading_compound_heading_op(

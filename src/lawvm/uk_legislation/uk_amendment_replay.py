@@ -104,6 +104,7 @@ from lawvm.uk_legislation.effect_payload_normalization import (
     prepend_inserted_p1group_heading_carrier,
 )
 from lawvm.uk_legislation.effect_crossheading_prelude import (
+    append_crossheading_group_repeal_observation,
     build_crossheading_context,
     build_crossheading_compound_heading_op,
     reject_unsupported_crossheading_replace,
@@ -146,7 +147,6 @@ from lawvm.uk_legislation.authority_filter import (
     _uk_op_allowed_by_authority_mode,
 )
 from lawvm.uk_legislation.heading_facets import (
-    _CROSSHEADING_AND_STRUCTURAL_REPEAL_RULE,
     _CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE,
     _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
     _heading_facet_after_anchor_insert_fragment,
@@ -1011,21 +1011,12 @@ def compile_effect_to_ir_ops(
         if crossheading_group_repeal_selector is not None:
             curr_action = "repeal"
             content_ir = None
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id=_CROSSHEADING_AND_STRUCTURAL_REPEAL_RULE,
-                family="target_facet_lowering",
-                reason_code="explicit_crossheading_and_structural_repeal",
-                reason=(
-                    "UK source explicitly repeals the named provision and the "
-                    "heading above it; lowering keeps the provision target and "
-                    "carries a replay selector that may remove the heading "
-                    "wrapper only if that wrapper owns exactly the target."
-                ),
+            append_crossheading_group_repeal_observation(
                 effect=effect,
+                crossheading_group_repeal_selector=crossheading_group_repeal_selector,
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
-                detail=dict(crossheading_group_repeal_selector),
+                lowering_rejections_out=lowering_rejections_out,
             )
         elif crossheading_replacement_text is not None:
             curr_action = "text_replace"
