@@ -759,6 +759,38 @@ def _rewrite_after_anchor_to_end_text(
     return " ".join(f"{text[: anchor_match.end()]}{joiner}{replacement}".split()).strip(), True
 
 
+def _find_text_range_start_index(
+    full_text: str,
+    start_text: str,
+    *,
+    occurrence: int,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[int, tuple[str, ...]]:
+    ordinal = occurrence if occurrence > 0 else 1
+    if occurrence > 0:
+        range_matches, used_word_anchor = _range_anchor_matches(full_text, start_text)
+    else:
+        range_matches = list(re.finditer(re.escape(start_text), full_text))
+        used_word_anchor = False
+    if len(range_matches) >= ordinal:
+        recovery_rule_ids = (
+            ("uk_replay_text_range_anchor_word_boundary_normalized",)
+            if used_word_anchor
+            else ()
+        )
+        return range_matches[ordinal - 1].start(), recovery_rule_ids
+    pattern = _text_patch_pattern(
+        start_text,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    matches = list(re.finditer(pattern, full_text, flags=re.I | re.S))
+    if len(matches) < ordinal:
+        return -1, ()
+    return matches[ordinal - 1].start(), ()
+
+
 class UKReplayTextApplyMixin:
     def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
         self,
@@ -2054,30 +2086,17 @@ class UKReplayTextApplyMixin:
             if not full_text:
                 return node, False
 
-            def _find_start_index(start_text: str) -> int:
-                ordinal = occurrence if occurrence > 0 else 1
-                if occurrence > 0:
-                    range_matches, used_word_anchor = _range_anchor_matches(full_text, start_text)
-                else:
-                    range_matches = list(re.finditer(re.escape(start_text), full_text))
-                    used_word_anchor = False
-                if len(range_matches) >= ordinal:
-                    if used_word_anchor and recovery_rule_ids_out is not None:
-                        recovery_rule_ids_out.append("uk_replay_text_range_anchor_word_boundary_normalized")
-                    return range_matches[ordinal - 1].start()
-                pattern = _text_patch_pattern(
+            if match.endswith("_TO_END"):
+                start_text = match[len("TEXT_FROM_") : -len("_TO_END")]
+                start_idx, start_recovery_rule_ids = _find_text_range_start_index(
+                    full_text,
                     start_text,
+                    occurrence=occurrence,
                     allow_punctuation_spacing=allow_punctuation_spacing,
                     allow_word_punctuation_elision=allow_word_punctuation_elision,
                 )
-                matches = list(re.finditer(pattern, full_text, flags=re.I | re.S))
-                if len(matches) < ordinal:
-                    return -1
-                return matches[ordinal - 1].start()
-
-            if match.endswith("_TO_END"):
-                start_text = match[len("TEXT_FROM_") : -len("_TO_END")]
-                start_idx = _find_start_index(start_text)
+                if start_recovery_rule_ids and recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.extend(start_recovery_rule_ids)
                 if start_idx == -1:
                     return node, False
                 new_text = full_text[:start_idx] + replacement
@@ -2091,7 +2110,15 @@ class UKReplayTextApplyMixin:
                 parts = match.replace("TEXT_FROM_", "", 1).split("_TO_", 1)
                 if len(parts) == 2:
                     start_text, end_text = parts[0], parts[1]
-                    start_idx = _find_start_index(start_text)
+                    start_idx, start_recovery_rule_ids = _find_text_range_start_index(
+                        full_text,
+                        start_text,
+                        occurrence=occurrence,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    if start_recovery_rule_ids and recovery_rule_ids_out is not None:
+                        recovery_rule_ids_out.extend(start_recovery_rule_ids)
                     end_idx = -1
                     if start_idx != -1:
                         if end_occurrence > 0:
