@@ -266,6 +266,17 @@ def _uk_rejection_rule_counts(rows: Iterable[dict[str, Any]]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def _uk_observation_field_counts(
+    rows: Iterable[dict[str, Any]], field: str
+) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        value = str(row.get(field) or "").strip()
+        if value:
+            counts[value] += 1
+    return dict(sorted(counts.items()))
+
+
 def _uk_blocking_rejection_rule_counts(rows: Iterable[dict[str, Any]]) -> dict[str, int]:
     return _uk_rejection_rule_counts(row for row in rows if is_blocking_compile_record(row))
 
@@ -3980,6 +3991,7 @@ def build_uk_evidence_bundle(
                     "manual_compile_frontier_observation_count": 0,
                     "manual_compile_status_counts": {},
                     "manual_compile_rule_counts": {},
+                    "suggested_claim_template_status_counts": {},
                     "manual_compile_frontier_observations": [],
                     "source_acquisition_observation_count": 0,
                     "source_acquisition_observation_rule_counts": {},
@@ -4374,6 +4386,9 @@ def build_uk_evidence_bundle(
             ).items()
         )
     )
+    suggested_claim_template_status_counts = _uk_observation_field_counts(
+        manual_compile_frontier_observations, "suggested_claim_template_status"
+    )
     source_acquisition_observation_rule_counts = _uk_rejection_rule_counts(
         source_acquisition_observations
     )
@@ -4584,6 +4599,7 @@ def build_uk_evidence_bundle(
                 ),
                 "manual_compile_status_counts": manual_compile_status_counts,
                 "manual_compile_rule_counts": manual_compile_rule_counts,
+                "suggested_claim_template_status_counts": suggested_claim_template_status_counts,
                 "manual_compile_frontier_observations": manual_compile_frontier_observations,
                 "source_acquisition_observation_count": len(source_acquisition_observations),
                 "source_acquisition_observation_rule_counts": (

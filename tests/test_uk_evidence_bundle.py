@@ -114,6 +114,7 @@ def test_uk_evidence_bundle_preserves_compile_rejection_lanes(monkeypatch, tmp_p
                     "manual_compile_status": "manual_compile_candidate",
                     "manual_compile_rule_id": "uk_manual_compile_heading_candidate",
                     "manual_compile_reason": "heading facet requires manual compile",
+                    "suggested_claim_template_status": "available",
                     "blocking": False,
                 }
             )
@@ -256,6 +257,9 @@ def test_uk_evidence_bundle_preserves_compile_rejection_lanes(monkeypatch, tmp_p
     assert compile_observations["manual_compile_rule_counts"] == {
         "uk_manual_compile_heading_candidate": 1,
     }
+    assert compile_observations["suggested_claim_template_status_counts"] == {
+        "available": 1,
+    }
     manual_observation = compile_observations["manual_compile_frontier_observations"][0]
     assert manual_observation["manual_compile_reason"] == "heading facet requires manual compile"
     assert compile_observations["source_acquisition_observation_count"] == 2
@@ -289,6 +293,7 @@ def test_uk_evidence_bundle_preserves_compile_rejection_lanes(monkeypatch, tmp_p
         "uk_effect_source_pathology_classified=1"
     ) in text
     assert "manual compile frontier statuses: manual_compile_candidate=1" in text
+    assert "manual compile claim templates: available=1" in text
     assert (
         "manual compile frontier rules: "
         "uk_manual_compile_heading_candidate=1"

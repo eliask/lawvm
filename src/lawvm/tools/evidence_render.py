@@ -223,6 +223,14 @@ def _uk_compiler_observation_text_lines(raw: object) -> tuple[str, ...]:
         )
         if manual_compile_status_counts:
             lines.append(f"manual compile frontier statuses: {manual_compile_status_counts}")
+        suggested_claim_template_status_counts = _format_count_map(
+            compile_observations.get("suggested_claim_template_status_counts")
+        )
+        if suggested_claim_template_status_counts:
+            lines.append(
+                "manual compile claim templates: "
+                f"{suggested_claim_template_status_counts}"
+            )
         manual_compile_rule_counts = _format_count_map(
             compile_observations.get("manual_compile_rule_counts")
         )
