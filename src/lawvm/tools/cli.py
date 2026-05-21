@@ -4043,6 +4043,15 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     uk_candidates_p.add_argument(
+        "--claim-template-status",
+        choices=("available", "not_available"),
+        default="",
+        help=(
+            "archive-backed mode only: emit statutes with at least one actionable "
+            "manual compile row whose suggested claim template status matches"
+        ),
+    )
+    uk_candidates_p.add_argument(
         "--replay-adjudication-kind",
         nargs="+",
         metavar="KIND",

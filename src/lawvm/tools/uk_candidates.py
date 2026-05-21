@@ -311,6 +311,15 @@ def _matches_filters(  # noqa: ANN001
     return True
 
 
+def _row_matches_claim_template_status(row: Mapping[str, Any], status: str) -> bool:
+    if not status:
+        return True
+    counts = row.get("suggested_claim_template_status_counts") or {}
+    if not isinstance(counts, Mapping):
+        return False
+    return int(counts.get(status) or 0) > 0
+
+
 def _matching_frontier(  # noqa: ANN001
     results,
     *,
@@ -979,6 +988,7 @@ def _uk_candidates_filters_jsonable(
     replay_adjudication_kinds: set[str] | None = None,
     replay_adjudication_sample_limit: int = 5,
     manual_compile_evidence_statuses: set[str] | None = None,
+    claim_template_status: str = "",
 ) -> dict[str, Any]:
     return {
         "top": top,
@@ -999,6 +1009,7 @@ def _uk_candidates_filters_jsonable(
             if manual_compile_evidence_statuses is not None
             else list(_DEFAULT_MANUAL_COMPILE_EVIDENCE_STATUSES)
         ),
+        "claim_template_status": claim_template_status,
     }
 
 
@@ -2637,6 +2648,7 @@ def main(args: "argparse.Namespace") -> None:
     residual_only: bool = bool(getattr(args, "residual_only", False))
     json_output: bool = bool(getattr(args, "json", False))
     summary_only: bool = bool(getattr(args, "summary_only", False))
+    claim_template_status: str = str(getattr(args, "claim_template_status", "") or "")
     min_year: int | None = getattr(args, "min_year", None)
     max_year: int | None = getattr(args, "max_year", None)
     type_args = getattr(args, "types", None)
@@ -2689,6 +2701,18 @@ def main(args: "argparse.Namespace") -> None:
         sys.exit(2)
     if residual_budget is not None and residual_budget < 0:
         print("error: --residual-budget must be zero or a positive integer", file=sys.stderr)
+        sys.exit(2)
+    if claim_template_status and not db_path.exists():
+        print(
+            "error: --claim-template-status requires an archive DB for per-effect inspection",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    if claim_template_status and fast and not residual_only:
+        print(
+            "error: --claim-template-status requires archive-backed mode; omit --fast or use --residual-only",
+            file=sys.stderr,
+        )
         sys.exit(2)
     if replay_adjudication_sample_limit < 0:
         print(
@@ -2786,6 +2810,7 @@ def main(args: "argparse.Namespace") -> None:
             if manual_compile_evidence_jsonl_path is not None
             else None
         ),
+        claim_template_status=claim_template_status,
     )
 
     if not json_output:
@@ -3085,7 +3110,7 @@ def main(args: "argparse.Namespace") -> None:
                             defeated_residual_root_count=len(defeated_residual_roots),
                             malformed_residual_root_count=len(malformed_residual_roots),
                         )
-                    report_rows.append(_uk_candidate_row_jsonable(
+                    candidate_row = _uk_candidate_row_jsonable(
                         r,
                         score_mode=score_mode,
                         source_counts=source_counts,
@@ -3167,7 +3192,13 @@ def main(args: "argparse.Namespace") -> None:
                         ),
                         replay_adjudication_kinds=replay_adjudication_kinds,
                         replay_adjudication_sample_limit=replay_adjudication_sample_limit,
-                    ))
+                    )
+                    if not _row_matches_claim_template_status(
+                        candidate_row,
+                        claim_template_status,
+                    ):
+                        continue
+                    report_rows.append(candidate_row)
                     if json_output:
                         continue
                     print(
@@ -3761,7 +3792,7 @@ def main(args: "argparse.Namespace") -> None:
                 effect_inspection_truncated=effect_inspection_truncated,
             ):
                 continue
-            report_rows.append(_uk_candidate_row_jsonable(
+            candidate_row = _uk_candidate_row_jsonable(
                 r,
                 score_mode=score_mode,
                 source_counts=source_counts,
@@ -3823,7 +3854,13 @@ def main(args: "argparse.Namespace") -> None:
                 ),
                 replay_adjudication_kinds=replay_adjudication_kinds,
                 replay_adjudication_sample_limit=replay_adjudication_sample_limit,
-            ))
+            )
+            if not _row_matches_claim_template_status(
+                candidate_row,
+                claim_template_status,
+            ):
+                continue
+            report_rows.append(candidate_row)
             if json_output:
                 continue
             print(
