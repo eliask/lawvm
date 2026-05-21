@@ -194,135 +194,138 @@ def _parse_affected_target(ref: str) -> LegalAddress:
     )
 
 
+def _split_stemmed_alnum(group: str) -> Optional[tuple[str, str]]:
+    match = re.fullmatch(r"((?:\d+[A-Z]*|[A-Z]+\d+[A-Z]*))([A-Z])", group, re.I)
+    if match is None:
+        return None
+    return match.group(1).upper(), match.group(2).upper()
+
+
+def _is_sibling_group_family(groups: list[str]) -> bool:
+    if all(group.isdigit() for group in groups):
+        return True
+    roman_values = [_shared_roman_to_arabic(group) for group in groups]
+    if (
+        len(groups) >= 2
+        and all(_looks_like_roman_subitem_label(group) for group in groups)
+        and all(value is not None for value in roman_values)
+    ):
+        return True
+    if all(re.fullmatch(r"\d+[A-Z]*", group, re.I) for group in groups):
+        return True
+    if all(re.fullmatch(r"[A-Z]+", group, re.I) for group in groups):
+        alpha_lengths = {len(group) for group in groups}
+        if alpha_lengths <= {1}:
+            return True
+        if alpha_lengths <= {1, 2}:
+            single_stems = {group.upper() for group in groups if len(group) == 1}
+            if single_stems:
+                return all(
+                    len(group) == 1 or any(group.upper().startswith(stem) for stem in single_stems)
+                    for group in groups
+                )
+            return len(alpha_lengths) == 1
+        return len(alpha_lengths) == 1
+    alnum = [re.fullmatch(r"(\d+)([A-Z])", group, re.I) for group in groups]
+    if (
+        bool(alnum)
+        and all(match is not None for match in alnum)
+        and len({match.group(1) for match in alnum if match is not None}) == 1
+    ):
+        return True
+    stemmed = [_split_stemmed_alnum(group) for group in groups]
+    return (
+        bool(stemmed)
+        and all(pair is not None for pair in stemmed)
+        and len({pair[0] for pair in stemmed if pair is not None}) == 1
+    )
+
+
+def _expand_parenthesized_range(prefix: str, start_str: str, end_str: str) -> Optional[list[str]]:
+    raw_start_str = start_str
+    raw_end_str = end_str
+    start_str = start_str.upper()
+    end_str = end_str.upper()
+    roman_start = _shared_roman_to_arabic(start_str)
+    roman_end = _shared_roman_to_arabic(end_str)
+    if (
+        roman_start is not None
+        and roman_end is not None
+        and roman_end > roman_start
+        and roman_end - roman_start < 50
+    ):
+        if raw_start_str.islower():
+            return [
+                f"{prefix}({_shared_arabic_to_roman(value).lower()})"
+                for value in range(roman_start, roman_end + 1)
+            ]
+        return [f"{prefix}({_shared_arabic_to_roman(value)})" for value in range(roman_start, roman_end + 1)]
+
+    if len(start_str) == 1 and len(end_str) == 1 and start_str.isalpha() and end_str.isalpha():
+        return [f"{prefix}({chr(c)})" for c in range(ord(start_str), ord(end_str) + 1)]
+
+    if (
+        len(start_str) == len(end_str)
+        and len(start_str) > 1
+        and start_str.isalpha()
+        and end_str.isalpha()
+        and start_str[:-1] == end_str[:-1]
+        and ord(start_str[-1]) <= ord(end_str[-1])
+    ):
+        stem = raw_start_str[:-1]
+        return [f"{prefix}({stem}{chr(c)})" for c in range(ord(raw_start_str[-1]), ord(raw_end_str[-1]) + 1)]
+
+    if (
+        len(start_str) == 1
+        and len(end_str) == 2
+        and start_str.isalpha()
+        and end_str.isalpha()
+        and end_str.startswith(start_str)
+    ):
+        end_letter = raw_end_str[-1].lower()
+        return [f"{prefix}({raw_start_str})"] + [
+            f"{prefix}({raw_start_str}{chr(c)})" for c in range(ord("a"), ord(end_letter) + 1)
+        ]
+
+    stemmed_start = _split_stemmed_alnum(start_str)
+    stemmed_end = _split_stemmed_alnum(end_str)
+    if stemmed_start is not None and stemmed_end is not None and stemmed_start[0] == stemmed_end[0]:
+        return [
+            f"{prefix}({stemmed_start[0]}{chr(c)})" for c in range(ord(stemmed_start[1]), ord(stemmed_end[1]) + 1)
+        ]
+
+    ms = re.match(r"^(\d+)([A-Z])$", start_str)
+    me = re.match(r"^(\d+)([A-Z])$", end_str)
+    if ms and me and ms.group(1) == me.group(1):
+        base_n = ms.group(1)
+        return [f"{prefix}({base_n}{chr(c)})" for c in range(ord(ms.group(2)), ord(me.group(2)) + 1)]
+
+    if start_str.isdigit() and me and me.group(1) == start_str:
+        return [f"{prefix}({start_str})"] + [
+            f"{prefix}({start_str}{chr(c)})" for c in range(ord("A"), ord(me.group(2)) + 1)
+        ]
+
+    if start_str.isdigit() and me is not None:
+        start = int(start_str)
+        end = int(me.group(1))
+        suffix = me.group(2).upper()
+        if suffix and end > start and end - start < 100:
+            return [f"{prefix}({n})" for n in range(start, end + 1)] + [
+                f"{prefix}({end}{chr(c)})" for c in range(ord("A"), ord(suffix) + 1)
+            ]
+
+    if start_str.isdigit() and end_str.isdigit():
+        start = int(start_str)
+        end = int(end_str)
+        if end > start and end - start < 100:
+            return [f"{prefix}({n})" for n in range(start, end + 1)]
+
+    return None
+
+
 def _split_metadata_provisions(prov_str: str) -> list[str]:
     if not prov_str:
         return []
-
-    def _split_stemmed_alnum(group: str) -> Optional[tuple[str, str]]:
-        match = re.fullmatch(r"((?:\d+[A-Z]*|[A-Z]+\d+[A-Z]*))([A-Z])", group, re.I)
-        if match is None:
-            return None
-        return match.group(1).upper(), match.group(2).upper()
-
-    def _is_sibling_group_family(groups: list[str]) -> bool:
-        if all(group.isdigit() for group in groups):
-            return True
-        roman_values = [_shared_roman_to_arabic(group) for group in groups]
-        if (
-            len(groups) >= 2
-            and all(_looks_like_roman_subitem_label(group) for group in groups)
-            and all(value is not None for value in roman_values)
-        ):
-            return True
-        if all(re.fullmatch(r"\d+[A-Z]*", group, re.I) for group in groups):
-            return True
-        if all(re.fullmatch(r"[A-Z]+", group, re.I) for group in groups):
-            alpha_lengths = {len(group) for group in groups}
-            if alpha_lengths <= {1}:
-                return True
-            if alpha_lengths <= {1, 2}:
-                single_stems = {group.upper() for group in groups if len(group) == 1}
-                if single_stems:
-                    return all(
-                        len(group) == 1 or any(group.upper().startswith(stem) for stem in single_stems)
-                        for group in groups
-                    )
-                return len(alpha_lengths) == 1
-            return len(alpha_lengths) == 1
-        alnum = [re.fullmatch(r"(\d+)([A-Z])", group, re.I) for group in groups]
-        if (
-            bool(alnum)
-            and all(match is not None for match in alnum)
-            and len({match.group(1) for match in alnum if match is not None}) == 1
-        ):
-            return True
-        stemmed = [_split_stemmed_alnum(group) for group in groups]
-        return (
-            bool(stemmed)
-            and all(pair is not None for pair in stemmed)
-            and len({pair[0] for pair in stemmed if pair is not None}) == 1
-        )
-
-    def _expand_parenthesized_range(prefix: str, start_str: str, end_str: str) -> Optional[list[str]]:
-        raw_start_str = start_str
-        raw_end_str = end_str
-        start_str = start_str.upper()
-        end_str = end_str.upper()
-        roman_start = _shared_roman_to_arabic(start_str)
-        roman_end = _shared_roman_to_arabic(end_str)
-        if (
-            roman_start is not None
-            and roman_end is not None
-            and roman_end > roman_start
-            and roman_end - roman_start < 50
-        ):
-            if raw_start_str.islower():
-                return [
-                    f"{prefix}({_shared_arabic_to_roman(value).lower()})"
-                    for value in range(roman_start, roman_end + 1)
-                ]
-            return [f"{prefix}({_shared_arabic_to_roman(value)})" for value in range(roman_start, roman_end + 1)]
-
-        if len(start_str) == 1 and len(end_str) == 1 and start_str.isalpha() and end_str.isalpha():
-            return [f"{prefix}({chr(c)})" for c in range(ord(start_str), ord(end_str) + 1)]
-
-        if (
-            len(start_str) == len(end_str)
-            and len(start_str) > 1
-            and start_str.isalpha()
-            and end_str.isalpha()
-            and start_str[:-1] == end_str[:-1]
-            and ord(start_str[-1]) <= ord(end_str[-1])
-        ):
-            stem = raw_start_str[:-1]
-            return [f"{prefix}({stem}{chr(c)})" for c in range(ord(raw_start_str[-1]), ord(raw_end_str[-1]) + 1)]
-
-        if (
-            len(start_str) == 1
-            and len(end_str) == 2
-            and start_str.isalpha()
-            and end_str.isalpha()
-            and end_str.startswith(start_str)
-        ):
-            end_letter = raw_end_str[-1].lower()
-            return [f"{prefix}({raw_start_str})"] + [
-                f"{prefix}({raw_start_str}{chr(c)})" for c in range(ord("a"), ord(end_letter) + 1)
-            ]
-
-        stemmed_start = _split_stemmed_alnum(start_str)
-        stemmed_end = _split_stemmed_alnum(end_str)
-        if stemmed_start is not None and stemmed_end is not None and stemmed_start[0] == stemmed_end[0]:
-            return [
-                f"{prefix}({stemmed_start[0]}{chr(c)})" for c in range(ord(stemmed_start[1]), ord(stemmed_end[1]) + 1)
-            ]
-
-        ms = re.match(r"^(\d+)([A-Z])$", start_str)
-        me = re.match(r"^(\d+)([A-Z])$", end_str)
-        if ms and me and ms.group(1) == me.group(1):
-            base_n = ms.group(1)
-            return [f"{prefix}({base_n}{chr(c)})" for c in range(ord(ms.group(2)), ord(me.group(2)) + 1)]
-
-        if start_str.isdigit() and me and me.group(1) == start_str:
-            return [f"{prefix}({start_str})"] + [
-                f"{prefix}({start_str}{chr(c)})" for c in range(ord("A"), ord(me.group(2)) + 1)
-            ]
-
-        if start_str.isdigit() and me is not None:
-            start = int(start_str)
-            end = int(me.group(1))
-            suffix = me.group(2).upper()
-            if suffix and end > start and end - start < 100:
-                return [f"{prefix}({n})" for n in range(start, end + 1)] + [
-                    f"{prefix}({end}{chr(c)})" for c in range(ord("A"), ord(suffix) + 1)
-                ]
-
-        if start_str.isdigit() and end_str.isdigit():
-            start = int(start_str)
-            end = int(end_str)
-            if end > start and end - start < 100:
-                return [f"{prefix}({n})" for n in range(start, end + 1)]
-
-        return None
 
     # Split by comma first
     parts = [p.strip() for p in prov_str.split(",") if p.strip()]
