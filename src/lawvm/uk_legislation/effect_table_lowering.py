@@ -7,8 +7,8 @@ import json
 import xml.etree.ElementTree as ET
 from typing import Any, Optional
 
-from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource
-from lawvm.core.semantic_types import IRNodeKind, StructuralAction
+from lawvm.core.ir import IRNode, LegalAddress, LegalOperation, OperationSource, TextPatchSpec, TextSelector
+from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
 from lawvm.uk_legislation.addressing import _addr_leaf_kind
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import (
@@ -30,9 +30,17 @@ from lawvm.uk_legislation.table_selectors import (
     _uk_table_column_insert_selector,
     _uk_table_entry_row_insert_selector,
 )
+from lawvm.uk_legislation.table_sources import (
+    _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID,
+    _UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID,
+    _UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID,
+    _uk_table_driven_repeal_table_quoted_words_text_repeal,
+    _uk_table_driven_repeal_table_structural_repeal,
+)
 from lawvm.uk_legislation.witness_builders import (
     _uk_target_expansion_witness,
     _uk_temporal_group_id,
+    _uk_text_rewrite_spec,
 )
 from lawvm.uk_legislation.witness_sidecars import (
     _payload_with_rewrite_witness,
@@ -49,6 +57,12 @@ from lawvm.uk_legislation.witnesses import (
 class UKTableLoweringResult:
     handled: bool
     op: Optional[LegalOperation] = None
+
+
+@dataclass(frozen=True)
+class UKTableBatchLoweringResult:
+    handled: bool
+    ops: tuple[LegalOperation, ...] = ()
 
 
 def try_lower_table_column_insert(
@@ -391,6 +405,177 @@ def try_lower_table_row_insert(
     )
 
 
+def try_lower_repeal_table_effect(
+    *,
+    effect: UKEffectRecord,
+    t_str: str,
+    target: LegalAddress,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    source_root: Optional[ET.Element],
+    sequence: int,
+    effect_witness: UKEffectWitness,
+    extraction_witness: UKProvisionExtractionWitness,
+    original_targets_str: list[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKTableBatchLoweringResult:
+    repeal_table_structural_repeal = _uk_table_driven_repeal_table_structural_repeal(
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        source_root=source_root,
+        target=target,
+    )
+    if repeal_table_structural_repeal.recognized and repeal_table_structural_repeal.match_count == 1:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=_UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID,
+            family="source_repeal_table_elaboration",
+            reason_code="unique_repeal_table_extent_row_structural_repeal",
+            reason=(
+                "UK repeal-table source row matched the affected Act and "
+                "provision exactly, and its extent cell names a whole "
+                "provision repeal; lowering emits a typed exact-target "
+                "repeal instead of replaying the broad repeal schedule."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": t_str,
+                "target": str(target),
+                "table_index": repeal_table_structural_repeal.table_index,
+                "row_text": repeal_table_structural_repeal.row_text,
+                "enactment_cell": repeal_table_structural_repeal.enactment_cell,
+                "extent_cell": repeal_table_structural_repeal.extent_cell,
+            },
+        )
+        return UKTableBatchLoweringResult(
+            handled=True,
+            ops=(
+                _build_table_structural_repeal_op(
+                    effect=effect,
+                    sequence=sequence,
+                    target=target,
+                    effect_witness=effect_witness,
+                    extraction_witness=extraction_witness,
+                    original_targets_str=original_targets_str,
+                    t_str=t_str,
+                    witness_rule_id=_UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID,
+                ),
+            ),
+        )
+    if repeal_table_structural_repeal.recognized:
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id=f"{_UK_REPEAL_TABLE_STRUCTURAL_REPEAL_RULE_ID}_unresolved",
+            family="source_repeal_table_elaboration",
+            reason_code=repeal_table_structural_repeal.reason_code,
+            reason=(
+                "UK repeal-table source could not be resolved to one "
+                "exact structural extent row for the affected target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": t_str,
+                "target": str(target),
+                "match_count": repeal_table_structural_repeal.match_count,
+            },
+        )
+        return UKTableBatchLoweringResult(handled=True)
+
+    repeal_table_text_repeal = _uk_table_driven_repeal_table_quoted_words_text_repeal(
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        source_root=source_root,
+        target=target,
+    )
+    if repeal_table_text_repeal.recognized and repeal_table_text_repeal.original:
+        repeal_table_rule_id = repeal_table_text_repeal.rule_id
+        if repeal_table_rule_id == _UK_REPEAL_TABLE_DEFINITION_ENTRY_TEXT_REPEAL_RULE_ID:
+            reason_code = "unique_repeal_table_extent_row_definition_entry"
+            reason = (
+                "UK repeal-table source row matched the affected Act and "
+                "provision exactly, and its extent cell names a definition "
+                "entry repeal; lowering emits definition-entry text deletes "
+                "instead of replaying the broad repeal schedule."
+            )
+        else:
+            reason_code = "unique_repeal_table_extent_row_quoted_words"
+            reason = (
+                "UK repeal-table source row matched the affected Act and "
+                "provision exactly, and its extent cell names a quoted "
+                "word-level repeal; lowering emits a text delete instead "
+                "of replaying the broad repeal schedule."
+            )
+        repeal_table_originals = (
+            repeal_table_text_repeal.original,
+            *repeal_table_text_repeal.additional_originals,
+        )
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=repeal_table_rule_id,
+            family="source_repeal_table_elaboration",
+            reason_code=reason_code,
+            reason=reason,
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": t_str,
+                "target": str(target),
+                "table_index": repeal_table_text_repeal.table_index,
+                "row_text": repeal_table_text_repeal.row_text,
+                "enactment_cell": repeal_table_text_repeal.enactment_cell,
+                "extent_cell": repeal_table_text_repeal.extent_cell,
+                "original": repeal_table_text_repeal.original,
+                "originals": repeal_table_originals,
+                "occurrence": repeal_table_text_repeal.occurrence,
+                "end_occurrence": repeal_table_text_repeal.end_occurrence,
+            },
+        )
+        return UKTableBatchLoweringResult(
+            handled=True,
+            ops=_build_repeal_table_text_ops(
+                effect=effect,
+                sequence=sequence,
+                target=target,
+                originals=repeal_table_originals,
+                occurrence=repeal_table_text_repeal.occurrence,
+                end_occurrence=repeal_table_text_repeal.end_occurrence,
+                rule_id=repeal_table_rule_id,
+                effect_witness=effect_witness,
+                extraction_witness=extraction_witness,
+                original_targets_str=original_targets_str,
+                t_str=t_str,
+            ),
+        )
+    if repeal_table_text_repeal.recognized:
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id=f"{_UK_REPEAL_TABLE_QUOTED_WORDS_TEXT_REPEAL_RULE_ID}_unresolved",
+            family="source_repeal_table_elaboration",
+            reason_code=repeal_table_text_repeal.reason_code,
+            reason=(
+                "UK repeal-table source could not be resolved to one "
+                "bounded quoted-words extent row for the affected target."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": t_str,
+                "target": str(target),
+                "match_count": repeal_table_text_repeal.match_count,
+            },
+        )
+        return UKTableBatchLoweringResult(handled=True)
+    return UKTableBatchLoweringResult(handled=False)
+
+
 def _table_row_insert_payload(
     *,
     selector: dict[str, Any],
@@ -476,6 +661,136 @@ def _table_row_insert_payload(
             for cell_index in range(1, column_index + 1)
         ),
     )
+
+
+def _build_table_structural_repeal_op(
+    *,
+    effect: UKEffectRecord,
+    sequence: int,
+    target: LegalAddress,
+    effect_witness: UKEffectWitness,
+    extraction_witness: UKProvisionExtractionWitness,
+    original_targets_str: list[str],
+    t_str: str,
+    witness_rule_id: str,
+) -> LegalOperation:
+    src = OperationSource(
+        statute_id=effect.affecting_act_id,
+        title=effect.affecting_title,
+        effective=effect_witness.applicability.effective_date or "",
+        raw_text=extraction_witness.extracted_text,
+    )
+    target_expansion_witness = _uk_target_expansion_witness(
+        t_str,
+        [t_str],
+        original_targets_str=original_targets_str,
+    )
+    lowered_witness = UKLoweredOperationWitness(
+        op_id=effect.effect_id,
+        sequence=sequence,
+        action=StructuralAction.REPEAL,
+        target=target,
+        payload=None,
+        source=src,
+        effect_witness=effect_witness,
+        extraction_witness=extraction_witness,
+        target_expansion_witness=target_expansion_witness,
+        text_rewrite_witness=None,
+        insertion_anchor_witness=None,
+    )
+    return LegalOperation(
+        op_id=lowered_witness.op_id,
+        sequence=lowered_witness.sequence,
+        action=StructuralAction.REPEAL,
+        target=target,
+        payload=None,
+        source=src,
+        group_id=_uk_temporal_group_id(effect),
+        provenance_tags=_uk_lowered_op_provenance_tags(lowered_witness),
+        witness_rule_id=witness_rule_id,
+    )
+
+
+def _build_repeal_table_text_ops(
+    *,
+    effect: UKEffectRecord,
+    sequence: int,
+    target: LegalAddress,
+    originals: tuple[str, ...],
+    occurrence: int,
+    end_occurrence: int,
+    rule_id: str,
+    effect_witness: UKEffectWitness,
+    extraction_witness: UKProvisionExtractionWitness,
+    original_targets_str: list[str],
+    t_str: str,
+) -> tuple[LegalOperation, ...]:
+    src = OperationSource(
+        statute_id=effect.affecting_act_id,
+        title=effect.affecting_title,
+        effective=effect_witness.applicability.effective_date or "",
+        raw_text=extraction_witness.extracted_text,
+    )
+    target_expansion_witness = _uk_target_expansion_witness(
+        t_str,
+        [t_str],
+        original_targets_str=original_targets_str,
+    )
+    ops: list[LegalOperation] = []
+    for original_index, original in enumerate(originals):
+        fragment_subs = [
+            {
+                "original": original,
+                "replacement": "",
+                "rule_id": rule_id,
+                "occurrence": str(occurrence),
+                "end_occurrence": str(end_occurrence),
+            }
+        ]
+        text_patch = TextPatchSpec(
+            kind=TextPatchKindEnum.DELETE,
+            selector=TextSelector(
+                match_text=original,
+                occurrence=occurrence,
+                end_occurrence=end_occurrence,
+            ),
+        )
+        text_rewrite_witness = _uk_text_rewrite_spec(
+            fragment_subs=fragment_subs,
+            text_patch=text_patch,
+            op_text_match=original,
+            op_text_replacement="",
+            op_text_occurrence=occurrence,
+            op_text_end_occurrence=end_occurrence,
+        )
+        lowered_witness = UKLoweredOperationWitness(
+            op_id=effect.effect_id if len(originals) == 1 else f"{effect.effect_id}_{original_index}",
+            sequence=sequence,
+            action=StructuralAction.TEXT_REPEAL,
+            target=target,
+            payload=None,
+            source=src,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            target_expansion_witness=target_expansion_witness,
+            text_rewrite_witness=text_rewrite_witness,
+            insertion_anchor_witness=None,
+        )
+        ops.append(
+            LegalOperation(
+                op_id=lowered_witness.op_id,
+                sequence=lowered_witness.sequence,
+                action=StructuralAction.TEXT_REPEAL,
+                target=target,
+                payload=None,
+                source=src,
+                group_id=_uk_temporal_group_id(effect),
+                provenance_tags=_uk_lowered_op_provenance_tags(lowered_witness),
+                text_patch=text_patch,
+                witness_rule_id=rule_id,
+            )
+        )
+    return tuple(ops)
 
 
 def _build_table_payload_op(
