@@ -462,6 +462,7 @@ from lawvm.uk_legislation.table_sources import (
 )
 from lawvm.uk_legislation.text_matching import (
     _normalize_text,
+    _node_text_patch_preimage_present,
     _numeric_list_trailing_comma_replacement_text,
     _numeric_list_trailing_comma_subtree_replacement,
     _rotated_trailing_comma_omission_match,
@@ -6193,24 +6194,6 @@ class UKReplayExecutor:
         self._replace_node_in_statute(node, rebuilt)
         return rebuilt, True
 
-    def _node_text_patch_preimage_present(
-        self,
-        node: UKMutableNode,
-        match: str,
-        occurrence: int,
-        end_occurrence: int = 0,
-    ) -> bool:
-        """Preflight the simple node-local text patches used for multi-cell table edits."""
-        if occurrence != 0 or end_occurrence != 0:
-            return False
-        text = node.text or ""
-        if not text or not match:
-            return False
-        if match in text:
-            return True
-        pattern = _text_patch_pattern(match)
-        return re.search(pattern, text, flags=re.I) is not None
-
     def _apply_text_append_on_subtree_text_end(
         self,
         node: UKMutableNode,
@@ -9666,7 +9649,7 @@ class UKReplayExecutor:
                         preimage_gaps = [
                             str(cell.text or "")[:240]
                             for cell in table_cells
-                            if not self._node_text_patch_preimage_present(
+                            if not _node_text_patch_preimage_present(
                                 cell,
                                 text_patch.selector.match_text,
                                 text_patch.selector.occurrence,
