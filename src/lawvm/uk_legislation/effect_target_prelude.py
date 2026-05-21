@@ -36,11 +36,12 @@ from lawvm.uk_legislation.source_payload_helpers import (
 from lawvm.uk_legislation.schedule_list_selectors import _uk_numbered_schedule_entry_repeal_target
 from lawvm.uk_legislation.source_payload_elaboration import _expand_sibling_targets_from_extracted
 from lawvm.uk_legislation.substitution_metadata import (
+    UKSourceLabelChangingSubstitution,
     _expand_sibling_targets_from_text,
     _source_text_schedule_paragraph_target_override,
 )
 from lawvm.uk_legislation.target_anchors import _fallback_target_eid
-from lawvm.uk_legislation.target_parser import _schedule_part_context_removed_target
+from lawvm.uk_legislation.target_parser import _parse_affected_target, _schedule_part_context_removed_target
 from lawvm.uk_legislation.xml_helpers import _tag
 
 
@@ -59,6 +60,16 @@ _UK_NUMBERED_SCHEDULE_ENTRY_REPEAL_TARGET_REFINED_RULE_ID = (
 class UKTargetPrelude:
     targets_str: list[str]
     mixed_heading_source_ref_by_target: dict[str, str]
+
+
+@dataclass(frozen=True)
+class UKPerTargetContext:
+    heading_facet_target: bool
+    target: LegalAddress
+    payload_match_target: LegalAddress
+    label_changing_substitution: Optional[UKSourceLabelChangingSubstitution]
+    target_replacement_leaf_override: Optional[str]
+    target_replacement_leaf_kind: Optional[str]
 
 
 def expand_single_target_prelude(
@@ -205,6 +216,85 @@ def reject_unsupported_target_facet(
         return True
 
     return False
+
+
+def resolve_effect_target_context(
+    *,
+    effect: UKEffectRecord,
+    action: str,
+    is_word_level: bool,
+    t_str: str,
+    target_index: int,
+    label_changing_substitutions: tuple[UKSourceLabelChangingSubstitution, ...],
+    replacement_leaf_override: Optional[str],
+    replacement_leaf_kind: Optional[str],
+    source_parent_substitution_range_payload: Optional[dict[str, Any]],
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKPerTargetContext:
+    heading_facet_target = _is_heading_only_ref(t_str)
+    parsed_target = _parse_affected_target(t_str)
+    target = parsed_target if _is_direct_section_paragraph_ref(t_str) else canonicalize_uk_address(parsed_target)
+    target = refine_enacted_schedule_table_row_part_target(
+        effect=effect,
+        action=action,
+        t_str=t_str,
+        target=target,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+    label_changing_substitution = next(
+        (
+            substitution
+            for substitution in label_changing_substitutions
+            if tuple(target.path) == tuple(substitution.source_target.path)
+        ),
+        None,
+    )
+    target_replacement_leaf_override = replacement_leaf_override
+    target_replacement_leaf_kind = replacement_leaf_kind
+    if label_changing_substitution is not None:
+        target_replacement_leaf_override = _addr_leaf_label(label_changing_substitution.replacement_target)
+        target_replacement_leaf_kind = _addr_leaf_kind(label_changing_substitution.replacement_target)
+    target = refine_source_text_schedule_paragraph_target(
+        effect=effect,
+        action=action,
+        is_word_level=is_word_level,
+        t_str=t_str,
+        target=target,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+    target = refine_flat_p1para_schedule_insert_target(
+        effect=effect,
+        action=action,
+        t_str=t_str,
+        target=target,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+    payload_match_target = target
+    if label_changing_substitution is not None:
+        payload_match_target = label_changing_substitution.replacement_target
+    elif source_parent_substitution_range_payload is not None and target_index == 0:
+        payload_match_target = LegalAddress(
+            path=(
+                *target.path[:-1],
+                ("item", str(source_parent_substitution_range_payload["payload_label"])),
+            )
+        )
+    return UKPerTargetContext(
+        heading_facet_target=heading_facet_target,
+        target=target,
+        payload_match_target=payload_match_target,
+        label_changing_substitution=label_changing_substitution,
+        target_replacement_leaf_override=target_replacement_leaf_override,
+        target_replacement_leaf_kind=target_replacement_leaf_kind,
+    )
 
 
 def refine_enacted_schedule_table_row_part_target(

@@ -98,11 +98,9 @@ from lawvm.uk_legislation.effect_replace_prelude import plan_replace_effect_prel
 from lawvm.uk_legislation.effect_target_prelude import (
     append_target_shape_observations,
     expand_single_target_prelude,
-    refine_enacted_schedule_table_row_part_target,
-    refine_flat_p1para_schedule_insert_target,
     refine_numbered_schedule_entry_repeal_target,
-    refine_source_text_schedule_paragraph_target,
     reject_unsupported_target_facet,
+    resolve_effect_target_context,
 )
 from lawvm.uk_legislation.addressing import (
     _action_name,
@@ -132,7 +130,6 @@ from lawvm.uk_legislation.heading_facets import (
     _heading_facet_append_fragment,
     _heading_facet_full_replacement_fragment,
     _is_crossheading_ref,
-    _is_direct_section_paragraph_ref,
     _is_heading_only_ref,
 )
 from lawvm.uk_legislation.lowering_records import (
@@ -659,7 +656,6 @@ def compile_effect_to_ir_ops(
         else None
     )
     for target_index, t_str in enumerate(targets_str):
-        heading_facet_target = _is_heading_only_ref(t_str)
         if reject_unsupported_target_facet(
             effect=effect,
             t_str=t_str,
@@ -669,43 +665,37 @@ def compile_effect_to_ir_ops(
             lowering_rejections_out=lowering_rejections_out,
         ):
             continue
-        parsed_target = _parse_affected_target(t_str)
-        target = parsed_target if _is_direct_section_paragraph_ref(t_str) else canonicalize_uk_address(parsed_target)
-        target = refine_enacted_schedule_table_row_part_target(
-            effect=effect,
-            action=action,
-            t_str=t_str,
-            target=target,
-            extracted_el=extracted_el,
-            extracted_text=extracted_text,
-            lowering_rejections_out=lowering_rejections_out,
-        )
-        label_changing_substitution = next(
-            (
-                substitution
-                for substitution in label_changing_substitutions
-                if tuple(target.path) == tuple(substitution.source_target.path)
-            ),
-            None,
-        )
-        target_replacement_leaf_override = replacement_leaf_override
-        target_replacement_leaf_kind = replacement_leaf_kind
-        if label_changing_substitution is not None:
-            target_replacement_leaf_override = _addr_leaf_label(label_changing_substitution.replacement_target)
-            target_replacement_leaf_kind = _addr_leaf_kind(label_changing_substitution.replacement_target)
-        target = refine_source_text_schedule_paragraph_target(
+        target_context = resolve_effect_target_context(
             effect=effect,
             action=action,
             is_word_level=is_word_level,
             t_str=t_str,
+            target_index=target_index,
+            label_changing_substitutions=label_changing_substitutions,
+            replacement_leaf_override=replacement_leaf_override,
+            replacement_leaf_kind=replacement_leaf_kind,
+            source_parent_substitution_range_payload=source_parent_substitution_range_payload,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        heading_facet_target = target_context.heading_facet_target
+        target = target_context.target
+        payload_match_target = target_context.payload_match_target
+        label_changing_substitution = target_context.label_changing_substitution
+        target_replacement_leaf_override = target_context.target_replacement_leaf_override
+        target_replacement_leaf_kind = target_context.target_replacement_leaf_kind
+        flat_p1para_schedule_insert_lowered = False
+        flat_p1para_payload_detail: dict[str, Any] = {}
+        append_target_shape_observations(
+            effect=effect,
+            t_str=t_str,
             target=target,
             extracted_el=extracted_el,
             extracted_text=extracted_text,
             lowering_rejections_out=lowering_rejections_out,
         )
-        flat_p1para_schedule_insert_lowered = False
-        flat_p1para_payload_detail: dict[str, Any] = {}
-        target = refine_flat_p1para_schedule_insert_target(
+        target = refine_numbered_schedule_entry_repeal_target(
             effect=effect,
             action=action,
             t_str=t_str,
@@ -714,16 +704,6 @@ def compile_effect_to_ir_ops(
             extracted_text=extracted_text,
             lowering_rejections_out=lowering_rejections_out,
         )
-        payload_match_target = target
-        if label_changing_substitution is not None:
-            payload_match_target = label_changing_substitution.replacement_target
-        elif source_parent_substitution_range_payload is not None and target_index == 0:
-            payload_match_target = LegalAddress(
-                path=(
-                    *target.path[:-1],
-                    ("item", str(source_parent_substitution_range_payload["payload_label"])),
-                )
-            )
         crossheading_replacement_text = (
             _crossheading_before_anchor_replacement_text(extracted_text)
             if action == "replace" and _is_crossheading_ref(t_str)
