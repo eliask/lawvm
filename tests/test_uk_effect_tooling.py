@@ -1954,6 +1954,173 @@ def test_uk_manual_compile_evidence_jsonl_templates_table_entry_claim() -> None:
     assert template["executable"] is False
 
 
+def test_uk_manual_compile_evidence_jsonl_templates_appropriate_place_claim() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-appropriate-place",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/1/section/8",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 8",
+        affecting_uri="/id/ukpga/2024/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="s. 6",
+        affecting_title="Test Act 2024",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="appropriate_place_insert_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_appropriate_place_insert_rejected",
+                    "blocking": True,
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview="At the appropriate place insert the following subsection.",
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_appropriate_place_candidate",
+            manual_compile_reason="Appropriate-place placement requires a validated anchor.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_appropriate_place_insert_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_appropriate_place_insert_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "appropriate_place_mutation"
+    assert template["placement_family"] == "appropriate_place_requires_anchor_claim"
+    assert "validated_predecessor_or_successor_anchor" in template["required_ownership"]
+    assert "target_container_boundary" in template["required_ownership"]
+    assert "claim_supplies_exact_anchor_or_ordering_rule" in (
+        template["required_validator_checks"]
+    )
+    assert "claim_identifies_target_container_surface" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_structural_sibling_claim() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-sibling-insert",
+        effect_type="paragraph inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/1/section/8/subsection/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 8(1)(a)",
+        affecting_uri="/id/ukpga/2024/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="s. 7",
+        affecting_title="Test Act 2024",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="structural_sibling_insert_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_structural_sibling_insert_rejected",
+                    "blocking": True,
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P2",
+            source_extracted_text_preview="After paragraph (a) insert the following paragraph.",
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="deterministic_frontend_candidate",
+            manual_compile_rule_id="uk_manual_frontier_structural_sibling_insert_candidate",
+            manual_compile_reason="Sibling insertion requires an explicit compiler or claim.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_structural_sibling_insert_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_structural_sibling_insert_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "structural_sibling_insert"
+    assert template["placement_family"] == "source_named_sibling_anchor_required"
+    assert "source_named_sibling_anchor" in template["required_ownership"]
+    assert "sibling_order_boundary" in template["required_ownership"]
+    assert "claim_identifies_exact_parent_and_anchor_sibling" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
 def test_uk_manual_compile_evidence_jsonl_templates_range_to_container_claim() -> None:
     effect = UKEffectRecord(
         effect_id="eff-range-container",

@@ -437,6 +437,10 @@ The template is a reviewer aid, not an operation source. Current templates:
 `uk_manual_frontier_schedule_list_entry_candidate`,
 `table_surface_mutation` for the table-entry/table-column manual frontier
 families,
+`appropriate_place_mutation` for
+`uk_manual_frontier_appropriate_place_candidate`,
+`structural_sibling_insert` for
+`uk_manual_frontier_structural_sibling_insert_candidate`,
 `definition_entry_insert` for
 `uk_manual_frontier_appropriate_place_definition_entry_candidate`, and
 `range_to_container_substitution` for
