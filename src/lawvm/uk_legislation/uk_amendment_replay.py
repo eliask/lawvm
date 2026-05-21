@@ -274,6 +274,104 @@ def _extend_handled_lowering_ops(
     return True
 
 
+@dataclass(frozen=True)
+class _EffectTargetPrelude:
+    targets_str: list[str]
+    original_targets_str: list[str]
+    mixed_heading_source_ref_by_target: dict[str, str]
+    trailing_repeal_refs: list[str]
+    replacement_leaf_override: Optional[str]
+    replacement_leaf_kind: Optional[str]
+    label_changing_substitutions: tuple[UKSourceLabelChangingSubstitution, ...]
+
+
+def _prepare_effect_target_prelude(
+    *,
+    effect: UKEffectRecord,
+    effect_type: str,
+    action: str,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    source_parent_substitution_range_payload: Optional[dict[str, Any]],
+    source_parent_at_end_added_payload: Optional[dict[str, Any]],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> _EffectTargetPrelude | None:
+    raw_affected_provisions = effect.affected_provisions
+    targets_str = _split_metadata_provisions(effect.affected_provisions)
+    original_targets_str = list(targets_str)
+    append_heading_facet_range_expansion_observation(
+        effect=effect,
+        raw_affected_provisions=raw_affected_provisions,
+        targets_str=targets_str,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+    mixed_heading_source_ref_by_target: dict[str, str] = {}
+    trailing_repeal_refs: list[str] = []
+    replacement_leaf_override: Optional[str] = None
+    replacement_leaf_kind: Optional[str] = None
+    label_changing_substitutions: tuple[UKSourceLabelChangingSubstitution, ...] = ()
+    if action == "replace":
+        replace_prelude = plan_replace_effect_prelude(
+            effect=effect,
+            original_targets_str=original_targets_str,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            source_parent_substitution_range_payload=source_parent_substitution_range_payload,
+            lowering_rejections_out=lowering_rejections_out,
+        )
+        targets_str = replace_prelude.targets_str
+        trailing_repeal_refs = replace_prelude.trailing_repeal_refs
+        replacement_leaf_override = replace_prelude.replacement_leaf_override
+        replacement_leaf_kind = replace_prelude.replacement_leaf_kind
+        label_changing_substitutions = replace_prelude.label_changing_substitutions
+    append_source_parent_at_end_added_observation(
+        lowering_rejections_out,
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        source_parent_at_end_added_payload=source_parent_at_end_added_payload,
+    )
+    target_prelude = expand_single_target_prelude(
+        effect=effect,
+        action=action,
+        targets_str=targets_str,
+        original_targets_str=original_targets_str,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+    targets_str = target_prelude.targets_str
+    mixed_heading_source_ref_by_target = target_prelude.mixed_heading_source_ref_by_target
+    append_added_type_source_structuralized_observation(
+        effect=effect,
+        effect_type=effect_type,
+        action=action,
+        targets_str=targets_str,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+    if not targets_str:
+        append_no_targets_rejection(
+            lowering_rejections_out,
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+        )
+        return None
+    return _EffectTargetPrelude(
+        targets_str=targets_str,
+        original_targets_str=original_targets_str,
+        mixed_heading_source_ref_by_target=mixed_heading_source_ref_by_target,
+        trailing_repeal_refs=trailing_repeal_refs,
+        replacement_leaf_override=replacement_leaf_override,
+        replacement_leaf_kind=replacement_leaf_kind,
+        label_changing_substitutions=label_changing_substitutions,
+    )
+
+
 def compile_effect_to_ir_ops(
     effect: UKEffectRecord,
     extracted_el: Optional[ET.Element],
@@ -395,72 +493,25 @@ def compile_effect_to_ir_ops(
             lowering_rejections_out=lowering_rejections_out,
         )
 
-    # ALWAYS split metadata provisions to handle ranges and lists
-    raw_affected_provisions = effect.affected_provisions
-    targets_str = _split_metadata_provisions(effect.affected_provisions)
-    original_targets_str = list(targets_str)
-    append_heading_facet_range_expansion_observation(
-        effect=effect,
-        raw_affected_provisions=raw_affected_provisions,
-        targets_str=targets_str,
-        extracted_el=extracted_el,
-        extracted_text=extracted_text,
-        lowering_rejections_out=lowering_rejections_out,
-    )
-    mixed_heading_source_ref_by_target: dict[str, str] = {}
-    trailing_repeal_refs: list[str] = []
-    replacement_leaf_override: Optional[str] = None
-    replacement_leaf_kind: Optional[str] = None
-    label_changing_substitutions: tuple[UKSourceLabelChangingSubstitution, ...] = ()
-    if action == "replace":
-        replace_prelude = plan_replace_effect_prelude(
-            effect=effect,
-            original_targets_str=original_targets_str,
-            extracted_el=extracted_el,
-            extracted_text=extracted_text,
-            source_parent_substitution_range_payload=source_parent_substitution_range_payload,
-            lowering_rejections_out=lowering_rejections_out,
-        )
-        targets_str = replace_prelude.targets_str
-        trailing_repeal_refs = replace_prelude.trailing_repeal_refs
-        replacement_leaf_override = replace_prelude.replacement_leaf_override
-        replacement_leaf_kind = replace_prelude.replacement_leaf_kind
-        label_changing_substitutions = replace_prelude.label_changing_substitutions
-    append_source_parent_at_end_added_observation(
-        lowering_rejections_out,
-        effect=effect,
-        extracted_el=extracted_el,
-        extracted_text=extracted_text,
-        source_parent_at_end_added_payload=source_parent_at_end_added_payload,
-    )
-    target_prelude = expand_single_target_prelude(
-        effect=effect,
-        action=action,
-        targets_str=targets_str,
-        original_targets_str=original_targets_str,
-        extracted_el=extracted_el,
-        extracted_text=extracted_text,
-        lowering_rejections_out=lowering_rejections_out,
-    )
-    targets_str = target_prelude.targets_str
-    mixed_heading_source_ref_by_target = target_prelude.mixed_heading_source_ref_by_target
-    append_added_type_source_structuralized_observation(
+    target_prelude = _prepare_effect_target_prelude(
         effect=effect,
         effect_type=effect_type,
         action=action,
-        targets_str=targets_str,
         extracted_el=extracted_el,
         extracted_text=extracted_text,
+        source_parent_at_end_added_payload=source_parent_at_end_added_payload,
+        source_parent_substitution_range_payload=source_parent_substitution_range_payload,
         lowering_rejections_out=lowering_rejections_out,
     )
-    if not targets_str:
-        append_no_targets_rejection(
-            lowering_rejections_out,
-            effect=effect,
-            extracted_el=extracted_el,
-            extracted_text=extracted_text,
-        )
+    if target_prelude is None:
         return []
+    targets_str = target_prelude.targets_str
+    mixed_heading_source_ref_by_target = target_prelude.mixed_heading_source_ref_by_target
+    original_targets_str = target_prelude.original_targets_str
+    trailing_repeal_refs = target_prelude.trailing_repeal_refs
+    replacement_leaf_override = target_prelude.replacement_leaf_override
+    replacement_leaf_kind = target_prelude.replacement_leaf_kind
+    label_changing_substitutions = target_prelude.label_changing_substitutions
 
     ops = []
     unlowered_overlap_substitution_targets: list[str] = []
