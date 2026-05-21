@@ -5,9 +5,13 @@ from dataclasses import replace as dc_replace
 from typing import Any, cast
 
 from lawvm.core.ir import LegalAddress, LegalOperation
-from lawvm.uk_legislation.addressing import _action_name, _uk_kind_value
+from lawvm.uk_legislation.addressing import _uk_kind_value
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_replace_children
-from lawvm.uk_legislation.replay_records import _append_uk_replay_adjudication
+from lawvm.uk_legislation.replay_records import (
+    _append_uk_replay_adjudication,
+    uk_replay_action_target_detail,
+    uk_replay_blocking_action_target_detail,
+)
 from lawvm.uk_legislation.replay_table_geometry import (
     resolve_uk_table_entry_row_insert_index,
     strip_uk_identity_attrs_recursive,
@@ -48,15 +52,13 @@ class UKReplayTableApplyMixin:
                 kind=_UK_REPLAY_TABLE_COLUMN_INSERT_UNRESOLVED_RULE_ID,
                 message="UK replay could not resolve the table-column insertion containing target.",
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "target_not_found",
-                    "family": "source_table_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code="target_not_found",
+                    family="source_table_elaboration",
+                ),
             )
             return False
         try:
@@ -81,17 +83,15 @@ class UKReplayTableApplyMixin:
                 kind=_UK_REPLAY_TABLE_COLUMN_INSERT_UNRESOLVED_RULE_ID,
                 message="UK replay could not resolve a source-owned table column insertion.",
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": payload_reason or reason,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code=payload_reason or reason,
                     **detail,
                     **payload_detail,
-                    "family": "source_table_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                    family="source_table_elaboration",
+                ),
             )
             return False
 
@@ -161,20 +161,18 @@ class UKReplayTableApplyMixin:
                 kind=_UK_REPLAY_TABLE_COLUMN_INSERT_UNRESOLVED_RULE_ID,
                 message="UK replay could not prove the table-column insertion boundary.",
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": reason or "payload_row_count_too_large",
-                    "payload_row_count": len(payload_cells),
-                    "payload_rows_consumed": payload_index,
-                    "adjusted_spans": adjusted_spans,
-                    "inserted_cells": inserted_cells,
-                    "matched_rows": tuple(matched_rows[:5]),
-                    "family": "source_table_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code=reason or "payload_row_count_too_large",
+                    payload_row_count=len(payload_cells),
+                    payload_rows_consumed=payload_index,
+                    adjusted_spans=adjusted_spans,
+                    inserted_cells=inserted_cells,
+                    matched_rows=tuple(matched_rows[:5]),
+                    family="source_table_elaboration",
+                ),
             )
             return False
         _append_uk_replay_adjudication(
@@ -185,18 +183,17 @@ class UKReplayTableApplyMixin:
                 "between-columns selector."
             ),
             op=op,
-            detail={
-                "target": str(target),
-                "selector": dict(selector),
-                "payload_row_count": len(payload_cells),
-                "adjusted_spans": adjusted_spans,
-                "inserted_cells": inserted_cells,
-                "matched_rows": tuple(matched_rows[:5]),
-                "family": "source_table_elaboration",
-                "blocking": False,
-                "strict_disposition": "record",
-                "quirks_disposition": "record",
-            },
+            detail=uk_replay_action_target_detail(
+                op,
+                target,
+                blocking=False,
+                selector=dict(selector),
+                payload_row_count=len(payload_cells),
+                adjusted_spans=adjusted_spans,
+                inserted_cells=inserted_cells,
+                matched_rows=tuple(matched_rows[:5]),
+                family="source_table_elaboration",
+            ),
         )
         return True
 
@@ -214,15 +211,13 @@ class UKReplayTableApplyMixin:
                 kind=_UK_REPLAY_TABLE_ENTRY_ROW_INSERT_UNRESOLVED_RULE_ID,
                 message="UK replay could not resolve the table-row insertion containing target.",
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "target_not_found",
-                    "family": "source_table_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code="target_not_found",
+                    family="source_table_elaboration",
+                ),
             )
             return False
         table, insert_index, reason, detail = resolve_uk_table_entry_row_insert_index(node, selector)
@@ -235,16 +230,14 @@ class UKReplayTableApplyMixin:
                     "for table-row insertion."
                 ),
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": reason,
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code=reason,
                     **detail,
-                    "family": "source_table_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                    family="source_table_elaboration",
+                ),
             )
             return False
         payload_kind = _uk_kind_value(new_node.kind).lower()
@@ -254,16 +247,14 @@ class UKReplayTableApplyMixin:
                 kind=_UK_REPLAY_TABLE_ENTRY_ROW_INSERT_UNRESOLVED_RULE_ID,
                 message="UK replay table-row insertion payload was not a table row.",
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "payload_not_row",
-                    "payload_kind": _uk_kind_value(new_node.kind),
-                    "family": "source_table_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code="payload_not_row",
+                    payload_kind=_uk_kind_value(new_node.kind),
+                    family="source_table_elaboration",
+                ),
             )
             return False
         inserted_rows = [new_node] if payload_kind == "row" else [
@@ -275,16 +266,14 @@ class UKReplayTableApplyMixin:
                 kind=_UK_REPLAY_TABLE_ENTRY_ROW_INSERT_UNRESOLVED_RULE_ID,
                 message="UK replay table-row insertion payload had no table rows.",
                 op=op,
-                detail={
-                    "target": str(target),
-                    "selector": dict(selector),
-                    "reason_code": "payload_has_no_rows",
-                    "payload_kind": _uk_kind_value(new_node.kind),
-                    "family": "source_table_elaboration",
-                    "blocking": True,
-                    "strict_disposition": "block",
-                    "quirks_disposition": "record",
-                },
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    selector=dict(selector),
+                    reason_code="payload_has_no_rows",
+                    payload_kind=_uk_kind_value(new_node.kind),
+                    family="source_table_elaboration",
+                ),
             )
             return False
         for row in inserted_rows:
@@ -300,17 +289,16 @@ class UKReplayTableApplyMixin:
                 "table-entry selector."
             ),
             op=op,
-            detail={
-                "target": str(target),
-                "selector": dict(selector),
-                "insert_index": insert_index,
-                "inserted_row_count": len(inserted_rows),
+            detail=uk_replay_action_target_detail(
+                op,
+                target,
+                blocking=False,
+                selector=dict(selector),
+                insert_index=insert_index,
+                inserted_row_count=len(inserted_rows),
                 **detail,
-                "family": "source_table_elaboration",
-                "blocking": False,
-                "strict_disposition": "record",
-                "quirks_disposition": "record",
-            },
+                family="source_table_elaboration",
+            ),
         )
         return True
 

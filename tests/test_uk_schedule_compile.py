@@ -14206,7 +14206,10 @@ def test_replay_table_entry_row_insert_blocks_ambiguous_table() -> None:
         if adjudication.kind == "uk_replay_table_entry_row_insert_unresolved"
     )
     assert unresolved.detail["reason_code"] == "table_not_unique"
+    assert unresolved.detail["action"] == "insert"
+    assert unresolved.detail["target"] == "section:159/subsection:5"
     assert unresolved.detail["blocking"] is True
+    assert unresolved.detail["strict_disposition"] == "block"
 
 
 def test_compile_schedule_list_entry_table_payload_preserves_rows() -> None:
@@ -15075,6 +15078,10 @@ def test_replay_table_column_insert_adjusts_spanning_header_and_rows() -> None:
     assert [cell.text for cell in table.children[2].children] == ["1", "\u00a325", "\u00a350", "\u00a3200"]
     assert [cell.text for cell in table.children[3].children] == ["2", "\u00a350", "\u00a3100", "\u00a3500"]
     assert [adjudication.kind for adjudication in adjudications] == ["uk_effect_table_column_insert"]
+    assert adjudications[0].detail["action"] == "insert"
+    assert adjudications[0].detail["target"] == "section:122"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
     assert adjudications[0].detail["adjusted_spans"] == 1
     assert adjudications[0].detail["inserted_cells"] == 3
 
