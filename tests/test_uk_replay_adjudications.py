@@ -1722,6 +1722,65 @@ def test_executor_applies_before_child_text_patch_without_flattening_children() 
     assert adjudications[0].detail["source_shape"] == "source_carried_before_child_selector"
 
 
+def test_executor_blocks_after_child_text_patch_when_anchor_is_ambiguous() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="ukpga/2020/17",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="11",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            children=(
+                                IRNode(
+                                    kind=IRNodeKind.PARAGRAPH,
+                                    label="b",
+                                    children=(
+                                        IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="i", text="first"),
+                                        IRNode(kind=IRNodeKind.SUBPARAGRAPH, label="i", text="second"),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_after_child_ambiguous_anchor",
+            sequence=1,
+            action=StructuralAction.TEXT_REPLACE,
+            target=LegalAddress(path=(("section", "11"), ("subsection", "1"), ("paragraph", "b"))),
+            text_patch=TextPatchSpec(
+                kind=TextPatchKindEnum.REPLACE,
+                selector=TextSelector(match_text="TEXT_AFTER_CHILD_subparagraph_i", occurrence=0),
+                replacement="or",
+            ),
+            source=_source(),
+        )
+    )
+
+    subparagraphs = executor.statute.body.children[0].children[0].children[0].children
+    assert [child.text for child in subparagraphs] == ["first", "second"]
+    assert [finding.kind for finding in adjudications] == ["uk_replay_text_match_synthetic_selector_gap"]
+    assert adjudications[0].detail["text_match"] == "TEXT_AFTER_CHILD_subparagraph_i"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+
+
 def test_executor_classifies_normalized_preimage_present_text_match_gap() -> None:
     adjudications: list[CompileAdjudication] = []
     statute = IRStatute(

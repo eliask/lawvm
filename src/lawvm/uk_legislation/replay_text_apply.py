@@ -606,17 +606,12 @@ class UKReplayTextApplyMixin:
                 return node, False
             child_kind = child_match.group(1)
             child_label = child_match.group(2)
-            anchor_path: Optional[tuple[int, ...]] = None
-            recovered_anchor_kind = False
+            anchor_paths: list[tuple[int, ...]] = []
 
             def _find_child_anchor(n: UKMutableNode, path: tuple[int, ...] = ()) -> None:
-                nonlocal anchor_path
-                if anchor_path is not None:
-                    return
                 kind_value = n.kind.value if isinstance(n.kind, IRNodeKind) else str(n.kind)
                 if kind_value == child_kind and _clean_num(n.label or "") == _clean_num(child_label):
-                    anchor_path = path
-                    return
+                    anchor_paths.append(path)
                 for i, child in enumerate(n.children):
                     _find_child_anchor(child, path + (i,))
 
@@ -627,8 +622,9 @@ class UKReplayTextApplyMixin:
                 return current
 
             _find_child_anchor(node)
-            if anchor_path is None:
+            if len(anchor_paths) != 1:
                 return node, False
+            anchor_path = anchor_paths[0]
             target_node = _node_at_child_path(node, anchor_path)
             joiner = "" if replacement.startswith((" ", ",", ".", ";", ":", ")")) else " "
             new_text = f"{(target_node.text or '').rstrip()}{joiner}{replacement}".rstrip()
@@ -638,6 +634,8 @@ class UKReplayTextApplyMixin:
                 dc_replace(target_node, text=new_text),
             )
             self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_source_carried_after_child_text_rewrite_applied")
             return rebuilt, True
 
         if match.startswith("TEXT_BEFORE_DEFINITION_"):
