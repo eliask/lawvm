@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 from lawvm.uk_legislation import replay_recovery_observations as recovery_obs
 from lawvm.uk_legislation import source_adjudication as sa
 from lawvm.uk_legislation.source_adjudication import (
@@ -113,6 +115,11 @@ def test_uk_replay_text_recovery_rules_have_explicit_observation_metadata() -> N
     assert sorted(
         emitted_recovery_rules - set(recovery_obs.UK_REPLAY_RECOVERY_OBSERVATIONS)
     ) == []
+
+
+def test_uk_replay_recovery_observation_rejects_unknown_rule_id() -> None:
+    with pytest.raises(KeyError):
+        recovery_obs.uk_replay_recovery_observation("uk_replay_missing_recovery_metadata")
 
 
 def test_uk_effect_source_pathology_classes_are_explicitly_owned() -> None:
