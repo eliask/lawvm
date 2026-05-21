@@ -27,17 +27,13 @@ import json as json  # noqa: F401
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any, List, Optional, cast
+from typing import Any, List, Optional
 
 from lawvm.core.ir import (
     IRStatute,
     LegalOperation,
 )
-from lawvm.core.semantic_types import IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.uk_legislation.uk_grafter import (
-    _clean_num,
-)
 from lawvm.uk_legislation.uk_grafter import _LEG_NS as _LEG_NS  # noqa: F401
 from lawvm.uk_legislation.effects import (
     UKEffectRecord,
@@ -66,13 +62,12 @@ from lawvm.uk_legislation.effect_operation_builder import (
     build_lowered_operations_for_text_patches,
 )
 from lawvm.uk_legislation.effect_payload_rejections import (
-    reject_broad_schedule_flat_replace_payload,
     reject_missing_structural_payload,
     reject_mixed_heading_structural_insert_missing_payload,
-    reject_non_substantive_structural_payload,
 )
 from lawvm.uk_legislation.effect_payload_normalization import (
     extract_uk_structural_payload_ir,
+    prepare_uk_operation_payload_node,
 )
 from lawvm.uk_legislation.effect_crossheading_prelude import (
     append_crossheading_group_repeal_observation,
@@ -106,8 +101,6 @@ from lawvm.uk_legislation.effect_target_prelude import (
 )
 from lawvm.uk_legislation.addressing import (
     _action_name,
-    _addr_leaf_kind,
-    _addr_leaf_label,
     _order_schedule_materialization_ops,
 )
 from lawvm.uk_legislation.authority_filter import (
@@ -135,9 +128,6 @@ from lawvm.uk_legislation.lowering_actions import (
 from lawvm.uk_legislation.metadata_rewrites import (
     _uk_metadata_renumber_targets,
     _uk_source_text_corrected_renumber_targets,
-)
-from lawvm.uk_legislation.mutable_ir import (
-    UKMutableNode,
 )
 from lawvm.uk_legislation.provision_extractor import (
     _instruction_text_before_amendment_container,
@@ -169,11 +159,6 @@ from lawvm.uk_legislation.ordering import (
     _order_uk_effects_for_replay,
     _order_uk_text_patch_preimage_chains,
 )
-from lawvm.uk_legislation.payload_identity import (
-    _synthesize_payload_descendant_eids,
-    _synthesize_whole_schedule_payload_descendant_eids,
-)
-from lawvm.uk_legislation.payload_conversion import _to_mutable_node
 from lawvm.uk_legislation.replay_applicability import (
     should_replay_nonstructural_ops,
 )
@@ -970,73 +955,24 @@ def compile_effect_to_ir_ops(
                     num = rel_m.group(1)
                     preceding_eid = f"p1-{num}" if "paragraph" in effect.comments.lower() else f"section-{num}"
 
-            # Build payload IRNode (None when fragment substitution handles content)
-            payload_node_mut: Optional[UKMutableNode] = _to_mutable_node(content_ir) if content_ir else None
-            if (
-                payload_node_mut is not None
-                and target_replacement_leaf_override
-                and target_replacement_leaf_kind
-                and str(payload_node_mut.kind).lower() == target_replacement_leaf_kind
-            ):
-                payload_node_mut.label = target_replacement_leaf_override
-            if payload_node_mut is not None and curr_action == "insert":
-                leaf_kind = _addr_leaf_kind(target) or ""
-                leaf_label = _addr_leaf_label(target) or ""
-                if (
-                    leaf_kind
-                    and leaf_label
-                    and payload_node_mut.kind == leaf_kind
-                    and not _clean_num(payload_node_mut.label or "")
-                ):
-                    payload_node_mut.label = leaf_label
-                leafish_kinds = {"subsection", "paragraph", "subparagraph", "item", "point"}
-                if (
-                    leaf_kind in leafish_kinds
-                    and payload_node_mut.kind in leafish_kinds
-                    and payload_node_mut.kind != leaf_kind
-                    and _clean_num(payload_node_mut.label or "") == _clean_num(leaf_label)
-                ):
-                    payload_node_mut.kind = cast(IRNodeKind, leaf_kind)
-            if payload_node_mut is not None and curr_action in ("insert", "replace"):
-                payload_identity_target = payload_match_target if curr_action == "replace" else target
-                payload_node_mut = _synthesize_whole_schedule_payload_descendant_eids(
-                    payload_node_mut,
-                    target=payload_identity_target,
-                    effect=effect,
-                    lowering_records_out=lowering_rejections_out,
-                    allow_payload_identity_synthesis=allow_payload_identity_synthesis,
-                )
-                payload_node_mut = _synthesize_payload_descendant_eids(
-                    payload_node_mut,
-                    target=payload_identity_target,
-                    effect=effect,
-                    lowering_records_out=lowering_rejections_out,
-                    allow_payload_identity_synthesis=allow_payload_identity_synthesis,
-                )
-
-            if reject_non_substantive_structural_payload(
+            payload_preparation = prepare_uk_operation_payload_node(
                 effect=effect,
                 curr_action=curr_action,
-                t_str=t_str,
-                payload_node_mut=payload_node_mut,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                lowering_rejections_out=lowering_rejections_out,
-            ):
-                continue
-            if reject_broad_schedule_flat_replace_payload(
-                effect=effect,
-                curr_action=curr_action,
-                t_str=t_str,
+                content_ir=content_ir,
+                target_ref=t_str,
                 target=target,
-                payload_node_mut=payload_node_mut,
+                payload_match_target=payload_match_target,
+                target_replacement_leaf_override=target_replacement_leaf_override,
+                target_replacement_leaf_kind=target_replacement_leaf_kind,
                 actual_el=actual_el,
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
+                allow_payload_identity_synthesis=allow_payload_identity_synthesis,
                 lowering_rejections_out=lowering_rejections_out,
-            ):
+            )
+            if payload_preparation.skip_effect:
                 continue
-            payload_node = payload_node_mut.to_irnode() if payload_node_mut is not None else None
+            payload_node = payload_preparation.payload_node
             text_patch_items = build_uk_text_patch_items(
                 curr_action=curr_action,
                 fragment_subs=fragment_subs,
