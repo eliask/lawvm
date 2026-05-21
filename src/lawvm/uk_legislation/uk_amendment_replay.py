@@ -96,6 +96,7 @@ from lawvm.uk_legislation.effect_lowering_tail import (
 )
 from lawvm.uk_legislation.effect_crossheading_prelude import (
     build_crossheading_context,
+    build_crossheading_compound_heading_op,
     reject_unsupported_crossheading_replace,
 )
 from lawvm.uk_legislation.effect_replace_prelude import plan_replace_effect_prelude
@@ -760,83 +761,19 @@ def compile_effect_to_ir_ops(
             lowering_rejections_out=lowering_rejections_out,
         )
         if crossheading_compound_heading_text is not None:
-            heading_target = LegalAddress(path=target.path, special=FacetKind.HEADING)
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id=_CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE,
-                family="target_facet_lowering",
-                reason_code="explicit_crossheading_and_structural_replacement_split",
-                reason=(
-                    "UK source replaces a provision and its cross-heading from a "
-                    "single titled payload; lowering emits a separate heading "
-                    "facet patch and leaves the structural payload on the named "
-                    "provision target."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "target_ref": t_str,
-                    "structural_target": str(target),
-                    "heading_target": str(heading_target),
-                    "replacement_text_preview": crossheading_compound_heading_text[:200],
-                },
-            )
-            fragment_subs_for_heading = [
-                {
-                    "original": "TEXT_ALL",
-                    "replacement": crossheading_compound_heading_text,
-                    "rule_id": _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
-                }
-            ]
-            heading_text_patch = TextPatchSpec(
-                kind=TextPatchKindEnum.REPLACE,
-                selector=TextSelector(match_text="TEXT_ALL", occurrence=0),
-                replacement=crossheading_compound_heading_text,
-            )
-            src = OperationSource(
-                statute_id=effect.affecting_act_id,
-                title=effect.affecting_title,
-                effective=effect_witness.applicability.effective_date or "",
-                raw_text=extraction_witness.extracted_text,
-            )
-            target_expansion_witness = _uk_target_expansion_witness(
-                t_str,
-                [t_str],
-                original_targets_str=original_targets_str,
-            )
-            text_rewrite_witness = _uk_text_rewrite_spec(
-                fragment_subs=fragment_subs_for_heading,
-                text_patch=heading_text_patch,
-                op_text_match="TEXT_ALL",
-                op_text_replacement=crossheading_compound_heading_text,
-                op_text_occurrence=0,
-            )
-            lowered_witness = UKLoweredOperationWitness(
-                op_id=f"{effect.effect_id}_crossheading",
-                sequence=sequence,
-                action=StructuralAction.TEXT_REPLACE,
-                target=heading_target,
-                payload=None,
-                source=src,
-                effect_witness=effect_witness,
-                extraction_witness=extraction_witness,
-                target_expansion_witness=target_expansion_witness,
-                text_rewrite_witness=text_rewrite_witness,
-                insertion_anchor_witness=None,
-            )
             ops.append(
-                LegalOperation(
-                    op_id=lowered_witness.op_id,
-                    sequence=lowered_witness.sequence,
-                    action=lowered_witness.action,
-                    target=lowered_witness.target,
-                    payload=None,
-                    source=lowered_witness.source,
-                    group_id=_uk_temporal_group_id(effect),
-                    provenance_tags=_uk_lowered_op_provenance_tags(lowered_witness),
-                    text_patch=heading_text_patch,
-                    witness_rule_id=_CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE,
+                build_crossheading_compound_heading_op(
+                    effect=effect,
+                    t_str=t_str,
+                    target=target,
+                    replacement_text=crossheading_compound_heading_text,
+                    sequence=sequence,
+                    effect_witness=effect_witness,
+                    extraction_witness=extraction_witness,
+                    original_targets_str=original_targets_str,
+                    extracted_el=extracted_el,
+                    extracted_text=extracted_text,
+                    lowering_rejections_out=lowering_rejections_out,
                 )
             )
         schedule_table_end_rows_selector = (
