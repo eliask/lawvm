@@ -4,16 +4,39 @@ from __future__ import annotations
 
 from dataclasses import replace as dc_replace
 
-from lawvm.core.ir import LegalOperation
+from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
+from lawvm.uk_legislation.addressing import _action_name, _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.canonicalize import canonicalize_uk_address
 from lawvm.uk_legislation.metadata_rewrites import _renumbered_descendant_text
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_insert_child_sorted
+from lawvm.uk_legislation.replay_records import _append_uk_replay_adjudication
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
 class UKReplayRenumberApplyMixin:
+
+    def _apply_renumber_op(self, op: LegalOperation, target: LegalAddress) -> None:
+        if self._apply_same_provision_descendant_renumber(op):
+            self._record_invariant_violations(op)
+            self._emit_top_section_snapshot(op)
+            return
+        if self._apply_same_parent_sibling_renumber(op):
+            self._record_invariant_violations(op)
+            self._emit_top_section_snapshot(op)
+            return
+        self._log(f"  EXECUTOR: unsupported renumber shape — skipping {op.op_id}")
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind="uk_replay_unsupported_action",
+            message="UK replay skipped unsupported action.",
+            op=op,
+            detail={
+                "action": _action_name(op.action),
+                "target": str(target),
+                "destination": str(op.destination) if op.destination is not None else "",
+            },
+        )
 
     def _apply_same_provision_descendant_renumber(self, op: LegalOperation) -> bool:
         source_target = canonicalize_uk_address(op.target)
@@ -94,4 +117,3 @@ class UKReplayRenumberApplyMixin:
         source_parent.children.pop(source_idx)
         uk_insert_child_sorted(source_parent, moved)
         return True
-
