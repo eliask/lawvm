@@ -108,6 +108,7 @@ def test_uk_replay_source_shape_residual_table_is_owned() -> None:
 def test_classify_uk_replay_adjudication_bucket() -> None:
     cases = {
         "uk_replay_target_not_found": "replay_bug",
+        "uk_replay_text_patch_missing_structured_payload": "replay_bug",
         "uk_replay_definition_child_shape_gap": "source_shape",
         "uk_replay_definition_anchor_lexical_variant_recovered": "source_shape",
         "uk_replay_definition_entry_shape_gap": "source_shape",
