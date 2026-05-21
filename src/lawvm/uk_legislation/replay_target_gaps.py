@@ -120,6 +120,252 @@ def uk_replace_payload_kind_mismatch_gap(op: LegalOperation, scoped_violation: s
     )
 
 
+def uk_part_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
+    if "part out of order:" not in scoped_violation.lower():
+        return False
+    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    if not target_path:
+        return False
+    part_labels = [str(label or "") for kind, label in target_path if str(kind or "").lower() == "part"]
+    if not part_labels:
+        return False
+    leaf_text = _clean_num(part_labels[-1])
+    violation = str(scoped_violation or "")
+    match = re.search(r"part out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
+
+    def normalize(text: str) -> str:
+        return re.sub(r"^(?:part)\s*", "", text.strip(), flags=re.I)
+
+    def numeric(text: str) -> bool:
+        return bool(re.fullmatch(r"\d+", normalize(text)))
+
+    def roman(text: str) -> bool:
+        return bool(re.fullmatch(r"(?:part)?[ivxlcdm]+", text, re.I))
+
+    schedule_labels = [
+        _clean_num(str(label or "")) for kind, label in target_path if str(kind or "").lower() == "schedule"
+    ]
+    if schedule_labels and any(re.fullmatch(r"\d+[a-z]+", label, re.I) for label in schedule_labels if label):
+        return True
+    if re.fullmatch(r"(?:[a-z]+\d+[a-z0-9]*|\d+[a-z][a-z0-9]*)", leaf_text):
+        return True
+    if match is None:
+        return False
+    left = _clean_num(normalize(match.group(1)))
+    right = _clean_num(normalize(match.group(2)))
+    return (numeric(left) and roman(right)) or (roman(left) and numeric(right))
+
+
+def uk_chapter_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
+    if "chapter out of order:" not in scoped_violation.lower():
+        return False
+    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    if not target_path or str(target_path[-1][0] or "").lower() != "chapter":
+        return False
+    violation = str(scoped_violation or "")
+    match = re.search(r"chapter out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
+    if match is None:
+        return False
+
+    def normalize(text: str) -> str:
+        return re.sub(r"^(?:chapter)\s*", "", text.strip(), flags=re.I)
+
+    left = _clean_num(normalize(match.group(1)))
+    right = _clean_num(normalize(match.group(2)))
+
+    def mixed(text: str) -> bool:
+        return bool(re.fullmatch(r"(?:[a-z]+\d+[a-z0-9]*|\d+[a-z][a-z0-9]*)", text, re.I))
+
+    def numeric(text: str) -> bool:
+        return bool(re.fullmatch(r"\d+", text))
+
+    return (
+        (numeric(left) and mixed(right))
+        or (mixed(left) and numeric(right))
+        or (mixed(left) and mixed(right))
+        or left == right
+    )
+
+
+def uk_section_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
+    if "section out of order:" not in scoped_violation.lower():
+        return False
+    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    if not target_path or str(target_path[-1][0] or "").lower() != "section":
+        return False
+    leaf_text = _clean_num(str(target_path[-1][1] or ""))
+    violation = str(scoped_violation or "")
+
+    def mixed(text: str) -> bool:
+        return bool(
+            re.fullmatch(
+                r"(?:\d+[a-z]+\d+[a-z0-9]*|\d+[a-z]{2,}|\d+[a-z]\d[a-z0-9]*|[a-z]+\d+[a-z0-9]*)",
+                text,
+                re.I,
+            )
+        )
+
+    if mixed(leaf_text):
+        return True
+    if leaf_text and not re.fullmatch(r"\d+[a-z]*", leaf_text, re.I):
+        return True
+    match = re.search(r"section out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
+    if match is None:
+        return False
+    left = _clean_num(match.group(1))
+    right = _clean_num(match.group(2))
+
+    def numeric(text: str) -> bool:
+        return bool(re.fullmatch(r"\d+", text))
+
+    return (numeric(left) and mixed(right)) or (mixed(left) and numeric(right)) or (mixed(left) and mixed(right))
+
+
+def uk_paragraph_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
+    if "paragraph out of order:" not in scoped_violation.lower():
+        return False
+    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    if not target_path:
+        return False
+    paragraph_labels = [str(label or "") for kind, label in target_path if str(kind or "").lower() == "paragraph"]
+    if not paragraph_labels:
+        return False
+    leaf_text = _clean_num(paragraph_labels[-1])
+
+    def mixed(text: str) -> bool:
+        return bool(re.fullmatch(r"(?:\d+[a-z][a-z0-9]*|[a-z]+\d+[a-z0-9]*)", text, re.I))
+
+    def pure_alpha(text: str) -> bool:
+        return bool(re.fullmatch(r"[a-z]+", text, re.I))
+
+    def pure_num(text: str) -> bool:
+        return bool(re.fullmatch(r"\d+", text))
+
+    def pure_roman(text: str) -> bool:
+        return bool(re.fullmatch(r"[ivxlcdm]+", text, re.I))
+
+    def alpha_suffix(text: str) -> bool:
+        return bool(re.fullmatch(r"[a-z]{2,}", text, re.I))
+
+    if mixed(leaf_text) or alpha_suffix(leaf_text):
+        return True
+    violation = str(scoped_violation or "")
+    match = re.search(r"paragraph out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
+    if match is None:
+        return False
+    left = _clean_num(match.group(1))
+    right = _clean_num(match.group(2))
+    return (
+        (mixed(left) and pure_alpha(right))
+        or (pure_alpha(left) and mixed(right))
+        or (mixed(left) and pure_num(right))
+        or (pure_num(left) and mixed(right))
+        or (mixed(left) and mixed(right))
+        or (pure_num(left) and pure_alpha(right))
+        or (pure_alpha(left) and pure_num(right))
+        or (alpha_suffix(left) and pure_alpha(right))
+        or (pure_alpha(left) and alpha_suffix(right))
+        or (pure_roman(left) and pure_alpha(right))
+        or (pure_alpha(left) and pure_roman(right))
+        or (alpha_suffix(left) and pure_roman(right))
+        or (pure_roman(left) and alpha_suffix(right))
+    )
+
+
+def uk_subparagraph_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
+    if "subparagraph out of order:" not in scoped_violation.lower():
+        return False
+    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    if not target_path or str(target_path[-1][0] or "").lower() != "subparagraph":
+        return False
+    leaf_text = _clean_num(str(target_path[-1][1] or ""))
+
+    def pure_roman(text: str) -> bool:
+        return bool(re.fullmatch(r"[ivxlcdm]+", text, re.I))
+
+    def alpha_suffix(text: str) -> bool:
+        return bool(re.fullmatch(r"[a-z]{2,}", text, re.I))
+
+    def mixed(text: str) -> bool:
+        return bool(re.fullmatch(r"(?:\d+[a-z][a-z0-9]*|[a-z]+\d+[a-z0-9]*|[ivxlcdm]+[a-z]+)", text, re.I))
+
+    if mixed(leaf_text) or alpha_suffix(leaf_text):
+        return True
+    violation = str(scoped_violation or "")
+    match = re.search(r"subparagraph out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
+    if match is None:
+        return False
+    left = _clean_num(match.group(1))
+    right = _clean_num(match.group(2))
+    return bool(
+        (mixed(left) and pure_roman(right))
+        or (pure_roman(left) and mixed(right))
+        or (re.fullmatch(r"\d+", left) and mixed(right))
+        or (mixed(left) and re.fullmatch(r"\d+", right))
+        or (mixed(left) and mixed(right))
+        or (alpha_suffix(left) and pure_roman(right))
+        or (pure_roman(left) and alpha_suffix(right))
+        or (alpha_suffix(left) and alpha_suffix(right))
+        or (re.fullmatch(r"\d+", left) and alpha_suffix(right))
+        or (alpha_suffix(left) and re.fullmatch(r"\d+", right))
+    )
+
+
+def uk_item_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
+    if "item out of order:" not in scoped_violation.lower():
+        return False
+    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    if not target_path or str(target_path[-1][0] or "").lower() not in {"subparagraph", "item", "point"}:
+        return False
+    in_schedule = any(str(kind or "").lower() == "schedule" for kind, _ in target_path)
+    raw_leaf_text = str(target_path[-1][1] or "").strip().lower()
+    leaf_text = _clean_num(raw_leaf_text)
+
+    def pure_roman(text: str) -> bool:
+        return bool(re.fullmatch(r"[ivxlcdm]+", text, re.I))
+
+    def pure_alpha(text: str) -> bool:
+        return bool(re.fullmatch(r"[a-z]+", text, re.I))
+
+    def pure_alpha_single(text: str) -> bool:
+        return bool(re.fullmatch(r"[a-z]", text, re.I))
+
+    def alpha_suffix(text: str) -> bool:
+        return bool(re.fullmatch(r"[a-z]{2,}", text, re.I))
+
+    def mixed(text: str) -> bool:
+        return bool(re.fullmatch(r"(?:\d+[a-z][a-z0-9]*|[a-z]+\d+[a-z0-9]*|[ivxlcdm]+[a-z]+)", text, re.I))
+
+    if mixed(leaf_text) or alpha_suffix(leaf_text):
+        return True
+    violation = str(scoped_violation or "")
+    match = re.search(r"item out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
+    if match is None:
+        return False
+    raw_left = str(match.group(1) or "").strip().lower()
+    raw_right = str(match.group(2) or "").strip().lower()
+    left = _clean_num(match.group(1))
+    right = _clean_num(match.group(2))
+    return bool(
+        (mixed(left) and pure_roman(right))
+        or (pure_roman(left) and mixed(right))
+        or (re.fullmatch(r"\d+", left) and mixed(right))
+        or (mixed(left) and re.fullmatch(r"\d+", right))
+        or (mixed(left) and mixed(right))
+        or (alpha_suffix(left) and pure_alpha(right))
+        or (pure_alpha(left) and alpha_suffix(right))
+        or (alpha_suffix(left) and pure_roman(right))
+        or (pure_roman(left) and alpha_suffix(right))
+        or (alpha_suffix(left) and alpha_suffix(right))
+        or (
+            in_schedule
+            and pure_alpha_single(raw_leaf_text)
+            and pure_alpha_single(raw_left)
+            and pure_alpha_single(raw_right)
+        )
+    )
+
+
 def uk_malformed_target_placeholder_label_gap(target: LegalAddress) -> bool:
     path = tuple(getattr(target, "path", ()) or ())
     return any(
