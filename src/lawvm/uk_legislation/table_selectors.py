@@ -530,6 +530,19 @@ def _uk_broad_table_entry_instruction(
     }
 
 
+def _uk_parent_target_before_table_marker(target: LegalAddress) -> LegalAddress | None:
+    path: list[tuple[str, str | None]] = []
+    for kind, label in target.path:
+        kind_norm = str(kind or "").lower()
+        label_norm = str(label or "").lower()
+        if kind_norm in {"table", "cell", "row"} or label_norm == "table":
+            break
+        path.append((kind, label))
+    if not path or len(path) == len(target.path):
+        return None
+    return LegalAddress(path=tuple(path), special=target.special)
+
+
 def _uk_schedule_table_end_rows_selector(
     *,
     target_ref: str,

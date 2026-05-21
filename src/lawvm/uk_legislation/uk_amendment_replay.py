@@ -247,6 +247,7 @@ from lawvm.uk_legislation.table_selectors import (
     _uk_single_table_column_payload,
     _uk_single_table_row_payload,
     _uk_broad_table_entry_instruction,
+    _uk_parent_target_before_table_marker,
     _uk_table_column_text_patch_selector,
     _uk_table_column_insert_selector,
     _uk_table_entry_inline_text_selector,
@@ -1180,19 +1181,6 @@ def _direct_payload_text(el: ET.Element) -> str:
         return parts
 
     return " ".join(" ".join(_collect_local(el)).split())
-
-
-def _uk_parent_target_before_table_marker(target: LegalAddress) -> LegalAddress | None:
-    path: list[tuple[str, str | None]] = []
-    for kind, label in target.path:
-        kind_norm = str(kind or "").lower()
-        label_norm = str(label or "").lower()
-        if kind_norm in {"table", "cell", "row"} or label_norm == "table":
-            break
-        path.append((kind, label))
-    if not path or len(path) == len(target.path):
-        return None
-    return LegalAddress(path=tuple(path), special=target.special)
 
 
 def _whole_schedule_target_root_eid(target: LegalAddress) -> str:
