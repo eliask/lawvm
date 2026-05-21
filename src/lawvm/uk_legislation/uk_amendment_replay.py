@@ -1102,6 +1102,15 @@ def _classify_compiled_effect_source_pathology(
     )
 
 
+def _extracted_tag_and_text(el: Optional[ET.Element]) -> tuple[Optional[str], str]:
+    if el is None:
+        return None, ""
+    return (
+        el.tag.rsplit("}", 1)[-1],
+        " ".join(t.strip() for t in el.itertext() if t and t.strip()),
+    )
+
+
 class UKReplayPipeline:
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root
@@ -1203,7 +1212,12 @@ class UKReplayPipeline:
             xml_bytes = source_context.xml_bytes
             root = source_context.root
 
-            structural_for_replay = e.is_structural_for_replay(applicability_mode=applicability_mode)
+            structural_for_replay = e.is_structural_for_replay(
+                applicability_mode=applicability_mode
+            )
+            replay_applicable = e.is_applicable_for_replay(
+                applicability_mode=applicability_mode
+            )
             lowering_rejection_count_before = (
                 len(lowering_rejections_out) if lowering_rejections_out is not None else 0
             )
@@ -1232,8 +1246,7 @@ class UKReplayPipeline:
                     lowering_rejections=lowering_rejections_out,
                     start_index=lowering_rejection_count_before,
                 )
-            extracted_tag = el.tag.rsplit("}", 1)[-1] if el is not None else None
-            extracted_text = " ".join(t.strip() for t in el.itertext() if t and t.strip()) if el is not None else ""
+            extracted_tag, extracted_text = _extracted_tag_and_text(el)
             source_pathology = _classify_compiled_effect_source_pathology(
                 effect=e,
                 extracted_tag=extracted_tag,
@@ -1248,7 +1261,7 @@ class UKReplayPipeline:
                 effect=e,
                 source_pathology=source_pathology,
                 structural_for_replay=structural_for_replay,
-                replay_applicable=e.is_applicable_for_replay(applicability_mode=applicability_mode),
+                replay_applicable=replay_applicable,
                 compiled_op_count=len(compiled),
             )
 
@@ -1269,9 +1282,7 @@ class UKReplayPipeline:
                     lowering_rejections_out=lowering_rejections_out,
                     lowering_rejection_start_index=lowering_rejection_count_before,
                     compiled_op_count=0,
-                    replay_applicable=e.is_applicable_for_replay(
-                        applicability_mode=applicability_mode
-                    ),
+                    replay_applicable=replay_applicable,
                     structural_for_replay=structural_for_replay,
                 )
                 continue
@@ -1291,14 +1302,11 @@ class UKReplayPipeline:
                 lowering_rejections_out=lowering_rejections_out,
                 lowering_rejection_start_index=lowering_rejection_count_before,
                 compiled_op_count=len(compiled),
-                replay_applicable=e.is_applicable_for_replay(
-                    applicability_mode=applicability_mode
-                ),
+                replay_applicable=replay_applicable,
                 structural_for_replay=structural_for_replay,
             )
             if source_pathology_filter_rejected:
                 continue
-            replay_applicable = e.is_applicable_for_replay(applicability_mode=applicability_mode)
             should_replay_compiled = structural_for_replay or should_replay_nonstructural_ops(
                 e,
                 compiled,
