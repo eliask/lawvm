@@ -1388,6 +1388,10 @@ class UKReplayTextApplyMixin:
                 rebuilt_child = dc_replace(child_node, text=" ".join(new_text.split()).strip())
                 rebuilt = self._replace_descendant_at_path(node, child_path, rebuilt_child)
                 self._replace_node_in_statute(node, rebuilt)
+                if recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_in_definition_child_structured_text_rewrite_applied"
+                    )
                 return rebuilt, True
 
             def _child_ordinal(label: str) -> Optional[int]:
@@ -1490,9 +1494,17 @@ class UKReplayTextApplyMixin:
             replacement_node = dc_replace(text_node, text=new_text)
             if not text_path:
                 self._replace_node_in_statute(text_node, replacement_node)
+                if recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_in_definition_child_flat_ordinal_text_rewrite_applied"
+                    )
                 return replacement_node, True
             rebuilt = self._replace_descendant_at_path(node, text_path, replacement_node)
             self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append(
+                    "uk_replay_in_definition_child_flat_ordinal_text_rewrite_applied"
+                )
             return rebuilt, True
 
         if match.startswith("TEXT_AFTER_DEFINITION_"):
