@@ -548,6 +548,14 @@ class UKReplayTextActionApplyMixin:
                     family = "text_rewrite_recovery"
                     strict_disposition = "record"
                     source_shape = "source_carried_multi_child_selector"
+                elif recovery_rule_id == "uk_replay_amendment_insert_tail_text_rewrite_applied":
+                    message = (
+                        "UK replay applied an amendment-instruction inserted-text rewrite "
+                        "after proving the target text contains an insert anchor."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "amendment_instruction_insert_tail_selector"
                 else:
                     message = (
                         "UK replay applied text-based op after normalizing "
