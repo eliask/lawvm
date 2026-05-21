@@ -6,7 +6,6 @@ from typing import Optional, cast
 
 from lawvm.core.ir import IRNode, LegalAddress, LegalOperation
 from lawvm.uk_legislation.addressing import (
-    _action_name,
     _addr_container,
     _addr_field,
     _addr_leaf_kind,
@@ -29,7 +28,9 @@ from lawvm.uk_legislation.provenance_notes import (
 from lawvm.uk_legislation.provision_extractor import _get_id_sequence
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
+    uk_replay_action_target_detail,
     uk_replay_blocking_action_target_detail,
+    uk_replay_recovery_action_target_detail,
 )
 from lawvm.uk_legislation.replay_target_gaps import (
     uk_crossheading_insert_target_gap,
@@ -80,16 +81,14 @@ class UKReplayInsertApplyMixin:
                             "normalized payload text."
                         ),
                         op=op,
-                        detail={
-                            "action": _action_name(op.action),
-                            "target": str(target),
-                            "payload_kind": str(op.payload.kind),
-                            "payload_label": op.payload.label or "",
-                            "target_resolution_recovery": insert_existing_target_resolution,
-                            "blocking": False,
-                            "strict_disposition": "record",
-                            "quirks_disposition": "record",
-                        },
+                        detail=uk_replay_action_target_detail(
+                            op,
+                            target,
+                            blocking=False,
+                            payload_kind=str(op.payload.kind),
+                            payload_label=op.payload.label or "",
+                            target_resolution_recovery=insert_existing_target_resolution,
+                        ),
                     )
                     return
                 if conflict_detail := uk_existing_target_insert_conflict_detail(node, op):
@@ -101,17 +100,14 @@ class UKReplayInsertApplyMixin:
                             "different normalized payload text."
                         ),
                         op=op,
-                        detail={
-                            "action": _action_name(op.action),
-                            "target": str(target),
-                            "payload_kind": str(op.payload.kind),
-                            "payload_label": op.payload.label or "",
-                            "target_resolution_recovery": insert_existing_target_resolution,
-                            "blocking": True,
-                            "strict_disposition": "block",
-                            "quirks_disposition": "record",
+                        detail=uk_replay_blocking_action_target_detail(
+                            op,
+                            target,
+                            payload_kind=str(op.payload.kind),
+                            payload_label=op.payload.label or "",
+                            target_resolution_recovery=insert_existing_target_resolution,
                             **conflict_detail,
-                        },
+                        ),
                     )
                     return
                 _append_uk_replay_adjudication(
@@ -119,16 +115,13 @@ class UKReplayInsertApplyMixin:
                     kind="uk_replay_existing_target_gap",
                     message="UK replay skipped insert: target path already exists before applying the op.",
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(target),
-                        "payload_kind": str(op.payload.kind),
-                        "payload_label": op.payload.label or "",
-                        "target_resolution_recovery": insert_existing_target_resolution,
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                    },
+                    detail=uk_replay_blocking_action_target_detail(
+                        op,
+                        target,
+                        payload_kind=str(op.payload.kind),
+                        payload_label=op.payload.label or "",
+                        target_resolution_recovery=insert_existing_target_resolution,
+                    ),
                 )
                 return
             # Clone payload so repeated ops (same source for multiple targets) don't share nodes
@@ -445,17 +438,14 @@ class UKReplayInsertApplyMixin:
                 "target parent resolution failed."
             ),
             op=op,
-            detail={
-                "action": _action_name(op.action),
-                "target": str(target),
-                "payload_kind": str(new_node.kind),
-                "payload_label": new_node.label or "",
-                "derived_target_eid": target_eid,
-                "family": "target_resolution_recovery",
-                "blocking": False,
-                "strict_disposition": "block",
-                "quirks_disposition": "apply",
-            },
+            detail=uk_replay_recovery_action_target_detail(
+                op,
+                target,
+                family="target_resolution_recovery",
+                payload_kind=str(new_node.kind),
+                payload_label=new_node.label or "",
+                derived_target_eid=target_eid,
+            ),
         )
         if new_kind == "schedule":
             supplements = list(self.statute.supplements)

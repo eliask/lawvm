@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from lawvm.core.ir import LegalAddress, LegalOperation
-from lawvm.uk_legislation.addressing import _action_name, _addr_leaf_kind, _addr_leaf_label
+from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.canonicalize import uk_kind_matches
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_replace_text
 from lawvm.uk_legislation.provenance_notes import _schedule_list_entry_replace_selector
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
+    uk_replay_action_target_detail,
     uk_replay_blocking_action_target_detail,
 )
 from lawvm.uk_legislation.replay_schedule_list_apply import (
@@ -24,6 +25,22 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 _UK_REPLAY_SOURCE_LABEL_CHANGING_SUBSTITUTION_RESOLVED_RULE_ID = (
     "uk_replay_source_label_changing_substitution_resolved"
 )
+
+
+def _source_label_changing_substitution_detail(
+    op: LegalOperation,
+    target: LegalAddress,
+    node: UKMutableNode,
+    new_node: UKMutableNode,
+) -> dict[str, object]:
+    return uk_replay_action_target_detail(
+        op,
+        target,
+        blocking=False,
+        source_label=str(node.label or ""),
+        replacement_label=str(new_node.label or ""),
+        family="lineage_normalization",
+    )
 
 
 class UKReplayReplaceApplyMixin:
@@ -83,15 +100,13 @@ class UKReplayReplaceApplyMixin:
                             "deletion after resolving both labelled child endpoints."
                         ),
                         op=op,
-                        detail={
-                            "action": _action_name(op.action),
-                            "target": str(target),
-                            "family": "text_rewrite_recovery",
-                            "blocking": False,
-                            "strict_disposition": "record",
-                            "quirks_disposition": "record",
+                        detail=uk_replay_action_target_detail(
+                            op,
+                            target,
+                            blocking=False,
+                            family="text_rewrite_recovery",
                             **observation,
-                        },
+                        ),
                     )
                 self._record_invariant_violations(op)
             else:
@@ -139,15 +154,12 @@ class UKReplayReplaceApplyMixin:
                                     "the new labelled payload."
                                 ),
                                 op=op,
-                                detail={
-                                    "target": str(target),
-                                    "source_label": str(node.label or ""),
-                                    "replacement_label": str(new_node.label or ""),
-                                    "family": "lineage_normalization",
-                                    "blocking": False,
-                                    "strict_disposition": "record",
-                                    "quirks_disposition": "record",
-                                },
+                                detail=_source_label_changing_substitution_detail(
+                                    op,
+                                    target,
+                                    node,
+                                    new_node,
+                                ),
                             )
                         self._record_invariant_violations(op)
                     elif idx is not None and node in self.statute.supplements:
@@ -162,15 +174,12 @@ class UKReplayReplaceApplyMixin:
                                     "the new labelled payload."
                                 ),
                                 op=op,
-                                detail={
-                                    "target": str(target),
-                                    "source_label": str(node.label or ""),
-                                    "replacement_label": str(new_node.label or ""),
-                                    "family": "lineage_normalization",
-                                    "blocking": False,
-                                    "strict_disposition": "record",
-                                    "quirks_disposition": "record",
-                                },
+                                detail=_source_label_changing_substitution_detail(
+                                    op,
+                                    target,
+                                    node,
+                                    new_node,
+                                ),
                             )
                         self._record_invariant_violations(op)
                 elif node_kind != "content" and new_kind == "content":

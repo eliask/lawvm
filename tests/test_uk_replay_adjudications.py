@@ -2613,6 +2613,9 @@ def test_executor_records_existing_target_conflict_gap() -> None:
     assert len(adjudications) == 1
     assert adjudications[0].kind == "uk_replay_existing_target_conflict_gap"
     assert adjudications[0].detail["target"] == "section:1"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
     assert adjudications[0].detail["existing_text_preview"] == "section one"
     assert adjudications[0].detail["payload_text_preview"] == "duplicate section"
 
@@ -2699,6 +2702,7 @@ def test_executor_records_existing_target_already_materialized() -> None:
     assert adjudications[0].detail["target"] == "section:1"
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
 
 
 def test_executor_records_crossheading_insert_target_gap() -> None:
