@@ -17,6 +17,7 @@ from lawvm.uk_legislation.replay_text_apply import (
     _insert_after_definition_text,
     _remove_trailing_context_word,
     _rewrite_definition_entry_text,
+    _rewrite_flat_definition_child_ordinal_text,
 )
 from lawvm.uk_legislation.source_adjudication import classify_uk_replay_adjudication_bucket
 from lawvm.uk_legislation.uk_amendment_replay import (
@@ -189,6 +190,64 @@ def test_insert_after_definition_text_rejects_unbounded_anchor() -> None:
     assert applied is False
     assert rewritten == original
     assert recovery_rule_ids == ()
+
+
+def test_rewrite_flat_definition_child_ordinal_text_replaces_segment() -> None:
+    rewritten, applied = _rewrite_flat_definition_child_ordinal_text(
+        (
+            '"review partner" means a local authority; '
+            'a clinical commissioning group; a Health Authority; a person; '
+            '"other" means another value;'
+        ),
+        term="review partner",
+        child_label="c",
+        replacement="an integrated care board, or",
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is True
+    assert rewritten == (
+        '"review partner" means a local authority; '
+        'a clinical commissioning group; an integrated care board, or; '
+        'a person; "other" means another value;'
+    )
+
+
+def test_rewrite_flat_definition_child_ordinal_text_deletes_segment() -> None:
+    rewritten, applied = _rewrite_flat_definition_child_ordinal_text(
+        (
+            '"relevant provision" means section 39(1); section 40(1); '
+            'section 41(1); section 42(1); "other provision" means paragraph (d);'
+        ),
+        term="relevant provision",
+        child_label="d",
+        replacement="",
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is True
+    assert rewritten == (
+        '"relevant provision" means section 39(1); section 40(1); '
+        'section 41(1); "other provision" means paragraph (d);'
+    )
+
+
+def test_rewrite_flat_definition_child_ordinal_text_rejects_missing_child() -> None:
+    original = '"review partner" means a local authority; "other" means another value;'
+
+    rewritten, applied = _rewrite_flat_definition_child_ordinal_text(
+        original,
+        term="review partner",
+        child_label="c",
+        replacement="an integrated care board, or",
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is False
+    assert rewritten == original
 
 
 def _uk_table_effect() -> UKEffectRecord:

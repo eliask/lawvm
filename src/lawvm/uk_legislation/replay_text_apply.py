@@ -268,6 +268,43 @@ def _insert_after_definition_text(
     return " ".join(new_text.split()).strip(), True, tuple(recovery_rule_ids)
 
 
+def _rewrite_flat_definition_child_ordinal_text(
+    text: str,
+    *,
+    term: str,
+    child_label: str,
+    replacement: str,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[str, bool]:
+    bounds = _flat_definition_child_bounds(
+        text,
+        term=term,
+        child_label=child_label,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    if bounds is None:
+        return text, False
+    ordinal, body_start, _entry_end, semicolons = bounds
+    segment_start = body_start
+    if ordinal > 1:
+        segment_start = body_start + semicolons[ordinal - 2].end()
+    segment_end = body_start + semicolons[ordinal - 1].end()
+    before = text[:segment_start].rstrip()
+    after = text[segment_end:].lstrip()
+    if replacement:
+        old_segment = text[segment_start:segment_end]
+        terminator = (
+            ";" if old_segment.rstrip().endswith(";") and not replacement.rstrip().endswith(";") else ""
+        )
+        new_segment = f"{replacement.strip()}{terminator}"
+        new_text = f"{before} {new_segment} {after}".strip()
+    else:
+        new_text = f"{before} {after}".strip()
+    return " ".join(new_text.split()).strip(), True
+
+
 def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
     current = n
     for index in path:
@@ -1438,39 +1475,15 @@ class UKReplayTextApplyMixin:
             if len(text_nodes) != 1:
                 return node, False
 
-            def _rewrite_definition_child(text: str) -> tuple[str, bool]:
-                bounds = _flat_definition_child_bounds(
-                    text,
-                    term=term,
-                    child_label=child_label,
-                    allow_punctuation_spacing=allow_punctuation_spacing,
-                    allow_word_punctuation_elision=allow_word_punctuation_elision,
-                )
-                if bounds is None:
-                    return text, False
-                ordinal, body_start, _entry_end, semicolons = bounds
-                segment_start = body_start
-                if ordinal > 1:
-                    segment_start = body_start + semicolons[ordinal - 2].end()
-                segment_end = body_start + semicolons[ordinal - 1].end()
-                before = text[:segment_start].rstrip()
-                after = text[segment_end:].lstrip()
-                if replacement:
-                    old_segment = text[segment_start:segment_end]
-                    terminator = (
-                        ";"
-                        if old_segment.rstrip().endswith(";")
-                        and not replacement.rstrip().endswith(";")
-                        else ""
-                    )
-                    new_segment = f"{replacement.strip()}{terminator}"
-                    new_text = f"{before} {new_segment} {after}".strip()
-                else:
-                    new_text = f"{before} {after}".strip()
-                return " ".join(new_text.split()).strip(), True
-
             text_path, text_node = text_nodes[0]
-            new_text, changed = _rewrite_definition_child(text_node.text or "")
+            new_text, changed = _rewrite_flat_definition_child_ordinal_text(
+                text_node.text or "",
+                term=term,
+                child_label=child_label,
+                replacement=replacement,
+                allow_punctuation_spacing=allow_punctuation_spacing,
+                allow_word_punctuation_elision=allow_word_punctuation_elision,
+            )
             if not changed:
                 return node, False
             replacement_node = dc_replace(text_node, text=new_text)
