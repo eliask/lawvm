@@ -346,6 +346,17 @@ from lawvm.uk_legislation.replay_table_geometry import (
     uk_table_cell_span,
     uk_table_selector_tables,
 )
+from lawvm.uk_legislation.replay_target_gaps import (
+    uk_broad_schedule_table_shape_gap,
+    uk_existing_target_insert_already_materialized,
+    uk_existing_target_insert_conflict_detail,
+    uk_existing_target_insert_gap,
+    uk_malformed_target_note_or_crossheading_gap,
+    uk_malformed_target_placeholder_label_gap,
+    uk_malformed_target_schedule_root_label_gap,
+    uk_malformed_target_sectionlike_label_gap,
+    uk_table_target_shape_gap,
+)
 from lawvm.uk_legislation.schedule_list_selectors import (
     UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID as _UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
     UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID as _UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
@@ -6879,34 +6890,6 @@ class UKReplayExecutor:
                 return True
         return False
 
-    def _table_target_shape_gap(self, target: LegalAddress) -> bool:
-        path = tuple(getattr(target, "path", ()) or ())
-        if not path:
-            return False
-        return any(_clean_num(label or "") == "table" for _, label in path)
-
-    def _broad_schedule_table_shape_gap(self, target: LegalAddress, node: UKMutableNode) -> bool:
-        path = tuple(getattr(target, "path", ()) or ())
-        if _addr_container(target) != "schedule" or not path:
-            return False
-        leaf_kind = str(path[-1][0] or "").lower()
-        if leaf_kind not in {"schedule", "part"}:
-            return False
-        node_kind = str(getattr(node, "kind", "") or "").lower()
-        if node_kind not in {"schedule", "part"}:
-            return False
-        descendant_kinds: set[str] = set()
-        stack = list(getattr(node, "children", []) or [])
-        while stack:
-            curr = stack.pop()
-            curr_kind = str(getattr(curr, "kind", "") or "").lower()
-            descendant_kinds.add(curr_kind)
-            stack.extend(list(getattr(curr, "children", []) or []))
-        if descendant_kinds & {"table", "row", "cell", "header_cell"}:
-            return False
-        provision_kinds = {"paragraph", "subparagraph", "item", "point", "p1group", "section"}
-        return not bool(descendant_kinds & provision_kinds)
-
     def _schedule_unlabeled_paragraph_target_gap(self, target: LegalAddress) -> bool:
         path = tuple(getattr(target, "path", ()) or ())
         if _addr_container(target) != "schedule" or len(path) < 3:
@@ -6984,7 +6967,7 @@ class UKReplayExecutor:
             for _, label in path
         ):
             return True
-        if self._malformed_target_sectionlike_label_gap(target):
+        if uk_malformed_target_sectionlike_label_gap(target):
             return True
         if _addr_container(target) == "schedule":
             first_kind, first_label = path[0]
@@ -7280,44 +7263,6 @@ class UKReplayExecutor:
                     return True
         return any(_clean_num(label or "") == "and" for _, label in path)
 
-    def _malformed_target_placeholder_label_gap(self, target: LegalAddress) -> bool:
-        path = tuple(getattr(target, "path", ()) or ())
-        return any(
-            str(kind or "").lower() in {"item", "point", "paragraph", "subparagraph"}
-            and bool(re.fullmatch(r"\[[^\]]+\]", str(label or "").strip()))
-            for kind, label in path
-        )
-
-    def _malformed_target_note_or_crossheading_gap(self, target: LegalAddress) -> bool:
-        path = tuple(getattr(target, "path", ()) or ())
-        if any(_clean_num(label or "").lower() == "note" for _, label in path):
-            return True
-        return any(
-            re.sub(r"[^0-9a-z]+", "", _clean_num(label or "").lower()) in {"crossheading", "crossheadings"}
-            for _, label in path
-        )
-
-    def _malformed_target_sectionlike_label_gap(self, target: LegalAddress) -> bool:
-        path = tuple(getattr(target, "path", ()) or ())
-        if not path:
-            return False
-        root_kind, root_label = path[0]
-        if str(root_kind or "").lower() not in {"section", "article", "rule", "regulation"}:
-            return False
-        normalized = re.sub(r"[^0-9a-z]+", "", str(root_label or "").strip().lower())
-        if not normalized:
-            return True
-        if any(ch.isdigit() for ch in normalized):
-            return False
-        return True
-
-    def _malformed_target_schedule_root_label_gap(self, target: LegalAddress) -> bool:
-        path = tuple(getattr(target, "path", ()) or ())
-        if _addr_container(target) != "schedule" or not path:
-            return False
-        first_kind, first_label = path[0]
-        return str(first_kind or "").lower() == "schedule" and not _clean_num(first_label or "")
-
     def _schedule_partition_target_gap(self, target: LegalAddress) -> bool:
         return bool(self._schedule_partition_target_gap_kind(target))
 
@@ -7343,18 +7288,18 @@ class UKReplayExecutor:
         return None
 
     def _malformed_target_gap_kind(self, target: LegalAddress) -> str:
-        if self._malformed_target_placeholder_label_gap(target):
+        if uk_malformed_target_placeholder_label_gap(target):
             return "uk_replay_malformed_target_placeholder_label_gap"
-        if self._malformed_target_note_or_crossheading_gap(target):
+        if uk_malformed_target_note_or_crossheading_gap(target):
             return "uk_replay_malformed_target_note_or_crossheading_gap"
         if self._schedule_unlabeled_paragraph_target_gap(target):
             return "uk_replay_schedule_unlabeled_paragraph_target_gap"
         partition_kind = self._schedule_partition_target_gap_kind(target)
         if partition_kind is not None:
             return partition_kind
-        if self._malformed_target_sectionlike_label_gap(target):
+        if uk_malformed_target_sectionlike_label_gap(target):
             return "uk_replay_malformed_target_sectionlike_label_gap"
-        if self._malformed_target_schedule_root_label_gap(target):
+        if uk_malformed_target_schedule_root_label_gap(target):
             return "uk_replay_malformed_target_schedule_root_label_gap"
         if self._malformed_target_gap(target):
             return "uk_replay_malformed_target_granularity_collapse_gap"
@@ -8496,67 +8441,6 @@ class UKReplayExecutor:
             return True
         return False
 
-    def _existing_target_insert_gap(
-        self,
-        target: LegalAddress,
-        node: Optional[UKMutableNode],
-        op: LegalOperation,
-    ) -> bool:
-        if _action_name(op.action) != "insert" or node is None:
-            return False
-        payload = getattr(op, "payload", None)
-        if payload is None:
-            return True
-        payload_kind = str(getattr(payload, "kind", "") or "")
-        payload_label = _clean_num(str(getattr(payload, "label", "") or ""))
-        target_kind = _addr_leaf_kind(target) or ""
-        target_label = _addr_leaf_label(target) or ""
-        if not (
-            uk_kind_matches(
-                node_kind=payload_kind,
-                target_kind=target_kind,
-                node_label=payload_label,
-                target_label=_clean_num(target_label),
-            )
-            and payload_label == _clean_num(target_label)
-        ):
-            return False
-        return uk_kind_matches(
-            node_kind=str(getattr(node, "kind", "") or ""),
-            target_kind=target_kind,
-            node_label=_clean_num(str(getattr(node, "label", "") or "")),
-            target_label=_clean_num(target_label),
-        ) and _clean_num(str(getattr(node, "label", "") or "")) == _clean_num(target_label)
-
-    def _existing_target_insert_already_materialized(
-        self,
-        node: Optional[UKMutableNode],
-        op: LegalOperation,
-    ) -> bool:
-        payload = getattr(op, "payload", None)
-        if node is None or payload is None:
-            return False
-        existing_text = _normalized_replay_subtree_text(node)
-        payload_text = _normalized_replay_subtree_text(payload)
-        return bool(existing_text and payload_text and existing_text == payload_text)
-
-    def _existing_target_insert_conflict_detail(
-        self,
-        node: Optional[UKMutableNode],
-        op: LegalOperation,
-    ) -> Optional[dict[str, str]]:
-        payload = getattr(op, "payload", None)
-        if node is None or payload is None:
-            return None
-        existing_text = _normalized_replay_subtree_text(node)
-        payload_text = _normalized_replay_subtree_text(payload)
-        if not existing_text or not payload_text or existing_text == payload_text:
-            return None
-        return {
-            "existing_text_preview": existing_text[:240],
-            "payload_text_preview": payload_text[:240],
-        }
-
     def _find_existing_insert_target_by_explicit_parent_leaf(
         self,
         target: LegalAddress,
@@ -8589,7 +8473,7 @@ class UKReplayExecutor:
         if parent_candidate is None:
             return None, None, None, ""
         for child_idx, child in enumerate(parent_candidate.children):
-            if self._match_kind_label(child, leaf_kind, leaf_label) and self._existing_target_insert_gap(
+            if self._match_kind_label(child, leaf_kind, leaf_label) and uk_existing_target_insert_gap(
                 target,
                 child,
                 op,
@@ -10294,7 +10178,7 @@ class UKReplayExecutor:
                             "UK replay skipped text-based op: text_match missing after "
                             "an earlier same-target text patch changed the replay preimage."
                         )
-                    elif self._broad_schedule_table_shape_gap(target, node):
+                    elif uk_broad_schedule_table_shape_gap(target, node):
                         if str(_addr_leaf_kind(target) or "").lower() == "part":
                             kind = "uk_replay_broad_schedule_part_table_shape_gap"
                         else:
@@ -10508,7 +10392,7 @@ class UKReplayExecutor:
                         self._applied_text_patch_targets.setdefault(target_key, []).append(op.op_id)
                     self._record_invariant_violations(op)
                     self._emit_top_section_snapshot(op)
-                elif self._table_target_shape_gap(target):
+                elif uk_table_target_shape_gap(target):
                     _append_uk_replay_adjudication(
                         self.adjudications_out,
                         kind="uk_replay_table_shape_gap",
@@ -10683,8 +10567,8 @@ class UKReplayExecutor:
                         },
                     )
                     return
-                if self._existing_target_insert_gap(target, node, op):
-                    if self._existing_target_insert_already_materialized(node, op):
+                if uk_existing_target_insert_gap(target, node, op):
+                    if uk_existing_target_insert_already_materialized(node, op):
                         _append_uk_replay_adjudication(
                             self.adjudications_out,
                             kind="uk_replay_existing_target_already_materialized",
@@ -10705,7 +10589,7 @@ class UKReplayExecutor:
                             },
                         )
                         return
-                    if conflict_detail := self._existing_target_insert_conflict_detail(node, op):
+                    if conflict_detail := uk_existing_target_insert_conflict_detail(node, op):
                         _append_uk_replay_adjudication(
                             self.adjudications_out,
                             kind="uk_replay_existing_target_conflict_gap",
