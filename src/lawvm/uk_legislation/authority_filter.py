@@ -103,6 +103,40 @@ def _uk_authority_filter_diagnostic(
     }
 
 
+def _apply_uk_authority_mode(
+    *,
+    ops: Sequence[LegalOperation],
+    effect: UKEffectRecord,
+    authority_mode: str,
+    replay_applicable: bool,
+    structural_for_replay: bool,
+    diagnostics_out: list[dict[str, Any]] | None,
+    rule_id: str = "uk_effect_authority_filter_rejected",
+    blocking: bool = True,
+    reason: str = "UK source-text-only authority mode rejected non-source-text replay operations",
+) -> list[LegalOperation]:
+    kept_ops, rejected_ops, rejected_reason_counts = _partition_uk_ops_by_authority_mode(
+        ops,
+        authority_mode,
+    )
+    if rejected_ops and diagnostics_out is not None:
+        diagnostics_out.append(
+            _uk_authority_filter_diagnostic(
+                effect=effect,
+                authority_mode=authority_mode,
+                compiled_op_count=len(ops),
+                rejected_ops=rejected_ops,
+                rejected_reason_counts=rejected_reason_counts,
+                replay_applicable=replay_applicable,
+                structural_for_replay=structural_for_replay,
+                rule_id=rule_id,
+                blocking=blocking,
+                reason=reason,
+            )
+        )
+    return kept_ops
+
+
 def _preceding_eid(op: LegalOperation) -> Optional[str]:
     witness = _witness_for_op(op)
     insertion_anchor_witness = getattr(witness, "insertion_anchor_witness", None)
