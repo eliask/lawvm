@@ -92,6 +92,7 @@ from lawvm.uk_legislation.effect_lowering_tail import (
     build_crossheading_insert_ops,
     build_trailing_repeal_ops,
 )
+from lawvm.uk_legislation.effect_replace_prelude import plan_replace_effect_prelude
 from lawvm.uk_legislation.addressing import (
     _action_name,
     _addr_container,
@@ -239,7 +240,6 @@ from lawvm.uk_legislation.substitution_metadata import (
     _expand_sibling_targets_from_text,
     _repeal_tail_for_substituted_series_replacement,
     _retarget_substituted_series_to_replaced_anchor,
-    _source_label_changing_substitution_series,
     _source_replaced_sibling_count_from_substitution_text,
     _source_text_schedule_paragraph_target_override,
 )
@@ -580,84 +580,19 @@ def compile_effect_to_ir_ops(
     replacement_leaf_kind: Optional[str] = None
     label_changing_substitutions: tuple[UKSourceLabelChangingSubstitution, ...] = ()
     if action == "replace":
-        # Keep the replacement target labels authoritative. The older anchor-
-        # retarget heuristic rewrites live replacement labels back to the
-        # legacy anchor series, which is exactly the kind of compatibility
-        # slop we do not want to keep around.
-        label_changing_substitutions = _source_label_changing_substitution_series(
-            effect.effect_type,
-            original_targets_str,
+        replace_prelude = plan_replace_effect_prelude(
+            effect=effect,
+            original_targets_str=original_targets_str,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            source_parent_substitution_range_payload=source_parent_substitution_range_payload,
+            lowering_rejections_out=lowering_rejections_out,
         )
-        if label_changing_substitutions:
-            targets_str = [substitution.source_ref for substitution in label_changing_substitutions]
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id=_UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID,
-                family="lineage_normalization",
-                reason_code="substituted_for_old_sibling_with_new_payload_label",
-                reason=(
-                    "UK source says a labelled sibling is substituted for an "
-                    "existing sibling, while effect metadata names the new "
-                    "payload label; lowering keeps the executable replace "
-                    "target on the source-named old sibling and preserves the "
-                    "new payload label as the replacement identity."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "substitutions": [
-                        {
-                            "source_ref": substitution.source_ref,
-                            "source_target": str(substitution.source_target),
-                            "replacement_ref": substitution.replacement_ref,
-                            "replacement_target": str(substitution.replacement_target),
-                        }
-                        for substitution in label_changing_substitutions
-                    ],
-                },
-            )
-        if source_parent_substitution_range_payload is not None:
-            trailing_repeal_refs = list(source_parent_substitution_range_payload["trailing_refs"])
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id=_UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID,
-                family="source_context_elaboration",
-                reason_code="payload_fragment_combined_with_parent_substitution_range",
-                reason=(
-                    "UK effect feed row has no effect type and the extracted "
-                    "BlockAmendment contains only the replacement payload, but "
-                    "the source-local parent instruction explicitly substitutes "
-                    "a bounded sibling range; lowering combines those facts into "
-                    "one source-owned replacement plus explicit trailing repeals."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    key: value
-                    for key, value in source_parent_substitution_range_payload.items()
-                    if key != "rule_id"
-                },
-            )
-        else:
-            trailing_repeal_refs = _repeal_tail_for_substituted_series_replacement(
-                effect.effect_type,
-                original_targets_str,
-            )
-        if (
-            trailing_repeal_refs
-            and original_targets_str
-            and not label_changing_substitutions
-            and source_parent_substitution_range_payload is None
-        ):
-            try:
-                replacement_target = _parse_affected_target(original_targets_str[0])
-            except Exception:
-                replacement_target = None
-            if replacement_target is not None:
-                replacement_leaf_override = _addr_leaf_label(replacement_target)
-                replacement_leaf_kind = _addr_leaf_kind(replacement_target)
+        targets_str = replace_prelude.targets_str
+        trailing_repeal_refs = replace_prelude.trailing_repeal_refs
+        replacement_leaf_override = replace_prelude.replacement_leaf_override
+        replacement_leaf_kind = replace_prelude.replacement_leaf_kind
+        label_changing_substitutions = replace_prelude.label_changing_substitutions
     if source_parent_at_end_added_payload is not None:
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
