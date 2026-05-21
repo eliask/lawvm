@@ -15,16 +15,8 @@ from lawvm.uk_legislation.effect_crossheading_prelude import (
     refine_crossheading_or_heading_facet_target,
     reject_unsupported_crossheading_replace,
 )
-from lawvm.uk_legislation.effect_lowering_tail import (
-    append_chained_insertion_anchor_observation,
-    resolve_uk_insertion_anchor_context,
-)
-from lawvm.uk_legislation.effect_operation_builder import (
-    build_lowered_operations_for_text_patches,
-)
 from lawvm.uk_legislation.effect_payload_normalization import (
     extract_uk_structural_payload_ir,
-    prepare_uk_operation_payload_node,
 )
 from lawvm.uk_legislation.effect_payload_rejections import (
     reject_missing_structural_payload,
@@ -36,6 +28,10 @@ from lawvm.uk_legislation.effect_schedule_lowering import (
 )
 from lawvm.uk_legislation.effect_substitution_normalization import (
     lower_substituted_payload_insert_normalization,
+)
+from lawvm.uk_legislation.effect_operation_finalization import (
+    UKFinalizeTargetOperationInput,
+    finalize_uk_target_operation,
 )
 from lawvm.uk_legislation.effect_table_lowering import (
     prepare_table_cell_text_patch_context,
@@ -69,8 +65,7 @@ from lawvm.uk_legislation.source_text_reclassifications import (
     reclassify_word_level_structural_subsection_omission,
 )
 from lawvm.uk_legislation.substitution_metadata import UKSourceLabelChangingSubstitution
-from lawvm.uk_legislation.target_anchors import _fallback_target_eid, _target_anchor_eid
-from lawvm.uk_legislation.text_patch_lowering import build_uk_text_patch_items
+from lawvm.uk_legislation.target_anchors import _fallback_target_eid
 from lawvm.uk_legislation.witnesses import UKEffectWitness, UKProvisionExtractionWitness
 
 
@@ -606,83 +601,30 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
             unlowered_overlap_target=t_str if unlowered_overlap_reason else "",
             unlowered_overlap_reason=unlowered_overlap_reason,
         )
-    anchor_context = resolve_uk_insertion_anchor_context(
-        effect=effect,
-        curr_action=curr_action,
-        target=target,
-        chained_insert_preceding_eid=ctx.chained_insert_anchor.preceding_eid,
-        chained_insert_preceding_eid_source=ctx.chained_insert_anchor.preceding_eid_source,
-        extracted_el=extracted_el,
-        extracted_text=extracted_text,
-    )
-    preceding_eid = anchor_context.preceding_eid
-    preceding_eid_source = anchor_context.preceding_eid_source
-    following_eid = anchor_context.following_eid
-    following_eid_source = anchor_context.following_eid_source
-
-    payload_preparation = prepare_uk_operation_payload_node(
-        effect=effect,
-        curr_action=curr_action,
-        content_ir=content_ir,
-        target_ref=t_str,
-        target=target,
-        payload_match_target=payload_match_target,
-        target_replacement_leaf_override=target_replacement_leaf_override,
-        target_replacement_leaf_kind=target_replacement_leaf_kind,
-        actual_el=actual_el,
-        extracted_el=extracted_el,
-        extracted_text=extracted_text,
-        allow_payload_identity_synthesis=ctx.allow_payload_identity_synthesis,
-        lowering_rejections_out=lowering_rejections_out,
-    )
-    if payload_preparation.skip_effect:
-        return _EffectTargetLoweringResult(
-            ops=target_ops,
-            chained_insert_anchor=ctx.chained_insert_anchor,
-            unlowered_overlap_target=t_str if unlowered_overlap_reason else "",
-            unlowered_overlap_reason=unlowered_overlap_reason,
-        )
-    payload_node = payload_preparation.payload_node
-    text_patch_items = build_uk_text_patch_items(
-        curr_action=curr_action,
-        fragment_subs=fragment_subs,
-        op_text_match=op_text_match,
-        op_text_replacement=op_text_replacement,
-        op_text_occurrence=op_text_occurrence,
-        op_text_end_occurrence=op_text_end_occurrence,
-    )
-
-    append_chained_insertion_anchor_observation(
-        lowering_rejections_out,
-        effect=effect,
-        target_ref=t_str,
-        target=target,
-        preceding_eid=preceding_eid,
-        preceding_eid_source=preceding_eid_source,
-        used_chained_insert_anchor=anchor_context.used_chained_insert_anchor,
-        extracted_el=extracted_el,
-        extracted_text=extracted_text,
-    )
-    target_ops.extend(
-        build_lowered_operations_for_text_patches(
+    finalization = finalize_uk_target_operation(
+        UKFinalizeTargetOperationInput(
             effect=effect,
             existing_ops_count=ctx.existing_ops_count + len(target_ops),
             sequence=ctx.sequence,
             curr_action=curr_action,
+            content_ir=content_ir,
             target=target,
-            payload_node=payload_node,
+            payload_match_target=payload_match_target,
+            target_replacement_leaf_override=target_replacement_leaf_override,
+            target_replacement_leaf_kind=target_replacement_leaf_kind,
+            actual_el=actual_el,
             target_ref=t_str,
             original_targets_str=ctx.original_targets_str,
             targets_str=ctx.targets_str,
-            text_patch_items=text_patch_items,
+            fragment_subs=fragment_subs,
             op_text_match=op_text_match,
             op_text_replacement=op_text_replacement,
             op_text_occurrence=op_text_occurrence,
             op_text_end_occurrence=op_text_end_occurrence,
-            preceding_eid=preceding_eid,
-            preceding_eid_source=preceding_eid_source,
-            following_eid=following_eid,
-            following_eid_source=following_eid_source,
+            chained_insert_preceding_eid=ctx.chained_insert_anchor.preceding_eid,
+            chained_insert_preceding_eid_source=(
+                ctx.chained_insert_anchor.preceding_eid_source
+            ),
             effect_witness=ctx.effect_witness,
             extraction_witness=ctx.extraction_witness,
             table_cell_selector=table_cell_selector,
@@ -692,18 +634,24 @@ def _lower_effect_target(ctx: _EffectTargetLoweringInput) -> _EffectTargetLoweri
             source_parent_substitution_range_payload=ctx.source_parent_substitution_range_payload,
             source_parent_at_end_added_payload=ctx.source_parent_at_end_added_payload,
             target_index=ctx.target_index,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            allow_payload_identity_synthesis=ctx.allow_payload_identity_synthesis,
+            lowering_rejections_out=lowering_rejections_out,
         )
     )
-    chained_insert_anchor = ctx.chained_insert_anchor
-    if curr_action == "insert" and preceding_eid:
-        target_anchor_eid = _target_anchor_eid(target)
-        if target_anchor_eid:
-            chained_insert_anchor = _ChainedInsertAnchorState(
-                preceding_eid=target_anchor_eid,
-                preceding_eid_source="prior_insert_in_same_effect",
-            )
-    else:
-        chained_insert_anchor = _ChainedInsertAnchorState()
+    if finalization.skip_effect:
+        return _EffectTargetLoweringResult(
+            ops=target_ops,
+            chained_insert_anchor=ctx.chained_insert_anchor,
+            unlowered_overlap_target=t_str if unlowered_overlap_reason else "",
+            unlowered_overlap_reason=unlowered_overlap_reason,
+        )
+    target_ops.extend(finalization.ops)
+    chained_insert_anchor = _ChainedInsertAnchorState(
+        preceding_eid=finalization.chained_insert_preceding_eid,
+        preceding_eid_source=finalization.chained_insert_preceding_eid_source,
+    )
     return _EffectTargetLoweringResult(
         ops=target_ops,
         chained_insert_anchor=chained_insert_anchor,
