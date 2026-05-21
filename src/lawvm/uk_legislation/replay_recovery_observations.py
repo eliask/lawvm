@@ -13,16 +13,6 @@ class UKReplayRecoveryObservation:
     source_shape: str | None = None
 
 
-_DEFAULT_CONTEXTUAL_SELECTOR_OBSERVATION = UKReplayRecoveryObservation(
-    message=(
-        "UK replay applied text-based op after normalizing "
-        "a contextual selector anchor kind."
-    ),
-    family="text_match_recovery",
-    strict_disposition="record",
-)
-
-
 UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
     "uk_replay_definition_predicate_shall_construed_normalized": UKReplayRecoveryObservation(
         message=(
@@ -335,7 +325,4 @@ UK_REPLAY_RECOVERY_OBSERVATIONS: dict[str, UKReplayRecoveryObservation] = {
 
 
 def uk_replay_recovery_observation(rule_id: str) -> UKReplayRecoveryObservation:
-    return UK_REPLAY_RECOVERY_OBSERVATIONS.get(
-        rule_id,
-        _DEFAULT_CONTEXTUAL_SELECTOR_OBSERVATION,
-    )
+    return UK_REPLAY_RECOVERY_OBSERVATIONS[rule_id]
