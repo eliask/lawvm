@@ -17,6 +17,7 @@ from lawvm.uk_legislation.addressing import (
 from lawvm.uk_legislation.canonicalize import canonicalize_uk_address
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.heading_facets import (
+    _expand_heading_facet_section_range_ref,
     _is_heading_facet_word_patch_supported,
     _is_heading_only_ref,
     _is_direct_section_paragraph_ref,
@@ -74,6 +75,76 @@ class UKPerTargetContext:
     label_changing_substitution: Optional[UKSourceLabelChangingSubstitution]
     target_replacement_leaf_override: Optional[str]
     target_replacement_leaf_kind: Optional[str]
+
+
+def append_heading_facet_range_expansion_observation(
+    *,
+    effect: UKEffectRecord,
+    raw_affected_provisions: str,
+    targets_str: list[str],
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> None:
+    heading_facet_range_targets = _expand_heading_facet_section_range_ref(
+        raw_affected_provisions
+    )
+    if not heading_facet_range_targets or targets_str != heading_facet_range_targets:
+        return
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id="uk_effect_heading_facet_range_expanded",
+        family="target_shape_normalization",
+        reason_code="explicit_section_heading_facet_range_expanded",
+        reason=(
+            "UK effect metadata names an explicit range of section titles/headings; "
+            "lowering expands that range into one typed heading facet target per section."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "original_target_ref": raw_affected_provisions,
+            "expanded_targets": list(heading_facet_range_targets),
+        },
+    )
+
+
+def append_added_type_source_structuralized_observation(
+    *,
+    effect: UKEffectRecord,
+    effect_type: str,
+    action: str,
+    targets_str: list[str],
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> None:
+    if effect_type != "added" or action != "insert" or extracted_el is None:
+        return
+    amendment_container = _first_amendment_container(extracted_el)
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id="uk_effect_added_type_source_structuralized",
+        family="effect_feed_normalization",
+        reason_code="nonstructural_added_type_has_source_structural_insert",
+        reason=(
+            "UK effect feed classified the row as 'added', but the exact "
+            "affecting source provision resolves and contains a source-owned "
+            "insert payload for the affected target; lowering admits the row "
+            "as a structural insert without treating all 'added' rows as "
+            "structural by metadata alone."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_refs": list(targets_str),
+            "source_container": _tag(amendment_container)
+            if amendment_container is not None
+            else _tag(extracted_el),
+        },
+    )
 
 
 def expand_single_target_prelude(
