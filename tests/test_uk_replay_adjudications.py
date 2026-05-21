@@ -4545,7 +4545,17 @@ def test_executor_applies_in_definition_range_to_end_without_global_rewrite() ->
         "\u201cmental disorder\u201d has the meaning given by section 328 of the 2003 Act; "
         "\u201cnearest relative\u201d means the nearest relative within the meaning of section 1;"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_in_definition_range_to_end_text_rewrite_applied"
+    ]
+    assert (
+        adjudications[0].detail["text_match"]
+        == "TEXT_IN_DEFINITION_mental disorder\x1fFROM\x1fmeans\x1fTO_END"
+    )
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "definition_range_to_end_selector"
 
 
 def test_executor_applies_after_definition_insert_to_unique_definition_text_child() -> None:
