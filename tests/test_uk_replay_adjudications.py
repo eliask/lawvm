@@ -18,6 +18,7 @@ from lawvm.uk_legislation.replay_text_apply import (
     _insert_at_end_of_definition_text,
     _insert_after_definition_text,
     _remove_trailing_context_word,
+    _rewrite_after_anchor_to_end_text,
     _rewrite_anchor_in_definition_entry_text,
     _rewrite_definition_entry_text,
     _rewrite_definition_range_text,
@@ -295,6 +296,50 @@ def test_rewrite_anchor_in_definition_entry_text_rewrites_unique_anchor() -> Non
 
     assert applied is True
     assert rewritten == '"entity" means firm, company or partnership;'
+
+
+def test_rewrite_after_anchor_to_end_text_uses_exact_anchor_occurrence() -> None:
+    rewritten, applied = _rewrite_after_anchor_to_end_text(
+        "before anchor one, before anchor two, discarded tail",
+        anchor="anchor",
+        replacement="kept tail",
+        occurrence=2,
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is True
+    assert rewritten == "before anchor one, before anchor kept tail"
+
+
+def test_rewrite_after_anchor_to_end_text_uses_normalized_anchor() -> None:
+    rewritten, applied = _rewrite_after_anchor_to_end_text(
+        "prefix Welsh  Ministers old tail",
+        anchor="Welsh Ministers",
+        replacement="new tail",
+        occurrence=0,
+        allow_punctuation_spacing=True,
+        allow_word_punctuation_elision=True,
+    )
+
+    assert applied is True
+    assert rewritten == "prefix Welsh Ministers new tail"
+
+
+def test_rewrite_after_anchor_to_end_text_rejects_missing_anchor() -> None:
+    original = "prefix Scottish Ministers old tail"
+
+    rewritten, applied = _rewrite_after_anchor_to_end_text(
+        original,
+        anchor="Welsh Ministers",
+        replacement="new tail",
+        occurrence=0,
+        allow_punctuation_spacing=True,
+        allow_word_punctuation_elision=True,
+    )
+
+    assert applied is False
+    assert rewritten == original
 
 
 def test_definition_child_insert_payload_preserves_ordered_list_metadata() -> None:
