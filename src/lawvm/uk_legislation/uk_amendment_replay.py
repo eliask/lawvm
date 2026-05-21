@@ -43,7 +43,6 @@ from lawvm.core.ir import (
 )
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction, TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.uk_legislation.canonicalize import (
     canonicalize_uk_address,
     uk_compound_subsection_candidate,
@@ -147,6 +146,7 @@ from lawvm.uk_legislation.heading_facets import (
 from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
     _append_uk_effect_lowering_rejection,
+    append_manual_compile_frontier_diagnostic,
     append_no_ops_lowering_rejections,
     append_source_pathology_filter_lowering_rejections,
     append_structural_no_ops_lowering_rejection,
@@ -216,7 +216,6 @@ from lawvm.uk_legislation.replay_text import (
     _compact_schedule_entry_anchor_with_citation_short_title,
     _compact_schedule_entry_anchor_without_article,
     _definition_entry_term_absent,
-    _lowering_record_rule_ids,
     _monetary_amount_text_selector,
     _multi_fragment_text_selector,
     _non_substantive_text_selector,
@@ -5183,10 +5182,7 @@ class UKReplayPipeline:
             lowering_observations_out=lowering_rejections_out,
         )
 
-        from lawvm.uk_legislation.source_adjudication import (
-            classify_uk_effect_source_pathology,
-            classify_uk_manual_compile_frontier,
-        )
+        from lawvm.uk_legislation.source_adjudication import classify_uk_effect_source_pathology
 
         ops = []
         extraction_cache: dict[str, UKAffectingSourceContext] = {}
@@ -5346,61 +5342,6 @@ class UKReplayPipeline:
                     }
                 )
 
-            def _append_manual_frontier_diagnostic(*, compiled_op_count: int) -> None:
-                if effect_diagnostics_out is None:
-                    return
-                current_lowering_rejections = (
-                    tuple(lowering_rejections_out[lowering_rejection_count_before:])
-                    if lowering_rejections_out is not None
-                    else ()
-                )
-                manual_frontier = classify_uk_manual_compile_frontier(
-                    effect_type=e.effect_type or "",
-                    source_pathology=source_pathology,
-                    extracted_tag=extracted_tag or "",
-                    extracted_text=extracted_text,
-                    lowering_rejections=current_lowering_rejections,
-                    compiled_op_count=compiled_op_count,
-                    replay_applicable=e.is_applicable_for_replay(
-                        applicability_mode=applicability_mode
-                    ),
-                    structural_for_replay=structural_for_replay,
-                )
-                effect_diagnostics_out.append(
-                    {
-                        "rule_id": "uk_manual_compile_frontier_classified",
-                        "family": "manual_compile_frontier",
-                        "phase": "lowering",
-                        "effect_id": str(e.effect_id or ""),
-                        "affecting_act_id": str(e.affecting_act_id or ""),
-                        "affected_provisions": str(e.affected_provisions or ""),
-                        "affecting_provisions": str(e.affecting_provisions or ""),
-                        "effect_type": str(e.effect_type or ""),
-                        "manual_compile_status": manual_frontier["status"],
-                        "manual_compile_rule_id": manual_frontier["rule_id"],
-                        "manual_compile_reason": manual_frontier["reason"],
-                        "lowering_rule_ids": _lowering_record_rule_ids(
-                            current_lowering_rejections
-                        ),
-                        "blocking_lowering_rule_ids": _lowering_record_rule_ids(
-                            tuple(
-                                row
-                                for row in current_lowering_rejections
-                                if is_blocking_compile_record(row)
-                            )
-                        ),
-                        "source_pathology": source_pathology or "",
-                        "structural_for_replay": structural_for_replay,
-                        "replay_applicable": e.is_applicable_for_replay(
-                            applicability_mode=applicability_mode
-                        ),
-                        "compiled_op_count": compiled_op_count,
-                        "blocking": False,
-                        "strict_disposition": "record",
-                        "quirks_disposition": "record",
-                    }
-                )
-
             if not compiled:
                 append_no_ops_lowering_rejections(
                     e,
@@ -5409,7 +5350,20 @@ class UKReplayPipeline:
                     compile_recorded_lowering_rejection=compile_recorded_lowering_rejection,
                     applicability_mode=applicability_mode,
                 )
-                _append_manual_frontier_diagnostic(compiled_op_count=0)
+                append_manual_compile_frontier_diagnostic(
+                    effect_diagnostics_out,
+                    effect=e,
+                    source_pathology=source_pathology,
+                    extracted_tag=extracted_tag or "",
+                    extracted_text=extracted_text,
+                    lowering_rejections_out=lowering_rejections_out,
+                    lowering_rejection_start_index=lowering_rejection_count_before,
+                    compiled_op_count=0,
+                    replay_applicable=e.is_applicable_for_replay(
+                        applicability_mode=applicability_mode
+                    ),
+                    structural_for_replay=structural_for_replay,
+                )
                 continue
             source_pathology_filter_rejected = append_source_pathology_filter_lowering_rejections(
                 e,
@@ -5418,7 +5372,20 @@ class UKReplayPipeline:
                 compiled_ops=compiled,
                 lowering_rejections_out=lowering_rejections_out,
             )
-            _append_manual_frontier_diagnostic(compiled_op_count=len(compiled))
+            append_manual_compile_frontier_diagnostic(
+                effect_diagnostics_out,
+                effect=e,
+                source_pathology=source_pathology,
+                extracted_tag=extracted_tag or "",
+                extracted_text=extracted_text,
+                lowering_rejections_out=lowering_rejections_out,
+                lowering_rejection_start_index=lowering_rejection_count_before,
+                compiled_op_count=len(compiled),
+                replay_applicable=e.is_applicable_for_replay(
+                    applicability_mode=applicability_mode
+                ),
+                structural_for_replay=structural_for_replay,
+            )
             if source_pathology_filter_rejected:
                 continue
             replay_applicable = e.is_applicable_for_replay(applicability_mode=applicability_mode)
