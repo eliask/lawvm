@@ -252,7 +252,6 @@ from lawvm.uk_legislation.source_context import (
     _source_parent_range_label,
 )
 from lawvm.uk_legislation.source_text_reclassifications import (
-    SOURCE_FOLLOWING_ANCHOR_STRUCTURED_SUBSTITUTION_RE as _SOURCE_FOLLOWING_ANCHOR_STRUCTURED_SUBSTITUTION_RE,
     _empty_effect_type_as_if_words_omitted,
     _empty_effect_type_commencement_source,
     _external_act_target_from_source_text,
@@ -261,6 +260,7 @@ from lawvm.uk_legislation.source_text_reclassifications import (
     _quote_only_omission_payload_match,
     _source_parent_application_modification_context,
     _word_level_structural_subsection_omission,
+    source_following_anchor_structured_substitution_anchor,
 )
 from lawvm.uk_legislation.table_selectors import (
     UK_SCHEDULE_TABLE_END_ROWS_RULE_ID as _UK_SCHEDULE_TABLE_END_ROWS_RULE_ID,
@@ -7047,24 +7047,16 @@ class UKReplayExecutor:
         )
         return True
 
-    def _source_following_anchor_structured_substitution_anchor(self, op: LegalOperation) -> str:
-        witness = _witness_for_op(op)
-        extraction = getattr(witness, "extraction_witness", None)
-        source_text = str(getattr(extraction, "extracted_text", "") or getattr(op.source, "raw_text", "") or "")
-        if not source_text:
-            return ""
-        match = _SOURCE_FOLLOWING_ANCHOR_STRUCTURED_SUBSTITUTION_RE.search(source_text)
-        if match is None:
-            return ""
-        return " ".join(match.group("anchor").split()).strip()
-
     def _recover_source_carried_structured_tail_substitution(
         self,
         op: LegalOperation,
         target: LegalAddress,
         new_node: UKMutableNode,
     ) -> bool:
-        anchor = self._source_following_anchor_structured_substitution_anchor(op)
+        witness = _witness_for_op(op)
+        extraction = getattr(witness, "extraction_witness", None)
+        source_text = str(getattr(extraction, "extracted_text", "") or getattr(op.source, "raw_text", "") or "")
+        anchor = source_following_anchor_structured_substitution_anchor(source_text)
         if not anchor:
             return False
         path = tuple(getattr(target, "path", ()) or ())
