@@ -3308,6 +3308,16 @@ def test_normalize_uk_replay_compare_eids_handles_source_container_ordinal_drift
     assert "schedule-1-paragraph-1" in replayed
 
 
+def test_normalize_uk_replay_compare_eids_handles_fused_chapter_container_label() -> None:
+    replayed, oracle = normalize_uk_replay_compare_eids(
+        {"part-6-chapter1a"},
+        {"part-6-chapter-1a"},
+    )
+
+    assert replayed == {"part-6-chapter-1a"}
+    assert oracle == {"part-6-chapter-1a"}
+
+
 def test_normalize_uk_replay_compare_eids_applies_oracle_physical_parent_alias() -> None:
     replayed, oracle = normalize_uk_replay_compare_eids(
         {"section-5-4-aa"},
