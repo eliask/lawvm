@@ -15,6 +15,9 @@ from lawvm.uk_legislation.heading_facets import (
     _crossheading_and_structural_repeal_selector,
     _crossheading_before_anchor_replacement_text,
     _crossheading_before_anchor_text_patch_fragment,
+    _heading_facet_after_anchor_insert_fragment,
+    _heading_facet_append_fragment,
+    _heading_facet_full_replacement_fragment,
     _is_crossheading_ref,
 )
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_rejection
@@ -119,6 +122,117 @@ def reject_unsupported_crossheading_replace(
         detail={"target_ref": t_str},
     )
     return True
+
+
+def refine_crossheading_or_heading_facet_target(
+    *,
+    effect: UKEffectRecord,
+    t_str: str,
+    target: LegalAddress,
+    heading_facet_target: bool,
+    crossheading_replacement_text: Optional[str],
+    crossheading_text_patch_fragment: Optional[dict[str, str]],
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> LegalAddress:
+    """Attach typed heading facet ownership and emit lowering observations."""
+    refined_target = target
+    if crossheading_replacement_text is not None:
+        refined_target = LegalAddress(path=refined_target.path, special=FacetKind.HEADING)
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_crossheading_before_anchor_replacement_lowered",
+            family="target_facet_lowering",
+            reason_code="explicit_crossheading_before_anchor_replacement",
+            reason=(
+                "UK cross-heading replacement lowered as a typed heading "
+                "facet text patch anchored by the named following provision"
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": t_str,
+                "target": str(refined_target),
+                "replacement_text_preview": crossheading_replacement_text[:200],
+            },
+        )
+    if crossheading_text_patch_fragment is not None:
+        refined_target = LegalAddress(path=refined_target.path, special=FacetKind.HEADING)
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_crossheading_before_anchor_text_patch_lowered",
+            family="target_facet_lowering",
+            reason_code="explicit_crossheading_before_anchor_text_patch",
+            reason=(
+                "UK cross-heading replacement lowered as a typed heading "
+                "facet text patch anchored by the named following provision"
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": t_str,
+                "target": str(refined_target),
+                "match_text": str(crossheading_text_patch_fragment["original"]),
+                "replacement_text_preview": str(
+                    crossheading_text_patch_fragment["replacement"]
+                )[:200],
+            },
+        )
+    if not heading_facet_target:
+        return refined_target
+
+    refined_target = LegalAddress(path=refined_target.path, special=FacetKind.HEADING)
+    heading_append_fragment = _heading_facet_append_fragment(extracted_text)
+    heading_after_anchor_insert_fragment = _heading_facet_after_anchor_insert_fragment(
+        extracted_text
+    )
+    heading_full_replacement_fragment = _heading_facet_full_replacement_fragment(
+        extracted_text
+    )
+    if heading_append_fragment is not None:
+        heading_observation_rule = "uk_effect_heading_facet_append_lowered"
+        heading_reason_code = "explicit_heading_facet_append"
+        heading_reason = (
+            "UK heading/title/sidenote target lowered as a typed facet "
+            "append; replay must mutate only the heading carrier."
+        )
+    elif heading_after_anchor_insert_fragment is not None:
+        heading_observation_rule = "uk_effect_heading_facet_after_anchor_insert_lowered"
+        heading_reason_code = "explicit_heading_facet_after_anchor_insert"
+        heading_reason = (
+            "UK heading/title/sidenote target lowered as a facet text "
+            "insertion after an explicit heading anchor; replay must "
+            "mutate only the heading carrier."
+        )
+    elif heading_full_replacement_fragment is not None:
+        heading_observation_rule = "uk_effect_heading_facet_full_replacement_lowered"
+        heading_reason_code = "explicit_heading_facet_full_replacement"
+        heading_reason = (
+            "UK heading/title/sidenote target lowered as a full facet "
+            "replacement; replay must mutate only the heading carrier."
+        )
+    else:
+        heading_observation_rule = "uk_effect_heading_facet_word_patch_lowered"
+        heading_reason_code = "explicit_heading_facet_word_patch"
+        heading_reason = (
+            "UK heading/title/sidenote target lowered as a facet "
+            "text patch; replay must mutate only the heading carrier."
+        )
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=heading_observation_rule,
+        family="target_facet_lowering",
+        reason_code=heading_reason_code,
+        reason=heading_reason,
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={"target_ref": t_str, "target": str(refined_target)},
+    )
+    return refined_target
 
 
 def build_crossheading_compound_heading_op(
