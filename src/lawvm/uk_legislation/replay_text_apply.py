@@ -156,6 +156,49 @@ def _flat_definition_child_bounds(
     return ordinal, body_start, entry_end, semicolons
 
 
+def _definition_child_insert_payload(
+    raw_replacement: str,
+    *,
+    term: str,
+) -> tuple[str, list[UKMutableNode]]:
+    text = " ".join(raw_replacement.split()).strip(" ,.")
+    if not text:
+        return "", []
+    anchor_suffix = ""
+    suffix_match = re.match(r"^(?P<suffix>;\s+(?:or|and))\s+(?P<body>.+)$", text, flags=re.I | re.S)
+    if suffix_match is not None:
+        anchor_suffix = " ".join(suffix_match.group("suffix").split())
+        text = suffix_match.group("body").strip()
+    item_matches = list(
+        re.finditer(
+            r"(?:(?<=^)|(?<=;\s))(?P<label>[0-9A-Za-z]+)\s+(?P<body>[^;]+;)",
+            text,
+            flags=re.S,
+        )
+    )
+    items: list[UKMutableNode] = []
+    if item_matches and item_matches[0].start() == 0:
+        for item_match in item_matches:
+            label = item_match.group("label").strip()
+            item_text = " ".join(item_match.group("body").split()).strip()
+            if not label or not item_text:
+                return "", []
+            items.append(
+                UKMutableNode(
+                    kind=IRNodeKind.ITEM,
+                    label=None,
+                    text=item_text,
+                    attrs={
+                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                        "definition_term": term,
+                        "definition_child_label": label,
+                        "source_rule_detail": "uk_effect_source_carried_definition_child_insert_text_patch",
+                    },
+                )
+            )
+    return anchor_suffix, items
+
+
 def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
     current = n
     for index in path:
@@ -1533,48 +1576,6 @@ class UKReplayTextApplyMixin:
                 if child_kind != "paragraph" or not term or not child_label:
                     return node, False
 
-                def _definition_insert_payload(
-                    raw_replacement: str,
-                ) -> tuple[str, list[UKMutableNode]]:
-                    text = " ".join(raw_replacement.split()).strip(" ,.")
-                    if not text:
-                        return "", []
-                    anchor_suffix = ""
-                    suffix_match = re.match(r"^(?P<suffix>;\s+(?:or|and))\s+(?P<body>.+)$", text, flags=re.I | re.S)
-                    if suffix_match is not None:
-                        anchor_suffix = " ".join(suffix_match.group("suffix").split())
-                        text = suffix_match.group("body").strip()
-                    item_matches = list(
-                        re.finditer(
-                            r"(?:(?<=^)|(?<=;\s))(?P<label>[0-9A-Za-z]+)\s+(?P<body>[^;]+;)",
-                            text,
-                            flags=re.S,
-                        )
-                    )
-                    items: list[UKMutableNode] = []
-                    if item_matches and item_matches[0].start() == 0:
-                        for item_match in item_matches:
-                            label = item_match.group("label").strip()
-                            item_text = " ".join(item_match.group("body").split()).strip()
-                            if not label or not item_text:
-                                return "", []
-                            items.append(
-                                UKMutableNode(
-                                    kind=IRNodeKind.ITEM,
-                                    label=None,
-                                    text=item_text,
-                                    attrs={
-                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
-                                        "definition_term": term,
-                                        "definition_child_label": label,
-                                        "source_rule_detail": (
-                                            "uk_effect_source_carried_definition_child_insert_text_patch"
-                                        ),
-                                    },
-                                )
-                            )
-                    return anchor_suffix, items
-
                 structured_child_matches = _definition_child_nodes(
                     node,
                     term=term,
@@ -1585,7 +1586,10 @@ class UKReplayTextApplyMixin:
                     parent_path = child_path[:-1]
                     child_index = child_path[-1]
 
-                    anchor_suffix, inserted_children = _definition_insert_payload(replacement)
+                    anchor_suffix, inserted_children = _definition_child_insert_payload(
+                        replacement,
+                        term=term,
+                    )
                     if inserted_children:
                         parent_node = _node_at_path(node, parent_path)
                         new_children = list(parent_node.children)
