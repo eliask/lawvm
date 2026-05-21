@@ -1215,6 +1215,30 @@ def test_classify_uk_manual_compile_frontier_prefers_deterministic_parser_work()
     assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
 
 
+def test_classify_uk_manual_compile_frontier_accepts_inflected_parser_verbs() -> None:
+    result = classify_uk_manual_compile_frontier(
+        effect_type="words substituted",
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text=(
+            "For the period specified in section 50(2) there is substituted "
+            "the period of four years."
+        ),
+        lowering_rejections=(
+            {
+                "rule_id": "uk_effect_overlap_substitution_unlowered",
+                "blocking": True,
+            },
+        ),
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert result["status"] == "deterministic_frontend_candidate"
+    assert result["rule_id"] == "uk_manual_frontier_parser_or_extraction_candidate"
+
+
 def test_classify_uk_manual_compile_frontier_accepts_dash_punctuated_instruction() -> None:
     result = classify_uk_manual_compile_frontier(
         effect_type="words inserted",

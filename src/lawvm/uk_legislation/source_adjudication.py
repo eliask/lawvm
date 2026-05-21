@@ -1558,7 +1558,10 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
     if (
         "uk_effect_overlap_substitution_unlowered" in blocking_rules
         and extracted_tag_norm not in {"", "BlockAmendment"}
-        and re.search(r"\b(?:substitute|insert|omit|repeal)\b", extracted_text_norm)
+        and re.search(
+            r"\b(?:substitute|substituted|insert|inserted|omit|omitted|repeal|repealed)\b",
+            extracted_text_norm,
+        )
     ):
         return {
             "status": "deterministic_frontend_candidate",

@@ -1471,6 +1471,11 @@ Current block-substitution context invariant:
 - the parser may lower `for "X" to the end substitute- <block text>` to a
   `TEXT_FROM_X_TO_END` patch using the named rule
   `uk_effect_quoted_anchor_to_end_block_substitution_text_patch`
+- manual-frontier classification treats explicit inflected amendment verbs
+  (`substituted`, `inserted`, `omitted`, `repealed`) as deterministic
+  parser/extraction work for `uk_effect_overlap_substitution_unlowered`, not as
+  an unclassified frontier. Witness pattern: `For the period ... there is
+  substituted the period of four years.`
 - the parser may lower `after the definition of "X" insert- <block text>` and
   `after the definition of "X", insert- <block text>` to a
   `TEXT_AFTER_DEFINITION_X` patch using the named rule
