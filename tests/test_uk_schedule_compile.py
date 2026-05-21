@@ -21957,7 +21957,8 @@ def test_executor_text_replace_uses_fragment_substitution_fallback_when_primary_
             ),
         ),
     )
-    executor: Any = UKReplayExecutor(statute)
+    adjudications: list[Any] = []
+    executor: Any = UKReplayExecutor(statute, adjudications_out=adjudications)
     op = LegalOperation(
         op_id="uk_test_text_replace_fragment_fallback",
         sequence=1,
@@ -21981,7 +21982,16 @@ def test_executor_text_replace_uses_fragment_substitution_fallback_when_primary_
     executor.apply_op(op)
 
     assert executor.statute.supplements[0].children[0].text == "The service is available on weekends."
-    assert not executor.adjudications_out
+    assert len(adjudications) == 1
+    adjudication = adjudications[0]
+    assert adjudication.kind == "uk_replay_text_fragment_substitution_fallback_applied"
+    assert adjudication.detail["text_match"] == "wrong token"
+    assert adjudication.detail["replacement_text"] == "ignored"
+    assert adjudication.detail["applied_match"] == "Saturdays"
+    assert adjudication.detail["applied_replacement"] == "weekends"
+    assert adjudication.detail["family"] == "text_rewrite_recovery"
+    assert adjudication.detail["blocking"] is False
+    assert adjudication.detail["strict_disposition"] == "record"
 
 
 def test_executor_repeal_collapses_oracle_zombie_schedule_root() -> None:

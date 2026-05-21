@@ -759,6 +759,28 @@ class UKReplayTextActionApplyMixin:
                         self._log(
                             f"  EXECUTOR: text_replace fallback in {node.kind} {node.label}: {alt_match!r} -> {alt_replacement!r}"
                         )
+                        _append_uk_replay_adjudication(
+                            self.adjudications_out,
+                            kind="uk_replay_text_fragment_substitution_fallback_applied",
+                            message=(
+                                "UK replay applied a text replacement using a source-carried "
+                                "fragment substitution after the primary selector missed."
+                            ),
+                            op=op,
+                            detail={
+                                "action": _action_name(op.action),
+                                "target": str(target),
+                                "text_match": text_patch.selector.match_text,
+                                "replacement_text": replacement,
+                                "applied_match": alt_match,
+                                "applied_replacement": alt_replacement,
+                                "family": "text_rewrite_recovery",
+                                "source_shape": "fragment_substitution_provenance_tag",
+                                "blocking": False,
+                                "strict_disposition": "record",
+                                "quirks_disposition": "record",
+                            },
+                        )
                         break
             if applied:
                 self._log(
