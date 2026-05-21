@@ -505,6 +505,45 @@ def append_source_pathology_classified_diagnostic(
     )
 
 
+def append_replay_applicability_filter_diagnostic(
+    diagnostics_out: Optional[list[dict[str, Any]]],
+    *,
+    effect: UKEffectRecord,
+    compiled_ops: Sequence[LegalOperation],
+    structural_for_replay: bool,
+    replay_applicable: bool,
+    applicability_mode: str,
+) -> None:
+    """Record that a compiled UK effect is excluded from replay by applicability."""
+    if diagnostics_out is None:
+        return
+    diagnostics_out.append(
+        {
+            "rule_id": "uk_effect_replay_applicability_filter_rejected",
+            "family": "applicability_filter",
+            "phase": "lowering",
+            "effect_id": str(effect.effect_id or ""),
+            "affecting_act_id": str(effect.affecting_act_id or ""),
+            "affected_provisions": str(effect.affected_provisions or ""),
+            "affecting_provisions": str(effect.affecting_provisions or ""),
+            "effect_type": str(effect.effect_type or ""),
+            "compiled_op_count": len(compiled_ops),
+            "compiled_op_ids": [str(op.op_id or "") for op in compiled_ops],
+            "compiled_op_actions": [_action_name(op.action) for op in compiled_ops],
+            "structural_for_replay": structural_for_replay,
+            "replay_applicable": replay_applicable,
+            "nonstructural_replay_family": uk_nonstructural_replay_candidate_family(
+                effect,
+                applicability_mode=applicability_mode,
+            ),
+            "reason": "UK effect compiled to operations but replay applicability excludes the effect",
+            "blocking": False,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+        }
+    )
+
+
 def _range_to_container_payload_root_summary(payload: IRNode) -> dict[str, Any]:
     child_summaries = tuple(
         {

@@ -100,7 +100,6 @@ from lawvm.uk_legislation.effects import (
     parse_effects_from_feeds,
     parse_effects_from_metadata,
     uk_effect_requires_affecting_source_for_replay,
-    uk_nonstructural_replay_candidate_family,
 )
 from lawvm.uk_legislation.addressing import (
     _action_name,
@@ -150,6 +149,7 @@ from lawvm.uk_legislation.lowering_records import (
     append_metadata_only_selection_rejection,
     append_no_ops_lowering_rejections,
     append_pit_date_filter_rejection,
+    append_replay_applicability_filter_diagnostic,
     append_source_pathology_classified_diagnostic,
     append_source_pathology_filter_lowering_rejections,
     append_structural_no_ops_lowering_rejection,
@@ -5359,32 +5359,14 @@ class UKReplayPipeline:
                 applicability_mode=applicability_mode,
             )
             if not should_replay_compiled:
-                if effect_diagnostics_out is not None:
-                    effect_diagnostics_out.append(
-                        {
-                            "rule_id": "uk_effect_replay_applicability_filter_rejected",
-                            "family": "applicability_filter",
-                            "phase": "lowering",
-                            "effect_id": str(e.effect_id or ""),
-                            "affecting_act_id": str(e.affecting_act_id or ""),
-                            "affected_provisions": str(e.affected_provisions or ""),
-                            "affecting_provisions": str(e.affecting_provisions or ""),
-                            "effect_type": str(e.effect_type or ""),
-                            "compiled_op_count": len(compiled),
-                            "compiled_op_ids": [str(op.op_id or "") for op in compiled],
-                            "compiled_op_actions": [_action_name(op.action) for op in compiled],
-                            "structural_for_replay": structural_for_replay,
-                            "replay_applicable": replay_applicable,
-                            "nonstructural_replay_family": uk_nonstructural_replay_candidate_family(
-                                e,
-                                applicability_mode=applicability_mode,
-                            ),
-                            "reason": "UK effect compiled to operations but replay applicability excludes the effect",
-                            "blocking": False,
-                            "strict_disposition": "record",
-                            "quirks_disposition": "record",
-                        }
-                    )
+                append_replay_applicability_filter_diagnostic(
+                    effect_diagnostics_out,
+                    effect=e,
+                    compiled_ops=compiled,
+                    structural_for_replay=structural_for_replay,
+                    replay_applicable=replay_applicable,
+                    applicability_mode=applicability_mode,
+                )
                 if authority_mode == "source_text_only" and authority_rejections_out is not None:
                     rejected_ops: list[LegalOperation] = []
                     rejected_reason_counts: dict[str, int] = {}
