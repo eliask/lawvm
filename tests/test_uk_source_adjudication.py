@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from lawvm.uk_legislation import replay_recovery_observations as recovery_obs
 from lawvm.uk_legislation import source_adjudication as sa
 from lawvm.uk_legislation.source_adjudication import (
     classify_uk_commencement_current_projection,
@@ -61,6 +62,33 @@ def test_uk_replay_emitted_adjudication_kinds_are_explicitly_owned() -> None:
     )
 
     assert sorted(emitted - owned) == []
+
+
+def test_uk_replay_recovery_observations_are_explicitly_owned() -> None:
+    keys = set(recovery_obs.UK_REPLAY_RECOVERY_OBSERVATIONS)
+    owned = (
+        sa.UK_REPLAY_BUG_ADJUDICATION_KINDS
+        | sa.UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS
+        | sa.UK_REPLAY_TEXT_SURFACE_ADJUDICATION_KINDS
+        | sa.UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS
+    )
+    nonblocking_or_source_shape = (
+        sa.UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS
+        | sa.UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS
+    )
+
+    assert sorted(keys - owned) == []
+    assert sorted(keys - nonblocking_or_source_shape) == []
+    for observation in recovery_obs.UK_REPLAY_RECOVERY_OBSERVATIONS.values():
+        assert observation.message
+        assert observation.family in {
+            "definition_entry_predicate_recovery",
+            "definition_entry_separator_recovery",
+            "target_resolution_recovery",
+            "text_match_recovery",
+            "text_rewrite_recovery",
+        }
+        assert observation.strict_disposition in {"block", "record"}
 
 
 def test_uk_effect_source_pathology_classes_are_explicitly_owned() -> None:
