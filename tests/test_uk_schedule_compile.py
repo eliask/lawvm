@@ -5445,6 +5445,56 @@ def test_compile_definition_range_to_end_substitution_uses_bounded_selector() ->
     )
 
 
+def test_compile_definition_range_to_end_substitution_preserves_occurrence() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-3-paragraph-23-5">
+          <Pnumber>5</Pnumber>
+          <Text>In section 61 (definitions), in the definition of “joint fire board” for the words from “board”, where it secondly occurs, to the end substitute “ and rescue board constituted by an amalgamation scheme made under section 2(1) of the Fire (Scotland) Act 2005 (asp 5) ” .</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_definition_range_to_end_occurrence",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-08-02",
+        affected_uri="/id/asp/2003/1/section/61",
+        affected_class="ScottishAct",
+        affected_year="2003",
+        affected_number="1",
+        affected_provisions="s. 61",
+        affecting_uri="/id/asp/2005/5",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="5",
+        affecting_provisions="Sch. 3 para. 23(5)",
+        affecting_title="Fire (Scotland) Act 2005",
+        in_force_dates=[{"date": "2005-08-02", "prospective": "false"}],
+    )
+
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+
+    assert len(ops) == 1
+    assert ops[0].action is StructuralAction.TEXT_REPLACE
+    assert ops[0].target.path == (("section", "61"),)
+    assert ops[0].text_patch is not None
+    assert (
+        ops[0].text_patch.selector.match_text
+        == "TEXT_IN_DEFINITION_joint fire board\x1fFROM\x1fboard\x1fTO_END"
+    )
+    assert ops[0].text_patch.selector.occurrence == 2
+    assert ops[0].text_patch.replacement == (
+        "and rescue board constituted by an amalgamation scheme made under section 2(1) "
+        "of the Fire (Scotland) Act 2005 (asp 5)"
+    )
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_definition_range_to_end_occurrence_substitution_text_patch"
+        in ops[0].provenance_tags
+    )
+
+
 def test_compile_rejects_whole_act_metadata_when_source_names_external_act_target() -> None:
     extracted_el = ET.fromstring(
         f"""

@@ -230,6 +230,7 @@ def test_rewrite_definition_range_to_end_text_preserves_entry_terminator() -> No
         term="primary legislation",
         start_anchor="Measure",
         replacement="instrument",
+        occurrence=0,
         allow_punctuation_spacing=False,
         allow_word_punctuation_elision=False,
     )
@@ -238,6 +239,26 @@ def test_rewrite_definition_range_to_end_text_preserves_entry_terminator() -> No
     assert rewritten == (
         '"primary legislation" means an Act, instrument; '
         '"secondary legislation" means regulations;'
+    )
+
+
+def test_rewrite_definition_range_to_end_text_uses_source_occurrence() -> None:
+    rewritten, applied = _rewrite_definition_range_to_end_text(
+        (
+            '"joint fire board" means a board constituted by a scheme, '
+            'and includes a board under older law;'
+        ),
+        term="joint fire board",
+        start_anchor="board",
+        replacement="and rescue board constituted by an amalgamation scheme;",
+        occurrence=2,
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is True
+    assert rewritten == (
+        '"joint fire board" means a and rescue board constituted by an amalgamation scheme;'
     )
 
 
