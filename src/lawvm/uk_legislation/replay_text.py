@@ -52,6 +52,22 @@ def _subtree_contains_text(node: UKMutableNode, needle: str) -> bool:
     return False
 
 
+def _subtree_text_match_count(node: UKMutableNode, needle: str) -> int:
+    """Count whitespace-flexible text matches across a mutable subtree."""
+    normalized_needle = " ".join((needle or "").split())
+    if not normalized_needle:
+        return 0
+    pattern = re.escape(normalized_needle).replace(r"\ ", r"\s+")
+    count = 0
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        text = current.text or ""
+        count += len(list(re.finditer(pattern, text, flags=re.I)))
+        stack.extend(reversed(current.children))
+    return count
+
+
 def _compact_normalized_text(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
 
