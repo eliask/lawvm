@@ -292,9 +292,9 @@ from lawvm.uk_legislation.source_child_tail_rewrites import (
     _fragment_substitution_source_carried_child_tail_substitution,
 )
 from lawvm.uk_legislation.source_amendment_program_fragments import (
-    _amendment_program_inserted_parent_structural_insert,
     _fragment_substitution_amendment_inserted_text_substitution,
     _fragment_substitution_source_carried_multi_subunit_repeal,
+    reject_amendment_program_inserted_parent_structural_insert,
 )
 from lawvm.uk_legislation.source_definition_context import (
     _scope_fragment_substitutions_to_source_definition_parent,
@@ -1266,35 +1266,15 @@ def compile_effect_to_ir_ops(
         content_ir = structural_sibling_insert.content_ir
         structural_sibling_insert_detail = structural_sibling_insert.detail
 
-        amendment_program_inserted_parent_structural_insert = (
-            _amendment_program_inserted_parent_structural_insert(
-                extracted_text=extracted_text,
-                target=target,
-            )
-            if extracted_text and curr_action == "insert"
-            else None
-        )
-        if amendment_program_inserted_parent_structural_insert is not None:
-            _append_uk_effect_lowering_rejection(
-                lowering_rejections_out,
-                rule_id="uk_effect_amendment_program_inserted_parent_structural_insert_rejected",
-                family="amendment_program_lowering",
-                reason_code="insert_targets_prior_amendment_inserted_parent",
-                reason=(
-                    "UK source text inserts a child into a paragraph inserted by "
-                    "a prior amendment instruction; this needs an amendment-"
-                    "program compiler and must not be replayed against an "
-                    "unrelated live base-law parent."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "target_ref": t_str,
-                    "target": str(target),
-                    **amendment_program_inserted_parent_structural_insert,
-                },
-            )
+        if reject_amendment_program_inserted_parent_structural_insert(
+            effect=effect,
+            curr_action=curr_action,
+            target=target,
+            target_ref=t_str,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        ):
             continue
 
         # Grounding 2.0: Fragment substitutions
