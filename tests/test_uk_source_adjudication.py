@@ -71,6 +71,20 @@ def test_uk_effect_source_pathology_classes_are_explicitly_owned() -> None:
     assert sorted(emitted - sa.UK_EFFECT_SOURCE_PATHOLOGY_CLASSES) == []
 
 
+def test_uk_manual_frontier_source_pathology_tables_are_owned() -> None:
+    tables = (
+        sa._UK_MANUAL_FRONTIER_RANGE_SOURCE_PATHOLOGY_RESULTS,
+        sa._UK_MANUAL_FRONTIER_SOURCE_INSUFFICIENT_PATHOLOGY_RESULTS,
+        sa._UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS,
+    )
+    table_keys = {source_pathology for table in tables for source_pathology in table}
+    rule_ids = {rule_id for table in tables for _, rule_id, _ in table.values()}
+
+    assert sorted(table_keys - sa.UK_EFFECT_SOURCE_PATHOLOGY_CLASSES) == []
+    assert "table_entry_target_unsupported" not in table_keys
+    assert all(rule_ids)
+
+
 def test_classify_uk_replay_adjudication_bucket() -> None:
     cases = {
         "uk_replay_target_not_found": "replay_bug",
