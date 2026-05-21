@@ -61,7 +61,7 @@ from lawvm.uk_legislation.uk_grafter import (
     _parse_pblock,
     _parse_schedule_single,
 )
-from lawvm.uk_legislation.nlp_parser import US, is_whole_node_replacement, parse_fragment_substitution
+from lawvm.uk_legislation.nlp_parser import is_whole_node_replacement, parse_fragment_substitution
 from lawvm.uk_legislation.witnesses import UKLoweredOperationWitness
 from lawvm.uk_legislation.effects import (
     STRUCTURAL_EFFECT_TYPES,
@@ -301,6 +301,7 @@ from lawvm.uk_legislation.source_definition_context import (
     _scope_fragment_substitutions_to_source_definition_parent,
 )
 from lawvm.uk_legislation.source_definition_fragments import (
+    append_source_definition_fragment_observations,
     _fragment_substitution_source_carried_after_quoted_anchor_insert,
     _fragment_substitution_source_carried_definition_child_insert,
     _fragment_substitution_source_carried_definition_child_text_omission,
@@ -1606,49 +1607,19 @@ def compile_effect_to_ir_ops(
                         extracted_text=extracted_text,
                         lowering_rejections_out=lowering_rejections_out,
                     )
-                    for source_definition_fragment in fragment_subs:
-                        source_definition_rule_id = str(source_definition_fragment.get("rule_id") or "")
-                        if source_definition_rule_id not in {
-                            "uk_effect_source_parent_definition_range_text_patch",
-                            "uk_effect_source_parent_definition_after_quoted_anchor_insert_text_patch",
-                            "uk_effect_source_parent_definition_child_after_quoted_anchor_insert_text_patch",
-                            "uk_effect_source_parent_definition_child_substitution_text_patch",
-                        }:
-                            continue
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id=source_definition_rule_id,
-                            family="source_context_elaboration",
-                            reason_code="text_patch_scoped_to_source_parent_definition",
-                            reason=(
-                                "UK child-row source gives a generic text patch while the parent "
-                                "instruction explicitly names a definition entry; lowering scopes "
-                                "the text patch to that definition instead of searching the whole "
-                                "target subsection."
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "target": str(target),
-                                "source_parent_id": str(source_definition_fragment.get("source_parent_id") or ""),
-                                "source_definition_term": str(
-                                    source_definition_fragment.get("source_definition_term") or ""
-                                ),
-                                "source_unscoped_match_text": str(
-                                    source_definition_fragment.get("source_unscoped_match_text") or ""
-                                ),
-                                "source_child_label": str(source_definition_fragment.get("source_child_label") or ""),
-                                "source_child_sublabel": str(
-                                    source_definition_fragment.get("source_child_sublabel") or ""
-                                ),
-                                "text_match": op_text_match,
-                                "replacement": op_text_replacement,
-                                "occurrence": op_text_occurrence,
-                                "end_occurrence": op_text_end_occurrence,
-                            },
-                        )
+                    append_source_definition_fragment_observations(
+                        effect=effect,
+                        target=target,
+                        target_ref=t_str,
+                        fragment_subs=fragment_subs,
+                        op_text_match=op_text_match,
+                        op_text_replacement=op_text_replacement,
+                        op_text_occurrence=op_text_occurrence,
+                        op_text_end_occurrence=op_text_end_occurrence,
+                        extracted_el=extracted_el,
+                        extracted_text=extracted_text,
+                        lowering_rejections_out=lowering_rejections_out,
+                    )
                     append_source_carried_tail_rewrite_observations(
                         effect=effect,
                         target=target,
@@ -1745,167 +1716,6 @@ def compile_effect_to_ir_ops(
                                 "text_match": op_text_match,
                                 "replacement": op_text_replacement,
                                 "occurrence": op_text_occurrence,
-                            },
-                        )
-                    for definition_entry_context_fragment in fragment_subs:
-                        if (
-                            str(definition_entry_context_fragment.get("rule_id") or "")
-                            != "uk_effect_source_carried_definition_entry_insert_text_patch"
-                        ):
-                            continue
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id="uk_effect_source_carried_definition_entry_insert_text_patch",
-                            family="source_context_elaboration",
-                            reason_code="definition_insert_anchor_resolved_from_parent_source",
-                            reason=(
-                                "UK source payload contains only the inserted definition entry, "
-                                "while the parent source instruction names the definition anchor; "
-                                "lowering combines those source-local facts instead of guessing "
-                                "definition placement from live text."
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "target": str(target),
-                                "source_parent_id": str(
-                                    definition_entry_context_fragment.get("source_parent_id") or ""
-                                ),
-                                "source_anchor_definition_term": str(
-                                    definition_entry_context_fragment.get("source_anchor_definition_term") or ""
-                                ),
-                                "text_match": op_text_match,
-                                "replacement": op_text_replacement,
-                                "payload_normalization_rule_ids": tuple(
-                                    rule_id
-                                    for rule_id in str(
-                                        definition_entry_context_fragment.get(
-                                            "payload_normalization_rule_ids"
-                                        )
-                                        or ""
-                                    ).split(US)
-                                    if rule_id
-                                ),
-                            },
-                        )
-                    for definition_entry_context_fragment in fragment_subs:
-                        if (
-                            str(definition_entry_context_fragment.get("rule_id") or "")
-                            != "uk_effect_source_carried_definition_entry_substitution_text_patch"
-                        ):
-                            continue
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id="uk_effect_source_carried_definition_entry_substitution_text_patch",
-                            family="source_context_elaboration",
-                            reason_code="definition_substitution_anchor_resolved_from_parent_source",
-                            reason=(
-                                "UK source payload contains only the replacement definition entry, "
-                                "while the parent source instruction names the definition being "
-                                "substituted; lowering combines those source-local facts instead "
-                                "of guessing the old definition term from live text."
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "target": str(target),
-                                "source_parent_id": str(
-                                    definition_entry_context_fragment.get("source_parent_id") or ""
-                                ),
-                                "source_original_definition_term": str(
-                                    definition_entry_context_fragment.get("source_original_definition_term") or ""
-                                ),
-                                "text_match": op_text_match,
-                                "replacement": op_text_replacement,
-                            },
-                        )
-                    for definition_child_context_fragment in fragment_subs:
-                        if (
-                            str(definition_child_context_fragment.get("rule_id") or "")
-                            != "uk_effect_source_carried_definition_child_text_omission_text_patch"
-                        ):
-                            continue
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id="uk_effect_source_carried_definition_child_text_omission_text_patch",
-                            family="source_context_elaboration",
-                            reason_code="definition_child_text_omission_resolved_from_parent_source",
-                            reason=(
-                                "UK child-row source names only a definition paragraph and quoted "
-                                "omitted text, while the parent source instruction names the "
-                                "definition term; lowering combines those source-local facts into "
-                                "a bounded definition-child text omission instead of deleting the "
-                                "quoted word from the whole target subsection."
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "target": str(target),
-                                "source_parent_id": str(
-                                    definition_child_context_fragment.get("source_parent_id") or ""
-                                ),
-                                "source_definition_term": str(
-                                    definition_child_context_fragment.get("source_definition_term") or ""
-                                ),
-                                "source_child_label": str(
-                                    definition_child_context_fragment.get("source_child_label") or ""
-                                ),
-                                "text_match": op_text_match,
-                                "replacement": op_text_replacement,
-                            },
-                        )
-                    for source_carried_context_fragment in fragment_subs:
-                        source_carried_rule_id = str(source_carried_context_fragment.get("rule_id") or "")
-                        if source_carried_rule_id not in {
-                            "uk_effect_source_carried_after_quoted_anchor_insert_text_patch",
-                            "uk_effect_source_carried_quoted_text_substitution_text_patch",
-                        }:
-                            continue
-                        reason_code = (
-                            "quoted_insert_anchor_resolved_from_parent_source"
-                            if source_carried_rule_id
-                            == "uk_effect_source_carried_after_quoted_anchor_insert_text_patch"
-                            else "quoted_substitution_preimage_resolved_from_parent_source"
-                        )
-                        reason = (
-                            "UK source payload contains only the inserted text, while "
-                            "the parent source instruction names the quoted after-anchor; "
-                            "lowering combines those source-local facts instead of guessing "
-                            "the anchor from live text."
-                            if source_carried_rule_id
-                            == "uk_effect_source_carried_after_quoted_anchor_insert_text_patch"
-                            else "UK source payload contains only the replacement text, while "
-                            "the parent source instruction names the quoted preimage; lowering "
-                            "combines those source-local facts instead of guessing the old text "
-                            "from live state."
-                        )
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id=source_carried_rule_id,
-                            family="source_context_elaboration",
-                            reason_code=reason_code,
-                            reason=reason,
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "target": str(target),
-                                "source_parent_id": str(source_carried_context_fragment.get("source_parent_id") or ""),
-                                "source_definition_term": str(
-                                    source_carried_context_fragment.get("source_definition_term") or ""
-                                ),
-                                "source_inserted_text": str(
-                                    source_carried_context_fragment.get("source_inserted_text") or ""
-                                ),
-                                "text_match": op_text_match,
-                                "replacement": op_text_replacement,
                             },
                         )
                 else:
