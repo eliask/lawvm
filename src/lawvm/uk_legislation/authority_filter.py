@@ -23,6 +23,26 @@ def _uk_op_allowed_by_authority_mode(op: LegalOperation, authority_mode: str) ->
     return True, None
 
 
+def _partition_uk_ops_by_authority_mode(
+    ops: Sequence[LegalOperation],
+    authority_mode: str,
+) -> tuple[list[LegalOperation], list[LegalOperation], dict[str, int]]:
+    kept_ops: list[LegalOperation] = []
+    rejected_ops: list[LegalOperation] = []
+    rejected_reason_counts: dict[str, int] = {}
+    for op in ops:
+        allowed, rejection_reason = _uk_op_allowed_by_authority_mode(op, authority_mode)
+        if allowed:
+            kept_ops.append(op)
+            continue
+        rejected_ops.append(op)
+        if rejection_reason:
+            rejected_reason_counts[rejection_reason] = (
+                rejected_reason_counts.get(rejection_reason, 0) + 1
+            )
+    return kept_ops, rejected_ops, rejected_reason_counts
+
+
 def _uk_authority_filter_diagnostic(
     *,
     effect: UKEffectRecord,
