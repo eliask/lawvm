@@ -446,6 +446,12 @@ families,
 `uk_manual_frontier_structural_sibling_insert_candidate`,
 `table_repeal_or_omission` for
 `uk_manual_frontier_repeal_table_candidate`,
+`amendment_program_target_mutation` for
+`uk_manual_frontier_amendment_program_target_candidate`,
+`source_carried_multi_subunit_text_rewrite` for
+`uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate`,
+`source_carried_child_tail_text_rewrite` for
+`uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate`,
 `source_carried_structured_text_patch` for
 `uk_manual_frontier_source_carried_structured_text_patch_candidate`,
 `definition_entry_insert` for
