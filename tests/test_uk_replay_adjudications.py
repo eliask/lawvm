@@ -5507,7 +5507,14 @@ def test_executor_applies_at_end_definition_insert_to_named_definition_only() ->
         "or (as the case may be) section 6A(5), "
         "“request” means a request for a review,"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_in_definition_at_end_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["text_match"] == "TEXT_IN_DEFINITION_person aggrieved\x1fAT_END"
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "definition_at_end_selector"
 
 
 def test_executor_applies_definition_child_repeal_without_bare_term_deletion() -> None:
