@@ -230,8 +230,7 @@ from lawvm.uk_legislation.source_action_inference import (
     infer_uk_effect_action_from_source,
 )
 from lawvm.uk_legislation.source_text_reclassifications import (
-    _quote_only_definition_list_omission_payload_match,
-    _quote_only_omission_payload_match,
+    lower_quote_only_word_omission,
     reclassify_word_level_structural_subsection_omission,
 )
 from lawvm.uk_legislation.substitution_metadata import (
@@ -1500,64 +1499,28 @@ def compile_effect_to_ir_ops(
                         # rather than silently dropping the effect.
                         curr_action = "replace"
                     elif is_word_level:
-                        quote_only_definition_omission: Optional[tuple[str, str]] = None
-                        quote_only_omission = None
-                        if (
-                            effect_type in {"words omitted", "word omitted", "words repealed", "word repealed"}
-                            and len(targets_str) == 1
-                        ):
-                            quote_only_definition_omission = _quote_only_definition_list_omission_payload_match(
-                                extracted_el=extracted_el,
-                                source_root=source_root,
-                                extracted_text=extracted_text,
+                        quote_only_omission_lowering = lower_quote_only_word_omission(
+                            effect=effect,
+                            effect_type=effect_type,
+                            curr_action=curr_action,
+                            content_ir=content_ir,
+                            is_word_level=is_word_level,
+                            targets_str=targets_str,
+                            target=target,
+                            target_ref=t_str,
+                            extracted_el=extracted_el,
+                            source_root=source_root,
+                            extracted_text=extracted_text,
+                            lowering_rejections_out=lowering_rejections_out,
+                        )
+                        if quote_only_omission_lowering.applied:
+                            fragment_subs = quote_only_omission_lowering.fragment_subs
+                            content_ir = quote_only_omission_lowering.content_ir
+                            op_text_match = quote_only_omission_lowering.op_text_match
+                            op_text_replacement = (
+                                quote_only_omission_lowering.op_text_replacement
                             )
-                            quote_only_omission = _quote_only_omission_payload_match(extracted_text)
-                        if quote_only_definition_omission is not None:
-                            definition_term, source_parent_id = quote_only_definition_omission
-                            fragment_subs = [
-                                {
-                                    "original": f"TEXT_DEFINITION_ENTRY_{definition_term}",
-                                    "replacement": "",
-                                    "rule_id": "uk_effect_quote_only_definition_list_omission_text_patch",
-                                }
-                            ]
-                            content_ir = None
-                            op_text_match = f"TEXT_DEFINITION_ENTRY_{definition_term}"
-                            op_text_replacement = ""
-                            curr_action = "text_repeal"
-                            _append_uk_effect_lowering_observation(
-                                lowering_rejections_out,
-                                rule_id="uk_effect_quote_only_definition_list_omission_text_patch",
-                                family="text_rewrite_lowering",
-                                reason_code="quote_only_payload_in_parent_definition_omission_list",
-                                reason=(
-                                    "UK word-level omission source row contains only a quoted "
-                                    "definition term, and its parent source instruction explicitly "
-                                    "omits definitions; lowering preserves a bounded definition-entry "
-                                    "selector instead of deleting every phrase occurrence."
-                                ),
-                                effect=effect,
-                                extracted_el=extracted_el,
-                                extracted_text=extracted_text,
-                                detail={
-                                    "target_ref": t_str,
-                                    "target": str(target),
-                                    "definition_term": definition_term,
-                                    "source_parent_id": source_parent_id,
-                                },
-                            )
-                        elif quote_only_omission:
-                            fragment_subs = [
-                                {
-                                    "original": quote_only_omission,
-                                    "replacement": "",
-                                    "rule_id": "uk_effect_quote_only_omission_payload_text_patch",
-                                }
-                            ]
-                            content_ir = None
-                            op_text_match = quote_only_omission
-                            op_text_replacement = ""
-                            curr_action = "text_repeal"
+                            curr_action = quote_only_omission_lowering.curr_action
                         else:
                             # We couldn't extract the fragment for a word-level effect.
                             # Do NOT replace the whole node text with the amendment instruction!

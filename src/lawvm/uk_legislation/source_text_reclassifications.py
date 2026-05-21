@@ -29,6 +29,16 @@ class UKTextReclassificationResult:
     detail: Optional[dict[str, str]]
 
 
+@dataclass(frozen=True)
+class UKQuoteOnlyOmissionLowering:
+    applied: bool
+    curr_action: str
+    content_ir: Optional[dict[str, Any]]
+    fragment_subs: Optional[list[dict[str, str]]]
+    op_text_match: Optional[str]
+    op_text_replacement: Optional[str]
+
+
 def _word_level_structural_subsection_omission(
     *,
     effect_type: str,
@@ -187,6 +197,105 @@ def _quote_only_definition_list_omission_payload_match(
                 )
             return fragment, source_parent_id
     return None
+
+
+def lower_quote_only_word_omission(
+    *,
+    effect: UKEffectRecord,
+    effect_type: str,
+    curr_action: str,
+    content_ir: Optional[dict[str, Any]],
+    is_word_level: bool,
+    targets_str: list[str],
+    target: LegalAddress,
+    target_ref: str,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKQuoteOnlyOmissionLowering:
+    if not (
+        is_word_level
+        and effect_type in {"words omitted", "word omitted", "words repealed", "word repealed"}
+        and len(targets_str) == 1
+    ):
+        return UKQuoteOnlyOmissionLowering(
+            applied=False,
+            curr_action=curr_action,
+            content_ir=content_ir,
+            fragment_subs=None,
+            op_text_match=None,
+            op_text_replacement=None,
+        )
+
+    quote_only_definition_omission = _quote_only_definition_list_omission_payload_match(
+        extracted_el=extracted_el,
+        source_root=source_root,
+        extracted_text=extracted_text,
+    )
+    if quote_only_definition_omission is not None:
+        definition_term, source_parent_id = quote_only_definition_omission
+        op_text_match = f"TEXT_DEFINITION_ENTRY_{definition_term}"
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_quote_only_definition_list_omission_text_patch",
+            family="text_rewrite_lowering",
+            reason_code="quote_only_payload_in_parent_definition_omission_list",
+            reason=(
+                "UK word-level omission source row contains only a quoted "
+                "definition term, and its parent source instruction explicitly "
+                "omits definitions; lowering preserves a bounded definition-entry "
+                "selector instead of deleting every phrase occurrence."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "definition_term": definition_term,
+                "source_parent_id": source_parent_id,
+            },
+        )
+        return UKQuoteOnlyOmissionLowering(
+            applied=True,
+            curr_action="text_repeal",
+            content_ir=None,
+            fragment_subs=[
+                {
+                    "original": op_text_match,
+                    "replacement": "",
+                    "rule_id": "uk_effect_quote_only_definition_list_omission_text_patch",
+                }
+            ],
+            op_text_match=op_text_match,
+            op_text_replacement="",
+        )
+
+    quote_only_omission = _quote_only_omission_payload_match(extracted_text or "")
+    if not quote_only_omission:
+        return UKQuoteOnlyOmissionLowering(
+            applied=False,
+            curr_action=curr_action,
+            content_ir=content_ir,
+            fragment_subs=None,
+            op_text_match=None,
+            op_text_replacement=None,
+        )
+    return UKQuoteOnlyOmissionLowering(
+        applied=True,
+        curr_action="text_repeal",
+        content_ir=None,
+        fragment_subs=[
+            {
+                "original": quote_only_omission,
+                "replacement": "",
+                "rule_id": "uk_effect_quote_only_omission_payload_text_patch",
+            }
+        ],
+        op_text_match=quote_only_omission,
+        op_text_replacement="",
+    )
 
 
 def _source_parent_application_modification_context(
