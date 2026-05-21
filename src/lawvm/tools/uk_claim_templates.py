@@ -403,9 +403,11 @@ def manual_compile_suggested_claim_template(
         source_norm,
         flags=re.I | re.S,
     )
-    if match is None:
-        return {}
-    payload = " ".join(match.group("payload").split()).strip()
+    payload = (
+        " ".join(match.group("payload").split()).strip()
+        if match is not None
+        else source_norm
+    )
     term_match = re.search(r"[\"“]\s*(?P<term>[^\"”]{1,160}?)\s*[\"”]", payload)
     term = " ".join(str(term_match.group("term") if term_match else "").split()).strip()
     return {

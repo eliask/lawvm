@@ -1812,6 +1812,86 @@ def test_uk_manual_compile_evidence_jsonl_templates_appropriate_place_definition
     )
 
 
+def test_uk_manual_compile_evidence_jsonl_definition_template_survives_unparsed_payload() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-definition-entry-unparsed",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/asp/2001/2/section/48",
+        affected_class="ScottishAct",
+        affected_year="2001",
+        affected_number="2",
+        affected_provisions="s. 48(1)",
+        affecting_uri="/id/asp/2019/17",
+        affecting_class="ScottishAct",
+        affecting_year="2019",
+        affecting_number="17",
+        affecting_provisions="sch. para. 3(6)(a)(iii)",
+        affecting_title="Transport (Scotland) Act 2019",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="appropriate_place_definition_entry_insert_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_overlap_substitution_unlowered", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P4",
+            source_extracted_text_preview="Definition entry payload with unusual publisher punctuation.",
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_appropriate_place_definition_entry_candidate"
+            ),
+            manual_compile_reason="Definition-entry placement needs a validated anchor.",
+            manual_compile_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_overlap_substitution_unlowered",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="asp/2001/2",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="asp/2001/2",
+        row=report_row,
+        context=context,
+    )
+
+    assert payload["suggested_claim_template_status"] == "available"
+    template = payload["suggested_claim_template"]
+    assert template["schema"] == "lawvm.uk_semantic_compile_claim_template.v1"
+    assert template["action_family"] == "definition_entry_insert"
+    assert template["inserted_definition_term"] == ""
+    assert (
+        template["inserted_definition_entry_preview"]
+        == "Definition entry payload with unusual publisher punctuation."
+    )
+    assert template["executable"] is False
+
+
 def test_uk_manual_compile_evidence_jsonl_templates_crossheading_claim() -> None:
     effect = UKEffectRecord(
         effect_id="eff-crossheading",
