@@ -331,6 +331,13 @@ from lawvm.uk_legislation.source_payload_helpers import (
     _inserted_section_p1group_heading_text,
     _prepend_inserted_section_heading_carrier,
 )
+from lawvm.uk_legislation.target_anchors import (
+    _body_target_eid_suffixes,
+    _fallback_target_eid,
+    _source_after_insertion_anchor,
+    _source_before_insertion_anchor,
+    _target_anchor_eid,
+)
 from lawvm.uk_legislation.target_parser import (
     _parse_affected_target,
     _schedule_part_context_removed_target,
@@ -697,127 +704,6 @@ def _is_unsafe_schedule_entry_repeal_op(op: LegalOperation) -> bool:
     if not _looks_like_schedule_entry_repeal_text(f"{raw_text} {payload_text}"):
         return False
     return payload is None or _uk_kind_value(payload.kind) == "schedule"
-
-
-def _source_after_insertion_anchor(
-    text: str,
-    target: Optional[LegalAddress] = None,
-) -> tuple[Optional[str], Optional[str]]:
-    lead = " ".join(str(text or "").split())
-    if not lead:
-        return None, None
-    match = re.search(
-        r"\bafter\s+(?P<kind>sub-?paragraph|paragraph|subsection|section|ss\.|s\.)\s*"
-        r"\(?(?P<label>[0-9a-zA-Z]+)\)?\b",
-        lead,
-        flags=re.I,
-    )
-    if match is None:
-        return None, None
-    kind = str(match.group("kind") or "").lower()
-    label = str(match.group("label") or "")
-    if not label:
-        return None, None
-    if target is not None and len(target.path) > 1:
-        parent = target.parent()
-        sibling_kind = _addr_leaf_kind(target)
-        if parent is not None and sibling_kind:
-            sibling = LegalAddress(path=(*parent.path, (sibling_kind, label)))
-            return _fallback_target_eid(sibling), "extracted_source_after_clause"
-    prefix = "p1" if kind == "paragraph" else "section"
-    return f"{prefix}-{label}", "extracted_source_after_clause"
-
-
-def _fallback_target_eid(addr: LegalAddress) -> str:
-    """Return the UK local fallback eId shape for an address without oracle data."""
-    addr = canonicalize_uk_address(addr)
-    container = _addr_container(addr)
-    section = _addr_field(addr, "schedule") or _addr_field(addr, "section")
-    part = _addr_field(addr, "part")
-    chapter = _addr_field(addr, "chapter")
-    parts: list[str] = []
-    if container == "schedule":
-        parts.append(f"schedule-{_clean_num(section)}" if section else "schedule")
-        if part:
-            parts.append(f"part-{_clean_num(part)}")
-        if chapter:
-            parts.append(f"chapter-{_clean_num(chapter)}")
-        paragraph, subsection, item_labels = _schedule_target_levels(addr)
-        if paragraph:
-            parts.append(f"paragraph-{_canonicalize_schedule_paragraph_eid_label(paragraph)}")
-        if subsection:
-            parts.append(_clean_num(subsection))
-        for item_label in item_labels:
-            parts.append(_canonicalize_eid_tail_label(item_label))
-        return "-".join(part for part in parts if part)
-
-    if section:
-        parts.append(f"section-{_clean_num(section)}")
-    for suffix_label in _body_target_eid_suffixes(addr):
-        parts.append(_canonicalize_eid_tail_label(suffix_label))
-    return "-".join(part for part in parts if part)
-
-
-def _body_target_eid_suffixes(addr: LegalAddress) -> list[str]:
-    """Return body descendant labels in UK eId order after the section root."""
-    suffixes: list[str] = []
-    seen_section_root = False
-    for kind, label in addr.path:
-        if kind in {"section", "article", "rule", "regulation"}:
-            seen_section_root = True
-            continue
-        if not seen_section_root:
-            continue
-        if kind in {"subsection", "paragraph", "subparagraph", "item", "point"} and label:
-            suffixes.append(label)
-    return suffixes
-
-
-def _source_before_insertion_anchor(
-    text: str,
-    target: LegalAddress,
-) -> tuple[Optional[str], Optional[str]]:
-    lead = " ".join(str(text or "").split())
-    if not lead:
-        return None, None
-    match = re.search(
-        r"\bbefore\s+(?P<kind>sub-?paragraph|paragraph|subsection|item)\s*"
-        r"\(?(?P<label>[0-9a-zA-Z]+)\)?\s+insert\b",
-        lead,
-        flags=re.I,
-    )
-    if match is None:
-        return None, None
-    if len(target.path) < 2:
-        return None, None
-    label = str(match.group("label") or "")
-    if not label:
-        return None, None
-    parent = target.parent()
-    if parent is None:
-        return None, None
-    sibling_kind = _addr_leaf_kind(target)
-    if not sibling_kind:
-        return None, None
-    sibling = LegalAddress(path=(*parent.path, (sibling_kind, label)))
-    return _fallback_target_eid(sibling), "extracted_source_before_clause"
-
-
-def _target_anchor_eid(target: LegalAddress) -> Optional[str]:
-    if not target.path:
-        return None
-    if len(target.path) != 1:
-        return _fallback_target_eid(target)
-    kind, label = target.path[0]
-    clean_label = _clean_num(label)
-    if not clean_label:
-        return None
-    clean_kind = str(kind or "").lower()
-    if clean_kind == "section":
-        return f"section-{clean_label}"
-    if clean_kind == "paragraph":
-        return f"p1-{clean_label}"
-    return None
 
 
 from lawvm.uk_legislation.uk_grafter import (
