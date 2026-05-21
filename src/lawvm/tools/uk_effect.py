@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.semantic_types import FacetKind, IRNodeKind
+from lawvm.uk_legislation.compiled_effect_facts import uk_compiled_effect_facts
 from lawvm.uk_legislation.source_state import (
     uk_affecting_act_xml_missing_rejection,
     uk_affecting_act_xml_parse_rejection,
@@ -704,17 +705,21 @@ def main(args: "argparse.Namespace") -> None:
         source_parse_observations: list[dict[str, Any]] = []
         enacted_source_parse_failed = False
         oracle_source_parse_failed = False
+        compiled_facts = uk_compiled_effect_facts(
+            ops=ops,
+            lowering_rejections=lowering_rejections,
+            lowering_rejection_start_index=lowering_rejection_count_before,
+            target_formatter=_fmt_target,
+            payload_text_formatter=lambda text: " ".join(text.split()),
+        )
         source_pathology = classify_uk_effect_source_pathology(
             extracted_tag=extracted_tag,
             extracted_text=extracted_text,
-            op_actions=[op.action.value for op in ops],
-            payload_kinds=[str(op.payload.kind) for op in ops if op.payload is not None],
-            payload_texts=[" ".join((op.payload.text or "").split()) for op in ops if op.payload is not None],
-            target_paths=[_fmt_target(op.target) for op in ops],
-            lowering_rule_ids=[
-                str(row.get("rule_id") or "")
-                for row in lowering_rejections[lowering_rejection_count_before:]
-            ],
+            op_actions=compiled_facts.op_actions,
+            payload_kinds=compiled_facts.payload_kinds,
+            payload_texts=compiled_facts.payload_texts,
+            target_paths=compiled_facts.target_paths,
+            lowering_rule_ids=compiled_facts.lowering_rule_ids,
             effect_type=effect.effect_type,
             is_structural=structural_for_replay,
         )

@@ -104,6 +104,26 @@ def test_uk_compiled_effect_facts_preserve_source_pathology_wire_shape() -> None
         "uk_effect_range_to_container_substitution_rejected",
     )
 
+    formatted_facts = uk_compiled_effect_facts(
+        ops=(
+            LegalOperation(
+                op_id="op-2",
+                sequence=2,
+                action=StructuralAction.TEXT_REPLACE,
+                target=LegalAddress(
+                    path=(("section", "1"),),
+                    special=FacetKind.HEADING,
+                ),
+                payload=IRNode(kind=IRNodeKind.SECTION, label="1", text="  A   B  "),
+            ),
+        ),
+        target_formatter=_fmt_target,
+        payload_text_formatter=lambda text: " ".join(text.split()),
+    )
+
+    assert formatted_facts.target_paths == ("section:1/heading",)
+    assert formatted_facts.payload_texts == ("A B",)
+
 
 def test_uk_manual_claim_template_status_only_labels_actionable_rows() -> None:
     assert (
