@@ -43,11 +43,18 @@ from lawvm.tools.uk_effects import (
     uk_effects_report_jsonable,
     uk_effects_summary_counts,
 )
+from lawvm.uk_legislation.lowering_records import (
+    append_manual_compile_frontier_diagnostic,
+)
+from lawvm.uk_legislation.manual_claim_templates import (
+    UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS,
+    uk_manual_claim_template_status,
+)
 from lawvm.uk_legislation.uk_amendment_replay import UKEffectRecord
 
 
 def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
-    assert UK_CLAIM_TEMPLATE_RULE_IDS == {
+    expected_rule_ids = {
         "uk_manual_frontier_appropriate_place_candidate",
         "uk_manual_frontier_appropriate_place_definition_entry_candidate",
         "uk_manual_frontier_amendment_program_target_candidate",
@@ -66,6 +73,74 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
         "uk_manual_frontier_table_entry_candidate",
         "uk_manual_frontier_table_entry_deictic_candidate",
     }
+    assert UK_CLAIM_TEMPLATE_RULE_IDS == expected_rule_ids
+    assert UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS == expected_rule_ids
+
+
+def test_uk_manual_claim_template_status_only_labels_actionable_rows() -> None:
+    assert (
+        uk_manual_claim_template_status(
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_heading_facet_candidate",
+        )
+        == "available"
+    )
+    assert (
+        uk_manual_claim_template_status(
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_unclassified",
+        )
+        == "not_available"
+    )
+    assert (
+        uk_manual_claim_template_status(
+            manual_compile_status="deterministic_frontend_supported",
+            manual_compile_rule_id="uk_manual_frontier_deterministic_supported",
+        )
+        == ""
+    )
+
+
+def test_manual_frontier_diagnostic_records_claim_template_status() -> None:
+    diagnostics: list[dict[str, object]] = []
+    append_manual_compile_frontier_diagnostic(
+        diagnostics,
+        effect=UKEffectRecord(
+            effect_id="effect-1",
+            effect_type="words substituted",
+            applied=True,
+            requires_applied=True,
+            modified="2024-01-01",
+            affected_uri="/id/ukpga/2000/1/section/10",
+            affected_class="UnitedKingdomPublicGeneralAct",
+            affected_year="2000",
+            affected_number="1",
+            affected_provisions="s. 10",
+            affecting_uri="/id/ukpga/2024/1",
+            affecting_class="UnitedKingdomPublicGeneralAct",
+            affecting_year="2024",
+            affecting_number="1",
+            affecting_provisions="s. 2",
+            affecting_title="Test Act 2024",
+        ),
+        source_pathology="unhandled_instruction_text",
+        extracted_tag="P1",
+        extracted_text='In the title to section 10, for "old" substitute "new".',
+        lowering_rejections_out=[
+            {"rule_id": "uk_effect_heading_only_ref_rejected", "blocking": True}
+        ],
+        lowering_rejection_start_index=0,
+        compiled_op_count=0,
+        replay_applicable=True,
+        structural_for_replay=True,
+    )
+
+    assert diagnostics[0]["manual_compile_status"] == "manual_compile_candidate"
+    assert (
+        diagnostics[0]["manual_compile_rule_id"]
+        == "uk_manual_frontier_heading_facet_candidate"
+    )
+    assert diagnostics[0]["suggested_claim_template_status"] == "available"
 
 
 def test_uk_effect_fmt_target_preserves_heading_facet() -> None:
