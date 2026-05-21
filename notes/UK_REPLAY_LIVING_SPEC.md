@@ -441,6 +441,10 @@ families,
 `uk_manual_frontier_appropriate_place_candidate`,
 `structural_sibling_insert` for
 `uk_manual_frontier_structural_sibling_insert_candidate`,
+`table_repeal_or_omission` for
+`uk_manual_frontier_repeal_table_candidate`,
+`source_carried_structured_text_patch` for
+`uk_manual_frontier_source_carried_structured_text_patch_candidate`,
 `definition_entry_insert` for
 `uk_manual_frontier_appropriate_place_definition_entry_candidate`, and
 `range_to_container_substitution` for

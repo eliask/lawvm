@@ -2121,6 +2121,165 @@ def test_uk_manual_compile_evidence_jsonl_templates_structural_sibling_claim() -
     assert template["executable"] is False
 
 
+def test_uk_manual_compile_evidence_jsonl_templates_repeal_table_claim() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-table-repeal",
+        effect_type="table repealed",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/1/schedule/4/table",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="Sch. 4 table",
+        affecting_uri="/id/ukpga/2024/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="s. 8",
+        affecting_title="Test Act 2024",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="repeal_schedule_table_source_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_overlap_substitution_unlowered", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="Table",
+            source_extracted_text_preview="In the table, omit the entry for old licence.",
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_repeal_table_candidate",
+            manual_compile_reason="Table repeal requires row/cell boundary ownership.",
+            manual_compile_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_overlap_substitution_unlowered",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "table_repeal_or_omission"
+    assert template["placement_family"] == "source_named_table_or_row_boundary_required"
+    assert "repealed_row_column_or_cell_boundary" in template["required_ownership"]
+    assert "claim_preserves_unclaimed_table_rows_columns_and_cells" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_source_carried_structured_patch_claim() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-source-carried-structured",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/1/section/9",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 9",
+        affecting_uri="/id/ukpga/2024/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="s. 9",
+        affecting_title="Test Act 2024",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="fragment_context_missing",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_overlap_substitution_unlowered", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="BlockAmendment",
+            source_extracted_text_preview=(
+                'for the words "old" substitute the words "new" in paragraph (a)'
+            ),
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_source_carried_structured_text_patch_candidate"
+            ),
+            manual_compile_reason="Structured carried payload requires child-bound claims.",
+            manual_compile_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_overlap_substitution_unlowered",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "source_carried_structured_text_patch"
+    assert (
+        template["placement_family"]
+        == "parent_formula_anchor_with_structured_payload_required"
+    )
+    assert "source_carried_payload_units" in template["required_ownership"]
+    assert "claim_rejects_flattening_structured_payload_into_host_text" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
 def test_uk_manual_compile_evidence_jsonl_templates_range_to_container_claim() -> None:
     effect = UKEffectRecord(
         effect_id="eff-range-container",
