@@ -5,8 +5,13 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Any, Optional
 
+from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_rejection
+from lawvm.uk_legislation.source_payload_elaboration import (
+    _is_broad_schedule_flat_replace_payload,
+    _is_non_substantive_structural_payload,
+)
 
 
 def reject_mixed_heading_structural_insert_missing_payload(
@@ -75,5 +80,84 @@ def reject_missing_structural_payload(
         extracted_el=extracted_el,
         extracted_text=extracted_text,
         detail={"target_ref": t_str, "action": action},
+    )
+    return True
+
+
+def reject_non_substantive_structural_payload(
+    *,
+    effect: UKEffectRecord,
+    curr_action: Optional[str],
+    t_str: str,
+    payload_node_mut: Any,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> bool:
+    if not (curr_action in ("insert", "replace") and _is_non_substantive_structural_payload(payload_node_mut)):
+        return False
+    _append_uk_effect_lowering_rejection(
+        lowering_rejections_out,
+        rule_id="uk_effect_non_substantive_payload_rejected",
+        family="source_pathology_filter",
+        reason_code="non_substantive_structural_payload",
+        reason=(
+            "UK structural effect payload contains only numbering "
+            "or dot leaders, so replaying it would create a bogus "
+            "legal unit"
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": t_str,
+            "action": curr_action,
+            "payload_kind": str(payload_node_mut.kind) if payload_node_mut is not None else "",
+        },
+    )
+    return True
+
+
+def reject_broad_schedule_flat_replace_payload(
+    *,
+    effect: UKEffectRecord,
+    curr_action: Optional[str],
+    t_str: str,
+    target: LegalAddress,
+    payload_node_mut: Any,
+    actual_el: Optional[ET.Element],
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> bool:
+    if not (
+        curr_action == "replace"
+        and _is_broad_schedule_flat_replace_payload(
+            target=target,
+            payload_node=payload_node_mut,
+            actual_source_el=actual_el,
+        )
+    ):
+        return False
+    _append_uk_effect_lowering_rejection(
+        lowering_rejections_out,
+        rule_id="uk_effect_broad_schedule_flat_payload_rejected",
+        family="payload_coverage_filter",
+        reason_code="broad_schedule_or_part_replace_payload_undercovered",
+        reason=(
+            "UK structural replace targets a whole schedule or schedule part, "
+            "but the extracted source payload is only flat text and does not "
+            "claim the target's descendant structure."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": t_str,
+            "target": str(target),
+            "payload_kind": str(payload_node_mut.kind),
+            "payload_label": str(payload_node_mut.label or ""),
+            "payload_text_preview": " ".join((payload_node_mut.text or "").split())[:240],
+        },
     )
     return True
