@@ -9,6 +9,7 @@ from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.ir import IRNode, LegalOperation
 from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.effects import _COMMENCEMENT_EFFECT_TYPES, UKEffectRecord, uk_nonstructural_replay_candidate_family
+from lawvm.uk_legislation.source_adjudication import classify_uk_manual_compile_frontier
 from lawvm.uk_legislation.source_payload_helpers import (
     UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID,
 )
@@ -345,6 +346,73 @@ def mark_nonreplay_lowering_rejections_nonblocking(
         )
         changed = True
     return changed
+
+
+def _lowering_record_rule_ids(rows: tuple[dict[str, Any], ...]) -> tuple[str, ...]:
+    return tuple(str(row.get("rule_id") or "") for row in rows if row.get("rule_id"))
+
+
+def append_manual_compile_frontier_diagnostic(
+    diagnostics_out: Optional[list[dict[str, Any]]],
+    *,
+    effect: UKEffectRecord,
+    source_pathology: str,
+    extracted_tag: str,
+    extracted_text: str,
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+    lowering_rejection_start_index: int,
+    compiled_op_count: int,
+    replay_applicable: bool,
+    structural_for_replay: bool,
+) -> None:
+    """Append the manual compile frontier classification for one UK effect row."""
+    if diagnostics_out is None:
+        return
+    current_lowering_rejections = (
+        tuple(lowering_rejections_out[lowering_rejection_start_index:])
+        if lowering_rejections_out is not None
+        else ()
+    )
+    manual_frontier = classify_uk_manual_compile_frontier(
+        effect_type=effect.effect_type or "",
+        source_pathology=source_pathology,
+        extracted_tag=extracted_tag or "",
+        extracted_text=extracted_text,
+        lowering_rejections=current_lowering_rejections,
+        compiled_op_count=compiled_op_count,
+        replay_applicable=replay_applicable,
+        structural_for_replay=structural_for_replay,
+    )
+    diagnostics_out.append(
+        {
+            "rule_id": "uk_manual_compile_frontier_classified",
+            "family": "manual_compile_frontier",
+            "phase": "lowering",
+            "effect_id": str(effect.effect_id or ""),
+            "affecting_act_id": str(effect.affecting_act_id or ""),
+            "affected_provisions": str(effect.affected_provisions or ""),
+            "affecting_provisions": str(effect.affecting_provisions or ""),
+            "effect_type": str(effect.effect_type or ""),
+            "manual_compile_status": manual_frontier["status"],
+            "manual_compile_rule_id": manual_frontier["rule_id"],
+            "manual_compile_reason": manual_frontier["reason"],
+            "lowering_rule_ids": _lowering_record_rule_ids(current_lowering_rejections),
+            "blocking_lowering_rule_ids": _lowering_record_rule_ids(
+                tuple(
+                    row
+                    for row in current_lowering_rejections
+                    if is_blocking_compile_record(row)
+                )
+            ),
+            "source_pathology": source_pathology or "",
+            "structural_for_replay": structural_for_replay,
+            "replay_applicable": replay_applicable,
+            "compiled_op_count": compiled_op_count,
+            "blocking": False,
+            "strict_disposition": "record",
+            "quirks_disposition": "record",
+        }
+    )
 
 
 def _range_to_container_payload_root_summary(payload: IRNode) -> dict[str, Any]:
