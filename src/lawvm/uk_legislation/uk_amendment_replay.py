@@ -139,6 +139,7 @@ from lawvm.uk_legislation.heading_facets import (
 from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
     _append_uk_effect_lowering_rejection,
+    _range_to_container_substitution_detail,
 )
 from lawvm.uk_legislation.metadata_rewrites import (
     UKMetadataRenumberTargets,
@@ -853,64 +854,6 @@ def append_source_pathology_filter_lowering_rejections(
         )
         appended = True
     return appended
-
-
-def _range_to_container_substitution_detail(
-    effect: UKEffectRecord,
-    compiled_ops: Sequence[LegalOperation],
-) -> dict[str, Any]:
-    """Return typed evidence for a blocked UK range-to-container substitution."""
-    range_match = re.search(
-        r"\bss?\.?\s*(?P<start>[0-9]+[A-Za-z]?)\s*[-\u2013\u2014]\s*(?P<end>[0-9]+[A-Za-z]?)\b",
-        effect.effect_type,
-        flags=re.I,
-    )
-    compiled_targets = tuple(str(op.target) for op in compiled_ops)
-    compiled_actions = tuple(_action_name(op.action) for op in compiled_ops)
-    payloads = tuple(op.payload for op in compiled_ops if op.payload is not None)
-    payload_kinds = tuple(payload.kind.value for payload in payloads)
-    payload_roots = tuple(_range_to_container_payload_root_summary(payload) for payload in payloads)
-    detail: dict[str, Any] = {
-        "compiled_actions": compiled_actions,
-        "compiled_targets": compiled_targets,
-        "payload_kinds": payload_kinds,
-        "payload_roots": payload_roots,
-        "required_ownership": (
-            "source_range",
-            "container_payload",
-            "lineage_or_migration_events",
-            "mutation_boundary",
-        ),
-        "target_container_ref": effect.affected_provisions,
-    }
-    if range_match is not None:
-        detail.update(
-            {
-                "source_range_kind": "section",
-                "source_range_start": range_match.group("start"),
-                "source_range_end": range_match.group("end"),
-            }
-        )
-    return detail
-
-
-def _range_to_container_payload_root_summary(payload: IRNode) -> dict[str, Any]:
-    child_summaries = tuple(
-        {
-            "kind": child.kind.value,
-            "label": child.label or "",
-            "eid": str(child.attrs.get("eId") or child.attrs.get("id") or ""),
-        }
-        for child in payload.children[:12]
-    )
-    return {
-        "kind": payload.kind.value,
-        "label": payload.label or "",
-        "eid": str(payload.attrs.get("eId") or payload.attrs.get("id") or ""),
-        "direct_child_count": len(payload.children),
-        "direct_children": child_summaries,
-        "truncated_direct_children": len(payload.children) > len(child_summaries),
-    }
 
 
 def append_no_ops_lowering_rejections(
