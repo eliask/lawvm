@@ -19089,6 +19089,77 @@ def test_replay_heading_facet_after_anchor_insert_preserves_heading_tail() -> No
     assert part.children[0].text == "INTERVENTION"
 
 
+def test_replay_chapter_1a_insert_does_not_emit_false_order_gap() -> None:
+    ns = _LEG_NS
+    extracted_el = ET.fromstring(
+        f"""
+        <P1 xmlns="{ns}">
+          <Pnumber>4</Pnumber>
+          <P1para>
+            <Text>After Chapter 1 of Part 6 of the 2021 Act insert—</Text>
+            <BlockAmendment>
+              <Chapter>
+                <Number>CHAPTER1A</Number>
+                <Title>Performance of corporate joint committees</Title>
+                <P1group>
+                  <Title>Application of Chapter 1 to corporate joint committees</Title>
+                  <P1>
+                    <Pnumber>115A</Pnumber>
+                    <P1para><Text>Schedule 10A applies.</Text></P1para>
+                  </P1>
+                </P1group>
+              </Chapter>
+            </BlockAmendment>
+          </P1para>
+        </P1>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="key-test-chapter-1a",
+        effect_type="inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2025-10-04",
+        affected_uri="/id/asc/2021/1/part/6/chapter/1a",
+        affected_class="WelshNationalAssemblyAct",
+        affected_year="2021",
+        affected_number="1",
+        affected_provisions="Pt. 6 Ch. 1A",
+        affecting_uri="/id/wsi/2022/797/regulation/4",
+        affecting_class="WelshStatutoryInstrument",
+        affecting_year="2022",
+        affecting_number="797",
+        affecting_provisions="reg. 4",
+        affecting_title="Corporate Joint Committees Regulations",
+        in_force_dates=[{"date": "2022-07-15", "prospective": "false"}],
+    )
+    ops = compile_effect_to_ir_ops(effect, extracted_el, sequence=0)
+    base = IRStatute(
+        statute_id="asc/2021/1",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            children=(
+                IRNode(
+                    kind=IRNodeKind.PART,
+                    label="6",
+                    children=(
+                        IRNode(kind=IRNodeKind.CHAPTER, label="1", attrs={"eId": "part-6-chapter-1"}),
+                        IRNode(kind=IRNodeKind.CHAPTER, label="2", attrs={"eId": "part-6-chapter-2"}),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[CompileAdjudication] = []
+
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
+
+    part = replayed.body.children[0]
+    assert [child.label for child in part.children] == ["1", "CHAPTER1A", "2"]
+    assert "uk_replay_chapter_order_shape_gap" not in {row.kind for row in adjudications}
+
+
 def test_replay_heading_facet_after_anchor_tail_replace_mutates_heading_only() -> None:
     base = IRStatute(
         statute_id="ukpga/2020/17",

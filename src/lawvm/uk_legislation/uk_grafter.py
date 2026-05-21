@@ -124,7 +124,13 @@ def _clean_num(raw: str) -> str:
     if not raw:
         return ""
     s = str(raw).strip()
-    s = re.sub(r"^(Part|Section|Schedule|Chapter|Paragraph|Article|Rule|Regulation)\s+", "", s, flags=re.IGNORECASE)
+    s = re.sub(
+        r"^(Part|Section|Schedule|Chapter|Paragraph|Article|Rule|Regulation)"
+        r"(?=\s+|[0-9IVXLCDM]+[A-Za-z]?\b)\s*",
+        "",
+        s,
+        flags=re.IGNORECASE,
+    )
     s = re.sub(r"[().]+$", "", s).strip()
     if re.match(r"^[IVXLCDM]+$", s, re.IGNORECASE):
         s = _roman_to_int(s)
