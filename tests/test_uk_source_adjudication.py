@@ -50,6 +50,21 @@ def _function_return_string_constants(path: Path, function_name: str) -> set[str
     raise AssertionError(f"function not found: {function_name}")
 
 
+def _uk_replay_recovery_rule_ids(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text())
+    return {
+        node.args[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in {"append", "extend"}
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+        and node.args[0].value.startswith("uk_replay_")
+    }
+
+
 def test_uk_replay_emitted_adjudication_kinds_are_explicitly_owned() -> None:
     emitted = set().union(
         *(_uk_replay_string_constants(path) for path in _uk_replay_module_paths())
@@ -89,6 +104,15 @@ def test_uk_replay_recovery_observations_are_explicitly_owned() -> None:
             "text_rewrite_recovery",
         }
         assert observation.strict_disposition in {"block", "record"}
+
+
+def test_uk_replay_text_recovery_rules_have_explicit_observation_metadata() -> None:
+    uk_dir = Path(__file__).parents[1] / "src/lawvm/uk_legislation"
+    emitted_recovery_rules = _uk_replay_recovery_rule_ids(uk_dir / "replay_text_apply.py")
+
+    assert sorted(
+        emitted_recovery_rules - set(recovery_obs.UK_REPLAY_RECOVERY_OBSERVATIONS)
+    ) == []
 
 
 def test_uk_effect_source_pathology_classes_are_explicitly_owned() -> None:
