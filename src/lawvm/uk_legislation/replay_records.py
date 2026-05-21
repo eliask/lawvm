@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalOperation
 from lawvm.core.phase_result import Finding
 from lawvm.replay_adjudication import CompileAdjudication
+
+
+@dataclass(frozen=True)
+class UKReplayPrepareResult:
+    accepted_ops: tuple[LegalOperation, ...]
+    rejected_adjudications: tuple[CompileAdjudication, ...]
 
 
 def _build_uk_replay_adjudication(
