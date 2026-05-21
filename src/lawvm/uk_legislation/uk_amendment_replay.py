@@ -324,7 +324,6 @@ from lawvm.uk_legislation.uk_prefetch import (
     fetch_affecting_acts_from_manifest,
 )
 from lawvm.uk_legislation.replay_applicability import (
-    nonstructural_replay_candidate_family,
     should_replay_nonstructural_ops,
 )
 from lawvm.uk_legislation.replay_prepare import prepare_replay_uk_ops
@@ -5092,44 +5091,6 @@ class UKReplayPipeline:
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root
 
-    @staticmethod
-    def _should_replay_nonstructural_ops(
-        effect: UKEffectRecord,
-        compiled_ops: list[LegalOperation],
-        *,
-        applicability_mode: str = "effective_date_plus_feed_applied",
-    ) -> bool:
-        """Admit a narrow false-negative effects-feed class into replay.
-
-        Some UK effects rows that are marked non-structural in the feed are
-        actually structural:
-
-        - sibling-range substitutions whose extracted source compiles to
-          multiple structural replace ops
-        - revoked rows whose extracted source compiles to one or more
-          structural repeal ops
-
-        Replaying these narrow classes is lower regret than trusting the feed
-        flag blindly.
-        """
-        return should_replay_nonstructural_ops(
-            effect,
-            compiled_ops,
-            applicability_mode=applicability_mode,
-        )
-
-    @staticmethod
-    def _nonstructural_replay_candidate_family(
-        effect: UKEffectRecord,
-        *,
-        applicability_mode: str = "effective_date_plus_feed_applied",
-    ) -> str:
-        """Return the nonstructural effect row family that may still replay."""
-        return nonstructural_replay_candidate_family(
-            effect,
-            applicability_mode=applicability_mode,
-        )
-
     def compile_ops_for_statute(
         self,
         affected_act_id: str,
@@ -5348,7 +5309,7 @@ class UKReplayPipeline:
             if source_pathology_filter_rejected:
                 continue
             replay_applicable = e.is_applicable_for_replay(applicability_mode=applicability_mode)
-            should_replay_compiled = structural_for_replay or self._should_replay_nonstructural_ops(
+            should_replay_compiled = structural_for_replay or should_replay_nonstructural_ops(
                 e,
                 compiled,
                 applicability_mode=applicability_mode,
