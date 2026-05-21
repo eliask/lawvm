@@ -36,10 +36,8 @@ from lawvm.core.ir import (
     LegalAddress,
     LegalOperation,
     OperationSource,
-    TextPatchSpec,
-    TextSelector,
 )
-from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction, TextPatchKindEnum
+from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.canonicalize import (
     canonicalize_uk_address,
@@ -286,10 +284,6 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     _fragment_target_suffix,
     _labeled_child_end_range_selector,
     _multi_quoted_word_repeal_fragments,
-    _separate_all_occurrences_text_replace_fragments,
-    _separate_definition_repeal_fragments,
-    _separate_multi_quoted_word_repeal_fragments,
-    _separate_occurrence_text_replace_fragments,
 )
 from lawvm.uk_legislation.source_context import (
     _first_amendment_container,
@@ -362,6 +356,7 @@ from lawvm.uk_legislation.target_parser import (
 from lawvm.uk_legislation.table_sources import (
     _uk_table_driven_corresponding_entry_word_substitution,
 )
+from lawvm.uk_legislation.text_patch_lowering import build_uk_text_patch_items
 from lawvm.uk_legislation.text_matching import (
     _normalize_text,
     _text_patch_pattern,
@@ -2771,118 +2766,14 @@ def compile_effect_to_ir_ops(
                 )
                 continue
             payload_node = payload_node_mut.to_irnode() if payload_node_mut is not None else None
-            text_patch_items: list[tuple[Optional[TextPatchSpec], Optional[list]]] = []
-            separate_definition_repeals = _separate_definition_repeal_fragments(fragment_subs)
-            separate_occurrence_replacements = _separate_occurrence_text_replace_fragments(fragment_subs)
-            separate_all_occurrences_replacements = _separate_all_occurrences_text_replace_fragments(fragment_subs)
-            separate_multi_quoted_word_repeals = _separate_multi_quoted_word_repeal_fragments(fragment_subs)
-            if curr_action == "text_repeal" and separate_definition_repeals:
-                for fragment in separate_definition_repeals:
-                    text_patch_items.append(
-                        (
-                            TextPatchSpec(
-                                kind=TextPatchKindEnum.DELETE,
-                                selector=TextSelector(
-                                    match_text=fragment["original"],
-                                    occurrence=0,
-                                ),
-                            ),
-                            [fragment],
-                        )
-                    )
-            elif curr_action == "text_repeal" and separate_multi_quoted_word_repeals:
-                for fragment in separate_multi_quoted_word_repeals:
-                    text_patch_items.append(
-                        (
-                            TextPatchSpec(
-                                kind=TextPatchKindEnum.DELETE,
-                                selector=TextSelector(
-                                    match_text=fragment["original"],
-                                    occurrence=0,
-                                ),
-                            ),
-                            [fragment],
-                        )
-                    )
-            elif curr_action == "text_replace" and separate_occurrence_replacements:
-                for fragment in separate_occurrence_replacements:
-                    text_patch_items.append(
-                        (
-                            TextPatchSpec(
-                                kind=TextPatchKindEnum.REPLACE,
-                                selector=TextSelector(
-                                    match_text=fragment["original"],
-                                    occurrence=int(fragment["occurrence"]),
-                                ),
-                                replacement=fragment["replacement"],
-                            ),
-                            [fragment],
-                        )
-                    )
-            elif curr_action == "text_replace" and separate_all_occurrences_replacements:
-                for fragment in separate_all_occurrences_replacements:
-                    text_patch_items.append(
-                        (
-                            TextPatchSpec(
-                                kind=TextPatchKindEnum.REPLACE,
-                                selector=TextSelector(
-                                    match_text=fragment["original"],
-                                    occurrence=0,
-                                ),
-                                replacement=fragment["replacement"],
-                            ),
-                            [fragment],
-                        )
-                    )
-            elif curr_action == "text_repeal" and op_text_match:
-                text_patch_items.append(
-                    (
-                        TextPatchSpec(
-                            kind=TextPatchKindEnum.DELETE,
-                            selector=TextSelector(
-                                match_text=op_text_match,
-                                occurrence=op_text_occurrence,
-                                end_occurrence=op_text_end_occurrence,
-                            ),
-                        ),
-                        fragment_subs,
-                    )
-                )
-            elif (
-                curr_action == "text_replace"
-                and op_text_match == "TEXT_FROM__TO_END"
-                and op_text_replacement is not None
-            ):
-                text_patch_items.append(
-                    (
-                        TextPatchSpec(
-                            kind=TextPatchKindEnum.APPEND,
-                            selector=TextSelector(
-                                match_text="TEXT_END",
-                                occurrence=0,
-                            ),
-                            replacement=op_text_replacement,
-                        ),
-                        fragment_subs,
-                    )
-                )
-            elif curr_action == "text_replace" and op_text_match and op_text_replacement is not None:
-                text_patch_items.append(
-                    (
-                        TextPatchSpec(
-                            kind=TextPatchKindEnum.REPLACE,
-                            selector=TextSelector(
-                                match_text=op_text_match,
-                                occurrence=op_text_occurrence,
-                                end_occurrence=op_text_end_occurrence,
-                            ),
-                            replacement=op_text_replacement,
-                        ),
-                        fragment_subs,
-                    )
-                )
-            else:
-                text_patch_items.append((None, fragment_subs))
+            text_patch_items = build_uk_text_patch_items(
+                curr_action=curr_action,
+                fragment_subs=fragment_subs,
+                op_text_match=op_text_match,
+                op_text_replacement=op_text_replacement,
+                op_text_occurrence=op_text_occurrence,
+                op_text_end_occurrence=op_text_end_occurrence,
+            )
 
             # Build source
             src = OperationSource(
