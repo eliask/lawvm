@@ -909,10 +909,15 @@ def test_executor_text_from_to_occurrence_counts_single_word_tokens() -> None:
         "any refusal of an ordinary Surveillance Commissioner to approve the authorisation;"
     )
     assert [row.kind for row in adjudications] == [
-        "uk_replay_text_range_anchor_word_boundary_normalized"
+        "uk_replay_text_range_anchor_word_boundary_normalized",
+        "uk_replay_node_local_range_text_rewrite_applied",
     ]
     assert adjudications[0].detail["family"] == "text_match_recovery"
     assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[1].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[1].detail["blocking"] is False
+    assert adjudications[1].detail["strict_disposition"] == "record"
+    assert adjudications[1].detail["source_shape"] == "node_local_range_selector"
 
 
 def test_executor_records_word_punctuation_elision_text_match_recovery() -> None:

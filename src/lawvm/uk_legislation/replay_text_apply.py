@@ -144,8 +144,10 @@ class UKReplayTextApplyMixin:
                 if len(matches) < ordinal:
                     return node, False
                 start_match = matches[ordinal - 1]
-            rebuilt = dc_replace(node, text=f"{text[: start_match.start()]}{replacement}")
+            rebuilt = dc_replace(node, text=f"{text[: start_match.start()]}{replacement}".strip())
             self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_node_local_range_to_end_text_rewrite_applied")
             return rebuilt, True
         if match.startswith("TEXT_FROM_") and "_TO_" in match:
             start_text, end_text = match.replace("TEXT_FROM_", "", 1).split("_TO_", 1)
@@ -201,6 +203,8 @@ class UKReplayTextApplyMixin:
                 end_end = end_idx + len(end_text)
             rebuilt = dc_replace(node, text=f"{text[: start_match.start()]}{replacement}{text[end_end:]}")
             self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_node_local_range_text_rewrite_applied")
             return rebuilt, True
         if occurrence == -1:
             pos = text.rfind(match)
@@ -2048,7 +2052,7 @@ class UKReplayTextApplyMixin:
             return rebuilt, True
 
         if match.startswith("TEXT_FROM_"):
-            if "_TO_" in match and not match.endswith("_TO_END") and node.text:
+            if node.text and ("_TO_" in match and not match.endswith("_TO_END") or not node.children):
                 rebuilt, applied = self._apply_text_replace_on_node_text_only(
                     node,
                     match,
