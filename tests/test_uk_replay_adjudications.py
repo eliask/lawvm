@@ -555,7 +555,10 @@ def test_executor_recovers_implicit_first_subparagraph_parent_text_patch() -> No
     assert adjudications[0].kind == "uk_replay_implicit_first_subparagraph_parent_text_recovered"
     assert adjudications[0].detail["target"] == "schedule:6/paragraph:43A/subparagraph:1"
     assert adjudications[0].detail["recovery_target"] == "schedule:6/paragraph:43A"
+    assert adjudications[0].detail["family"] == "target_resolution_recovery"
+    assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "apply"
 
 
 def test_executor_recovers_direct_section_paragraph_text_patch_from_unique_child() -> None:
@@ -609,7 +612,9 @@ def test_executor_recovers_direct_section_paragraph_text_patch_from_unique_child
     assert adjudications[0].kind == "uk_replay_direct_section_paragraph_child_text_recovered"
     assert adjudications[0].detail["target"] == "section:48/paragraph:a"
     assert adjudications[0].detail["recovery_target"] == "section:48/subsection:1"
+    assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "apply"
 
 
 def test_executor_blocks_direct_section_paragraph_text_patch_when_child_text_ambiguous() -> None:
@@ -3297,6 +3302,7 @@ def test_executor_recovers_empty_descendant_text_patch_on_parent_text() -> None:
     assert adjudications[0].kind == "uk_replay_empty_descendant_parent_text_recovered"
     assert adjudications[0].detail["target"] == "schedule:1/paragraph:1/item:d/item:i"
     assert adjudications[0].detail["recovery_target"] == "schedule:1/paragraph:1/item:d"
+    assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "block"
     assert adjudications[0].detail["quirks_disposition"] == "apply"
 
@@ -3377,6 +3383,7 @@ def test_executor_materializes_source_carried_labeled_child_text_substitution() 
     assert len(adjudications) == 1
     assert adjudications[0].kind == "uk_replay_source_carried_labeled_child_text_substitution_recovered"
     assert adjudications[0].detail["child_labels"] == ("i", "ii")
+    assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "block"
     assert adjudications[0].detail["quirks_disposition"] == "apply"
 
@@ -3495,6 +3502,7 @@ def test_executor_recovers_source_carried_structured_tail_substitution() -> None
     assert adjudications[0].detail["source_anchor"] == "where"
     assert adjudications[0].detail["parent_tail_trimmed"] is True
     assert adjudications[1].detail["parent_tail_trimmed"] is False
+    assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "block"
     assert adjudications[0].detail["quirks_disposition"] == "apply"
 
