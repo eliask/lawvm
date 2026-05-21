@@ -116,6 +116,7 @@ from lawvm.uk_legislation.addressing import (
 )
 from lawvm.uk_legislation.authority_filter import (
     _following_eid,
+    _partition_uk_ops_by_authority_mode,
     _preceding_eid,
     _uk_authority_filter_diagnostic,
     _uk_op_allowed_by_authority_mode,
@@ -5368,17 +5369,10 @@ class UKReplayPipeline:
                     applicability_mode=applicability_mode,
                 )
                 if authority_mode == "source_text_only" and authority_rejections_out is not None:
-                    rejected_ops: list[LegalOperation] = []
-                    rejected_reason_counts: dict[str, int] = {}
-                    for op in compiled:
-                        allowed, rejection_reason = _uk_op_allowed_by_authority_mode(op, authority_mode)
-                        if allowed:
-                            continue
-                        rejected_ops.append(op)
-                        if rejection_reason:
-                            rejected_reason_counts[rejection_reason] = (
-                                rejected_reason_counts.get(rejection_reason, 0) + 1
-                            )
+                    _, rejected_ops, rejected_reason_counts = _partition_uk_ops_by_authority_mode(
+                        compiled,
+                        authority_mode,
+                    )
                     if rejected_ops:
                         authority_rejections_out.append(
                             _uk_authority_filter_diagnostic(
@@ -5399,15 +5393,10 @@ class UKReplayPipeline:
                         )
                 continue
             if authority_mode == "source_text_only":
-                rejected_ops: list[LegalOperation] = []
-                rejected_reason_counts: dict[str, int] = {}
-                for op in compiled:
-                    allowed, rejection_reason = _uk_op_allowed_by_authority_mode(op, authority_mode)
-                    if allowed:
-                        continue
-                    rejected_ops.append(op)
-                    if rejection_reason:
-                        rejected_reason_counts[rejection_reason] = rejected_reason_counts.get(rejection_reason, 0) + 1
+                kept_ops, rejected_ops, rejected_reason_counts = _partition_uk_ops_by_authority_mode(
+                    compiled,
+                    authority_mode,
+                )
                 if rejected_ops and authority_rejections_out is not None:
                     authority_rejections_out.append(
                         _uk_authority_filter_diagnostic(
@@ -5420,7 +5409,7 @@ class UKReplayPipeline:
                             structural_for_replay=structural_for_replay,
                         )
                     )
-                compiled = [op for op in compiled if _uk_op_allowed_by_authority_mode(op, authority_mode)[0]]
+                compiled = kept_ops
                 if not compiled:
                     continue
             if should_replay_compiled:
