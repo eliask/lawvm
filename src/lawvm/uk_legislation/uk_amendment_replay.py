@@ -89,6 +89,7 @@ from lawvm.uk_legislation.effect_special_lowering import (
 )
 from lawvm.uk_legislation.effect_lowering_tail import (
     append_unlowered_overlap_substitution_rejection,
+    build_crossheading_insert_ops,
     build_trailing_repeal_ops,
 )
 from lawvm.uk_legislation.addressing import (
@@ -356,7 +357,6 @@ from lawvm.uk_legislation.source_payload_helpers import (
 from lawvm.uk_legislation.source_payload_elaboration import (
     _crossheading_and_structural_replacement_heading_text,
     _expand_sibling_targets_from_extracted,
-    _extract_crossheading_payload_from_extracted,
     _is_broad_schedule_flat_replace_payload,
     _is_non_substantive_structural_payload,
     _retarget_instruction_element_to_target,
@@ -797,46 +797,15 @@ def compile_effect_to_ir_ops(
     chained_insert_preceding_eid: Optional[str] = None
     chained_insert_preceding_eid_source = "effect_comments_after_clause"
     if action == "insert":
-        crossheading_payload = _extract_crossheading_payload_from_extracted(
-            effect.affected_provisions,
-            extracted_el,
-        )
-        if crossheading_payload is not None:
-            crossheading_target = canonicalize_uk_address(LegalAddress(path=(("crossheading", ""),)))
-            crossheading_target_witness = _uk_target_expansion_witness(
-                "cross-heading",
-                ["cross-heading"],
-            )
-            crossheading_lowered_witness = UKLoweredOperationWitness(
-                op_id=f"{effect.effect_id}_crossheading",
+        ops.extend(
+            build_crossheading_insert_ops(
+                effect=effect,
+                extracted_el=extracted_el,
                 sequence=sequence,
-                action=StructuralAction.INSERT,
-                target=crossheading_target,
-                payload=crossheading_payload,
-                source=OperationSource(
-                    statute_id=effect.affecting_act_id,
-                    title=effect.affecting_title,
-                    effective=effect_witness.applicability.effective_date or "",
-                    raw_text=extraction_witness.extracted_text,
-                ),
                 effect_witness=effect_witness,
                 extraction_witness=extraction_witness,
-                target_expansion_witness=crossheading_target_witness,
-                text_rewrite_witness=None,
-                insertion_anchor_witness=None,
             )
-            ops.append(
-                LegalOperation(
-                    op_id=crossheading_lowered_witness.op_id,
-                    sequence=sequence,
-                    action=StructuralAction.INSERT,
-                    target=crossheading_target,
-                    payload=_payload_with_rewrite_witness(crossheading_payload, crossheading_lowered_witness),
-                    source=crossheading_lowered_witness.source,
-                    group_id=_uk_temporal_group_id(effect),
-                    provenance_tags=_uk_lowered_op_provenance_tags(crossheading_lowered_witness),
-                )
-            )
+        )
     source_replaced_sibling_count = (
         _source_replaced_sibling_count_from_substitution_text(
             extracted_text=extracted_text,

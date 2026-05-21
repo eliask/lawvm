@@ -5,12 +5,16 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Any, Optional
 
-from lawvm.core.ir import LegalOperation, OperationSource
+from lawvm.core.ir import LegalAddress, LegalOperation, OperationSource
 from lawvm.core.semantic_types import StructuralAction
+from lawvm.uk_legislation.canonicalize import canonicalize_uk_address
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_rejection
 from lawvm.uk_legislation.source_definition_fragments import (
     _looks_like_appropriate_place_definition_entry_insert_text,
+)
+from lawvm.uk_legislation.source_payload_elaboration import (
+    _extract_crossheading_payload_from_extracted,
 )
 from lawvm.uk_legislation.source_parent_payloads import (
     UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID as _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID,
@@ -20,7 +24,10 @@ from lawvm.uk_legislation.witness_builders import (
     _uk_target_expansion_witness,
     _uk_temporal_group_id,
 )
-from lawvm.uk_legislation.witness_sidecars import _uk_lowered_op_provenance_tags
+from lawvm.uk_legislation.witness_sidecars import (
+    _payload_with_rewrite_witness,
+    _uk_lowered_op_provenance_tags,
+)
 from lawvm.uk_legislation.witnesses import (
     UKEffectWitness,
     UKLoweredOperationWitness,
@@ -86,6 +93,61 @@ def append_unlowered_overlap_substitution_rejection(
             ),
         },
     )
+
+
+def build_crossheading_insert_ops(
+    *,
+    effect: UKEffectRecord,
+    extracted_el: Optional[ET.Element],
+    sequence: int,
+    effect_witness: UKEffectWitness,
+    extraction_witness: UKProvisionExtractionWitness,
+) -> list[LegalOperation]:
+    crossheading_payload = _extract_crossheading_payload_from_extracted(
+        effect.affected_provisions,
+        extracted_el,
+    )
+    if crossheading_payload is None:
+        return []
+
+    crossheading_target = canonicalize_uk_address(LegalAddress(path=(("crossheading", ""),)))
+    crossheading_target_witness = _uk_target_expansion_witness(
+        "cross-heading",
+        ["cross-heading"],
+    )
+    crossheading_lowered_witness = UKLoweredOperationWitness(
+        op_id=f"{effect.effect_id}_crossheading",
+        sequence=sequence,
+        action=StructuralAction.INSERT,
+        target=crossheading_target,
+        payload=crossheading_payload,
+        source=OperationSource(
+            statute_id=effect.affecting_act_id,
+            title=effect.affecting_title,
+            effective=effect_witness.applicability.effective_date or "",
+            raw_text=extraction_witness.extracted_text,
+        ),
+        effect_witness=effect_witness,
+        extraction_witness=extraction_witness,
+        target_expansion_witness=crossheading_target_witness,
+        text_rewrite_witness=None,
+        insertion_anchor_witness=None,
+    )
+    return [
+        LegalOperation(
+            op_id=crossheading_lowered_witness.op_id,
+            sequence=sequence,
+            action=StructuralAction.INSERT,
+            target=crossheading_target,
+            payload=_payload_with_rewrite_witness(
+                crossheading_payload,
+                crossheading_lowered_witness,
+            ),
+            source=crossheading_lowered_witness.source,
+            group_id=_uk_temporal_group_id(effect),
+            provenance_tags=_uk_lowered_op_provenance_tags(crossheading_lowered_witness),
+        )
+    ]
 
 
 def build_trailing_repeal_ops(
