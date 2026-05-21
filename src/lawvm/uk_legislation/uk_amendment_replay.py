@@ -309,6 +309,7 @@ from lawvm.uk_legislation.source_definition_fragments import (
     _fragment_substitution_source_carried_definition_entry_substitution,
     _fragment_substitution_source_carried_following_words_repeal,
     _fragment_substitution_source_carried_quoted_text_substitution,
+    lower_source_carried_definition_child_text_omission,
 )
 from lawvm.uk_legislation.source_fragment_context import (
     _fragment_substitution_after_words_inserted_by_sibling,
@@ -1291,52 +1292,25 @@ def compile_effect_to_ir_ops(
         curr_action = structural_omission_reclassification.curr_action
         content_ir = structural_omission_reclassification.content_ir
 
-        source_carried_definition_child_text_omission = (
-            _fragment_substitution_source_carried_definition_child_text_omission(
-                extracted_el=extracted_el,
-                source_root=source_root,
-                extracted_text=extracted_text,
-            )
-            if extracted_text
-            else None
+        definition_child_text_omission_lowering = lower_source_carried_definition_child_text_omission(
+            effect=effect,
+            curr_action=curr_action,
+            content_ir=content_ir,
+            fragment_subs=fragment_subs,
+            op_text_match=op_text_match,
+            op_text_replacement=op_text_replacement,
+            target=target,
+            target_ref=t_str,
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
         )
-        if source_carried_definition_child_text_omission is not None:
-            fragment_subs = [source_carried_definition_child_text_omission]
-            content_ir = None
-            op_text_match = source_carried_definition_child_text_omission["original"]
-            op_text_replacement = source_carried_definition_child_text_omission["replacement"]
-            curr_action = "text_repeal" if op_text_replacement == "" else "text_replace"
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id="uk_effect_source_carried_definition_child_text_omission_text_patch",
-                family="source_context_elaboration",
-                reason_code="definition_child_text_omission_resolved_from_parent_source",
-                reason=(
-                    "UK child-row source names only a definition paragraph and quoted "
-                    "omitted text, while the parent source instruction names the "
-                    "definition term; lowering combines those source-local facts into "
-                    "a bounded definition-child text omission instead of deleting the "
-                    "quoted word from the whole target subsection."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "target_ref": t_str,
-                    "target": str(target),
-                    "source_parent_id": str(
-                        source_carried_definition_child_text_omission.get("source_parent_id") or ""
-                    ),
-                    "source_definition_term": str(
-                        source_carried_definition_child_text_omission.get("source_definition_term") or ""
-                    ),
-                    "source_child_label": str(
-                        source_carried_definition_child_text_omission.get("source_child_label") or ""
-                    ),
-                    "text_match": op_text_match,
-                    "replacement": op_text_replacement,
-                },
-            )
+        curr_action = definition_child_text_omission_lowering.curr_action
+        content_ir = definition_child_text_omission_lowering.content_ir
+        fragment_subs = definition_child_text_omission_lowering.fragment_subs
+        op_text_match = definition_child_text_omission_lowering.op_text_match
+        op_text_replacement = definition_child_text_omission_lowering.op_text_replacement
 
         source_carried_definition_child_at_end_insert = (
             _fragment_substitution_source_carried_definition_child_at_end_insert(
