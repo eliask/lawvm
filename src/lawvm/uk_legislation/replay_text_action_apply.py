@@ -501,6 +501,22 @@ class UKReplayTextActionApplyMixin:
                     )
                     family = "target_resolution_recovery"
                     strict_disposition = "record"
+                elif recovery_rule_id == "uk_replay_definition_child_structured_text_rewrite_applied":
+                    message = (
+                        "UK replay applied a definition-child text rewrite against "
+                        "a preserved structured definition child."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "structured_definition_child_selector"
+                elif recovery_rule_id == "uk_replay_definition_child_flat_ordinal_text_rewrite_applied":
+                    message = (
+                        "UK replay applied a definition-child text rewrite against "
+                        "a flat definition entry using a bounded ordinal child segment."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "flat_definition_child_ordinal_selector"
                 elif recovery_rule_id == "uk_replay_text_range_anchor_word_boundary_normalized":
                     message = (
                         "UK replay applied range text op after matching a quoted "
