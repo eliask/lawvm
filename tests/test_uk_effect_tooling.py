@@ -25,6 +25,7 @@ from lawvm.tools.uk_effect import (
     uk_effect_report_jsonable,
 )
 from lawvm.tools.uk_effects import (
+    UK_CLAIM_TEMPLATE_RULE_IDS,
     _EffectFilters,
     _EffectReportRow,
     _EffectSummary,
@@ -42,6 +43,25 @@ from lawvm.tools.uk_effects import (
     uk_effects_summary_counts,
 )
 from lawvm.uk_legislation.uk_amendment_replay import UKEffectRecord
+
+
+def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
+    assert UK_CLAIM_TEMPLATE_RULE_IDS == {
+        "uk_manual_frontier_appropriate_place_candidate",
+        "uk_manual_frontier_appropriate_place_definition_entry_candidate",
+        "uk_manual_frontier_crossheading_candidate",
+        "uk_manual_frontier_heading_facet_candidate",
+        "uk_manual_frontier_range_to_container_candidate",
+        "uk_manual_frontier_repeal_table_candidate",
+        "uk_manual_frontier_schedule_list_entry_candidate",
+        "uk_manual_frontier_schedule_note_candidate",
+        "uk_manual_frontier_source_carried_structured_text_patch_candidate",
+        "uk_manual_frontier_structural_sibling_insert_candidate",
+        "uk_manual_frontier_table_appropriate_place_candidate",
+        "uk_manual_frontier_table_column_insert_candidate",
+        "uk_manual_frontier_table_entry_candidate",
+        "uk_manual_frontier_table_entry_deictic_candidate",
+    }
 
 
 def test_uk_effect_fmt_target_preserves_heading_facet() -> None:
