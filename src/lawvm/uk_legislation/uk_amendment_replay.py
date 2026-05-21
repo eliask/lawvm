@@ -96,6 +96,10 @@ from lawvm.uk_legislation.effects import (
     parse_effects_from_metadata,
     uk_effect_requires_affecting_source_for_replay,
 )
+from lawvm.uk_legislation.effect_special_lowering import (
+    lower_uk_after_paragraph_insert_labelled_series,
+    lower_uk_metadata_renumber_effect,
+)
 from lawvm.uk_legislation.addressing import (
     _action_name,
     _addr_container,
@@ -247,18 +251,15 @@ from lawvm.uk_legislation.source_context import (
     _build_affecting_source_context,
     _extract_from_affecting_source_context,
     _extract_from_affecting_source_context_with_observations,
-    _preview_source_text,
     _select_enacted_source_for_current_shell,
     _source_parent_range_label,
 )
+from lawvm.uk_legislation.source_action_inference import infer_uk_effect_action_from_source
 from lawvm.uk_legislation.source_text_reclassifications import (
-    _empty_effect_type_as_if_words_omitted,
-    _empty_effect_type_commencement_source,
     _external_act_target_from_source_text,
     _partial_whole_act_repeal_exceptions,
     _quote_only_definition_list_omission_payload_match,
     _quote_only_omission_payload_match,
-    _source_parent_application_modification_context,
     _word_level_structural_subsection_omission,
     source_following_anchor_structured_substitution_anchor,
 )
@@ -459,13 +460,10 @@ from lawvm.uk_legislation.source_payload_elaboration import (
 )
 from lawvm.uk_legislation.source_parent_payloads import (
     SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE as _SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE,
-    UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID as _UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
     UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID as _UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID,
     UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID as _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID,
     _source_after_paragraph_insert_labelled_series,
-    _source_parent_at_end_added_payload,
     _source_parent_instruction_with_payload,
-    _source_parent_substitution_range_payload,
 )
 from lawvm.uk_legislation.source_structural_sibling import _structural_sibling_insert_from_source
 from lawvm.uk_legislation.source_table_entry_paragraph import (
@@ -646,100 +644,22 @@ def compile_effect_to_ir_ops(
     source_parent_substitution_range_payload: Optional[dict[str, Any]] = None
     source_parent_at_end_added_payload: Optional[dict[str, Any]] = None
 
-    # Infer missing action from text heuristics if metadata is empty.
-    # For empty effect_type we require a clear structural verb — if none is found
-    # we skip (return []) rather than guessing "modified" or a structural replace.
-    if not action and extracted_el is not None:
-        text_lower = (extracted_text or "").lower()
-        if _empty_effect_type_commencement_source(extracted_text or ""):
-            _append_uk_effect_lowering_rejection(
-                lowering_rejections_out,
-                rule_id="uk_effect_commencement_source_rejected",
-                family="applicability_scope",
-                reason_code="commencement_source_out_of_scope",
-                reason=(
-                    "UK effect has no explicit text/tree action and the source "
-                    "is a commencement instrument; structural replay must not "
-                    "synthesize a mutation from in-force language."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={"effect_type_normalized": effect_type},
-            )
-            return []
-        application_modification_context = _source_parent_application_modification_context(
-            extracted_el=extracted_el,
-            source_root=source_root,
-        )
-        if application_modification_context:
-            _append_uk_effect_lowering_rejection(
-                lowering_rejections_out,
-                rule_id="uk_effect_application_modification_payload_rejected",
-                family="applicability_scope",
-                reason_code="application_modification_payload_out_of_scope",
-                reason=(
-                    "UK effect has no explicit effect type and the extracted "
-                    "BlockAmendment payload is governed by a parent "
-                    "application-modification formula; structural replay must "
-                    "not treat it as an unconditional current-text amendment."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "parent_context_preview": _preview_source_text(
-                        application_modification_context,
-                        limit=240,
-                    ),
-                },
-            )
-            return []
-        if _empty_effect_type_as_if_words_omitted(extracted_text or ""):
-            _append_uk_effect_lowering_rejection(
-                lowering_rejections_out,
-                rule_id="uk_effect_empty_type_as_if_words_omitted_rejected",
-                family="temporal_recovery",
-                reason_code="empty_effect_type_temporary_as_if_word_omission",
-                reason=(
-                    "UK effect has no explicit effect type and the source uses "
-                    "temporary 'shall have effect as if words were omitted' "
-                    "language; lowering must not infer a structural repeal of "
-                    "the broad affected provision."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={"affected_provisions": effect.affected_provisions},
-            )
-            return []
-        if "repeal" in text_lower or "omit" in text_lower:
-            action = "repeal"
-        elif "substitute" in text_lower or "replace" in text_lower:
-            action = "replace"
-        elif "insert" in text_lower:
-            action = "insert"
-        elif re.search(r"\bfrom\b.*\bto\b", text_lower, re.I | re.S):
-            action = "replace"
-        else:
-            source_parent_substitution_range_payload = _source_parent_substitution_range_payload(
-                extracted_el=extracted_el,
-                source_root=source_root,
-                extracted_text=extracted_text,
-                target_refs=_split_metadata_provisions(effect.affected_provisions),
-            )
-            if source_parent_substitution_range_payload is not None:
-                action = "replace"
-            else:
-                source_parent_at_end_added_payload = _source_parent_at_end_added_payload(
-                    extracted_el=extracted_el,
-                    source_root=source_root,
-                    extracted_text=extracted_text,
-                    target_refs=_split_metadata_provisions(effect.affected_provisions),
-                )
-                if source_parent_at_end_added_payload is not None:
-                    action = "insert"
-        # No else — leave action=None so we fall through to the early return below.
+    action_inference = infer_uk_effect_action_from_source(
+        effect=effect,
+        effect_type=effect_type,
+        initial_action=action,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        source_root=source_root,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+    if action_inference.blocked:
+        return []
+    action = action_inference.action
+    source_parent_substitution_range_payload = (
+        action_inference.source_parent_substitution_range_payload
+    )
+    source_parent_at_end_added_payload = action_inference.source_parent_at_end_added_payload
 
     if not action:
         _append_uk_effect_lowering_rejection(
@@ -777,65 +697,16 @@ def compile_effect_to_ir_ops(
     )
 
     if action == "renumber" and metadata_renumber_targets is not None:
-        source_target = metadata_renumber_targets.source_target
-        destination = metadata_renumber_targets.destination
-        _append_uk_effect_lowering_observation(
-            lowering_rejections_out,
-            rule_id=metadata_renumber_targets.rule_id,
-            family="lineage_normalization",
-            reason_code=metadata_renumber_targets.reason_code,
-            reason=metadata_renumber_targets.reason,
+        return lower_uk_metadata_renumber_effect(
             effect=effect,
             extracted_el=extracted_el,
             extracted_text=extracted_text,
-            detail={
-                "source_target": str(source_target),
-                "destination": str(destination),
-                "metadata_destination": (
-                    str(metadata_renumber_targets.metadata_destination)
-                    if metadata_renumber_targets.metadata_destination is not None
-                    else ""
-                ),
-                "affected_provisions": effect.affected_provisions,
-            },
-        )
-        src = OperationSource(
-            statute_id=effect.affecting_act_id,
-            title=effect.affecting_title,
-            effective=effect_witness.applicability.effective_date or "",
-            raw_text=extraction_witness.extracted_text,
-        )
-        target_expansion_witness = _uk_target_expansion_witness(
-            effect.affected_provisions,
-            [effect.affected_provisions],
-            original_targets_str=[effect.affected_provisions],
-        )
-        lowered_witness = UKLoweredOperationWitness(
-            op_id=effect.effect_id,
             sequence=sequence,
-            action=StructuralAction.RENUMBER,
-            target=source_target,
-            payload=None,
-            source=src,
+            metadata_renumber_targets=metadata_renumber_targets,
             effect_witness=effect_witness,
             extraction_witness=extraction_witness,
-            target_expansion_witness=target_expansion_witness,
-            text_rewrite_witness=None,
-            insertion_anchor_witness=None,
+            lowering_rejections_out=lowering_rejections_out,
         )
-        return [
-            LegalOperation(
-                op_id=lowered_witness.op_id,
-                sequence=lowered_witness.sequence,
-                action=StructuralAction.RENUMBER,
-                target=source_target,
-                destination=destination,
-                source=src,
-                group_id=_uk_temporal_group_id(effect),
-                provenance_tags=_uk_lowered_op_provenance_tags(lowered_witness),
-                witness_rule_id=metadata_renumber_targets.rule_id,
-            )
-        ]
 
     after_paragraph_series = _source_after_paragraph_insert_labelled_series(
         extracted_el=extracted_el,
@@ -843,132 +714,16 @@ def compile_effect_to_ir_ops(
         affected_provisions=effect.affected_provisions,
     )
     if action == "insert" and after_paragraph_series is not None:
-        _append_uk_effect_lowering_observation(
-            lowering_rejections_out,
-            rule_id=_UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
-            family="source_context_elaboration",
-            reason_code="after_paragraph_insert_semicolon_and_labelled_series",
-            reason=(
-                "UK source row inserts a semicolon after an existing paragraph "
-                "and then a contiguous labelled paragraph series; lowering "
-                "separates the punctuation patch from the inserted legal "
-                "siblings instead of treating the instruction text as one "
-                "payload."
-            ),
+        return lower_uk_after_paragraph_insert_labelled_series(
             effect=effect,
             extracted_el=extracted_el,
             extracted_text=extracted_text,
-            detail={
-                key: value
-                for key, value in after_paragraph_series.items()
-                if key != "rule_id"
-            },
-        )
-        src = OperationSource(
-            statute_id=effect.affecting_act_id,
-            title=effect.affecting_title,
-            effective=effect_witness.applicability.effective_date or "",
-            raw_text=extraction_witness.extracted_text,
-        )
-        semicolon_target = LegalAddress(
-            path=(
-                ("section", str(after_paragraph_series["section"])),
-                ("subsection", str(after_paragraph_series["subsection"])),
-                ("paragraph", str(after_paragraph_series["anchor_label"])),
-            )
-        )
-        semicolon_patch = TextPatchSpec(
-            kind=TextPatchKindEnum.APPEND,
-            selector=TextSelector(match_text="TEXT_END", occurrence=0),
-            replacement=";",
-        )
-        semicolon_rewrite = _uk_text_rewrite_spec(
-            fragment_subs=[
-                {
-                    "original": "TEXT_END",
-                    "replacement": ";",
-                    "rule_id": _UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
-                }
-            ],
-            text_patch=semicolon_patch,
-            op_text_match="TEXT_END",
-            op_text_replacement=";",
-            op_text_occurrence=0,
-        )
-        semicolon_witness = UKLoweredOperationWitness(
-            op_id=f"{effect.effect_id}_semicolon",
             sequence=sequence,
-            action=StructuralAction.TEXT_REPLACE,
-            target=semicolon_target,
-            payload=None,
-            source=src,
+            after_paragraph_series=after_paragraph_series,
             effect_witness=effect_witness,
             extraction_witness=extraction_witness,
-            target_expansion_witness=_uk_target_expansion_witness(
-                effect.affected_provisions,
-                [str(after_paragraph_series["semicolon_target"])],
-                original_targets_str=[effect.affected_provisions],
-            ),
-            text_rewrite_witness=semicolon_rewrite,
-            insertion_anchor_witness=None,
+            lowering_rejections_out=lowering_rejections_out,
         )
-        custom_ops = [
-            LegalOperation(
-                op_id=semicolon_witness.op_id,
-                sequence=semicolon_witness.sequence,
-                action=semicolon_witness.action,
-                target=semicolon_target,
-                payload=None,
-                source=src,
-                group_id=_uk_temporal_group_id(effect),
-                provenance_tags=_uk_lowered_op_provenance_tags(semicolon_witness),
-                text_patch=semicolon_patch,
-                witness_rule_id=_UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
-            )
-        ]
-        preceding_target = semicolon_target
-        for payload_index, payload in enumerate(after_paragraph_series["payloads"]):
-            payload_target = _parse_affected_target(str(payload["target_ref"]))
-            payload_node = IRNode(
-                kind=IRNodeKind.PARAGRAPH,
-                label=str(payload["label"]),
-                text=str(payload["text"]),
-            )
-            insert_witness = UKLoweredOperationWitness(
-                op_id=f"{effect.effect_id}_insert_{payload_index}",
-                sequence=sequence,
-                action=StructuralAction.INSERT,
-                target=payload_target,
-                payload=payload_node,
-                source=src,
-                effect_witness=effect_witness,
-                extraction_witness=extraction_witness,
-                target_expansion_witness=_uk_target_expansion_witness(
-                    effect.affected_provisions,
-                    [str(payload["target_ref"])],
-                    original_targets_str=[effect.affected_provisions],
-                ),
-                text_rewrite_witness=None,
-                insertion_anchor_witness=_uk_insertion_anchor_witness(
-                    _target_anchor_eid(preceding_target),
-                    anchor_source=_UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
-                ),
-            )
-            custom_ops.append(
-                LegalOperation(
-                    op_id=insert_witness.op_id,
-                    sequence=insert_witness.sequence,
-                    action=insert_witness.action,
-                    target=payload_target,
-                    payload=_payload_with_rewrite_witness(payload_node, insert_witness),
-                    source=src,
-                    group_id=_uk_temporal_group_id(effect),
-                    provenance_tags=_uk_lowered_op_provenance_tags(insert_witness),
-                    witness_rule_id=_UK_AFTER_PARAGRAPH_INSERT_LABELLED_SERIES_RULE_ID,
-                )
-            )
-            preceding_target = payload_target
-        return custom_ops
 
     # ALWAYS split metadata provisions to handle ranges and lists
     raw_affected_provisions = effect.affected_provisions
