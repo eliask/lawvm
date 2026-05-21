@@ -18,6 +18,7 @@ from lawvm.uk_legislation.replay_text_apply import (
     _insert_at_end_of_definition_text,
     _insert_after_definition_text,
     _remove_trailing_context_word,
+    _find_text_range_start_index,
     _rewrite_after_anchor_to_end_text,
     _rewrite_anchor_in_definition_entry_text,
     _rewrite_definition_entry_text,
@@ -340,6 +341,58 @@ def test_rewrite_after_anchor_to_end_text_rejects_missing_anchor() -> None:
 
     assert applied is False
     assert rewritten == original
+
+
+def test_find_text_range_start_index_exact_anchor_has_no_recovery() -> None:
+    start_idx, recovery_rule_ids = _find_text_range_start_index(
+        "alpha beta alpha gamma",
+        "alpha",
+        occurrence=0,
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert start_idx == 0
+    assert recovery_rule_ids == ()
+
+
+def test_find_text_range_start_index_word_boundary_recovery_is_visible() -> None:
+    start_idx, recovery_rule_ids = _find_text_range_start_index(
+        "alpha secular secularism",
+        "secular",
+        occurrence=1,
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert start_idx == 6
+    assert recovery_rule_ids == ("uk_replay_text_range_anchor_word_boundary_normalized",)
+
+
+def test_find_text_range_start_index_patch_pattern_fallback() -> None:
+    start_idx, recovery_rule_ids = _find_text_range_start_index(
+        "alpha Welsh  Ministers gamma",
+        "Welsh Ministers",
+        occurrence=0,
+        allow_punctuation_spacing=True,
+        allow_word_punctuation_elision=True,
+    )
+
+    assert start_idx == 6
+    assert recovery_rule_ids == ()
+
+
+def test_find_text_range_start_index_rejects_missing_anchor() -> None:
+    start_idx, recovery_rule_ids = _find_text_range_start_index(
+        "alpha beta gamma",
+        "delta",
+        occurrence=0,
+        allow_punctuation_spacing=True,
+        allow_word_punctuation_elision=True,
+    )
+
+    assert start_idx == -1
+    assert recovery_rule_ids == ()
 
 
 def test_definition_child_insert_payload_preserves_ordered_list_metadata() -> None:
