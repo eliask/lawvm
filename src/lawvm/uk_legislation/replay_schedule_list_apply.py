@@ -504,6 +504,7 @@ class UKReplayScheduleListApplyMixin:
         prefix_normalized = False
         article_normalized = False
         parenthetical_paragraph_normalized = False
+        grouped_entry_count = 0
         if not matches:
             matches = [
                 (idx, child)
@@ -551,6 +552,7 @@ class UKReplayScheduleListApplyMixin:
                 for child_idx, child in enumerate(group.children)
                 if _uk_kind_value(child.kind) == "schedule_entry"
             ]
+            grouped_entry_count = len(grouped_entry_rows)
 
             def _matches_in_group(mode: str) -> list[tuple[int, UKMutableNode, int, UKMutableNode]]:
                 if mode == "exact":
@@ -606,7 +608,7 @@ class UKReplayScheduleListApplyMixin:
                         group_text=(group_node.text or "")[:200],
                         group_entry_index=child_idx,
                         group_insert_index=insert_index,
-                        grouped_entry_count=len(grouped_entry_rows),
+                        grouped_entry_count=grouped_entry_count,
                         match_mode=grouped_match_mode,
                     ),
                 )
@@ -634,7 +636,7 @@ class UKReplayScheduleListApplyMixin:
                     reason_code="anchor_not_unique",
                     anchor_match_count=len(matches),
                     entry_count=len(entry_rows),
-                    grouped_entry_count=len(grouped_entry_rows) if "grouped_entry_rows" in locals() else 0,
+                    grouped_entry_count=grouped_entry_count,
                 ),
             )
             return False
