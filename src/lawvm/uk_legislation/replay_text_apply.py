@@ -366,6 +366,41 @@ def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
     return current
 
 
+def _find_descendant_path_by_kind_label(
+    node: UKMutableNode,
+    *,
+    kind: str,
+    label: str,
+) -> tuple[int, ...] | None:
+    stack: list[tuple[tuple[int, ...], UKMutableNode]] = [((), node)]
+    while stack:
+        path, current = stack.pop()
+        kind_value = current.kind.value if isinstance(current.kind, IRNodeKind) else str(current.kind)
+        if kind_value == kind and _clean_num(current.label or "") == _clean_num(label):
+            return path
+        for index in range(len(current.children) - 1, -1, -1):
+            stack.append((path + (index,), current.children[index]))
+    return None
+
+
+def _collect_descendant_paths_by_label_and_kinds(
+    node: UKMutableNode,
+    *,
+    label: str,
+    allowed_kinds: set[str],
+) -> list[tuple[int, ...]]:
+    matches: list[tuple[int, ...]] = []
+    stack: list[tuple[tuple[int, ...], UKMutableNode]] = [((), node)]
+    while stack:
+        path, current = stack.pop()
+        kind_value = current.kind.value if isinstance(current.kind, IRNodeKind) else str(current.kind)
+        if kind_value in allowed_kinds and _clean_num(current.label or "") == _clean_num(label):
+            matches.append(path)
+        for index in range(len(current.children) - 1, -1, -1):
+            stack.append((path + (index,), current.children[index]))
+    return matches
+
+
 def _definition_child_nodes(
     n: UKMutableNode,
     *,
@@ -1981,21 +2016,12 @@ class UKReplayTextApplyMixin:
             relation = contextual_match.group(2)
             anchor_kind = contextual_match.group(3)
             anchor_label = contextual_match.group(4)
-            anchor_path: Optional[tuple[int, ...]] = None
+            anchor_path = _find_descendant_path_by_kind_label(
+                node,
+                kind=anchor_kind,
+                label=anchor_label,
+            )
             recovered_anchor_kind = False
-
-            def _find_anchor(n: UKMutableNode, path: tuple[int, ...] = ()) -> None:
-                nonlocal anchor_path
-                if anchor_path is not None:
-                    return
-                kind_value = n.kind.value if isinstance(n.kind, IRNodeKind) else str(n.kind)
-                if kind_value == anchor_kind and _clean_num(n.label or "") == _clean_num(anchor_label):
-                    anchor_path = path
-                    return
-                for i, child in enumerate(n.children):
-                    _find_anchor(child, path + (i,))
-
-            _find_anchor(node)
             if anchor_path is None:
                 allowed_anchor_kinds = {
                     "paragraph",
@@ -2006,16 +2032,11 @@ class UKReplayTextApplyMixin:
                 if anchor_kind.lower() not in allowed_anchor_kinds:
                     return node, False
 
-                candidate_paths: list[tuple[int, ...]] = []
-
-                def _collect_label_anchors(n: UKMutableNode, path: tuple[int, ...] = ()) -> None:
-                    kind_value = n.kind.value if isinstance(n.kind, IRNodeKind) else str(n.kind)
-                    if kind_value in allowed_anchor_kinds and _clean_num(n.label or "") == _clean_num(anchor_label):
-                        candidate_paths.append(path)
-                    for i, child in enumerate(n.children):
-                        _collect_label_anchors(child, path + (i,))
-
-                _collect_label_anchors(node)
+                candidate_paths = _collect_descendant_paths_by_label_and_kinds(
+                    node,
+                    label=anchor_label,
+                    allowed_kinds=allowed_anchor_kinds,
+                )
                 if len(candidate_paths) != 1:
                     return node, False
                 anchor_path = candidate_paths[0]
