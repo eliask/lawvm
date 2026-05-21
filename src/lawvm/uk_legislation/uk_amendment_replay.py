@@ -337,12 +337,9 @@ from lawvm.uk_legislation.replay_records import (
 from lawvm.uk_legislation.replay_table_geometry import (
     expanded_uk_table_rows,
     expanded_uk_table_rows_with_physical_index,
+    resolve_uk_table_entry_inline_cell,
     resolve_uk_table_entry_row_insert_index,
-    resolve_unique_uk_table_column_text_cell,
-    resolve_unique_uk_table_entry_cell,
     resolve_unique_uk_table_entry_cells,
-    resolve_unique_uk_table_entry_text_cell,
-    resolve_unique_uk_table_relating_cell,
     strip_uk_identity_attrs_recursive,
     uk_table_column_insert_plans,
     uk_table_column_payload_cells,
@@ -5886,68 +5883,6 @@ class UKReplayExecutor:
             "replacement_fragment": " ".join(replacement.split())[:240],
         }
 
-    def _resolve_table_entry_inline_cell(
-        self,
-        node: UKMutableNode,
-        selector: dict[str, Any],
-    ) -> tuple[UKMutableNode | None, str, dict[str, Any]]:
-        """Resolve a source-owned "nth entry in column N relating to X" table cell."""
-        if str(selector.get("selector_mode") or "") == "unique_column_text":
-            return resolve_unique_uk_table_column_text_cell(node, selector)
-        if str(selector.get("selector_mode") or "") == "unique_relating_cell":
-            return resolve_unique_uk_table_relating_cell(node, selector)
-        if str(selector.get("selector_mode") or "") in {"unique_relating_text", "unique_entry_text"}:
-            return resolve_unique_uk_table_entry_text_cell(node, selector)
-        if str(selector.get("selector_mode") or "") == "unique_entry_cell":
-            return resolve_unique_uk_table_entry_cell(node, selector)
-
-        try:
-            column_index = int(selector.get("column_index") or 0)
-            entry_index = int(selector.get("entry_index") or 0)
-        except (TypeError, ValueError):
-            return None, "invalid_selector", {}
-        relating_norm = _compact_normalized_text(str(selector.get("relating_text") or ""))
-        if column_index < 1 or entry_index < 1 or not relating_norm:
-            return None, "invalid_selector", {}
-
-        tables, carrier_detail = uk_table_selector_tables(node, selector)
-        if len(tables) != 1:
-            return None, "table_not_unique", {"table_count": len(tables), **carrier_detail}
-
-        matching_cells: list[UKMutableNode] = []
-        matching_rows: list[str] = []
-        for row_cells in expanded_uk_table_rows(tables[0]):
-            target_cell = row_cells.get(column_index)
-            if target_cell is None:
-                continue
-            relation_cells = [
-                cell
-                for col, cell in sorted(row_cells.items())
-                if col < column_index and _compact_normalized_text(cell.text or "").find(relating_norm) >= 0
-            ]
-            if not relation_cells:
-                continue
-            if not matching_cells or matching_cells[-1] is not target_cell:
-                matching_cells.append(target_cell)
-                matching_rows.append(
-                    " | ".join(
-                        str(row_cells[col].text or "")
-                        for col in sorted(row_cells)
-                        if str(row_cells[col].text or "")
-                    )[:240]
-                )
-        if len(matching_cells) < entry_index:
-            return None, "entry_not_found", {
-                "matching_entry_count": len(matching_cells),
-                "matching_rows": tuple(matching_rows[:5]),
-                **carrier_detail,
-            }
-        return matching_cells[entry_index - 1], "", {
-            "matching_entry_count": len(matching_cells),
-            "matched_row": matching_rows[entry_index - 1] if entry_index - 1 < len(matching_rows) else "",
-            **carrier_detail,
-        }
-
     def _heading_facet_carrier_for_target(
         self,
         target: LegalAddress,
@@ -9819,7 +9754,7 @@ class UKReplayExecutor:
                         self._record_invariant_violations(op)
                         self._emit_top_section_snapshot(op)
                         return
-                    table_cell, table_cell_reason, table_cell_detail = self._resolve_table_entry_inline_cell(
+                    table_cell, table_cell_reason, table_cell_detail = resolve_uk_table_entry_inline_cell(
                         node,
                         table_cell_selector,
                     )
