@@ -217,6 +217,11 @@ from lawvm.uk_legislation.source_context import (
     _select_enacted_source_for_current_shell,
     _source_parent_range_label,
 )
+from lawvm.uk_legislation.source_text_reclassifications import (
+    _empty_effect_type_as_if_words_omitted,
+    _quote_only_omission_payload_match,
+    _word_level_structural_subsection_omission,
+)
 from lawvm.uk_legislation.substitution_metadata import (
     UKSourceLabelChangingSubstitution,
     _expand_sibling_targets_from_text,
@@ -2080,46 +2085,6 @@ def _flat_p1para_schedule_paragraph_insert_payload(
     }
 
 
-def _word_level_structural_subsection_omission(
-    *,
-    effect_type: str,
-    extracted_text: Optional[str],
-    target: LegalAddress,
-) -> Optional[dict[str, str]]:
-    """Identify word-level feed rows whose source explicitly repeals a subsection."""
-    effect_type_norm = (effect_type or "").strip().lower()
-    if effect_type_norm not in {"words omitted", "word omitted", "words repealed", "word repealed"}:
-        return None
-    if _addr_leaf_kind(target) != "subsection":
-        return None
-    text = " ".join((extracted_text or "").split())
-    if not text:
-        return None
-    match = re.search(
-        r"\bomit\s+(?:the\s+)?subsection\s*\(\s*(?P<label>[0-9A-Za-z]+)\s*\)(?=\W|$)",
-        text,
-        flags=re.I,
-    )
-    if match is None:
-        match = re.search(
-            r"\bsubsection\s*\(\s*(?P<label>[0-9A-Za-z]+)\s*\)\s+is\s+"
-            r"(?:omitted|repealed)\b",
-            text,
-            flags=re.I,
-        )
-    if match is None:
-        return None
-    source_label = _clean_num(str(match.group("label") or ""))
-    target_label = _clean_num(_addr_leaf_label(target) or "")
-    if not source_label or source_label != target_label:
-        return None
-    return {
-        "source_target_kind": "subsection",
-        "source_target_label": source_label,
-        "matched_instruction": match.group(0),
-    }
-
-
 def _uk_table_entry_inline_text_selector(
     *,
     target_ref: str,
@@ -3633,39 +3598,6 @@ def _is_broad_schedule_flat_replace_payload(
     if actual_source_el is not None and _tag(actual_source_el) in {"Schedule", "Part"}:
         return False
     return bool((payload_node.text or "").strip())
-
-
-def _empty_effect_type_as_if_words_omitted(text: str) -> bool:
-    norm = " ".join(str(text or "").split()).lower()
-    if not norm:
-        return False
-    return (
-        "shall have effect" in norm
-        and "as if" in norm
-        and re.search(r"\bwords?\b", norm) is not None
-        and re.search(r"\b(?:were|was)\s+omitted\b", norm) is not None
-    )
-
-
-_DOUBLE_QUOTED_FRAGMENT_RE = re.compile(r'["\u201c]([^"\u201d]+)["\u201d]')
-
-
-def _quote_only_omission_payload_match(extracted_text: str) -> Optional[str]:
-    """Return a quoted deletion fragment when the payload contains no instruction text."""
-    normalized = " ".join((extracted_text or "").split())
-    if not normalized:
-        return None
-    matches = list(_DOUBLE_QUOTED_FRAGMENT_RE.finditer(normalized))
-    if len(matches) != 1:
-        return None
-    match = matches[0]
-    residue = (normalized[: match.start()] + normalized[match.end() :]).strip()
-    residue = re.sub(r"^(?:[ivxlcdm]+|[a-z]|\d+)[.)]?\s*", "", residue, flags=re.I)
-    residue = residue.strip(" \t\r\n,;.")
-    if residue.lower() not in {"", "and", "or"}:
-        return None
-    fragment = " ".join(match.group(1).split()).strip()
-    return fragment or None
 
 
 def _source_ancestor_chain(source_root: Optional[ET.Element], el: Optional[ET.Element]) -> tuple[ET.Element, ...]:
