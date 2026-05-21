@@ -93,6 +93,7 @@ from lawvm.uk_legislation.effect_lowering_tail import (
     build_trailing_repeal_ops,
 )
 from lawvm.uk_legislation.effect_replace_prelude import plan_replace_effect_prelude
+from lawvm.uk_legislation.effect_target_prelude import expand_single_target_prelude
 from lawvm.uk_legislation.addressing import (
     _action_name,
     _addr_container,
@@ -126,7 +127,6 @@ from lawvm.uk_legislation.heading_facets import (
     _is_heading_only_ref,
     _is_schedule_note_ref,
     _is_schedule_part_abbreviation_ref,
-    _mixed_heading_structural_insert_ref,
 )
 from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
@@ -237,7 +237,6 @@ from lawvm.uk_legislation.table_selectors import (
 from lawvm.uk_legislation.substitution_metadata import (
     UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID as _UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID,
     UKSourceLabelChangingSubstitution,
-    _expand_sibling_targets_from_text,
     _repeal_tail_for_substituted_series_replacement,
     _retarget_substituted_series_to_replaced_anchor,
     _source_replaced_sibling_count_from_substitution_text,
@@ -356,7 +355,6 @@ from lawvm.uk_legislation.source_payload_helpers import (
 )
 from lawvm.uk_legislation.source_payload_elaboration import (
     _crossheading_and_structural_replacement_heading_text,
-    _expand_sibling_targets_from_extracted,
     _is_broad_schedule_flat_replace_payload,
     _is_non_substantive_structural_payload,
     _retarget_instruction_element_to_target,
@@ -615,77 +613,17 @@ def compile_effect_to_ir_ops(
                 if key != "rule_id"
             },
         )
-    if len(targets_str) == 1:
-        mixed_heading_structural_ref = _mixed_heading_structural_insert_ref(
-            targets_str[0],
-            action=action,
-        )
-        expansion_source_el = extracted_el
-        expansion_ref = targets_str[0]
-        if mixed_heading_structural_ref:
-            expansion_ref = mixed_heading_structural_ref
-            amendment_container = _first_amendment_container(extracted_el)
-            expansion_source_el = amendment_container if amendment_container is not None else extracted_el
-        else:
-            amendment_container = _first_amendment_container(extracted_el)
-            if amendment_container is not None:
-                expansion_source_el = amendment_container
-        expanded_targets = _expand_sibling_targets_from_extracted(expansion_ref, expansion_source_el)
-        if not expanded_targets:
-            expanded_targets = _expand_sibling_targets_from_text(expansion_ref, extracted_text)
-        if expanded_targets:
-            targets_str = expanded_targets
-            if mixed_heading_structural_ref:
-                mixed_heading_source_ref_by_target = {
-                    target_ref: original_targets_str[0] for target_ref in expanded_targets
-                }
-            else:
-                _append_uk_effect_lowering_observation(
-                    lowering_rejections_out,
-                    rule_id="uk_effect_source_payload_sibling_range_expanded",
-                    family="target_shape_normalization",
-                    reason_code="source_payload_children_expand_compressed_sibling_range",
-                    reason=(
-                        "UK effect metadata compressed a sibling target range, "
-                        "while the extracted BlockAmendment contains one direct "
-                        "payload child for each sibling; lowering expands the "
-                        "targets to those source-owned children."
-                    ),
-                    effect=effect,
-                    extracted_el=extracted_el,
-                    extracted_text=extracted_text,
-                    detail={
-                        "original_target_ref": original_targets_str[0],
-                        "expanded_targets": list(expanded_targets),
-                        "source_container": _tag(expansion_source_el) if expansion_source_el is not None else "",
-                    },
-                )
-        elif mixed_heading_structural_ref and len(re.findall(r"\([0-9A-Z]+\)", mixed_heading_structural_ref, re.I)) == 1:
-            targets_str = [mixed_heading_structural_ref]
-            mixed_heading_source_ref_by_target = {
-                mixed_heading_structural_ref: original_targets_str[0],
-            }
-        if mixed_heading_structural_ref and mixed_heading_source_ref_by_target:
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id="uk_effect_mixed_heading_structural_insert_target_normalized",
-                family="target_shape_normalization",
-                reason_code="mixed_heading_structural_insert_target_split",
-                reason=(
-                    "UK effect target combines inserted structural provisions "
-                    "with a heading facet; lowering removes the heading suffix "
-                    "only for source-owned structural insert targets and keeps "
-                    "the heading facet unresolved."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "original_target_ref": original_targets_str[0],
-                    "structural_targets": list(targets_str),
-                    "heading_facet_status": "unresolved",
-                },
-            )
+    target_prelude = expand_single_target_prelude(
+        effect=effect,
+        action=action,
+        targets_str=targets_str,
+        original_targets_str=original_targets_str,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    )
+    targets_str = target_prelude.targets_str
+    mixed_heading_source_ref_by_target = target_prelude.mixed_heading_source_ref_by_target
     if effect_type == "added" and action == "insert" and extracted_el is not None:
         _append_uk_effect_lowering_observation(
             lowering_rejections_out,
