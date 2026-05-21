@@ -3544,6 +3544,9 @@ def test_executor_classifies_repeated_form_label_payload_shape_gap() -> None:
     }
     assert len(adjudications) == 2
     assert adjudications[0].detail["target"] == "schedule:5A"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
     assert "duplicate item:a" in adjudications[0].detail["payload_violations"]
 
 

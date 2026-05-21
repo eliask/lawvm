@@ -12,7 +12,6 @@ from typing import cast
 from lawvm.core import tree_ops
 from lawvm.core.ir import IRNode, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
 from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
@@ -31,6 +30,20 @@ from lawvm.uk_legislation.replay_target_gaps import (
     uk_source_anchored_order_observation,
     uk_subparagraph_order_shape_gap,
 )
+
+
+def _invariant_detail(
+    op: LegalOperation,
+    scoped_violation: str,
+    **extra: str,
+) -> dict[str, object]:
+    return uk_replay_action_target_detail(
+        op,
+        op.target,
+        blocking=False,
+        violation=scoped_violation,
+        **extra,
+    )
 
 
 class UKReplayInvariantDiagnosticsMixin:
@@ -62,12 +75,11 @@ class UKReplayInvariantDiagnosticsMixin:
                         "structure repeats local item labels under the same paragraph."
                     ),
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(op.target),
-                        "violation": scoped_violation,
-                        "payload_violations": "; ".join(payload_shape_violations),
-                    },
+                    detail=_invariant_detail(
+                        op,
+                        scoped_violation,
+                        payload_violations="; ".join(payload_shape_violations),
+                    ),
                 )
             elif payload_shape_violations or uk_payload_container_shape_gap(op, scoped_violation):
                 _append_uk_replay_adjudication(
@@ -75,12 +87,11 @@ class UKReplayInvariantDiagnosticsMixin:
                     kind="uk_replay_payload_shape_gap",
                     message="UK replay applied a payload that already violated order/duplication tree invariants.",
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(op.target),
-                        "violation": scoped_violation,
-                        "payload_violations": "; ".join(payload_shape_violations),
-                    },
+                    detail=_invariant_detail(
+                        op,
+                        scoped_violation,
+                        payload_violations="; ".join(payload_shape_violations),
+                    ),
                 )
             elif uk_replace_payload_kind_mismatch_gap(op, scoped_violation):
                 _append_uk_replay_adjudication(
@@ -88,12 +99,11 @@ class UKReplayInvariantDiagnosticsMixin:
                     kind="uk_replay_replace_payload_target_leaf_mismatch_gap",
                     message="UK replay hit an invariant because the replace payload kind does not match the lowered target leaf.",
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(op.target),
-                        "violation": scoped_violation,
-                        "payload_kind": str(getattr(op.payload, "kind", "")) if op.payload is not None else "",
-                    },
+                    detail=_invariant_detail(
+                        op,
+                        scoped_violation,
+                        payload_kind=str(op.payload.kind) if op.payload is not None else "",
+                    ),
                 )
             elif uk_part_order_shape_gap(op, scoped_violation):
                 _append_uk_replay_adjudication(
@@ -101,11 +111,7 @@ class UKReplayInvariantDiagnosticsMixin:
                     kind="uk_replay_part_order_shape_gap",
                     message="UK replay hit a mixed-label part ordering seam that is not yet canonically ordered.",
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(op.target),
-                        "violation": scoped_violation,
-                    },
+                    detail=_invariant_detail(op, scoped_violation),
                 )
             elif uk_chapter_order_shape_gap(op, scoped_violation):
                 _append_uk_replay_adjudication(
@@ -113,11 +119,7 @@ class UKReplayInvariantDiagnosticsMixin:
                     kind="uk_replay_chapter_order_shape_gap",
                     message="UK replay hit a mixed-label chapter ordering seam that is not yet canonically ordered.",
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(op.target),
-                        "violation": scoped_violation,
-                    },
+                    detail=_invariant_detail(op, scoped_violation),
                 )
             elif uk_source_anchored_order_observation(op, scoped_violation):
                 _append_uk_replay_adjudication(
@@ -128,12 +130,7 @@ class UKReplayInvariantDiagnosticsMixin:
                         "generic label-order invariant would sort the inserted label elsewhere."
                     ),
                     op=op,
-                    detail=uk_replay_action_target_detail(
-                        op,
-                        op.target,
-                        blocking=False,
-                        violation=scoped_violation,
-                    ),
+                    detail=_invariant_detail(op, scoped_violation),
                 )
             elif uk_section_order_shape_gap(op, scoped_violation):
                 _append_uk_replay_adjudication(
@@ -141,11 +138,7 @@ class UKReplayInvariantDiagnosticsMixin:
                     kind="uk_replay_section_order_shape_gap",
                     message="UK replay hit an alphanumeric section ordering seam that is not yet canonically ordered.",
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(op.target),
-                        "violation": scoped_violation,
-                    },
+                    detail=_invariant_detail(op, scoped_violation),
                 )
             elif uk_paragraph_order_shape_gap(op, scoped_violation):
                 _append_uk_replay_adjudication(
@@ -153,11 +146,7 @@ class UKReplayInvariantDiagnosticsMixin:
                     kind="uk_replay_paragraph_order_shape_gap",
                     message="UK replay hit a mixed-label paragraph ordering seam that is not yet canonically ordered.",
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(op.target),
-                        "violation": scoped_violation,
-                    },
+                    detail=_invariant_detail(op, scoped_violation),
                 )
             elif uk_subparagraph_order_shape_gap(op, scoped_violation):
                 _append_uk_replay_adjudication(
@@ -165,11 +154,7 @@ class UKReplayInvariantDiagnosticsMixin:
                     kind="uk_replay_subparagraph_order_shape_gap",
                     message="UK replay hit a mixed-label subparagraph ordering seam that is not yet canonically ordered.",
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(op.target),
-                        "violation": scoped_violation,
-                    },
+                    detail=_invariant_detail(op, scoped_violation),
                 )
             elif uk_item_order_shape_gap(op, scoped_violation):
                 _append_uk_replay_adjudication(
@@ -177,11 +162,7 @@ class UKReplayInvariantDiagnosticsMixin:
                     kind="uk_replay_item_order_shape_gap",
                     message="UK replay hit a mixed-label item ordering seam that is not yet canonically ordered.",
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(op.target),
-                        "violation": scoped_violation,
-                    },
+                    detail=_invariant_detail(op, scoped_violation),
                 )
             else:
                 _append_uk_replay_adjudication(
@@ -189,10 +170,6 @@ class UKReplayInvariantDiagnosticsMixin:
                     kind="uk_replay_tree_invariant_violation",
                     message="UK replay violated order/duplication tree invariant after applying an op.",
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(op.target),
-                        "violation": scoped_violation,
-                    },
+                    detail=_invariant_detail(op, scoped_violation),
                 )
         self._seen_invariant_violations = current_violations
