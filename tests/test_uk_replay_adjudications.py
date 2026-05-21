@@ -15,6 +15,7 @@ from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
 from lawvm.uk_legislation.replay_text_apply import (
     _delete_source_carried_child_text,
     _definition_child_insert_payload,
+    _insert_at_end_of_definition_text,
     _insert_after_definition_text,
     _remove_trailing_context_word,
     _rewrite_definition_entry_text,
@@ -164,6 +165,50 @@ def test_delete_source_carried_child_text_rejects_missing_witness() -> None:
         allow_punctuation_spacing=False,
         allow_word_punctuation_elision=False,
     ) == (original, False)
+
+
+def test_insert_at_end_of_definition_text_inserts_before_next_definition() -> None:
+    rewritten, applied = _insert_at_end_of_definition_text(
+        '"primary legislation" means an Act; "secondary legislation" means regulations;',
+        term="primary legislation",
+        replacement="or Measure",
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is True
+    assert rewritten == (
+        '"primary legislation" means an Act or Measure; '
+        '"secondary legislation" means regulations;'
+    )
+
+
+def test_insert_at_end_of_definition_text_inserts_before_terminal_punctuation() -> None:
+    rewritten, applied = _insert_at_end_of_definition_text(
+        '"primary legislation" means an Act.',
+        term="primary legislation",
+        replacement=", Measure or Order",
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is True
+    assert rewritten == '"primary legislation" means an Act, Measure or Order.'
+
+
+def test_insert_at_end_of_definition_text_rejects_ambiguous_definition() -> None:
+    original = '"primary legislation" means an Act; "primary legislation" includes a Measure;'
+
+    rewritten, applied = _insert_at_end_of_definition_text(
+        original,
+        term="primary legislation",
+        replacement="or Order",
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is False
+    assert rewritten == original
 
 
 def test_definition_child_insert_payload_preserves_ordered_list_metadata() -> None:

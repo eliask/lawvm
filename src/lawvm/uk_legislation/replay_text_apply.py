@@ -459,6 +459,41 @@ def _delete_source_carried_child_text(
     return new_text, count > 0
 
 
+def _insert_at_end_of_definition_text(
+    text: str,
+    *,
+    term: str,
+    replacement: str,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[str, bool]:
+    definition_start_pattern = _compile_definition_entry_start_pattern(
+        term,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+        prefix_pattern=r"(?:^|[;\.,\u2014\u2013-]\s*)",
+    )
+    starts = list(definition_start_pattern.finditer(text))
+    if len(starts) != 1:
+        return text, False
+    definition_start = starts[0]
+    next_definition = _UK_NEXT_DEFINITION_PATTERN.search(text, definition_start.end())
+    if next_definition is not None:
+        insert_at = next_definition.start()
+    else:
+        terminal = re.search(r"\s*[;,.]\s*$", text)
+        insert_at = terminal.start() if terminal is not None else len(text)
+    joiner = (
+        ""
+        if insert_at == 0
+        or text[:insert_at].endswith((" ", "\t", "\n", "\r"))
+        or replacement.startswith((" ", ",", ".", ";", ":", ")"))
+        else " "
+    )
+    new_text = f"{text[:insert_at]}{joiner}{replacement}{text[insert_at:]}"
+    return " ".join(new_text.split()).strip(), True
+
+
 class UKReplayTextApplyMixin:
     def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
         self,
@@ -1178,37 +1213,16 @@ class UKReplayTextApplyMixin:
                 if not term:
                     return node, False
 
-                def _insert_at_end_of_definition(text: str) -> tuple[str, bool]:
-                    definition_start_pattern = _compile_definition_entry_start_pattern(
-                        term,
-                        allow_punctuation_spacing=allow_punctuation_spacing,
-                        allow_word_punctuation_elision=allow_word_punctuation_elision,
-                        prefix_pattern=r"(?:^|[;\.,\u2014\u2013-]\s*)",
-                    )
-                    starts = list(definition_start_pattern.finditer(text))
-                    if len(starts) != 1:
-                        return text, False
-                    definition_start = starts[0]
-                    next_definition = _UK_NEXT_DEFINITION_PATTERN.search(text, definition_start.end())
-                    if next_definition is not None:
-                        insert_at = next_definition.start()
-                    else:
-                        terminal = re.search(r"\s*[;,.]\s*$", text)
-                        insert_at = terminal.start() if terminal is not None else len(text)
-                    joiner = (
-                        ""
-                        if insert_at == 0
-                        or text[:insert_at].endswith((" ", "\t", "\n", "\r"))
-                        or replacement.startswith((" ", ",", ".", ";", ":", ")"))
-                        else " "
-                    )
-                    new_text = f"{text[:insert_at]}{joiner}{replacement}{text[insert_at:]}"
-                    return " ".join(new_text.split()).strip(), True
-
                 rebuilt, applied = self._apply_unique_text_node_rewrite(
                     node,
                     text_nodes,
-                    _insert_at_end_of_definition,
+                    lambda text: _insert_at_end_of_definition_text(
+                        text,
+                        term=term,
+                        replacement=replacement,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    ),
                 )
                 if not applied:
                     return node, False
