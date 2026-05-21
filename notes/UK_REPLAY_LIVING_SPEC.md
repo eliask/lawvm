@@ -2227,7 +2227,11 @@ Current block-substitution context invariant:
   `as_if_application_modification_unsupported` and manual frontier
   `uk_manual_frontier_as_if_application_modification_out_of_scope`. That family
   is an applied/as-if modification lane, not a direct mutation of the base
-  statute text/tree under the current UK replay model.
+  statute text/tree under the current UK replay model. If source-local lowering
+  first emitted `uk_effect_lowering_no_supported_action_rejected`, the
+  replay-oriented caller reclassifies that diagnostic as nonblocking under
+  `uk_effect_nonreplay_lowering_observed` once source-pathology classification
+  proves the out-of-scope as-if lane.
 - `BlockAmendment` fragments that expose only payload text while the feed says
   `words substituted` or another word-level effect are classified as
   `payload_fragment_without_action_formula` and
@@ -3720,7 +3724,9 @@ Current bench replay-regime invariant:
   `uk_effect_lowering_no_supported_action_rejected`, but replay-oriented
   callers must reclassify it as nonblocking with
   `uk_effect_nonreplay_lowering_observed` when the selected replay lens does
-  not support or admit that nonstructural effect family. Renumbering,
+  not support or admit that nonstructural effect family, or when later
+  source-pathology classification proves an out-of-scope lane such as as-if,
+  commencement, or application-modification text. Renumbering,
   savings/transitional, excluded, and applied-with-modifications rows remain
   visible evidence; they are not counted as current replay blockers unless a
   supported nonstructural replay family claims them. New UK tooling should read

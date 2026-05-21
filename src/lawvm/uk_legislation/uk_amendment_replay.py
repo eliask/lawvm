@@ -64,6 +64,7 @@ from lawvm.uk_legislation.lowering_records import (
     append_source_pathology_classified_diagnostic,
     append_source_pathology_filter_lowering_rejections,
     mark_nonreplay_lowering_rejections_nonblocking,
+    mark_source_pathology_nonreplay_lowering_rejections_nonblocking,
 )
 from lawvm.uk_legislation.source_context import (
     UKAffectingSourceContext,
@@ -303,6 +304,12 @@ class UKReplayPipeline:
                 lowering_rejection_start_index=lowering_rejection_count_before,
                 structural_for_replay=structural_for_replay,
             )
+            if lowering_rejections_out is not None:
+                mark_source_pathology_nonreplay_lowering_rejections_nonblocking(
+                    source_pathology=source_pathology,
+                    lowering_rejections=lowering_rejections_out,
+                    start_index=lowering_rejection_count_before,
+                )
             append_source_pathology_classified_diagnostic(
                 effect_diagnostics_out,
                 effect=e,

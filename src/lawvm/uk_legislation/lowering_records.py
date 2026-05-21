@@ -375,6 +375,54 @@ def mark_nonreplay_lowering_rejections_nonblocking(
     return changed
 
 
+_SOURCE_PATHOLOGY_NONREPLAY_OUT_OF_SCOPE = frozenset(
+    {
+        "as_if_application_modification_unsupported",
+        "commencement_effect_out_of_scope",
+        "application_modification_payload_out_of_scope",
+        "temporary_as_if_word_omission_unsupported",
+    }
+)
+
+
+def mark_source_pathology_nonreplay_lowering_rejections_nonblocking(
+    *,
+    source_pathology: str,
+    lowering_rejections: list[dict[str, Any]],
+    start_index: int,
+) -> bool:
+    """Mark replay-lens blockers nonblocking when source pathology proves out-of-scope.
+
+    Empty/ambiguous UK effect types can look structurally replayable until the
+    source text is inspected. Once source-pathology classification proves an
+    as-if, commencement, or application-modification lane, the compile
+    diagnostic remains evidence but should not count as a failed text/tree
+    mutation.
+    """
+    if source_pathology not in _SOURCE_PATHOLOGY_NONREPLAY_OUT_OF_SCOPE:
+        return False
+    if start_index >= len(lowering_rejections):
+        return False
+    changed = False
+    for rejection in lowering_rejections[start_index:]:
+        if not is_blocking_compile_record(rejection):
+            continue
+        rejection["blocking"] = False
+        rejection["strict_disposition"] = "record"
+        rejection["nonblocking_reclassification_rule_id"] = (
+            "uk_effect_nonreplay_lowering_observed"
+        )
+        rejection["replay_relevance"] = "source_pathology_out_of_scope"
+        rejection["source_pathology"] = source_pathology
+        rejection["reclassification_reason"] = (
+            "Source-pathology classification proves this row is outside direct "
+            "UK text/tree replay; the lowering diagnostic is evidence, not a "
+            "replay blocker."
+        )
+        changed = True
+    return changed
+
+
 def _lowering_record_rule_ids(rows: tuple[dict[str, Any], ...]) -> tuple[str, ...]:
     return tuple(str(row.get("rule_id") or "") for row in rows if row.get("rule_id"))
 

@@ -543,6 +543,7 @@ def main(args: "argparse.Namespace") -> None:
         append_no_ops_lowering_rejections,
         compile_effect_to_ir_ops,
         mark_nonreplay_lowering_rejections_nonblocking,
+        mark_source_pathology_nonreplay_lowering_rejections_nonblocking,
     )
     from lawvm.tools.uk_replay import _archive_url_for_statute
 
@@ -722,6 +723,11 @@ def main(args: "argparse.Namespace") -> None:
             lowering_rule_ids=compiled_facts.lowering_rule_ids,
             effect_type=effect.effect_type,
             is_structural=structural_for_replay,
+        )
+        mark_source_pathology_nonreplay_lowering_rejections_nonblocking(
+            source_pathology=source_pathology,
+            lowering_rejections=lowering_rejections,
+            start_index=lowering_rejection_count_before,
         )
         append_source_pathology_filter_lowering_rejections(
             effect,
