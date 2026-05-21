@@ -441,6 +441,24 @@ def _remove_trailing_context_word(text: str, needle: str) -> tuple[str, bool]:
     return (match.group("prefix").rstrip() + match.group("suffix").rstrip()).rstrip(), True
 
 
+def _delete_source_carried_child_text(
+    text: str,
+    *,
+    original: str,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[str, bool]:
+    if original in text:
+        return text.replace(original, ""), True
+    pattern = _text_patch_pattern(
+        original,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    new_text, count = re.subn(pattern, "", text, flags=re.I | re.S)
+    return new_text, count > 0
+
+
 class UKReplayTextApplyMixin:
     def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
         self,
@@ -1024,21 +1042,15 @@ class UKReplayTextApplyMixin:
             if set(direct_matches) != set(child_labels):
                 return node, False
 
-            def _delete_from_child_text(text: str) -> tuple[str, bool]:
-                if original in text:
-                    return text.replace(original, ""), True
-                pattern = _text_patch_pattern(
-                    original,
-                    allow_punctuation_spacing=allow_punctuation_spacing,
-                    allow_word_punctuation_elision=allow_word_punctuation_elision,
-                )
-                new_text, count = re.subn(pattern, "", text, flags=re.I | re.S)
-                return new_text, count > 0
-
             new_children = list(node.children)
             for label in child_labels:
                 index, child = direct_matches[label]
-                new_text, changed = _delete_from_child_text(child.text or "")
+                new_text, changed = _delete_source_carried_child_text(
+                    child.text or "",
+                    original=original,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
                 if not changed:
                     return node, False
                 new_children[index] = dc_replace(child, text=new_text)

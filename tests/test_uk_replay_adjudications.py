@@ -13,6 +13,7 @@ from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
 from lawvm.uk_legislation.replay_text_apply import (
+    _delete_source_carried_child_text,
     _definition_child_insert_payload,
     _insert_after_definition_text,
     _remove_trailing_context_word,
@@ -134,6 +135,35 @@ def test_remove_trailing_context_word_preserves_trailing_punctuation() -> None:
         "paragraph (a), then",
         False,
     )
+
+
+def test_delete_source_carried_child_text_uses_exact_witness_first() -> None:
+    assert _delete_source_carried_child_text(
+        "paragraph (a), or",
+        original=", or",
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    ) == ("paragraph (a)", True)
+
+
+def test_delete_source_carried_child_text_uses_patch_pattern_recovery() -> None:
+    assert _delete_source_carried_child_text(
+        "the Welsh  Ministers",
+        original="Welsh Ministers",
+        allow_punctuation_spacing=True,
+        allow_word_punctuation_elision=True,
+    ) == ("the ", True)
+
+
+def test_delete_source_carried_child_text_rejects_missing_witness() -> None:
+    original = "paragraph (a), and"
+
+    assert _delete_source_carried_child_text(
+        original,
+        original=", or",
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    ) == (original, False)
 
 
 def test_definition_child_insert_payload_preserves_ordered_list_metadata() -> None:
