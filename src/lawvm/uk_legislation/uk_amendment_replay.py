@@ -164,7 +164,14 @@ from lawvm.uk_legislation.metadata_rewrites import (
     _uk_metadata_renumber_targets,
     _uk_source_text_corrected_renumber_targets,
 )
-from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
+from lawvm.uk_legislation.mutable_ir import (
+    UKMutableNode,
+    UKMutableStatute,
+    uk_insert_child_sorted,
+    uk_replace_children,
+    uk_replace_text,
+    uk_replace_text_and_children,
+)
 from lawvm.uk_legislation.provision_extractor import (
     _extract_provision_element_from_root,
     _find_provision_greedy,
@@ -5524,29 +5531,6 @@ class UKReplayExecutor:
                 return True
         return False
 
-    def _replace_children(self, node: UKMutableNode, new_children: list[UKMutableNode]) -> bool:
-        node.children = list(new_children)
-        return True
-
-    def _replace_text(self, node: UKMutableNode, new_text: str) -> bool:
-        node.text = new_text
-        return True
-
-    def _replace_text_and_children(
-        self,
-        node: UKMutableNode,
-        *,
-        text: str,
-        children: list[UKMutableNode],
-    ) -> bool:
-        node.text = text
-        node.children = list(children)
-        return True
-
-    def _replace_attrs(self, node: UKMutableNode, attrs: dict[str, Any]) -> bool:
-        node.attrs = dict(attrs)
-        return True
-
     def _insert_table_column(
         self,
         target: LegalAddress,
@@ -5804,7 +5788,7 @@ class UKReplayExecutor:
             strip_uk_identity_attrs_recursive(row)
         children = list(table.children)
         children[insert_index:insert_index] = inserted_rows
-        self._replace_children(table, children)
+        uk_replace_children(table, children)
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
@@ -6321,16 +6305,6 @@ class UKReplayExecutor:
             },
         )
         return False
-
-    def _insert_child_sorted(self, parent: UKMutableNode, new_node: UKMutableNode) -> bool:
-        from lawvm.uk_legislation.canonicalize import uk_insert_into_children
-
-        uk_insert_into_children(
-            cast(list[IRNode], parent.children),
-            cast(IRNode, new_node),
-            label_sort_key=_label_sort_key,
-        )
-        return True
 
     def _insert_supplement_sorted(self, new_node: UKMutableNode) -> bool:
         from lawvm.uk_legislation.canonicalize import uk_insert_into_children
@@ -7169,7 +7143,7 @@ class UKReplayExecutor:
 
         if not str(new_node.attrs.get("eId") or new_node.attrs.get("id") or ""):
             new_node.attrs["eId"] = self._derive_target_eid(target)
-        self._insert_child_sorted(parent_node, new_node)
+        uk_insert_child_sorted(parent_node, new_node)
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind="uk_replay_source_carried_structured_tail_substitution_recovered",
@@ -7284,7 +7258,7 @@ class UKReplayExecutor:
         if not children:
             return False
 
-        self._replace_text_and_children(node, text=rebuilt_text, children=children)
+        uk_replace_text_and_children(node, text=rebuilt_text, children=children)
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=_UK_REPLAY_SOURCE_CARRIED_LABELED_CHILD_TEXT_SUBSTITUTION_RULE_ID,
@@ -8491,7 +8465,7 @@ class UKReplayExecutor:
             attrs={**dict(source_node.attrs), "eId": self._derive_target_eid(destination)},
         )
         source_parent.children.pop(source_idx)
-        self._insert_child_sorted(source_parent, moved)
+        uk_insert_child_sorted(source_parent, moved)
         return True
 
     def apply_op(self, op: LegalOperation):
@@ -8848,7 +8822,7 @@ class UKReplayExecutor:
                                 )
                             self._record_invariant_violations(op)
                     elif node_kind != "content" and new_kind == "content":
-                        self._replace_text(node, new_node.text)
+                        uk_replace_text(node, new_node.text)
                     else:
                         existing_eid = str(node.attrs.get("eId") or node.attrs.get("id") or "")
                         if existing_eid:
@@ -12391,7 +12365,7 @@ class UKReplayExecutor:
                 strip_uk_identity_attrs_recursive(row)
             children = list(table.children)
             children[insert_index:insert_index] = payload_rows
-            self._replace_children(table, children)
+            uk_replace_children(table, children)
             _append_uk_replay_adjudication(
                 self.adjudications_out,
                 kind=resolved_rule_id,
@@ -12472,7 +12446,7 @@ class UKReplayExecutor:
             strip_uk_identity_attrs_recursive(row)
         children = list(table.children)
         children[insert_index:insert_index] = payload_rows
-        self._replace_children(table, children)
+        uk_replace_children(table, children)
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=resolved_rule_id,
@@ -12641,7 +12615,7 @@ class UKReplayExecutor:
                 new_node.attrs.pop(key, None)
             children = list(carrier_node.children)
             children.insert(insert_index, new_node)
-            self._replace_children(carrier_node, children)
+            uk_replace_children(carrier_node, children)
             return True
 
         matches = [
@@ -12860,7 +12834,7 @@ class UKReplayExecutor:
             new_node.attrs.pop(key, None)
         children = list(carrier_node.children)
         children.insert(insert_index, new_node)
-        self._replace_children(carrier_node, children)
+        uk_replace_children(carrier_node, children)
         return True
 
     def _repeal_schedule_list_entries(
@@ -13073,7 +13047,7 @@ class UKReplayExecutor:
             children = list(parent.children)
             for idx in sorted(indices, reverse=True):
                 children.pop(idx)
-            self._replace_children(parent, children)
+            uk_replace_children(parent, children)
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPEAL_RESOLVED_RULE_ID,
@@ -13255,7 +13229,7 @@ class UKReplayExecutor:
             new_node.attrs.pop(key, None)
         children = list(schedule_node.children)
         children[replace_idx] = new_node
-        self._replace_children(schedule_node, children)
+        uk_replace_children(schedule_node, children)
         _append_uk_replay_adjudication(
             self.adjudications_out,
             kind=_UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_RESOLVED_RULE_ID,
@@ -13356,14 +13330,14 @@ class UKReplayExecutor:
             self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} at routed index {insert_idx}")
             children = list(parent_node.children)
             children.insert(insert_idx, new_node)
-            self._replace_children(parent_node, children)
+            uk_replace_children(parent_node, children)
             return True
         if parent_node:
             new_node = _inherit_parent_local_eid(parent_node, new_node)
             self._log(
                 f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into {parent_node.kind} {parent_node.label}"
             )
-            return self._insert_child_sorted(parent_node, new_node)
+            return uk_insert_child_sorted(parent_node, new_node)
 
         # Build parent address by dropping the last path segment.
         # Single-segment paths (e.g. section:2a) get parent = body/schedules directly,
@@ -13377,7 +13351,7 @@ class UKReplayExecutor:
             if p_node:
                 new_node = _inherit_parent_local_eid(p_node, new_node)
                 self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into {p_node.kind} {p_node.label}")
-                return self._insert_child_sorted(p_node, new_node)
+                return uk_insert_child_sorted(p_node, new_node)
         elif container == "schedule":
             # Single-segment schedule target: the target IS the schedule — insert payload into it,
             # but only when the payload is a part, chapter, or section (structural containers
@@ -13404,7 +13378,7 @@ class UKReplayExecutor:
                     sch_node = cast(UKMutableNode, sch_node)
                     new_node = _inherit_parent_local_eid(sch_node, new_node)
                     self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into schedule {sch_node.label}")
-                    return self._insert_child_sorted(sch_node, new_node)
+                    return uk_insert_child_sorted(sch_node, new_node)
                 return False
         else:
             # Single-segment non-schedule target: prefer inserting after the
@@ -13422,7 +13396,7 @@ class UKReplayExecutor:
                 self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} after body predecessor {pred_label}")
                 children: list[UKMutableNode] = list(pred_parent.children)
                 children.insert(pred_idx + 1, new_node)
-                self._replace_children(pred_parent, children)
+                uk_replace_children(pred_parent, children)
                 return True
 
             # No suitable predecessor exists in the body tree: fall back to a
@@ -13443,7 +13417,7 @@ class UKReplayExecutor:
             if p_node:
                 new_node = _inherit_parent_local_eid(p_node, new_node)
                 self._log(f"  EXECUTOR: inserting {new_node.kind} {new_node.label} into parent {parent_eid}")
-                return self._insert_child_sorted(cast(UKMutableNode, p_node), new_node)
+                return uk_insert_child_sorted(cast(UKMutableNode, p_node), new_node)
 
         body_root_kinds = {
             "part",
