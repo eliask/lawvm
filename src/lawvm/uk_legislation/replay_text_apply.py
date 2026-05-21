@@ -4,13 +4,18 @@ import re
 from dataclasses import replace as dc_replace
 from typing import Optional
 
+from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
-from lawvm.uk_legislation.replay_text import _range_anchor_matches
+from lawvm.uk_legislation.nlp_parser import US
+from lawvm.uk_legislation.replay_text import _append_definition_child_suffix_text, _range_anchor_matches
 from lawvm.uk_legislation.text_matching import (
     _numeric_list_trailing_comma_replacement_text,
     _numeric_list_trailing_comma_subtree_replacement,
+    _normalize_text,
     _text_patch_pattern,
 )
+from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
 class UKReplayTextApplyMixin:
@@ -314,3 +319,1824 @@ class UKReplayTextApplyMixin:
         rebuilt = self._replace_descendant_at_path(node, text_path, replacement_node)
         self._replace_node_in_statute(node, rebuilt)
         return rebuilt, True
+
+    def _apply_text_replace_on_subtree(
+        self,
+        node: UKMutableNode,
+        match: str,
+        replacement: str,
+        occurrence: int,
+        end_occurrence: int = 0,
+        *,
+        allow_punctuation_spacing: bool = False,
+        allow_word_punctuation_elision: bool = False,
+        recovery_rule_ids_out: Optional[list[str]] = None,
+    ) -> tuple[UKMutableNode, bool]:
+        """Walk the subtree rooted at *node*, find *match* in text fields, and substitute.
+
+        Args:
+            node:        Root of the IR subtree to search.
+            match:       Exact string to find (case-sensitive first, then whitespace-
+                         normalized fallback, consistent with _apply_text_substitution_on_node).
+            replacement: String to substitute in place of *match*.
+            occurrence:  0 = replace all occurrences across the subtree.
+                         N > 0 = replace only the Nth occurrence (1-based, document order).
+                         -1 = replace only the last occurrence in document order.
+
+        Returns:
+            True if at least one substitution was made; False otherwise.
+        """
+        # Collect all nodes with text in document order (pre-order traversal)
+        text_nodes: list[tuple[tuple[int, ...], UKMutableNode]] = []
+
+        def _collect(n: UKMutableNode, path: tuple[int, ...] = ()) -> None:
+            if n.text:
+                text_nodes.append((path, n))
+            for i, child in enumerate(n.children):
+                _collect(child, path + (i,))
+
+        _collect(node)
+
+        if match == "TEXT_OPENING_WORDS":
+            if not node.text:
+                return node, False
+            rebuilt = dc_replace(node, text=replacement)
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match == "TEXT_BEGINNING":
+            if not node.text:
+                return node, False
+            joiner = "" if replacement.endswith((" ", "(", "/", "-")) else " "
+            rebuilt = dc_replace(node, text=f"{replacement}{joiner}{node.text}")
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith(f"TEXT_FROM_CHILD_END{US}"):
+            parts = match.split(US, 3)
+            if len(parts) != 4:
+                return node, False
+            child_kind = parts[1]
+            child_label = parts[2]
+            start_text = parts[3].strip()
+            if not child_kind or not child_label or not start_text:
+                return node, False
+            direct_child_matches = [
+                (index, child)
+                for index, child in enumerate(node.children)
+                if (child.kind.value if isinstance(child.kind, IRNodeKind) else str(child.kind))
+                == child_kind
+                and _clean_num(child.label or "") == _clean_num(child_label)
+            ]
+            if len(direct_child_matches) != 1:
+                return node, False
+            child_index, _child = direct_child_matches[0]
+            text = node.text or ""
+            if not text:
+                return node, False
+            ordinal = occurrence if occurrence > 0 else 1
+            literal_matches = list(re.finditer(re.escape(start_text), text))
+            if len(literal_matches) >= ordinal:
+                start_match = literal_matches[ordinal - 1]
+            else:
+                pattern = _text_patch_pattern(
+                    start_text,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                matches = list(re.finditer(pattern, text, flags=re.I | re.S))
+                if len(matches) < ordinal:
+                    return node, False
+                start_match = matches[ordinal - 1]
+            separators = list(re.finditer(r"[—–-]", text[start_match.end() :]))
+            if not separators:
+                return node, False
+            separator = separators[-1]
+            tail_start = start_match.end() + separator.end()
+            prefix = text[: start_match.start()].rstrip()
+            tail = text[tail_start:].strip()
+            replacement_text = replacement.strip()
+            if not replacement_text:
+                new_text = f"{prefix} {tail}".strip()
+            else:
+                joiner_before = "" if not prefix or replacement_text.startswith((" ", ",", ".", ";", ":", ")")) else " "
+                joiner_after = "" if not tail or replacement_text.endswith((" ", "(", "/", "-")) else " "
+                new_text = f"{prefix}{joiner_before}{replacement_text}{joiner_after}{tail}".strip()
+            rebuilt = dc_replace(
+                node,
+                text=" ".join(new_text.split()).strip(),
+                children=tuple(node.children[child_index + 1 :]),
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_labeled_child_end_range_applied")
+            return rebuilt, True
+
+        if match.startswith("TEXT_BEFORE_CHILD_"):
+            child_match = re.fullmatch(
+                r"TEXT_BEFORE_CHILD_([A-Za-z]+)_([0-9A-Za-z]+)",
+                match,
+            )
+            if child_match is None:
+                return node, False
+            child_kind = child_match.group(1)
+            child_label = child_match.group(2)
+            if not node.text:
+                return node, False
+
+            direct_child_matches = [
+                child
+                for child in node.children
+                if (child.kind.value if isinstance(child.kind, IRNodeKind) else str(child.kind))
+                == child_kind
+                and _clean_num(child.label or "") == _clean_num(child_label)
+            ]
+            if len(direct_child_matches) != 1:
+                return node, False
+            rebuilt = dc_replace(node, text=replacement)
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match == "TEXT_AFTER_AMENDMENT_INSERT_TO_END":
+            text = node.text or ""
+            insert_matches = list(re.finditer(r"\binsert\s*[—–-]", text, flags=re.I))
+            if not insert_matches or not replacement:
+                return node, False
+            insert_match = insert_matches[-1]
+            rebuilt = dc_replace(
+                node,
+                text=f"{text[: insert_match.end()].rstrip()} {replacement.strip()}",
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_IN_CHILDREN_"):
+            child_match = re.fullmatch(
+                rf"TEXT_IN_CHILDREN_([A-Za-z]+)_([0-9A-Za-z_]+){re.escape(US)}(.+)",
+                match,
+                flags=re.S,
+            )
+            if child_match is None or replacement:
+                return node, False
+            child_kind = child_match.group(1)
+            child_labels = tuple(label for label in child_match.group(2).split("_") if label)
+            original = child_match.group(3).strip()
+            if not child_labels or not original:
+                return node, False
+            direct_matches: dict[str, tuple[int, UKMutableNode]] = {}
+            for index, child in enumerate(node.children):
+                kind_value = child.kind.value if isinstance(child.kind, IRNodeKind) else str(child.kind)
+                label_key = _clean_num(child.label or "")
+                if kind_value == child_kind and label_key in child_labels and label_key not in direct_matches:
+                    direct_matches[label_key] = (index, child)
+                elif kind_value == child_kind and label_key in child_labels:
+                    return node, False
+            if set(direct_matches) != set(child_labels):
+                return node, False
+
+            def _delete_from_child_text(text: str) -> tuple[str, bool]:
+                if original in text:
+                    return text.replace(original, ""), True
+                pattern = _text_patch_pattern(
+                    original,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                new_text, count = re.subn(pattern, "", text, flags=re.I | re.S)
+                return new_text, count > 0
+
+            new_children = list(node.children)
+            for label in child_labels:
+                index, child = direct_matches[label]
+                new_text, changed = _delete_from_child_text(child.text or "")
+                if not changed:
+                    return node, False
+                new_children[index] = dc_replace(child, text=new_text)
+            rebuilt = dc_replace(node, children=new_children)
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_AFTER_CHILD_TAIL_"):
+            child_match = re.fullmatch(
+                r"TEXT_AFTER_CHILD_TAIL_([A-Za-z]+)_([0-9A-Za-z]+)",
+                match,
+            )
+            if child_match is None:
+                return node, False
+            child_kind = child_match.group(1)
+            child_label = child_match.group(2)
+            direct_child_matches = [
+                (index, child)
+                for index, child in enumerate(node.children)
+                if (child.kind.value if isinstance(child.kind, IRNodeKind) else str(child.kind))
+                == child_kind
+                and _clean_num(child.label or "") == _clean_num(child_label)
+            ]
+            if len(direct_child_matches) != 1:
+                return node, False
+            child_index, _ = direct_child_matches[0]
+            if child_index != len(node.children) - 1:
+                return node, False
+            text = node.text or ""
+            if not text:
+                return node, False
+            separator_matches = list(re.finditer(r"[—–-]", text))
+            if not separator_matches:
+                return node, False
+            separator = separator_matches[-1]
+            tail = text[separator.end() :].strip()
+            replacement_text = str(replacement or "").strip()
+            if not tail:
+                return node, False
+            if not replacement_text and not re.match(r"(?:,?\s*)?(?:and|or)\b|[“\"'‘]", tail, flags=re.I):
+                return node, False
+            if replacement_text:
+                joiner = "" if replacement_text.startswith((" ", ",", ".", ";", ":", ")")) else " "
+                rebuilt_text = f"{text[: separator.end()].rstrip()}{joiner}{replacement_text}".rstrip()
+            else:
+                rebuilt_text = text[: separator.end()].rstrip()
+            rebuilt = dc_replace(node, text=rebuilt_text)
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_AFTER_CHILD_"):
+            child_match = re.fullmatch(
+                r"TEXT_AFTER_CHILD_([A-Za-z]+)_([0-9A-Za-z]+)",
+                match,
+            )
+            if child_match is None:
+                return node, False
+            child_kind = child_match.group(1)
+            child_label = child_match.group(2)
+            anchor_path: Optional[tuple[int, ...]] = None
+            recovered_anchor_kind = False
+
+            def _find_child_anchor(n: UKMutableNode, path: tuple[int, ...] = ()) -> None:
+                nonlocal anchor_path
+                if anchor_path is not None:
+                    return
+                kind_value = n.kind.value if isinstance(n.kind, IRNodeKind) else str(n.kind)
+                if kind_value == child_kind and _clean_num(n.label or "") == _clean_num(child_label):
+                    anchor_path = path
+                    return
+                for i, child in enumerate(n.children):
+                    _find_child_anchor(child, path + (i,))
+
+            def _node_at_child_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
+                current = n
+                for idx in path:
+                    current = current.children[idx]
+                return current
+
+            _find_child_anchor(node)
+            if anchor_path is None:
+                return node, False
+            target_node = _node_at_child_path(node, anchor_path)
+            joiner = "" if replacement.startswith((" ", ",", ".", ";", ":", ")")) else " "
+            new_text = f"{(target_node.text or '').rstrip()}{joiner}{replacement}".rstrip()
+            rebuilt = self._replace_descendant_at_path(
+                node,
+                anchor_path,
+                dc_replace(target_node, text=new_text),
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_BEFORE_DEFINITION_"):
+            term = match[len("TEXT_BEFORE_DEFINITION_") :].strip()
+            if not term:
+                return node, False
+            full_text = " ".join(tn.text.strip() for _, tn in text_nodes if tn.text).strip()
+            if not full_text:
+                return node, False
+            term_pattern = _text_patch_pattern(
+                term,
+                allow_punctuation_spacing=allow_punctuation_spacing,
+                allow_word_punctuation_elision=allow_word_punctuation_elision,
+            )
+            definition_pattern = re.compile(
+                rf"(?P<prefix>^|[;\.—–-]\s*)"
+                rf"(?P<body>[“\"'‘]?\s*{term_pattern}\s*[”\"'’]?(?:\s*[,;:])?\s+)",
+                re.I | re.S,
+            )
+            definition_match = definition_pattern.search(full_text)
+            if definition_match is None:
+                return node, False
+            insert_at = definition_match.start("body")
+            joiner = "" if replacement.endswith(" ") else " "
+            new_text = f"{full_text[:insert_at]}{replacement}{joiner}{full_text[insert_at:]}"
+            rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip(), children=[])
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_IN_DEFINITION_") and not match.startswith("TEXT_IN_DEFINITION_CHILD_"):
+            parts = match[len("TEXT_IN_DEFINITION_") :].split(US)
+            if len(parts) == 2 and parts[1] == "AT_END":
+                term = parts[0].strip()
+                if not term:
+                    return node, False
+
+                def _insert_at_end_of_definition(text: str) -> tuple[str, bool]:
+                    term_pattern = _text_patch_pattern(
+                        term,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    definition_start_pattern = re.compile(
+                        rf"""
+                        (?P<prefix>(?:^|[;\.,\u2014\u2013-]\s*))
+                        [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                        (?:\s*\([^;]*?\))*
+                        \s+
+                        (?:
+                            means
+                            |has\s+the\s+same\s+meaning\s+as
+                            |has\s+the\s+meaning
+                            |is\s+to\s+be\s+construed
+                            |shall\s+be\s+construed
+                            |includes
+                        )\b
+                        """,
+                        flags=re.I | re.S | re.X,
+                    )
+                    starts = list(definition_start_pattern.finditer(text))
+                    if len(starts) != 1:
+                        return text, False
+                    definition_start = starts[0]
+                    next_definition_pattern = re.compile(
+                        r"""
+                        [;\.,]\s*
+                        [“"'\u2018][^”"'\u2019;]{1,160}[”"'\u2019]
+                        (?:\s*\([^;]*?\))*
+                        \s+
+                        (?:
+                            means
+                            |has\s+the\s+same\s+meaning\s+as
+                            |has\s+the\s+meaning
+                            |is\s+to\s+be\s+construed
+                            |shall\s+be\s+construed
+                            |includes
+                        )\b
+                        """,
+                        flags=re.I | re.S | re.X,
+                    )
+                    next_definition = next_definition_pattern.search(text, definition_start.end())
+                    if next_definition is not None:
+                        insert_at = next_definition.start()
+                    else:
+                        terminal = re.search(r"\s*[;,.]\s*$", text)
+                        insert_at = terminal.start() if terminal is not None else len(text)
+                    joiner = (
+                        ""
+                        if insert_at == 0
+                        or text[:insert_at].endswith((" ", "\t", "\n", "\r"))
+                        or replacement.startswith((" ", ",", ".", ";", ":", ")"))
+                        else " "
+                    )
+                    new_text = f"{text[:insert_at]}{joiner}{replacement}{text[insert_at:]}"
+                    return " ".join(new_text.split()).strip(), True
+
+                if node.text:
+                    new_text, changed = _insert_at_end_of_definition(node.text)
+                    if changed:
+                        rebuilt = dc_replace(node, text=new_text)
+                        self._replace_node_in_statute(node, rebuilt)
+                        return rebuilt, True
+
+                candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+                for path, text_node in text_nodes:
+                    if not text_node.text:
+                        continue
+                    new_text, changed = _insert_at_end_of_definition(text_node.text)
+                    if changed:
+                        candidate_paths.append((path, text_node, new_text))
+                if len(candidate_paths) != 1:
+                    return node, False
+                path, text_node, new_text = candidate_paths[0]
+                rebuilt = self._replace_descendant_at_path(
+                    node,
+                    path,
+                    dc_replace(text_node, text=new_text),
+                )
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+            if len(parts) == 4 and parts[1] == "FROM" and parts[3] == "TO_END":
+                term = parts[0].strip()
+                start_anchor = parts[2].strip()
+                if not term or not start_anchor:
+                    return node, False
+
+                def _rewrite_range_to_end_in_definition(text: str) -> tuple[str, bool]:
+                    term_pattern = _text_patch_pattern(
+                        term,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    definition_pattern = re.compile(
+                        rf"""
+                        (?P<prefix>(?:^|[;\.]\s*))
+                        [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                        \s+
+                        (?:
+                            means
+                            |has\s+the\s+same\s+meaning\s+as
+                            |has\s+the\s+meaning
+                            |is\s+to\s+be\s+construed
+                            |shall\s+be\s+construed
+                            |includes
+                        )\b
+                        .*?
+                        (?P<terminator>;|$)
+                        """,
+                        flags=re.I | re.S | re.X,
+                    )
+                    definition_matches = list(definition_pattern.finditer(text))
+                    if len(definition_matches) != 1:
+                        return text, False
+                    definition_match = definition_matches[0]
+                    entry_text = definition_match.group(0)
+                    start_pattern = _text_patch_pattern(
+                        start_anchor,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    start_matches = list(re.finditer(start_pattern, entry_text, flags=re.I | re.S))
+                    if len(start_matches) != 1:
+                        return text, False
+                    start_match = start_matches[0]
+                    terminator = str(definition_match.group("terminator") or "")
+                    replacement_text = replacement.strip()
+                    if terminator and not replacement_text.endswith(terminator):
+                        replacement_text = f"{replacement_text}{terminator}"
+                    rewritten_entry = entry_text[: start_match.start()].rstrip()
+                    joiner = (
+                        ""
+                        if not rewritten_entry
+                        or rewritten_entry.endswith((" ", "\t", "\n", "\r"))
+                        or replacement_text.startswith((" ", ",", ".", ";", ":", ")"))
+                        else " "
+                    )
+                    rewritten_entry = f"{rewritten_entry}{joiner}{replacement_text}"
+                    new_text = (
+                        text[: definition_match.start()]
+                        + rewritten_entry
+                        + text[definition_match.end() :]
+                    )
+                    return " ".join(new_text.split()).strip(), True
+
+                if node.text:
+                    new_text, changed = _rewrite_range_to_end_in_definition(node.text)
+                    if changed:
+                        rebuilt = dc_replace(node, text=new_text)
+                        self._replace_node_in_statute(node, rebuilt)
+                        return rebuilt, True
+
+                candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+                for path, text_node in text_nodes:
+                    if not text_node.text:
+                        continue
+                    new_text, changed = _rewrite_range_to_end_in_definition(text_node.text)
+                    if changed:
+                        candidate_paths.append((path, text_node, new_text))
+                if len(candidate_paths) != 1:
+                    return node, False
+                path, text_node, new_text = candidate_paths[0]
+                rebuilt = self._replace_descendant_at_path(
+                    node,
+                    path,
+                    dc_replace(text_node, text=new_text),
+                )
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+            if len(parts) == 5 and parts[1] == "FROM" and parts[3] == "TO":
+                term = parts[0].strip()
+                start_anchor = parts[2].strip()
+                end_anchor = parts[4].strip()
+                if not term or not start_anchor or not end_anchor:
+                    return node, False
+
+                def _rewrite_range_in_definition(text: str) -> tuple[str, bool]:
+                    term_pattern = _text_patch_pattern(
+                        term,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    definition_pattern = re.compile(
+                        rf"""
+                        (?P<prefix>(?:^|[;\.]\s*))
+                        [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                        \s+
+                        (?:
+                            means
+                            |has\s+the\s+same\s+meaning\s+as
+                            |has\s+the\s+meaning
+                            |is\s+to\s+be\s+construed
+                            |shall\s+be\s+construed
+                            |includes
+                        )\b
+                        .*?
+                        (?P<terminator>;|$)
+                        """,
+                        flags=re.I | re.S | re.X,
+                    )
+                    definition_matches = list(definition_pattern.finditer(text))
+                    if len(definition_matches) != 1:
+                        return text, False
+                    definition_match = definition_matches[0]
+                    entry_text = definition_match.group(0)
+                    start_pattern = _text_patch_pattern(
+                        start_anchor,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    start_ordinal = occurrence if occurrence > 0 else 1
+                    start_matches = list(re.finditer(start_pattern, entry_text, flags=re.I | re.S))
+                    if len(start_matches) < start_ordinal:
+                        return text, False
+                    start_match = start_matches[start_ordinal - 1]
+                    end_pattern = _text_patch_pattern(
+                        end_anchor,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    end_matches = [
+                        candidate
+                        for candidate in re.finditer(end_pattern, entry_text, flags=re.I | re.S)
+                        if candidate.start() >= start_match.end()
+                    ]
+                    end_ordinal = end_occurrence if end_occurrence > 0 else 1
+                    if len(end_matches) < end_ordinal:
+                        return text, False
+                    end_match = end_matches[end_ordinal - 1]
+                    rewritten_entry = (
+                        entry_text[: start_match.start()]
+                        + replacement
+                        + entry_text[end_match.end() :]
+                    )
+                    new_text = (
+                        text[: definition_match.start()]
+                        + rewritten_entry
+                        + text[definition_match.end() :]
+                    )
+                    return " ".join(new_text.split()).strip(), True
+
+                if node.text:
+                    new_text, changed = _rewrite_range_in_definition(node.text)
+                    if changed:
+                        rebuilt = dc_replace(node, text=new_text)
+                        self._replace_node_in_statute(node, rebuilt)
+                        return rebuilt, True
+
+                candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+                for path, text_node in text_nodes:
+                    if not text_node.text:
+                        continue
+                    new_text, changed = _rewrite_range_in_definition(text_node.text)
+                    if changed:
+                        candidate_paths.append((path, text_node, new_text))
+                if len(candidate_paths) != 1:
+                    return node, False
+                path, text_node, new_text = candidate_paths[0]
+                rebuilt = self._replace_descendant_at_path(
+                    node,
+                    path,
+                    dc_replace(text_node, text=new_text),
+                )
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+            if len(parts) == 3 and parts[1] == "AFTER_EACH":
+                term = parts[0].strip()
+                anchor = parts[2].strip()
+                if not term or not anchor:
+                    return node, False
+
+                def _rewrite_each_anchor_in_definition_entry(text: str) -> tuple[str, bool]:
+                    term_pattern = _text_patch_pattern(
+                        term,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    definition_pattern = re.compile(
+                        rf"""
+                        (?P<prefix>(?:^|[;\.]\s*))
+                        [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                        \s+
+                        (?:
+                            means
+                            |has\s+the\s+same\s+meaning\s+as
+                            |has\s+the\s+meaning
+                            |is\s+to\s+be\s+construed
+                            |includes
+                        )\b
+                        .*?
+                        (?P<terminator>;|$)
+                        """,
+                        flags=re.I | re.S | re.X,
+                    )
+                    definition_matches = list(definition_pattern.finditer(text))
+                    if len(definition_matches) != 1:
+                        return text, False
+                    definition_match = definition_matches[0]
+                    entry_text = definition_match.group(0)
+                    anchor_pattern = _text_patch_pattern(
+                        anchor,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    anchor_matches = list(re.finditer(anchor_pattern, entry_text, flags=re.I | re.S))
+                    if not anchor_matches:
+                        return text, False
+                    rewritten_entry = re.sub(anchor_pattern, replacement, entry_text, flags=re.I | re.S)
+                    new_text = f"{text[:definition_match.start()]}{rewritten_entry}{text[definition_match.end():]}"
+                    return " ".join(new_text.split()).strip(), True
+
+                if node.text:
+                    new_text, changed = _rewrite_each_anchor_in_definition_entry(node.text)
+                    if changed:
+                        rebuilt = dc_replace(node, text=new_text)
+                        self._replace_node_in_statute(node, rebuilt)
+                        return rebuilt, True
+
+                candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+                for path, text_node in text_nodes:
+                    if not text_node.text:
+                        continue
+                    new_text, changed = _rewrite_each_anchor_in_definition_entry(text_node.text)
+                    if changed:
+                        candidate_paths.append((path, text_node, new_text))
+                if len(candidate_paths) != 1:
+                    return node, False
+                path, text_node, new_text = candidate_paths[0]
+                rebuilt = self._replace_descendant_at_path(
+                    node,
+                    path,
+                    dc_replace(text_node, text=new_text),
+                )
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+            if len(parts) != 3 or parts[1] != "AFTER":
+                return node, False
+            term = parts[0].strip()
+            anchor = parts[2].strip()
+            if not term or not anchor:
+                return node, False
+
+            def _rewrite_anchor_in_definition_entry(text: str) -> tuple[str, bool]:
+                term_pattern = _text_patch_pattern(
+                    term,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                definition_pattern = re.compile(
+                    rf"""
+                    (?P<prefix>(?:^|[;\.]\s*))
+                    [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                    \s+
+                    (?:
+                        means
+                        |has\s+the\s+same\s+meaning\s+as
+                        |has\s+the\s+meaning
+                        |is\s+to\s+be\s+construed
+                        |includes
+                    )\b
+                    .*?
+                    (?P<terminator>;|$)
+                    """,
+                    flags=re.I | re.S | re.X,
+                )
+                definition_matches = list(definition_pattern.finditer(text))
+                if len(definition_matches) != 1:
+                    return text, False
+                definition_match = definition_matches[0]
+                entry_text = definition_match.group(0)
+                anchor_pattern = _text_patch_pattern(
+                    anchor,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                anchor_matches = list(re.finditer(anchor_pattern, entry_text, flags=re.I | re.S))
+                if len(anchor_matches) != 1:
+                    return text, False
+                anchor_match = anchor_matches[0]
+                rewritten_entry = (
+                    entry_text[: anchor_match.start()]
+                    + replacement
+                    + entry_text[anchor_match.end() :]
+                )
+                new_text = f"{text[:definition_match.start()]}{rewritten_entry}{text[definition_match.end():]}"
+                return " ".join(new_text.split()).strip(), True
+
+            if node.text:
+                new_text, changed = _rewrite_anchor_in_definition_entry(node.text)
+                if changed:
+                    rebuilt = dc_replace(node, text=new_text)
+                    self._replace_node_in_statute(node, rebuilt)
+                    return rebuilt, True
+
+            candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+            for path, text_node in text_nodes:
+                if not text_node.text:
+                    continue
+                new_text, changed = _rewrite_anchor_in_definition_entry(text_node.text)
+                if changed:
+                    candidate_paths.append((path, text_node, new_text))
+            if len(candidate_paths) != 1:
+                return node, False
+            path, text_node, new_text = candidate_paths[0]
+            rebuilt = self._replace_descendant_at_path(
+                node,
+                path,
+                dc_replace(text_node, text=new_text),
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_DEFINITION_CHILD_"):
+            child_selector = match[len("TEXT_DEFINITION_CHILD_") :]
+            child_parts = child_selector.split(US)
+            if len(child_parts) != 2:
+                return node, False
+            kind_and_term, child_label = child_parts
+            child_match = re.fullmatch(r"([A-Z]+)_(.+)", kind_and_term)
+            if child_match is None:
+                return node, False
+            child_kind = child_match.group(1).lower()
+            term = child_match.group(2).strip()
+            child_label = child_label.strip()
+            if child_kind != "paragraph" or not term or not child_label:
+                return node, False
+
+            def _definition_child_nodes(
+                n: UKMutableNode,
+                path: tuple[int, ...] = (),
+            ) -> list[tuple[tuple[int, ...], UKMutableNode]]:
+                matches: list[tuple[tuple[int, ...], UKMutableNode]] = []
+                for index, child in enumerate(n.children):
+                    child_path = path + (index,)
+                    if (
+                        child.kind is IRNodeKind.ITEM
+                        and str(child.attrs.get("definition_child_label") or "").lower() == child_label.lower()
+                        and child.attrs.get("source_rule_id") == "uk_definition_ordered_list_child_preserved"
+                        and _normalize_text(str(child.attrs.get("definition_term") or "")) == _normalize_text(term)
+                    ):
+                        matches.append((child_path, child))
+                    matches.extend(_definition_child_nodes(child, child_path))
+                return matches
+
+            structured_child_matches = _definition_child_nodes(node)
+            if len(structured_child_matches) == 1:
+                child_path, child_node = structured_child_matches[0]
+
+                def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
+                    current = n
+                    for index in path:
+                        current = current.children[index]
+                    return current
+
+                if replacement:
+                    rebuilt_child = dc_replace(child_node, text=replacement.strip())
+                    rebuilt = self._replace_descendant_at_path(node, child_path, rebuilt_child)
+                    self._replace_node_in_statute(node, rebuilt)
+                    return rebuilt, True
+                parent_path = child_path[:-1]
+                child_index = child_path[-1]
+                parent_node = _node_at_path(node, parent_path)
+                new_children = list(parent_node.children)
+                new_children.pop(child_index)
+                rebuilt_parent = dc_replace(parent_node, children=new_children)
+                rebuilt = (
+                    rebuilt_parent
+                    if not parent_path
+                    else self._replace_descendant_at_path(node, parent_path, rebuilt_parent)
+                )
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+            if len(text_nodes) != 1:
+                return node, False
+
+            def _child_ordinal(label: str) -> Optional[int]:
+                if len(label) == 1 and label.isalpha():
+                    return ord(label.lower()) - ord("a") + 1
+                if label.isdigit():
+                    return int(label)
+                return None
+
+            def _rewrite_definition_child(text: str) -> tuple[str, bool]:
+                ordinal = _child_ordinal(child_label)
+                if ordinal is None or ordinal < 1:
+                    return text, False
+                term_pattern = _text_patch_pattern(
+                    term,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                definition_start_pattern = re.compile(
+                    rf"""
+                    (?P<prefix>(?:^|[;\.]\s*))
+                    [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                    \s+
+                    (?:
+                        means
+                        |has\s+the\s+same\s+meaning\s+as
+                        |has\s+the\s+meaning
+                        |is\s+to\s+be\s+construed
+                        |includes
+                    )\b
+                    """,
+                    flags=re.I | re.S | re.X,
+                )
+                definition_starts = list(definition_start_pattern.finditer(text))
+                if len(definition_starts) != 1:
+                    return text, False
+                definition_start = definition_starts[0]
+                next_definition_pattern = re.compile(
+                    r"""
+                    [;\.]\s*
+                    [“"'\u2018][^”"'\u2019;]{1,160}[”"'\u2019]
+                    \s+
+                    (?:
+                        means
+                        |has\s+the\s+same\s+meaning\s+as
+                        |has\s+the\s+meaning
+                        |is\s+to\s+be\s+construed
+                        |includes
+                    )\b
+                    """,
+                    flags=re.I | re.S | re.X,
+                )
+                next_definition = next_definition_pattern.search(text, definition_start.end())
+                entry_end = next_definition.start() + 1 if next_definition is not None else len(text)
+                body_start = definition_start.end()
+                entry_body = text[body_start:entry_end]
+                semicolons = list(re.finditer(r";", entry_body))
+                if len(semicolons) < ordinal:
+                    return text, False
+                segment_start = body_start
+                if ordinal > 1:
+                    segment_start = body_start + semicolons[ordinal - 2].end()
+                segment_end = body_start + semicolons[ordinal - 1].end()
+                before = text[:segment_start].rstrip()
+                after = text[segment_end:].lstrip()
+                if replacement:
+                    old_segment = text[segment_start:segment_end]
+                    terminator = (
+                        ";"
+                        if old_segment.rstrip().endswith(";")
+                        and not replacement.rstrip().endswith(";")
+                        else ""
+                    )
+                    new_segment = f"{replacement.strip()}{terminator}"
+                    new_text = f"{before} {new_segment} {after}".strip()
+                else:
+                    new_text = f"{before} {after}".strip()
+                return " ".join(new_text.split()).strip(), True
+
+            text_path, text_node = text_nodes[0]
+            new_text, changed = _rewrite_definition_child(text_node.text or "")
+            if not changed:
+                return node, False
+            replacement_node = dc_replace(text_node, text=new_text)
+            if not text_path:
+                self._replace_node_in_statute(text_node, replacement_node)
+                return replacement_node, True
+            rebuilt = self._replace_descendant_at_path(node, text_path, replacement_node)
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_IN_DEFINITION_CHILD_"):
+            child_selector = match[len("TEXT_IN_DEFINITION_CHILD_") :]
+            child_parts = child_selector.split(US)
+            child_after_anchor = ""
+            child_at_end = False
+            if len(child_parts) == 4 and child_parts[2] == "AFTER":
+                kind_and_term, child_label, _, child_after_anchor = child_parts
+                original = ""
+            elif len(child_parts) == 3:
+                kind_and_term, child_label, original = child_parts
+                child_at_end = original == "AT_END"
+            else:
+                return node, False
+            child_match = re.fullmatch(r"([A-Z]+)_(.+)", kind_and_term)
+            if child_match is None:
+                return node, False
+            child_kind = child_match.group(1).lower()
+            term = child_match.group(2).strip()
+            child_label = child_label.strip()
+            original = original.strip()
+            child_after_anchor = child_after_anchor.strip()
+            if child_kind != "paragraph" or not term or not child_label:
+                return node, False
+            if (child_after_anchor and original) or (not child_after_anchor and not original and not child_at_end):
+                return node, False
+
+            def _definition_child_nodes(
+                n: UKMutableNode,
+                path: tuple[int, ...] = (),
+            ) -> list[tuple[tuple[int, ...], UKMutableNode]]:
+                matches: list[tuple[tuple[int, ...], UKMutableNode]] = []
+                for index, child in enumerate(n.children):
+                    child_path = path + (index,)
+                    if (
+                        child.kind is IRNodeKind.ITEM
+                        and str(child.attrs.get("definition_child_label") or "").lower() == child_label.lower()
+                        and child.attrs.get("source_rule_id") == "uk_definition_ordered_list_child_preserved"
+                        and _normalize_text(str(child.attrs.get("definition_term") or "")) == _normalize_text(term)
+                    ):
+                        matches.append((child_path, child))
+                    matches.extend(_definition_child_nodes(child, child_path))
+                return matches
+
+            structured_child_matches = _definition_child_nodes(node)
+            if child_after_anchor:
+                pattern = _text_patch_pattern(
+                    child_after_anchor,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+            elif re.fullmatch(r"[A-Za-z0-9]+", original):
+                pattern = rf"(?<![A-Za-z0-9]){re.escape(original)}(?![A-Za-z0-9])"
+            else:
+                pattern = _text_patch_pattern(
+                    original,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+            replacement_text = replacement or ""
+            if len(structured_child_matches) == 1:
+                child_path, child_node = structured_child_matches[0]
+                child_text = child_node.text or ""
+                if not child_text:
+                    return node, False
+                if child_at_end:
+                    new_text = _append_definition_child_suffix_text(child_text, replacement_text)
+                elif child_after_anchor:
+                    required_occurrence = occurrence if occurrence > 0 else 1
+                    matches = list(re.finditer(pattern, child_text, flags=re.I | re.S))
+                    if len(matches) < required_occurrence:
+                        return node, False
+                    match_obj = matches[required_occurrence - 1]
+                    new_text = (
+                        child_text[: match_obj.start()]
+                        + replacement_text
+                        + child_text[match_obj.end() :]
+                    )
+                else:
+                    new_text, count = re.subn(pattern, replacement_text, child_text, count=1, flags=re.I | re.S)
+                    if count != 1:
+                        return node, False
+                rebuilt_child = dc_replace(child_node, text=" ".join(new_text.split()).strip())
+                rebuilt = self._replace_descendant_at_path(node, child_path, rebuilt_child)
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+            def _child_ordinal(label: str) -> Optional[int]:
+                if len(label) == 1 and label.isalpha():
+                    return ord(label.lower()) - ord("a") + 1
+                if label.isdigit():
+                    return int(label)
+                return None
+
+            def _rewrite_flat_definition_child(text: str) -> tuple[str, bool]:
+                ordinal = _child_ordinal(child_label)
+                if ordinal is None or ordinal < 1:
+                    return text, False
+                term_pattern = _text_patch_pattern(
+                    term,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                definition_start_pattern = re.compile(
+                    rf"""
+                    (?P<prefix>(?:^|[;\.]\s*))
+                    [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                    \s+
+                    (?:
+                        means
+                        |has\s+the\s+same\s+meaning\s+as
+                        |has\s+the\s+meaning
+                        |is\s+to\s+be\s+construed
+                        |includes
+                    )\b
+                    """,
+                    flags=re.I | re.S | re.X,
+                )
+                definition_starts = list(definition_start_pattern.finditer(text))
+                if len(definition_starts) != 1:
+                    return text, False
+                definition_start = definition_starts[0]
+                next_definition_pattern = re.compile(
+                    r"""
+                    [;\.]\s*
+                    [“"'\u2018][^”"'\u2019;]{1,160}[”"'\u2019]
+                    \s+
+                    (?:
+                        means
+                        |has\s+the\s+same\s+meaning\s+as
+                        |has\s+the\s+meaning
+                        |is\s+to\s+be\s+construed
+                        |includes
+                    )\b
+                    """,
+                    flags=re.I | re.S | re.X,
+                )
+                next_definition = next_definition_pattern.search(text, definition_start.end())
+                entry_end = next_definition.start() + 1 if next_definition is not None else len(text)
+                body_start = definition_start.end()
+                entry_body = text[body_start:entry_end]
+                semicolons = list(re.finditer(r";", entry_body))
+                if len(semicolons) < ordinal:
+                    return text, False
+                segment_start = body_start
+                if ordinal > 1:
+                    segment_start = body_start + semicolons[ordinal - 2].end()
+                search_end = (
+                    body_start + semicolons[ordinal - 1].end()
+                    if child_after_anchor
+                    else body_start + semicolons[ordinal].end()
+                    if len(semicolons) > ordinal
+                    else entry_end
+                )
+                segment = text[segment_start:search_end]
+                if child_at_end:
+                    new_segment = _append_definition_child_suffix_text(segment, replacement_text)
+                    new_text = f"{text[:segment_start]}{new_segment}{text[search_end:]}"
+                    return " ".join(new_text.split()).strip(), True
+                matches = list(re.finditer(pattern, segment, flags=re.I | re.S))
+                if child_after_anchor:
+                    required_occurrence = occurrence if occurrence > 0 else 1
+                    if len(matches) < required_occurrence:
+                        return text, False
+                    match_obj = matches[required_occurrence - 1]
+                else:
+                    if len(matches) != 1:
+                        return text, False
+                    match_obj = matches[0]
+                absolute_start = segment_start + match_obj.start()
+                absolute_end = segment_start + match_obj.end()
+                new_text = f"{text[:absolute_start]}{replacement_text}{text[absolute_end:]}"
+                return " ".join(new_text.split()).strip(), True
+
+            candidate_rewrites: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+            for text_path, text_node in text_nodes:
+                if not text_node.text:
+                    continue
+                new_text, changed = _rewrite_flat_definition_child(text_node.text)
+                if changed:
+                    candidate_rewrites.append((text_path, text_node, new_text))
+            if len(candidate_rewrites) != 1:
+                return node, False
+            text_path, text_node, new_text = candidate_rewrites[0]
+            replacement_node = dc_replace(text_node, text=new_text)
+            if not text_path:
+                self._replace_node_in_statute(text_node, replacement_node)
+                return replacement_node, True
+            rebuilt = self._replace_descendant_at_path(node, text_path, replacement_node)
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_AFTER_DEFINITION_"):
+            definition_child_match = re.fullmatch(
+                r"TEXT_AFTER_DEFINITION_([A-Z]+)_(.*)_AFTER_([0-9A-Za-z]+)",
+                match,
+            )
+            if definition_child_match is not None:
+                child_kind = definition_child_match.group(1).lower()
+                term = definition_child_match.group(2).strip()
+                child_label = definition_child_match.group(3).strip()
+                if child_kind != "paragraph" or not term or not child_label:
+                    return node, False
+
+                def _definition_child_nodes(
+                    n: UKMutableNode,
+                    path: tuple[int, ...] = (),
+                ) -> list[tuple[tuple[int, ...], UKMutableNode]]:
+                    matches: list[tuple[tuple[int, ...], UKMutableNode]] = []
+                    for index, child in enumerate(n.children):
+                        child_path = path + (index,)
+                        if (
+                            child.kind is IRNodeKind.ITEM
+                            and str(child.attrs.get("definition_child_label") or "").lower() == child_label.lower()
+                            and child.attrs.get("source_rule_id") == "uk_definition_ordered_list_child_preserved"
+                            and _normalize_text(str(child.attrs.get("definition_term") or "")) == _normalize_text(term)
+                        ):
+                            matches.append((child_path, child))
+                        matches.extend(_definition_child_nodes(child, child_path))
+                    return matches
+
+                def _definition_insert_payload(
+                    raw_replacement: str,
+                ) -> tuple[str, list[UKMutableNode]]:
+                    text = " ".join(raw_replacement.split()).strip(" ,.")
+                    if not text:
+                        return "", []
+                    anchor_suffix = ""
+                    suffix_match = re.match(r"^(?P<suffix>;\s+(?:or|and))\s+(?P<body>.+)$", text, flags=re.I | re.S)
+                    if suffix_match is not None:
+                        anchor_suffix = " ".join(suffix_match.group("suffix").split())
+                        text = suffix_match.group("body").strip()
+                    item_matches = list(
+                        re.finditer(
+                            r"(?:(?<=^)|(?<=;\s))(?P<label>[0-9A-Za-z]+)\s+(?P<body>[^;]+;)",
+                            text,
+                            flags=re.S,
+                        )
+                    )
+                    items: list[UKMutableNode] = []
+                    if item_matches and item_matches[0].start() == 0:
+                        for item_match in item_matches:
+                            label = item_match.group("label").strip()
+                            item_text = " ".join(item_match.group("body").split()).strip()
+                            if not label or not item_text:
+                                return "", []
+                            items.append(
+                                UKMutableNode(
+                                    kind=IRNodeKind.ITEM,
+                                    label=None,
+                                    text=item_text,
+                                    attrs={
+                                        "source_rule_id": "uk_definition_ordered_list_child_preserved",
+                                        "definition_term": term,
+                                        "definition_child_label": label,
+                                        "source_rule_detail": (
+                                            "uk_effect_source_carried_definition_child_insert_text_patch"
+                                        ),
+                                    },
+                                )
+                            )
+                    return anchor_suffix, items
+
+                structured_child_matches = _definition_child_nodes(node)
+                if len(structured_child_matches) == 1:
+                    child_path, child_node = structured_child_matches[0]
+                    parent_path = child_path[:-1]
+                    child_index = child_path[-1]
+
+                    def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
+                        current = n
+                        for index in path:
+                            current = current.children[index]
+                        return current
+
+                    anchor_suffix, inserted_children = _definition_insert_payload(replacement)
+                    if inserted_children:
+                        parent_node = _node_at_path(node, parent_path)
+                        new_children = list(parent_node.children)
+                        if anchor_suffix:
+                            anchor_text = " ".join(f"{child_node.text.rstrip()} {anchor_suffix}".split()).strip()
+                            new_children[child_index] = dc_replace(child_node, text=anchor_text)
+                        new_children[child_index + 1 : child_index + 1] = inserted_children
+                        rebuilt_parent = dc_replace(parent_node, children=new_children)
+                        rebuilt = (
+                            rebuilt_parent
+                            if not parent_path
+                            else self._replace_descendant_at_path(node, parent_path, rebuilt_parent)
+                        )
+                        self._replace_node_in_statute(node, rebuilt)
+                        return rebuilt, True
+
+                full_text = " ".join(tn.text.strip() for _, tn in text_nodes if tn.text).strip()
+                if not full_text:
+                    return node, False
+                term_pattern = re.escape(term).replace(r"\ ", r"\s+")
+                definition_match = re.search(
+                    rf"[“\"'‘]?\s*{term_pattern}\s*[”\"'’]?.*?\bmeans\b",
+                    full_text,
+                    flags=re.I | re.S,
+                )
+                if definition_match is None:
+                    return node, False
+                if len(child_label) == 1 and child_label.isalpha():
+                    semicolon_ordinal = ord(child_label.lower()) - ord("a") + 1
+                elif child_label.isdigit():
+                    semicolon_ordinal = int(child_label)
+                else:
+                    return node, False
+                tail = full_text[definition_match.end() :]
+                semicolons = list(re.finditer(r";", tail))
+                if len(semicolons) < semicolon_ordinal:
+                    return node, False
+                insert_at = definition_match.end() + semicolons[semicolon_ordinal - 1].end()
+                joiner = "" if replacement.startswith((" ", ",", ".", ";", ":", ")")) else " "
+                new_text = f"{full_text[:insert_at]}{joiner}{replacement}{full_text[insert_at:]}"
+                rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip(), children=[])
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+            term = match[len("TEXT_AFTER_DEFINITION_") :].strip()
+            if not term:
+                return node, False
+
+            def _insert_after_definition_in_text(text: str) -> tuple[str, bool]:
+                definition_start: Optional[re.Match[str]] = None
+                recovered_anchor = False
+                recovered_parenthetical_translation = False
+                recovered_qualifier_phrase = False
+                recovered_conjoined_term = False
+                for candidate_term in (term, *_uk_definition_term_lexical_variants(term)):
+                    term_pattern = _text_patch_pattern(
+                        candidate_term,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    definition_start_pattern = re.compile(
+                        rf"""
+                        (?P<prefix>(?:^|[;\.,\u2014\u2013-]\s*|(?:\band\b|\bor\b)\s+))
+                        [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                        (?P<parenthetical_translation>(?:\s*\([^;]*?\))*)
+                        (?P<qualifier>\s*,\s*[^;]{{1,240}}?\s*,)?
+                        \s+
+                        (?:
+                            means
+                            |has\s+the\s+same\s+meaning\s+as
+                            |has\s+the\s+meaning
+                            |is\s+to\s+be\s+construed
+                            |shall\s+be\s+construed
+                            |includes
+                        )\b
+                        """,
+                        flags=re.I | re.S | re.X,
+                    )
+                    definition_starts = list(definition_start_pattern.finditer(text))
+                    if len(definition_starts) != 1:
+                        continue
+                    definition_start = definition_starts[0]
+                    recovered_anchor = candidate_term != term
+                    recovered_parenthetical_translation = bool(
+                        str(definition_start.group("parenthetical_translation") or "").strip()
+                    )
+                    recovered_qualifier_phrase = bool(
+                        str(definition_start.group("qualifier") or "").strip()
+                    )
+                    recovered_conjoined_term = bool(
+                        re.fullmatch(
+                            r"\s*(?:and|or)\s+",
+                            str(definition_start.group("prefix") or ""),
+                            flags=re.I,
+                        )
+                    )
+                    break
+                if definition_start is None:
+                    return text, False
+                next_definition_pattern = re.compile(
+                    r"""
+                    [;\.,]\s*
+                    [“"'\u2018][^”"'\u2019;]{1,160}[”"'\u2019]
+                    (?:\s*\([^;]*?\))*
+                    \s+
+                    (?:
+                        means
+                        |has\s+the\s+same\s+meaning\s+as
+                        |has\s+the\s+meaning
+                        |is\s+to\s+be\s+construed
+                        |shall\s+be\s+construed
+                        |includes
+                    )\b
+                    """,
+                    flags=re.I | re.S | re.X,
+                )
+                next_definition = next_definition_pattern.search(text, definition_start.end())
+                if next_definition is not None:
+                    insert_at = next_definition.start() + 1
+                else:
+                    insert_at = len(text)
+                joiner = "" if replacement.startswith((" ", ",", ".", ";", ":", ")")) else " "
+                new_text = f"{text[:insert_at]}{joiner}{replacement}{text[insert_at:]}"
+                if recovered_anchor and recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_definition_anchor_lexical_variant_recovered"
+                    )
+                if recovered_parenthetical_translation and recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_definition_anchor_parenthetical_translation_normalized"
+                    )
+                if recovered_qualifier_phrase and recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_definition_anchor_qualifier_phrase_normalized"
+                    )
+                if recovered_conjoined_term and recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_definition_anchor_conjoined_term_normalized"
+                    )
+                return " ".join(new_text.split()).strip(), True
+
+            if node.text:
+                new_text, changed = _insert_after_definition_in_text(node.text)
+                if changed:
+                    rebuilt = dc_replace(node, text=new_text)
+                    self._replace_node_in_statute(node, rebuilt)
+                    return rebuilt, True
+
+            candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+            for path, text_node in text_nodes:
+                if not text_node.text:
+                    continue
+                new_text, changed = _insert_after_definition_in_text(text_node.text)
+                if changed:
+                    candidate_paths.append((path, text_node, new_text))
+            if len(candidate_paths) != 1:
+                return node, False
+            path, text_node, new_text = candidate_paths[0]
+            rebuilt = self._replace_descendant_at_path(
+                node,
+                path,
+                dc_replace(text_node, text=new_text),
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_DEFINITION_ENTRY_"):
+            term = match[len("TEXT_DEFINITION_ENTRY_") :].strip()
+            if not term:
+                return node, False
+
+            def _rewrite_definition_entry(text: str) -> tuple[str, bool, tuple[str, ...]]:
+                term_pattern = _text_patch_pattern(
+                    term,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                definition_pattern = re.compile(
+                    rf"""
+                    (?P<prefix>(?:^|[;\.:\u2014]\s*,?\s*))
+                    \s*
+                    [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+                    (?:\s*\([^;]*?\))*
+                    (?P<qualifier>\s*,\s*[^;]{{1,240}}?\s*,)?
+                    \s+
+                    (?P<predicate>
+                        means
+                        |has\s+the\s+same\s+meaning\s+as
+                        |has\s+the\s+meaning
+                        |is\s+to\s+be\s+construed
+                        |shall\s+be\s+construed
+                        |includes
+                    )\b
+                    .*?
+                    (?P<terminator>;|$)
+                    """,
+                    flags=re.I | re.S | re.X,
+                )
+                matches = list(definition_pattern.finditer(text))
+                if len(matches) != 1:
+                    return text, False, ()
+                m = matches[0]
+                predicate = " ".join(str(m.group("predicate") or "").lower().split())
+                used_shall_construed = predicate == "shall be construed"
+                used_qualifier = bool(str(m.group("qualifier") or "").strip())
+                raw_prefix = m.group("prefix")
+                used_orphan_separator = bool(re.search(r"[;\.:\u2014]\s*,\s*$", raw_prefix))
+                prefix = re.sub(r"\s*,\s*$", " ", raw_prefix) if used_orphan_separator else raw_prefix
+                if replacement:
+                    replacement_prefix = "" if m.start() == 0 else prefix
+                    joiner = "" if not replacement_prefix or replacement.startswith((" ", ",", ".", ";", ":", ")")) else " "
+                    new_text = f"{text[:m.start()]}{replacement_prefix}{joiner}{replacement}{text[m.end():]}"
+                else:
+                    replacement_prefix = "" if m.start() == 0 or prefix.strip() == "." else prefix
+                    new_text = f"{text[:m.start()]}{replacement_prefix}{text[m.end():]}"
+                recovery_rule_ids = []
+                if used_shall_construed:
+                    recovery_rule_ids.append("uk_replay_definition_predicate_shall_construed_normalized")
+                if used_qualifier:
+                    recovery_rule_ids.append("uk_replay_definition_entry_qualifier_phrase_normalized")
+                if used_orphan_separator:
+                    recovery_rule_ids.append("uk_replay_definition_entry_orphan_separator_normalized")
+                return " ".join(new_text.split()).strip(), True, tuple(recovery_rule_ids)
+
+            if node.text:
+                new_text, changed, definition_recovery_rule_ids = _rewrite_definition_entry(node.text)
+                if changed:
+                    if definition_recovery_rule_ids and recovery_rule_ids_out is not None:
+                        recovery_rule_ids_out.extend(definition_recovery_rule_ids)
+                    rebuilt = dc_replace(node, text=new_text)
+                    self._replace_node_in_statute(node, rebuilt)
+                    return rebuilt, True
+
+            candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str, tuple[str, ...]]] = []
+            for path, text_node in text_nodes:
+                if not text_node.text:
+                    continue
+                new_text, changed, definition_recovery_rule_ids = _rewrite_definition_entry(text_node.text)
+                if changed:
+                    candidate_paths.append((path, text_node, new_text, definition_recovery_rule_ids))
+            if len(candidate_paths) != 1:
+                return node, False
+            path, text_node, new_text, definition_recovery_rule_ids = candidate_paths[0]
+            if definition_recovery_rule_ids and recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.extend(definition_recovery_rule_ids)
+            rebuilt = self._replace_descendant_at_path(
+                node,
+                path,
+                dc_replace(text_node, text=new_text),
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_WORD_"):
+            target_contextual_match = re.fullmatch(
+                r"TEXT_WORD_(.*?)_IMMEDIATELY_FOLLOWING_TARGET",
+                match,
+            )
+            if target_contextual_match is not None:
+                word = target_contextual_match.group(1)
+
+                def _remove_trailing_target_word(text: str, needle: str) -> tuple[str, bool]:
+                    pattern = re.compile(
+                        rf"(?P<prefix>.*?)(?P<sep>\s*,?\s*){re.escape(needle)}(?P<suffix>\s*[,;:]?\s*)$",
+                        re.I | re.S,
+                    )
+                    m = pattern.fullmatch(text)
+                    if not m:
+                        return text, False
+                    return (m.group("prefix").rstrip() + m.group("suffix").rstrip()).rstrip(), True
+
+                new_text, changed = _remove_trailing_target_word(node.text or "", word)
+                if not changed:
+                    return node, False
+                rebuilt = dc_replace(node, text=new_text)
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+            contextual_match = re.fullmatch(
+                r"TEXT_WORD_(.*?)_IMMEDIATELY_(PRECEDING|FOLLOWING)_([A-Za-z]+)_([0-9A-Za-z]+)",
+                match,
+            )
+            if contextual_match is None:
+                return node, False
+            word = contextual_match.group(1)
+            relation = contextual_match.group(2)
+            anchor_kind = contextual_match.group(3)
+            anchor_label = contextual_match.group(4)
+            anchor_path: Optional[tuple[int, ...]] = None
+            recovered_anchor_kind = False
+
+            def _find_anchor(n: UKMutableNode, path: tuple[int, ...] = ()) -> None:
+                nonlocal anchor_path
+                if anchor_path is not None:
+                    return
+                kind_value = n.kind.value if isinstance(n.kind, IRNodeKind) else str(n.kind)
+                if kind_value == anchor_kind and _clean_num(n.label or "") == _clean_num(anchor_label):
+                    anchor_path = path
+                    return
+                for i, child in enumerate(n.children):
+                    _find_anchor(child, path + (i,))
+
+            def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
+                current = n
+                for idx in path:
+                    current = current.children[idx]
+                return current
+
+            def _remove_trailing_word(text: str, needle: str) -> tuple[str, bool]:
+                pattern = re.compile(
+                    rf"(?P<prefix>.*?)(?P<sep>\s*,?\s*){re.escape(needle)}(?P<suffix>\s*[,;:]?\s*)$",
+                    re.I | re.S,
+                )
+                m = pattern.fullmatch(text)
+                if not m:
+                    return text, False
+                return (m.group("prefix").rstrip() + m.group("suffix").rstrip()).rstrip(), True
+
+            _find_anchor(node)
+            if anchor_path is None:
+                allowed_anchor_kinds = {
+                    "paragraph",
+                    "subparagraph",
+                    "item",
+                    "point",
+                }
+                if anchor_kind.lower() not in allowed_anchor_kinds:
+                    return node, False
+
+                candidate_paths: list[tuple[int, ...]] = []
+
+                def _collect_label_anchors(n: UKMutableNode, path: tuple[int, ...] = ()) -> None:
+                    kind_value = n.kind.value if isinstance(n.kind, IRNodeKind) else str(n.kind)
+                    if kind_value in allowed_anchor_kinds and _clean_num(n.label or "") == _clean_num(anchor_label):
+                        candidate_paths.append(path)
+                    for i, child in enumerate(n.children):
+                        _collect_label_anchors(child, path + (i,))
+
+                _collect_label_anchors(node)
+                if len(candidate_paths) != 1:
+                    return node, False
+                anchor_path = candidate_paths[0]
+                recovered_anchor_kind = True
+            target_path = anchor_path
+            if relation == "PRECEDING":
+                if not anchor_path:
+                    return node, False
+                sibling_idx = anchor_path[-1] - 1
+                if sibling_idx < 0:
+                    return node, False
+                target_path = anchor_path[:-1] + (sibling_idx,)
+            target_node = _node_at_path(node, target_path)
+            new_text, changed = _remove_trailing_word(target_node.text or "", word)
+            if not changed:
+                return node, False
+            if recovered_anchor_kind and recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_contextual_word_anchor_kind_normalized")
+            rebuilt = self._replace_descendant_at_path(
+                node,
+                target_path,
+                dc_replace(target_node, text=new_text),
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_AFTER_") and match.endswith("_TO_END"):
+            anchor = match[len("TEXT_AFTER_") : -len("_TO_END")]
+            if not anchor:
+                return node, False
+
+            def _rewrite_after_anchor(text: str) -> tuple[str, bool]:
+                ordinal = occurrence if occurrence > 0 else 1
+                start = 0
+                for _ in range(ordinal):
+                    idx = text.find(anchor, start)
+                    if idx == -1:
+                        break
+                    start = idx + len(anchor)
+                else:
+                    anchor_end = idx + len(anchor)
+                    joiner = (
+                        ""
+                        if text[:anchor_end].endswith((" ", "\t", "\n", "\r"))
+                        or replacement.startswith((" ", ",", ".", ";", ":", ")"))
+                        else " "
+                    )
+                    return f"{text[:anchor_end]}{joiner}{replacement}", True
+
+                pattern = _text_patch_pattern(
+                    anchor,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                matches = list(re.finditer(pattern, text, flags=re.I | re.S))
+                if len(matches) < ordinal:
+                    return text, False
+                anchor_match = matches[ordinal - 1]
+                joiner = (
+                    ""
+                    if text[: anchor_match.end()].endswith((" ", "\t", "\n", "\r"))
+                    or replacement.startswith((" ", ",", ".", ";", ":", ")"))
+                    else " "
+                )
+                return f"{text[: anchor_match.end()]}{joiner}{replacement}", True
+
+            if node.text:
+                new_text, changed = _rewrite_after_anchor(node.text)
+                if changed:
+                    rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip())
+                    self._replace_node_in_statute(node, rebuilt)
+                    return rebuilt, True
+
+            candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
+            for path, text_node in text_nodes:
+                if not text_node.text:
+                    continue
+                new_text, changed = _rewrite_after_anchor(text_node.text)
+                if changed:
+                    candidate_paths.append((path, text_node, new_text))
+            if len(candidate_paths) != 1:
+                return node, False
+            path, text_node, new_text = candidate_paths[0]
+            rebuilt = self._replace_descendant_at_path(
+                node,
+                path,
+                dc_replace(text_node, text=" ".join(new_text.split()).strip()),
+            )
+            self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, True
+
+        if match.startswith("TEXT_FROM_"):
+            if "_TO_" in match and not match.endswith("_TO_END") and node.text:
+                rebuilt, applied = self._apply_text_replace_on_node_text_only(
+                    node,
+                    match,
+                    replacement,
+                    occurrence,
+                    end_occurrence,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    recovery_rule_ids_out=recovery_rule_ids_out,
+                )
+                if applied:
+                    return rebuilt, True
+
+            full_text = " ".join(tn.text.strip() for _, tn in text_nodes if tn.text).strip()
+            if not full_text:
+                return node, False
+
+            def _find_start_index(start_text: str) -> int:
+                ordinal = occurrence if occurrence > 0 else 1
+                if occurrence > 0:
+                    range_matches, used_word_anchor = _range_anchor_matches(full_text, start_text)
+                else:
+                    range_matches = list(re.finditer(re.escape(start_text), full_text))
+                    used_word_anchor = False
+                if len(range_matches) >= ordinal:
+                    if used_word_anchor and recovery_rule_ids_out is not None:
+                        recovery_rule_ids_out.append("uk_replay_text_range_anchor_word_boundary_normalized")
+                    return range_matches[ordinal - 1].start()
+                pattern = _text_patch_pattern(
+                    start_text,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                matches = list(re.finditer(pattern, full_text, flags=re.I | re.S))
+                if len(matches) < ordinal:
+                    return -1
+                return matches[ordinal - 1].start()
+
+            if match.endswith("_TO_END"):
+                start_text = match[len("TEXT_FROM_") : -len("_TO_END")]
+                start_idx = _find_start_index(start_text)
+                if start_idx == -1:
+                    return node, False
+                new_text = full_text[:start_idx] + replacement
+                rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip(), children=[])
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+            if "_TO_" in match:
+                parts = match.replace("TEXT_FROM_", "", 1).split("_TO_", 1)
+                if len(parts) == 2:
+                    start_text, end_text = parts[0], parts[1]
+                    start_idx = _find_start_index(start_text)
+                    end_idx = -1
+                    if start_idx != -1:
+                        if end_occurrence > 0:
+                            end_matches, used_word_end = _range_anchor_matches(full_text, end_text)
+                            if len(end_matches) >= end_occurrence:
+                                end_match = end_matches[end_occurrence - 1]
+                                if end_match.start() >= start_idx + len(start_text):
+                                    end_idx = end_match.start()
+                                    end_end = end_match.end()
+                                    if used_word_end and recovery_rule_ids_out is not None:
+                                        recovery_rule_ids_out.append(
+                                            "uk_replay_text_range_anchor_word_boundary_normalized"
+                                        )
+                        else:
+                            end_idx = full_text.find(end_text, start_idx + len(start_text))
+                            end_end = end_idx + len(end_text)
+                    if start_idx == -1 or end_idx == -1:
+                        start_pattern = _text_patch_pattern(
+                            start_text,
+                            allow_punctuation_spacing=allow_punctuation_spacing,
+                            allow_word_punctuation_elision=allow_word_punctuation_elision,
+                        )
+                        start_matches = list(re.finditer(start_pattern, full_text, flags=re.I | re.S))
+                        ordinal = occurrence if occurrence > 0 else 1
+                        if len(start_matches) < ordinal:
+                            return node, False
+                        start_match = start_matches[ordinal - 1]
+                        if end_occurrence > 0:
+                            end_pattern = _text_patch_pattern(
+                                end_text,
+                                allow_punctuation_spacing=allow_punctuation_spacing,
+                                allow_word_punctuation_elision=allow_word_punctuation_elision,
+                            )
+                            end_matches = list(re.finditer(end_pattern, full_text, flags=re.I | re.S))
+                            if len(end_matches) < end_occurrence:
+                                return node, False
+                            end_match = end_matches[end_occurrence - 1]
+                            if end_match.start() < start_match.end():
+                                return node, False
+                            new_text = full_text[: start_match.start()] + replacement + full_text[end_match.end() :]
+                        else:
+                            pattern = (
+                                start_pattern
+                                + r".*?"
+                                + _text_patch_pattern(
+                                    end_text,
+                                    allow_punctuation_spacing=allow_punctuation_spacing,
+                                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                                )
+                            )
+                            m = re.search(pattern, full_text, flags=re.I | re.S)
+                            if not m:
+                                return node, False
+                            new_text = full_text[: m.start()] + replacement + full_text[m.end() :]
+                    else:
+                        new_text = full_text[:start_idx] + replacement + full_text[end_end:]
+                    rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip(), children=[])
+                    self._replace_node_in_statute(node, rebuilt)
+                    return rebuilt, True
+
+        if occurrence == -1:
+            last_exact_match: Optional[tuple[tuple[int, ...], UKMutableNode, int]] = None
+            for path, tn in text_nodes:
+                start = 0
+                while True:
+                    pos = tn.text.find(match, start)
+                    if pos == -1:
+                        break
+                    last_exact_match = (path, tn, pos)
+                    start = pos + len(match)
+            if last_exact_match is not None:
+                path, tn, pos = last_exact_match
+                rebuilt = self._replace_descendant_at_path(
+                    node,
+                    path,
+                    dc_replace(tn, text=tn.text[:pos] + replacement + tn.text[pos + len(match) :]),
+                )
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+
+            pattern = _text_patch_pattern(
+                match,
+                allow_punctuation_spacing=allow_punctuation_spacing,
+                allow_word_punctuation_elision=allow_word_punctuation_elision,
+            )
+            last_normalized_match: Optional[tuple[tuple[int, ...], UKMutableNode, re.Match[str]]] = None
+            for path, tn in text_nodes:
+                for m in re.finditer(pattern, tn.text, flags=re.I):
+                    last_normalized_match = (path, tn, m)
+            if last_normalized_match is not None:
+                path, tn, m = last_normalized_match
+                rebuilt = self._replace_descendant_at_path(
+                    node,
+                    path,
+                    dc_replace(tn, text=tn.text[: m.start()] + replacement + tn.text[m.end() :]),
+                )
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True
+            return node, False
+
+        if occurrence == 0:
+            # Replace all occurrences across all text nodes
+            made_any = False
+            rebuilt = node
+            for path, tn in text_nodes:
+                text = tn.text
+                if match in text:
+                    rebuilt = self._replace_descendant_at_path(
+                        rebuilt,
+                        path,
+                        dc_replace(tn, text=text.replace(match, replacement)),
+                    )
+                    made_any = True
+                else:
+                    # Whitespace-normalized fallback (same as _apply_text_substitution_on_node)
+                    pattern = _text_patch_pattern(
+                        match,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    )
+                    new_text, count = re.subn(pattern, replacement, text, flags=re.I)
+                    if count > 0:
+                        rebuilt = self._replace_descendant_at_path(
+                            rebuilt,
+                            path,
+                            dc_replace(tn, text=new_text),
+                        )
+                        made_any = True
+            if made_any:
+                self._replace_node_in_statute(node, rebuilt)
+            return rebuilt, made_any
+        else:
+            # Replace only the Nth occurrence (1-based) — count across all text nodes in order
+            global_count = 0
+            for path, tn in text_nodes:
+                text = tn.text
+                # Count occurrences in this node's text
+                start = 0
+                while True:
+                    pos = text.find(match, start)
+                    if pos == -1:
+                        break
+                    global_count += 1
+                    if global_count == occurrence:
+                        rebuilt = self._replace_descendant_at_path(
+                            node,
+                            path,
+                            dc_replace(tn, text=text[:pos] + replacement + text[pos + len(match) :]),
+                        )
+                        self._replace_node_in_statute(node, rebuilt)
+                        return rebuilt, True
+                    start = pos + len(match)
+            # Whitespace-normalized fallback if exact search found nothing
+            if global_count == 0:
+                pattern = _text_patch_pattern(
+                    match,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                )
+                nth_seen = 0
+                for path, tn in text_nodes:
+                    for m in re.finditer(pattern, tn.text, flags=re.I):
+                        nth_seen += 1
+                        if nth_seen == occurrence:
+                            rebuilt = self._replace_descendant_at_path(
+                                node,
+                                path,
+                                dc_replace(tn, text=tn.text[: m.start()] + replacement + tn.text[m.end() :]),
+                            )
+                            self._replace_node_in_statute(node, rebuilt)
+                            return rebuilt, True
+            return node, False
