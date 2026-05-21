@@ -23,28 +23,18 @@ Current status:
 
 from __future__ import annotations
 
-import json
+import json as json  # noqa: F401
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import replace as dc_replace
 from pathlib import Path
-from typing import Any, List, Optional, Sequence, cast
+from typing import Any, List, Optional, cast
 
 from lawvm.core.ir import (
     IRStatute,
-    LegalAddress,
     LegalOperation,
 )
 from lawvm.core.semantic_types import IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.uk_legislation.canonicalize import (
-    canonicalize_uk_address,
-    uk_should_bubble_structural_commencement,
-    uk_should_descend_transparently,
-)
-from lawvm.uk_legislation.commencement import (
-    commencement_eid_set,
-)
 from lawvm.uk_legislation.uk_grafter import (
     _parse_part,
     _parse_chapter,
@@ -54,28 +44,17 @@ from lawvm.uk_legislation.uk_grafter import (
     _parse_p3,
     _parse_p4,
     _clean_num,
-    _LEG_NS,
-    _extract_num,
     _parse_pblock,
     _parse_schedule_single,
 )
+from lawvm.uk_legislation.uk_grafter import _LEG_NS as _LEG_NS  # noqa: F401
 from lawvm.uk_legislation.nlp_parser import is_whole_node_replacement, parse_fragment_substitution
 from lawvm.uk_legislation.effects import (
-    STRUCTURAL_EFFECT_TYPES,
     UKEffectRecord,
     _COMMENCEMENT_EFFECT_TYPES,
-    _is_uk_renumber_effect_type,
-    build_acquisition_manifest,
-    fetch_effects_for_statute,
-    fetch_metadata_for_statute,
     get_affecting_act_enacted_xml_from_archive,
     get_affecting_act_xml_from_archive,
-    load_effects_for_statute,
     load_effects_for_statute_from_archive,
-    load_effects_for_statute_from_raw,
-    parse_effects_from_bytes,
-    parse_effects_from_feeds,
-    parse_effects_from_metadata,
     uk_effect_requires_affecting_source_for_replay,
 )
 from lawvm.uk_legislation.effect_special_lowering import (
@@ -141,19 +120,14 @@ from lawvm.uk_legislation.addressing import (
     _addr_leaf_kind,
     _addr_leaf_label,
     _order_schedule_materialization_ops,
-    _uk_eid_value,
-    _uk_kind_value,
 )
 from lawvm.uk_legislation.authority_filter import (
     _partition_uk_ops_by_authority_mode,
     _uk_authority_filter_diagnostic,
-    _uk_op_allowed_by_authority_mode,
 )
 from lawvm.uk_legislation.heading_facets import (
-    _CROSSHEADING_AND_STRUCTURAL_REPLACEMENT_SPLIT_RULE,
     _CROSSHEADING_BEFORE_ANCHOR_REPLACEMENT_RULE,
     _heading_facet_after_anchor_insert_fragment,
-    _heading_facet_append_fragment,
     _heading_facet_full_replacement_fragment,
     _is_heading_only_ref,
 )
@@ -165,7 +139,6 @@ from lawvm.uk_legislation.lowering_records import (
     append_replay_applicability_filter_diagnostic,
     append_source_pathology_classified_diagnostic,
     append_source_pathology_filter_lowering_rejections,
-    append_structural_no_ops_lowering_rejection,
     mark_nonreplay_lowering_rejections_nonblocking,
 )
 from lawvm.uk_legislation.lowering_actions import (
@@ -173,43 +146,16 @@ from lawvm.uk_legislation.lowering_actions import (
     _uk_effect_type_action,
 )
 from lawvm.uk_legislation.metadata_rewrites import (
-    UKMetadataRenumberTargets,
     _select_whole_schedule_element,
     _uk_metadata_renumber_targets,
     _uk_source_text_corrected_renumber_targets,
 )
 from lawvm.uk_legislation.mutable_ir import (
     UKMutableNode,
-    uk_replace_children,
 )
 from lawvm.uk_legislation.provision_extractor import (
-    _extract_provision_element_from_root,
-    _find_provision_greedy,
-    _get_ref_sequence,
     _instruction_text_before_amendment_container,
-    _norm_prov_ref,
-    _parse_ref,
-    _select_extracted_match,
-    extract_provision_element,
     extract_provision_element_from_bytes,
-)
-from lawvm.uk_legislation.provenance_notes import (
-    NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR as _NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR,
-    NOTE_EFFECT_TYPE as _NOTE_EFFECT_TYPE,
-    NOTE_FRAGMENT_SUB as _NOTE_FRAGMENT_SUB,
-    NOTE_METADATA_SOURCE_FALLBACK as _NOTE_METADATA_SOURCE_FALLBACK,
-    NOTE_ORIGINAL_REF as _NOTE_ORIGINAL_REF,
-    NOTE_PRECEDING_EID as _NOTE_PRECEDING_EID,
-    NOTE_RAW_TEXT as _NOTE_RAW_TEXT,
-    NOTE_REWRITE_WITNESS as _NOTE_REWRITE_WITNESS,
-    NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR as _NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR,
-    NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR as _NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR,
-    NOTE_TABLE_CELL_SELECTOR as _NOTE_TABLE_CELL_SELECTOR,
-    NOTE_TABLE_COLUMN_INSERT_SELECTOR as _NOTE_TABLE_COLUMN_INSERT_SELECTOR,
-    NOTE_TABLE_ROW_INSERT_SELECTOR as _NOTE_TABLE_ROW_INSERT_SELECTOR,
-    NOTE_TEXT_REWRITE_RULE as _NOTE_TEXT_REWRITE_RULE,
-    _schedule_list_entry_selector,
-    _schedule_list_entry_table_rows_selector,
 )
 from lawvm.uk_legislation.replay_text import (
     _multi_fragment_text_selector,
@@ -218,7 +164,6 @@ from lawvm.uk_legislation.source_context import (
     UKAffectingSourceContext,
     _append_affecting_source_context_diagnostic,
     _build_affecting_source_context,
-    _extract_from_affecting_source_context,
     _extract_from_affecting_source_context_with_observations,
     _select_enacted_source_for_current_shell,
 )
@@ -232,56 +177,30 @@ from lawvm.uk_legislation.source_text_reclassifications import (
 )
 from lawvm.uk_legislation.substitution_metadata import (
     UKSourceLabelChangingSubstitution,
-    _repeal_tail_for_substituted_series_replacement,
-    _retarget_substituted_series_to_replaced_anchor,
     _source_replaced_sibling_count_from_substitution_text,
 )
-from lawvm.uk_legislation.witness_sidecars import (
-    _lowered_witness_from_payload_data,
-    _lowered_witness_to_payload_data,
-    _witness_for_op,
-)
 from lawvm.uk_legislation.witness_builders import (
-    _uk_applicability_witness,
     _uk_effect_witness,
     _uk_extraction_witness,
 )
 from lawvm.uk_legislation.ordering import (
     _order_uk_effects_for_replay,
     _order_uk_text_patch_preimage_chains,
-    _text_replace_preimage_chain_key,
-    _uk_source_provision_label_sort_key,
-    _uk_source_provision_order_key,
 )
-from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
 from lawvm.uk_legislation.payload_identity import (
     _synthesize_payload_descendant_eids,
     _synthesize_whole_schedule_payload_descendant_eids,
 )
-from lawvm.uk_legislation.payload_conversion import _to_irnode, _to_mutable_node
-from lawvm.uk_legislation.uk_prefetch import (
-    fetch_affecting_act,
-    fetch_affecting_acts_from_manifest,
-)
+from lawvm.uk_legislation.payload_conversion import _to_mutable_node
 from lawvm.uk_legislation.replay_applicability import (
     should_replay_nonstructural_ops,
-)
-from lawvm.uk_legislation.replay_table_geometry import (
-    expanded_uk_table_rows,
-    uk_table_cell_span,
 )
 from lawvm.uk_legislation.replay_executor import (
     UKReplayExecutor,
     _prepare_replay_uk_ops,
-    replay_uk_ops,
-)
-from lawvm.uk_legislation.schedule_list_selectors import (
-    _strip_schedule_entry_payload,
-    _strip_schedule_entry_phrase,
 )
 from lawvm.uk_legislation.text_rewrite_fragments import (
     _fragment_rule_ids,
-    _fragment_substitution,
     append_all_occurrences_text_rewrite_observations,
     append_basic_text_rewrite_observations,
     append_source_carried_substitution_rewrite_observations,
@@ -319,9 +238,6 @@ from lawvm.uk_legislation.source_fragment_context import (
     _fragment_substitution_after_words_inserted_by_sibling,
     _fragment_substitution_grouped_anchor_occurrence,
 )
-from lawvm.uk_legislation.source_labeled_child_parts import (
-    _source_carried_labeled_child_replacement_parts,
-)
 from lawvm.uk_legislation.source_payload_helpers import (
     _direct_payload_text,
     infer_source_payload_from_target,
@@ -343,25 +259,64 @@ from lawvm.uk_legislation.target_anchors import (
     _source_after_insertion_anchor,
     _source_before_insertion_anchor,
     _target_anchor_eid,
-    uk_match_kind_label,
 )
 from lawvm.uk_legislation.target_parser import (
-    _parse_affected_target,
     _split_metadata_provisions,
 )
 from lawvm.uk_legislation.table_sources import (
     lower_uk_table_driven_corresponding_entry_word_substitution,
 )
 from lawvm.uk_legislation.text_patch_lowering import build_uk_text_patch_items
-from lawvm.uk_legislation.text_matching import (
-    _normalize_text,
-    _text_patch_pattern,
-)
 from lawvm.uk_legislation.xml_helpers import (
     _direct_structural_num,
     _tag,
     _text_content,
-    get_all_eids,
+)
+
+# Backward-compatible re-exports for older tools/tests that imported UK helper
+# internals from this historical facade while the implementation moved out.
+from lawvm.uk_legislation.authority_filter import (  # noqa: F401
+    _uk_op_allowed_by_authority_mode as _uk_op_allowed_by_authority_mode,
+)
+from lawvm.uk_legislation.commencement import commencement_eid_set as commencement_eid_set  # noqa: F401
+from lawvm.uk_legislation.effects import (  # noqa: F401
+    load_effects_for_statute as load_effects_for_statute,
+    parse_effects_from_bytes as parse_effects_from_bytes,
+    parse_effects_from_feeds as parse_effects_from_feeds,
+    parse_effects_from_metadata as parse_effects_from_metadata,
+)
+from lawvm.uk_legislation.ordering import (  # noqa: F401
+    _uk_source_provision_order_key as _uk_source_provision_order_key,
+)
+from lawvm.uk_legislation.provenance_notes import (  # noqa: F401
+    NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR as _NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR,
+    NOTE_FRAGMENT_SUB as _NOTE_FRAGMENT_SUB,
+    NOTE_METADATA_SOURCE_FALLBACK as _NOTE_METADATA_SOURCE_FALLBACK,
+    NOTE_PRECEDING_EID as _NOTE_PRECEDING_EID,
+    NOTE_REWRITE_WITNESS as _NOTE_REWRITE_WITNESS,
+    NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR as _NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR,
+    NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR as _NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR,
+    NOTE_TABLE_CELL_SELECTOR as _NOTE_TABLE_CELL_SELECTOR,
+    NOTE_TABLE_COLUMN_INSERT_SELECTOR as _NOTE_TABLE_COLUMN_INSERT_SELECTOR,
+    NOTE_TABLE_ROW_INSERT_SELECTOR as _NOTE_TABLE_ROW_INSERT_SELECTOR,
+    NOTE_TEXT_REWRITE_RULE as _NOTE_TEXT_REWRITE_RULE,
+)
+from lawvm.uk_legislation.provision_extractor import (  # noqa: F401
+    _parse_ref as _parse_ref,
+)
+from lawvm.uk_legislation.replay_executor import replay_uk_ops as replay_uk_ops  # noqa: F401
+from lawvm.uk_legislation.source_context import (  # noqa: F401
+    _extract_from_affecting_source_context as _extract_from_affecting_source_context,
+)
+from lawvm.uk_legislation.substitution_metadata import (  # noqa: F401
+    _repeal_tail_for_substituted_series_replacement as _repeal_tail_for_substituted_series_replacement,
+    _retarget_substituted_series_to_replaced_anchor as _retarget_substituted_series_to_replaced_anchor,
+)
+from lawvm.uk_legislation.target_parser import (  # noqa: F401
+    _parse_affected_target as _parse_affected_target,
+)
+from lawvm.uk_legislation.text_rewrite_fragments import (  # noqa: F401
+    _fragment_substitution as _fragment_substitution,
 )
 
 # ---------------------------------------------------------------------------
