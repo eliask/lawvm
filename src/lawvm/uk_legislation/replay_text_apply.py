@@ -1022,6 +1022,10 @@ class UKReplayTextApplyMixin:
                     if changed:
                         rebuilt = dc_replace(node, text=new_text)
                         self._replace_node_in_statute(node, rebuilt)
+                        if recovery_rule_ids_out is not None:
+                            recovery_rule_ids_out.append(
+                                "uk_replay_in_definition_after_each_text_rewrite_applied"
+                            )
                         return rebuilt, True
 
                 candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
@@ -1040,6 +1044,10 @@ class UKReplayTextApplyMixin:
                     dc_replace(text_node, text=new_text),
                 )
                 self._replace_node_in_statute(node, rebuilt)
+                if recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_in_definition_after_each_text_rewrite_applied"
+                    )
                 return rebuilt, True
 
             if len(parts) != 3 or parts[1] != "AFTER":
@@ -1099,6 +1107,10 @@ class UKReplayTextApplyMixin:
                 if changed:
                     rebuilt = dc_replace(node, text=new_text)
                     self._replace_node_in_statute(node, rebuilt)
+                    if recovery_rule_ids_out is not None:
+                        recovery_rule_ids_out.append(
+                            "uk_replay_in_definition_after_anchor_text_rewrite_applied"
+                        )
                     return rebuilt, True
 
             candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str]] = []
@@ -1117,6 +1129,10 @@ class UKReplayTextApplyMixin:
                 dc_replace(text_node, text=new_text),
             )
             self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append(
+                    "uk_replay_in_definition_after_anchor_text_rewrite_applied"
+                )
             return rebuilt, True
 
         if match.startswith("TEXT_DEFINITION_CHILD_"):

@@ -588,6 +588,22 @@ class UKReplayTextActionApplyMixin:
                     family = "text_rewrite_recovery"
                     strict_disposition = "record"
                     source_shape = "definition_range_selector"
+                elif recovery_rule_id == "uk_replay_in_definition_after_each_text_rewrite_applied":
+                    message = (
+                        "UK replay applied an all-occurrences definition text rewrite "
+                        "after proving a unique definition surface and at least one anchor."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "definition_after_each_anchor_selector"
+                elif recovery_rule_id == "uk_replay_in_definition_after_anchor_text_rewrite_applied":
+                    message = (
+                        "UK replay applied a definition after-anchor text rewrite after "
+                        "proving a unique definition surface and unique anchor."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "definition_after_anchor_selector"
                 else:
                     message = (
                         "UK replay applied text-based op after normalizing "

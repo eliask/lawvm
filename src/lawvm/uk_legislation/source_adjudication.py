@@ -297,6 +297,8 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_direct_section_paragraph_child_text_recovered",
         "uk_replay_empty_descendant_parent_text_recovered",
         "uk_replay_existing_target_already_materialized",
+        "uk_replay_in_definition_after_anchor_text_rewrite_applied",
+        "uk_replay_in_definition_after_each_text_rewrite_applied",
         "uk_replay_in_definition_at_end_text_rewrite_applied",
         "uk_replay_in_definition_range_text_rewrite_applied",
         "uk_replay_in_definition_range_to_end_text_rewrite_applied",

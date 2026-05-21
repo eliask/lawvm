@@ -4486,7 +4486,13 @@ def test_executor_applies_in_definition_after_anchor_insert_without_global_rewri
         "\u201cqualified lawyer\u201d means a person authorised by the 2007 "
         "or a person who is a registered foreign lawyer Act;"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_in_definition_after_anchor_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "definition_after_anchor_selector"
 
 
 def test_executor_applies_in_definition_range_to_end_without_global_rewrite() -> None:
@@ -5991,7 +5997,13 @@ def test_executor_scopes_source_carried_anchor_insert_to_definition_entry() -> N
         "“local authority” means a council; “local transport strategy” means "
         "the strategy prepared by authority; or b a local traffic authority,;"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_in_definition_after_anchor_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "definition_after_anchor_selector"
 
 
 def test_executor_applies_definition_scoped_from_to_range() -> None:
