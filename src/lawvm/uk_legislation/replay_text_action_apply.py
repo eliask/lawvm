@@ -538,6 +538,22 @@ class UKReplayTextActionApplyMixin:
                     family = "text_rewrite_recovery"
                     strict_disposition = "record"
                     source_shape = "node_local_range_to_end_selector"
+                elif recovery_rule_id == "uk_replay_subtree_range_text_rewrite_flattened":
+                    message = (
+                        "UK replay applied a bounded range text rewrite over the "
+                        "linearized target subtree and flattened covered children."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "subtree_range_selector"
+                elif recovery_rule_id == "uk_replay_subtree_range_to_end_text_rewrite_flattened":
+                    message = (
+                        "UK replay applied a range-to-end text rewrite over the "
+                        "linearized target subtree and flattened covered children."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "subtree_range_to_end_selector"
                 elif recovery_rule_id == "uk_replay_definition_anchor_lexical_variant_recovered":
                     message = (
                         "UK replay applied definition-anchor text op after resolving "

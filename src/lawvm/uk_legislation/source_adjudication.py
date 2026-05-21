@@ -354,6 +354,8 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_labeled_child_end_range_applied",
         "uk_replay_node_local_range_text_rewrite_applied",
         "uk_replay_node_local_range_to_end_text_rewrite_applied",
+        "uk_replay_subtree_range_text_rewrite_flattened",
+        "uk_replay_subtree_range_to_end_text_rewrite_flattened",
     }
 )
 
