@@ -1493,6 +1493,18 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
         "applicability_mode": "effective_date_only",
         "authority_mode": "effect_feed_inspection",
     }
+    template = payload["suggested_claim_template"]
+    assert template["schema"] == "lawvm.uk_semantic_compile_claim_template.v1"
+    assert template["action_family"] == "facet_text_rewrite"
+    assert template["facet_family"] == "heading_or_title"
+    assert template["placement_family"] == "explicit_facet_target_required"
+    assert template["candidate_target_surface"] == "s. 1"
+    assert template["text_match"] == "old"
+    assert template["replacement"] == "new"
+    assert "claim_identifies_exact_target_facet_not_host_body" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
     assert payload["lowering_rejection_rule_counts"] == {
         "uk_effect_heading_only_ref_rejected": 1,
     }
