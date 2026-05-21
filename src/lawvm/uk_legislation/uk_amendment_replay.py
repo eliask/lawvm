@@ -32,12 +32,10 @@ from typing import Any, List, Optional, Sequence, cast
 
 from lawvm.core.ir import (
     IRStatute,
-    IRNode,
     LegalAddress,
     LegalOperation,
-    OperationSource,
 )
-from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.canonicalize import (
     canonicalize_uk_address,
@@ -62,7 +60,6 @@ from lawvm.uk_legislation.uk_grafter import (
     _parse_schedule_single,
 )
 from lawvm.uk_legislation.nlp_parser import is_whole_node_replacement, parse_fragment_substitution
-from lawvm.uk_legislation.witnesses import UKLoweredOperationWitness
 from lawvm.uk_legislation.effects import (
     STRUCTURAL_EFFECT_TYPES,
     UKEffectRecord,
@@ -96,7 +93,9 @@ from lawvm.uk_legislation.effect_lowering_tail import (
     build_crossheading_insert_ops,
     build_trailing_repeal_ops,
 )
-from lawvm.uk_legislation.effect_operation_builder import build_lowered_operation_provenance
+from lawvm.uk_legislation.effect_operation_builder import (
+    build_lowered_operations_for_text_patches,
+)
 from lawvm.uk_legislation.effect_payload_rejections import (
     reject_broad_schedule_flat_replace_payload,
     reject_missing_structural_payload,
@@ -171,7 +170,6 @@ from lawvm.uk_legislation.lowering_records import (
 )
 from lawvm.uk_legislation.lowering_actions import (
     _is_uk_word_level_effect_type,
-    _to_structural_action,
     _uk_effect_type_action,
 )
 from lawvm.uk_legislation.metadata_rewrites import (
@@ -241,18 +239,12 @@ from lawvm.uk_legislation.substitution_metadata import (
 from lawvm.uk_legislation.witness_sidecars import (
     _lowered_witness_from_payload_data,
     _lowered_witness_to_payload_data,
-    _payload_with_rewrite_witness,
     _witness_for_op,
 )
 from lawvm.uk_legislation.witness_builders import (
     _uk_applicability_witness,
     _uk_effect_witness,
     _uk_extraction_witness,
-    _uk_insertion_anchor_witness,
-    _uk_target_expansion_witness,
-    _uk_temporal_events_from_ops,
-    _uk_temporal_group_id,
-    _uk_text_rewrite_spec,
 )
 from lawvm.uk_legislation.ordering import (
     _order_uk_effects_for_replay,
@@ -1638,24 +1630,6 @@ def compile_effect_to_ir_ops(
                 op_text_end_occurrence=op_text_end_occurrence,
             )
 
-            # Build source
-            src = OperationSource(
-                statute_id=effect.affecting_act_id,
-                title=effect.affecting_title,
-                effective=effect_witness.applicability.effective_date or "",
-                raw_text=extraction_witness.extracted_text,
-            )
-
-            target_expansion_witness = _uk_target_expansion_witness(
-                t_str,
-                [t_str],
-                original_targets_str=original_targets_str,
-            )
-            insertion_anchor_witness = _uk_insertion_anchor_witness(
-                preceding_eid,
-                following_eid=following_eid,
-                anchor_source=following_eid_source or preceding_eid_source,
-            )
             append_chained_insertion_anchor_observation(
                 lowering_rejections_out,
                 effect=effect,
@@ -1667,59 +1641,37 @@ def compile_effect_to_ir_ops(
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
             )
-            for text_patch_item, fragment_subs_for_witness in text_patch_items:
-                text_rewrite_witness = _uk_text_rewrite_spec(
-                    fragment_subs=fragment_subs_for_witness,
-                    text_patch=text_patch_item,
+            ops.extend(
+                build_lowered_operations_for_text_patches(
+                    effect=effect,
+                    existing_ops_count=len(ops),
+                    sequence=sequence,
+                    curr_action=curr_action,
+                    target=target,
+                    payload_node=payload_node,
+                    target_ref=t_str,
+                    original_targets_str=original_targets_str,
+                    targets_str=targets_str,
+                    text_patch_items=text_patch_items,
                     op_text_match=op_text_match,
                     op_text_replacement=op_text_replacement,
                     op_text_occurrence=op_text_occurrence,
                     op_text_end_occurrence=op_text_end_occurrence,
-                )
-                lowered_witness = UKLoweredOperationWitness(
-                    op_id=(
-                        f"{effect.effect_id}_{len(ops)}"
-                        if len(targets_str) > 1 or len(text_patch_items) > 1
-                        else effect.effect_id
-                    ),
-                    sequence=sequence,
-                    action=_to_structural_action(curr_action),
-                    target=target,
-                    payload=payload_node,
-                    source=src,
+                    preceding_eid=preceding_eid,
+                    preceding_eid_source=preceding_eid_source,
+                    following_eid=following_eid,
+                    following_eid_source=following_eid_source,
                     effect_witness=effect_witness,
                     extraction_witness=extraction_witness,
-                    target_expansion_witness=target_expansion_witness,
-                    text_rewrite_witness=text_rewrite_witness,
-                    insertion_anchor_witness=insertion_anchor_witness,
-                )
-                provenance_tags, op_witness_rule_id = build_lowered_operation_provenance(
-                    lowered_witness=lowered_witness,
                     table_cell_selector=table_cell_selector,
                     crossheading_group_repeal_selector=crossheading_group_repeal_selector,
-                    curr_action=curr_action,
-                    target=target,
                     label_changing_substitution=label_changing_substitution,
                     flat_p1para_schedule_insert_lowered=flat_p1para_schedule_insert_lowered,
-                    source_parent_substitution_range_payload=(
-                        source_parent_substitution_range_payload
-                    ),
+                    source_parent_substitution_range_payload=source_parent_substitution_range_payload,
                     source_parent_at_end_added_payload=source_parent_at_end_added_payload,
                     target_index=target_index,
                 )
-                op = LegalOperation(
-                    op_id=lowered_witness.op_id,
-                    sequence=lowered_witness.sequence,
-                    action=lowered_witness.action,
-                    target=lowered_witness.target,
-                    payload=_payload_with_rewrite_witness(lowered_witness.payload, lowered_witness),
-                    source=lowered_witness.source,
-                    group_id=_uk_temporal_group_id(effect),
-                    provenance_tags=provenance_tags,
-                    text_patch=text_patch_item,
-                    witness_rule_id=op_witness_rule_id,
-                )
-                ops.append(op)
+            )
             if curr_action == "insert" and preceding_eid:
                 target_anchor_eid = _target_anchor_eid(target)
                 if target_anchor_eid:
