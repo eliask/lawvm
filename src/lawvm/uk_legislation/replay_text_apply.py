@@ -2099,6 +2099,8 @@ class UKReplayTextApplyMixin:
                 new_text = full_text[:start_idx] + replacement
                 rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip(), children=[])
                 self._replace_node_in_statute(node, rebuilt)
+                if recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append("uk_replay_subtree_range_to_end_text_rewrite_flattened")
                 return rebuilt, True
 
             if "_TO_" in match:
@@ -2164,6 +2166,8 @@ class UKReplayTextApplyMixin:
                         new_text = full_text[:start_idx] + replacement + full_text[end_end:]
                     rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip(), children=[])
                     self._replace_node_in_statute(node, rebuilt)
+                    if recovery_rule_ids_out is not None:
+                        recovery_rule_ids_out.append("uk_replay_subtree_range_text_rewrite_flattened")
                     return rebuilt, True
 
         if occurrence == -1:

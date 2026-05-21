@@ -10708,10 +10708,16 @@ def test_compile_word_range_substitution_collapses_target_subtree() -> None:
         supplements=(),
     )
 
-    replayed = replay_uk_ops(base, ops)
+    adjudications: list[CompileAdjudication] = []
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
     subsection = replayed.body.children[0].children[0]
     assert subsection.text == "means"
     assert subsection.children == ()
+    assert [row.kind for row in adjudications] == ["uk_replay_subtree_range_text_rewrite_flattened"]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "subtree_range_selector"
 
 
 def test_compile_inserted_subsection_preserves_intro_text_with_children() -> None:
@@ -10836,12 +10842,20 @@ def test_compile_word_range_to_end_substitution_collapses_target_subtree() -> No
         supplements=(),
     )
 
-    replayed = replay_uk_ops(base, ops)
+    adjudications: list[CompileAdjudication] = []
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
     subsection = replayed.body.children[0].children[0]
     assert subsection.text.endswith(
         "of a mayor and cabinet executive are to be discharged in accordance with this section"
     )
     assert subsection.children == ()
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_subtree_range_to_end_text_rewrite_flattened"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "subtree_range_to_end_selector"
 
 
 def test_compile_word_range_to_end_there_is_substituted() -> None:
