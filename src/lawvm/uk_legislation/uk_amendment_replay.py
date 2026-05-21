@@ -147,7 +147,6 @@ from lawvm.uk_legislation.lowering_actions import (
 )
 from lawvm.uk_legislation.metadata_rewrites import (
     UKMetadataRenumberTargets,
-    _renumbered_descendant_text,
     _select_whole_schedule_element,
     _uk_metadata_renumber_targets,
     _uk_source_text_corrected_renumber_targets,
@@ -155,7 +154,6 @@ from lawvm.uk_legislation.metadata_rewrites import (
 from lawvm.uk_legislation.mutable_ir import (
     UKMutableNode,
     UKMutableStatute,
-    uk_insert_child_sorted,
     uk_replace_children,
     uk_replace_text,
 )
@@ -285,7 +283,6 @@ from lawvm.uk_legislation.witness_builders import (
     _uk_text_rewrite_spec,
 )
 from lawvm.uk_legislation.ordering import (
-    _label_sort_key,
     _order_uk_effects_for_replay,
     _order_uk_text_patch_preimage_chains,
     _text_replace_preimage_chain_key,
@@ -322,6 +319,7 @@ from lawvm.uk_legislation.replay_table_apply import UKReplayTableApplyMixin
 from lawvm.uk_legislation.replay_text_apply import UKReplayTextApplyMixin
 from lawvm.uk_legislation.replay_invariant_diagnostics import UKReplayInvariantDiagnosticsMixin
 from lawvm.uk_legislation.replay_grounding import UKReplayGroundingMixin
+from lawvm.uk_legislation.replay_heading_apply import UKReplayHeadingApplyMixin
 from lawvm.uk_legislation.replay_insert_apply import UKReplayInsertApplyMixin
 from lawvm.uk_legislation.replay_target_diagnostics import (
     UKReplayTargetDiagnosticsMixin,
@@ -332,6 +330,8 @@ from lawvm.uk_legislation.replay_schedule_list_apply import (
     UKReplayScheduleListApplyMixin,
     _UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID,
 )
+from lawvm.uk_legislation.replay_renumber_apply import UKReplayRenumberApplyMixin
+from lawvm.uk_legislation.replay_state import UKReplayStateMixin
 from lawvm.uk_legislation.replay_target_gaps import (
     uk_broad_schedule_table_shape_gap,
     uk_crossheading_insert_target_gap,
@@ -5109,6 +5109,9 @@ class UKReplayExecutor(
     UKReplayTargetDiagnosticsMixin,
     UKReplayTargetLookupMixin,
     UKReplayInsertApplyMixin,
+    UKReplayStateMixin,
+    UKReplayRenumberApplyMixin,
+    UKReplayHeadingApplyMixin,
 ):
     def __init__(
         self,
@@ -5133,346 +5136,6 @@ class UKReplayExecutor(
     def _log(self, message: str) -> None:
         if self.verbose:
             print(message)
-
-    def _replace_statute(
-        self,
-        *,
-        body: Optional[UKMutableNode] = None,
-        supplements: Optional[list[UKMutableNode]] = None,
-        metadata: Optional[dict[str, Any]] = None,
-    ) -> None:
-        """Replace the UK-local mutable runtime state."""
-        if body is not None:
-            self.statute.body = body
-        if supplements is not None:
-            self.statute.supplements = list(supplements)
-        if metadata is not None:
-            self.statute.metadata = dict(metadata)
-
-    def _find_path_to_node(
-        self,
-        root: UKMutableNode,
-        target_node: UKMutableNode,
-        path: tuple[int, ...] = (),
-    ) -> Optional[tuple[int, ...]]:
-        if root is target_node:
-            return path
-        for i, child in enumerate(root.children):
-            found = self._find_path_to_node(child, target_node, path + (i,))
-            if found is not None:
-                return found
-        return None
-
-    def _replace_descendant_at_path(
-        self,
-        root: UKMutableNode,
-        path: tuple[int, ...],
-        new_node: UKMutableNode,
-    ) -> UKMutableNode:
-        if not path:
-            return new_node
-        idx = path[0]
-        root.children[idx] = self._replace_descendant_at_path(root.children[idx], path[1:], new_node)
-        return root
-
-    def _replace_node_in_statute(self, old_node: UKMutableNode, new_node: UKMutableNode) -> bool:
-        if self.statute.body is old_node:
-            self.statute.body = new_node
-            return True
-        body_path = self._find_path_to_node(self.statute.body, old_node)
-        if body_path is not None:
-            self._replace_descendant_at_path(self.statute.body, body_path, new_node)
-            return True
-        for idx, root in enumerate(self.statute.supplements):
-            if root is old_node:
-                self.statute.supplements[idx] = new_node
-                return True
-            sub_path = self._find_path_to_node(root, old_node)
-            if sub_path is not None:
-                self._replace_descendant_at_path(root, sub_path, new_node)
-                return True
-        return False
-
-    def _remove_node(self, node: UKMutableNode, parent: Optional[UKMutableNode], idx: Optional[int]) -> bool:
-        if parent is not None and idx is not None:
-            parent.children.pop(idx)
-            return True
-        for s_idx, root in enumerate(self.statute.supplements):
-            if root is node:
-                self.statute.supplements.pop(s_idx)
-                return True
-        return False
-
-    def _find_parent_tuple_for_node(
-        self,
-        target_node: UKMutableNode,
-    ) -> tuple[Optional[UKMutableNode], Optional[int]]:
-        def _walk(parent: UKMutableNode) -> tuple[Optional[UKMutableNode], Optional[int]]:
-            for child_idx, child in enumerate(parent.children):
-                if child is target_node:
-                    return parent, child_idx
-                found_parent, found_idx = _walk(child)
-                if found_parent is not None:
-                    return found_parent, found_idx
-            return None, None
-
-        if self.statute.body is target_node:
-            return None, None
-        found_parent, found_idx = _walk(self.statute.body)
-        if found_parent is not None:
-            return found_parent, found_idx
-        for supplement in self.statute.supplements:
-            if supplement is target_node:
-                return None, None
-            found_parent, found_idx = _walk(supplement)
-            if found_parent is not None:
-                return found_parent, found_idx
-        return None, None
-
-    def _repeal_crossheading_group(
-        self,
-        target: LegalAddress,
-        node: UKMutableNode,
-        parent: Optional[UKMutableNode],
-        op: LegalOperation,
-        selector: dict[str, Any],
-    ) -> bool:
-        """Delete a heading wrapper only when source and live shape prove sole ownership."""
-        if str(selector.get("selector_mode") or "") != "structural_with_heading_above_repeal":
-            reason_code = "invalid_selector"
-            detail: dict[str, Any] = {"selector": dict(selector)}
-        elif parent is None:
-            reason_code = "target_has_no_heading_parent"
-            detail = {"selector": dict(selector)}
-        else:
-            parent_kind = _uk_kind_value(parent.kind).lower()
-            structural_children = [
-                child
-                for child in parent.children
-                if _uk_kind_value(child.kind).lower()
-                in {"section", "article", "rule", "regulation", "paragraph", "subparagraph", "item"}
-            ]
-            if parent_kind not in {"crossheading", "p1group", "pgroup", "pblock"}:
-                reason_code = "parent_is_not_heading_wrapper"
-                detail = {"parent_kind": parent_kind, "selector": dict(selector)}
-            elif not (parent.text or "").strip():
-                reason_code = "heading_wrapper_has_no_heading_text"
-                detail = {"parent_kind": parent_kind, "selector": dict(selector)}
-            elif len(structural_children) != 1 or structural_children[0] is not node:
-                reason_code = "heading_wrapper_does_not_solely_own_target"
-                detail = {
-                    "parent_kind": parent_kind,
-                    "structural_child_count": len(structural_children),
-                    "selector": dict(selector),
-                }
-            else:
-                grandparent, parent_idx = self._find_parent_tuple_for_node(parent)
-                if self._remove_node(parent, grandparent, parent_idx):
-                    self._record_repealed_target(target)
-                    _append_uk_replay_adjudication(
-                        self.adjudications_out,
-                        kind=_UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_RESOLVED_RULE_ID,
-                        message=(
-                            "UK replay removed a cross-heading wrapper because "
-                            "the source explicitly repealed the heading above "
-                            "the target and the wrapper owned only that target."
-                        ),
-                        op=op,
-                        detail={
-                            "target": str(target),
-                            "removed_parent_kind": parent_kind,
-                            "removed_heading_preview": " ".join((parent.text or "").split())[:200],
-                            "selector": dict(selector),
-                        },
-                    )
-                    return True
-                reason_code = "heading_wrapper_remove_failed"
-                detail = {"parent_kind": parent_kind, "selector": dict(selector)}
-        _append_uk_replay_adjudication(
-            self.adjudications_out,
-            kind=_UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_UNRESOLVED_RULE_ID,
-            message=(
-                "UK replay skipped cross-heading group repeal: source selector "
-                "did not prove a unique heading wrapper solely owned by the target."
-            ),
-            op=op,
-            detail={
-                "action": _action_name(op.action),
-                "target": str(target),
-                "reason_code": reason_code,
-                **detail,
-            },
-        )
-        return False
-
-    def _insert_supplement_sorted(self, new_node: UKMutableNode) -> bool:
-        from lawvm.uk_legislation.canonicalize import uk_insert_into_children
-
-        uk_insert_into_children(
-            cast(list[IRNode], self.statute.supplements),
-            cast(IRNode, new_node),
-            label_sort_key=_label_sort_key,
-        )
-        return True
-
-    def _record_repealed_target(self, target: LegalAddress) -> None:
-        target_text = str(target or "").strip()
-        if target_text:
-            self._repealed_target_prefixes.add(target_text)
-
-    def _target_under_repealed_prefix(self, target: LegalAddress) -> bool:
-        target_text = str(target or "").strip()
-        if not target_text:
-            return False
-        for prefix in self._repealed_target_prefixes:
-            if target_text == prefix or target_text.startswith(prefix + "/"):
-                return True
-        return False
-
-    def _emit_top_section_snapshot(self, op: LegalOperation) -> None:
-        """Emit a top-level section/schedule snapshot to lo_ops_out after an op is applied.
-
-        Finds the top-level node (first path segment) affected by *op* in the
-        current statute state and appends a LegalOperation snapshot to lo_ops_out.
-        This gives compile_timelines() section-level content for overlay
-        materialization, mirroring the Finland lo_ops_out pattern.
-
-        For repeal ops the tombstone is recorded (payload=None, action="repeal").
-        For all other structural ops the current node content is snapshotted
-        (action="replace" / "insert" depending on whether the node was already in
-        the base, but "replace" is used as the conservative choice since
-        compile_timelines handles both identically for existing addresses).
-        """
-        if self.lo_ops_out is None:
-            return
-        target = op.target
-        if not target.path:
-            return
-        # Derive the canonical address for the top-level container.
-        # For body ops this is the first path segment (e.g. section:1 or part:I).
-        # For schedule ops it is the schedule element itself.
-        top_kind, top_label = target.path[0]
-        top_addr = LegalAddress(path=((top_kind, top_label),))
-
-        # Find the top-level node in the current (post-op) statute state.
-        # We look in body children and schedules.
-        top_node: Optional[UKMutableNode] = None
-        for child in self.statute.body.children:
-            if str(child.kind) == top_kind and (child.label is not None and child.label == top_label):
-                top_node = child
-                break
-        if top_node is None:
-            for sch in self.statute.supplements:
-                if str(sch.kind) == top_kind and sch.label == top_label:
-                    top_node = sch
-                    break
-
-        if _action_name(op.action) == "repeal" and top_node is None:
-            # Node was removed — emit tombstone
-            self.lo_ops_out.append(
-                LegalOperation(
-                    op_id=f"uk_snapshot_repeal_{top_kind}_{top_label}_{op.op_id}",
-                    sequence=op.sequence,
-                    action=StructuralAction.REPEAL,
-                    target=top_addr,
-                    payload=None,
-                    source=op.source,
-                    group_id=op.group_id,
-                )
-            )
-        elif top_node is not None:
-            # Snapshot the current state of the top-level node after op applied.
-            self.lo_ops_out.append(
-                LegalOperation(
-                    op_id=f"uk_snapshot_{top_kind}_{top_label}_{op.op_id}",
-                    sequence=op.sequence,
-                    action=StructuralAction.REPLACE,
-                    target=top_addr,
-                    payload=top_node.to_irnode(),
-                    source=op.source,
-                    group_id=op.group_id,
-                )
-            )
-
-    def _apply_same_provision_descendant_renumber(self, op: LegalOperation) -> bool:
-        source_target = canonicalize_uk_address(op.target)
-        destination = canonicalize_uk_address(op.destination) if op.destination is not None else None
-        if destination is None:
-            return False
-        if len(destination.path) != len(source_target.path) + 1 or destination.path[:-1] != source_target.path:
-            return False
-
-        source_node, _source_parent, _source_idx = self._find_node_by_target(source_target)
-        if source_node is None:
-            return False
-        destination_kind = _addr_leaf_kind(destination) or ""
-        destination_label = _addr_leaf_label(destination)
-        # Descendant renumbering creates the destination as an immediate child of
-        # the source provision.  Do not use broad recursive target lookup here:
-        # schedule item "i" may normalize like subparagraph "1", but it is not a
-        # destination collision for "paragraph 12 becomes sub-paragraph (1)".
-        for child in source_node.children:
-            child_kind = str(child.kind or "").lower()
-            child_label = _clean_num(str(child.label or ""))
-            if child_kind == destination_kind and child_label == _clean_num(destination_label or ""):
-                return False
-
-        if not destination_kind:
-            return False
-
-        child = UKMutableNode(
-            kind=IRNodeKind(destination_kind),
-            label=destination_label,
-            text=_renumbered_descendant_text(
-                source_node.text or "",
-                source_label=source_node.label,
-                destination_label=destination_label,
-            ),
-            attrs={"eId": self._derive_target_eid(destination)},
-            children=list(source_node.children),
-        )
-        replacement = UKMutableNode(
-            kind=source_node.kind,
-            label=source_node.label,
-            text="",
-            attrs=dict(source_node.attrs),
-            children=[child],
-        )
-        return self._replace_node_in_statute(source_node, replacement)
-
-    def _apply_same_parent_sibling_renumber(self, op: LegalOperation) -> bool:
-        source_target = canonicalize_uk_address(op.target)
-        destination = canonicalize_uk_address(op.destination) if op.destination is not None else None
-        if destination is None:
-            return False
-        if (
-            len(destination.path) != len(source_target.path)
-            or destination.path[:-1] != source_target.path[:-1]
-            or _addr_leaf_kind(destination) != _addr_leaf_kind(source_target)
-        ):
-            return False
-
-        source_node, source_parent, source_idx = self._find_node_by_target(source_target)
-        if source_node is None or source_parent is None or source_idx is None:
-            return False
-        destination_node, _destination_parent, _destination_idx = self._find_node_by_target(destination)
-        if destination_node is not None:
-            return False
-
-        destination_label = _addr_leaf_label(destination)
-        moved = dc_replace(
-            source_node,
-            label=destination_label,
-            text=_renumbered_descendant_text(
-                source_node.text or "",
-                source_label=source_node.label,
-                destination_label=destination_label,
-            ),
-            attrs={**dict(source_node.attrs), "eId": self._derive_target_eid(destination)},
-        )
-        source_parent.children.pop(source_idx)
-        uk_insert_child_sorted(source_parent, moved)
-        return True
 
     def apply_op(self, op: LegalOperation):
         target = op.target
