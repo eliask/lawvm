@@ -218,6 +218,40 @@ def reject_unsupported_target_facet(
     return False
 
 
+def reject_schedule_entry_missing_source(
+    *,
+    effect: UKEffectRecord,
+    effect_type: str,
+    action: str,
+    t_str: str,
+    target: LegalAddress,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> bool:
+    if not (
+        extracted_el is None
+        and effect_type in {"entry inserted", "entry repealed", "entry omitted"}
+    ):
+        return False
+    _append_uk_effect_lowering_rejection(
+        lowering_rejections_out,
+        rule_id="uk_effect_schedule_entry_missing_source_rejected",
+        family="source_schedule_list_entry_elaboration",
+        reason_code="entry_effect_requires_source_text",
+        reason=(
+            "UK schedule-entry effect row requires affecting source text; "
+            "metadata alone does not identify the entry payload or entry "
+            "anchor safely enough for replay."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={"target_ref": t_str, "target": str(target), "action": action},
+    )
+    return True
+
+
 def resolve_effect_target_context(
     *,
     effect: UKEffectRecord,
