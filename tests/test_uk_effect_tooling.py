@@ -1795,6 +1795,165 @@ def test_uk_manual_compile_evidence_jsonl_templates_schedule_note_claim() -> Non
     assert template["executable"] is False
 
 
+def test_uk_manual_compile_evidence_jsonl_templates_schedule_list_entry_claim() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-schedule-entry",
+        effect_type="entry inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/1/schedule/2/table",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions='Sch. 2 entry relating to "old entry"',
+        affecting_uri="/id/ukpga/2024/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="s. 4",
+        affecting_title="Test Act 2024",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="schedule_list_entry_target_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_schedule_list_entry_target_rejected",
+                    "blocking": True,
+                },
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview='After the entry relating to "old entry" insert "new entry".',
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_schedule_list_entry_candidate",
+            manual_compile_reason="Schedule entry placement requires a validated carrier claim.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_schedule_list_entry_target_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_schedule_list_entry_target_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "schedule_list_entry_mutation"
+    assert template["placement_family"] == "entry_anchor_requires_carrier_claim"
+    assert template["candidate_target_surface"] == 'Sch. 2 entry relating to "old entry"'
+    assert "entry_carrier" in template["required_ownership"]
+    assert "claim_identifies_predecessor_or_replaced_entry" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
+def test_uk_manual_compile_evidence_jsonl_templates_table_entry_claim() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-table-entry",
+        effect_type="entry inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/1/schedule/3/table",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="Sch. 3 table entry",
+        affecting_uri="/id/ukpga/2024/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="s. 5",
+        affecting_title="Test Act 2024",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="table_entry_target_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_table_entry_target_rejected", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="Table",
+            source_extracted_text_preview="After that entry insert the following entry.",
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_table_entry_deictic_candidate",
+            manual_compile_reason="Table entry placement requires a validated row claim.",
+            manual_compile_lowering_rule_ids=("uk_effect_table_entry_target_rejected",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_table_entry_target_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "table_surface_mutation"
+    assert template["placement_family"] == "deictic_table_entry_anchor_required"
+    assert template["candidate_target_surface"] == "Sch. 3 table entry"
+    assert "row_or_column_carrier" in template["required_ownership"]
+    assert "claim_preserves_unclaimed_rows_columns_and_cells" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
 def test_uk_manual_compile_evidence_jsonl_templates_range_to_container_claim() -> None:
     effect = UKEffectRecord(
         effect_id="eff-range-container",

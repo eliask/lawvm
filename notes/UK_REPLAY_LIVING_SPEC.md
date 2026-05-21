@@ -433,6 +433,10 @@ The template is a reviewer aid, not an operation source. Current templates:
 `facet_text_rewrite` for `uk_manual_frontier_heading_facet_candidate`,
 `crossheading_text_rewrite` for `uk_manual_frontier_crossheading_candidate`,
 `schedule_note_text_rewrite` for `uk_manual_frontier_schedule_note_candidate`,
+`schedule_list_entry_mutation` for
+`uk_manual_frontier_schedule_list_entry_candidate`,
+`table_surface_mutation` for the table-entry/table-column manual frontier
+families,
 `definition_entry_insert` for
 `uk_manual_frontier_appropriate_place_definition_entry_candidate`, and
 `range_to_container_substitution` for
