@@ -1546,6 +1546,20 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
 
     if (
         "uk_effect_overlap_substitution_unlowered" in blocking_rules
+        and re.search(
+            r"\bfor the period specified in\b.+\bthere\s+(?:is|are|shall\s+be)\s+substituted\b",
+            extracted_text_norm,
+        )
+        and not re.search(r"[“\"'‘]", str(extracted_text or ""))
+    ):
+        return {
+            "status": "source_insufficient",
+            "rule_id": "uk_manual_frontier_unquoted_preimage_substitution_source_insufficient",
+            "reason": "The source names the new period but does not quote or otherwise provide the old text preimage; replay requires an explicit source/preimage claim rather than parser inference from the live target.",
+        }
+
+    if (
+        "uk_effect_overlap_substitution_unlowered" in blocking_rules
         and extracted_tag_norm in {"Schedule", "Part", "Table", "Tgroup", "Pblock"}
         and any(term in effect_type_norm for term in ("repeal", "omit"))
     ):
