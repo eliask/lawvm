@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Optional, Sequence
 
 from lawvm.core.ir import LegalOperation
+from lawvm.uk_legislation.addressing import _action_name
 
 
 def _literal_text_spans_in_subtree(
@@ -74,6 +75,72 @@ def _same_source_ordinal_text_patch_overlap_status(
     if saw_unknown:
         return "unknown"
     return "disjoint"
+
+
+def _classify_same_source_text_patch_overlaps(
+    ops: Sequence[LegalOperation],
+    *,
+    base_executor: Optional[Any],
+) -> tuple[set[str], set[str], dict[str, set[str]]]:
+    """Classify same-source text patch overlaps before replay ordering."""
+    overlapping_text_patch_op_ids: set[str] = set()
+    disjoint_text_patch_overlap_op_ids: set[str] = set()
+    disjoint_text_patch_before_edges: dict[str, set[str]] = {}
+    grouped_text_ops: dict[tuple[str, str, str, tuple[tuple[str, str], ...]], list[LegalOperation]] = {}
+    for op in ops:
+        if _action_name(op.action) != "text_replace" or op.text_patch is None:
+            continue
+        match_text = op.text_patch.selector.match_text
+        if match_text.startswith(("TEXT_", "FROM_")):
+            continue
+        source = op.source
+        group_key = (
+            source.statute_id if source else "",
+            source.effective if source else "",
+            str(op.target.special or ""),
+            op.target.path,
+        )
+        grouped_text_ops.setdefault(group_key, []).append(op)
+
+    for group_ops in grouped_text_ops.values():
+        if len(group_ops) < 2:
+            continue
+        for op in group_ops:
+            if op.text_patch is None or op.text_patch.selector.occurrence == 0:
+                continue
+            match_text = op.text_patch.selector.match_text
+            if len(match_text.strip()) < 3:
+                continue
+            broader_ops: list[LegalOperation] = []
+            for other in group_ops:
+                if other is op or other.text_patch is None:
+                    continue
+                other_match = other.text_patch.selector.match_text
+                if other_match.startswith(("TEXT_", "FROM_")):
+                    continue
+                if len(other_match) <= len(match_text):
+                    continue
+                if match_text.strip() in other_match:
+                    broader_ops.append(other)
+            if not broader_ops:
+                continue
+            overlap_status = _same_source_ordinal_text_patch_overlap_status(
+                op,
+                broader_ops,
+                base_executor=base_executor,
+            )
+            if overlap_status == "disjoint":
+                disjoint_text_patch_overlap_op_ids.add(op.op_id)
+                disjoint_text_patch_before_edges.setdefault(op.op_id, set()).update(
+                    broader_op.op_id for broader_op in broader_ops
+                )
+            else:
+                overlapping_text_patch_op_ids.add(op.op_id)
+    return (
+        overlapping_text_patch_op_ids,
+        disjoint_text_patch_overlap_op_ids,
+        disjoint_text_patch_before_edges,
+    )
 
 
 def _order_ops_by_before_edges(
