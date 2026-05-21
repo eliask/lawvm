@@ -196,6 +196,36 @@ def test_executor_records_replay_target_not_found() -> None:
     assert adjudications[0].source_statute == "ukpga/2026/1"
 
 
+def test_executor_records_body_root_fallback_insert_recovery() -> None:
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(_base_statute(), adjudications_out=adjudications)
+
+    executor.apply_op(
+        LegalOperation(
+            op_id="uk_test_body_root_fallback_insert",
+            sequence=1,
+            action=StructuralAction.INSERT,
+            target=LegalAddress(path=(("chapter", "1"), ("section", "2"))),
+            payload=IRNode(kind=IRNodeKind.SECTION, label="2", text="Inserted section."),
+            source=_source(),
+        )
+    )
+
+    assert [child.label for child in executor.statute.body.children] == ["1", "2"]
+    assert len(adjudications) == 1
+    assert adjudications[0].kind == "uk_replay_body_root_fallback_insert_resolved"
+    assert classify_uk_replay_adjudication_bucket(adjudications[0].kind) == (
+        "nonblocking_observation"
+    )
+    assert adjudications[0].detail["family"] == "target_resolution_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "apply"
+    assert adjudications[0].detail["target"] == "chapter:1/section:2"
+    assert adjudications[0].detail["payload_kind"] == "section"
+    assert adjudications[0].detail["derived_target_eid"]
+
+
 def test_executor_resolves_source_parent_range_schedule_paragraph_target_to_unique_item() -> None:
     statute = IRStatute(
         statute_id="asp/2000/4",

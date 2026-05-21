@@ -14,10 +14,9 @@ from lawvm.uk_legislation.addressing import (
     _canonicalize_eid_tail_label,
     _canonicalize_schedule_paragraph_eid_label,
     _schedule_target_levels,
-    _uk_kind_value,
 )
 from lawvm.uk_legislation.authority_filter import _following_eid, _preceding_eid
-from lawvm.uk_legislation.canonicalize import uk_find_body_predecessor_parent, uk_resolve_insertion_parent
+from lawvm.uk_legislation.canonicalize import uk_find_body_predecessor_parent
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute, uk_insert_child_sorted, uk_replace_children
 from lawvm.uk_legislation.ordering import _label_sort_key
 from lawvm.uk_legislation.provenance_notes import (
@@ -435,6 +434,26 @@ class UKReplayInsertApplyMixin:
             )
             return False
         self._log(f"  EXECUTOR: fallback inserting {new_node.kind} {new_node.label} into body")
+        _append_uk_replay_adjudication(
+            self.adjudications_out,
+            kind="uk_replay_body_root_fallback_insert_resolved",
+            message=(
+                "UK replay inserted a payload at body/supplement root after "
+                "target parent resolution failed."
+            ),
+            op=op,
+            detail={
+                "action": _action_name(op.action),
+                "target": str(target),
+                "payload_kind": str(new_node.kind),
+                "payload_label": new_node.label or "",
+                "derived_target_eid": target_eid,
+                "family": "target_resolution_recovery",
+                "blocking": False,
+                "strict_disposition": "block",
+                "quirks_disposition": "apply",
+            },
+        )
         if new_kind == "schedule":
             supplements = list(self.statute.supplements)
             supplements.append(new_node)
