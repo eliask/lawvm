@@ -715,6 +715,50 @@ def _rewrite_anchor_in_definition_entry_text(
     return " ".join(new_text.split()).strip(), True
 
 
+def _rewrite_after_anchor_to_end_text(
+    text: str,
+    *,
+    anchor: str,
+    replacement: str,
+    occurrence: int,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[str, bool]:
+    ordinal = occurrence if occurrence > 0 else 1
+    start = 0
+    for _ in range(ordinal):
+        idx = text.find(anchor, start)
+        if idx == -1:
+            break
+        start = idx + len(anchor)
+    else:
+        anchor_end = idx + len(anchor)
+        joiner = (
+            ""
+            if text[:anchor_end].endswith((" ", "\t", "\n", "\r"))
+            or replacement.startswith((" ", ",", ".", ";", ":", ")"))
+            else " "
+        )
+        return " ".join(f"{text[:anchor_end]}{joiner}{replacement}".split()).strip(), True
+
+    pattern = _text_patch_pattern(
+        anchor,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    matches = list(re.finditer(pattern, text, flags=re.I | re.S))
+    if len(matches) < ordinal:
+        return text, False
+    anchor_match = matches[ordinal - 1]
+    joiner = (
+        ""
+        if text[: anchor_match.end()].endswith((" ", "\t", "\n", "\r"))
+        or replacement.startswith((" ", ",", ".", ";", ":", ")"))
+        else " "
+    )
+    return " ".join(f"{text[: anchor_match.end()]}{joiner}{replacement}".split()).strip(), True
+
+
 class UKReplayTextApplyMixin:
     def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
         self,
@@ -1973,49 +2017,17 @@ class UKReplayTextApplyMixin:
             if not anchor:
                 return node, False
 
-            def _rewrite_after_anchor(text: str) -> tuple[str, bool]:
-                ordinal = occurrence if occurrence > 0 else 1
-                start = 0
-                for _ in range(ordinal):
-                    idx = text.find(anchor, start)
-                    if idx == -1:
-                        break
-                    start = idx + len(anchor)
-                else:
-                    anchor_end = idx + len(anchor)
-                    joiner = (
-                        ""
-                        if text[:anchor_end].endswith((" ", "\t", "\n", "\r"))
-                        or replacement.startswith((" ", ",", ".", ";", ":", ")"))
-                        else " "
-                    )
-                    return f"{text[:anchor_end]}{joiner}{replacement}", True
-
-                pattern = _text_patch_pattern(
-                    anchor,
-                    allow_punctuation_spacing=allow_punctuation_spacing,
-                    allow_word_punctuation_elision=allow_word_punctuation_elision,
-                )
-                matches = list(re.finditer(pattern, text, flags=re.I | re.S))
-                if len(matches) < ordinal:
-                    return text, False
-                anchor_match = matches[ordinal - 1]
-                joiner = (
-                    ""
-                    if text[: anchor_match.end()].endswith((" ", "\t", "\n", "\r"))
-                    or replacement.startswith((" ", ",", ".", ";", ":", ")"))
-                    else " "
-                )
-                return f"{text[: anchor_match.end()]}{joiner}{replacement}", True
-
-            def _rewrite_after_anchor_normalized(text: str) -> tuple[str, bool]:
-                new_text, changed = _rewrite_after_anchor(text)
-                return " ".join(new_text.split()).strip(), changed
-
             rebuilt, applied = self._apply_unique_text_node_rewrite(
                 node,
                 text_nodes,
-                _rewrite_after_anchor_normalized,
+                lambda text: _rewrite_after_anchor_to_end_text(
+                    text,
+                    anchor=anchor,
+                    replacement=replacement,
+                    occurrence=occurrence,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                ),
             )
             if not applied:
                 return node, False
