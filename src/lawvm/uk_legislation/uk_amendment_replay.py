@@ -328,6 +328,7 @@ from lawvm.uk_legislation.source_context import (
 from lawvm.uk_legislation.source_payload_helpers import (
     UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID as _UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID,
     UK_NONADDRESSABLE_SCHEDULE_PART_INSERT_TARGET_RULE_ID as _UK_NONADDRESSABLE_SCHEDULE_PART_INSERT_TARGET_RULE_ID,
+    _direct_payload_text,
     _flat_p1para_schedule_paragraph_insert_payload,
     _inserted_section_p1group_heading_text,
     _prepend_inserted_section_heading_carrier,
@@ -961,55 +962,6 @@ def mark_nonreplay_lowering_rejections_nonblocking(
         )
         changed = True
     return changed
-
-
-def _direct_payload_text(el: ET.Element) -> str:
-    """Collect direct/local text for extracted payload compilation only."""
-    structural_tags = {
-        "part",
-        "chapter",
-        "euchapter",
-        "p1group",
-        "section",
-        "p1",
-        "article",
-        "eusection",
-        "conventionrights",
-        "pblock",
-        "p2",
-        "p3",
-        "p4",
-        "subsection",
-        "paragraph",
-        "schedule",
-    }
-    transparent_tags = {
-        "pnumber",
-        "number",
-        "title",
-        "commentaryref",
-        "blockamendment",
-        "inlineamendment",
-    }
-    editorial_tags = {"commentary", "citation", "citationsubref"}
-
-    def _collect_local(node: ET.Element) -> list[str]:
-        parts: list[str] = []
-        if node.text:
-            parts.append(node.text)
-        for child in node:
-            ct = _tag(child).lower()
-            if ct in editorial_tags:
-                pass
-            elif ct in structural_tags or ct in transparent_tags:
-                pass
-            else:
-                parts.extend(_collect_local(child))
-            if child.tail:
-                parts.append(child.tail)
-        return parts
-
-    return " ".join(" ".join(_collect_local(el)).split())
 
 
 def _whole_schedule_target_root_eid(target: LegalAddress) -> str:
