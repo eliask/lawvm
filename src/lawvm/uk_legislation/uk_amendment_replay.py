@@ -229,13 +229,27 @@ from lawvm.uk_legislation.source_text_reclassifications import (
 )
 from lawvm.uk_legislation.table_selectors import (
     UK_SCHEDULE_TABLE_END_ROWS_RULE_ID as _UK_SCHEDULE_TABLE_END_ROWS_RULE_ID,
+    UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID as _UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID,
     UK_TABLE_COLUMN_INSERT_RULE_ID as _UK_TABLE_COLUMN_INSERT_RULE_ID,
+    UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID as _UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID,
+    UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID as _UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID,
+    UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID as _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID,
+    UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID as _UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID,
+    UK_TABLE_ENTRY_LABELS_COLUMN_TEXT_RULE_ID as _UK_TABLE_ENTRY_LABELS_COLUMN_TEXT_RULE_ID,
+    UK_TABLE_ENTRY_LABEL_COLUMN_TEXT_RULE_ID as _UK_TABLE_ENTRY_LABEL_COLUMN_TEXT_RULE_ID,
+    UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID as _UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID,
+    UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID as _UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID,
+    UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID as _UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID,
+    UK_TABLE_ENTRY_ROW_INSERT_RULE_ID as _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
     _uk_schedule_list_entry_table_payload,
     _uk_schedule_table_end_rows_selector,
     _uk_single_logical_table_entry_group_payload,
     _uk_single_table_column_payload,
     _uk_single_table_row_payload,
+    _uk_table_column_text_patch_selector,
     _uk_table_column_insert_selector,
+    _uk_table_entry_inline_text_selector,
+    _uk_table_entry_row_insert_selector,
 )
 from lawvm.uk_legislation.substitution_metadata import (
     UKSourceLabelChangingSubstitution,
@@ -305,8 +319,6 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
 from lawvm.uk_legislation.source_context import (
     _first_amendment_container,
     _source_ancestor_chain,
-    _source_previous_table_entry_label_context,
-    _source_previous_table_entry_relating_context,
     _source_text_before_extracted_child,
     _unique_source_ancestor_chain_by_tag_text,
 )
@@ -430,22 +442,9 @@ def _retarget_instruction_element_to_target(
     return clone
 
 
-_UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID = "uk_effect_table_entry_inline_text_insertion"
-_UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID = "uk_effect_table_entry_relating_text_patch"
-_UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_relating_column_text_patch"
-_UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID = "uk_effect_table_entry_label_text_patch"
-_UK_TABLE_ENTRY_LABEL_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_label_column_text_patch"
-_UK_TABLE_ENTRY_LABELS_COLUMN_TEXT_RULE_ID = "uk_effect_table_entry_labels_column_text_patch"
-_UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID = (
-    "uk_effect_table_entry_deictic_label_column_text_patch"
-)
 _UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID = (
     "uk_effect_source_carried_table_entry_paragraph_substitution_text_patch"
 )
-_UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID = "uk_effect_table_column_heading_text_patch"
-_UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID = "uk_effect_table_column_text_patch"
-_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID = "uk_effect_table_entry_row_insert"
-_UK_TABLE_ENTRY_INSTRUCTION_REJECTED_RULE_ID = "uk_effect_table_entry_instruction_rejected"
 _UK_REPLAY_TABLE_ENTRY_INLINE_UNRESOLVED_RULE_ID = "uk_replay_table_entry_inline_text_insertion_unresolved"
 _UK_REPLAY_TABLE_ENTRY_INLINE_PREIMAGE_GAP_RULE_ID = "uk_replay_table_entry_inline_text_preimage_gap"
 _UK_REPLAY_TABLE_ENTRY_ROW_INSERT_UNRESOLVED_RULE_ID = "uk_replay_table_entry_row_insert_unresolved"
@@ -1319,421 +1318,6 @@ def _flat_p1para_schedule_paragraph_insert_payload(
             "unresolved_heading_texts": heading_texts,
             "source_container": "BlockAmendment/P1para",
         },
-    }
-
-
-def _uk_table_entry_inline_text_selector(
-    *,
-    target_ref: str,
-    target: LegalAddress,
-    extracted_text: Optional[str],
-    extracted_el: Optional[ET.Element] = None,
-    source_root: Optional[ET.Element] = None,
-) -> dict[str, Any] | None:
-    """Extract a deterministic base-table cell selector from inline table-entry wording."""
-    text = " ".join((extracted_text or "").split())
-    if not text or "table" not in " ".join((target_ref, str(target))).lower():
-        return None
-    fragments = parse_fragment_substitution(text)
-    primary_fragment = fragments[0] if len(fragments) == 1 else None
-    original_text = str(primary_fragment.get("original") or "") if primary_fragment is not None else ""
-    heading_match = re.search(
-        r"\bin\s+the\s+heading\s+of\s+the\s+"
-        r"(?P<column>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+"
-        r"column\b",
-        text,
-        re.I,
-    )
-    if heading_match is not None and original_text:
-        column_index = _uk_ordinal_to_int(heading_match.group("column"))
-        if column_index is not None and column_index >= 1:
-            return {
-                "rule_id": _UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID,
-                "selector_mode": "unique_column_text",
-                "column_index": column_index,
-                "match_text": original_text,
-                "table_label": "",
-                "original_target": str(target),
-                "target_ref": target_ref,
-            }
-    relating_match = re.search(
-        r"\bin\s+the\s+entry\s+relating\s+to\s+(?:the\s+)?(?P<relating>.*?)(?:,\s+for\b|,\s+after\b|,\s+omit\b|,\s+insert\b|$)",
-        text,
-        re.I,
-    )
-    if relating_match is not None and original_text:
-        relating_text = " ".join(relating_match.group("relating").split()).strip(" ,;.")
-        if relating_text:
-            return {
-                "rule_id": _UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID,
-                "selector_mode": "unique_relating_text",
-                "relating_text": relating_text,
-                "match_text": original_text,
-                "table_label": "",
-                "original_target": str(target),
-                "target_ref": target_ref,
-            }
-    relating_column_match = re.search(
-        r"\bin\s+the\s+entry\s+(?:for|relating\s+to)\s+(?:the\s+)?(?P<relating>.*?),\s+in\s+"
-        r"(?:(?:the\s+)?(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
-        r"column\s+(?P<column_number>\d+))\b",
-        text,
-        re.I,
-    )
-    if relating_column_match is not None:
-        relating_text = " ".join(relating_column_match.group("relating").split()).strip(" ,;.")
-        column_token = relating_column_match.group("column_ordinal") or relating_column_match.group("column_number")
-        column_index = _uk_ordinal_to_int(column_token or "")
-        if relating_text and column_index is not None and column_index >= 1:
-            return {
-                "rule_id": _UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID,
-                "selector_mode": "unique_relating_cell",
-                "relating_text": relating_text,
-                "column_index": column_index,
-                "table_label": "",
-                "original_target": str(target),
-                "target_ref": target_ref,
-            }
-    entry_labels_column_match = re.search(
-        r"\bin\s+entries\s+(?P<entries>[0-9A-Z]+(?:\s*(?:,|and)\s*[0-9A-Z]+)+),?\s+in\s+"
-        r"(?:(?:the\s+)?(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
-        r"column\s+(?P<column_number>\d+))\b",
-        text,
-        re.I,
-    )
-    if entry_labels_column_match is not None:
-        entry_labels = tuple(
-            _clean_num(label)
-            for label in re.split(r"\s*(?:,|and)\s*", entry_labels_column_match.group("entries"))
-            if _clean_num(label)
-        )
-        column_token = (
-            entry_labels_column_match.group("column_ordinal")
-            or entry_labels_column_match.group("column_number")
-        )
-        column_index = _uk_ordinal_to_int(column_token or "")
-        if len(entry_labels) >= 2 and column_index is not None and column_index >= 1:
-            return {
-                "rule_id": _UK_TABLE_ENTRY_LABELS_COLUMN_TEXT_RULE_ID,
-                "selector_mode": "unique_entry_cells",
-                "entry_labels": entry_labels,
-                "column_index": column_index,
-                "table_label": "",
-                "original_target": str(target),
-                "target_ref": target_ref,
-            }
-    deictic_entry_column_match = re.search(
-        r"\bin\s+that\s+entry,?\s+in\s+"
-        r"(?:(?:the\s+)?(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
-        r"column\s+(?P<column_number>\d+))\b",
-        text,
-        re.I,
-    )
-    if deictic_entry_column_match is not None:
-        column_token = (
-            deictic_entry_column_match.group("column_ordinal")
-            or deictic_entry_column_match.group("column_number")
-        )
-        column_index = _uk_ordinal_to_int(column_token or "")
-        entry_context = _source_previous_table_entry_label_context(
-            extracted_el=extracted_el,
-            source_root=source_root,
-            rule_id=_UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID,
-        )
-        entry_label = _clean_num(entry_context.get("entry_label") or "")
-        if entry_label and column_index is not None and column_index >= 1:
-            return {
-                "rule_id": _UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID,
-                "selector_mode": "unique_entry_cell",
-                "entry_label": entry_label,
-                "column_index": column_index,
-                "table_label": "",
-                "original_target": str(target),
-                "target_ref": target_ref,
-                **entry_context,
-            }
-    entry_column_match = re.search(
-        r"\bin\s+entry\s+(?P<entry>[0-9A-Z]+),?\s+in\s+"
-        r"(?:(?:the\s+)?(?P<column_ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+column|"
-        r"column\s+(?P<column_number>\d+))\b",
-        text,
-        re.I,
-    )
-    if entry_column_match is not None:
-        entry_label = _clean_num(entry_column_match.group("entry"))
-        column_token = entry_column_match.group("column_ordinal") or entry_column_match.group("column_number")
-        column_index = _uk_ordinal_to_int(column_token or "")
-        if entry_label and column_index is not None and column_index >= 1:
-            return {
-                "rule_id": _UK_TABLE_ENTRY_LABEL_COLUMN_TEXT_RULE_ID,
-                "selector_mode": "unique_entry_cell",
-                "entry_label": entry_label,
-                "column_index": column_index,
-                "table_label": "",
-                "original_target": str(target),
-                "target_ref": target_ref,
-            }
-    entry_label_match = re.search(
-        r"\bin\s+entry\s+(?P<entry>[0-9A-Z]+)\s+in\s+the\s+table\b",
-        text,
-        re.I,
-    )
-    if entry_label_match is not None and original_text:
-        entry_label = _clean_num(entry_label_match.group("entry"))
-        if entry_label:
-            return {
-                "rule_id": _UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID,
-                "selector_mode": "unique_entry_text",
-                "entry_label": entry_label,
-                "match_text": original_text,
-                "table_label": "",
-                "original_target": str(target),
-                "target_ref": target_ref,
-            }
-    match = re.search(
-        r"\bin\s+the\s+(?P<column>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+column,\s+"
-        r"in\s+the\s+(?P<entry>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+entry\s+"
-        r"relating\s+to\s+(?:the\s+)?(?P<relating>.*?)(?:,\s+after\b|,\s+for\b|,\s+omit\b|,\s+insert\b|$)",
-        text,
-        re.I,
-    )
-    if match is None:
-        return None
-    column_index = _uk_ordinal_to_int(match.group("column"))
-    entry_index = _uk_ordinal_to_int(match.group("entry"))
-    relating_text = " ".join(match.group("relating").split()).strip(" ,;.")
-    if column_index is None or entry_index is None or column_index < 1 or entry_index < 1 or not relating_text:
-        return None
-    table_match = re.search(r"\btable\s+([0-9A-Za-z]+)\b", target_ref, re.I)
-    return {
-        "rule_id": _UK_TABLE_ENTRY_INLINE_TEXT_RULE_ID,
-        "column_index": column_index,
-        "entry_index": entry_index,
-        "relating_text": relating_text,
-        "table_label": table_match.group(1) if table_match is not None else "",
-        "original_target": str(target),
-        "target_ref": target_ref,
-    }
-
-
-def _uk_table_entry_row_insert_selector(
-    *,
-    target_ref: str,
-    target: LegalAddress,
-    extracted_text: Optional[str],
-    extracted_el: Optional[ET.Element] = None,
-    source_root: Optional[ET.Element] = None,
-) -> dict[str, Any] | None:
-    """Extract an explicit table-row insertion selector from ordinal entry wording."""
-    text = " ".join((extracted_text or "").split())
-    source_names_table = "table" in text.lower()
-    implicit_subsection_entry_group = re.search(
-        r"\bafter\s+(?:the\s+)?entry\s+"
-        r"(?:relating\s+to|for)\s+(?:the\s+)?(?P<relating>.+?)\s+"
-        r"insert(?:ed)?\s*[—–-]?\s*(?P<payload>.*)$",
-        text,
-        re.I,
-    )
-    if not text or (
-        "table" not in " ".join((target_ref, str(target), text)).lower()
-        and not (_addr_leaf_kind(target) == "subsection" and implicit_subsection_entry_group is not None)
-    ):
-        return None
-    target_names_table = "table" in f"{target_ref} {target}".lower()
-    deictic_previous_entry_insert = re.search(
-        r"\bafter\s+that\s+entry\s+insert(?:ed)?\s*[—–-]?",
-        text,
-        re.I,
-    )
-    if target_names_table and deictic_previous_entry_insert is not None:
-        entry_context = _source_previous_table_entry_relating_context(
-            extracted_el=extracted_el,
-            source_root=source_root,
-            rule_id=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
-        )
-        relating_text = " ".join(str(entry_context.get("relating_text") or "").split()).strip(" ,;.")
-        if relating_text:
-            group_payload = _uk_single_logical_table_entry_group_payload(extracted_el)
-            return {
-                "rule_id": _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
-                "selector_mode": "relating_entry",
-                "direction": "after",
-                "column_index": 1,
-                "entry_index": 1,
-                "relating_text": relating_text,
-                "source_payload_mode": "logical_table_entry_group"
-                if group_payload is not None
-                else "single_table_row",
-                **(
-                    {"logical_payload_row_count": len(group_payload.children)}
-                    if group_payload is not None
-                    else {}
-                ),
-                "source_names_table": source_names_table,
-                "original_target": str(target),
-                "target_ref": target_ref,
-                **entry_context,
-            }
-    entry_label_match = re.search(
-        r"\bafter\s+entry\s+(?P<anchor>[0-9A-Z]+)\s+in\s+the\s+table\s+"
-        r"insert(?:ed)?\s*[—–-]?",
-        text,
-        re.I,
-    )
-    table_match = re.search(r"\btable\s+([0-9A-Za-z]+)\b", target_ref, re.I)
-    if entry_label_match is not None:
-        anchor_entry_label = _clean_num(entry_label_match.group("anchor"))
-        if anchor_entry_label:
-            return {
-                "rule_id": _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
-                "selector_mode": "entry_label",
-                "direction": "after",
-                "anchor_entry_label": anchor_entry_label,
-                "table_label": table_match.group(1) if table_match is not None else "",
-                "source_names_table": source_names_table,
-                "original_target": str(target),
-                "target_ref": target_ref,
-            }
-    numbered_target_table_match = re.search(
-        r"\bafter\s+entry\s+(?P<anchor>[0-9A-Z]+)\s+"
-        r"insert(?:ed)?\s*[—–-]?",
-        text,
-        re.I,
-    )
-    if target_names_table and numbered_target_table_match is not None:
-        anchor_entry_label = _clean_num(numbered_target_table_match.group("anchor"))
-        if anchor_entry_label:
-            return {
-                "rule_id": _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
-                "selector_mode": "entry_label",
-                "direction": "after",
-                "anchor_entry_label": anchor_entry_label,
-                "table_label": table_match.group(1) if table_match is not None else "",
-                "source_payload_mode": "table_rows",
-                "source_names_table": source_names_table,
-                "original_target": str(target),
-                "target_ref": target_ref,
-            }
-    if implicit_subsection_entry_group is not None and not source_names_table:
-        relating_text = " ".join(implicit_subsection_entry_group.group("relating").split()).strip(" ,;.")
-        inserted_text = _strip_schedule_entry_payload(implicit_subsection_entry_group.group("payload"))
-        if relating_text:
-            return {
-                "rule_id": _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
-                "selector_mode": "entry_group_heading",
-                "direction": "after",
-                "relating_text": relating_text,
-                "inserted_text": inserted_text,
-                "source_payload_mode": "table_rows",
-                "source_names_table": False,
-                "original_target": str(target),
-                "target_ref": target_ref,
-            }
-    match = re.search(
-        r"\bafter\s+the\s+"
-        r"(?P<entry>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+"
-        r"entry\s+in\s+the\s+"
-        r"(?P<column>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+"
-        r"column\s+relating\s+to\s+(?:the\s+)?(?P<relating>.+?)\s+"
-        r"insert(?:ed)?\s*[—–-]?\s*(?P<payload>.+)$",
-        text,
-        re.I,
-    )
-    if match is not None:
-        entry_index = _uk_ordinal_to_int(match.group("entry"))
-        column_index = _uk_ordinal_to_int(match.group("column"))
-        relating_text = " ".join(match.group("relating").split()).strip(" ,;.")
-        inserted_text = _strip_schedule_entry_payload(match.group("payload"))
-        if (
-            entry_index is None
-            or column_index is None
-            or entry_index < 1
-            or column_index < 2
-            or not relating_text
-            or not inserted_text
-        ):
-            return None
-        return {
-            "rule_id": _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
-            "selector_mode": "ordinal_column",
-            "direction": "after",
-            "column_index": column_index,
-            "entry_index": entry_index,
-            "relating_text": relating_text,
-            "inserted_text": inserted_text,
-            "table_label": table_match.group(1) if table_match is not None else "",
-            "source_names_table": source_names_table,
-            "original_target": str(target),
-            "target_ref": target_ref,
-        }
-    relating_match = re.search(
-        r"\bafter\s+(?:the\s+)?entry\s+in\s+the\s+table\s+"
-        r"relating\s+to\s+(?:the\s+)?(?P<relating>.+?)\s+"
-        r"insert(?:ed)?\s*[—–-]?\s*(?P<payload>.+)$",
-        text,
-        re.I,
-    )
-    if relating_match is None:
-        return None
-    relating_text = " ".join(relating_match.group("relating").split()).strip(" ,;.")
-    inserted_text = _strip_schedule_entry_payload(relating_match.group("payload"))
-    if not relating_text or not inserted_text:
-        return None
-    return {
-        "rule_id": _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
-        "selector_mode": "relating_entry",
-        "direction": "after",
-        "column_index": 1,
-        "entry_index": 1,
-        "relating_text": relating_text,
-        "inserted_text": inserted_text,
-        "table_label": table_match.group(1) if table_match is not None else "",
-        "source_names_table": source_names_table,
-        "original_target": str(target),
-        "target_ref": target_ref,
-    }
-
-
-def _uk_table_column_text_patch_selector(
-    *,
-    target_ref: str,
-    target: LegalAddress,
-    extracted_text: Optional[str],
-) -> dict[str, Any] | None:
-    """Extract a unique-column preimage selector for broad schedule/part table text patches."""
-    text = " ".join((extracted_text or "").split())
-    if not text:
-        return None
-    if "table" in " ".join((target_ref, str(target))).lower():
-        return None
-    if re.search(r"\b(?:entry|entries)\b", text, flags=re.I):
-        return None
-    target_kind = target.path[-1][0] if target.path else ""
-    if target_kind not in {"schedule", "part"}:
-        return None
-    column_match = re.search(
-        r"\bin\s+column\s+(?P<column>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\b",
-        text,
-        flags=re.I,
-    )
-    if column_match is None:
-        return None
-    column_index = _uk_ordinal_to_int(column_match.group("column"))
-    if column_index is None or column_index < 1:
-        return None
-    fragments = parse_fragment_substitution(text)
-    if not fragments:
-        return None
-    match_text = str(fragments[0].get("original") or "").strip()
-    if not match_text:
-        return None
-    return {
-        "rule_id": _UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID,
-        "selector_mode": "unique_column_text",
-        "column_index": column_index,
-        "match_text": match_text,
-        "target_ref": target_ref,
-        "original_target": str(target),
     }
 
 
