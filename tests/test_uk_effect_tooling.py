@@ -1716,6 +1716,85 @@ def test_uk_manual_compile_evidence_jsonl_templates_crossheading_claim() -> None
     assert template["executable"] is False
 
 
+def test_uk_manual_compile_evidence_jsonl_templates_schedule_note_claim() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-schedule-note",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/1/schedule/1/note/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="Sch. 1 note",
+        affecting_uri="/id/ukpga/2024/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="s. 3",
+        affecting_title="Test Act 2024",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="schedule_note_target_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_schedule_note_target_rejected", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview='In the note, for "old note" substitute "new note".',
+            affecting_source_status="available",
+            affecting_source_size=123,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id="uk_manual_frontier_schedule_note_candidate",
+            manual_compile_reason="Schedule note requires a validated carrier claim.",
+            manual_compile_lowering_rule_ids=("uk_effect_schedule_note_target_rejected",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_schedule_note_target_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    template = payload["suggested_claim_template"]
+    assert template["action_family"] == "schedule_note_text_rewrite"
+    assert template["facet_family"] == "schedule_note"
+    assert template["placement_family"] == "explicit_schedule_note_carrier_required"
+    assert template["candidate_target_surface"] == "Sch. 1 note"
+    assert template["text_match"] == "old note"
+    assert template["replacement"] == "new note"
+    assert "claim_preserves_schedule_paragraph_body_structure" in (
+        template["required_validator_checks"]
+    )
+    assert template["executable"] is False
+
+
 def test_uk_manual_compile_evidence_jsonl_templates_range_to_container_claim() -> None:
     effect = UKEffectRecord(
         effect_id="eff-range-container",
