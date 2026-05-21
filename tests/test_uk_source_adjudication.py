@@ -85,6 +85,20 @@ def test_uk_manual_frontier_source_pathology_tables_are_owned() -> None:
     assert all(rule_ids)
 
 
+def test_uk_replay_source_shape_residual_table_is_owned() -> None:
+    mapped = {
+        adjudication_kind
+        for adjudication_kind, _ in sa._UK_REPLAY_SOURCE_SHAPE_RESIDUAL_KIND_PRIORITY
+    }
+    defaulted = sa._UK_REPLAY_SOURCE_SHAPE_RESIDUAL_DEFAULT_ADJUDICATION_KINDS
+
+    assert len(mapped) == len(sa._UK_REPLAY_SOURCE_SHAPE_RESIDUAL_KIND_PRIORITY)
+    assert sorted(mapped - sa.UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS) == []
+    assert sorted(defaulted - sa.UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS) == []
+    assert sorted(mapped & defaulted) == []
+    assert sorted(sa.UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS - mapped - defaulted) == []
+
+
 def test_classify_uk_replay_adjudication_bucket() -> None:
     cases = {
         "uk_replay_target_not_found": "replay_bug",
