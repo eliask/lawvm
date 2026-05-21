@@ -432,6 +432,7 @@ Known manual families may additionally include a non-executable
 The template is a reviewer aid, not an operation source. Current templates:
 `facet_text_rewrite` for `uk_manual_frontier_heading_facet_candidate`,
 `crossheading_text_rewrite` for `uk_manual_frontier_crossheading_candidate`,
+`schedule_note_text_rewrite` for `uk_manual_frontier_schedule_note_candidate`,
 `definition_entry_insert` for
 `uk_manual_frontier_appropriate_place_definition_entry_candidate`, and
 `range_to_container_substitution` for
