@@ -184,6 +184,27 @@ def test_parse_fragment_substitution_handles_all_occurrences_substitution() -> N
     ]
 
 
+def test_parse_fragment_substitution_handles_respectively_there_is_substituted() -> None:
+    subs = parse_fragment_substitution(
+        "1 In each of the following provisions of the 2002 Act, for the words "
+        "“Commissioner” and “Commissioner's” wherever occurring there is substituted "
+        "“ Commission ” and “ Commission's ” respectively—"
+    )
+
+    assert subs == [
+        {
+            "original": "Commissioner",
+            "replacement": "Commission",
+            "rule_id": "uk_effect_respectively_all_occurrences_substitution_text_patch",
+        },
+        {
+            "original": "Commissioner's",
+            "replacement": "Commission's",
+            "rule_id": "uk_effect_respectively_all_occurrences_substitution_text_patch",
+        },
+    ]
+
+
 def test_parse_fragment_substitution_handles_nested_quote_substitution() -> None:
     subs = parse_fragment_substitution(
         "iii for the words \u201ca medical practitioner (the \u201cnominated medical "
@@ -329,6 +350,21 @@ def test_parse_fragment_substitution_handles_post_quoted_ordinal_substitution() 
             "original": "six months",
             "replacement": "four months",
             "occurrence": "1",
+            "rule_id": "uk_effect_post_quoted_ordinal_substitution_text_patch",
+        }
+    ]
+
+
+def test_parse_fragment_substitution_handles_post_quoted_ordinal_there_is_substituted() -> None:
+    subs = parse_fragment_substitution(
+        "ii for the word “order” in the second place where it appears there is substituted “ scheme ” ."
+    )
+
+    assert subs == [
+        {
+            "original": "order",
+            "replacement": "scheme",
+            "occurrence": "2",
             "rule_id": "uk_effect_post_quoted_ordinal_substitution_text_patch",
         }
     ]

@@ -9745,6 +9745,68 @@ def test_compile_both_places_there_is_substituted_records_all_occurrences_observ
     assert all_occurrence_record["occurrence"] == 0
 
 
+def test_compile_respectively_there_is_substituted_records_all_occurrences_observations() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P2 xmlns="{_LEG_NS}" id="schedule-5-paragraph-7-1">
+          <Pnumber>1</Pnumber>
+          <Text>1 In each of the following provisions of the 2002 Act, for the words “Commissioner” and “Commissioner's” wherever occurring there is substituted “ Commission ” and “ Commission's ” respectively—</Text>
+        </P2>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_respectively_there_is_substituted",
+        effect_type="words substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-07-01",
+        affected_uri="/id/asp/2002/3",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="3",
+        affected_provisions="s. 3",
+        affecting_uri="/id/asp/2005/3",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="3",
+        affecting_provisions="Sch. 5 para. 7(1)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2005-07-01", "prospective": "false"}],
+    )
+    lowering_records: list[dict[str, object]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_records,
+    )
+
+    assert len(ops) == 2
+    assert [op.action for op in ops] == [
+        StructuralAction.TEXT_REPLACE,
+        StructuralAction.TEXT_REPLACE,
+    ]
+    assert [op.target.path for op in ops] == [(("section", "3"),), (("section", "3"),)]
+    assert [
+        (op.text_patch.selector.match_text, op.text_patch.replacement)
+        for op in ops
+        if op.text_patch is not None
+    ] == [
+        ("Commissioner", "Commission"),
+        ("Commissioner's", "Commission's"),
+    ]
+    assert [
+        record["rule_id"]
+        for record in lowering_records
+        if record["rule_id"] == "uk_effect_respectively_all_occurrences_substitution_text_patch"
+    ] == [
+        "uk_effect_respectively_all_occurrences_substitution_text_patch",
+        "uk_effect_respectively_all_occurrences_substitution_text_patch",
+    ]
+    assert all(record["blocking"] is False for record in lowering_records)
+
+
 def test_compile_after_anchor_each_occasion_insert_records_all_occurrences_observation() -> None:
     extracted_el = ET.fromstring(
         f"""
@@ -15929,6 +15991,59 @@ def test_compile_post_quoted_ordinal_substitution_preserves_bounded_occurrence()
         in op.provenance_tags
     )
     assert _fragment_substitution(op)[0]["occurrence"] == "1"
+
+
+def test_compile_post_quoted_ordinal_there_is_substituted_preserves_bounded_occurrence() -> None:
+    extracted_el = ET.fromstring(
+        f"""
+        <P4 xmlns="{_LEG_NS}">
+          <Pnumber>ii</Pnumber>
+          <Text>ii for the word “order” in the second place where it appears there is substituted “ scheme ” .</Text>
+        </P4>
+        """
+    )
+    effect = UKEffectRecord(
+        effect_id="uk_test_post_quoted_ordinal_there_is_substituted",
+        effect_type="word substituted",
+        applied=True,
+        requires_applied=True,
+        modified="2005-07-01",
+        affected_uri="/id/asp/2002/3",
+        affected_class="ScottishAct",
+        affected_year="2002",
+        affected_number="3",
+        affected_provisions="s. 30(4)",
+        affecting_uri="/id/asp/2005/3",
+        affecting_class="ScottishAct",
+        affecting_year="2005",
+        affecting_number="3",
+        affecting_provisions="s. 21(2)(c)(ii)",
+        affecting_title="Test Amendment Act",
+        in_force_dates=[{"date": "2005-07-01", "prospective": "false"}],
+    )
+    lowering_rejections: list[dict[str, Any]] = []
+
+    ops = compile_effect_to_ir_ops(
+        effect,
+        extracted_el,
+        sequence=0,
+        lowering_rejections_out=lowering_rejections,
+    )
+
+    assert lowering_rejections == []
+    assert len(ops) == 1
+    op = ops[0]
+    assert op.action == StructuralAction.TEXT_REPLACE
+    assert op.target.path == (("section", "30"), ("subsection", "4"))
+    assert op.text_patch is not None
+    assert op.text_patch.selector.match_text == "order"
+    assert op.text_patch.selector.occurrence == 2
+    assert op.text_patch.replacement == "scheme"
+    assert (
+        f"{_NOTE_TEXT_REWRITE_RULE}uk_effect_post_quoted_ordinal_substitution_text_patch"
+        in op.provenance_tags
+    )
+    assert _fragment_substitution(op)[0]["occurrence"] == "2"
 
 
 def test_compile_post_quoted_where_ordinal_substitution_preserves_bounded_occurrence() -> None:
