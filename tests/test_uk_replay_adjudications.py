@@ -12,6 +12,10 @@ from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
+from lawvm.uk_legislation.replay_text_apply import (
+    _remove_trailing_context_word,
+    _rewrite_definition_entry_text,
+)
 from lawvm.uk_legislation.source_adjudication import classify_uk_replay_adjudication_bucket
 from lawvm.uk_legislation.uk_amendment_replay import (
     UKReplayExecutor,
@@ -82,6 +86,51 @@ def test_uk_ordinal_to_int_accepts_words_adverbs_and_numeric_suffixes() -> None:
     assert _uk_ordinal_to_int("  3rd. ") == 3
     assert _uk_ordinal_to_int("12th") == 12
     assert _uk_ordinal_to_int("eleventh") is None
+
+
+def test_rewrite_definition_entry_text_records_predicate_recovery() -> None:
+    rewritten, applied, recovery_rule_ids = _rewrite_definition_entry_text(
+        '"regulated activity" shall be construed as activity within section 1;',
+        term="regulated activity",
+        replacement="",
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is True
+    assert rewritten == ""
+    assert recovery_rule_ids == ("uk_replay_definition_predicate_shall_construed_normalized",)
+
+
+def test_rewrite_definition_entry_text_rejects_missing_entry() -> None:
+    original = '"charge" means one;'
+
+    rewritten, applied, recovery_rule_ids = _rewrite_definition_entry_text(
+        original,
+        term="fee",
+        replacement='"fee" means three;',
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is False
+    assert rewritten == original
+    assert recovery_rule_ids == ()
+
+
+def test_remove_trailing_context_word_preserves_trailing_punctuation() -> None:
+    assert _remove_trailing_context_word("paragraph (a), or;", "or") == (
+        "paragraph (a);",
+        True,
+    )
+    assert _remove_trailing_context_word("paragraph (a), or", "or") == (
+        "paragraph (a)",
+        True,
+    )
+    assert _remove_trailing_context_word("paragraph (a), then", "or") == (
+        "paragraph (a), then",
+        False,
+    )
 
 
 def _uk_table_effect() -> UKEffectRecord:
