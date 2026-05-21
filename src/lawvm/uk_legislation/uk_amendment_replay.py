@@ -105,6 +105,7 @@ from lawvm.uk_legislation.effect_target_prelude import (
     expand_single_target_prelude,
     refine_numbered_schedule_entry_repeal_target,
     reject_unsupported_target_facet,
+    reject_schedule_entry_missing_source,
     resolve_effect_target_context,
 )
 from lawvm.uk_legislation.addressing import (
@@ -726,22 +727,16 @@ def compile_effect_to_ir_ops(
             lowering_rejections_out=lowering_rejections_out,
         ):
             continue
-        if extracted_el is None and effect_type in {"entry inserted", "entry repealed", "entry omitted"}:
-            _append_uk_effect_lowering_rejection(
-                lowering_rejections_out,
-                rule_id="uk_effect_schedule_entry_missing_source_rejected",
-                family="source_schedule_list_entry_elaboration",
-                reason_code="entry_effect_requires_source_text",
-                reason=(
-                    "UK schedule-entry effect row requires affecting source text; "
-                    "metadata alone does not identify the entry payload or entry "
-                    "anchor safely enough for replay."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={"target_ref": t_str, "target": str(target), "action": action},
-            )
+        if reject_schedule_entry_missing_source(
+            effect=effect,
+            effect_type=effect_type,
+            action=action,
+            t_str=t_str,
+            target=target,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        ):
             continue
         append_target_shape_observations(
             effect=effect,
