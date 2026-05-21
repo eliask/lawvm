@@ -67,6 +67,55 @@ _UK_REPLAY_TABLE_ENTRY_INLINE_PREIMAGE_GAP_RULE_ID = "uk_replay_table_entry_inli
 _UK_RESPECTIVELY_ALL_OCCURRENCES_TEXT_REWRITE_RULE_ID = (
     "uk_effect_respectively_all_occurrences_substitution_text_patch"
 )
+_UK_REPLAY_BLOCKING_TEXT_MISS_KINDS = frozenset(
+    {
+        "uk_replay_broad_schedule_table_shape_gap",
+        "uk_replay_broad_schedule_part_table_shape_gap",
+        "uk_replay_table_shape_gap",
+        "uk_replay_definition_entry_shape_gap",
+        "uk_replay_heading_text_preimage_gap",
+        "uk_replay_text_target_empty_surface_gap",
+        "uk_replay_text_match_missing",
+        "uk_replay_text_insert_anchor_preimage_gap",
+        "uk_replay_text_monetary_amount_preimage_gap",
+        "uk_replay_text_parenthetical_omission_preimage_gap",
+        "uk_replay_text_match_article_phrase_surface_gap",
+        "uk_replay_text_patch_preimage_drift",
+        "uk_replay_text_patch_preimage_drift_multi_prior_same_target",
+        "uk_replay_text_match_synthetic_selector_gap",
+        "uk_replay_text_match_normalized_preimage_present_gap",
+        "uk_replay_text_match_non_substantive_selector_gap",
+        "uk_replay_text_match_multi_fragment_selector_gap",
+        "uk_replay_text_match_citation_tail_surface_gap",
+        "uk_replay_text_match_citation_connector_surface_gap",
+    }
+)
+_UK_REPLAY_TEXT_MISS_SOURCE_SHAPE_BY_KIND = {
+    "uk_replay_text_target_empty_surface_gap": "target_subtree_without_text_surface",
+    "uk_replay_heading_text_preimage_gap": "heading_preimage_absent",
+    "uk_replay_heading_respectively_all_occurrences_absent_observed": (
+        "respectively_all_occurrences_heading_preimage_absent"
+    ),
+    "uk_replay_definition_entry_already_absent_observed": "definition_entry_already_absent",
+    "uk_replay_text_insert_anchor_preimage_gap": "insert_anchor_preimage_absent",
+    "uk_replay_text_monetary_amount_preimage_gap": "monetary_amount_preimage_absent",
+    "uk_replay_text_parenthetical_omission_preimage_gap": "parenthetical_omission_preimage_absent",
+    "uk_replay_text_match_article_phrase_surface_gap": "article_phrase_content_word_surface_gap",
+    "uk_replay_text_match_normalized_preimage_present_gap": "normalized_preimage_present",
+    "uk_replay_text_match_replacement_normalized_present": "replacement_normalized_present",
+    "uk_replay_text_match_multi_fragment_selector_gap": "multi_fragment_text_selector",
+    "uk_replay_text_match_citation_tail_surface_gap": "citation_tail_surface_gap",
+    "uk_replay_text_match_citation_connector_surface_gap": "citation_connector_surface_gap",
+}
+
+
+def _uk_replay_text_miss_source_shape(kind: str) -> str:
+    if kind in {
+        "uk_replay_broad_schedule_table_shape_gap",
+        "uk_replay_broad_schedule_part_table_shape_gap",
+    }:
+        return "broad_schedule_without_table_or_provision_structure"
+    return _UK_REPLAY_TEXT_MISS_SOURCE_SHAPE_BY_KIND.get(kind, "")
 
 
 class UKReplayTextActionApplyMixin:
@@ -919,53 +968,9 @@ class UKReplayTextActionApplyMixin:
                         "target": str(target),
                         "text_match": text_patch.selector.match_text,
                         "replacement_text": replacement,
-                        "blocking": kind
-                        in {
-                            "uk_replay_broad_schedule_table_shape_gap",
-                            "uk_replay_broad_schedule_part_table_shape_gap",
-                            "uk_replay_table_shape_gap",
-                            "uk_replay_definition_entry_shape_gap",
-                            "uk_replay_heading_text_preimage_gap",
-                            "uk_replay_text_target_empty_surface_gap",
-                            "uk_replay_text_match_missing",
-                            "uk_replay_text_insert_anchor_preimage_gap",
-                            "uk_replay_text_monetary_amount_preimage_gap",
-                            "uk_replay_text_parenthetical_omission_preimage_gap",
-                            "uk_replay_text_match_article_phrase_surface_gap",
-                            "uk_replay_text_patch_preimage_drift",
-                            "uk_replay_text_patch_preimage_drift_multi_prior_same_target",
-                            "uk_replay_text_match_synthetic_selector_gap",
-                            "uk_replay_text_match_normalized_preimage_present_gap",
-                            "uk_replay_text_match_non_substantive_selector_gap",
-                            "uk_replay_text_match_multi_fragment_selector_gap",
-                            "uk_replay_text_match_citation_tail_surface_gap",
-                            "uk_replay_text_match_citation_connector_surface_gap",
-                        },
+                        "blocking": kind in _UK_REPLAY_BLOCKING_TEXT_MISS_KINDS,
                         "strict_disposition": (
-                            "block"
-                            if kind
-                            in {
-                                "uk_replay_broad_schedule_table_shape_gap",
-                                "uk_replay_broad_schedule_part_table_shape_gap",
-                                "uk_replay_table_shape_gap",
-                                "uk_replay_definition_entry_shape_gap",
-                                "uk_replay_heading_text_preimage_gap",
-                                "uk_replay_text_target_empty_surface_gap",
-                                "uk_replay_text_match_missing",
-                                "uk_replay_text_insert_anchor_preimage_gap",
-                                "uk_replay_text_monetary_amount_preimage_gap",
-                                "uk_replay_text_parenthetical_omission_preimage_gap",
-                                "uk_replay_text_match_article_phrase_surface_gap",
-                                "uk_replay_text_patch_preimage_drift",
-                                "uk_replay_text_patch_preimage_drift_multi_prior_same_target",
-                                "uk_replay_text_match_synthetic_selector_gap",
-                                "uk_replay_text_match_normalized_preimage_present_gap",
-                                "uk_replay_text_match_non_substantive_selector_gap",
-                                "uk_replay_text_match_multi_fragment_selector_gap",
-                                "uk_replay_text_match_citation_tail_surface_gap",
-                                "uk_replay_text_match_citation_connector_surface_gap",
-                            }
-                            else "record"
+                            "block" if kind in _UK_REPLAY_BLOCKING_TEXT_MISS_KINDS else "record"
                         ),
                         "quirks_disposition": "record",
                         "prior_same_target_text_patch_op_ids": tuple(
@@ -976,41 +981,7 @@ class UKReplayTextActionApplyMixin:
                         ),
                         "target_container": _addr_container(target),
                         "target_granularity": _addr_leaf_kind(target) or "",
-                        "source_shape": (
-                            "broad_schedule_without_table_or_provision_structure"
-                            if kind
-                            in {
-                                "uk_replay_broad_schedule_table_shape_gap",
-                                "uk_replay_broad_schedule_part_table_shape_gap",
-                            }
-                            else "target_subtree_without_text_surface"
-                            if kind == "uk_replay_text_target_empty_surface_gap"
-                            else "heading_preimage_absent"
-                            if kind == "uk_replay_heading_text_preimage_gap"
-                            else "respectively_all_occurrences_heading_preimage_absent"
-                            if kind == "uk_replay_heading_respectively_all_occurrences_absent_observed"
-                            else "definition_entry_already_absent"
-                            if kind == "uk_replay_definition_entry_already_absent_observed"
-                            else "insert_anchor_preimage_absent"
-                            if kind == "uk_replay_text_insert_anchor_preimage_gap"
-                            else "monetary_amount_preimage_absent"
-                            if kind == "uk_replay_text_monetary_amount_preimage_gap"
-                            else "parenthetical_omission_preimage_absent"
-                            if kind == "uk_replay_text_parenthetical_omission_preimage_gap"
-                            else "article_phrase_content_word_surface_gap"
-                            if kind == "uk_replay_text_match_article_phrase_surface_gap"
-                            else "normalized_preimage_present"
-                            if kind == "uk_replay_text_match_normalized_preimage_present_gap"
-                            else "replacement_normalized_present"
-                            if kind == "uk_replay_text_match_replacement_normalized_present"
-                            else "multi_fragment_text_selector"
-                            if kind == "uk_replay_text_match_multi_fragment_selector_gap"
-                            else "citation_tail_surface_gap"
-                            if kind == "uk_replay_text_match_citation_tail_surface_gap"
-                            else "citation_connector_surface_gap"
-                            if kind == "uk_replay_text_match_citation_connector_surface_gap"
-                            else ""
-                        ),
+                        "source_shape": _uk_replay_text_miss_source_shape(kind),
                         "target_text_preview": _replay_subtree_text_preview(node),
                         "target_text_normalized_preview": _normalized_replay_subtree_text(node)[:240],
                     },
