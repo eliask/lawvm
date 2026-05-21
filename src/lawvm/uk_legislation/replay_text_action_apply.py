@@ -437,6 +437,7 @@ class UKReplayTextActionApplyMixin:
                     replacement,
                     text_patch.selector.occurrence,
                     text_patch.selector.end_occurrence,
+                    recovery_rule_ids_out=recovery_rule_ids,
                 )
             else:
                 node, applied = self._apply_text_replace_on_subtree(
@@ -513,6 +514,14 @@ class UKReplayTextActionApplyMixin:
                     family = "text_rewrite_recovery"
                     strict_disposition = "record"
                     source_shape = "contextual_adjacent_word_selector"
+                elif recovery_rule_id == "uk_replay_after_anchor_to_end_text_rewrite_applied":
+                    message = (
+                        "UK replay applied an after-anchor tail text rewrite "
+                        "from a source-carried selector."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "after_anchor_to_end_selector"
                 elif recovery_rule_id == "uk_replay_definition_anchor_lexical_variant_recovered":
                     message = (
                         "UK replay applied definition-anchor text op after resolving "

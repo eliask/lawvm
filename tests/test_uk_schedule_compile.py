@@ -19037,12 +19037,17 @@ def test_replay_heading_facet_after_anchor_tail_replace_mutates_heading_only() -
             replacement="or Northern Ireland.",
         ),
     )
+    adjudications: list[CompileAdjudication] = []
 
-    result = replay_uk_ops(base, [op])
+    result = replay_uk_ops(base, [op], adjudications_out=adjudications)
 
     part = result.supplements[0].children[0]
     assert part.text == "Scotland or Northern Ireland."
     assert part.children[0].text == "Body text."
+    assert [row.kind for row in adjudications] == ["uk_replay_after_anchor_to_end_text_rewrite_applied"]
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "after_anchor_to_end_selector"
 
 
 def test_replay_heading_facet_patch_uses_direct_section_heading_carrier() -> None:
