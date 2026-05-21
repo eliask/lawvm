@@ -9499,13 +9499,21 @@ def test_compile_definition_scoped_all_occurrences_insert_and_replay() -> None:
             ),
         ),
     )
-    executor = UKReplayExecutor(statute)
+    adjudications: list[CompileAdjudication] = []
+    executor = UKReplayExecutor(statute, adjudications_out=adjudications)
     executor.apply_op(ops[0])
 
     assert executor.statute.body.children[0].text == (
         "“an action for removing from heritable property” means an action "
         "for decree, order of removing or a decree, order for removing;"
     )
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_in_definition_after_each_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "definition_after_each_anchor_selector"
 
 
 def test_compile_opening_words_substitution_preserves_children() -> None:
