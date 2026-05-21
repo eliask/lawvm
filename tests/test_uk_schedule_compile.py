@@ -1247,6 +1247,8 @@ def test_replay_source_anchored_section_order_is_observed_not_shape_gap() -> Non
         "uk_replay_source_anchored_order_observed"
     ]
     assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
 
 
 def test_split_metadata_provisions_carries_active_subsection_context() -> None:
@@ -19916,6 +19918,10 @@ def test_replay_crossheading_group_repeal_removes_single_child_heading_wrapper()
     assert [adjudication.kind for adjudication in adjudications] == [
         "uk_replay_crossheading_and_structural_repeal_resolved"
     ]
+    assert adjudications[0].detail["action"] == "repeal"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
 
 
 def test_replay_crossheading_group_repeal_blocks_shared_heading_wrapper() -> None:
@@ -19968,6 +19974,10 @@ def test_replay_crossheading_group_repeal_blocks_shared_heading_wrapper() -> Non
         "uk_replay_crossheading_and_structural_repeal_unresolved"
     ]
     assert adjudications[0].detail["reason_code"] == "heading_wrapper_does_not_solely_own_target"
+    assert adjudications[0].detail["action"] == "repeal"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
 
 
 def test_oracle_grounding_does_not_create_public_schedule_entry_eids() -> None:

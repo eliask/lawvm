@@ -14,7 +14,10 @@ from lawvm.core.ir import IRNode, LegalOperation
 from lawvm.replay_adjudication import CompileAdjudication
 from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
-from lawvm.uk_legislation.replay_records import _append_uk_replay_adjudication
+from lawvm.uk_legislation.replay_records import (
+    _append_uk_replay_adjudication,
+    uk_replay_action_target_detail,
+)
 from lawvm.uk_legislation.replay_target_gaps import (
     uk_chapter_order_shape_gap,
     uk_item_order_shape_gap,
@@ -125,14 +128,12 @@ class UKReplayInvariantDiagnosticsMixin:
                         "generic label-order invariant would sort the inserted label elsewhere."
                     ),
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(op.target),
-                        "violation": scoped_violation,
-                        "blocking": False,
-                        "strict_disposition": "record",
-                        "quirks_disposition": "record",
-                    },
+                    detail=uk_replay_action_target_detail(
+                        op,
+                        op.target,
+                        blocking=False,
+                        violation=scoped_violation,
+                    ),
                 )
             elif uk_section_order_shape_gap(op, scoped_violation):
                 _append_uk_replay_adjudication(

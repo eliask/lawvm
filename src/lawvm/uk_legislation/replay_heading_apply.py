@@ -5,13 +5,17 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress, LegalOperation
-from lawvm.uk_legislation.addressing import _action_name, _uk_kind_value
+from lawvm.uk_legislation.addressing import _uk_kind_value
 from lawvm.uk_legislation.heading_facets import (
     _UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_RESOLVED_RULE_ID,
     _UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_UNRESOLVED_RULE_ID,
 )
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
-from lawvm.uk_legislation.replay_records import _append_uk_replay_adjudication
+from lawvm.uk_legislation.replay_records import (
+    _append_uk_replay_adjudication,
+    uk_replay_action_target_detail,
+    uk_replay_blocking_action_target_detail,
+)
 
 
 class UKReplayHeadingApplyMixin:
@@ -65,12 +69,17 @@ class UKReplayHeadingApplyMixin:
                             "the target and the wrapper owned only that target."
                         ),
                         op=op,
-                        detail={
-                            "target": str(target),
-                            "removed_parent_kind": parent_kind,
-                            "removed_heading_preview": " ".join((parent.text or "").split())[:200],
-                            "selector": dict(selector),
-                        },
+                        detail=uk_replay_action_target_detail(
+                            op,
+                            target,
+                            blocking=False,
+                            family="heading_facet_replay",
+                            **{
+                                "removed_parent_kind": parent_kind,
+                                "removed_heading_preview": " ".join((parent.text or "").split())[:200],
+                                "selector": dict(selector),
+                            },
+                        ),
                     )
                     return True
                 reason_code = "heading_wrapper_remove_failed"
@@ -83,12 +92,11 @@ class UKReplayHeadingApplyMixin:
                 "did not prove a unique heading wrapper solely owned by the target."
             ),
             op=op,
-            detail={
-                "action": _action_name(op.action),
-                "target": str(target),
-                "reason_code": reason_code,
-                **detail,
-            },
+            detail=uk_replay_blocking_action_target_detail(
+                op,
+                target,
+                family="heading_facet_replay",
+                **{"reason_code": reason_code, **detail},
+            ),
         )
         return False
-
