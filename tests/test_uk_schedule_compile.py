@@ -9676,10 +9676,19 @@ def test_compile_after_child_insert_appends_to_named_child() -> None:
         supplements=(),
     )
 
-    replayed = replay_uk_ops(base, ops)
+    adjudications: list[CompileAdjudication] = []
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
     children = replayed.body.children[0].children[0].children[0].children
     assert children[0].text == "first condition or"
     assert children[1].text == "second condition"
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_source_carried_after_child_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["text_match"] == "TEXT_AFTER_CHILD_subparagraph_i"
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "source_carried_after_child_selector"
 
 
 def test_compile_words_inserted_insert_at_end_to_text_replace() -> None:
