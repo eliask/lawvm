@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import re
-from typing import Optional
+import xml.etree.ElementTree as ET
+from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.addressing import _addr_container, _addr_field, _schedule_target_levels
+from lawvm.uk_legislation.effects import UKEffectRecord
+from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_rejection
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
@@ -132,3 +135,47 @@ def _amendment_program_inserted_parent_structural_insert(
         "inserted_label": source_label(match.group("inserted_label")),
         "inserted_text_preview": " ".join(str(match.group("inserted_text") or "").split())[:240],
     }
+
+
+def reject_amendment_program_inserted_parent_structural_insert(
+    *,
+    effect: UKEffectRecord,
+    curr_action: str,
+    target: LegalAddress,
+    target_ref: str,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> bool:
+    detail = (
+        _amendment_program_inserted_parent_structural_insert(
+            extracted_text=extracted_text,
+            target=target,
+        )
+        if extracted_text and curr_action == "insert"
+        else None
+    )
+    if detail is None:
+        return False
+
+    _append_uk_effect_lowering_rejection(
+        lowering_rejections_out,
+        rule_id="uk_effect_amendment_program_inserted_parent_structural_insert_rejected",
+        family="amendment_program_lowering",
+        reason_code="insert_targets_prior_amendment_inserted_parent",
+        reason=(
+            "UK source text inserts a child into a paragraph inserted by "
+            "a prior amendment instruction; this needs an amendment-"
+            "program compiler and must not be replayed against an "
+            "unrelated live base-law parent."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            **detail,
+        },
+    )
+    return True
