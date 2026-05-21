@@ -6,6 +6,8 @@ from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.addressing import _addr_leaf_kind
+from lawvm.uk_legislation.effects import UKEffectRecord
+from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
 from lawvm.uk_legislation.provision_extractor import _instruction_text_before_amendment_container
 from lawvm.uk_legislation.source_context import _source_ancestor_chain
 from lawvm.uk_legislation.source_fragment_context import _source_lead_text_before_subordinate_rows
@@ -15,6 +17,49 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID = (
     "uk_effect_source_carried_table_entry_paragraph_substitution_text_patch"
 )
+
+
+def append_source_carried_table_entry_paragraph_observation(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    target_ref: str,
+    fragment_rule_ids: tuple[str, ...],
+    primary: dict[str, Any],
+    op_text_match: Optional[str],
+    op_text_replacement: Optional[str],
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> None:
+    if UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID not in fragment_rule_ids:
+        return
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID,
+        family="source_table_elaboration",
+        reason_code="source_carried_table_entry_paragraph_substitution_lowered",
+        reason=(
+            "UK child-row source names a paragraph or subparagraph "
+            "inside a table entry, while the parent source names the "
+            "entry; lowering combines those source-local facts into "
+            "a bounded table-cell text patch instead of inventing "
+            "schedule paragraph structure."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            "text_match": op_text_match,
+            "replacement": op_text_replacement,
+            "source_parent_id": str(primary.get("source_parent_id") or ""),
+            "source_entry_label": str(primary.get("source_entry_label") or ""),
+            "source_paragraph_label": str(primary.get("source_paragraph_label") or ""),
+            "source_subparagraph_label": str(primary.get("source_subparagraph_label") or ""),
+        },
+    )
 
 SOURCE_TABLE_CELL_PARAGRAPH_SENTINEL_RE = re.compile(
     r"^TEXT_TABLE_CELL_PARAGRAPH_(?P<paragraph>[0-9]+)"
