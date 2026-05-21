@@ -103,8 +103,7 @@ from lawvm.uk_legislation.addressing import (
     _order_schedule_materialization_ops,
 )
 from lawvm.uk_legislation.authority_filter import (
-    _partition_uk_ops_by_authority_mode,
-    _uk_authority_filter_diagnostic,
+    _apply_uk_authority_mode,
 )
 from lawvm.uk_legislation.compiled_effect_facts import uk_compiled_effect_facts
 from lawvm.uk_legislation.heading_facets import (
@@ -1337,48 +1336,31 @@ class UKReplayPipeline:
                     replay_applicable=replay_applicable,
                     applicability_mode=applicability_mode,
                 )
-                if authority_mode == "source_text_only" and authority_rejections_out is not None:
-                    _, rejected_ops, rejected_reason_counts = _partition_uk_ops_by_authority_mode(
-                        compiled,
-                        authority_mode,
+                if authority_mode == "source_text_only":
+                    _apply_uk_authority_mode(
+                        ops=compiled,
+                        effect=e,
+                        authority_mode=authority_mode,
+                        replay_applicable=replay_applicable,
+                        structural_for_replay=structural_for_replay,
+                        diagnostics_out=authority_rejections_out,
+                        rule_id="uk_effect_authority_filter_non_applicable_observed",
+                        blocking=False,
+                        reason=(
+                            "UK source-text-only authority mode observed "
+                            "non-source-text operations on a non-replay-applicable effect"
+                        ),
                     )
-                    if rejected_ops:
-                        authority_rejections_out.append(
-                            _uk_authority_filter_diagnostic(
-                                effect=e,
-                                authority_mode=authority_mode,
-                                compiled_op_count=len(compiled),
-                                rejected_ops=rejected_ops,
-                                rejected_reason_counts=rejected_reason_counts,
-                                replay_applicable=replay_applicable,
-                                structural_for_replay=structural_for_replay,
-                                rule_id="uk_effect_authority_filter_non_applicable_observed",
-                                blocking=False,
-                                reason=(
-                                    "UK source-text-only authority mode observed "
-                                    "non-source-text operations on a non-replay-applicable effect"
-                                ),
-                            )
-                        )
                 continue
             if authority_mode == "source_text_only":
-                kept_ops, rejected_ops, rejected_reason_counts = _partition_uk_ops_by_authority_mode(
-                    compiled,
-                    authority_mode,
+                compiled = _apply_uk_authority_mode(
+                    ops=compiled,
+                    effect=e,
+                    authority_mode=authority_mode,
+                    replay_applicable=replay_applicable,
+                    structural_for_replay=structural_for_replay,
+                    diagnostics_out=authority_rejections_out,
                 )
-                if rejected_ops and authority_rejections_out is not None:
-                    authority_rejections_out.append(
-                        _uk_authority_filter_diagnostic(
-                            effect=e,
-                            authority_mode=authority_mode,
-                            compiled_op_count=len(compiled),
-                            rejected_ops=rejected_ops,
-                            rejected_reason_counts=rejected_reason_counts,
-                            replay_applicable=replay_applicable,
-                            structural_for_replay=structural_for_replay,
-                        )
-                    )
-                compiled = kept_ops
                 if not compiled:
                     continue
             if should_replay_compiled:
