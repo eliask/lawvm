@@ -143,6 +143,17 @@ def _rewrite_definition_entry_text(
     return " ".join(new_text.split()).strip(), True, tuple(recovery_rule_ids)
 
 
+def _remove_trailing_context_word(text: str, needle: str) -> tuple[str, bool]:
+    pattern = re.compile(
+        rf"(?P<prefix>.*?)(?P<sep>\s*,?\s*){re.escape(needle)}(?P<suffix>\s*[,;:]?\s*)$",
+        re.I | re.S,
+    )
+    match = pattern.fullmatch(text)
+    if not match:
+        return text, False
+    return (match.group("prefix").rstrip() + match.group("suffix").rstrip()).rstrip(), True
+
+
 class UKReplayTextApplyMixin:
     def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
         self,
@@ -1806,18 +1817,7 @@ class UKReplayTextApplyMixin:
             )
             if target_contextual_match is not None:
                 word = target_contextual_match.group(1)
-
-                def _remove_trailing_target_word(text: str, needle: str) -> tuple[str, bool]:
-                    pattern = re.compile(
-                        rf"(?P<prefix>.*?)(?P<sep>\s*,?\s*){re.escape(needle)}(?P<suffix>\s*[,;:]?\s*)$",
-                        re.I | re.S,
-                    )
-                    m = pattern.fullmatch(text)
-                    if not m:
-                        return text, False
-                    return (m.group("prefix").rstrip() + m.group("suffix").rstrip()).rstrip(), True
-
-                new_text, changed = _remove_trailing_target_word(node.text or "", word)
+                new_text, changed = _remove_trailing_context_word(node.text or "", word)
                 if not changed:
                     return node, False
                 rebuilt = dc_replace(node, text=new_text)
@@ -1849,16 +1849,6 @@ class UKReplayTextApplyMixin:
                     return
                 for i, child in enumerate(n.children):
                     _find_anchor(child, path + (i,))
-
-            def _remove_trailing_word(text: str, needle: str) -> tuple[str, bool]:
-                pattern = re.compile(
-                    rf"(?P<prefix>.*?)(?P<sep>\s*,?\s*){re.escape(needle)}(?P<suffix>\s*[,;:]?\s*)$",
-                    re.I | re.S,
-                )
-                m = pattern.fullmatch(text)
-                if not m:
-                    return text, False
-                return (m.group("prefix").rstrip() + m.group("suffix").rstrip()).rstrip(), True
 
             _find_anchor(node)
             if anchor_path is None:
@@ -1894,7 +1884,7 @@ class UKReplayTextApplyMixin:
                     return node, False
                 target_path = anchor_path[:-1] + (sibling_idx,)
             target_node = _node_at_path(node, target_path)
-            new_text, changed = _remove_trailing_word(target_node.text or "", word)
+            new_text, changed = _remove_trailing_context_word(target_node.text or "", word)
             if not changed:
                 return node, False
             if recovered_anchor_kind and recovery_rule_ids_out is not None:
