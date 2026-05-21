@@ -35,6 +35,22 @@ def test_parse_fragment_substitution_handles_after_the_word_there_is_inserted() 
     ]
 
 
+def test_parse_fragment_substitution_handles_secondly_occurring_insert() -> None:
+    subs = parse_fragment_substitution(
+        'in sub-paragraph (iv), after “board”, where secondly occurring, '
+        'there is inserted “ , a Transport Partnership ” .'
+    )
+
+    assert subs == [
+        {
+            "original": "board",
+            "replacement": "board , a Transport Partnership ",
+            "occurrence": "2",
+            "rule_id": "uk_effect_after_quoted_anchor_where_ordinal_insert_text_patch",
+        }
+    ]
+
+
 def test_parse_fragment_substitution_handles_bare_quoted_anchor_insert() -> None:
     subs = parse_fragment_substitution(
         "i \u201c18,\u201d there shall be inserted \u201c 18A, 18B, 18C, \u201d ; and"

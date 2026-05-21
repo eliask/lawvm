@@ -7,16 +7,26 @@ US = "\x1f"
 
 _ORDINAL_OCCURRENCES = {
     "first": "1",
+    "firstly": "1",
     "1st": "1",
     "second": "2",
+    "secondly": "2",
     "2nd": "2",
     "third": "3",
+    "thirdly": "3",
     "3rd": "3",
     "fourth": "4",
+    "fourthly": "4",
     "4th": "4",
     "fifth": "5",
+    "fifthly": "5",
     "5th": "5",
 }
+
+_ORDINAL_OCCURRENCE_WORDS = (
+    r"first|firstly|1st|second|secondly|2nd|third|thirdly|3rd|"
+    r"fourth|fourthly|4th|fifth|fifthly|5th"
+)
 
 
 def _normalize_quotes(text: str) -> str:
@@ -828,9 +838,9 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
 
     matches_after_where_ordinal_nested_quote_insert = re.finditer(
         r"after (?:(?:the )?words? )?[“\"'‘](?P<original>.*?)[”\"'’],?\s+"
-        r"where\s+(?:it|they|those words?)\s+"
-        r"(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
-        r"(?:occurs?|appear)s?,?\s+(?:there\s+(?:is|are)\s+inserted|insert)\s+"
+        rf"where\s+(?:(?:it|they|those words?)\s+)?"
+        rf"(?P<ordinal>{_ORDINAL_OCCURRENCE_WORDS})\s+"
+        r"(?:occurs?|occurring|appear)s?,?\s+(?:there\s+(?:is|are)\s+inserted|insert)\s+"
         r"[“\"'‘](?P<inserted>.+)[”\"'’]\s*(?:[,.;]|$)",
         text,
         re.I,
@@ -857,9 +867,9 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
 
     matches_after_where_ordinal_insert = re.finditer(
         r"after (?:(?:the )?words? )?[“\"'‘](.*?)[”\"'’],?\s+"
-        r"where\s+(?:it|they|those words?)\s+"
-        r"(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
-        r"(?:occurs?|appear)s?,?\s+(?:there\s+(?:is|are)\s+inserted|insert)\s+"
+        rf"where\s+(?:(?:it|they|those words?)\s+)?"
+        rf"({_ORDINAL_OCCURRENCE_WORDS})\s+"
+        r"(?:occurs?|occurring|appear)s?,?\s+(?:there\s+(?:is|are)\s+inserted|insert)\s+"
         r"[“\"'‘](.*?)[”\"'’]",
         text,
         re.I,
