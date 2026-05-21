@@ -499,6 +499,10 @@ def try_lower_repeal_table_effect(
                 "target_ref": t_str,
                 "target": str(target),
                 "match_count": repeal_table_structural_repeal.match_count,
+                "table_index": repeal_table_structural_repeal.table_index,
+                "row_text": repeal_table_structural_repeal.row_text,
+                "enactment_cell": repeal_table_structural_repeal.enactment_cell,
+                "extent_cell": repeal_table_structural_repeal.extent_cell,
             },
         )
         return UKTableBatchLoweringResult(handled=True)

@@ -2164,9 +2164,16 @@ Current block-substitution context invariant:
   structural clause starts, so a mixed cell such as `Section 92(3) and (6). In
   section 93(1) and (3), the words "...". Part 6.` can lower the `Part 6`
   repeal without being swallowed into the preceding word-level clause.
+  A single extent clause that combines a structural target and a word-level
+  repeal, such as `Section 69(3)(b) and the word "and" immediately preceding
+  it.`, remains blocked under
+  `mixed_structural_and_word_repeal_requires_split` until lowering can emit both
+  the exact structural repeal and the bounded word deletion without dropping
+  either source lane.
   Current witnesses: `asp/2000/6` / `asp/2006/8` schedule repeal of sections
   `26` to `31`; `asp/2001/8` / `asp/2010/8 sch. 14 para. 37` repeal of
-  Parts `1` and `2`; `asp/2001/10` / `asp/2006/1 Sch. 7` repeal of Part `6`.
+  Parts `1` and `2`; `asp/2001/10` / `asp/2006/1 Sch. 7` repeal of Part `6`;
+  blocked mixed-lane witness `asp/2001/2` / `asp/2008/1 Sch. 2`.
 - bounded repeal-table definition-entry rows are owned separately by
   `uk_effect_repeal_table_definition_entry_text_repeal`: after the same unique
   affected-Act row and affected-provision clause matching, an extent clause of

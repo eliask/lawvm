@@ -448,6 +448,7 @@ def _uk_table_driven_repeal_table_structural_repeal(
         return _UKRepealTableStructuralRepeal(recognized=False)
 
     matches: list[tuple[int, str, str, str]] = []
+    mixed_structural_word_matches: list[tuple[int, str, str, str]] = []
     tables = []
     seen_table_ids: set[int] = set()
     for root in search_roots:
@@ -468,13 +469,27 @@ def _uk_table_driven_repeal_table_structural_repeal(
             if not _uk_repeal_table_enactment_matches_effect(enactment_cell, effect):
                 continue
             for extent_clause in _uk_repeal_table_extent_clauses(extent_cell):
-                if not _uk_repeal_table_clause_is_structural_repeal(extent_clause):
-                    continue
                 if not _uk_table_cell_mentions_target(
                     extent_clause,
                     target=target,
                     affected_year=str(effect.affected_year or ""),
                 ):
+                    continue
+                if not _uk_repeal_table_clause_is_structural_repeal(extent_clause):
+                    norm_clause = " ".join(extent_clause.split()).lower()
+                    if re.search(r"\b(?:word|words)\b", norm_clause) and re.search(
+                        r"\b(?:section|sections|schedule|schedules|paragraph|paragraphs|"
+                        r"subsection|subsections|sub-?paragraph|sub-?paragraphs)\b",
+                        norm_clause,
+                    ):
+                        mixed_structural_word_matches.append(
+                            (
+                                table_index,
+                                " | ".join((enactment_cell, extent_clause)),
+                                enactment_cell,
+                                extent_clause,
+                            )
+                        )
                     continue
                 matches.append(
                     (
@@ -486,6 +501,17 @@ def _uk_table_driven_repeal_table_structural_repeal(
                 )
 
     if len(matches) != 1:
+        if not matches and len(mixed_structural_word_matches) == 1:
+            table_index, row_text, enactment_cell, extent_cell = mixed_structural_word_matches[0]
+            return _UKRepealTableStructuralRepeal(
+                recognized=True,
+                reason_code="mixed_structural_and_word_repeal_requires_split",
+                match_count=0,
+                table_index=table_index,
+                row_text=row_text,
+                enactment_cell=enactment_cell,
+                extent_cell=extent_cell,
+            )
         return _UKRepealTableStructuralRepeal(
             recognized=True,
             reason_code="no_unique_matching_repeal_table_structural_row",
