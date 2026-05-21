@@ -4070,3 +4070,28 @@ Current bench replay-regime invariant:
   EIDs with no oracle-only residuals after comparison normalization. The
   commencement replay/oracle lens is 100%, so the low full-score row is a
   current projection surface, not a replay mutation gap.
+
+## UK Source-Backed Renumber Residual Claims
+
+- A current oracle can retain the pre-renumber EID while the effect feed and
+  affecting source both prove an applied same-parent renumber. This is not a
+  replay-bug proof by itself, because the comparison still needs source/oracle
+  adjudication, but it should not be hidden under generic
+  `uk_mixed_residual_eids`.
+- UK bench residual-claim classification may refine such rows to
+  `uk_source_backed_renumber_oracle_branch_mixed_residual_eids` when:
+  - the comparison is core;
+  - replay/oracle residual sets contain an oracle-only EID matching the
+    lowering observation's `source_target`;
+  - the lowering observation is one of
+    `uk_effect_metadata_sibling_renumber_lowered` or
+    `uk_effect_source_text_renumber_destination_corrected`.
+- This classification remains `UNRESOLVED`; it is an evidence-routing label
+  for applied source-backed lineage/oracle-incorporation drift, not permission
+  to alter replay, suppress residual EIDs, or prove an official consolidation
+  error automatically.
+- Witness: `asc/2024/6` current source-first replay applies
+  `asc/2025/3 Sch. 1 para. 62`, whose source says to omit `s. 16(8)` and
+  renumber `s. 16(9)` as `s. 16(8)`. The current oracle still exposes
+  `section-16-9`, so the residual claim is refined to the source-backed
+  renumber oracle-branch family while staying unresolved.

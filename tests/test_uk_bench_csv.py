@@ -21,6 +21,46 @@ def test_uk_bench_commencement_score_requires_commenced_eid_evidence() -> None:
     assert uk_bench._score_commenced_eids({"section-1"}, {"section-1", "section-2"}) == 0.5
 
 
+def test_uk_bench_residual_claim_classifies_source_backed_renumber_oracle_branch() -> None:
+    tier, kind, section_claim_count = uk_bench._classify_uk_residual_claim_for_bench(
+        comparison_class="commensurable",
+        only_in_replayed={"schedule-1-paragraph-14"},
+        only_in_oracle={"section-16-9"},
+        replay_adjudication_kind_counts={},
+        lowering_observations=[
+            {
+                "rule_id": "uk_effect_metadata_sibling_renumber_lowered",
+                "source_target": "section:16/subsection:9",
+                "destination": "section:16/subsection:8",
+            }
+        ],
+    )
+
+    assert tier == "UNRESOLVED"
+    assert kind == "uk_source_backed_renumber_oracle_branch_mixed_residual_eids"
+    assert section_claim_count == 0
+
+
+def test_uk_bench_residual_claim_ignores_unrelated_source_backed_renumber() -> None:
+    tier, kind, section_claim_count = uk_bench._classify_uk_residual_claim_for_bench(
+        comparison_class="commensurable",
+        only_in_replayed={"schedule-1-paragraph-14"},
+        only_in_oracle={"section-16-9"},
+        replay_adjudication_kind_counts={},
+        lowering_observations=[
+            {
+                "rule_id": "uk_effect_metadata_sibling_renumber_lowered",
+                "source_target": "section:20/subsection:9",
+                "destination": "section:20/subsection:8",
+            }
+        ],
+    )
+
+    assert tier == "UNRESOLVED"
+    assert kind == "uk_mixed_residual_eids"
+    assert section_claim_count == 0
+
+
 def test_uk_bench_commencement_oracle_uses_same_temporal_lens() -> None:
     assert uk_bench._commenced_oracle_eids(
         {"section-1", "section-2", "section-3"},
