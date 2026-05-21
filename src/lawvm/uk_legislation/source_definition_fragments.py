@@ -16,6 +16,7 @@ from lawvm.uk_legislation.source_context import (
 )
 from lawvm.uk_legislation.source_definition_context import (
     _source_definition_child_context_from_ancestors,
+    _source_definition_child_refined_target,
     _source_definition_term_from_ancestors,
     _source_definition_term_from_local_ancestor_context,
 )
@@ -29,6 +30,7 @@ from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag, _text
 
 @dataclass(frozen=True)
 class UKDefinitionTextPatchLowering:
+    target: LegalAddress
     curr_action: str
     content_ir: Optional[dict[str, Any]]
     fragment_subs: Optional[list[dict[str, str]]]
@@ -265,6 +267,7 @@ def lower_source_carried_definition_child_text_omission(
     )
     if detail is None:
         return UKDefinitionTextPatchLowering(
+            target=target,
             curr_action=curr_action,
             content_ir=content_ir,
             fragment_subs=fragment_subs,
@@ -300,7 +303,110 @@ def lower_source_carried_definition_child_text_omission(
         },
     )
     return UKDefinitionTextPatchLowering(
+        target=target,
         curr_action="text_repeal" if replacement == "" else "text_replace",
+        content_ir=None,
+        fragment_subs=[detail],
+        op_text_match=text_match,
+        op_text_replacement=replacement,
+    )
+
+
+def lower_source_carried_definition_child_at_end_insert(
+    *,
+    effect: UKEffectRecord,
+    curr_action: str,
+    content_ir: Optional[dict[str, Any]],
+    fragment_subs: Optional[list[dict[str, str]]],
+    op_text_match: Optional[str],
+    op_text_replacement: Optional[str],
+    target: LegalAddress,
+    target_ref: str,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKDefinitionTextPatchLowering:
+    detail = (
+        _fragment_substitution_source_carried_definition_child_at_end_insert(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+        )
+        if extracted_text and curr_action == "insert"
+        else None
+    )
+    if detail is None:
+        return UKDefinitionTextPatchLowering(
+            target=target,
+            curr_action=curr_action,
+            content_ir=content_ir,
+            fragment_subs=fragment_subs,
+            op_text_match=op_text_match,
+            op_text_replacement=op_text_replacement,
+        )
+
+    text_match = detail["original"]
+    replacement = detail["replacement"]
+    lowered_target = target
+    refined_target = _source_definition_child_refined_target(
+        target=target,
+        fragment=detail,
+    )
+    if refined_target is not None:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_source_parent_definition_child_target_refined",
+            family="source_context_elaboration",
+            reason_code="source_parent_definition_child_refines_direct_section_paragraph",
+            reason=(
+                "UK affected-provision metadata names a direct section paragraph, "
+                "while the source parent explicitly says that paragraph is inside "
+                "a named definition entry; lowering targets the containing section "
+                "and preserves the child paragraph as a scoped text selector."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "original_target": str(target),
+                "refined_target": str(refined_target),
+                "source_definition_term": str(detail.get("source_definition_term") or ""),
+                "source_child_label": str(detail.get("source_child_label") or ""),
+            },
+        )
+        lowered_target = refined_target
+
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id="uk_effect_source_carried_definition_child_at_end_insert_text_patch",
+        family="source_context_elaboration",
+        reason_code="definition_child_at_end_insert_resolved_from_parent_source",
+        reason=(
+            "UK source payload contains only the inserted definition-child tail, "
+            "while the parent source instruction names the definition term and "
+            "paragraph; lowering combines those source-local facts into a bounded "
+            "definition-child text append instead of inserting an unreachable "
+            "address-only subparagraph."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(lowered_target),
+            "source_parent_id": str(detail.get("source_parent_id") or ""),
+            "source_definition_term": str(detail.get("source_definition_term") or ""),
+            "source_child_label": str(detail.get("source_child_label") or ""),
+            "source_child_sublabel": str(detail.get("source_child_sublabel") or ""),
+            "text_match": text_match,
+            "replacement": replacement,
+        },
+    )
+    return UKDefinitionTextPatchLowering(
+        target=lowered_target,
+        curr_action="text_replace",
         content_ir=None,
         fragment_subs=[detail],
         op_text_match=text_match,
