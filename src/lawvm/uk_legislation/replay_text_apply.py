@@ -199,6 +199,75 @@ def _definition_child_insert_payload(
     return anchor_suffix, items
 
 
+def _insert_after_definition_text(
+    text: str,
+    *,
+    term: str,
+    replacement: str,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[str, bool, tuple[str, ...]]:
+    definition_start: re.Match[str] | None = None
+    recovered_anchor = False
+    recovered_parenthetical_translation = False
+    recovered_qualifier_phrase = False
+    recovered_conjoined_term = False
+    for candidate_term in (term, *_uk_definition_term_lexical_variants(term)):
+        term_pattern = _definition_term_pattern(
+            candidate_term,
+            allow_punctuation_spacing=allow_punctuation_spacing,
+            allow_word_punctuation_elision=allow_word_punctuation_elision,
+        )
+        definition_start_pattern = re.compile(
+            rf"""
+            (?P<prefix>(?:^|[;\.,\u2014\u2013-]\s*|(?:\band\b|\bor\b)\s+))
+            [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+            (?P<parenthetical_translation>(?:\s*\([^;]*?\))*)
+            (?P<qualifier>\s*,\s*[^;]{{1,240}}?\s*,)?
+            \s+
+            (?:{_UK_DEFINITION_PREDICATE_PATTERN})\b
+            """,
+            flags=re.I | re.S | re.X,
+        )
+        definition_starts = list(definition_start_pattern.finditer(text))
+        if len(definition_starts) != 1:
+            continue
+        definition_start = definition_starts[0]
+        recovered_anchor = candidate_term != term
+        recovered_parenthetical_translation = bool(
+            str(definition_start.group("parenthetical_translation") or "").strip()
+        )
+        recovered_qualifier_phrase = bool(str(definition_start.group("qualifier") or "").strip())
+        recovered_conjoined_term = bool(
+            re.fullmatch(
+                r"\s*(?:and|or)\s+",
+                str(definition_start.group("prefix") or ""),
+                flags=re.I,
+            )
+        )
+        break
+    if definition_start is None:
+        return text, False, ()
+    next_definition = _UK_NEXT_DEFINITION_PATTERN.search(text, definition_start.end())
+    if next_definition is not None:
+        insert_at = next_definition.start() + 1
+    else:
+        insert_at = len(text)
+    joiner = "" if replacement.startswith((" ", ",", ".", ";", ":", ")")) else " "
+    new_text = f"{text[:insert_at]}{joiner}{replacement}{text[insert_at:]}"
+    recovery_rule_ids = []
+    if recovered_anchor:
+        recovery_rule_ids.append("uk_replay_definition_anchor_lexical_variant_recovered")
+    if recovered_parenthetical_translation:
+        recovery_rule_ids.append("uk_replay_definition_anchor_parenthetical_translation_normalized")
+    if recovered_qualifier_phrase:
+        recovery_rule_ids.append("uk_replay_definition_anchor_qualifier_phrase_normalized")
+    if recovered_conjoined_term:
+        recovery_rule_ids.append("uk_replay_definition_anchor_conjoined_term_normalized")
+    recovery_rule_ids.append("uk_replay_after_definition_text_insert_applied")
+    return " ".join(new_text.split()).strip(), True, tuple(recovery_rule_ids)
+
+
 def _node_at_path(n: UKMutableNode, path: tuple[int, ...]) -> UKMutableNode:
     current = n
     for index in path:
@@ -1646,106 +1715,22 @@ class UKReplayTextApplyMixin:
             if not term:
                 return node, False
 
-            def _insert_after_definition_in_text(text: str) -> tuple[str, bool]:
-                definition_start: Optional[re.Match[str]] = None
-                recovered_anchor = False
-                recovered_parenthetical_translation = False
-                recovered_qualifier_phrase = False
-                recovered_conjoined_term = False
-                for candidate_term in (term, *_uk_definition_term_lexical_variants(term)):
-                    term_pattern = _text_patch_pattern(
-                        candidate_term,
-                        allow_punctuation_spacing=allow_punctuation_spacing,
-                        allow_word_punctuation_elision=allow_word_punctuation_elision,
-                    )
-                    definition_start_pattern = re.compile(
-                        rf"""
-                        (?P<prefix>(?:^|[;\.,\u2014\u2013-]\s*|(?:\band\b|\bor\b)\s+))
-                        [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
-                        (?P<parenthetical_translation>(?:\s*\([^;]*?\))*)
-                        (?P<qualifier>\s*,\s*[^;]{{1,240}}?\s*,)?
-                        \s+
-                        (?:
-                            means
-                            |has\s+the\s+same\s+meaning\s+as
-                            |has\s+the\s+meaning
-                            |is\s+to\s+be\s+construed
-                            |shall\s+be\s+construed
-                            |includes
-                        )\b
-                        """,
-                        flags=re.I | re.S | re.X,
-                    )
-                    definition_starts = list(definition_start_pattern.finditer(text))
-                    if len(definition_starts) != 1:
-                        continue
-                    definition_start = definition_starts[0]
-                    recovered_anchor = candidate_term != term
-                    recovered_parenthetical_translation = bool(
-                        str(definition_start.group("parenthetical_translation") or "").strip()
-                    )
-                    recovered_qualifier_phrase = bool(
-                        str(definition_start.group("qualifier") or "").strip()
-                    )
-                    recovered_conjoined_term = bool(
-                        re.fullmatch(
-                            r"\s*(?:and|or)\s+",
-                            str(definition_start.group("prefix") or ""),
-                            flags=re.I,
-                        )
-                    )
-                    break
-                if definition_start is None:
-                    return text, False
-                next_definition_pattern = re.compile(
-                    r"""
-                    [;\.,]\s*
-                    [“"'\u2018][^”"'\u2019;]{1,160}[”"'\u2019]
-                    (?:\s*\([^;]*?\))*
-                    \s+
-                    (?:
-                        means
-                        |has\s+the\s+same\s+meaning\s+as
-                        |has\s+the\s+meaning
-                        |is\s+to\s+be\s+construed
-                        |shall\s+be\s+construed
-                        |includes
-                    )\b
-                    """,
-                    flags=re.I | re.S | re.X,
-                )
-                next_definition = next_definition_pattern.search(text, definition_start.end())
-                if next_definition is not None:
-                    insert_at = next_definition.start() + 1
-                else:
-                    insert_at = len(text)
-                joiner = "" if replacement.startswith((" ", ",", ".", ";", ":", ")")) else " "
-                new_text = f"{text[:insert_at]}{joiner}{replacement}{text[insert_at:]}"
-                if recovered_anchor and recovery_rule_ids_out is not None:
-                    recovery_rule_ids_out.append(
-                        "uk_replay_definition_anchor_lexical_variant_recovered"
-                    )
-                if recovered_parenthetical_translation and recovery_rule_ids_out is not None:
-                    recovery_rule_ids_out.append(
-                        "uk_replay_definition_anchor_parenthetical_translation_normalized"
-                    )
-                if recovered_qualifier_phrase and recovery_rule_ids_out is not None:
-                    recovery_rule_ids_out.append(
-                        "uk_replay_definition_anchor_qualifier_phrase_normalized"
-                    )
-                if recovered_conjoined_term and recovery_rule_ids_out is not None:
-                    recovery_rule_ids_out.append(
-                        "uk_replay_definition_anchor_conjoined_term_normalized"
-                    )
-                if recovery_rule_ids_out is not None:
-                    recovery_rule_ids_out.append("uk_replay_after_definition_text_insert_applied")
-                return " ".join(new_text.split()).strip(), True
-
-            return self._apply_unique_text_node_rewrite(
+            rebuilt, applied, recovery_rule_ids = self._apply_unique_text_node_rewrite_with_metadata(
                 node,
                 text_nodes,
-                _insert_after_definition_in_text,
+                lambda text: _insert_after_definition_text(
+                    text,
+                    term=term,
+                    replacement=replacement,
+                    allow_punctuation_spacing=allow_punctuation_spacing,
+                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+                ),
             )
+            if not applied:
+                return node, False
+            if recovery_rule_ids and recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.extend(recovery_rule_ids)
+            return rebuilt, True
 
         if match.startswith("TEXT_DEFINITION_ENTRY_"):
             term = match[len("TEXT_DEFINITION_ENTRY_") :].strip()

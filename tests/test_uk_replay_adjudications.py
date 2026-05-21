@@ -14,6 +14,7 @@ from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
 from lawvm.uk_legislation.replay_text_apply import (
     _definition_child_insert_payload,
+    _insert_after_definition_text,
     _remove_trailing_context_word,
     _rewrite_definition_entry_text,
 )
@@ -147,6 +148,47 @@ def test_definition_child_insert_payload_preserves_ordered_list_metadata() -> No
     assert {child.attrs["source_rule_id"] for child in children} == {
         "uk_definition_ordered_list_child_preserved"
     }
+
+
+def test_insert_after_definition_text_reports_anchor_recoveries_in_order() -> None:
+    rewritten, applied, recovery_rule_ids = _insert_after_definition_text(
+        (
+            '"directed" and "intrusive", in relation to surveillance, '
+            'shall be construed in accordance with section 1; "ordinary" means usual;'
+        ),
+        term="intrusive",
+        replacement='"joint operation" means an operation involving two forces;',
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is True
+    assert rewritten == (
+        '"directed" and "intrusive", in relation to surveillance, '
+        'shall be construed in accordance with section 1; '
+        '"joint operation" means an operation involving two forces; "ordinary" means usual;'
+    )
+    assert recovery_rule_ids == (
+        "uk_replay_definition_anchor_qualifier_phrase_normalized",
+        "uk_replay_definition_anchor_conjoined_term_normalized",
+        "uk_replay_after_definition_text_insert_applied",
+    )
+
+
+def test_insert_after_definition_text_rejects_unbounded_anchor() -> None:
+    original = 'The words directed and intrusive appear in prose; "ordinary" means usual;'
+
+    rewritten, applied, recovery_rule_ids = _insert_after_definition_text(
+        original,
+        term="intrusive",
+        replacement='"joint operation" means an operation involving two forces;',
+        allow_punctuation_spacing=False,
+        allow_word_punctuation_elision=False,
+    )
+
+    assert applied is False
+    assert rewritten == original
+    assert recovery_rule_ids == ()
 
 
 def _uk_table_effect() -> UKEffectRecord:
