@@ -13,6 +13,7 @@ from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
 from lawvm.uk_legislation.replay_text_apply import (
+    _definition_child_insert_payload,
     _remove_trailing_context_word,
     _rewrite_definition_entry_text,
 )
@@ -131,6 +132,21 @@ def test_remove_trailing_context_word_preserves_trailing_punctuation() -> None:
         "paragraph (a), then",
         False,
     )
+
+
+def test_definition_child_insert_payload_preserves_ordered_list_metadata() -> None:
+    anchor_suffix, children = _definition_child_insert_payload(
+        "; or c third condition; d fourth condition;",
+        term="regulated activity",
+    )
+
+    assert anchor_suffix == "; or"
+    assert [child.text for child in children] == ["third condition;", "fourth condition;"]
+    assert [child.attrs["definition_child_label"] for child in children] == ["c", "d"]
+    assert {child.attrs["definition_term"] for child in children} == {"regulated activity"}
+    assert {child.attrs["source_rule_id"] for child in children} == {
+        "uk_definition_ordered_list_child_preserved"
+    }
 
 
 def _uk_table_effect() -> UKEffectRecord:
