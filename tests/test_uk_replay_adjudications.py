@@ -193,6 +193,9 @@ def test_executor_records_replay_target_not_found() -> None:
     assert len(adjudications) == 1
     assert adjudications[0].kind == "uk_replay_replace_payload_target_leaf_mismatch_gap"
     assert adjudications[0].detail["target"] == "section:9"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
     assert adjudications[0].source_statute == "ukpga/2026/1"
 
 
@@ -2559,6 +2562,9 @@ def test_executor_records_payload_missing() -> None:
     assert adjudications[0].kind == "uk_replay_payload_missing"
     assert adjudications[0].detail["action"] == "insert"
     assert adjudications[0].detail["target"] == "section:1/subsection:2"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
 
 
 def test_executor_records_replace_payload_missing() -> None:
@@ -2579,6 +2585,9 @@ def test_executor_records_replace_payload_missing() -> None:
     assert adjudications[0].kind == "uk_replay_payload_missing"
     assert adjudications[0].detail["action"] == "replace"
     assert adjudications[0].detail["target"] == "section:1"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
 
 
 def test_executor_records_existing_target_conflict_gap() -> None:
@@ -2715,6 +2724,8 @@ def test_executor_records_crossheading_insert_target_gap() -> None:
     assert len(adjudications) == 1
     assert adjudications[0].kind == "uk_replay_crossheading_target_gap"
     assert adjudications[0].detail["target"] == "crossheading:"
+    assert adjudications[0].detail["blocking"] is True
+    assert adjudications[0].detail["strict_disposition"] == "block"
 
 
 def test_replay_uk_ops_collects_adjudications() -> None:

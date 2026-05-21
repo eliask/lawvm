@@ -7,7 +7,10 @@ from lawvm.uk_legislation.addressing import _action_name, _addr_leaf_kind, _addr
 from lawvm.uk_legislation.canonicalize import uk_kind_matches
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_replace_text
 from lawvm.uk_legislation.provenance_notes import _schedule_list_entry_replace_selector
-from lawvm.uk_legislation.replay_records import _append_uk_replay_adjudication
+from lawvm.uk_legislation.replay_records import (
+    _append_uk_replay_adjudication,
+    uk_replay_blocking_action_target_detail,
+)
 from lawvm.uk_legislation.replay_schedule_list_apply import (
     _UK_REPLAY_SCHEDULE_LIST_ENTRY_REPLACE_UNRESOLVED_RULE_ID,
 )
@@ -109,7 +112,7 @@ class UKReplayReplaceApplyMixin:
                     kind=str(kind),
                     message=message,
                     op=op,
-                    detail={"action": _action_name(op.action), "target": str(target)},
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
         elif op.payload is not None:
             # Clone payload so repeated ops don't share state
@@ -210,12 +213,12 @@ class UKReplayReplaceApplyMixin:
                             kind=self._malformed_target_gap_kind(target),
                             message="UK replay skipped replace: lowered target path is malformed.",
                             op=op,
-                            detail={
-                                "action": _action_name(op.action),
-                                "target": str(target),
-                                "payload_kind": str(new_node.kind),
-                                "payload_label": new_node.label or "",
-                            },
+                            detail=uk_replay_blocking_action_target_detail(
+                                op,
+                                target,
+                                payload_kind=str(new_node.kind),
+                                payload_label=new_node.label or "",
+                            ),
                         )
                         return
                     if self._missing_parent_shape_gap(target):
@@ -224,12 +227,12 @@ class UKReplayReplaceApplyMixin:
                             kind=self._missing_parent_shape_gap_kind(target),
                             message="UK replay skipped replace: immediate parent target path is structurally absent.",
                             op=op,
-                            detail={
-                                "action": _action_name(op.action),
-                                "target": str(target),
-                                "payload_kind": str(new_node.kind),
-                                "payload_label": new_node.label or "",
-                            },
+                            detail=uk_replay_blocking_action_target_detail(
+                                op,
+                                target,
+                                payload_kind=str(new_node.kind),
+                                payload_label=new_node.label or "",
+                            ),
                         )
                         return
                     if self._schedule_paragraph_carrier_gap(target):
@@ -238,12 +241,12 @@ class UKReplayReplaceApplyMixin:
                             kind=self._schedule_paragraph_carrier_gap_kind(target),
                             message="UK replay skipped replace: schedule paragraph carrier is structurally absent or wrapped.",
                             op=op,
-                            detail={
-                                "action": _action_name(op.action),
-                                "target": str(target),
-                                "payload_kind": str(new_node.kind),
-                                "payload_label": new_node.label or "",
-                            },
+                            detail=uk_replay_blocking_action_target_detail(
+                                op,
+                                target,
+                                payload_kind=str(new_node.kind),
+                                payload_label=new_node.label or "",
+                            ),
                         )
                         return
                     if self._leading_blank_subparagraph_gap(target):
@@ -252,12 +255,12 @@ class UKReplayReplaceApplyMixin:
                             kind="uk_replay_absent_sibling_range_gap",
                             message="UK replay skipped replace: target falls inside an absent leading numeric subparagraph gap under blank schedule placeholders.",
                             op=op,
-                            detail={
-                                "action": _action_name(op.action),
-                                "target": str(target),
-                                "payload_kind": str(new_node.kind),
-                                "payload_label": new_node.label or "",
-                            },
+                            detail=uk_replay_blocking_action_target_detail(
+                                op,
+                                target,
+                                payload_kind=str(new_node.kind),
+                                payload_label=new_node.label or "",
+                            ),
                         )
                         return
                     if self._missing_sibling_range_gap(target):
@@ -266,12 +269,12 @@ class UKReplayReplaceApplyMixin:
                             kind="uk_replay_absent_sibling_range_gap",
                             message="UK replay skipped replace: target falls inside an absent sibling range under the parent path.",
                             op=op,
-                            detail={
-                                "action": _action_name(op.action),
-                                "target": str(target),
-                                "payload_kind": str(new_node.kind),
-                                "payload_label": new_node.label or "",
-                            },
+                            detail=uk_replay_blocking_action_target_detail(
+                                op,
+                                target,
+                                payload_kind=str(new_node.kind),
+                                payload_label=new_node.label or "",
+                            ),
                         )
                         return
                     if self._empty_descendant_shape_gap(target):
@@ -280,12 +283,12 @@ class UKReplayReplaceApplyMixin:
                             kind="uk_replay_empty_descendant_shape_gap",
                             message="UK replay skipped replace: parent target exists but has no descendant structural shape.",
                             op=op,
-                            detail={
-                                "action": _action_name(op.action),
-                                "target": str(target),
-                                "payload_kind": str(new_node.kind),
-                                "payload_label": new_node.label or "",
-                            },
+                            detail=uk_replay_blocking_action_target_detail(
+                                op,
+                                target,
+                                payload_kind=str(new_node.kind),
+                                payload_label=new_node.label or "",
+                            ),
                         )
                         return
                     _append_uk_replay_adjudication(
@@ -293,12 +296,12 @@ class UKReplayReplaceApplyMixin:
                         kind="uk_replay_payload_mismatch",
                         message="UK replay skipped replace: payload could not be inserted by target path.",
                         op=op,
-                        detail={
-                            "action": _action_name(op.action),
-                            "target": str(target),
-                            "payload_kind": str(new_node.kind),
-                            "payload_label": new_node.label or "",
-                        },
+                        detail=uk_replay_blocking_action_target_detail(
+                            op,
+                            target,
+                            payload_kind=str(new_node.kind),
+                            payload_label=new_node.label or "",
+                        ),
                     )
             else:
                 if _addr_leaf_kind(op.target) and (
@@ -324,7 +327,7 @@ class UKReplayReplaceApplyMixin:
                     kind=str(kind),
                     message=message,
                     op=op,
-                    detail={"action": _action_name(op.action), "target": str(target)},
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
         else:
             _append_uk_replay_adjudication(
@@ -332,7 +335,7 @@ class UKReplayReplaceApplyMixin:
                 kind="uk_replay_payload_missing",
                 message="UK replay skipped replace: payload missing.",
                 op=op,
-                detail={"action": _action_name(op.action), "target": str(target)},
+                detail=uk_replay_blocking_action_target_detail(op, target),
             )
         if target_found or node is not None:
             self._emit_top_section_snapshot(op)

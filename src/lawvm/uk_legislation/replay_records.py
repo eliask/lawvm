@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from dataclasses import replace as dc_replace
 from typing import Any, Optional
 
-from lawvm.core.ir import IRStatute, LegalOperation
+from lawvm.core.ir import IRStatute, LegalAddress, LegalOperation
 from lawvm.core.phase_result import Finding
 from lawvm.core.replay_lints import build_text_duplication_findings
 from lawvm.replay_adjudication import CompileAdjudication
@@ -68,6 +68,23 @@ def _append_uk_replay_adjudication(
     if adjudications_out is not None:
         adjudications_out.append(adjudication)
     return adjudication
+
+
+def uk_replay_blocking_action_target_detail(
+    op: LegalOperation,
+    target: LegalAddress,
+    **extra: Any,
+) -> dict[str, Any]:
+    """Build the standard strict-blocking detail payload for replay skips."""
+    detail: dict[str, Any] = {
+        "action": _action_name(op.action),
+        "target": str(target),
+        "blocking": True,
+        "strict_disposition": "block",
+        "quirks_disposition": "record",
+    }
+    detail.update(extra)
+    return detail
 
 
 def append_schedule_entry_repeal_granularity_blocked_adjudication(

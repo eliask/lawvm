@@ -6,11 +6,14 @@ from dataclasses import replace as dc_replace
 
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.core.semantic_types import IRNodeKind
-from lawvm.uk_legislation.addressing import _action_name, _addr_leaf_kind, _addr_leaf_label
+from lawvm.uk_legislation.addressing import _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.canonicalize import canonicalize_uk_address
 from lawvm.uk_legislation.metadata_rewrites import _renumbered_descendant_text
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_insert_child_sorted
-from lawvm.uk_legislation.replay_records import _append_uk_replay_adjudication
+from lawvm.uk_legislation.replay_records import (
+    _append_uk_replay_adjudication,
+    uk_replay_blocking_action_target_detail,
+)
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
@@ -31,11 +34,11 @@ class UKReplayRenumberApplyMixin:
             kind="uk_replay_unsupported_action",
             message="UK replay skipped unsupported action.",
             op=op,
-            detail={
-                "action": _action_name(op.action),
-                "target": str(target),
-                "destination": str(op.destination) if op.destination is not None else "",
-            },
+            detail=uk_replay_blocking_action_target_detail(
+                op,
+                target,
+                destination=str(op.destination) if op.destination is not None else "",
+            ),
         )
 
     def _apply_same_provision_descendant_renumber(self, op: LegalOperation) -> bool:
