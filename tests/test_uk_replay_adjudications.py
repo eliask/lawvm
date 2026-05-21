@@ -5652,7 +5652,13 @@ def test_executor_applies_definition_child_repeal_without_bare_term_deletion() -
         "section 40(1); section 41(1); "
         "\u201cother provision\u201d means paragraph (d);"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_definition_child_flat_ordinal_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "flat_definition_child_ordinal_selector"
 
 
 def test_executor_applies_definition_child_repeal_to_preserved_ordered_list_child() -> None:
@@ -5724,7 +5730,13 @@ def test_executor_applies_definition_child_repeal_to_preserved_ordered_list_chil
     subsection = executor.statute.body.children[0].children[0]
     assert [child.attrs["definition_child_label"] for child in subsection.children] == ["a"]
     assert subsection.text == "\u201crelevant provision\u201d means-"
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_definition_child_structured_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "structured_definition_child_selector"
 
 
 def test_executor_applies_definition_child_substitution_inside_definition_entry() -> None:
@@ -5782,7 +5794,13 @@ def test_executor_applies_definition_child_substitution_inside_definition_entry(
         "a clinical commissioning group; an integrated care board, or; "
         "a person; \u201cother\u201d means another value;"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_definition_child_flat_ordinal_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "flat_definition_child_ordinal_selector"
 
 
 def test_executor_inserts_source_carried_definition_children_after_anchor() -> None:

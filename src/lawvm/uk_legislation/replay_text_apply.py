@@ -1181,6 +1181,10 @@ class UKReplayTextApplyMixin:
                     rebuilt_child = dc_replace(child_node, text=replacement.strip())
                     rebuilt = self._replace_descendant_at_path(node, child_path, rebuilt_child)
                     self._replace_node_in_statute(node, rebuilt)
+                    if recovery_rule_ids_out is not None:
+                        recovery_rule_ids_out.append(
+                            "uk_replay_definition_child_structured_text_rewrite_applied"
+                        )
                     return rebuilt, True
                 parent_path = child_path[:-1]
                 child_index = child_path[-1]
@@ -1194,6 +1198,10 @@ class UKReplayTextApplyMixin:
                     else self._replace_descendant_at_path(node, parent_path, rebuilt_parent)
                 )
                 self._replace_node_in_statute(node, rebuilt)
+                if recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_definition_child_structured_text_rewrite_applied"
+                    )
                 return rebuilt, True
 
             if len(text_nodes) != 1:
@@ -1283,9 +1291,17 @@ class UKReplayTextApplyMixin:
             replacement_node = dc_replace(text_node, text=new_text)
             if not text_path:
                 self._replace_node_in_statute(text_node, replacement_node)
+                if recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_definition_child_flat_ordinal_text_rewrite_applied"
+                    )
                 return replacement_node, True
             rebuilt = self._replace_descendant_at_path(node, text_path, replacement_node)
             self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append(
+                    "uk_replay_definition_child_flat_ordinal_text_rewrite_applied"
+                )
             return rebuilt, True
 
         if match.startswith("TEXT_IN_DEFINITION_CHILD_"):
