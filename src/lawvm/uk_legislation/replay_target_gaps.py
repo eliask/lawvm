@@ -18,6 +18,52 @@ from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.witness_sidecars import _witness_for_op
 
 
+def _strip_order_kind_prefix(text: str, kind: str) -> str:
+    return re.sub(rf"^(?:{re.escape(kind)})\s*", "", text.strip(), flags=re.I)
+
+
+def _is_numeric_order_label(text: str) -> bool:
+    return bool(re.fullmatch(r"\d+", text))
+
+
+def _is_roman_order_label(text: str) -> bool:
+    return bool(re.fullmatch(r"[ivxlcdm]+", text, re.I))
+
+
+def _is_alpha_order_label(text: str) -> bool:
+    return bool(re.fullmatch(r"[a-z]+", text, re.I))
+
+
+def _is_single_alpha_order_label(text: str) -> bool:
+    return bool(re.fullmatch(r"[a-z]", text, re.I))
+
+
+def _is_alpha_suffix_order_label(text: str) -> bool:
+    return bool(re.fullmatch(r"[a-z]{2,}", text, re.I))
+
+
+def _is_mixed_chapter_order_label(text: str) -> bool:
+    return bool(re.fullmatch(r"(?:[a-z]+\d+[a-z0-9]*|\d+[a-z][a-z0-9]*)", text, re.I))
+
+
+def _is_mixed_section_order_label(text: str) -> bool:
+    return bool(
+        re.fullmatch(
+            r"(?:\d+[a-z]+\d+[a-z0-9]*|\d+[a-z]{2,}|\d+[a-z]\d[a-z0-9]*|[a-z]+\d+[a-z0-9]*)",
+            text,
+            re.I,
+        )
+    )
+
+
+def _is_mixed_paragraph_order_label(text: str) -> bool:
+    return bool(re.fullmatch(r"(?:\d+[a-z][a-z0-9]*|[a-z]+\d+[a-z0-9]*)", text, re.I))
+
+
+def _is_mixed_subunit_order_label(text: str) -> bool:
+    return bool(re.fullmatch(r"(?:\d+[a-z][a-z0-9]*|[a-z]+\d+[a-z0-9]*|[ivxlcdm]+[a-z]+)", text, re.I))
+
+
 def uk_table_target_shape_gap(target: LegalAddress) -> bool:
     path = tuple(getattr(target, "path", ()) or ())
     if not path:
@@ -172,16 +218,6 @@ def uk_part_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
     leaf_text = _clean_num(part_labels[-1])
     violation = str(scoped_violation or "")
     match = re.search(r"part out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
-
-    def normalize(text: str) -> str:
-        return re.sub(r"^(?:part)\s*", "", text.strip(), flags=re.I)
-
-    def numeric(text: str) -> bool:
-        return bool(re.fullmatch(r"\d+", normalize(text)))
-
-    def roman(text: str) -> bool:
-        return bool(re.fullmatch(r"(?:part)?[ivxlcdm]+", text, re.I))
-
     schedule_labels = [
         _clean_num(str(label or "")) for kind, label in target_path if str(kind or "").lower() == "schedule"
     ]
@@ -191,9 +227,11 @@ def uk_part_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
         return True
     if match is None:
         return False
-    left = _clean_num(normalize(match.group(1)))
-    right = _clean_num(normalize(match.group(2)))
-    return (numeric(left) and roman(right)) or (roman(left) and numeric(right))
+    left = _clean_num(_strip_order_kind_prefix(match.group(1), "part"))
+    right = _clean_num(_strip_order_kind_prefix(match.group(2), "part"))
+    return (_is_numeric_order_label(left) and _is_roman_order_label(right)) or (
+        _is_roman_order_label(left) and _is_numeric_order_label(right)
+    )
 
 
 def uk_chapter_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
@@ -206,23 +244,13 @@ def uk_chapter_order_shape_gap(op: LegalOperation, scoped_violation: str) -> boo
     match = re.search(r"chapter out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
     if match is None:
         return False
-
-    def normalize(text: str) -> str:
-        return re.sub(r"^(?:chapter)\s*", "", text.strip(), flags=re.I)
-
-    left = _clean_num(normalize(match.group(1)))
-    right = _clean_num(normalize(match.group(2)))
-
-    def mixed(text: str) -> bool:
-        return bool(re.fullmatch(r"(?:[a-z]+\d+[a-z0-9]*|\d+[a-z][a-z0-9]*)", text, re.I))
-
-    def numeric(text: str) -> bool:
-        return bool(re.fullmatch(r"\d+", text))
+    left = _clean_num(_strip_order_kind_prefix(match.group(1), "chapter"))
+    right = _clean_num(_strip_order_kind_prefix(match.group(2), "chapter"))
 
     return (
-        (numeric(left) and mixed(right))
-        or (mixed(left) and numeric(right))
-        or (mixed(left) and mixed(right))
+        (_is_numeric_order_label(left) and _is_mixed_chapter_order_label(right))
+        or (_is_mixed_chapter_order_label(left) and _is_numeric_order_label(right))
+        or (_is_mixed_chapter_order_label(left) and _is_mixed_chapter_order_label(right))
         or left == right
     )
 
@@ -235,17 +263,7 @@ def uk_section_order_shape_gap(op: LegalOperation, scoped_violation: str) -> boo
         return False
     leaf_text = _clean_num(str(target_path[-1][1] or ""))
     violation = str(scoped_violation or "")
-
-    def mixed(text: str) -> bool:
-        return bool(
-            re.fullmatch(
-                r"(?:\d+[a-z]+\d+[a-z0-9]*|\d+[a-z]{2,}|\d+[a-z]\d[a-z0-9]*|[a-z]+\d+[a-z0-9]*)",
-                text,
-                re.I,
-            )
-        )
-
-    if mixed(leaf_text):
+    if _is_mixed_section_order_label(leaf_text):
         return True
     if leaf_text and not re.fullmatch(r"\d+[a-z]*", leaf_text, re.I):
         return True
@@ -254,11 +272,11 @@ def uk_section_order_shape_gap(op: LegalOperation, scoped_violation: str) -> boo
         return False
     left = _clean_num(match.group(1))
     right = _clean_num(match.group(2))
-
-    def numeric(text: str) -> bool:
-        return bool(re.fullmatch(r"\d+", text))
-
-    return (numeric(left) and mixed(right)) or (mixed(left) and numeric(right)) or (mixed(left) and mixed(right))
+    return (
+        (_is_numeric_order_label(left) and _is_mixed_section_order_label(right))
+        or (_is_mixed_section_order_label(left) and _is_numeric_order_label(right))
+        or (_is_mixed_section_order_label(left) and _is_mixed_section_order_label(right))
+    )
 
 
 def uk_paragraph_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
@@ -271,23 +289,7 @@ def uk_paragraph_order_shape_gap(op: LegalOperation, scoped_violation: str) -> b
     if not paragraph_labels:
         return False
     leaf_text = _clean_num(paragraph_labels[-1])
-
-    def mixed(text: str) -> bool:
-        return bool(re.fullmatch(r"(?:\d+[a-z][a-z0-9]*|[a-z]+\d+[a-z0-9]*)", text, re.I))
-
-    def pure_alpha(text: str) -> bool:
-        return bool(re.fullmatch(r"[a-z]+", text, re.I))
-
-    def pure_num(text: str) -> bool:
-        return bool(re.fullmatch(r"\d+", text))
-
-    def pure_roman(text: str) -> bool:
-        return bool(re.fullmatch(r"[ivxlcdm]+", text, re.I))
-
-    def alpha_suffix(text: str) -> bool:
-        return bool(re.fullmatch(r"[a-z]{2,}", text, re.I))
-
-    if mixed(leaf_text) or alpha_suffix(leaf_text):
+    if _is_mixed_paragraph_order_label(leaf_text) or _is_alpha_suffix_order_label(leaf_text):
         return True
     violation = str(scoped_violation or "")
     match = re.search(r"paragraph out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
@@ -296,19 +298,19 @@ def uk_paragraph_order_shape_gap(op: LegalOperation, scoped_violation: str) -> b
     left = _clean_num(match.group(1))
     right = _clean_num(match.group(2))
     return (
-        (mixed(left) and pure_alpha(right))
-        or (pure_alpha(left) and mixed(right))
-        or (mixed(left) and pure_num(right))
-        or (pure_num(left) and mixed(right))
-        or (mixed(left) and mixed(right))
-        or (pure_num(left) and pure_alpha(right))
-        or (pure_alpha(left) and pure_num(right))
-        or (alpha_suffix(left) and pure_alpha(right))
-        or (pure_alpha(left) and alpha_suffix(right))
-        or (pure_roman(left) and pure_alpha(right))
-        or (pure_alpha(left) and pure_roman(right))
-        or (alpha_suffix(left) and pure_roman(right))
-        or (pure_roman(left) and alpha_suffix(right))
+        (_is_mixed_paragraph_order_label(left) and _is_alpha_order_label(right))
+        or (_is_alpha_order_label(left) and _is_mixed_paragraph_order_label(right))
+        or (_is_mixed_paragraph_order_label(left) and _is_numeric_order_label(right))
+        or (_is_numeric_order_label(left) and _is_mixed_paragraph_order_label(right))
+        or (_is_mixed_paragraph_order_label(left) and _is_mixed_paragraph_order_label(right))
+        or (_is_numeric_order_label(left) and _is_alpha_order_label(right))
+        or (_is_alpha_order_label(left) and _is_numeric_order_label(right))
+        or (_is_alpha_suffix_order_label(left) and _is_alpha_order_label(right))
+        or (_is_alpha_order_label(left) and _is_alpha_suffix_order_label(right))
+        or (_is_roman_order_label(left) and _is_alpha_order_label(right))
+        or (_is_alpha_order_label(left) and _is_roman_order_label(right))
+        or (_is_alpha_suffix_order_label(left) and _is_roman_order_label(right))
+        or (_is_roman_order_label(left) and _is_alpha_suffix_order_label(right))
     )
 
 
@@ -319,17 +321,7 @@ def uk_subparagraph_order_shape_gap(op: LegalOperation, scoped_violation: str) -
     if not target_path or str(target_path[-1][0] or "").lower() != "subparagraph":
         return False
     leaf_text = _clean_num(str(target_path[-1][1] or ""))
-
-    def pure_roman(text: str) -> bool:
-        return bool(re.fullmatch(r"[ivxlcdm]+", text, re.I))
-
-    def alpha_suffix(text: str) -> bool:
-        return bool(re.fullmatch(r"[a-z]{2,}", text, re.I))
-
-    def mixed(text: str) -> bool:
-        return bool(re.fullmatch(r"(?:\d+[a-z][a-z0-9]*|[a-z]+\d+[a-z0-9]*|[ivxlcdm]+[a-z]+)", text, re.I))
-
-    if mixed(leaf_text) or alpha_suffix(leaf_text):
+    if _is_mixed_subunit_order_label(leaf_text) or _is_alpha_suffix_order_label(leaf_text):
         return True
     violation = str(scoped_violation or "")
     match = re.search(r"subparagraph out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
@@ -338,16 +330,16 @@ def uk_subparagraph_order_shape_gap(op: LegalOperation, scoped_violation: str) -
     left = _clean_num(match.group(1))
     right = _clean_num(match.group(2))
     return bool(
-        (mixed(left) and pure_roman(right))
-        or (pure_roman(left) and mixed(right))
-        or (re.fullmatch(r"\d+", left) and mixed(right))
-        or (mixed(left) and re.fullmatch(r"\d+", right))
-        or (mixed(left) and mixed(right))
-        or (alpha_suffix(left) and pure_roman(right))
-        or (pure_roman(left) and alpha_suffix(right))
-        or (alpha_suffix(left) and alpha_suffix(right))
-        or (re.fullmatch(r"\d+", left) and alpha_suffix(right))
-        or (alpha_suffix(left) and re.fullmatch(r"\d+", right))
+        (_is_mixed_subunit_order_label(left) and _is_roman_order_label(right))
+        or (_is_roman_order_label(left) and _is_mixed_subunit_order_label(right))
+        or (_is_numeric_order_label(left) and _is_mixed_subunit_order_label(right))
+        or (_is_mixed_subunit_order_label(left) and _is_numeric_order_label(right))
+        or (_is_mixed_subunit_order_label(left) and _is_mixed_subunit_order_label(right))
+        or (_is_alpha_suffix_order_label(left) and _is_roman_order_label(right))
+        or (_is_roman_order_label(left) and _is_alpha_suffix_order_label(right))
+        or (_is_alpha_suffix_order_label(left) and _is_alpha_suffix_order_label(right))
+        or (_is_numeric_order_label(left) and _is_alpha_suffix_order_label(right))
+        or (_is_alpha_suffix_order_label(left) and _is_numeric_order_label(right))
     )
 
 
@@ -360,23 +352,7 @@ def uk_item_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
     in_schedule = any(str(kind or "").lower() == "schedule" for kind, _ in target_path)
     raw_leaf_text = str(target_path[-1][1] or "").strip().lower()
     leaf_text = _clean_num(raw_leaf_text)
-
-    def pure_roman(text: str) -> bool:
-        return bool(re.fullmatch(r"[ivxlcdm]+", text, re.I))
-
-    def pure_alpha(text: str) -> bool:
-        return bool(re.fullmatch(r"[a-z]+", text, re.I))
-
-    def pure_alpha_single(text: str) -> bool:
-        return bool(re.fullmatch(r"[a-z]", text, re.I))
-
-    def alpha_suffix(text: str) -> bool:
-        return bool(re.fullmatch(r"[a-z]{2,}", text, re.I))
-
-    def mixed(text: str) -> bool:
-        return bool(re.fullmatch(r"(?:\d+[a-z][a-z0-9]*|[a-z]+\d+[a-z0-9]*|[ivxlcdm]+[a-z]+)", text, re.I))
-
-    if mixed(leaf_text) or alpha_suffix(leaf_text):
+    if _is_mixed_subunit_order_label(leaf_text) or _is_alpha_suffix_order_label(leaf_text):
         return True
     violation = str(scoped_violation or "")
     match = re.search(r"item out of order:\s*(.+?)\s*>\s*(.+)$", violation, re.I)
@@ -387,21 +363,21 @@ def uk_item_order_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
     left = _clean_num(match.group(1))
     right = _clean_num(match.group(2))
     return bool(
-        (mixed(left) and pure_roman(right))
-        or (pure_roman(left) and mixed(right))
-        or (re.fullmatch(r"\d+", left) and mixed(right))
-        or (mixed(left) and re.fullmatch(r"\d+", right))
-        or (mixed(left) and mixed(right))
-        or (alpha_suffix(left) and pure_alpha(right))
-        or (pure_alpha(left) and alpha_suffix(right))
-        or (alpha_suffix(left) and pure_roman(right))
-        or (pure_roman(left) and alpha_suffix(right))
-        or (alpha_suffix(left) and alpha_suffix(right))
+        (_is_mixed_subunit_order_label(left) and _is_roman_order_label(right))
+        or (_is_roman_order_label(left) and _is_mixed_subunit_order_label(right))
+        or (_is_numeric_order_label(left) and _is_mixed_subunit_order_label(right))
+        or (_is_mixed_subunit_order_label(left) and _is_numeric_order_label(right))
+        or (_is_mixed_subunit_order_label(left) and _is_mixed_subunit_order_label(right))
+        or (_is_alpha_suffix_order_label(left) and _is_alpha_order_label(right))
+        or (_is_alpha_order_label(left) and _is_alpha_suffix_order_label(right))
+        or (_is_alpha_suffix_order_label(left) and _is_roman_order_label(right))
+        or (_is_roman_order_label(left) and _is_alpha_suffix_order_label(right))
+        or (_is_alpha_suffix_order_label(left) and _is_alpha_suffix_order_label(right))
         or (
             in_schedule
-            and pure_alpha_single(raw_leaf_text)
-            and pure_alpha_single(raw_left)
-            and pure_alpha_single(raw_right)
+            and _is_single_alpha_order_label(raw_leaf_text)
+            and _is_single_alpha_order_label(raw_left)
+            and _is_single_alpha_order_label(raw_right)
         )
     )
 
