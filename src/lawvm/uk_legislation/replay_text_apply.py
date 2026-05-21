@@ -1883,6 +1883,8 @@ class UKReplayTextApplyMixin:
                     return node, False
                 rebuilt = dc_replace(node, text=new_text)
                 self._replace_node_in_statute(node, rebuilt)
+                if recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append("uk_replay_contextual_word_text_rewrite_applied")
                 return rebuilt, True
 
             contextual_match = re.fullmatch(
@@ -1964,6 +1966,8 @@ class UKReplayTextApplyMixin:
                 return node, False
             if recovered_anchor_kind and recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.append("uk_replay_contextual_word_anchor_kind_normalized")
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_contextual_word_text_rewrite_applied")
             rebuilt = self._replace_descendant_at_path(
                 node,
                 target_path,

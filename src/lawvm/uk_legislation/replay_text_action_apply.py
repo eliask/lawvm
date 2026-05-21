@@ -505,6 +505,14 @@ class UKReplayTextActionApplyMixin:
                     family = "text_rewrite_recovery"
                     strict_disposition = "record"
                     source_shape = "definition_entry_selector"
+                elif recovery_rule_id == "uk_replay_contextual_word_text_rewrite_applied":
+                    message = (
+                        "UK replay applied a contextual adjacent-word text rewrite "
+                        "after resolving the source-carried anchor."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "contextual_adjacent_word_selector"
                 elif recovery_rule_id == "uk_replay_definition_anchor_lexical_variant_recovered":
                     message = (
                         "UK replay applied definition-anchor text op after resolving "

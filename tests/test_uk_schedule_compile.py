@@ -9986,10 +9986,14 @@ def test_contextual_following_word_repeal_records_anchor_kind_recovery() -> None
     paragraph_8 = replayed.supplements[0].children[0]
     assert paragraph_8.children[0].text == "third condition"
     assert [adjudication.kind for adjudication in adjudications] == [
-        "uk_replay_contextual_word_anchor_kind_normalized"
+        "uk_replay_contextual_word_anchor_kind_normalized",
+        "uk_replay_contextual_word_text_rewrite_applied",
     ]
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[1].detail["blocking"] is False
+    assert adjudications[1].detail["strict_disposition"] == "record"
+    assert adjudications[1].detail["source_shape"] == "contextual_adjacent_word_selector"
 
 
 def test_compile_contextual_target_word_repeal_uses_target_node() -> None:
@@ -10068,8 +10072,16 @@ def test_compile_contextual_target_word_repeal_uses_target_node() -> None:
         supplements=(),
     )
 
-    replayed = replay_uk_ops(base, ops)
+    adjudications: list[CompileAdjudication] = []
+    replayed = replay_uk_ops(base, ops, adjudications_out=adjudications)
     assert replayed.body.children[0].children[0].children[0].text == "first condition"
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_contextual_word_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "contextual_adjacent_word_selector"
 
 
 def test_compile_nested_contextual_word_repeal_uses_child_anchor() -> None:

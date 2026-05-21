@@ -288,6 +288,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_after_definition_child_structured_insert_applied",
         "uk_replay_after_definition_text_insert_applied",
         "uk_replay_contextual_word_anchor_kind_normalized",
+        "uk_replay_contextual_word_text_rewrite_applied",
         "uk_replay_amendment_insert_tail_text_rewrite_applied",
         "uk_replay_before_definition_text_rewrite_applied",
         "uk_replay_definition_anchor_conjoined_term_normalized",
