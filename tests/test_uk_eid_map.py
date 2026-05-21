@@ -159,3 +159,41 @@ def test_extract_eid_map_records_schedule_visible_number_alias() -> None:
             "quirks_disposition": "record",
         }
     ]
+
+
+def test_extract_eid_map_records_body_descendant_visible_number_alias() -> None:
+    xml = b"""\
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation">
+  <Body>
+    <P1 id="section-16">
+      <Pnumber>16</Pnumber>
+      <P1para>
+        <P2 id="section-16-9">
+          <Pnumber>
+            <Substitution ChangeId="key-renumber" CommentaryRef="key-renumber">8</Substitution>
+          </Pnumber>
+          <P2para><Text>Renumbered provision.</Text></P2para>
+        </P2>
+      </P1para>
+    </P1>
+  </Body>
+</Legislation>
+"""
+
+    eid_data = extract_eid_map_bytes(xml)
+
+    assert eid_data["visible_number_eid_aliases"] == {"section-16-9": "section-16-8"}
+    assert eid_data["oracle_identity_observations"] == [
+        {
+            "rule_id": "uk_oracle_visible_number_eid_alias_aligned",
+            "phase": "oracle_alignment",
+            "family": "oracle_identity_drift",
+            "original_eid": "section-16-9",
+            "visible_number_eid": "section-16-8",
+            "xml_tag": "P2",
+            "visible_number": "8",
+            "physical_path_key": "body:section-16:subsection-8",
+            "strict_disposition": "block",
+            "quirks_disposition": "record",
+        }
+    ]

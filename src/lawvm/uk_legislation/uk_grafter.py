@@ -98,7 +98,7 @@ def _local_structural_text(el: ET.Element) -> str:
 def _extract_num(el: Optional[ET.Element]) -> str:
     if el is None:
         return ""
-    return (el.text or "").strip()
+    return _text_content(el)
 
 
 def _add_attrs(node: UKMutableNode, el: ET.Element):
@@ -602,22 +602,29 @@ def _record_visible_number_eid_alias(
     aliases: dict[str, str],
     observations: list[dict[str, Any]],
 ) -> None:
-    if not eid or kind != "paragraph" or not clean_num:
+    if not eid or not clean_num:
         return
     eid_norm = str(eid or "").lower()
-    if not eid_norm.startswith("schedule-"):
+    supported_kind = kind in {"subsection", "paragraph", "subparagraph", "item", "point"}
+    if not supported_kind:
         return
     leaf = _eid_leaf_label(eid_norm)
     clean_leaf = _clean_num(clean_num)
     if not leaf or not clean_leaf or leaf == clean_leaf:
         return
-    if "n" not in leaf:
-        return
-    if _leading_digits(leaf) != _leading_digits(clean_leaf):
-        return
     visible_eid = _eid_with_leaf_label(eid_norm, clean_leaf)
     if not visible_eid or visible_eid == eid_norm:
         return
+    if eid_norm.startswith("schedule-"):
+        if "n" not in leaf:
+            return
+        if _leading_digits(leaf) != _leading_digits(clean_leaf):
+            return
+    else:
+        original_root = _section_or_article_root(eid_norm)
+        visible_root = _section_or_article_root(visible_eid)
+        if not original_root or original_root != visible_root:
+            return
     aliases.setdefault(eid, visible_eid)
     observations.append(
         {
