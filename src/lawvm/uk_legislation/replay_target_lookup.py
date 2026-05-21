@@ -16,7 +16,11 @@ from lawvm.uk_legislation.canonicalize import (
     uk_schedule_root_candidates,
 )
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, UKMutableStatute
-from lawvm.uk_legislation.replay_records import _append_uk_replay_adjudication
+from lawvm.uk_legislation.replay_records import (
+    _append_uk_replay_adjudication,
+    uk_replay_action_target_detail,
+    uk_replay_recovery_action_target_detail,
+)
 from lawvm.uk_legislation.replay_target_gaps import (
     uk_existing_target_insert_gap,
     uk_is_explicit_direct_section_paragraph_target,
@@ -164,16 +168,15 @@ class UKReplayTargetLookupMixin:
                                                 "single exactly labelled paragraph child."
                                             ),
                                             op=target_resolution_op,
-                                            detail={
-                                                "action": _action_name(target_resolution_op.action),
-                                                "target": str(target),
-                                                "paragraph_label": str(p_label),
-                                                "wrapper_kind": "p1group",
-                                                "family": "target_resolution_recovery",
-                                                "blocking": False,
-                                                "strict_disposition": "record",
-                                                "quirks_disposition": "apply",
-                                            },
+                                            detail=uk_replay_action_target_detail(
+                                                target_resolution_op,
+                                                target,
+                                                blocking=False,
+                                                paragraph_label=str(p_label),
+                                                wrapper_kind="p1group",
+                                                family="target_resolution_recovery",
+                                                quirks_disposition="apply",
+                                            ),
                                         )
                                         break
                             next_cands = ordinal_matches
@@ -257,17 +260,14 @@ class UKReplayTargetLookupMixin:
                 "whose effect feed names a schedule item as a schedule paragraph."
             ),
             op=op,
-            detail={
-                "action": _action_name(op.action),
-                "target": str(target),
-                "recovered_kind": _uk_kind_value(recovered_node.kind),
-                "recovered_label": recovered_node.label or "",
-                "family": "target_resolution_recovery",
-                "source_rule_id": _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID,
-                "blocking": False,
-                "strict_disposition": "block",
-                "quirks_disposition": "apply",
-            },
+            detail=uk_replay_recovery_action_target_detail(
+                op,
+                target,
+                family="target_resolution_recovery",
+                recovered_kind=_uk_kind_value(recovered_node.kind),
+                recovered_label=recovered_node.label or "",
+                source_rule_id=_UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID,
+            ),
         )
         return recovered_node, recovered_parent, recovered_idx
 
@@ -292,4 +292,3 @@ class UKReplayTargetLookupMixin:
             if uk_match_kind_label(sch, "schedule", sched_label):
                 return len(sch.children) == 0
         return False
-

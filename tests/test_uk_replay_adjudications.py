@@ -3165,7 +3165,9 @@ def test_executor_resolves_unlabeled_schedule_p1group_single_paragraph_child() -
     assert [adjudication.kind for adjudication in adjudications] == [
         "uk_replay_schedule_p1group_paragraph_wrapper_resolved"
     ]
+    assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["quirks_disposition"] == "apply"
     assert adjudications[0].detail["family"] == "target_resolution_recovery"
 
 
