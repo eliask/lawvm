@@ -26,7 +26,7 @@ from __future__ import annotations
 import json as json  # noqa: F401
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Protocol, Sequence
 
 from lawvm.core.ir import (
     IRStatute,
@@ -241,6 +241,38 @@ from lawvm.uk_legislation.xml_helpers import _tag as _tag  # noqa: F401
 # ---------------------------------------------------------------------------
 # UK replay helpers
 # ---------------------------------------------------------------------------
+
+
+class _SingleLoweringResult(Protocol):
+    handled: bool
+    op: Optional[LegalOperation]
+
+
+class _BatchLoweringResult(Protocol):
+    handled: bool
+    ops: Sequence[LegalOperation]
+
+
+def _append_handled_lowering_op(
+    ops: list[LegalOperation],
+    result: _SingleLoweringResult,
+) -> bool:
+    if not result.handled:
+        return False
+    if result.op is not None:
+        ops.append(result.op)
+    return True
+
+
+def _extend_handled_lowering_ops(
+    ops: list[LegalOperation],
+    result: _BatchLoweringResult,
+) -> bool:
+    if not result.handled:
+        return False
+    ops.extend(result.ops)
+    return True
+
 
 def compile_effect_to_ir_ops(
     effect: UKEffectRecord,
@@ -564,9 +596,7 @@ def compile_effect_to_ir_ops(
             original_targets_str=original_targets_str,
             lowering_rejections_out=lowering_rejections_out,
         )
-        if schedule_table_end_rows.handled:
-            if schedule_table_end_rows.op is not None:
-                ops.append(schedule_table_end_rows.op)
+        if _append_handled_lowering_op(ops, schedule_table_end_rows):
             continue
         schedule_list_entry = try_lower_schedule_list_entry_mutation(
             effect=effect,
@@ -584,9 +614,7 @@ def compile_effect_to_ir_ops(
             original_targets_str=original_targets_str,
             lowering_rejections_out=lowering_rejections_out,
         )
-        if schedule_list_entry.handled:
-            if schedule_list_entry.op is not None:
-                ops.append(schedule_list_entry.op)
+        if _append_handled_lowering_op(ops, schedule_list_entry):
             continue
         table_column_insert = try_lower_table_column_insert(
             effect=effect,
@@ -601,9 +629,7 @@ def compile_effect_to_ir_ops(
             original_targets_str=original_targets_str,
             lowering_rejections_out=lowering_rejections_out,
         )
-        if table_column_insert.handled:
-            if table_column_insert.op is not None:
-                ops.append(table_column_insert.op)
+        if _append_handled_lowering_op(ops, table_column_insert):
             continue
         table_row_insert = try_lower_table_row_insert(
             effect=effect,
@@ -619,9 +645,7 @@ def compile_effect_to_ir_ops(
             original_targets_str=original_targets_str,
             lowering_rejections_out=lowering_rejections_out,
         )
-        if table_row_insert.handled:
-            if table_row_insert.op is not None:
-                ops.append(table_row_insert.op)
+        if _append_handled_lowering_op(ops, table_row_insert):
             continue
         repeal_table_effect = try_lower_repeal_table_effect(
             effect=effect,
@@ -636,8 +660,7 @@ def compile_effect_to_ir_ops(
             original_targets_str=original_targets_str,
             lowering_rejections_out=lowering_rejections_out,
         )
-        if repeal_table_effect.handled:
-            ops.extend(repeal_table_effect.ops)
+        if _extend_handled_lowering_ops(ops, repeal_table_effect):
             continue
         table_cell_context = prepare_table_cell_text_patch_context(
             effect=effect,
