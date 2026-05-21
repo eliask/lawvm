@@ -98,6 +98,7 @@ from lawvm.uk_legislation.effect_replace_prelude import plan_replace_effect_prel
 from lawvm.uk_legislation.effect_target_prelude import (
     expand_single_target_prelude,
     refine_enacted_schedule_table_row_part_target,
+    refine_flat_p1para_schedule_insert_target,
     refine_source_text_schedule_paragraph_target,
     reject_unsupported_target_facet,
 )
@@ -351,7 +352,6 @@ from lawvm.uk_legislation.source_labeled_child_parts import (
 )
 from lawvm.uk_legislation.source_payload_helpers import (
     UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID as _UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID,
-    UK_NONADDRESSABLE_SCHEDULE_PART_INSERT_TARGET_RULE_ID as _UK_NONADDRESSABLE_SCHEDULE_PART_INSERT_TARGET_RULE_ID,
     _direct_payload_text,
     _flat_p1para_schedule_paragraph_insert_payload,
     _inserted_section_p1group_heading_text,
@@ -387,7 +387,6 @@ from lawvm.uk_legislation.target_anchors import (
 )
 from lawvm.uk_legislation.target_parser import (
     _parse_affected_target,
-    _schedule_part_context_removed_target,
     _split_metadata_provisions,
 )
 from lawvm.uk_legislation.table_sources import (
@@ -709,40 +708,15 @@ def compile_effect_to_ir_ops(
         )
         flat_p1para_schedule_insert_lowered = False
         flat_p1para_payload_detail: dict[str, Any] = {}
-        if action == "insert":
-            flat_p1para_probe = _flat_p1para_schedule_paragraph_insert_payload(
-                extracted_el,
-                target,
-                fallback_target_eid=_fallback_target_eid,
-            )
-            if flat_p1para_probe is not None:
-                if _addr_field(target, "part") is not None:
-                    stripped_target = _schedule_part_context_removed_target(target)
-                    if stripped_target is not None:
-                        original_target = target
-                        target = canonicalize_uk_address(stripped_target)
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id=_UK_NONADDRESSABLE_SCHEDULE_PART_INSERT_TARGET_RULE_ID,
-                            family="target_resolution_recovery",
-                            reason_code="flat_insert_payload_uses_nonaddressable_schedule_part_context",
-                            reason=(
-                                "UK source names a schedule Part as insertion context, "
-                                "but the source-owned BlockAmendment payload is a direct "
-                                "labelled schedule paragraph with no Part wrapper; lowering "
-                                "records the Part as context and targets the replay-addressable "
-                                "schedule paragraph."
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "metadata_target": str(original_target),
-                                "normalized_target": str(target),
-                                "removed_part_label": _addr_field(original_target, "part") or "",
-                            },
-                        )
+        target = refine_flat_p1para_schedule_insert_target(
+            effect=effect,
+            action=action,
+            t_str=t_str,
+            target=target,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
+        )
         payload_match_target = target
         if label_changing_substitution is not None:
             payload_match_target = label_changing_substitution.replacement_target
