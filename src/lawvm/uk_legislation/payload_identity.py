@@ -27,6 +27,36 @@ def _whole_schedule_target_root_eid(target: LegalAddress) -> str:
     return f"schedule-{_clean_num(schedule_label)}"
 
 
+def _whole_schedule_payload_local_suffix(parent_eid: str, child: UKMutableNode) -> str:
+    kind_name = str(child.kind or "").lower()
+    raw_label = str(child.label or "").strip()
+    clean_label = _clean_num(raw_label).strip("().")
+    if kind_name == "crossheading":
+        heading_text = " ".join(str(child.text or raw_label).split()).strip()
+        heading_slug = re.sub(r"[^a-zA-Z0-9]+", "-", heading_text.lower()).strip("-")
+        if heading_slug:
+            return f"crossheading-{heading_slug}"
+        return ""
+    if (
+        raw_label
+        and kind_name in {"subparagraph", "item", "point"}
+        and re.fullmatch(r"[ivxlcdm]+", raw_label, re.IGNORECASE)
+    ):
+        clean_label = raw_label.lower().strip(".")
+    if not clean_label:
+        return ""
+    if kind_name in {"paragraph", "subparagraph", "subsection", "item", "point", "p2", "p3"}:
+        if re.search(r"(?:^|-)paragraph-[^-]+(?:-|$)", parent_eid):
+            return clean_label
+        return f"paragraph-{clean_label}"
+    return f"{kind_name}-{clean_label}"
+
+
+def _payload_local_suffix(child: UKMutableNode) -> str:
+    raw_label = str(child.label or "").strip()
+    return _canonicalize_eid_tail_label(raw_label)
+
+
 def _synthesize_whole_schedule_payload_descendant_eids(
     payload_node: UKMutableNode,
     *,
@@ -81,30 +111,6 @@ def _synthesize_whole_schedule_payload_descendant_eids(
     skipped_ambiguous = 0
     skipped_duplicate = 0
 
-    def _local_suffix(parent_eid: str, child: UKMutableNode) -> str:
-        kind_name = str(child.kind or "").lower()
-        raw_label = str(child.label or "").strip()
-        clean_label = _clean_num(raw_label).strip("().")
-        if kind_name == "crossheading":
-            heading_text = " ".join(str(child.text or raw_label).split()).strip()
-            heading_slug = re.sub(r"[^a-zA-Z0-9]+", "-", heading_text.lower()).strip("-")
-            if heading_slug:
-                return f"crossheading-{heading_slug}"
-            return ""
-        if (
-            raw_label
-            and kind_name in {"subparagraph", "item", "point"}
-            and re.fullmatch(r"[ivxlcdm]+", raw_label, re.IGNORECASE)
-        ):
-            clean_label = raw_label.lower().strip(".")
-        if not clean_label:
-            return ""
-        if kind_name in {"paragraph", "subparagraph", "subsection", "item", "point", "p2", "p3"}:
-            if re.search(r"(?:^|-)paragraph-[^-]+(?:-|$)", parent_eid):
-                return clean_label
-            return f"paragraph-{clean_label}"
-        return f"{kind_name}-{clean_label}"
-
     def _walk(parent_eid: str, current: UKMutableNode) -> None:
         nonlocal skipped_ambiguous, skipped_duplicate
         for child in current.children:
@@ -114,7 +120,7 @@ def _synthesize_whole_schedule_payload_descendant_eids(
             if existing_eid:
                 used_eids.add(existing_eid)
             else:
-                suffix = _local_suffix(parent_eid, child)
+                suffix = _whole_schedule_payload_local_suffix(parent_eid, child)
                 if suffix:
                     child_parent_eid = f"{parent_eid}{'' if parent_eid.endswith('-') else '-'}{suffix}"
                     if child_parent_eid in used_eids:
@@ -217,10 +223,6 @@ def _synthesize_payload_descendant_eids(
     used_eids: set[str] = {root_eid}
     skipped_duplicate = 0
 
-    def _suffix(child: UKMutableNode) -> str:
-        raw_label = str(child.label or "").strip()
-        return _canonicalize_eid_tail_label(raw_label)
-
     def _walk(parent_eid: str, current: UKMutableNode) -> None:
         nonlocal skipped_duplicate
         for child in current.children:
@@ -229,7 +231,7 @@ def _synthesize_payload_descendant_eids(
             if child_eid:
                 used_eids.add(child_eid)
             else:
-                suffix = _suffix(child)
+                suffix = _payload_local_suffix(child)
                 if suffix:
                     child_parent_eid = f"{parent_eid}{'' if parent_eid.endswith('-') else '-'}{suffix}"
                     if child_parent_eid in used_eids:
