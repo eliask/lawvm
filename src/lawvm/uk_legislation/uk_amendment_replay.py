@@ -66,6 +66,23 @@ from lawvm.uk_legislation.commencement import (
 )
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
+from lawvm.uk_legislation.uk_grafter import (
+    _parse_part,
+    _parse_chapter,
+    _parse_section,
+    _parse_p1group,
+    _parse_p2,
+    _parse_p3,
+    _parse_p4,
+    _clean_num,
+    _semantic_hash,
+    _LEG_NS,
+    _extract_num,
+    _parse_pblock,
+    _parse_schedule_single,
+)
+from lawvm.uk_legislation.nlp_parser import US, is_whole_node_replacement, parse_fragment_substitution
+from lawvm.uk_legislation.witnesses import UKLoweredOperationWitness
 from lawvm.uk_legislation.source_state import (
     uk_affecting_act_xml_missing_rejection,
     uk_affecting_act_xml_parse_rejection,
@@ -538,32 +555,6 @@ _UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID = "uk_effect_range_to_end_there_is
 class UKReplayPrepareResult:
     accepted_ops: tuple[LegalOperation, ...]
     rejected_adjudications: tuple[CompileAdjudication, ...]
-
-
-from lawvm.uk_legislation.uk_grafter import (
-    _parse_part,
-    _parse_chapter,
-    _parse_section,
-    _parse_p1group,
-    _parse_p2,
-    _parse_p3,
-    _parse_p4,
-    _clean_num,
-    _semantic_hash,
-    _LEG_NS,
-    _extract_num,
-    _parse_pblock,
-    _parse_schedule_single,
-)
-
-from lawvm.uk_legislation.nlp_parser import US, is_whole_node_replacement, parse_fragment_substitution
-from lawvm.uk_legislation.witnesses import UKLoweredOperationWitness
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
 
 
 def compile_effect_to_ir_ops(
