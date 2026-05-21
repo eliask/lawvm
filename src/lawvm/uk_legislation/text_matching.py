@@ -81,6 +81,18 @@ def _text_match_has_word_punctuation_elision_candidate(match: str) -> bool:
     return bool(re.search(r"(?<=[A-Za-z0-9_])['’‘\-‐‑‒–—](?=[A-Za-z0-9_])", match))
 
 
+def _walk_text_nodes(node: UKMutableNode) -> list[tuple[tuple[int, ...], UKMutableNode]]:
+    text_nodes: list[tuple[tuple[int, ...], UKMutableNode]] = []
+    stack: list[tuple[tuple[int, ...], UKMutableNode]] = [((), node)]
+    while stack:
+        path, current = stack.pop()
+        if current.text:
+            text_nodes.append((path, current))
+        for index in range(len(current.children) - 1, -1, -1):
+            stack.append((path + (index,), current.children[index]))
+    return text_nodes
+
+
 def _node_text_patch_preimage_present(
     node: UKMutableNode,
     match: str,
@@ -125,16 +137,11 @@ def _rotated_trailing_comma_omission_match(match: str, node: UKMutableNode) -> O
     body_pattern_re = re.compile(rf"(?<![A-Za-z0-9]){body_pattern}(?![A-Za-z0-9])", flags=re.I)
     rotated_matches: list[str] = []
     body_matches = 0
-
-    def _walk(current: UKMutableNode) -> None:
-        nonlocal body_matches
+    for _, current in _walk_text_nodes(node):
         text = current.text or ""
         rotated_matches.extend(match_obj.group("delete") for match_obj in rotated_pattern.finditer(text))
         body_matches += len(tuple(body_pattern_re.finditer(text)))
-        for child in current.children:
-            _walk(child)
 
-    _walk(node)
     if len(rotated_matches) != 1 or body_matches != 1:
         return None
     return rotated_matches[0]
@@ -194,15 +201,7 @@ def _numeric_list_trailing_comma_subtree_replacement(
     if anchor_pattern is None:
         return None
     anchor, pattern = anchor_pattern
-    text_nodes: list[tuple[tuple[int, ...], UKMutableNode]] = []
-
-    def _collect(current: UKMutableNode, path: tuple[int, ...] = ()) -> None:
-        if current.text:
-            text_nodes.append((path, current))
-        for index, child in enumerate(current.children):
-            _collect(child, path + (index,))
-
-    _collect(node)
+    text_nodes = _walk_text_nodes(node)
     if any(match in text_node.text for _, text_node in text_nodes):
         return None
     matches: list[tuple[tuple[int, ...], UKMutableNode, re.Match[str]]] = []
