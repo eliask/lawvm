@@ -4,10 +4,17 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Optional
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress, LegalOperation
 from lawvm.uk_legislation.addressing import _addr_container
+from lawvm.uk_legislation.effects import UKEffectRecord
+from lawvm.uk_legislation.lowering_records import (
+    _append_uk_effect_lowering_observation,
+    _append_uk_effect_lowering_rejection,
+)
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.provenance_notes import NOTE_FRAGMENT_SUB, NOTE_TEXT_REWRITE_RULE
 from lawvm.uk_legislation.witness_sidecars import _witness_for_op
@@ -25,6 +32,13 @@ UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
         "uk_effect_wherever_occurring_substitution_text_patch",
     }
 )
+
+
+@dataclass(frozen=True)
+class UKLabeledChildEndRangeLowering:
+    primary: dict[str, Any]
+    curr_action: Optional[str]
+    skip_effect: bool
 
 
 def _multi_quoted_word_repeal_fragments(
@@ -166,6 +180,88 @@ def _labeled_child_end_range_selector(
     if not start:
         return ""
     return f"TEXT_FROM_CHILD_END{US}{suffix_kind}{US}{suffix_label}{US}{start}"
+
+
+def lower_labeled_child_end_range_selector(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    target_ref: str,
+    primary: dict[str, Any],
+    curr_action: Optional[str],
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKLabeledChildEndRangeLowering:
+    target_suffix = _fragment_target_suffix(primary)
+    if target_suffix is None:
+        return UKLabeledChildEndRangeLowering(
+            primary=primary,
+            curr_action=curr_action,
+            skip_effect=False,
+        )
+
+    labeled_child_end_selector = _labeled_child_end_range_selector(
+        target,
+        primary,
+        target_suffix,
+    )
+    if not labeled_child_end_selector:
+        _append_uk_effect_lowering_rejection(
+            lowering_rejections_out,
+            rule_id="uk_effect_labeled_child_end_range_target_rejected",
+            family="target_resolution_recovery",
+            reason_code="unsupported_labeled_end_range_target_suffix",
+            reason=(
+                "UK source text bounds a text range to a labelled child target, "
+                "but the affected provision target could not safely carry the "
+                "parent-scoped child-end selector without widening or changing "
+                "the source scope."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "target_suffix_kind": target_suffix[0],
+                "target_suffix_label": target_suffix[1],
+            },
+        )
+        return UKLabeledChildEndRangeLowering(
+            primary=primary,
+            curr_action=None,
+            skip_effect=True,
+        )
+
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id="uk_effect_labeled_child_end_range_text_patch",
+        family="text_rewrite_lowering",
+        reason_code="source_bounded_text_range_names_child_endpoint",
+        reason=(
+            "UK source text bounds a range from a parent text anchor to "
+            "the end of a labelled child provision; lowering preserves the "
+            "parent target and encodes the explicit child endpoint in the "
+            "text selector instead of retargeting to the child."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            "text_match": labeled_child_end_selector,
+            "source_text_match": str(primary.get("original") or ""),
+            "target_suffix_kind": target_suffix[0],
+            "target_suffix_label": target_suffix[1],
+        },
+    )
+    return UKLabeledChildEndRangeLowering(
+        primary={**primary, "original": labeled_child_end_selector},
+        curr_action=curr_action,
+        skip_effect=False,
+    )
 
 
 def _separate_definition_repeal_fragments(

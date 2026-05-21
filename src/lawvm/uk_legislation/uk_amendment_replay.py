@@ -280,8 +280,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID as _UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID,
     _fragment_rule_ids,
     _fragment_substitution,
-    _fragment_target_suffix,
-    _labeled_child_end_range_selector,
+    lower_labeled_child_end_range_selector,
     _multi_quoted_word_repeal_fragments,
 )
 from lawvm.uk_legislation.source_context import (
@@ -1559,61 +1558,20 @@ def compile_effect_to_ir_ops(
                         extracted_text=extracted_text,
                         lowering_rejections_out=lowering_rejections_out,
                     )
-                    primary_target_suffix = _fragment_target_suffix(primary)
-                    if primary_target_suffix is not None:
-                        labeled_child_end_selector = _labeled_child_end_range_selector(
-                            target,
-                            primary,
-                            primary_target_suffix,
-                        )
-                        if not labeled_child_end_selector:
-                            _append_uk_effect_lowering_rejection(
-                                lowering_rejections_out,
-                                rule_id="uk_effect_labeled_child_end_range_target_rejected",
-                                family="target_resolution_recovery",
-                                reason_code="unsupported_labeled_end_range_target_suffix",
-                                reason=(
-                                    "UK source text bounds a text range to a labelled child target, "
-                                    "but the affected provision target could not safely carry the "
-                                    "parent-scoped child-end selector without widening or changing "
-                                    "the source scope."
-                                ),
-                                effect=effect,
-                                extracted_el=extracted_el,
-                                extracted_text=extracted_text,
-                                detail={
-                                    "target_ref": t_str,
-                                    "target": str(target),
-                                    "target_suffix_kind": primary_target_suffix[0],
-                                    "target_suffix_label": primary_target_suffix[1],
-                                },
-                            )
-                            curr_action = None
-                            continue
-                        primary = {**primary, "original": labeled_child_end_selector}
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id="uk_effect_labeled_child_end_range_text_patch",
-                            family="text_rewrite_lowering",
-                            reason_code="source_bounded_text_range_names_child_endpoint",
-                            reason=(
-                                "UK source text bounds a range from a parent text anchor to "
-                                "the end of a labelled child provision; lowering preserves the "
-                                "parent target and encodes the explicit child endpoint in the "
-                                "text selector instead of retargeting to the child."
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "target": str(target),
-                                "text_match": labeled_child_end_selector,
-                                "source_text_match": str(subs[0].get("original") or ""),
-                                "target_suffix_kind": primary_target_suffix[0],
-                                "target_suffix_label": primary_target_suffix[1],
-                            },
-                        )
+                    labeled_child_end_range_lowering = lower_labeled_child_end_range_selector(
+                        effect=effect,
+                        target=target,
+                        target_ref=t_str,
+                        primary=primary,
+                        curr_action=curr_action,
+                        extracted_el=extracted_el,
+                        extracted_text=extracted_text,
+                        lowering_rejections_out=lowering_rejections_out,
+                    )
+                    primary = labeled_child_end_range_lowering.primary
+                    curr_action = labeled_child_end_range_lowering.curr_action
+                    if labeled_child_end_range_lowering.skip_effect:
+                        continue
                     op_text_match = primary["original"]
                     op_text_replacement = primary["replacement"]
                     op_text_occurrence = int(primary.get("occurrence", "0") or "0")
