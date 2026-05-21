@@ -2149,16 +2149,20 @@ Current block-substitution context invariant:
 - bounded repeal-table whole-provision rows are owned by
   `uk_effect_repeal_table_structural_repeal`: the compiler must match the same
   unique affected-Act row and an extent clause that explicitly names the exact
-  affected section, schedule, paragraph, subsection, or subparagraph. It then
-  lowers only the feed-named target to a typed `REPEAL`. Clauses mentioning
+  affected part, chapter, section, schedule, paragraph, subsection, or
+  subparagraph. It then lowers only the feed-named target to a typed `REPEAL`.
+  Clauses mentioning
   words, definitions, entries, or table-entry surfaces remain outside this
   rule; non-unique or unmatched rows emit
   `uk_effect_repeal_table_structural_repeal_unresolved` rather than replaying a
   broad repeal schedule or table row as host text. A unique section-range cell
   such as `Sections 26 to 31.` may corroborate each feed-expanded numeric
-  section target inside that range; targets outside the range remain
-  unresolved. Current witness: `asp/2000/6` / `asp/2006/8` schedule repeal of
-  sections `26` to `31`.
+  section target inside that range; a unique container-list cell such as
+  `Parts 1 and 2.` may corroborate each feed-expanded part target inside that
+  list. Targets outside the source-owned list or range remain unresolved.
+  Current witnesses: `asp/2000/6` / `asp/2006/8` schedule repeal of sections
+  `26` to `31`; `asp/2001/8` / `asp/2010/8 sch. 14 para. 37` repeal of
+  Parts `1` and `2`.
 - bounded repeal-table definition-entry rows are owned separately by
   `uk_effect_repeal_table_definition_entry_text_repeal`: after the same unique
   affected-Act row and affected-provision clause matching, an extent clause of
@@ -3874,6 +3878,13 @@ Current bench replay-regime invariant:
   - current witness: `asp/2001/2`, where enacted XML uses generic visible
     `Part`/`SCHEDULE` labels with ids such as `part-n2` and `schedule-n2`,
     while the current oracle exposes numbered containers
+- Payload-less source-owned structural repeals must carry the serialized UK
+  lowered-operation witness sidecar in provenance, just like text rewrites and
+  renumbers. Source-text-only authority mode reads this sidecar to distinguish
+  a repeal proven by affecting-act text from metadata-only replay authority.
+  Without it, deterministic source-table repeals are incorrectly rejected as
+  non-source-text operations. Current witness: `asp/2001/8`, where source-owned
+  repeal-table Part `1`/`2` rows must pass source-text-only replay authority.
 
 ## UK Target Shape Normalization
 
