@@ -32,6 +32,7 @@ from lawvm.tools.uk_candidates import (
     _primary_frontier_score,
     _print_uk_candidates_text_summary,
     _replay_applicable_effects_with_budget,
+    _row_matches_claim_template_status,
     _summarize_effect_inventory,
     _triage_rule_id,
     _uk_candidate_row_jsonable,
@@ -225,6 +226,20 @@ def test_matches_filters_applies_year_and_type_bounds() -> None:
     assert _matches_filters(row, min_year=None, max_year=1999, types=None) is False
     assert _matches_filters(row, min_year=None, max_year=None, types={"ukpga"}) is True
     assert _matches_filters(row, min_year=None, max_year=None, types={"asp"}) is False
+
+
+def test_row_matches_claim_template_status_uses_candidate_counts() -> None:
+    row = {
+        "suggested_claim_template_status_counts": {
+            "available": 2,
+            "not_available": 0,
+        },
+    }
+
+    assert _row_matches_claim_template_status(row, "") is True
+    assert _row_matches_claim_template_status(row, "available") is True
+    assert _row_matches_claim_template_status(row, "not_available") is False
+    assert _row_matches_claim_template_status({}, "available") is False
 
 
 def test_filtered_frontier_keeps_only_core_filtered_rows_sorted_by_frontier_score() -> None:
@@ -1108,6 +1123,7 @@ def test_candidates_report_jsonable_records_summary_and_filters() -> None:
         min_year=2000,
         max_year=2005,
         types={"ukpga", "asp"},
+        claim_template_status="available",
     )
     report = _uk_candidates_report_jsonable(
         label="uk_frontier",
@@ -1310,6 +1326,7 @@ def test_candidates_report_jsonable_records_summary_and_filters() -> None:
     assert report["filters"]["types"] == ["asp", "ukpga"]
     assert report["filters"]["effect_budget"] == 25
     assert report["filters"]["residual_budget"] == 3
+    assert report["filters"]["claim_template_status"] == "available"
     assert report["summary"] == {
         "configured_top": 5,
         "configured_score_mode": "replay",
@@ -1563,6 +1580,7 @@ def test_print_uk_candidates_text_summary_uses_report_summary(capsys) -> None:
                 "compare_counts": {"commensurable": 1},
                 "candidate_compare_counts": {"commensurable": 1},
                 "non_candidate_compare_counts": {},
+                "suggested_claim_template_status_counts": {"available": 1},
                 "uk_replay_regime": {
                     "allow_metadata_backfill": False,
                     "allow_oracle_alignment": False,
@@ -1715,6 +1733,10 @@ def test_print_uk_candidates_text_summary_uses_report_summary(capsys) -> None:
         "candidate=missing_extracted_source=1 non_candidate={}"
     ) in out
     assert "compare_evidence: all=commensurable=1 candidate=commensurable=1 non_candidate={}" in out
+    assert (
+        "manual_compile_frontier: status={} rules={} claim_templates=available=1"
+        in out
+    )
     assert "rejection_rules:" in out
     assert "feed_parse: uk_effect_feed_xml_parse_rejected=1" in out
     assert "feed_observation: uk_effect_feed_xml_parse_rejected=1" in out
