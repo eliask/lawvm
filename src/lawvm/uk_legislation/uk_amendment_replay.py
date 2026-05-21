@@ -355,6 +355,10 @@ from lawvm.uk_legislation.replay_target_gaps import (
     uk_malformed_target_placeholder_label_gap,
     uk_malformed_target_schedule_root_label_gap,
     uk_malformed_target_sectionlike_label_gap,
+    uk_payload_container_shape_gap,
+    uk_payload_shape_invariant_violations,
+    uk_repeated_form_label_payload_shape_gap,
+    uk_replace_payload_kind_mismatch_gap,
     uk_table_target_shape_gap,
 )
 from lawvm.uk_legislation.schedule_list_selectors import (
@@ -6387,47 +6391,6 @@ class UKReplayExecutor:
                 violations.add(f"{root_name}:{violation}")
         return violations
 
-    def _payload_shape_invariant_violations(self, op: LegalOperation) -> list[str]:
-        payload = getattr(op, "payload", None)
-        if payload is None or _action_name(op.action) not in {"insert", "replace"}:
-            return []
-        violations: list[str] = []
-        for violation in tree_ops.check_invariants(payload):
-            if "duplicate " not in violation and " out of order:" not in violation:
-                continue
-            violations.append(violation)
-        return violations
-
-    def _payload_container_shape_gap(self, op: LegalOperation, scoped_violation: str) -> bool:
-        if "duplicate part:" not in scoped_violation.lower():
-            return False
-        payload = getattr(op, "payload", None)
-        if payload is None or _action_name(op.action) != "replace":
-            return False
-        target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
-        if not target_path or str(target_path[-1][0] or "").lower() != "part":
-            return False
-        payload_kind = str(getattr(payload, "kind", "") or "").lower()
-        payload_label = _clean_num(str(getattr(payload, "label", "") or ""))
-        return payload_kind == "part" and payload_label in {"", "part"}
-
-    def _repeated_form_label_payload_shape_gap(self, op: LegalOperation, payload_violations: list[str]) -> bool:
-        payload = getattr(op, "payload", None)
-        if payload is None or _action_name(op.action) != "insert":
-            return False
-        target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
-        if len(target_path) != 1 or str(target_path[0][0] or "").lower() != "schedule":
-            return False
-        if str(getattr(payload, "kind", "") or "").lower() != "schedule":
-            return False
-        if not payload_violations:
-            return False
-        allowed = (
-            "duplicate item:",
-            "item out of order:",
-        )
-        return all(any(token in violation.lower() for token in allowed) for violation in payload_violations)
-
     def _part_order_shape_gap(self, op: LegalOperation, scoped_violation: str) -> bool:
         if "part out of order:" not in scoped_violation.lower():
             return False
@@ -6696,39 +6659,11 @@ class UKReplayExecutor:
             )
         )
 
-    def _replace_payload_kind_mismatch_gap(self, op: LegalOperation, scoped_violation: str) -> bool:
-        if _action_name(op.action) != "replace" or op.payload is None:
-            return False
-        target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
-        if not target_path:
-            return False
-        target_kind = str(target_path[-1][0] or "").lower()
-        payload_kind = str(getattr(op.payload, "kind", "") or "").lower()
-        if payload_kind == target_kind:
-            return False
-        return (
-            (
-                target_kind == "subsection"
-                and payload_kind == "paragraph"
-                and "paragraph out of order:" in scoped_violation.lower()
-            )
-            or (
-                target_kind == "paragraph"
-                and payload_kind == "subparagraph"
-                and "subparagraph out of order:" in scoped_violation.lower()
-            )
-            or (
-                target_kind in {"subparagraph", "item", "point"}
-                and payload_kind in {"item", "point"}
-                and "duplicate " in scoped_violation.lower()
-            )
-        )
-
     def _record_invariant_violations(self, op: LegalOperation) -> None:
         current_violations = self._collect_invariant_violations()
-        payload_shape_violations = self._payload_shape_invariant_violations(op)
+        payload_shape_violations = uk_payload_shape_invariant_violations(op)
         for scoped_violation in sorted(current_violations - self._seen_invariant_violations):
-            if payload_shape_violations and self._repeated_form_label_payload_shape_gap(
+            if payload_shape_violations and uk_repeated_form_label_payload_shape_gap(
                 op, payload_shape_violations
             ):
                 _append_uk_replay_adjudication(
@@ -6746,7 +6681,7 @@ class UKReplayExecutor:
                         "payload_violations": "; ".join(payload_shape_violations),
                     },
                 )
-            elif payload_shape_violations or self._payload_container_shape_gap(op, scoped_violation):
+            elif payload_shape_violations or uk_payload_container_shape_gap(op, scoped_violation):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_payload_shape_gap",
@@ -6759,7 +6694,7 @@ class UKReplayExecutor:
                         "payload_violations": "; ".join(payload_shape_violations),
                     },
                 )
-            elif self._replace_payload_kind_mismatch_gap(op, scoped_violation):
+            elif uk_replace_payload_kind_mismatch_gap(op, scoped_violation):
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind="uk_replay_replace_payload_target_leaf_mismatch_gap",

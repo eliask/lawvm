@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 
 from lawvm.core.ir import LegalAddress, LegalOperation
+from lawvm.core import tree_ops
 from lawvm.uk_legislation.addressing import (
     _action_name,
     _addr_container,
@@ -44,6 +45,79 @@ def uk_broad_schedule_table_shape_gap(target: LegalAddress, node: UKMutableNode)
         return False
     provision_kinds = {"paragraph", "subparagraph", "item", "point", "p1group", "section"}
     return not bool(descendant_kinds & provision_kinds)
+
+
+def uk_payload_shape_invariant_violations(op: LegalOperation) -> list[str]:
+    payload = getattr(op, "payload", None)
+    if payload is None or _action_name(op.action) not in {"insert", "replace"}:
+        return []
+    violations: list[str] = []
+    for violation in tree_ops.check_invariants(payload):
+        if "duplicate " not in violation and " out of order:" not in violation:
+            continue
+        violations.append(violation)
+    return violations
+
+
+def uk_payload_container_shape_gap(op: LegalOperation, scoped_violation: str) -> bool:
+    if "duplicate part:" not in scoped_violation.lower():
+        return False
+    payload = getattr(op, "payload", None)
+    if payload is None or _action_name(op.action) != "replace":
+        return False
+    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    if not target_path or str(target_path[-1][0] or "").lower() != "part":
+        return False
+    payload_kind = str(getattr(payload, "kind", "") or "").lower()
+    payload_label = _clean_num(str(getattr(payload, "label", "") or ""))
+    return payload_kind == "part" and payload_label in {"", "part"}
+
+
+def uk_repeated_form_label_payload_shape_gap(op: LegalOperation, payload_violations: list[str]) -> bool:
+    payload = getattr(op, "payload", None)
+    if payload is None or _action_name(op.action) != "insert":
+        return False
+    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    if len(target_path) != 1 or str(target_path[0][0] or "").lower() != "schedule":
+        return False
+    if str(getattr(payload, "kind", "") or "").lower() != "schedule":
+        return False
+    if not payload_violations:
+        return False
+    allowed = (
+        "duplicate item:",
+        "item out of order:",
+    )
+    return all(any(token in violation.lower() for token in allowed) for violation in payload_violations)
+
+
+def uk_replace_payload_kind_mismatch_gap(op: LegalOperation, scoped_violation: str) -> bool:
+    if _action_name(op.action) != "replace" or op.payload is None:
+        return False
+    target_path = tuple(getattr(getattr(op, "target", None), "path", ()) or ())
+    if not target_path:
+        return False
+    target_kind = str(target_path[-1][0] or "").lower()
+    payload_kind = str(getattr(op.payload, "kind", "") or "").lower()
+    if payload_kind == target_kind:
+        return False
+    return (
+        (
+            target_kind == "subsection"
+            and payload_kind == "paragraph"
+            and "paragraph out of order:" in scoped_violation.lower()
+        )
+        or (
+            target_kind == "paragraph"
+            and payload_kind == "subparagraph"
+            and "subparagraph out of order:" in scoped_violation.lower()
+        )
+        or (
+            target_kind in {"subparagraph", "item", "point"}
+            and payload_kind in {"item", "point"}
+            and "duplicate " in scoped_violation.lower()
+        )
+    )
 
 
 def uk_malformed_target_placeholder_label_gap(target: LegalAddress) -> bool:
