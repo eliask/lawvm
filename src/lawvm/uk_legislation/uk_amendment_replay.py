@@ -320,6 +320,10 @@ from lawvm.uk_legislation.uk_prefetch import (
     fetch_affecting_act,
     fetch_affecting_acts_from_manifest,
 )
+from lawvm.uk_legislation.replay_applicability import (
+    nonstructural_replay_candidate_family,
+    should_replay_nonstructural_ops,
+)
 from lawvm.uk_legislation.replay_prepare import prepare_replay_uk_ops
 from lawvm.uk_legislation.replay_records import (
     UKReplayPrepareResult,
@@ -5090,28 +5094,11 @@ class UKReplayPipeline:
         Replaying these narrow classes is lower regret than trusting the feed
         flag blindly.
         """
-        if not effect.is_applicable_for_replay(applicability_mode=applicability_mode):
-            return False
-        effect_type = (effect.effect_type or "").strip().lower()
-        if effect_type.startswith("substituted for"):
-            if not compiled_ops:
-                return False
-            head, *tail = compiled_ops
-            if _action_name(head.action) != "replace" or head.payload is None:
-                return False
-            if all(_action_name(op.action) == "replace" and op.payload is not None for op in compiled_ops):
-                return True
-            return all(_action_name(op.action) == "repeal" and op.target.path for op in tail)
-        if effect_type.startswith("revoked"):
-            return bool(compiled_ops) and all(_action_name(op.action) == "repeal" and op.target.path for op in compiled_ops)
-        if effect_type.startswith("ceases to have effect"):
-            return bool(compiled_ops) and all(_action_name(op.action) == "repeal" and op.target.path for op in compiled_ops)
-        if effect_type == "added":
-            return bool(compiled_ops) and all(
-                _action_name(op.action) == "insert" and op.payload is not None
-                for op in compiled_ops
-            )
-        return False
+        return should_replay_nonstructural_ops(
+            effect,
+            compiled_ops,
+            applicability_mode=applicability_mode,
+        )
 
     @staticmethod
     def _nonstructural_replay_candidate_family(
@@ -5120,7 +5107,7 @@ class UKReplayPipeline:
         applicability_mode: str = "effective_date_plus_feed_applied",
     ) -> str:
         """Return the nonstructural effect row family that may still replay."""
-        return uk_nonstructural_replay_candidate_family(
+        return nonstructural_replay_candidate_family(
             effect,
             applicability_mode=applicability_mode,
         )
