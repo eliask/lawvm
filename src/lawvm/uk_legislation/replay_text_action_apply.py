@@ -129,6 +129,7 @@ def _text_patch_detail(
     replacement: str,
     *,
     blocking: bool,
+    strict_disposition: str | None = None,
     quirks_disposition: str = "record",
     **extra: Any,
 ) -> dict[str, Any]:
@@ -140,6 +141,8 @@ def _text_patch_detail(
         replacement_text=replacement,
         **extra,
     )
+    if strict_disposition is not None:
+        detail["strict_disposition"] = strict_disposition
     detail["quirks_disposition"] = quirks_disposition
     return detail
 
@@ -514,16 +517,15 @@ class UKReplayTextActionApplyMixin:
                 message = observation.message
                 family = observation.family
                 strict_disposition = observation.strict_disposition
-                detail = {
-                    "action": _action_name(op.action),
-                    "target": str(target),
-                    "text_match": text_patch.selector.match_text,
-                    "replacement_text": replacement,
-                    "family": family,
-                    "blocking": False,
-                    "strict_disposition": strict_disposition,
-                    "quirks_disposition": "record",
-                }
+                detail = _text_patch_detail(
+                    op,
+                    target,
+                    text_patch,
+                    replacement,
+                    blocking=False,
+                    strict_disposition=strict_disposition,
+                    family=family,
+                )
                 if source_shape is not None:
                     detail["source_shape"] = source_shape
                 _append_uk_replay_adjudication(
@@ -563,16 +565,14 @@ class UKReplayTextActionApplyMixin:
                             "citation punctuation spacing in text_match."
                         ),
                         op=op,
-                        detail={
-                            "action": _action_name(op.action),
-                            "target": str(target),
-                            "text_match": text_patch.selector.match_text,
-                            "replacement_text": replacement,
-                            "family": "text_match_recovery",
-                            "blocking": False,
-                            "strict_disposition": "record",
-                            "quirks_disposition": "record",
-                        },
+                        detail=_text_patch_detail(
+                            op,
+                            target,
+                            text_patch,
+                            replacement,
+                            blocking=False,
+                            family="text_match_recovery",
+                        ),
                     )
             if (
                 not applied
@@ -607,16 +607,14 @@ class UKReplayTextActionApplyMixin:
                             "word-internal apostrophe/hyphen elision in text_match."
                         ),
                         op=op,
-                        detail={
-                            "action": _action_name(op.action),
-                            "target": str(target),
-                            "text_match": text_patch.selector.match_text,
-                            "replacement_text": replacement,
-                            "family": "text_match_recovery",
-                            "blocking": False,
-                            "strict_disposition": "record",
-                            "quirks_disposition": "record",
-                        },
+                        detail=_text_patch_detail(
+                            op,
+                            target,
+                            text_patch,
+                            replacement,
+                            blocking=False,
+                            family="text_match_recovery",
+                        ),
                     )
             if (
                 not applied
@@ -660,24 +658,22 @@ class UKReplayTextActionApplyMixin:
                             "a trailing comma absent before a conjunction in the target."
                         ),
                         op=op,
-                        detail={
-                            "action": _action_name(op.action),
-                            "target": str(target),
-                            "text_match": text_patch.selector.match_text,
-                            "applied_match": applied_match,
-                            "replacement_text": replacement,
-                            "family": "text_match_recovery",
-                            "source_shape": "numeric_list_trailing_comma_before_conjunction",
-                            "blocking": False,
-                            "strict_disposition": "record",
-                            "quirks_disposition": "record",
-                            "prior_same_target_text_patch_op_ids": tuple(
+                        detail=_text_patch_detail(
+                            op,
+                            target,
+                            text_patch,
+                            replacement,
+                            blocking=False,
+                            applied_match=applied_match,
+                            family="text_match_recovery",
+                            source_shape="numeric_list_trailing_comma_before_conjunction",
+                            prior_same_target_text_patch_op_ids=tuple(
                                 self._applied_text_patch_targets.get(str(target), ())
                             ),
-                            "prior_same_target_text_patch_count": len(
+                            prior_same_target_text_patch_count=len(
                                 self._applied_text_patch_targets.get(str(target), ())
                             ),
-                        },
+                        ),
                     )
             if (
                 not applied
@@ -719,18 +715,16 @@ class UKReplayTextActionApplyMixin:
                                 "rotated trailing-comma selector preimage."
                             ),
                             op=op,
-                            detail={
-                                "action": _action_name(op.action),
-                                "target": str(target),
-                                "text_match": text_patch.selector.match_text,
-                                "applied_match": rotated_match,
-                                "replacement_text": replacement,
-                                "family": "text_match_recovery",
-                                "source_shape": "trailing_comma_rotated_before_phrase",
-                                "blocking": False,
-                                "strict_disposition": "record",
-                                "quirks_disposition": "record",
-                            },
+                            detail=_text_patch_detail(
+                                op,
+                                target,
+                                text_patch,
+                                replacement,
+                                blocking=False,
+                                applied_match=rotated_match,
+                                family="text_match_recovery",
+                                source_shape="trailing_comma_rotated_before_phrase",
+                            ),
                         )
             if not applied:
                 for frag_sub in _fragment_substitution(op) or []:
@@ -771,19 +765,17 @@ class UKReplayTextActionApplyMixin:
                                 "fragment substitution after the primary selector missed."
                             ),
                             op=op,
-                            detail={
-                                "action": _action_name(op.action),
-                                "target": str(target),
-                                "text_match": text_patch.selector.match_text,
-                                "replacement_text": replacement,
-                                "applied_match": alt_match,
-                                "applied_replacement": alt_replacement,
-                                "family": "text_rewrite_recovery",
-                                "source_shape": "fragment_substitution_provenance_tag",
-                                "blocking": False,
-                                "strict_disposition": "record",
-                                "quirks_disposition": "record",
-                            },
+                            detail=_text_patch_detail(
+                                op,
+                                target,
+                                text_patch,
+                                replacement,
+                                blocking=False,
+                                applied_match=alt_match,
+                                applied_replacement=alt_replacement,
+                                family="text_rewrite_recovery",
+                                source_shape="fragment_substitution_provenance_tag",
+                            ),
                         )
                         break
             if applied:
