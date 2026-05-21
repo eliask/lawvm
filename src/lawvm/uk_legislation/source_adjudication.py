@@ -763,7 +763,15 @@ def classify_uk_commencement_current_projection(
 
 
 def _normalize_uk_source_container_eid(eid: str) -> str:
-    parts = [part for part in str(eid or "").lower().split("-") if part]
+    parts: list[str] = []
+    for part in str(eid or "").lower().split("-"):
+        if not part:
+            continue
+        match = re.fullmatch(r"(chapter|part|schedule|paragraph)([0-9]+[a-z]?)", part)
+        if match is not None:
+            parts.extend([match.group(1), match.group(2)])
+            continue
+        parts.append(part)
     if not parts:
         return ""
     normalized: list[str] = []
