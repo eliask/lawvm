@@ -70,21 +70,32 @@ def _append_uk_replay_adjudication(
     return adjudication
 
 
+def uk_replay_action_target_detail(
+    op: LegalOperation,
+    target: LegalAddress,
+    *,
+    blocking: bool,
+    **extra: Any,
+) -> dict[str, Any]:
+    """Build the standard action/target detail payload for replay adjudications."""
+    detail: dict[str, Any] = {
+        "action": _action_name(op.action),
+        "target": str(target),
+        "blocking": bool(blocking),
+        "strict_disposition": "block" if blocking else "record",
+        "quirks_disposition": "record",
+    }
+    detail.update(extra)
+    return detail
+
+
 def uk_replay_blocking_action_target_detail(
     op: LegalOperation,
     target: LegalAddress,
     **extra: Any,
 ) -> dict[str, Any]:
     """Build the standard strict-blocking detail payload for replay skips."""
-    detail: dict[str, Any] = {
-        "action": _action_name(op.action),
-        "target": str(target),
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-    }
-    detail.update(extra)
-    return detail
+    return uk_replay_action_target_detail(op, target, blocking=True, **extra)
 
 
 def append_schedule_entry_repeal_granularity_blocked_adjudication(
