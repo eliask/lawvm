@@ -947,6 +947,21 @@ def _manual_compile_source_jsonable(source: Mapping[str, Any]) -> dict[str, Any]
     return payload
 
 
+def _quoted_for_substitute_pair(source_preview: str) -> tuple[str, str]:
+    """Return the quoted preimage/replacement pair from a simple formula."""
+    replacement_match = re.search(
+        r"\bfor\b.{0,240}?[\"“](?P<old>[^\"”]{1,240})[\"”]\s+substitute\s+[\"“](?P<new>[^\"”]{1,240})[\"”]",
+        " ".join(source_preview.split()),
+        flags=re.I,
+    )
+    if replacement_match is None:
+        return "", ""
+    return (
+        " ".join(replacement_match.group("old").split()),
+        " ".join(replacement_match.group("new").split()),
+    )
+
+
 def _manual_compile_suggested_claim_template(
     *,
     statute_id: str,
@@ -957,11 +972,7 @@ def _manual_compile_suggested_claim_template(
     effect = row.effect
     if summary.manual_compile_rule_id == "uk_manual_frontier_heading_facet_candidate":
         source_preview = " ".join((summary.source_extracted_text_preview or "").split())
-        replacement_match = re.search(
-            r"\bfor\b.{0,240}?[\"“](?P<old>[^\"”]{1,240})[\"”]\s+substitute\s+[\"“](?P<new>[^\"”]{1,240})[\"”]",
-            source_preview,
-            flags=re.I,
-        )
+        text_match, replacement = _quoted_for_substitute_pair(source_preview)
         return {
             "schema": "lawvm.uk_semantic_compile_claim_template.v1",
             "claim_kind": "semantic_compile",
@@ -978,16 +989,8 @@ def _manual_compile_suggested_claim_template(
             "source_pathology": summary.source_pathology or "",
             "candidate_target_surface": effect.affected_provisions,
             "candidate_source_preview": source_preview[:500],
-            "text_match": (
-                " ".join(replacement_match.group("old").split())
-                if replacement_match is not None
-                else ""
-            ),
-            "replacement": (
-                " ".join(replacement_match.group("new").split())
-                if replacement_match is not None
-                else ""
-            ),
+            "text_match": text_match,
+            "replacement": replacement,
             "required_validator_checks": [
                 "source_witness_targets_heading_title_or_sidenote_facet",
                 "claim_identifies_exact_target_facet_not_host_body",
@@ -999,11 +1002,7 @@ def _manual_compile_suggested_claim_template(
         }
     if summary.manual_compile_rule_id == "uk_manual_frontier_crossheading_candidate":
         source_preview = " ".join((summary.source_extracted_text_preview or "").split())
-        replacement_match = re.search(
-            r"\bfor\b.{0,240}?[\"“](?P<old>[^\"”]{1,240})[\"”]\s+substitute\s+[\"“](?P<new>[^\"”]{1,240})[\"”]",
-            source_preview,
-            flags=re.I,
-        )
+        text_match, replacement = _quoted_for_substitute_pair(source_preview)
         return {
             "schema": "lawvm.uk_semantic_compile_claim_template.v1",
             "claim_kind": "semantic_compile",
@@ -1020,16 +1019,8 @@ def _manual_compile_suggested_claim_template(
             "source_pathology": summary.source_pathology or "",
             "candidate_target_surface": effect.affected_provisions,
             "candidate_source_preview": source_preview[:500],
-            "text_match": (
-                " ".join(replacement_match.group("old").split())
-                if replacement_match is not None
-                else ""
-            ),
-            "replacement": (
-                " ".join(replacement_match.group("new").split())
-                if replacement_match is not None
-                else ""
-            ),
+            "text_match": text_match,
+            "replacement": replacement,
             "required_validator_checks": [
                 "source_witness_targets_crossheading_surface",
                 "claim_identifies_exact_crossheading_carrier",
