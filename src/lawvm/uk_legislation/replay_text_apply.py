@@ -1605,6 +1605,10 @@ class UKReplayTextApplyMixin:
                             else self._replace_descendant_at_path(node, parent_path, rebuilt_parent)
                         )
                         self._replace_node_in_statute(node, rebuilt)
+                        if recovery_rule_ids_out is not None:
+                            recovery_rule_ids_out.append(
+                                "uk_replay_after_definition_child_structured_insert_applied"
+                            )
                         return rebuilt, True
 
                 full_text = " ".join(tn.text.strip() for _, tn in text_nodes if tn.text).strip()
@@ -1633,6 +1637,10 @@ class UKReplayTextApplyMixin:
                 new_text = f"{full_text[:insert_at]}{joiner}{replacement}{full_text[insert_at:]}"
                 rebuilt = dc_replace(node, text=" ".join(new_text.split()).strip(), children=[])
                 self._replace_node_in_statute(node, rebuilt)
+                if recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append(
+                        "uk_replay_after_definition_child_flat_ordinal_insert_applied"
+                    )
                 return rebuilt, True
 
             term = match[len("TEXT_AFTER_DEFINITION_") :].strip()
@@ -1730,6 +1738,8 @@ class UKReplayTextApplyMixin:
                     recovery_rule_ids_out.append(
                         "uk_replay_definition_anchor_conjoined_term_normalized"
                     )
+                if recovery_rule_ids_out is not None:
+                    recovery_rule_ids_out.append("uk_replay_after_definition_text_insert_applied")
                 return " ".join(new_text.split()).strip(), True
 
             if node.text:

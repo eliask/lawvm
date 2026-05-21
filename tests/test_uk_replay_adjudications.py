@@ -4706,7 +4706,13 @@ def test_executor_applies_after_definition_insert_to_unique_definition_text_chil
         "\u201cmental health officer\u201d has the meaning given by section 329 of the 2003 Act;"
     )
     assert subsection.children[2].text == "\u201cnearest relative\u201d means a relative"
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_after_definition_text_insert_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "after_definition_text_insert_selector"
 
 
 def test_executor_records_definition_anchor_education_lexical_variant_recovery() -> None:
@@ -4771,10 +4777,13 @@ def test_executor_records_definition_anchor_education_lexical_variant_recovery()
         "\u201cland\u201d includes buildings."
     )
     assert [adjudication.kind for adjudication in adjudications] == [
-        "uk_replay_definition_anchor_lexical_variant_recovered"
+        "uk_replay_definition_anchor_lexical_variant_recovered",
+        "uk_replay_after_definition_text_insert_applied",
     ]
     assert adjudications[0].detail["family"] == "target_resolution_recovery"
     assert adjudications[0].detail["strict_disposition"] == "block"
+    assert adjudications[1].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[1].detail["strict_disposition"] == "record"
 
 
 def test_executor_applies_after_definition_insert_for_conjoined_qualified_anchor() -> None:
@@ -4834,11 +4843,14 @@ def test_executor_applies_after_definition_insert_for_conjoined_qualified_anchor
     assert [row.kind for row in adjudications] == [
         "uk_replay_definition_anchor_qualifier_phrase_normalized",
         "uk_replay_definition_anchor_conjoined_term_normalized",
+        "uk_replay_after_definition_text_insert_applied",
     ]
     assert adjudications[0].detail["family"] == "target_resolution_recovery"
     assert adjudications[0].detail["strict_disposition"] == "record"
     assert adjudications[1].detail["family"] == "target_resolution_recovery"
     assert adjudications[1].detail["strict_disposition"] == "record"
+    assert adjudications[2].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[2].detail["strict_disposition"] == "record"
 
 
 def test_executor_does_not_apply_after_definition_insert_for_unbounded_conjoined_anchor() -> None:
@@ -5531,7 +5543,13 @@ def test_executor_applies_after_definition_insert_to_comma_separated_definition_
         "“ the Ombudsman's functions ” includes the Ombudsman's functions under the 2015 Act, "
         "“request” means a request for a review,"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_after_definition_text_insert_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "after_definition_text_insert_selector"
 
 
 def test_executor_applies_at_end_definition_insert_to_named_definition_only() -> None:
@@ -5886,7 +5904,16 @@ def test_executor_inserts_source_carried_definition_children_after_anchor() -> N
         "the South-West of Scotland Transport Partnership;",
         "the Strathclyde Passenger Transport Authority;",
     ]
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_after_definition_child_structured_insert_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert (
+        adjudications[0].detail["source_shape"]
+        == "structured_after_definition_child_insert_selector"
+    )
 
 
 def test_executor_inserts_definition_child_and_appends_anchor_connector() -> None:
@@ -5955,7 +5982,16 @@ def test_executor_inserts_definition_child_and_appends_anchor_connector() -> Non
         "the Strathclyde Passenger Transport Authority ; or",
         "the West of Scotland Transport Partnership;",
     ]
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_after_definition_child_structured_insert_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert (
+        adjudications[0].detail["source_shape"]
+        == "structured_after_definition_child_insert_selector"
+    )
 
 
 def test_executor_scopes_source_carried_anchor_insert_to_definition_entry() -> None:

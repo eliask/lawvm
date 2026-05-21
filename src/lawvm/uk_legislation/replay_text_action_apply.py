@@ -459,6 +459,30 @@ class UKReplayTextActionApplyMixin:
                     )
                     family = "definition_entry_predicate_recovery"
                     strict_disposition = "record"
+                elif recovery_rule_id == "uk_replay_after_definition_child_structured_insert_applied":
+                    message = (
+                        "UK replay inserted source-carried definition children after "
+                        "a preserved structured definition child."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "structured_after_definition_child_insert_selector"
+                elif recovery_rule_id == "uk_replay_after_definition_child_flat_ordinal_insert_applied":
+                    message = (
+                        "UK replay inserted source-carried definition text after "
+                        "a flat definition entry using a bounded ordinal child segment."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "flat_after_definition_child_ordinal_insert_selector"
+                elif recovery_rule_id == "uk_replay_after_definition_text_insert_applied":
+                    message = (
+                        "UK replay inserted definition text after proving a unique "
+                        "definition surface."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "after_definition_text_insert_selector"
                 elif recovery_rule_id == "uk_replay_definition_entry_qualifier_phrase_normalized":
                     message = (
                         "UK replay applied definition-entry text op after recognizing "
