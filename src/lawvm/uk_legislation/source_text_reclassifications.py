@@ -98,6 +98,17 @@ SOURCE_FOLLOWING_ANCHOR_STRUCTURED_SUBSTITUTION_RE = re.compile(
     flags=re.I | re.S,
 )
 
+
+def source_following_anchor_structured_substitution_anchor(source_text: str) -> str:
+    text = str(source_text or "")
+    if not text:
+        return ""
+    match = SOURCE_FOLLOWING_ANCHOR_STRUCTURED_SUBSTITUTION_RE.search(text)
+    if match is None:
+        return ""
+    return " ".join(match.group("anchor").split()).strip()
+
+
 _DEFINITION_LIST_OMISSION_CONTEXT_RE = re.compile(
     r"(?:^|\b)omit\s+(?:the\s+)?definitions?\s+of(?:\b|[\u2014-])",
     flags=re.I,
