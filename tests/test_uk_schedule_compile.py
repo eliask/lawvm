@@ -23368,6 +23368,11 @@ def test_pipeline_compile_ops_blocks_range_to_container_substitution_until_owned
                 {"kind": "section", "label": "3A", "eid": "section-3A"},
             ),
             "truncated_direct_children": False,
+            "descendant_section_count": 1,
+            "descendant_sections": (
+                {"label": "3A", "eid": "section-3A"},
+            ),
+            "truncated_descendant_sections": False,
         },
     )
     assert lowering_rejections[-1]["required_ownership"] == (
