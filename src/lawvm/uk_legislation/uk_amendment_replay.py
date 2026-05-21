@@ -335,6 +335,7 @@ from lawvm.uk_legislation.replay_table_geometry import (
     expanded_uk_table_rows_with_physical_index,
     resolve_unique_uk_table_column_text_cell,
     resolve_unique_uk_table_entry_cell,
+    resolve_unique_uk_table_entry_cells,
     resolve_unique_uk_table_entry_text_cell,
     resolve_unique_uk_table_relating_cell,
     strip_uk_identity_attrs_recursive,
@@ -6146,62 +6147,6 @@ class UKReplayExecutor:
             **carrier_detail,
         }
 
-    def _resolve_unique_table_entry_cells(
-        self,
-        node: UKMutableNode,
-        selector: dict[str, Any],
-    ) -> tuple[list[UKMutableNode], str, dict[str, Any]]:
-        try:
-            column_index = int(selector.get("column_index") or 0)
-        except (TypeError, ValueError):
-            return [], "invalid_selector", {}
-        raw_labels = selector.get("entry_labels")
-        if not isinstance(raw_labels, (list, tuple)) or not raw_labels:
-            return [], "invalid_selector", {}
-        entry_labels = tuple(_compact_normalized_text(str(label or "")) for label in raw_labels)
-        if column_index < 1 or not entry_labels or any(not label for label in entry_labels):
-            return [], "invalid_selector", {}
-
-        tables, carrier_detail = uk_table_selector_tables(node, selector)
-        if len(tables) != 1:
-            return [], "table_not_unique", {"table_count": len(tables), **carrier_detail}
-
-        matches_by_label: dict[str, list[tuple[UKMutableNode, str]]] = {label: [] for label in entry_labels}
-        for row_cells in expanded_uk_table_rows(tables[0]):
-            row_texts = [
-                str(row_cells[col].text or "")
-                for col in sorted(row_cells)
-                if str(row_cells[col].text or "")
-            ]
-            target_cell = row_cells.get(column_index)
-            if target_cell is None:
-                continue
-            for label in entry_labels:
-                if not any(_compact_normalized_text(text) == label for text in row_texts):
-                    continue
-                row_preview = " | ".join(row_texts)[:240]
-                if not matches_by_label[label] or matches_by_label[label][-1][0] is not target_cell:
-                    matches_by_label[label].append((target_cell, row_preview))
-
-        missing = tuple(label for label, matches in matches_by_label.items() if not matches)
-        ambiguous = tuple(label for label, matches in matches_by_label.items() if len(matches) > 1)
-        if missing or ambiguous:
-            return [], "entry_cells_not_unique", {
-                "missing_entry_labels": missing,
-                "ambiguous_entry_labels": ambiguous,
-                "matching_rows": tuple(
-                    row_preview
-                    for matches in matches_by_label.values()
-                    for _cell, row_preview in matches[:2]
-                )[:5],
-                **carrier_detail,
-            }
-        return [matches_by_label[label][0][0] for label in entry_labels], "", {
-            "matching_cell_count": len(entry_labels),
-            "matched_rows": tuple(matches_by_label[label][0][1] for label in entry_labels),
-            **carrier_detail,
-        }
-
     def _heading_facet_carrier_for_target(
         self,
         target: LegalAddress,
@@ -9986,7 +9931,7 @@ class UKReplayExecutor:
                 table_cell_selector = _table_cell_selector(op)
                 if table_cell_selector is not None:
                     if str(table_cell_selector.get("selector_mode") or "") == "unique_entry_cells":
-                        table_cells, table_cell_reason, table_cell_detail = self._resolve_unique_table_entry_cells(
+                        table_cells, table_cell_reason, table_cell_detail = resolve_unique_uk_table_entry_cells(
                             node,
                             table_cell_selector,
                         )
