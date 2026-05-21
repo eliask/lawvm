@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from dataclasses import replace as dc_replace
 from typing import Any, Optional
 
-from lawvm.core.ir import LegalOperation
+from lawvm.core.ir import IRStatute, LegalOperation
 from lawvm.core.phase_result import Finding
+from lawvm.core.replay_lints import build_text_duplication_findings
 from lawvm.replay_adjudication import CompileAdjudication
 
 
@@ -75,3 +78,55 @@ def _uk_adjudication_from_finding(finding: Finding) -> CompileAdjudication:
         source_statute=str(finding.source_statute or ""),
         detail=detail,
     )
+
+
+def append_replay_fold_text_duplication_adjudications(
+    adjudications_out: list[CompileAdjudication],
+    *,
+    frozen_statute: IRStatute,
+    source_statute: str,
+) -> None:
+    """Project replay-fold text-duplication findings into UK adjudications."""
+    duplicate_findings = [
+        dc_replace(finding, detail={**finding.detail, "root": "body"})
+        for finding in build_text_duplication_findings(
+            frozen_statute.body,
+            phase="replay_fold",
+            source_statute=source_statute,
+        )
+    ]
+    for schedule in frozen_statute.supplements:
+        schedule_findings = build_text_duplication_findings(
+            schedule,
+            phase="replay_fold",
+            source_statute=source_statute,
+        )
+        duplicate_findings.extend(
+            dc_replace(
+                finding,
+                detail={**finding.detail, "root": f"schedule:{schedule.label or '?'}"},
+            )
+            for finding in schedule_findings
+        )
+
+    seen_duplicate_keys = {
+        (
+            adjudication.kind,
+            adjudication.message,
+            adjudication.source_statute,
+            json.dumps(adjudication.detail, sort_keys=True, ensure_ascii=False),
+        )
+        for adjudication in adjudications_out
+    }
+    for finding in duplicate_findings:
+        adjudication = _uk_adjudication_from_finding(finding)
+        key = (
+            adjudication.kind,
+            adjudication.message,
+            adjudication.source_statute,
+            json.dumps(adjudication.detail, sort_keys=True, ensure_ascii=False),
+        )
+        if key in seen_duplicate_keys:
+            continue
+        adjudications_out.append(adjudication)
+        seen_duplicate_keys.add(key)

@@ -43,7 +43,6 @@ from lawvm.core.ir import (
 )
 from lawvm.core.semantic_types import FacetKind, IRNodeKind, StructuralAction, TextPatchKindEnum
 from lawvm.replay_adjudication import CompileAdjudication
-from lawvm.core.replay_lints import build_text_duplication_findings
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.uk_legislation.canonicalize import (
     canonicalize_uk_address,
@@ -323,9 +322,9 @@ from lawvm.uk_legislation.uk_prefetch import (
 )
 from lawvm.uk_legislation.replay_records import (
     UKReplayPrepareResult,
+    append_replay_fold_text_duplication_adjudications,
     _append_uk_replay_adjudication,
     _build_uk_replay_adjudication,
-    _uk_adjudication_from_finding,
 )
 from lawvm.uk_legislation.replay_prepare_ordering import (
     _order_ops_by_before_edges,
@@ -15796,50 +15795,10 @@ def replay_uk_ops(
         executor.apply_op(op)
 
     if adjudications_out is not None:
-        frozen_statute = executor.statute.to_irstatute()
-        duplicate_findings = [
-            dc_replace(finding, detail={**finding.detail, "root": "body"})
-            for finding in build_text_duplication_findings(
-                frozen_statute.body,
-                phase="replay_fold",
-                source_statute=base.statute_id,
-            )
-        ]
-        for schedule in frozen_statute.supplements:
-            schedule_findings = build_text_duplication_findings(
-                schedule,
-                phase="replay_fold",
-                source_statute=base.statute_id,
-            )
-            patched_schedule_findings = [
-                dc_replace(
-                    finding,
-                    detail={**finding.detail, "root": f"schedule:{schedule.label or '?'}"},
-                )
-                for finding in schedule_findings
-            ]
-            duplicate_findings.extend(patched_schedule_findings)
-
-        seen_duplicate_keys = {
-            (
-                adjudication.kind,
-                adjudication.message,
-                adjudication.source_statute,
-                json.dumps(adjudication.detail, sort_keys=True, ensure_ascii=False),
-            )
-            for adjudication in adjudications_out
-        }
-        for finding in duplicate_findings:
-            adjudication = _uk_adjudication_from_finding(finding)
-            key = (
-                adjudication.kind,
-                adjudication.message,
-                adjudication.source_statute,
-                json.dumps(adjudication.detail, sort_keys=True, ensure_ascii=False),
-            )
-            if key in seen_duplicate_keys:
-                continue
-            adjudications_out.append(adjudication)
-            seen_duplicate_keys.add(key)
+        append_replay_fold_text_duplication_adjudications(
+            adjudications_out,
+            frozen_statute=executor.statute.to_irstatute(),
+            source_statute=base.statute_id,
+        )
 
     return executor.statute.to_irstatute()
