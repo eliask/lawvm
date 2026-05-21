@@ -7,13 +7,16 @@ from dataclasses import replace as dc_replace
 from typing import cast
 
 from lawvm.core.ir import LegalAddress, LegalOperation, TextPatchSpec
-from lawvm.core.semantic_types import IRNodeKind, StructuralAction, TextPatchKindEnum
+from lawvm.core.semantic_types import IRNodeKind, TextPatchKindEnum
 from lawvm.roman import roman_to_arabic as _shared_roman_to_arabic
-from lawvm.uk_legislation.addressing import _action_name, _addr_container, _addr_leaf_kind, _addr_leaf_label, _uk_kind_value
+from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind, _uk_kind_value
 from lawvm.uk_legislation.canonicalize import uk_is_transparent_wrapper_kind, uk_kind_matches
 from lawvm.uk_legislation.mutable_ir import UKMutableNode, uk_insert_child_sorted, uk_replace_text_and_children
 from lawvm.uk_legislation.ordering import _label_sort_key
-from lawvm.uk_legislation.replay_records import _append_uk_replay_adjudication
+from lawvm.uk_legislation.replay_records import (
+    _append_uk_replay_adjudication,
+    uk_replay_recovery_action_target_detail,
+)
 from lawvm.uk_legislation.replay_target_gaps import (
     uk_malformed_target_note_or_crossheading_gap,
     uk_malformed_target_placeholder_label_gap,
@@ -503,17 +506,14 @@ class UKReplayTargetDiagnosticsMixin:
                 "source-targeted descendant is not represented as a structural carrier."
             ),
             op=op,
-            detail={
-                "action": _action_name(op.action),
-                "target": str(target),
-                "recovery_target": str(parent_target),
-                "text_match": match_text,
-                "replacement_text": replacement,
-                "family": "target_resolution_recovery",
-                "blocking": False,
-                "strict_disposition": "block",
-                "quirks_disposition": "apply",
-            },
+            detail=uk_replay_recovery_action_target_detail(
+                op,
+                target,
+                family="target_resolution_recovery",
+                recovery_target=str(parent_target),
+                text_match=match_text,
+                replacement_text=replacement,
+            ),
         )
         return True
 
@@ -573,18 +573,15 @@ class UKReplayTargetDiagnosticsMixin:
                 "rather than a structural child."
             ),
             op=op,
-            detail={
-                "action": _action_name(op.action),
-                "target": str(target),
-                "recovery_target": str(parent_target),
-                "text_match": match_text,
-                "replacement_text": replacement,
-                "family": "target_resolution_recovery",
-                "source_shape": "implicit_first_subparagraph_parent_text",
-                "blocking": False,
-                "strict_disposition": "block",
-                "quirks_disposition": "apply",
-            },
+            detail=uk_replay_recovery_action_target_detail(
+                op,
+                target,
+                family="target_resolution_recovery",
+                recovery_target=str(parent_target),
+                text_match=match_text,
+                replacement_text=replacement,
+                source_shape="implicit_first_subparagraph_parent_text",
+            ),
         )
         return True
 
@@ -651,20 +648,17 @@ class UKReplayTargetDiagnosticsMixin:
                 "with explicit child provisions."
             ),
             op=op,
-            detail={
-                "action": _action_name(op.action),
-                "target": str(target),
-                "recovery_target": str(parent_target),
-                "source_anchor": anchor,
-                "payload_kind": str(new_node.kind),
-                "payload_label": str(new_node.label or ""),
-                "parent_had_children_before": parent_had_children,
-                "parent_tail_trimmed": parent_tail_trimmed,
-                "family": "source_carried_structured_tail_substitution",
-                "blocking": False,
-                "strict_disposition": "block",
-                "quirks_disposition": "apply",
-            },
+            detail=uk_replay_recovery_action_target_detail(
+                op,
+                target,
+                family="source_carried_structured_tail_substitution",
+                recovery_target=str(parent_target),
+                source_anchor=anchor,
+                payload_kind=str(new_node.kind),
+                payload_label=str(new_node.label or ""),
+                parent_had_children_before=parent_had_children,
+                parent_tail_trimmed=parent_tail_trimmed,
+            ),
         )
         return True
 
@@ -765,19 +759,16 @@ class UKReplayTargetDiagnosticsMixin:
                 "source-carried quoted substitution payload."
             ),
             op=op,
-            detail={
-                "action": _action_name(op.action),
-                "target": str(target),
-                "text_match": match_text,
-                "replacement_text": replacement,
-                "child_kind": child_kind,
-                "child_labels": tuple(label for label, _ in parts),
-                "family": "source_carried_labeled_child_text_substitution",
-                "source_shape": "flat_replacement_payload_with_visible_child_labels",
-                "blocking": False,
-                "strict_disposition": "block",
-                "quirks_disposition": "apply",
-            },
+            detail=uk_replay_recovery_action_target_detail(
+                op,
+                target,
+                family="source_carried_labeled_child_text_substitution",
+                text_match=match_text,
+                replacement_text=replacement,
+                child_kind=child_kind,
+                child_labels=tuple(label for label, _ in parts),
+                source_shape="flat_replacement_payload_with_visible_child_labels",
+            ),
         )
         return True
 
@@ -923,10 +914,11 @@ class UKReplayTargetDiagnosticsMixin:
                 "as an addressable carrier."
             ),
             op=op,
-            detail={
-                "action": _action_name(op.action),
-                "target": str(target),
-                "recovery_target": str(
+            detail=uk_replay_recovery_action_target_detail(
+                op,
+                target,
+                family="target_resolution_recovery",
+                recovery_target=str(
                     LegalAddress(
                         path=(
                             *parent_target.path,
@@ -935,14 +927,10 @@ class UKReplayTargetDiagnosticsMixin:
                         special=None,
                     )
                 ),
-                "text_match": match_text,
-                "replacement_text": replacement,
-                "family": "target_resolution_recovery",
-                "source_shape": "direct_section_paragraph_text_carried_by_unique_child",
-                "blocking": False,
-                "strict_disposition": "block",
-                "quirks_disposition": "apply",
-            },
+                text_match=match_text,
+                replacement_text=replacement,
+                source_shape="direct_section_paragraph_text_carried_by_unique_child",
+            ),
         )
         return True
 

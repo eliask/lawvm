@@ -98,6 +98,26 @@ def uk_replay_blocking_action_target_detail(
     return uk_replay_action_target_detail(op, target, blocking=True, **extra)
 
 
+def uk_replay_recovery_action_target_detail(
+    op: LegalOperation,
+    target: LegalAddress,
+    *,
+    family: str,
+    **extra: Any,
+) -> dict[str, Any]:
+    """Build the standard detail payload for recoveries applied only in quirks mode."""
+    detail = uk_replay_action_target_detail(
+        op,
+        target,
+        blocking=False,
+        family=family,
+        **extra,
+    )
+    detail["strict_disposition"] = "block"
+    detail["quirks_disposition"] = "apply"
+    return detail
+
+
 def append_schedule_entry_repeal_granularity_blocked_adjudication(
     adjudications_out: Optional[list[CompileAdjudication]],
     *,
