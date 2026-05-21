@@ -550,6 +550,8 @@ class UKReplayTextApplyMixin:
                 new_children[index] = dc_replace(child, text=new_text)
             rebuilt = dc_replace(node, children=new_children)
             self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_source_carried_multi_child_text_rewrite_applied")
             return rebuilt, True
 
         if match.startswith("TEXT_AFTER_CHILD_TAIL_"):

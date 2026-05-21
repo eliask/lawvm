@@ -6695,7 +6695,14 @@ def test_executor_deletes_source_carried_multi_subunit_text_only_from_named_chil
         "Notify the granter and  the Commission.",
         f"Do not touch {omitted} here.",
     ]
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_source_carried_multi_child_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["text_match"] == f"TEXT_IN_CHILDREN_subsection_1_2\x1f{omitted}"
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "source_carried_multi_child_selector"
 
 
 def test_executor_rejects_multi_subunit_text_delete_when_named_child_missing() -> None:
