@@ -320,6 +320,40 @@ class UKReplayTextApplyMixin:
         self._replace_node_in_statute(node, rebuilt)
         return rebuilt, True
 
+    def _apply_text_substitution_on_node(self, node: UKMutableNode, subs: list[dict]) -> UKMutableNode:
+        text = node.text or ""
+        children = list(node.children)
+        for s in subs:
+            old, new = s["original"], s["replacement"]
+            if old.startswith("FROM_") and "_TO_" in old:
+                parts = old.replace("FROM_", "").split("_TO_")
+                if len(parts) == 2:
+                    start_label, end_label = parts[0].strip("()"), parts[1].strip("()")
+                    start_idx = end_idx = -1
+                    for i, child in enumerate(children):
+                        if _clean_num(child.label or "") == _clean_num(start_label):
+                            start_idx = i
+                        if _clean_num(child.label or "") == _clean_num(end_label):
+                            end_idx = i
+                    if start_idx != -1 and end_idx != -1 and start_idx <= end_idx:
+                        self._log(
+                            f"  EXECUTOR: deleting children from '{start_label}' to '{end_label}' in {node.kind} {node.label}"
+                        )
+                        for i in range(end_idx, start_idx - 1, -1):
+                            children.pop(i)
+                continue
+            if old in text:
+                text = text.replace(old, new)
+            else:
+                pattern = re.escape(old).replace(r"\ ", r"\s+")
+                new_text, count = re.subn(pattern, new, text, flags=re.I)
+                if count > 0:
+                    text = new_text
+        rebuilt = dc_replace(node, text=text, children=list(children))
+        self._replace_node_in_statute(node, rebuilt)
+        return rebuilt
+
+
     def _apply_text_replace_on_subtree(
         self,
         node: UKMutableNode,

@@ -6800,26 +6800,8 @@ class UKReplayExecutor(
             self._apply_insert_op(op, target, node, insert_existing_target_resolution)
             return
         elif _action_name(op.action) == "renumber":
-            if self._apply_same_provision_descendant_renumber(op):
-                self._record_invariant_violations(op)
-                self._emit_top_section_snapshot(op)
-                return
-            if self._apply_same_parent_sibling_renumber(op):
-                self._record_invariant_violations(op)
-                self._emit_top_section_snapshot(op)
-                return
-            self._log(f"  EXECUTOR: unsupported renumber shape — skipping {op.op_id}")
-            _append_uk_replay_adjudication(
-                self.adjudications_out,
-                kind="uk_replay_unsupported_action",
-                message="UK replay skipped unsupported action.",
-                op=op,
-                detail={
-                    "action": _action_name(op.action),
-                    "target": str(target),
-                    "destination": str(op.destination) if op.destination is not None else "",
-                },
-            )
+            self._apply_renumber_op(op, target)
+            return
         elif _action_name(op.action) == "unknown":
             self._log(f"  EXECUTOR: unknown action — skipping {op.op_id}")
             _append_uk_replay_adjudication(
@@ -6835,39 +6817,6 @@ class UKReplayExecutor(
                 f"on op {op.op_id}. This is a programming error — every action "
                 f"type must be explicitly handled (even if only to skip+warn)."
             )
-
-    def _apply_text_substitution_on_node(self, node: UKMutableNode, subs: list[dict]) -> UKMutableNode:
-        text = node.text or ""
-        children = list(node.children)
-        for s in subs:
-            old, new = s["original"], s["replacement"]
-            if old.startswith("FROM_") and "_TO_" in old:
-                parts = old.replace("FROM_", "").split("_TO_")
-                if len(parts) == 2:
-                    start_label, end_label = parts[0].strip("()"), parts[1].strip("()")
-                    start_idx = end_idx = -1
-                    for i, child in enumerate(children):
-                        if _clean_num(child.label or "") == _clean_num(start_label):
-                            start_idx = i
-                        if _clean_num(child.label or "") == _clean_num(end_label):
-                            end_idx = i
-                    if start_idx != -1 and end_idx != -1 and start_idx <= end_idx:
-                        self._log(
-                            f"  EXECUTOR: deleting children from '{start_label}' to '{end_label}' in {node.kind} {node.label}"
-                        )
-                        for i in range(end_idx, start_idx - 1, -1):
-                            children.pop(i)
-                continue
-            if old in text:
-                text = text.replace(old, new)
-            else:
-                pattern = re.escape(old).replace(r"\ ", r"\s+")
-                new_text, count = re.subn(pattern, new, text, flags=re.I)
-                if count > 0:
-                    text = new_text
-        rebuilt = dc_replace(node, text=text, children=list(children))
-        self._replace_node_in_statute(node, rebuilt)
-        return rebuilt
 
 
 
