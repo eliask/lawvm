@@ -22105,6 +22105,59 @@ def test_executor_text_replace_uses_fragment_substitution_fallback_when_primary_
     assert adjudication.detail["strict_disposition"] == "record"
 
 
+def test_executor_replace_fragment_substitution_child_range_deletion_is_observed() -> None:
+    statute = IRStatute(
+        statute_id="ukpga/2010/9",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="1",
+                    text="Section text.",
+                    children=(
+                        IRNode(kind=IRNodeKind.PARAGRAPH, label="a", text="A."),
+                        IRNode(kind=IRNodeKind.PARAGRAPH, label="b", text="B."),
+                        IRNode(kind=IRNodeKind.PARAGRAPH, label="c", text="C."),
+                    ),
+                ),
+            ),
+        ),
+    )
+    adjudications: list[Any] = []
+    executor: Any = UKReplayExecutor(statute, adjudications_out=adjudications)
+    op = LegalOperation(
+        op_id="uk_test_replace_fragment_child_range_delete",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("section", "1"),)),
+        source=OperationSource(statute_id="ukpga/2012/5", title="Amending Act"),
+        provenance_tags=(
+            _NOTE_FRAGMENT_SUB
+            + json.dumps(
+                [{"original": "FROM_a_TO_b", "replacement": ""}],
+                ensure_ascii=False,
+            ),
+        ),
+    )
+
+    executor.apply_op(op)
+
+    section = executor.statute.body.children[0]
+    assert [child.label for child in section.children] == ["c"]
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_fragment_substitution_child_range_deleted"
+    ]
+    assert adjudications[0].detail["source_shape"] == "fragment_substitution_child_range_selector"
+    assert adjudications[0].detail["removed_labels"] == ("a", "b")
+    assert adjudications[0].detail["removed_count"] == 2
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+
+
 def test_executor_repeal_collapses_oracle_zombie_schedule_root() -> None:
     statute = IRStatute(
         statute_id="ukpga/2010/26",
