@@ -81,6 +81,24 @@ def _text_match_has_word_punctuation_elision_candidate(match: str) -> bool:
     return bool(re.search(r"(?<=[A-Za-z0-9_])['’‘\-‐‑‒–—](?=[A-Za-z0-9_])", match))
 
 
+def _node_text_patch_preimage_present(
+    node: UKMutableNode,
+    match: str,
+    occurrence: int,
+    end_occurrence: int = 0,
+) -> bool:
+    """Preflight simple node-local text patches used for multi-cell table edits."""
+    if occurrence != 0 or end_occurrence != 0:
+        return False
+    text = node.text or ""
+    if not text or not match:
+        return False
+    if match in text:
+        return True
+    pattern = _text_patch_pattern(match)
+    return re.search(pattern, text, flags=re.I) is not None
+
+
 def _rotated_trailing_comma_omission_match(match: str, node: UKMutableNode) -> Optional[str]:
     """Return a unique `X` preimage for a quoted omission selector shaped as `X,`.
 
