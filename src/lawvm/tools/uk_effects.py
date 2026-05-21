@@ -1370,6 +1370,9 @@ def _manual_compile_evidence_row_jsonable(
         "manual_compile_blocking_lowering_rule_ids": list(
             summary.manual_compile_blocking_lowering_rule_ids
         ),
+        "suggested_claim_template_status": (
+            "available" if suggested_claim_template else "not_available"
+        ),
         "suggested_claim_template": suggested_claim_template,
         "source_pathology": summary.source_pathology or "",
         "source": _manual_compile_source_jsonable(effect_payload["source"]),

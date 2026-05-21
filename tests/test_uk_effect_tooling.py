@@ -1493,6 +1493,7 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
         "applicability_mode": "effective_date_only",
         "authority_mode": "effect_feed_inspection",
     }
+    assert payload["suggested_claim_template_status"] == "available"
     template = payload["suggested_claim_template"]
     assert template["schema"] == "lawvm.uk_semantic_compile_claim_template.v1"
     assert template["action_family"] == "facet_text_rewrite"
@@ -1548,6 +1549,83 @@ def test_uk_manual_compile_evidence_jsonl_rows_are_source_witnessed(tmp_path) ->
         context=context,
     )
     assert changed_rule_payload["work_item_id"] != payload["work_item_id"]
+
+
+def test_uk_manual_compile_evidence_jsonl_marks_missing_claim_template() -> None:
+    effect = UKEffectRecord(
+        effect_id="eff-missing-template",
+        effect_type="transfer of functions",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 1",
+        affecting_uri="/id/ukpga/2025/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2025",
+        affecting_number="1",
+        affecting_provisions="s. 2",
+        affecting_title="Test Act",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="as_if_application_modification_unsupported",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {
+                    "rule_id": "uk_effect_lowering_no_supported_action_rejected",
+                    "blocking": True,
+                },
+            ),
+            replay_applicable=False,
+            structural_for_replay=False,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview="The Act applies as if modified.",
+            affecting_source_status="available",
+            affecting_source_size=17,
+            affecting_source_sha256="affecting-sha",
+            manual_compile_status="non_textual_or_out_of_scope",
+            manual_compile_rule_id=(
+                "uk_manual_frontier_as_if_application_modification_out_of_scope"
+            ),
+            manual_compile_reason="Out of scope for direct text/tree replay.",
+            manual_compile_lowering_rule_ids=(
+                "uk_effect_lowering_no_supported_action_rejected",
+            ),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_lowering_no_supported_action_rejected",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    assert payload["suggested_claim_template_status"] == "not_available"
+    assert payload["suggested_claim_template"] == {}
 
 
 def test_uk_manual_compile_evidence_jsonl_templates_appropriate_place_definition_entry() -> None:
