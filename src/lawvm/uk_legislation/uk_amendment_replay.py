@@ -353,7 +353,7 @@ from lawvm.uk_legislation.target_parser import (
     _split_metadata_provisions,
 )
 from lawvm.uk_legislation.table_sources import (
-    _uk_table_driven_corresponding_entry_word_substitution,
+    lower_uk_table_driven_corresponding_entry_word_substitution,
 )
 from lawvm.uk_legislation.text_patch_lowering import build_uk_text_patch_items
 from lawvm.uk_legislation.text_matching import (
@@ -1361,66 +1361,26 @@ def compile_effect_to_ir_ops(
                 heading_full_replacement_precheck is not None
                 or not is_whole_node_replacement(extracted_text, effect.effect_type)
             ):
-                table_substitution = _uk_table_driven_corresponding_entry_word_substitution(
+                table_substitution = lower_uk_table_driven_corresponding_entry_word_substitution(
                     effect=effect,
-                    extracted_text=extracted_text,
-                    source_root=source_root,
+                    curr_action=curr_action,
+                    content_ir=content_ir,
+                    fragment_subs=fragment_subs,
+                    op_text_match=op_text_match,
+                    op_text_replacement=op_text_replacement,
                     target=target,
+                    target_ref=t_str,
+                    extracted_el=extracted_el,
+                    source_root=source_root,
+                    extracted_text=extracted_text,
+                    lowering_rejections_out=lowering_rejections_out,
                 )
-                if table_substitution.recognized and table_substitution.original and table_substitution.replacement is not None:
-                    fragment_subs = [
-                        {
-                            "original": table_substitution.original,
-                            "replacement": table_substitution.replacement,
-                            "rule_id": "uk_effect_corresponding_table_entry_word_substitution",
-                        }
-                    ]
-                    content_ir = None
-                    op_text_match = table_substitution.original
-                    op_text_replacement = table_substitution.replacement
-                    curr_action = "text_replace"
-                    _append_uk_effect_lowering_observation(
-                        lowering_rejections_out,
-                        rule_id="uk_effect_corresponding_table_entry_word_substitution",
-                        family="source_table_elaboration",
-                        reason_code="unique_column_1_target_column_2_words_match",
-                        reason=(
-                            "UK table-driven word substitution resolved by matching "
-                            "the affected provision to a unique source table row"
-                        ),
-                        effect=effect,
-                        extracted_el=extracted_el,
-                        extracted_text=extracted_text,
-                        detail={
-                            "target_ref": t_str,
-                            "target": str(target),
-                            "table_index": table_substitution.table_index,
-                            "row_text": table_substitution.row_text,
-                            "original": table_substitution.original,
-                            "replacement": table_substitution.replacement,
-                        },
-                    )
-                elif table_substitution.recognized:
-                    _append_uk_effect_lowering_rejection(
-                        lowering_rejections_out,
-                        rule_id="uk_effect_corresponding_table_entry_word_substitution_unresolved",
-                        family="source_table_elaboration",
-                        reason_code=table_substitution.reason_code,
-                        reason=(
-                            "UK table-driven word substitution could not be "
-                            "resolved to a unique source table row"
-                        ),
-                        effect=effect,
-                        extracted_el=extracted_el,
-                        extracted_text=extracted_text,
-                        detail={
-                            "target_ref": t_str,
-                            "target": str(target),
-                            "match_count": table_substitution.match_count,
-                            "replacement": table_substitution.replacement or "",
-                        },
-                    )
-                    curr_action = None
+                curr_action = table_substitution.curr_action
+                content_ir = table_substitution.content_ir
+                fragment_subs = table_substitution.fragment_subs
+                op_text_match = table_substitution.op_text_match
+                op_text_replacement = table_substitution.op_text_replacement
+                if table_substitution.skip_effect:
                     continue
                 heading_after_anchor_insert = (
                     _heading_facet_after_anchor_insert_fragment(extracted_text) if heading_facet_target else None

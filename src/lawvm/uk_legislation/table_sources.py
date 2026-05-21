@@ -4,10 +4,14 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence
 
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.effects import UKEffectRecord
+from lawvm.uk_legislation.lowering_records import (
+    _append_uk_effect_lowering_observation,
+    _append_uk_effect_lowering_rejection,
+)
 from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
 from lawvm.uk_legislation.xml_helpers import _tag, _text_content
 
@@ -30,6 +34,17 @@ class _UKTableDrivenWordSubstitution:
     match_count: int = 0
     table_index: int = -1
     row_text: str = ""
+
+
+@dataclass(frozen=True)
+class UKTableWordSubstitutionLowering:
+    recognized: bool
+    skip_effect: bool
+    curr_action: Optional[str]
+    content_ir: Optional[dict[str, Any]]
+    fragment_subs: Optional[list[dict[str, str]]]
+    op_text_match: Optional[str]
+    op_text_replacement: Optional[str]
 
 
 @dataclass(frozen=True)
@@ -738,4 +753,103 @@ def _uk_table_driven_corresponding_entry_word_substitution(
         match_count=1,
         table_index=table_index,
         row_text=row_text,
+    )
+
+
+def lower_uk_table_driven_corresponding_entry_word_substitution(
+    *,
+    effect: UKEffectRecord,
+    curr_action: Optional[str],
+    content_ir: Optional[dict[str, Any]],
+    fragment_subs: Optional[list[dict[str, str]]],
+    op_text_match: Optional[str],
+    op_text_replacement: Optional[str],
+    target: LegalAddress,
+    target_ref: str,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKTableWordSubstitutionLowering:
+    substitution = _uk_table_driven_corresponding_entry_word_substitution(
+        effect=effect,
+        extracted_text=extracted_text,
+        source_root=source_root,
+        target=target,
+    )
+    if not substitution.recognized:
+        return UKTableWordSubstitutionLowering(
+            recognized=False,
+            skip_effect=False,
+            curr_action=curr_action,
+            content_ir=content_ir,
+            fragment_subs=fragment_subs,
+            op_text_match=op_text_match,
+            op_text_replacement=op_text_replacement,
+        )
+
+    if substitution.original and substitution.replacement is not None:
+        fragment = {
+            "original": substitution.original,
+            "replacement": substitution.replacement,
+            "rule_id": "uk_effect_corresponding_table_entry_word_substitution",
+        }
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_corresponding_table_entry_word_substitution",
+            family="source_table_elaboration",
+            reason_code="unique_column_1_target_column_2_words_match",
+            reason=(
+                "UK table-driven word substitution resolved by matching "
+                "the affected provision to a unique source table row"
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "table_index": substitution.table_index,
+                "row_text": substitution.row_text,
+                "original": substitution.original,
+                "replacement": substitution.replacement,
+            },
+        )
+        return UKTableWordSubstitutionLowering(
+            recognized=True,
+            skip_effect=False,
+            curr_action="text_replace",
+            content_ir=None,
+            fragment_subs=[fragment],
+            op_text_match=substitution.original,
+            op_text_replacement=substitution.replacement,
+        )
+
+    _append_uk_effect_lowering_rejection(
+        lowering_rejections_out,
+        rule_id="uk_effect_corresponding_table_entry_word_substitution_unresolved",
+        family="source_table_elaboration",
+        reason_code=substitution.reason_code,
+        reason=(
+            "UK table-driven word substitution could not be "
+            "resolved to a unique source table row"
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            "match_count": substitution.match_count,
+            "replacement": substitution.replacement or "",
+        },
+    )
+    return UKTableWordSubstitutionLowering(
+        recognized=True,
+        skip_effect=True,
+        curr_action=None,
+        content_ir=content_ir,
+        fragment_subs=fragment_subs,
+        op_text_match=op_text_match,
+        op_text_replacement=op_text_replacement,
     )
