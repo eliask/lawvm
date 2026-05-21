@@ -461,9 +461,9 @@ from lawvm.uk_legislation.table_sources import (
 )
 from lawvm.uk_legislation.text_matching import (
     _normalize_text,
-    _numeric_list_trailing_comma_anchor_pattern,
+    _numeric_list_trailing_comma_replacement_text,
+    _numeric_list_trailing_comma_subtree_replacement,
     _rotated_trailing_comma_omission_match,
-    _splice_text_match_replacement,
     _text_match_has_word_punctuation_elision_candidate,
     _text_patch_pattern,
 )
@@ -6206,19 +6206,17 @@ class UKReplayExecutor:
     ) -> tuple[UKMutableNode, bool, str | None]:
         """Recover a unique numeric list item whose source selector adds a comma."""
 
-        if occurrence not in (0, 1) or end_occurrence:
-            return node, False, None
-        anchor_pattern = _numeric_list_trailing_comma_anchor_pattern(match, replacement)
-        if anchor_pattern is None:
-            return node, False, None
-        anchor, pattern = anchor_pattern
         text = node.text or ""
-        if not text or match in text:
+        new_text, anchor = _numeric_list_trailing_comma_replacement_text(
+            text,
+            match,
+            replacement,
+            occurrence,
+            end_occurrence,
+        )
+        if new_text is None or anchor is None:
             return node, False, None
-        matches = list(pattern.finditer(text))
-        if len(matches) != 1:
-            return node, False, None
-        rebuilt = dc_replace(node, text=_splice_text_match_replacement(text, matches[0], replacement))
+        rebuilt = dc_replace(node, text=new_text)
         self._replace_node_in_statute(node, rebuilt)
         return rebuilt, True, anchor
 
@@ -6232,35 +6230,25 @@ class UKReplayExecutor:
     ) -> tuple[UKMutableNode, bool, str | None]:
         """Recover one unique numeric list item across a resolved target subtree."""
 
-        if occurrence not in (0, 1) or end_occurrence:
+        subtree_replacement = _numeric_list_trailing_comma_subtree_replacement(
+            node,
+            match,
+            replacement,
+            occurrence,
+            end_occurrence,
+        )
+        if subtree_replacement is None:
             return node, False, None
-        anchor_pattern = _numeric_list_trailing_comma_anchor_pattern(match, replacement)
-        if anchor_pattern is None:
-            return node, False, None
-        anchor, pattern = anchor_pattern
-        text_nodes: list[tuple[tuple[int, ...], UKMutableNode]] = []
-
-        def _collect(current: UKMutableNode, path: tuple[int, ...] = ()) -> None:
-            if current.text:
-                text_nodes.append((path, current))
-            for index, child in enumerate(current.children):
-                _collect(child, path + (index,))
-
-        _collect(node)
-        if any(match in text_node.text for _, text_node in text_nodes):
-            return node, False, None
-        matches: list[tuple[tuple[int, ...], UKMutableNode, re.Match[str]]] = []
-        for path, text_node in text_nodes:
-            matches.extend((path, text_node, match_obj) for match_obj in pattern.finditer(text_node.text))
-        if len(matches) != 1:
-            return node, False, None
-        path, text_node, match_obj = matches[0]
+        path, new_text, anchor = subtree_replacement
+        text_node = node
+        for index in path:
+            text_node = text_node.children[index]
         rebuilt = self._replace_descendant_at_path(
             node,
             path,
             dc_replace(
                 text_node,
-                text=_splice_text_match_replacement(text_node.text, match_obj, replacement),
+                text=new_text,
             ),
         )
         self._replace_node_in_statute(node, rebuilt)
