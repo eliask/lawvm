@@ -142,6 +142,60 @@ def _numeric_list_trailing_comma_anchor_pattern(
     return anchor, pattern
 
 
+def _numeric_list_trailing_comma_replacement_text(
+    text: str,
+    match: str,
+    replacement: str,
+    occurrence: int,
+    end_occurrence: int,
+) -> tuple[str | None, str | None]:
+    if occurrence not in (0, 1) or end_occurrence:
+        return None, None
+    anchor_pattern = _numeric_list_trailing_comma_anchor_pattern(match, replacement)
+    if anchor_pattern is None:
+        return None, None
+    anchor, pattern = anchor_pattern
+    if not text or match in text:
+        return None, None
+    matches = list(pattern.finditer(text))
+    if len(matches) != 1:
+        return None, None
+    return _splice_text_match_replacement(text, matches[0], replacement), anchor
+
+
+def _numeric_list_trailing_comma_subtree_replacement(
+    node: UKMutableNode,
+    match: str,
+    replacement: str,
+    occurrence: int,
+    end_occurrence: int,
+) -> tuple[tuple[int, ...], str, str] | None:
+    if occurrence not in (0, 1) or end_occurrence:
+        return None
+    anchor_pattern = _numeric_list_trailing_comma_anchor_pattern(match, replacement)
+    if anchor_pattern is None:
+        return None
+    anchor, pattern = anchor_pattern
+    text_nodes: list[tuple[tuple[int, ...], UKMutableNode]] = []
+
+    def _collect(current: UKMutableNode, path: tuple[int, ...] = ()) -> None:
+        if current.text:
+            text_nodes.append((path, current))
+        for index, child in enumerate(current.children):
+            _collect(child, path + (index,))
+
+    _collect(node)
+    if any(match in text_node.text for _, text_node in text_nodes):
+        return None
+    matches: list[tuple[tuple[int, ...], UKMutableNode, re.Match[str]]] = []
+    for path, text_node in text_nodes:
+        matches.extend((path, text_node, match_obj) for match_obj in pattern.finditer(text_node.text))
+    if len(matches) != 1:
+        return None
+    path, text_node, match_obj = matches[0]
+    return path, _splice_text_match_replacement(text_node.text, match_obj, replacement), anchor
+
+
 def _splice_text_match_replacement(text: str, match_obj: re.Match[str], replacement: str) -> str:
     """Splice replacement while avoiding duplicate whitespace at the join."""
 
