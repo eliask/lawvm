@@ -142,6 +142,7 @@ from lawvm.uk_legislation.lowering_records import (
     append_structural_no_ops_lowering_rejection,
     mark_nonreplay_lowering_rejections_nonblocking,
 )
+from lawvm.uk_legislation.lowering_actions import _to_structural_action
 from lawvm.uk_legislation.metadata_rewrites import (
     UKMetadataRenumberTargets,
     _select_whole_schedule_element,
@@ -563,24 +564,6 @@ from lawvm.uk_legislation.witnesses import UKLoweredOperationWitness
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-
-
-def _to_structural_action(action: str) -> StructuralAction:
-    """Map string action to StructuralAction, preserving text-level variants."""
-    if action == "replace":
-        return StructuralAction.REPLACE
-    if action == "text_replace":
-        return StructuralAction.TEXT_REPLACE
-    if action == "repeal":
-        return StructuralAction.REPEAL
-    if action == "text_repeal":
-        return StructuralAction.TEXT_REPEAL
-    if action == "insert":
-        return StructuralAction.INSERT
-    if action == "renumber":
-        return StructuralAction.RENUMBER
-    # Fallback for unknown actions - should not happen in normal operation
-    return StructuralAction.META
 
 
 def compile_effect_to_ir_ops(
