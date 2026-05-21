@@ -46,6 +46,7 @@ from lawvm.tools.uk_effects import (
 from lawvm.uk_legislation.lowering_records import (
     append_manual_compile_frontier_diagnostic,
 )
+from lawvm.uk_legislation.compiled_effect_facts import uk_compiled_effect_facts
 from lawvm.uk_legislation.manual_claim_templates import (
     UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS,
     uk_manual_claim_template_status,
@@ -75,6 +76,33 @@ def test_uk_claim_template_rule_id_set_tracks_supported_templates() -> None:
     }
     assert UK_CLAIM_TEMPLATE_RULE_IDS == expected_rule_ids
     assert UK_MANUAL_CLAIM_TEMPLATE_RULE_IDS == expected_rule_ids
+
+
+def test_uk_compiled_effect_facts_preserve_source_pathology_wire_shape() -> None:
+    op = LegalOperation(
+        op_id="op-1",
+        sequence=1,
+        action=StructuralAction.REPLACE,
+        target=LegalAddress(path=(("part", "2"), ("chapter", "1"))),
+        payload=IRNode(kind=IRNodeKind.CHAPTER, label="1", text="Chapter text"),
+    )
+
+    facts = uk_compiled_effect_facts(
+        ops=(op,),
+        lowering_rejections=(
+            {"rule_id": "before"},
+            {"rule_id": "uk_effect_range_to_container_substitution_rejected"},
+        ),
+        lowering_rejection_start_index=1,
+    )
+
+    assert facts.op_actions == ("replace",)
+    assert facts.payload_kinds == ("chapter",)
+    assert facts.payload_texts == ("Chapter text",)
+    assert facts.target_paths == ("part:2/chapter:1",)
+    assert facts.lowering_rule_ids == (
+        "uk_effect_range_to_container_substitution_rejected",
+    )
 
 
 def test_uk_manual_claim_template_status_only_labels_actionable_rows() -> None:

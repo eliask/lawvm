@@ -13,6 +13,7 @@ from lawvm.tools.uk_claim_templates import (
     UK_CLAIM_TEMPLATE_RULE_IDS as _UK_CLAIM_TEMPLATE_RULE_IDS,
     manual_compile_suggested_claim_template as _manual_compile_suggested_claim_template,
 )
+from lawvm.uk_legislation.compiled_effect_facts import uk_compiled_effect_facts
 from lawvm.uk_legislation.source_state import (
     uk_source_parse_observations_from_ir,
     uk_source_xml_parse_rejection,
@@ -365,17 +366,19 @@ def summarize_uk_effect(
         extracted_text if len(extracted_text) <= 500 else extracted_text[:497] + "..."
     )
 
+    compiled_facts = uk_compiled_effect_facts(
+        ops=ops,
+        lowering_rejections=lowering_rejections,
+        lowering_rejection_start_index=lowering_rejection_count_before,
+    )
     source_pathology = classify_uk_effect_source_pathology(
         extracted_tag=extracted_tag,
         extracted_text=extracted_text,
-        op_actions=[op.action.value for op in ops],
-        payload_kinds=[str(op.payload.kind) for op in ops if op.payload is not None],
-        payload_texts=[op.payload.text or "" for op in ops if op.payload is not None],
-        target_paths=["/".join(f"{kind}:{label}" for kind, label in op.target.path) for op in ops],
-        lowering_rule_ids=[
-            str(row.get("rule_id") or "")
-            for row in lowering_rejections[lowering_rejection_count_before:]
-        ],
+        op_actions=compiled_facts.op_actions,
+        payload_kinds=compiled_facts.payload_kinds,
+        payload_texts=compiled_facts.payload_texts,
+        target_paths=compiled_facts.target_paths,
+        lowering_rule_ids=compiled_facts.lowering_rule_ids,
         effect_type=effect.effect_type,
         is_structural=structural_for_replay,
     )
