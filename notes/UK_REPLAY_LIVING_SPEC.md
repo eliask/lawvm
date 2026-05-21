@@ -4095,3 +4095,19 @@ Current bench replay-regime invariant:
   renumber `s. 16(9)` as `s. 16(8)`. The current oracle still exposes
   `section-16-9`, so the residual claim is refined to the source-backed
   renumber oracle-branch family while staying unresolved.
+
+## UK Residual Claim Evidence JSONL
+
+- `lawvm uk-candidates --residual-claim-evidence-jsonl PATH` writes selected
+  saved bench residual claims as `lawvm.uk_residual_claim_frontier.v1` JSONL
+  work items. The export is an evidence/review surface only; it must not alter
+  replay, candidate selection, or benchmark scoring.
+- A residual claim row is reviewable when it has a non-empty claim kind other
+  than `no_strong_claim`/`unknown_legacy_missing` and carries replay/oracle
+  residual counts or a section-claim count. Empty saved rows are omitted so the
+  file is a work queue, not a copy of the whole benchmark.
+- Each work item carries the saved replay regime, replay-regime source claim,
+  residual claim, source/oracle witness metadata, scores, comparison class, and
+  a stable `uk-residual-claim-*` ID. `validator_status` starts as
+  `not_validated`; downstream human/LLM review may classify the item, but the
+  saved evidence row remains separate from replay execution.

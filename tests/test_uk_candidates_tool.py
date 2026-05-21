@@ -4016,6 +4016,140 @@ def test_uk_candidates_fast_json_exports_replay_adjudication_evidence_jsonl(
     assert evidence_rows[0]["oracle_source"]["sha256"] == "oracle-sha"
 
 
+def test_uk_candidates_fast_json_exports_residual_claim_evidence_jsonl(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    out_path = tmp_path / "residual" / "claims.jsonl"
+    rows = [
+        SimpleNamespace(
+            statute_id="asc/2024/6",
+            status="OK",
+            year=2024,
+            act_type="asc",
+            score=0.99,
+            replay_score=0.877315,
+            commencement_score=-1.0,
+            replay_commencement_score=0.996951,
+            n_commenced_eids=10,
+            comparison_class="commensurable",
+            n_enacted_eids=10,
+            n_oracle_eids=11,
+            n_effects=2,
+            n_effect_rows=2,
+            n_effect_feed_pages=1,
+            enacted_source_status="available",
+            enacted_source_size=123,
+            enacted_source_sha256="enacted-sha",
+            enacted_source_url="https://example.test/asc/2024/6/enacted.xml",
+            oracle_source_status="available",
+            oracle_source_size=456,
+            oracle_source_sha256="oracle-sha",
+            oracle_source_url="https://example.test/asc/2024/6/current.xml",
+            uk_metadata_backfill_enabled=False,
+            uk_oracle_alignment_enabled=False,
+            uk_metadata_only_effects_enabled=False,
+            uk_applicability_mode="effective_date_only",
+            uk_authority_mode="source_text_only",
+            uk_source_purity_lane="source_backed_effects_assisted",
+            uk_source_semantics_clean=True,
+            uk_source_first_candidate=True,
+            uk_source_first_candidate_reasons=(),
+            replay_adjudication_count=0,
+            replay_adjudication_kind_counts={},
+            replay_adjudications=(),
+            uk_residual_claim_tier="UNRESOLVED",
+            uk_residual_claim_kind="uk_source_backed_renumber_oracle_branch_mixed_residual_eids",
+            uk_residual_claim_comparison_class="commensurable",
+            uk_residual_claim_core_comparison=True,
+            uk_residual_only_in_replayed_count=53,
+            uk_residual_only_in_oracle_count=1,
+            uk_residual_section_claim_count=0,
+            uk_residual_section_claim_emitted=False,
+        ),
+        SimpleNamespace(
+            statute_id="ukpga/2000/1",
+            status="OK",
+            year=2000,
+            act_type="ukpga",
+            score=0.9,
+            replay_score=0.9,
+            commencement_score=-1.0,
+            replay_commencement_score=-1.0,
+            n_commenced_eids=0,
+            comparison_class="commensurable",
+            uk_source_purity_lane="unknown",
+            uk_source_semantics_clean=False,
+            uk_source_first_candidate=False,
+            uk_source_first_candidate_reasons=(),
+            replay_adjudication_count=0,
+            replay_adjudication_kind_counts={},
+            replay_adjudications=(),
+            uk_residual_claim_tier="UNRESOLVED",
+            uk_residual_claim_kind="no_strong_claim",
+            uk_residual_claim_comparison_class="commensurable",
+            uk_residual_claim_core_comparison=True,
+            uk_residual_only_in_replayed_count=0,
+            uk_residual_only_in_oracle_count=0,
+            uk_residual_section_claim_count=0,
+            uk_residual_section_claim_emitted=False,
+        ),
+    ]
+    monkeypatch.setattr("lawvm.tools.uk_bench._load_run", lambda label: rows)
+
+    uk_candidates.main(
+        Namespace(
+            label="demo",
+            top=10,
+            fast=True,
+            effect_budget=None,
+            residual_budget=None,
+            score_mode="auto",
+            residual_only=False,
+            json=True,
+            summary_only=False,
+            min_year=None,
+            max_year=None,
+            types=None,
+            db=None,
+            residual_claim_evidence_jsonl=str(out_path),
+        )
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    evidence_rows = [
+        json.loads(line) for line in out_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert payload["residual_claim_evidence_jsonl"] == {
+        "path": str(out_path),
+        "rows": 1,
+    }
+    assert evidence_rows[0]["schema"] == "lawvm.uk_residual_claim_frontier.v1"
+    assert evidence_rows[0]["rule_id"] == "uk_residual_claim_frontier_workqueue"
+    assert evidence_rows[0]["work_item_kind"] == "residual_claim_review"
+    assert evidence_rows[0]["claim_status"] == "UNRESOLVED"
+    assert evidence_rows[0]["claim_kind"] == (
+        "uk_source_backed_renumber_oracle_branch_mixed_residual_eids"
+    )
+    assert evidence_rows[0]["validator_status"] == "not_validated"
+    assert evidence_rows[0]["work_item_id"].startswith("uk-residual-claim-")
+    assert evidence_rows[0]["bench_label"] == "demo"
+    assert evidence_rows[0]["statute_id"] == "asc/2024/6"
+    assert evidence_rows[0]["uk_residual_claim"]["only_in_replayed_count"] == 53
+    assert evidence_rows[0]["uk_residual_claim"]["only_in_oracle_count"] == 1
+    assert evidence_rows[0]["uk_replay_regime"] == {
+        "allow_metadata_backfill": False,
+        "allow_metadata_only_effects": False,
+        "allow_oracle_alignment": False,
+        "applicability_mode": "effective_date_only",
+        "authority_mode": "source_text_only",
+    }
+    assert evidence_rows[0]["enacted_source"]["sha256"] == "enacted-sha"
+    assert evidence_rows[0]["oracle_source"]["sha256"] == "oracle-sha"
+
+
 def test_uk_candidates_fast_json_infers_body_root_for_old_duplication_samples(
     monkeypatch,
     capsys,
