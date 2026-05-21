@@ -1,0 +1,161 @@
+from __future__ import annotations
+
+import re
+import xml.etree.ElementTree as ET
+from typing import Optional
+
+from lawvm.uk_legislation.nlp_parser import parse_fragment_substitution
+from lawvm.uk_legislation.ordinals import _uk_ordinal_to_int
+from lawvm.uk_legislation.provision_extractor import _instruction_text_before_amendment_container
+from lawvm.uk_legislation.source_context import (
+    _source_ancestor_chain,
+    _unique_source_ancestor_chain_by_tag_text,
+)
+from lawvm.uk_legislation.uk_grafter import _clean_num
+from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag, _text_content
+
+
+_AFTER_WORDS_INSERTED_BY_SIBLING_RE = re.compile(
+    r"\bafter\s+the\s+words\s+inserted\s+by\s+(?:sub-?paragraph|paragraph)\s+\((?P<label>[0-9A-Za-z]+)\)\s+"
+    r"insert(?:\s+[“\"'‘](?P<quoted>.*?)[”\"'’]|\s*[—-]\s*(?P<block>.+?)(?:\s+[.,;])?$)",
+    flags=re.I,
+)
+
+_GROUPED_ANCHOR_OCCURRENCE_CHILD_RE = re.compile(
+    r"^\s*(?:[0-9A-Za-z]+|[ivxlcdm]+)\s+the\s+"
+    r"(?P<ordinal>first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\s+"
+    r"time\s+it\s+(?:appears|occurs),?\s+substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]\s*;?\s*$",
+    flags=re.I,
+)
+
+_GROUPED_ANCHOR_OCCURRENCE_PARENT_RE = re.compile(
+    r"(?:^|\b)for\s+(?:the\s+words?\s+)?[“\"'‘](?P<original>.*?)[”\"'’]\s*[—-]\s*$",
+    flags=re.I,
+)
+
+_SOURCE_SUBORDINATE_ROW_TAGS = frozenset({"P1", "P2", "P3", "P4", "P5", "P6"})
+
+
+def _fragment_substitution_after_words_inserted_by_sibling(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve "after the words inserted by sub-paragraph (a)" from a source sibling."""
+    text = " ".join((extracted_text or "").split())
+    match = _AFTER_WORDS_INSERTED_BY_SIBLING_RE.search(text)
+    if not match:
+        return None
+    sibling_label = _clean_num(match.group("label"))
+    inserted_raw = match.group("quoted") if match.group("quoted") is not None else match.group("block")
+    inserted = " ".join((inserted_raw or "").split()).strip()
+    if not sibling_label or not inserted:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        return None
+    parent = ancestors[0]
+    for child in parent:
+        if child is extracted_el or (extracted_el is not None and child.get("id") == extracted_el.get("id")):
+            continue
+        if _clean_num(_direct_structural_num(child)) != sibling_label:
+            continue
+        sibling_fragments = parse_fragment_substitution(_text_content(child))
+        if len(sibling_fragments) != 1:
+            return None
+        sibling_fragment = sibling_fragments[0]
+        anchor = " ".join(str(sibling_fragment.get("replacement") or "").split()).strip()
+        if not anchor:
+            return None
+        joiner = "" if anchor.endswith((" ", "\t", "\n", "\r")) or inserted.startswith((" ", ",", ".", ";", ":", ")")) else " "
+        return {
+            "original": anchor,
+            "replacement": f"{anchor}{joiner}{inserted}",
+            "source_sibling_label": sibling_label,
+            "source_sibling_rule_id": str(sibling_fragment.get("rule_id") or "fragment_substitution"),
+            "rule_id": "uk_effect_after_words_inserted_by_sibling_text_patch",
+        }
+    return None
+
+
+def _source_lead_text_before_subordinate_rows(el: ET.Element) -> str:
+    parts: list[str] = []
+    if el.text:
+        parts.append(el.text)
+    for child in el:
+        if _tag(child) in _SOURCE_SUBORDINATE_ROW_TAGS:
+            break
+        parts.append(_text_content(child))
+        if child.tail:
+            parts.append(child.tail)
+    return " ".join(" ".join(parts).split())
+
+
+def _source_has_subordinate_row_scope(el: ET.Element) -> bool:
+    """Return true when an ancestor can contain unrelated sibling amendment rows."""
+    if _tag(el) in {"Legislation", "Body", "Pblock"}:
+        return True
+    for child in el:
+        child_tag = _tag(child)
+        if child_tag in _SOURCE_SUBORDINATE_ROW_TAGS:
+            return True
+        if child_tag.endswith("para"):
+            if any(_tag(grandchild) in _SOURCE_SUBORDINATE_ROW_TAGS for grandchild in child):
+                return True
+    return False
+
+
+def _source_local_instruction_text_for_carried_payload(ancestor: ET.Element) -> str:
+    """Collect only source-local instruction text for a carried BlockAmendment.
+
+    Broad containers such as Pblock/P1/P1para may contain earlier sibling rows
+    with unrelated definition instructions. Those rows cannot supply the anchor
+    for the current payload.
+    """
+    lead_text = _source_lead_text_before_subordinate_rows(ancestor)
+    if lead_text:
+        return lead_text
+    if _source_has_subordinate_row_scope(ancestor):
+        return ""
+    return _instruction_text_before_amendment_container(ancestor)
+
+
+def _fragment_substitution_grouped_anchor_occurrence(
+    *,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> Optional[dict[str, str]]:
+    """Resolve child rows like "the first time it appears" from a carried parent anchor."""
+    child_match = _GROUPED_ANCHOR_OCCURRENCE_CHILD_RE.match(" ".join((extracted_text or "").split()))
+    if not child_match:
+        return None
+    ancestors = _source_ancestor_chain(source_root, extracted_el)
+    if not ancestors:
+        ancestors = _unique_source_ancestor_chain_by_tag_text(source_root, extracted_el)
+    for ancestor_index, ancestor in enumerate(ancestors):
+        candidate_text = _source_lead_text_before_subordinate_rows(ancestor)
+        if not candidate_text:
+            candidate_text = _instruction_text_before_amendment_container(ancestor)
+        parent_match = _GROUPED_ANCHOR_OCCURRENCE_PARENT_RE.search(candidate_text.strip())
+        if not parent_match:
+            continue
+        original = parent_match.group("original").strip()
+        replacement = child_match.group("replacement").strip()
+        if not original or not replacement:
+            return None
+        occurrence = _uk_ordinal_to_int(child_match.group("ordinal"))
+        if occurrence is None:
+            return None
+        return {
+            "original": original,
+            "replacement": replacement,
+            "occurrence": str(occurrence),
+            "source_parent_id": str(
+                ancestor.get("id")
+                or next((candidate.get("id") for candidate in ancestors[ancestor_index + 1 :] if candidate.get("id")), "")
+            ),
+            "rule_id": "uk_effect_grouped_anchor_occurrence_substitution_text_patch",
+        }
+    return None
