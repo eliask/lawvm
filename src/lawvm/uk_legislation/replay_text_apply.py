@@ -489,6 +489,8 @@ class UKReplayTextApplyMixin:
                 return node, False
             rebuilt = dc_replace(node, text=replacement)
             self._replace_node_in_statute(node, rebuilt)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_source_carried_before_child_text_rewrite_applied")
             return rebuilt, True
 
         if match == "TEXT_AFTER_AMENDMENT_INSERT_TO_END":

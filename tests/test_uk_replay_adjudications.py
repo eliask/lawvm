@@ -1712,7 +1712,14 @@ def test_executor_applies_before_child_text_patch_without_flattening_children() 
     subsection = executor.statute.body.children[0].children[0]
     assert subsection.text == "The minimum term must be adjusted, taking into account-"
     assert subsection.children[0].text == "first factor"
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_source_carried_before_child_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["text_match"] == "TEXT_BEFORE_CHILD_paragraph_a"
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "source_carried_before_child_selector"
 
 
 def test_executor_classifies_normalized_preimage_present_text_match_gap() -> None:
