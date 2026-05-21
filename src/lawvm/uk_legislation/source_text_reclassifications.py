@@ -132,6 +132,13 @@ def _empty_effect_type_as_if_words_omitted(text: str) -> bool:
 
 
 _DOUBLE_QUOTED_FRAGMENT_RE = re.compile(r'["\u201c]([^"\u201d]+)["\u201d]')
+_CHILD_QUALIFIED_WORD_OMISSION_RE = re.compile(
+    r"^\s*(?:(?:[0-9A-Za-z]+|[ivxlcdm]+)[.)]?\s+){0,2}"
+    r"the\s+words?\s+[\"\u201c](?P<fragment>.*?)[\"\u201d]\s+"
+    r"in\s+(?P<child_kind>paragraph|sub-?paragraph|subsection|section)\s+"
+    r"\(?(?P<child_label>[0-9A-Za-z]+)\)?\s*,?\s*(?:and)?\s*\.?\s*$",
+    flags=re.I | re.S,
+)
 
 
 def _quote_only_omission_payload_match(extracted_text: str) -> Optional[str]:
@@ -150,6 +157,44 @@ def _quote_only_omission_payload_match(extracted_text: str) -> Optional[str]:
         return None
     fragment = " ".join(match.group(1).split()).strip()
     return fragment or None
+
+
+def _child_qualified_word_omission_payload_match(
+    *,
+    effect_type: str,
+    extracted_text: Optional[str],
+    target: LegalAddress,
+) -> Optional[dict[str, str]]:
+    """Return a deletion fragment when source names the exact affected child."""
+    effect_type_norm = (effect_type or "").strip().lower()
+    if effect_type_norm not in {"words omitted", "word omitted", "words repealed", "word repealed"}:
+        return None
+    normalized = " ".join((extracted_text or "").split()).strip()
+    if not normalized:
+        return None
+    match = _CHILD_QUALIFIED_WORD_OMISSION_RE.match(normalized)
+    if match is None:
+        return None
+    source_kind = match.group("child_kind").replace("-", "").lower()
+    source_kind = "subparagraph" if source_kind == "subparagraph" else source_kind
+    source_label = _source_child_label(match.group("child_label"))
+    target_kind = _addr_leaf_kind(target)
+    target_label = _source_child_label(_addr_leaf_label(target) or "")
+    if source_kind != target_kind or not source_label or source_label != target_label:
+        return None
+    fragment = " ".join(match.group("fragment").split()).strip()
+    if not fragment:
+        return None
+    return {
+        "fragment": fragment,
+        "source_child_kind": source_kind,
+        "source_child_label": source_label,
+        "matched_instruction": match.group(0),
+    }
+
+
+def _source_child_label(label: str) -> str:
+    return str(label or "").strip().strip("()").lower()
 
 
 SOURCE_FOLLOWING_ANCHOR_STRUCTURED_SUBSTITUTION_RE = re.compile(
@@ -226,6 +271,47 @@ def lower_quote_only_word_omission(
             fragment_subs=None,
             op_text_match=None,
             op_text_replacement=None,
+        )
+
+    child_qualified_omission = _child_qualified_word_omission_payload_match(
+        effect_type=effect_type,
+        extracted_text=extracted_text,
+        target=target,
+    )
+    if child_qualified_omission is not None:
+        op_text_match = child_qualified_omission["fragment"]
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id="uk_effect_child_qualified_word_omission_text_patch",
+            family="text_rewrite_lowering",
+            reason_code="word_omission_payload_names_exact_child_target",
+            reason=(
+                "UK word-level omission source row quotes the deleted words and "
+                "names the exact child already selected by the effect feed; "
+                "lowering uses the feed action and target without widening scope."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                **child_qualified_omission,
+            },
+        )
+        return UKQuoteOnlyOmissionLowering(
+            applied=True,
+            curr_action="text_repeal",
+            content_ir=None,
+            fragment_subs=[
+                {
+                    "original": op_text_match,
+                    "replacement": "",
+                    "rule_id": "uk_effect_child_qualified_word_omission_text_patch",
+                }
+            ],
+            op_text_match=op_text_match,
+            op_text_replacement="",
         )
 
     quote_only_definition_omission = _quote_only_definition_list_omission_payload_match(
