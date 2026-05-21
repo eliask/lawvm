@@ -4052,6 +4052,14 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     uk_candidates_p.add_argument(
+        "--residual-claim-evidence-jsonl",
+        metavar="PATH",
+        help=(
+            "write selected saved-run replay/oracle residual claims as JSONL "
+            "review work items"
+        ),
+    )
+    uk_candidates_p.add_argument(
         "--replay-adjudication-sample-limit",
         type=int,
         default=5,

@@ -188,6 +188,111 @@ def _uk_residual_claim_from_bench_row(result) -> dict[str, object]:  # noqa: ANN
     }
 
 
+def _uk_residual_claim_has_reviewable_evidence(claim: Mapping[str, object]) -> bool:
+    kind = str(claim.get("selected_kind") or "")
+    if not kind or kind in {"no_strong_claim", "unknown_legacy_missing"}:
+        return False
+    return (
+        int(claim.get("only_in_replayed_count") or 0) > 0
+        or int(claim.get("only_in_oracle_count") or 0) > 0
+        or int(claim.get("section_claim_count") or 0) > 0
+        or _bool_bench_field(claim.get("section_claim_emitted"), default=False)
+    )
+
+
+def _uk_residual_claim_work_item_id(
+    *,
+    label: str,
+    statute_id: str,
+    claim: Mapping[str, object],
+) -> str:
+    parts = (
+        label,
+        statute_id,
+        str(claim.get("selected_tier") or ""),
+        str(claim.get("selected_kind") or ""),
+        str(claim.get("comparison_class") or ""),
+        str(claim.get("only_in_replayed_count") or 0),
+        str(claim.get("only_in_oracle_count") or 0),
+        str(claim.get("section_claim_count") or 0),
+    )
+    digest = hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:16]
+    return f"uk-residual-claim-{digest}"
+
+
+def _uk_residual_claim_evidence_row_jsonable(
+    result,  # noqa: ANN001
+    *,
+    label: str,
+    score_mode: str,
+) -> dict[str, Any]:
+    claim = _uk_residual_claim_from_bench_row(result)
+    return {
+        "schema": "lawvm.uk_residual_claim_frontier.v1",
+        "rule_id": "uk_residual_claim_frontier_workqueue",
+        "family": "residual_claim_frontier",
+        "phase": "oracle_adjudication",
+        "jurisdiction": "uk",
+        "work_item_kind": "residual_claim_review",
+        "claim_kind": str(claim.get("selected_kind") or "unknown"),
+        "claim_status": str(claim.get("selected_tier") or "UNRESOLVED"),
+        "validator_status": "not_validated",
+        "work_item_id": _uk_residual_claim_work_item_id(
+            label=label,
+            statute_id=str(result.statute_id),
+            claim=claim,
+        ),
+        "bench_label": label,
+        "statute_id": str(result.statute_id),
+        "score_mode": score_mode,
+        "frontier_score": _primary_frontier_score(result, score_mode=score_mode),
+        "raw_score": float(getattr(result, "score", -1.0)),
+        "replay_score": float(getattr(result, "replay_score", -1.0)),
+        "commencement_score": float(getattr(result, "commencement_score", -1.0)),
+        "replay_commencement_score": float(
+            getattr(result, "replay_commencement_score", -1.0)
+        ),
+        "comparison_class": _effective_comparison_class(result),
+        "core_benchmark": _effective_core_benchmark(result),
+        "uk_replay_regime": _uk_replay_regime_kwargs_from_bench_row(result),
+        "uk_replay_regime_claim": _uk_replay_regime_claim_from_bench_row(result),
+        "uk_residual_claim": claim,
+        "enacted_source": {
+            "status": str(getattr(result, "enacted_source_status", "") or "unknown"),
+            "size": int(getattr(result, "enacted_source_size", 0) or 0),
+            "sha256": str(getattr(result, "enacted_source_sha256", "") or ""),
+            "url": str(getattr(result, "enacted_source_url", "") or ""),
+        },
+        "oracle_source": {
+            "status": str(getattr(result, "oracle_source_status", "") or "unknown"),
+            "size": int(getattr(result, "oracle_source_size", 0) or 0),
+            "sha256": str(getattr(result, "oracle_source_sha256", "") or ""),
+            "url": str(getattr(result, "oracle_source_url", "") or ""),
+        },
+    }
+
+
+def _uk_residual_claim_evidence_rows(
+    results: Sequence[object],
+    *,
+    label: str,
+    score_mode: str,
+) -> tuple[dict[str, Any], ...]:
+    rows: list[dict[str, Any]] = []
+    for result in results:
+        claim = _uk_residual_claim_from_bench_row(result)
+        if not _uk_residual_claim_has_reviewable_evidence(claim):
+            continue
+        rows.append(
+            _uk_residual_claim_evidence_row_jsonable(
+                result,
+                label=label,
+                score_mode=score_mode,
+            )
+        )
+    return tuple(rows)
+
+
 def _matches_filters(  # noqa: ANN001
     result,
     *,
@@ -2185,6 +2290,15 @@ def _attach_replay_adjudication_evidence_report(
     return report
 
 
+def _attach_residual_claim_evidence_report(
+    report: dict[str, Any],
+    evidence_report: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if evidence_report is not None:
+        report["residual_claim_evidence_jsonl"] = dict(evidence_report)
+    return report
+
+
 def _format_replay_adjudication_evidence_report(
     evidence_report: Mapping[str, Any],
 ) -> str:
@@ -2193,6 +2307,15 @@ def _format_replay_adjudication_evidence_report(
         "Replay adjudication evidence JSONL: "
         f"{evidence_report.get('path')} rows={evidence_report.get('rows')} "
         f"kinds={kinds}"
+    )
+
+
+def _format_residual_claim_evidence_report(
+    evidence_report: Mapping[str, Any],
+) -> str:
+    return (
+        "Residual claim evidence JSONL: "
+        f"{evidence_report.get('path')} rows={evidence_report.get('rows')}"
     )
 
 
@@ -2512,6 +2635,14 @@ def main(args: "argparse.Namespace") -> None:
         if replay_adjudication_evidence_jsonl_arg
         else None
     )
+    residual_claim_evidence_jsonl_arg = (
+        getattr(args, "residual_claim_evidence_jsonl", "") or ""
+    )
+    residual_claim_evidence_jsonl_path = (
+        Path(residual_claim_evidence_jsonl_arg)
+        if residual_claim_evidence_jsonl_arg
+        else None
+    )
     manual_compile_evidence_statuses = _manual_compile_evidence_statuses_from_args(
         getattr(args, "manual_compile_evidence_status", None)
     )
@@ -2589,6 +2720,24 @@ def main(args: "argparse.Namespace") -> None:
         if replay_adjudication_evidence_jsonl_path is not None
         else None
     )
+    residual_claim_evidence_jsonl_count = 0
+    if residual_claim_evidence_jsonl_path is not None:
+        residual_claim_evidence_jsonl_count = _write_jsonl_rows(
+            residual_claim_evidence_jsonl_path,
+            _uk_residual_claim_evidence_rows(
+                frontier,
+                label=label,
+                score_mode=score_mode,
+            ),
+        )
+    residual_claim_evidence_jsonl_report = (
+        {
+            "path": str(residual_claim_evidence_jsonl_path),
+            "rows": residual_claim_evidence_jsonl_count,
+        }
+        if residual_claim_evidence_jsonl_path is not None
+        else None
+    )
     filters_json = _uk_candidates_filters_jsonable(
         top=top,
         score_mode=score_mode,
@@ -2662,6 +2811,10 @@ def main(args: "argparse.Namespace") -> None:
                 report,
                 replay_adjudication_evidence_jsonl_report,
             )
+            _attach_residual_claim_evidence_report(
+                report,
+                residual_claim_evidence_jsonl_report,
+            )
             print(json.dumps(
                 report,
                 ensure_ascii=False,
@@ -2682,6 +2835,15 @@ def main(args: "argparse.Namespace") -> None:
             print(
                 _format_replay_adjudication_evidence_report(
                     replay_adjudication_evidence_jsonl_report
+                )
+            )
+        if (
+            not json_output
+            and residual_claim_evidence_jsonl_report is not None
+        ):
+            print(
+                _format_residual_claim_evidence_report(
+                    residual_claim_evidence_jsonl_report
                 )
             )
         return
@@ -3062,6 +3224,10 @@ def main(args: "argparse.Namespace") -> None:
                     report,
                     replay_adjudication_evidence_jsonl_report,
                 )
+                _attach_residual_claim_evidence_report(
+                    report,
+                    residual_claim_evidence_jsonl_report,
+                )
                 print(json.dumps(
                     report,
                     ensure_ascii=False,
@@ -3072,6 +3238,15 @@ def main(args: "argparse.Namespace") -> None:
                 print(
                     _format_replay_adjudication_evidence_report(
                         replay_adjudication_evidence_jsonl_report
+                    )
+                )
+            if (
+                not json_output
+                and residual_claim_evidence_jsonl_report is not None
+            ):
+                print(
+                    _format_residual_claim_evidence_report(
+                        residual_claim_evidence_jsonl_report
                     )
                 )
             return
@@ -3295,6 +3470,10 @@ def main(args: "argparse.Namespace") -> None:
                 report,
                 replay_adjudication_evidence_jsonl_report,
             )
+            _attach_residual_claim_evidence_report(
+                report,
+                residual_claim_evidence_jsonl_report,
+            )
             print(json.dumps(
                 report,
                 ensure_ascii=False,
@@ -3306,6 +3485,15 @@ def main(args: "argparse.Namespace") -> None:
             print(
                 _format_replay_adjudication_evidence_report(
                     replay_adjudication_evidence_jsonl_report
+                )
+            )
+        if (
+            not json_output
+            and residual_claim_evidence_jsonl_report is not None
+        ):
+            print(
+                _format_residual_claim_evidence_report(
+                    residual_claim_evidence_jsonl_report
                 )
             )
         return
@@ -3693,6 +3881,10 @@ def main(args: "argparse.Namespace") -> None:
             report,
             replay_adjudication_evidence_jsonl_report,
         )
+        _attach_residual_claim_evidence_report(
+            report,
+            residual_claim_evidence_jsonl_report,
+        )
         print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     else:
         print()
@@ -3707,6 +3899,12 @@ def main(args: "argparse.Namespace") -> None:
             print(
                 _format_replay_adjudication_evidence_report(
                     replay_adjudication_evidence_jsonl_report
+                )
+            )
+        if residual_claim_evidence_jsonl_report is not None:
+            print(
+                _format_residual_claim_evidence_report(
+                    residual_claim_evidence_jsonl_report
                 )
             )
         _print_uk_candidates_text_summary(

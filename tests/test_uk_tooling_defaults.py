@@ -627,6 +627,22 @@ def test_uk_candidates_parser_accepts_replay_adjudication_evidence_jsonl() -> No
     )
 
 
+def test_uk_candidates_parser_accepts_residual_claim_evidence_jsonl() -> None:
+    parser = cli._build_parser()
+
+    args = parser.parse_args(
+        [
+            "uk-candidates",
+            "--label",
+            "demo",
+            "--residual-claim-evidence-jsonl",
+            ".tmp/uk-residual-claims.jsonl",
+        ]
+    )
+
+    assert args.residual_claim_evidence_jsonl == ".tmp/uk-residual-claims.jsonl"
+
+
 def test_uk_candidates_parser_accepts_manual_compile_evidence_statuses() -> None:
     parser = cli._build_parser()
 
