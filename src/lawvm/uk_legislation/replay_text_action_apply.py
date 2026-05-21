@@ -497,6 +497,14 @@ class UKReplayTextActionApplyMixin:
                     )
                     family = "definition_entry_separator_recovery"
                     strict_disposition = "record"
+                elif recovery_rule_id == "uk_replay_definition_entry_text_rewrite_applied":
+                    message = (
+                        "UK replay applied a definition-entry text rewrite after "
+                        "proving a unique definition entry surface."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "definition_entry_selector"
                 elif recovery_rule_id == "uk_replay_definition_anchor_lexical_variant_recovered":
                     message = (
                         "UK replay applied definition-anchor text op after resolving "

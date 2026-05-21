@@ -1830,6 +1830,10 @@ class UKReplayTextApplyMixin:
                 if changed:
                     if definition_recovery_rule_ids and recovery_rule_ids_out is not None:
                         recovery_rule_ids_out.extend(definition_recovery_rule_ids)
+                    if recovery_rule_ids_out is not None:
+                        recovery_rule_ids_out.append(
+                            "uk_replay_definition_entry_text_rewrite_applied"
+                        )
                     rebuilt = dc_replace(node, text=new_text)
                     self._replace_node_in_statute(node, rebuilt)
                     return rebuilt, True
@@ -1846,6 +1850,8 @@ class UKReplayTextApplyMixin:
             path, text_node, new_text, definition_recovery_rule_ids = candidate_paths[0]
             if definition_recovery_rule_ids and recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.extend(definition_recovery_rule_ids)
+            if recovery_rule_ids_out is not None:
+                recovery_rule_ids_out.append("uk_replay_definition_entry_text_rewrite_applied")
             rebuilt = self._replace_descendant_at_path(
                 node,
                 path,

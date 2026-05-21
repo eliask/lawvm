@@ -4040,7 +4040,13 @@ def test_executor_applies_definition_entry_repeal_without_phrase_deletion() -> N
         "\u201cquality partnership scheme\u201d means a quality partnership scheme "
         "or a quality contract scheme;"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_definition_entry_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "definition_entry_selector"
 
 
 def test_executor_applies_definition_entry_repeal_with_qualifier_before_predicate() -> None:
@@ -4093,10 +4099,13 @@ def test_executor_applies_definition_entry_repeal_with_qualifier_before_predicat
         "\u201cpolice force\u201d means a force; \u201cprivate vehicle\u201d means a vehicle;"
     )
     assert [row.kind for row in adjudications] == [
-        "uk_replay_definition_entry_qualifier_phrase_normalized"
+        "uk_replay_definition_entry_qualifier_phrase_normalized",
+        "uk_replay_definition_entry_text_rewrite_applied",
     ]
     assert adjudications[0].detail["family"] == "definition_entry_predicate_recovery"
     assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[1].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[1].detail["strict_disposition"] == "record"
 
 
 def test_executor_applies_definition_entry_repeal_with_orphan_separator() -> None:
@@ -4152,9 +4161,12 @@ def test_executor_applies_definition_entry_repeal_with_orphan_separator() -> Non
     assert [row.kind for row in adjudications] == [
         "uk_replay_definition_entry_qualifier_phrase_normalized",
         "uk_replay_definition_entry_orphan_separator_normalized",
+        "uk_replay_definition_entry_text_rewrite_applied",
     ]
     assert adjudications[1].detail["family"] == "definition_entry_separator_recovery"
     assert adjudications[1].detail["strict_disposition"] == "record"
+    assert adjudications[2].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[2].detail["strict_disposition"] == "record"
 
 
 def test_executor_does_not_treat_plain_comma_as_definition_entry_separator() -> None:
@@ -4318,7 +4330,13 @@ def test_executor_applies_bilingual_definition_entry_repeal_without_phrase_delet
         "In this Part\u2014 \u201cworks\u201d means paragraph 2 of regulation 2(1) "
         "of the Public Contracts Regulations;"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_definition_entry_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "definition_entry_selector"
 
 
 def test_executor_applies_definition_entry_substitution_without_phrase_deletion() -> None:
@@ -4374,7 +4392,13 @@ def test_executor_applies_definition_entry_substitution_without_phrase_deletion(
         "has the meaning given by section 17(2); "
         "\u201crelevant provision\u201d means another meaning;"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_definition_entry_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "definition_entry_selector"
 
 
 def test_executor_applies_definition_entry_repeal_with_shall_be_construed_predicate() -> None:
@@ -4426,11 +4450,14 @@ def test_executor_applies_definition_entry_repeal_with_shall_be_construed_predic
         "\u201ctraffic commissioner\u201d means the commissioner for Scotland;"
     )
     assert [adjudication.kind for adjudication in adjudications] == [
-        "uk_replay_definition_predicate_shall_construed_normalized"
+        "uk_replay_definition_predicate_shall_construed_normalized",
+        "uk_replay_definition_entry_text_rewrite_applied",
     ]
     assert adjudications[0].detail["family"] == "definition_entry_predicate_recovery"
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[1].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[1].detail["strict_disposition"] == "record"
 
 
 def test_executor_applies_in_definition_after_anchor_insert_without_global_rewrite() -> None:
