@@ -89,6 +89,100 @@ UK_COMPARE_CHAINED_TEXT_REWRITE_RULE_IDS = frozenset(
         "uk_effect_wherever_occurring_substitution_text_patch",
     }
 )
+_ManualFrontierClassification = tuple[str, str, str]
+_UK_MANUAL_FRONTIER_RANGE_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClassification] = {
+    "range_to_container_target_unsupported": (
+        "manual_compile_candidate",
+        "uk_manual_frontier_range_to_container_candidate",
+        "The source substitutes a section range into a higher-level container; a manual or deterministic range-to-container migration claim must own the replaced range, new container, and lineage.",
+    ),
+}
+_UK_MANUAL_FRONTIER_SOURCE_INSUFFICIENT_PATHOLOGY_RESULTS: dict[
+    str, _ManualFrontierClassification
+] = {
+    "missing_extracted_source": (
+        "source_insufficient",
+        "uk_manual_frontier_missing_payload_source_insufficient",
+        "No extracted source witness is available; a manual claim cannot replace missing public source evidence.",
+    ),
+    "non_substantive_shell_payload": (
+        "source_insufficient",
+        "uk_manual_frontier_non_substantive_payload_source_insufficient",
+        "The available payload is non-substantive shell or dot-leader text and should not become legal content.",
+    ),
+}
+_UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS: dict[str, _ManualFrontierClassification] = {
+    "amendment_text_target_unsupported": (
+        "deterministic_frontend_candidate",
+        "uk_manual_frontier_amendment_program_target_candidate",
+        "The source targets text inserted by another amendment instruction; this needs an explicit amendment-program compilation lane, not a base-text guess.",
+    ),
+    "schedule_list_entry_target_unsupported": (
+        "manual_compile_candidate",
+        "uk_manual_frontier_schedule_list_entry_candidate",
+        "The source targets a schedule/list entry by anchor entry text; a claim or future list-entry compiler must identify the entry carrier and sibling insertion point rather than mutating collapsed schedule text.",
+    ),
+    "appropriate_place_definition_entry_insert_unsupported": (
+        "manual_compile_candidate",
+        "uk_manual_frontier_appropriate_place_definition_entry_candidate",
+        "The source inserts a definition entry at an appropriate place without naming an anchor; a claim or future placement compiler must supply and validate the exact definition-entry insertion point instead of inferring it from live text.",
+    ),
+    "appropriate_place_insert_unsupported": (
+        "manual_compile_candidate",
+        "uk_manual_frontier_appropriate_place_candidate",
+        "The source asks for appropriate-place placement; a claim or future placement compiler must identify the insertion anchor without guessing from live text.",
+    ),
+    "repeal_schedule_table_source_unsupported": (
+        "manual_compile_candidate",
+        "uk_manual_frontier_repeal_table_candidate",
+        "The row appears to depend on a repeal schedule/table or grouped repeal source that may need row/column compilation.",
+    ),
+    "as_if_application_modification_unsupported": (
+        "non_textual_or_out_of_scope",
+        "uk_manual_frontier_as_if_application_modification_out_of_scope",
+        "The source is an applied/as-if modification clause rather than a direct mutation of the affected statute text/tree under the current UK replay model.",
+    ),
+    "commencement_effect_out_of_scope": (
+        "non_textual_or_out_of_scope",
+        "uk_manual_frontier_commencement_effect_out_of_scope",
+        "The source is a commencement/applicability instrument; it may matter to temporal selection, but it is not a direct text/tree mutation under the current UK replay model.",
+    ),
+    "application_modification_payload_out_of_scope": (
+        "non_textual_or_out_of_scope",
+        "uk_manual_frontier_application_modification_payload_out_of_scope",
+        "The extracted payload belongs to an application-modification formula; replay must not treat it as a direct amendment to current target text without a scoped temporal/application model.",
+    ),
+    "source_carried_multi_subunit_text_rewrite_unsupported": (
+        "deterministic_frontend_candidate",
+        "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
+        "The feed target is broader than the source-carried child targets; compile must split the text rewrite by the named child units rather than mutate the whole parent.",
+    ),
+    "source_carried_child_tail_text_rewrite_unsupported": (
+        "deterministic_frontend_candidate",
+        "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate",
+        "The source targets the text tail following a named child; compile must own a bounded child-tail selector rather than delete from the whole parent text.",
+    ),
+    "structural_sibling_insert_unsupported": (
+        "deterministic_frontend_candidate",
+        "uk_manual_frontier_structural_sibling_insert_candidate",
+        "The source inserts new structural siblings after a named child; a future compiler must emit sibling insert operations instead of appending payload text to the anchor child.",
+    ),
+    "heading_facet_target_unsupported": (
+        "manual_compile_candidate",
+        "uk_manual_frontier_heading_facet_candidate",
+        "The source targets a heading/title/sidenote facet; a manual claim or future facet compiler must target that facet without mutating the host body.",
+    ),
+    "crossheading_target_unsupported": (
+        "manual_compile_candidate",
+        "uk_manual_frontier_crossheading_candidate",
+        "The source targets a cross-heading surface that needs an explicit crossheading/facet claim.",
+    ),
+    "schedule_note_target_unsupported": (
+        "manual_compile_candidate",
+        "uk_manual_frontier_schedule_note_candidate",
+        "The source targets a schedule note surface; a claim or future note compiler must target that note without inventing paragraph structure.",
+    ),
+}
 _UK_SOURCE_CONTAINER_EID_CHILD_STARTS = {
     "part": frozenset({"chapter", "crossheading", "section"}),
     "schedule": frozenset({"crossheading", "paragraph", "part"}),
@@ -1142,6 +1236,17 @@ def _looks_like_source_carried_structured_text_patch_payload(text: str) -> bool:
     )
 
 
+def _uk_manual_frontier_classification(
+    table: dict[str, _ManualFrontierClassification],
+    source_pathology: str,
+) -> dict[str, str] | None:
+    classification = table.get(source_pathology)
+    if classification is None:
+        return None
+    status, rule_id, reason = classification
+    return {"status": status, "rule_id": rule_id, "reason": reason}
+
+
 def classify_uk_manual_compile_frontier(  # noqa: PLR0913
     *,
     effect_type: str,
@@ -1186,12 +1291,12 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The source substitutes a section range into a higher-level container whose feed target is absent from the available source surfaces; a manual or deterministic range-to-container migration claim must own the replaced range, new container, and lineage.",
         }
 
-    if source_pathology_norm == "range_to_container_target_unsupported":
-        return {
-            "status": "manual_compile_candidate",
-            "rule_id": "uk_manual_frontier_range_to_container_candidate",
-            "reason": "The source substitutes a section range into a higher-level container; a manual or deterministic range-to-container migration claim must own the replaced range, new container, and lineage.",
-        }
+    range_source_pathology_result = _uk_manual_frontier_classification(
+        _UK_MANUAL_FRONTIER_RANGE_SOURCE_PATHOLOGY_RESULTS,
+        source_pathology_norm,
+    )
+    if range_source_pathology_result is not None:
+        return range_source_pathology_result
 
     if (
         compiled_op_count > 0
@@ -1211,19 +1316,12 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The selected replay lens does not admit this row as a structural text/tree replay effect.",
         }
 
-    if source_pathology_norm == "missing_extracted_source":
-        return {
-            "status": "source_insufficient",
-            "rule_id": "uk_manual_frontier_missing_payload_source_insufficient",
-            "reason": "No extracted source witness is available; a manual claim cannot replace missing public source evidence.",
-        }
-
-    if source_pathology_norm == "non_substantive_shell_payload":
-        return {
-            "status": "source_insufficient",
-            "rule_id": "uk_manual_frontier_non_substantive_payload_source_insufficient",
-            "reason": "The available payload is non-substantive shell or dot-leader text and should not become legal content.",
-        }
+    insufficient_source_pathology_result = _uk_manual_frontier_classification(
+        _UK_MANUAL_FRONTIER_SOURCE_INSUFFICIENT_PATHOLOGY_RESULTS,
+        source_pathology_norm,
+    )
+    if insufficient_source_pathology_result is not None:
+        return insufficient_source_pathology_result
 
     if (
         source_pathology_norm in {"fragment_context_missing", "payload_fragment_without_action_formula"}
@@ -1264,12 +1362,12 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "reason": "The row already lowers to replay operations without blocking lowering rejections.",
         }
 
-    if source_pathology_norm == "amendment_text_target_unsupported":
-        return {
-            "status": "deterministic_frontend_candidate",
-            "rule_id": "uk_manual_frontier_amendment_program_target_candidate",
-            "reason": "The source targets text inserted by another amendment instruction; this needs an explicit amendment-program compilation lane, not a base-text guess.",
-        }
+    main_source_pathology_result = _uk_manual_frontier_classification(
+        _UK_MANUAL_FRONTIER_MAIN_SOURCE_PATHOLOGY_RESULTS,
+        source_pathology_norm,
+    )
+    if main_source_pathology_result is not None:
+        return main_source_pathology_result
 
     if source_pathology_norm == "table_entry_target_unsupported":
         entry_shapes = {
@@ -1299,97 +1397,6 @@ def classify_uk_manual_compile_frontier(  # noqa: PLR0913
             "status": "manual_compile_candidate",
             "rule_id": "uk_manual_frontier_table_entry_candidate",
             "reason": "The source targets a table entry/column surface; a claim or future table compiler must identify the row and cell rather than mutating host body text.",
-        }
-
-    if source_pathology_norm == "schedule_list_entry_target_unsupported":
-        return {
-            "status": "manual_compile_candidate",
-            "rule_id": "uk_manual_frontier_schedule_list_entry_candidate",
-            "reason": "The source targets a schedule/list entry by anchor entry text; a claim or future list-entry compiler must identify the entry carrier and sibling insertion point rather than mutating collapsed schedule text.",
-        }
-
-    if source_pathology_norm == "appropriate_place_definition_entry_insert_unsupported":
-        return {
-            "status": "manual_compile_candidate",
-            "rule_id": "uk_manual_frontier_appropriate_place_definition_entry_candidate",
-            "reason": "The source inserts a definition entry at an appropriate place without naming an anchor; a claim or future placement compiler must supply and validate the exact definition-entry insertion point instead of inferring it from live text.",
-        }
-
-    if source_pathology_norm == "appropriate_place_insert_unsupported":
-        return {
-            "status": "manual_compile_candidate",
-            "rule_id": "uk_manual_frontier_appropriate_place_candidate",
-            "reason": "The source asks for appropriate-place placement; a claim or future placement compiler must identify the insertion anchor without guessing from live text.",
-        }
-
-    if source_pathology_norm == "repeal_schedule_table_source_unsupported":
-        return {
-            "status": "manual_compile_candidate",
-            "rule_id": "uk_manual_frontier_repeal_table_candidate",
-            "reason": "The row appears to depend on a repeal schedule/table or grouped repeal source that may need row/column compilation.",
-        }
-
-    if source_pathology_norm == "as_if_application_modification_unsupported":
-        return {
-            "status": "non_textual_or_out_of_scope",
-            "rule_id": "uk_manual_frontier_as_if_application_modification_out_of_scope",
-            "reason": "The source is an applied/as-if modification clause rather than a direct mutation of the affected statute text/tree under the current UK replay model.",
-        }
-
-    if source_pathology_norm == "commencement_effect_out_of_scope":
-        return {
-            "status": "non_textual_or_out_of_scope",
-            "rule_id": "uk_manual_frontier_commencement_effect_out_of_scope",
-            "reason": "The source is a commencement/applicability instrument; it may matter to temporal selection, but it is not a direct text/tree mutation under the current UK replay model.",
-        }
-
-    if source_pathology_norm == "application_modification_payload_out_of_scope":
-        return {
-            "status": "non_textual_or_out_of_scope",
-            "rule_id": "uk_manual_frontier_application_modification_payload_out_of_scope",
-            "reason": "The extracted payload belongs to an application-modification formula; replay must not treat it as a direct amendment to current target text without a scoped temporal/application model.",
-        }
-
-    if source_pathology_norm == "source_carried_multi_subunit_text_rewrite_unsupported":
-        return {
-            "status": "deterministic_frontend_candidate",
-            "rule_id": "uk_manual_frontier_source_carried_multi_subunit_text_rewrite_candidate",
-            "reason": "The feed target is broader than the source-carried child targets; compile must split the text rewrite by the named child units rather than mutate the whole parent.",
-        }
-
-    if source_pathology_norm == "source_carried_child_tail_text_rewrite_unsupported":
-        return {
-            "status": "deterministic_frontend_candidate",
-            "rule_id": "uk_manual_frontier_source_carried_child_tail_text_rewrite_candidate",
-            "reason": "The source targets the text tail following a named child; compile must own a bounded child-tail selector rather than delete from the whole parent text.",
-        }
-
-    if source_pathology_norm == "structural_sibling_insert_unsupported":
-        return {
-            "status": "deterministic_frontend_candidate",
-            "rule_id": "uk_manual_frontier_structural_sibling_insert_candidate",
-            "reason": "The source inserts new structural siblings after a named child; a future compiler must emit sibling insert operations instead of appending payload text to the anchor child.",
-        }
-
-    if source_pathology_norm == "heading_facet_target_unsupported":
-        return {
-            "status": "manual_compile_candidate",
-            "rule_id": "uk_manual_frontier_heading_facet_candidate",
-            "reason": "The source targets a heading/title/sidenote facet; a manual claim or future facet compiler must target that facet without mutating the host body.",
-        }
-
-    if source_pathology_norm == "crossheading_target_unsupported":
-        return {
-            "status": "manual_compile_candidate",
-            "rule_id": "uk_manual_frontier_crossheading_candidate",
-            "reason": "The source targets a cross-heading surface that needs an explicit crossheading/facet claim.",
-        }
-
-    if source_pathology_norm == "schedule_note_target_unsupported":
-        return {
-            "status": "manual_compile_candidate",
-            "rule_id": "uk_manual_frontier_schedule_note_candidate",
-            "reason": "The source targets a schedule note surface; a claim or future note compiler must target that note without inventing paragraph structure.",
         }
 
     if "uk_effect_heading_only_ref_rejected" in blocking_rules:
