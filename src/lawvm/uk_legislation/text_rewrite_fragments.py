@@ -23,6 +23,13 @@ from lawvm.uk_legislation.witness_sidecars import _witness_for_op
 UK_MULTI_QUOTED_WORD_REPEAL_RULE_ID = "uk_effect_multi_quoted_word_repeal_text_patches"
 UK_CONTEXTUAL_ADJACENT_WORD_OMIT_RULE_ID = "uk_effect_contextual_adjacent_word_omit_text_patch"
 UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID = "uk_effect_range_to_end_there_is_substituted_text_patch"
+UK_SOURCE_CARRIED_CHILD_TAIL_REPEAL_RULE_ID = "uk_effect_source_carried_child_tail_repeal_text_patch"
+UK_SOURCE_CARRIED_FOLLOWING_WORDS_REPEAL_RULE_ID = (
+    "uk_effect_source_carried_following_words_repeal_text_patch"
+)
+UK_SOURCE_CARRIED_SUBPARAGRAPH_TAIL_REPEAL_RULE_ID = (
+    "uk_effect_source_carried_subparagraph_tail_repeal_text_patch"
+)
 
 UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS = frozenset(
     {
@@ -260,6 +267,88 @@ def append_basic_text_rewrite_observations(
         )
 
 
+def append_source_carried_tail_rewrite_observations(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    target_ref: str,
+    fragment_subs: Optional[list[dict[str, Any]]],
+    primary: dict[str, Any],
+    op_text_match: Optional[str],
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> None:
+    rule_ids = _fragment_rule_ids(fragment_subs)
+    if UK_SOURCE_CARRIED_CHILD_TAIL_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_SOURCE_CARRIED_CHILD_TAIL_REPEAL_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="source_carried_child_tail_repeal_lowered",
+            reason=(
+                "UK source text explicitly repeals the words following "
+                "a named paragraph inside the affected subsection; lowering "
+                "preserves that as a bounded child-tail text selector instead "
+                "of deleting from the whole parent."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "source_anchor_child_label": str(primary.get("source_anchor_child_label") or ""),
+                "source_subsection_label": str(primary.get("source_subsection_label") or ""),
+            },
+        )
+    if UK_SOURCE_CARRIED_FOLLOWING_WORDS_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_SOURCE_CARRIED_FOLLOWING_WORDS_REPEAL_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="source_carried_following_words_repeal_lowered",
+            reason=(
+                "UK source parent says the following words are repealed "
+                "and the BlockAmendment carries only those words; lowering "
+                "preserves the block payload as the exact deletion preimage."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "source_parent_id": str(primary.get("source_parent_id") or ""),
+            },
+        )
+    if UK_SOURCE_CARRIED_SUBPARAGRAPH_TAIL_REPEAL_RULE_ID in rule_ids:
+        _append_uk_effect_lowering_observation(
+            lowering_rejections_out,
+            rule_id=UK_SOURCE_CARRIED_SUBPARAGRAPH_TAIL_REPEAL_RULE_ID,
+            family="text_rewrite_lowering",
+            reason_code="source_carried_subparagraph_tail_repeal_lowered",
+            reason=(
+                "UK source text explicitly repeals the words following "
+                "a named subparagraph inside the affected paragraph; lowering "
+                "preserves that as a bounded child-tail text selector instead "
+                "of deleting from the whole paragraph."
+            ),
+            effect=effect,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            detail={
+                "target_ref": target_ref,
+                "target": str(target),
+                "text_match": op_text_match,
+                "source_anchor_child_kind": str(primary.get("source_anchor_child_kind") or ""),
+                "source_anchor_child_label": str(primary.get("source_anchor_child_label") or ""),
+                "source_parent_kind": str(primary.get("source_parent_kind") or ""),
+                "source_parent_label": str(primary.get("source_parent_label") or ""),
+            },
+        )
 def _fragment_target_suffix(fragment: object) -> tuple[str, str] | None:
     if not isinstance(fragment, dict):
         return None

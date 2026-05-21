@@ -281,6 +281,7 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     _fragment_substitution,
     append_all_occurrences_text_rewrite_observations,
     append_basic_text_rewrite_observations,
+    append_source_carried_tail_rewrite_observations,
     lower_labeled_child_end_range_selector,
     _multi_quoted_word_repeal_fragments,
 )
@@ -1648,84 +1649,17 @@ def compile_effect_to_ir_ops(
                                 "end_occurrence": op_text_end_occurrence,
                             },
                         )
-                    if "uk_effect_source_carried_child_tail_repeal_text_patch" in _fragment_rule_ids(fragment_subs):
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id="uk_effect_source_carried_child_tail_repeal_text_patch",
-                            family="text_rewrite_lowering",
-                            reason_code="source_carried_child_tail_repeal_lowered",
-                            reason=(
-                                "UK source text explicitly repeals the words following "
-                                "a named paragraph inside the affected subsection; lowering "
-                                "preserves that as a bounded child-tail text selector instead "
-                                "of deleting from the whole parent."
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "target": str(target),
-                                "text_match": op_text_match,
-                                "source_anchor_child_label": str(primary.get("source_anchor_child_label") or ""),
-                                "source_subsection_label": str(primary.get("source_subsection_label") or ""),
-                            },
-                        )
-                    if (
-                        "uk_effect_source_carried_following_words_repeal_text_patch"
-                        in _fragment_rule_ids(fragment_subs)
-                    ):
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id="uk_effect_source_carried_following_words_repeal_text_patch",
-                            family="text_rewrite_lowering",
-                            reason_code="source_carried_following_words_repeal_lowered",
-                            reason=(
-                                "UK source parent says the following words are repealed "
-                                "and the BlockAmendment carries only those words; lowering "
-                                "preserves the block payload as the exact deletion preimage."
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "target": str(target),
-                                "text_match": op_text_match,
-                                "source_parent_id": str(primary.get("source_parent_id") or ""),
-                            },
-                        )
-                    if "uk_effect_source_carried_subparagraph_tail_repeal_text_patch" in _fragment_rule_ids(
-                        fragment_subs
-                    ):
-                        _append_uk_effect_lowering_observation(
-                            lowering_rejections_out,
-                            rule_id="uk_effect_source_carried_subparagraph_tail_repeal_text_patch",
-                            family="text_rewrite_lowering",
-                            reason_code="source_carried_subparagraph_tail_repeal_lowered",
-                            reason=(
-                                "UK source text explicitly repeals the words following "
-                                "a named subparagraph inside the affected paragraph; lowering "
-                                "preserves that as a bounded child-tail text selector instead "
-                                "of deleting from the whole paragraph."
-                            ),
-                            effect=effect,
-                            extracted_el=extracted_el,
-                            extracted_text=extracted_text,
-                            detail={
-                                "target_ref": t_str,
-                                "target": str(target),
-                                "text_match": op_text_match,
-                                "source_anchor_child_kind": str(
-                                    primary.get("source_anchor_child_kind") or ""
-                                ),
-                                "source_anchor_child_label": str(
-                                    primary.get("source_anchor_child_label") or ""
-                                ),
-                                "source_parent_kind": str(primary.get("source_parent_kind") or ""),
-                                "source_parent_label": str(primary.get("source_parent_label") or ""),
-                            },
-                        )
+                    append_source_carried_tail_rewrite_observations(
+                        effect=effect,
+                        target=target,
+                        target_ref=t_str,
+                        fragment_subs=fragment_subs,
+                        primary=primary,
+                        op_text_match=op_text_match,
+                        extracted_el=extracted_el,
+                        extracted_text=extracted_text,
+                        lowering_rejections_out=lowering_rejections_out,
+                    )
                     if _UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID in _fragment_rule_ids(fragment_subs):
                         _append_uk_effect_lowering_observation(
                             lowering_rejections_out,
