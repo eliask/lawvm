@@ -92,6 +92,7 @@ from lawvm.uk_legislation.effect_lowering_tail import (
     build_crossheading_insert_ops,
     build_trailing_repeal_ops,
 )
+from lawvm.uk_legislation.effect_operation_builder import build_lowered_operation_provenance
 from lawvm.uk_legislation.effect_crossheading_prelude import (
     build_crossheading_context,
     build_crossheading_compound_heading_op,
@@ -192,7 +193,6 @@ from lawvm.uk_legislation.provenance_notes import (
     NOTE_REWRITE_WITNESS as _NOTE_REWRITE_WITNESS,
     NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR as _NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR,
     NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR as _NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR,
-    NOTE_SOURCE_LABEL_CHANGE_SUBSTITUTION as _NOTE_SOURCE_LABEL_CHANGE_SUBSTITUTION,
     NOTE_TABLE_CELL_SELECTOR as _NOTE_TABLE_CELL_SELECTOR,
     NOTE_TABLE_COLUMN_INSERT_SELECTOR as _NOTE_TABLE_COLUMN_INSERT_SELECTOR,
     NOTE_TABLE_ROW_INSERT_SELECTOR as _NOTE_TABLE_ROW_INSERT_SELECTOR,
@@ -220,7 +220,6 @@ from lawvm.uk_legislation.source_text_reclassifications import (
     _word_level_structural_subsection_omission,
 )
 from lawvm.uk_legislation.substitution_metadata import (
-    UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID as _UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID,
     UKSourceLabelChangingSubstitution,
     _repeal_tail_for_substituted_series_replacement,
     _retarget_substituted_series_to_replaced_anchor,
@@ -230,7 +229,6 @@ from lawvm.uk_legislation.witness_sidecars import (
     _lowered_witness_from_payload_data,
     _lowered_witness_to_payload_data,
     _payload_with_rewrite_witness,
-    _uk_lowered_op_provenance_tags,
     _witness_for_op,
 )
 from lawvm.uk_legislation.witness_builders import (
@@ -334,8 +332,6 @@ from lawvm.uk_legislation.source_payload_elaboration import (
     _with_trailing_subordinate_siblings,
 )
 from lawvm.uk_legislation.source_parent_payloads import (
-    UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID as _UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID,
-    UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID as _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID,
     _source_after_paragraph_insert_labelled_series,
 )
 from lawvm.uk_legislation.source_structural_sibling import _structural_sibling_insert_from_source
@@ -2840,52 +2836,20 @@ def compile_effect_to_ir_ops(
                     text_rewrite_witness=text_rewrite_witness,
                     insertion_anchor_witness=insertion_anchor_witness,
                 )
-                provenance_tags = _uk_lowered_op_provenance_tags(lowered_witness)
-                if table_cell_selector is not None:
-                    provenance_tags = (
-                        *provenance_tags,
-                        f"{_NOTE_TABLE_CELL_SELECTOR}{json.dumps(table_cell_selector, ensure_ascii=False)}",
-                    )
-                op_witness_rule_id = None
-                if crossheading_group_repeal_selector is not None and curr_action == "repeal":
-                    op_witness_rule_id = _CROSSHEADING_AND_STRUCTURAL_REPEAL_RULE
-                    provenance_tags = (
-                        *provenance_tags,
-                        (
-                            f"{_NOTE_CROSSHEADING_GROUP_REPEAL_SELECTOR}"
-                            f"{json.dumps(crossheading_group_repeal_selector, ensure_ascii=False)}"
-                        ),
-                    )
-                if (
-                    label_changing_substitution is not None
-                    and curr_action == "replace"
-                    and tuple(target.path) == tuple(label_changing_substitution.source_target.path)
-                ):
-                    op_witness_rule_id = _UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID
-                    label_change_note = {
-                        "rule_id": _UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID,
-                        "source_target": str(label_changing_substitution.source_target),
-                        "replacement_target": str(label_changing_substitution.replacement_target),
-                        "source_ref": label_changing_substitution.source_ref,
-                        "replacement_ref": label_changing_substitution.replacement_ref,
-                    }
-                    provenance_tags = (
-                        *provenance_tags,
-                        (
-                            f"{_NOTE_SOURCE_LABEL_CHANGE_SUBSTITUTION}"
-                            f"{json.dumps(label_change_note, ensure_ascii=False)}"
-                        ),
-                    )
-                if flat_p1para_schedule_insert_lowered and curr_action == "insert":
-                    op_witness_rule_id = _UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID
-                if (
-                    source_parent_substitution_range_payload is not None
-                    and curr_action == "replace"
-                    and target_index < len(source_parent_substitution_range_payload["payload_labels"])
-                ):
-                    op_witness_rule_id = _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID
-                if source_parent_at_end_added_payload is not None and curr_action == "insert":
-                    op_witness_rule_id = _UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID
+                provenance_tags, op_witness_rule_id = build_lowered_operation_provenance(
+                    lowered_witness=lowered_witness,
+                    table_cell_selector=table_cell_selector,
+                    crossheading_group_repeal_selector=crossheading_group_repeal_selector,
+                    curr_action=curr_action,
+                    target=target,
+                    label_changing_substitution=label_changing_substitution,
+                    flat_p1para_schedule_insert_lowered=flat_p1para_schedule_insert_lowered,
+                    source_parent_substitution_range_payload=(
+                        source_parent_substitution_range_payload
+                    ),
+                    source_parent_at_end_added_payload=source_parent_at_end_added_payload,
+                    target_index=target_index,
+                )
                 op = LegalOperation(
                     op_id=lowered_witness.op_id,
                     sequence=lowered_witness.sequence,
