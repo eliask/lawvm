@@ -28,7 +28,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 import Levenshtein
-from dataclasses import dataclass, replace as dc_replace
+from dataclasses import replace as dc_replace
 from pathlib import Path
 from typing import Any, List, Optional, Sequence, cast
 from urllib.error import HTTPError, URLError
@@ -323,6 +323,7 @@ from lawvm.uk_legislation.payload_identity import (
 )
 from lawvm.uk_legislation.payload_conversion import _to_irnode, _to_mutable_node
 from lawvm.uk_legislation.replay_records import (
+    UKReplayPrepareResult,
     _append_uk_replay_adjudication,
     _build_uk_replay_adjudication,
     _uk_adjudication_from_finding,
@@ -553,13 +554,6 @@ _UK_RESPECTIVELY_ALL_OCCURRENCES_TEXT_REWRITE_RULE_ID = (
     "uk_effect_respectively_all_occurrences_substitution_text_patch"
 )
 _UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID = "uk_effect_range_to_end_there_is_substituted_text_patch"
-
-@dataclass(frozen=True)
-class UKReplayPrepareResult:
-    accepted_ops: tuple[LegalOperation, ...]
-    rejected_adjudications: tuple[CompileAdjudication, ...]
-
-
 def compile_effect_to_ir_ops(
     effect: UKEffectRecord,
     extracted_el: Optional[ET.Element],
