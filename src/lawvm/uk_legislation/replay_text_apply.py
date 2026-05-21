@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace as dc_replace
-from typing import Optional
+from typing import Any, Optional
 
 from lawvm.uk_legislation.definition_anchors import _uk_definition_term_lexical_variants
 from lawvm.core.semantic_types import IRNodeKind
@@ -326,9 +326,14 @@ class UKReplayTextApplyMixin:
         self._replace_node_in_statute(node, rebuilt)
         return rebuilt, True
 
-    def _apply_text_substitution_on_node(self, node: UKMutableNode, subs: list[dict]) -> UKMutableNode:
+    def _apply_text_substitution_on_node(
+        self,
+        node: UKMutableNode,
+        subs: list[dict],
+    ) -> tuple[UKMutableNode, tuple[dict[str, Any], ...]]:
         text = node.text or ""
         children = list(node.children)
+        observations: list[dict[str, Any]] = []
         for s in subs:
             old, new = s["original"], s["replacement"]
             if old.startswith("FROM_") and "_TO_" in old:
@@ -345,8 +350,18 @@ class UKReplayTextApplyMixin:
                         self._log(
                             f"  EXECUTOR: deleting children from '{start_label}' to '{end_label}' in {node.kind} {node.label}"
                         )
+                        removed_labels = tuple(str(child.label or "") for child in children[start_idx : end_idx + 1])
                         for i in range(end_idx, start_idx - 1, -1):
                             children.pop(i)
+                        observations.append(
+                            {
+                                "source_shape": "fragment_substitution_child_range_selector",
+                                "start_label": start_label,
+                                "end_label": end_label,
+                                "removed_labels": removed_labels,
+                                "removed_count": len(removed_labels),
+                            }
+                        )
                 continue
             if old in text:
                 text = text.replace(old, new)
@@ -357,7 +372,7 @@ class UKReplayTextApplyMixin:
                     text = new_text
         rebuilt = dc_replace(node, text=text, children=list(children))
         self._replace_node_in_statute(node, rebuilt)
-        return rebuilt
+        return rebuilt, tuple(observations)
 
 
     def _apply_text_replace_on_subtree(

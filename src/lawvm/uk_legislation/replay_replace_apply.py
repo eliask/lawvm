@@ -70,7 +70,26 @@ class UKReplayReplaceApplyMixin:
         if frag_subs is not None:
             if node:
                 self._log(f"  EXECUTOR: substituting text in {node.kind} {node.label}")
-                self._apply_text_substitution_on_node(node, frag_subs)
+                _, substitution_observations = self._apply_text_substitution_on_node(node, frag_subs)
+                for observation in substitution_observations:
+                    _append_uk_replay_adjudication(
+                        self.adjudications_out,
+                        kind="uk_replay_fragment_substitution_child_range_deleted",
+                        message=(
+                            "UK replay applied a fragment-substitution child range "
+                            "deletion after resolving both labelled child endpoints."
+                        ),
+                        op=op,
+                        detail={
+                            "action": _action_name(op.action),
+                            "target": str(target),
+                            "family": "text_rewrite_recovery",
+                            "blocking": False,
+                            "strict_disposition": "record",
+                            "quirks_disposition": "record",
+                            **observation,
+                        },
+                    )
                 self._record_invariant_violations(op)
             else:
                 if self._malformed_target_gap(target):
