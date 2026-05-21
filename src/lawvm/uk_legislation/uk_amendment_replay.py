@@ -333,6 +333,9 @@ from lawvm.uk_legislation.replay_records import (
 from lawvm.uk_legislation.replay_table_geometry import (
     expanded_uk_table_rows,
     expanded_uk_table_rows_with_physical_index,
+    strip_uk_identity_attrs_recursive,
+    uk_table_column_insert_plans,
+    uk_table_column_payload_cells,
     uk_table_cell_span,
 )
 from lawvm.uk_legislation.schedule_list_selectors import (
@@ -5714,88 +5717,6 @@ class UKReplayExecutor:
             **carrier_detail,
         }
 
-    def _strip_identity_attrs_recursive(self, node: UKMutableNode) -> None:
-        for key in ("eId", "id"):
-            node.attrs.pop(key, None)
-        for child in node.children:
-            self._strip_identity_attrs_recursive(child)
-
-    def _table_column_payload_cells(
-        self,
-        new_node: UKMutableNode,
-    ) -> tuple[list[UKMutableNode], str, dict[str, Any]]:
-        if _uk_kind_value(new_node.kind).lower() != "table":
-            return [], "payload_not_table", {"payload_kind": _uk_kind_value(new_node.kind)}
-        payload_rows = [
-            row for row in new_node.children if _uk_kind_value(row.kind).lower() == "row"
-        ]
-        if not payload_rows:
-            return [], "payload_has_no_rows", {"payload_row_count": 0}
-        payload_cells: list[UKMutableNode] = []
-        for row_index, row in enumerate(payload_rows):
-            row_cells = [
-                child
-                for child in row.children
-                if _uk_kind_value(child.kind).lower() in {"cell", "header_cell"}
-            ]
-            if len(row_cells) != 1:
-                return [], "payload_not_single_column", {
-                    "payload_row_index": row_index,
-                    "payload_cell_count": len(row_cells),
-                    "payload_row_count": len(payload_rows),
-                }
-            cloned = UKMutableNode.from_irnode(row_cells[0].to_irnode())
-            self._strip_identity_attrs_recursive(cloned)
-            payload_cells.append(cloned)
-        return payload_cells, "", {"payload_row_count": len(payload_rows)}
-
-    def _table_column_insert_plans(
-        self,
-        table: UKMutableNode,
-    ) -> list[dict[str, Any]]:
-        plans: list[dict[str, Any]] = []
-        active_rowspans: dict[int, tuple[int, UKMutableNode]] = {}
-        for row_index, row in enumerate(table.children):
-            if _uk_kind_value(row.kind).lower() != "row":
-                continue
-            row_cells: dict[int, UKMutableNode] = {
-                col: cell for col, (_, cell) in active_rowspans.items()
-            }
-            next_rowspans: dict[int, tuple[int, UKMutableNode]] = {
-                col: (remaining - 1, cell)
-                for col, (remaining, cell) in active_rowspans.items()
-                if remaining > 1
-            }
-            col = 1
-            owned_ranges: list[tuple[int, int, UKMutableNode, int]] = []
-            for physical_index, cell in enumerate(row.children):
-                cell_kind = _uk_kind_value(cell.kind).lower()
-                if cell_kind not in {"cell", "header_cell"}:
-                    continue
-                while col in row_cells:
-                    col += 1
-                rowspan, colspan = uk_table_cell_span(cell)
-                start_col = col
-                end_col = col + colspan - 1
-                owned_ranges.append((start_col, end_col, cell, physical_index))
-                for offset in range(colspan):
-                    current_col = col + offset
-                    row_cells[current_col] = cell
-                    if rowspan > 1:
-                        next_rowspans[current_col] = (rowspan - 1, cell)
-                col += colspan
-            if row_cells:
-                plans.append(
-                    {
-                        "row_index": row_index,
-                        "row": row,
-                        "row_cells": row_cells,
-                        "owned_ranges": owned_ranges,
-                    }
-                )
-            active_rowspans = next_rowspans
-        return plans
-
     def _insert_table_column(
         self,
         target: LegalAddress,
@@ -5836,7 +5757,7 @@ class UKReplayExecutor:
             table = tables[0] if len(tables) == 1 else None
             reason = "" if table is not None else "table_not_unique"
             detail = {"table_count": len(tables), **carrier_detail} if table is None else carrier_detail
-        payload_cells, payload_reason, payload_detail = self._table_column_payload_cells(new_node)
+        payload_cells, payload_reason, payload_detail = uk_table_column_payload_cells(new_node)
         if table is None or payload_reason:
             _append_uk_replay_adjudication(
                 self.adjudications_out,
@@ -5861,7 +5782,7 @@ class UKReplayExecutor:
         adjusted_spans = 0
         inserted_cells = 0
         matched_rows: list[str] = []
-        plans = self._table_column_insert_plans(table)
+        plans = uk_table_column_insert_plans(table)
         for plan in plans:
             row = cast(UKMutableNode, plan["row"])
             row_cells = cast(dict[int, UKMutableNode], plan["row_cells"])
@@ -6050,7 +5971,7 @@ class UKReplayExecutor:
             )
             return False
         for row in inserted_rows:
-            self._strip_identity_attrs_recursive(row)
+            strip_uk_identity_attrs_recursive(row)
         children = list(table.children)
         children[insert_index:insert_index] = inserted_rows
         self._replace_children(table, children)
@@ -13607,7 +13528,7 @@ class UKReplayExecutor:
                 return False
             insert_index = len(table.children)
             for row in payload_rows:
-                self._strip_identity_attrs_recursive(row)
+                strip_uk_identity_attrs_recursive(row)
             children = list(table.children)
             children[insert_index:insert_index] = payload_rows
             self._replace_children(table, children)
@@ -13688,7 +13609,7 @@ class UKReplayExecutor:
         row_index, match_mode, row_preview = matched_rows[0]
         insert_index = row_index if direction == "before" else row_index + 1
         for row in payload_rows:
-            self._strip_identity_attrs_recursive(row)
+            strip_uk_identity_attrs_recursive(row)
         children = list(table.children)
         children[insert_index:insert_index] = payload_rows
         self._replace_children(table, children)
