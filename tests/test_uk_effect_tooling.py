@@ -101,6 +101,80 @@ def test_uk_manual_claim_template_status_only_labels_actionable_rows() -> None:
     )
 
 
+@pytest.mark.parametrize("rule_id", sorted(UK_CLAIM_TEMPLATE_RULE_IDS))
+def test_uk_claim_template_rule_ids_all_render_nonempty_templates(rule_id: str) -> None:
+    effect = UKEffectRecord(
+        effect_id=f"eff-{rule_id}",
+        effect_type="words inserted",
+        applied=True,
+        requires_applied=True,
+        modified="2024-01-01",
+        affected_uri="/id/ukpga/2000/1/section/1",
+        affected_class="UnitedKingdomPublicGeneralAct",
+        affected_year="2000",
+        affected_number="1",
+        affected_provisions="s. 1",
+        affecting_uri="/id/ukpga/2024/1",
+        affecting_class="UnitedKingdomPublicGeneralAct",
+        affecting_year="2024",
+        affecting_number="1",
+        affecting_provisions="s. 2",
+        affecting_title="Test Act 2024",
+    )
+    report_row = _EffectReportRow(
+        effect=effect,
+        summary=_EffectSummary(
+            source_pathology="unhandled_instruction_text",
+            compare_shape="",
+            n_ops=0,
+            candidate=False,
+            resolver_eids=(),
+            lowering_rejections=(
+                {"rule_id": "uk_effect_overlap_substitution_unlowered", "blocking": True},
+            ),
+            replay_applicable=True,
+            structural_for_replay=True,
+            source_extracted=True,
+            source_extracted_tag="P1",
+            source_extracted_text_preview=(
+                'At the appropriate place insert— "new term" means X. '
+                'For "old" substitute "new".'
+            ),
+            manual_compile_status="manual_compile_candidate",
+            manual_compile_rule_id=rule_id,
+            manual_compile_reason="test",
+            manual_compile_lowering_rule_ids=("uk_effect_overlap_substitution_unlowered",),
+            manual_compile_blocking_lowering_rule_ids=(
+                "uk_effect_overlap_substitution_unlowered",
+            ),
+        ),
+    )
+    context = _EffectSummaryContext(
+        statute_id="ukpga/2000/1",
+        enacted_ir=None,
+        oracle_ir=None,
+        base_eids=set(),
+        oracle_eids=set(),
+        base_text_map={},
+        oracle_eid_map={},
+        oracle_text_map={},
+        resolver=None,
+        affecting_xml_cache={},
+    )
+
+    payload = _manual_compile_evidence_row_jsonable(
+        statute_id="ukpga/2000/1",
+        row=report_row,
+        context=context,
+    )
+
+    assert payload["suggested_claim_template_status"] == "available"
+    assert payload["suggested_claim_template"]["schema"] == (
+        "lawvm.uk_semantic_compile_claim_template.v1"
+    )
+    assert payload["suggested_claim_template"]["executable"] is False
+
+
 def test_manual_frontier_diagnostic_records_claim_template_status() -> None:
     diagnostics: list[dict[str, object]] = []
     append_manual_compile_frontier_diagnostic(
