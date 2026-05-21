@@ -30,6 +30,11 @@ def _uk_replay_string_constants(path: Path) -> set[str]:
     }
 
 
+def _uk_replay_module_paths() -> tuple[Path, ...]:
+    uk_dir = Path(__file__).parents[1] / "src/lawvm/uk_legislation"
+    return (*sorted(uk_dir.glob("replay_*.py")), uk_dir / "uk_amendment_replay.py")
+
+
 def _function_return_string_constants(path: Path, function_name: str) -> set[str]:
     tree = ast.parse(path.read_text())
     for node in ast.walk(tree):
@@ -45,8 +50,9 @@ def _function_return_string_constants(path: Path, function_name: str) -> set[str
 
 
 def test_uk_replay_emitted_adjudication_kinds_are_explicitly_owned() -> None:
-    replay_path = Path(__file__).parents[1] / "src/lawvm/uk_legislation/uk_amendment_replay.py"
-    emitted = _uk_replay_string_constants(replay_path)
+    emitted = set().union(
+        *(_uk_replay_string_constants(path) for path in _uk_replay_module_paths())
+    )
     owned = (
         sa.UK_REPLAY_BUG_ADJUDICATION_KINDS
         | sa.UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS
