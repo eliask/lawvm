@@ -75,6 +75,74 @@ def _text_nodes_in_document_order(
     return text_nodes
 
 
+def _rewrite_definition_entry_text(
+    text: str,
+    *,
+    term: str,
+    replacement: str,
+    allow_punctuation_spacing: bool,
+    allow_word_punctuation_elision: bool,
+) -> tuple[str, bool, tuple[str, ...]]:
+    term_pattern = _text_patch_pattern(
+        term,
+        allow_punctuation_spacing=allow_punctuation_spacing,
+        allow_word_punctuation_elision=allow_word_punctuation_elision,
+    )
+    definition_pattern = re.compile(
+        rf"""
+        (?P<prefix>(?:^|[;\.:\u2014]\s*,?\s*))
+        \s*
+        [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
+        (?:\s*\([^;]*?\))*
+        (?P<qualifier>\s*,\s*[^;]{{1,240}}?\s*,)?
+        \s+
+        (?P<predicate>
+            means
+            |has\s+the\s+same\s+meaning\s+as
+            |has\s+the\s+meaning
+            |is\s+to\s+be\s+construed
+            |shall\s+be\s+construed
+            |includes
+        )\b
+        .*?
+        (?P<terminator>;|$)
+        """,
+        flags=re.I | re.S | re.X,
+    )
+    matches = list(definition_pattern.finditer(text))
+    if len(matches) != 1:
+        return text, False, ()
+    match = matches[0]
+    predicate = " ".join(str(match.group("predicate") or "").lower().split())
+    used_shall_construed = predicate == "shall be construed"
+    used_qualifier = bool(str(match.group("qualifier") or "").strip())
+    raw_prefix = match.group("prefix")
+    used_orphan_separator = bool(re.search(r"[;\.:\u2014]\s*,\s*$", raw_prefix))
+    prefix = re.sub(r"\s*,\s*$", " ", raw_prefix) if used_orphan_separator else raw_prefix
+    if replacement:
+        replacement_prefix = "" if match.start() == 0 else prefix
+        joiner = (
+            ""
+            if not replacement_prefix or replacement.startswith((" ", ",", ".", ";", ":", ")"))
+            else " "
+        )
+        new_text = (
+            f"{text[: match.start()]}{replacement_prefix}{joiner}"
+            f"{replacement}{text[match.end():]}"
+        )
+    else:
+        replacement_prefix = "" if match.start() == 0 or prefix.strip() == "." else prefix
+        new_text = f"{text[: match.start()]}{replacement_prefix}{text[match.end():]}"
+    recovery_rule_ids = []
+    if used_shall_construed:
+        recovery_rule_ids.append("uk_replay_definition_predicate_shall_construed_normalized")
+    if used_qualifier:
+        recovery_rule_ids.append("uk_replay_definition_entry_qualifier_phrase_normalized")
+    if used_orphan_separator:
+        recovery_rule_ids.append("uk_replay_definition_entry_orphan_separator_normalized")
+    return " ".join(new_text.split()).strip(), True, tuple(recovery_rule_ids)
+
+
 class UKReplayTextApplyMixin:
     def _apply_numeric_list_trailing_comma_anchor_on_node_text_only(
         self,
@@ -455,6 +523,39 @@ class UKReplayTextApplyMixin:
         )
         self._replace_node_in_statute(node, rebuilt)
         return rebuilt, True
+
+    def _apply_unique_text_node_rewrite_with_metadata(
+        self,
+        node: UKMutableNode,
+        text_nodes: list[tuple[tuple[int, ...], UKMutableNode]],
+        rewrite: Callable[[str], tuple[str, bool, Any]],
+    ) -> tuple[UKMutableNode, bool, Any]:
+        """Apply a unique text rewrite and return the rewrite's metadata."""
+
+        if node.text:
+            new_text, changed, metadata = rewrite(node.text)
+            if changed:
+                rebuilt = dc_replace(node, text=new_text)
+                self._replace_node_in_statute(node, rebuilt)
+                return rebuilt, True, metadata
+
+        candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str, Any]] = []
+        for path, text_node in text_nodes:
+            if not text_node.text:
+                continue
+            new_text, changed, metadata = rewrite(text_node.text)
+            if changed:
+                candidate_paths.append((path, text_node, new_text, metadata))
+        if len(candidate_paths) != 1:
+            return node, False, None
+        path, text_node, new_text, metadata = candidate_paths[0]
+        rebuilt = self._replace_descendant_at_path(
+            node,
+            path,
+            dc_replace(text_node, text=new_text),
+        )
+        self._replace_node_in_statute(node, rebuilt)
+        return rebuilt, True, metadata
 
     def _apply_text_replace_on_subtree(
         self,
@@ -1677,92 +1778,25 @@ class UKReplayTextApplyMixin:
             if not term:
                 return node, False
 
-            def _rewrite_definition_entry(text: str) -> tuple[str, bool, tuple[str, ...]]:
-                term_pattern = _text_patch_pattern(
-                    term,
-                    allow_punctuation_spacing=allow_punctuation_spacing,
-                    allow_word_punctuation_elision=allow_word_punctuation_elision,
+            rebuilt, applied, definition_recovery_rule_ids = (
+                self._apply_unique_text_node_rewrite_with_metadata(
+                    node,
+                    text_nodes,
+                    lambda text: _rewrite_definition_entry_text(
+                        text,
+                        term=term,
+                        replacement=replacement,
+                        allow_punctuation_spacing=allow_punctuation_spacing,
+                        allow_word_punctuation_elision=allow_word_punctuation_elision,
+                    ),
                 )
-                definition_pattern = re.compile(
-                    rf"""
-                    (?P<prefix>(?:^|[;\.:\u2014]\s*,?\s*))
-                    \s*
-                    [“"'\u2018]?\s*{term_pattern}\s*[”"'\u2019]?
-                    (?:\s*\([^;]*?\))*
-                    (?P<qualifier>\s*,\s*[^;]{{1,240}}?\s*,)?
-                    \s+
-                    (?P<predicate>
-                        means
-                        |has\s+the\s+same\s+meaning\s+as
-                        |has\s+the\s+meaning
-                        |is\s+to\s+be\s+construed
-                        |shall\s+be\s+construed
-                        |includes
-                    )\b
-                    .*?
-                    (?P<terminator>;|$)
-                    """,
-                    flags=re.I | re.S | re.X,
-                )
-                matches = list(definition_pattern.finditer(text))
-                if len(matches) != 1:
-                    return text, False, ()
-                m = matches[0]
-                predicate = " ".join(str(m.group("predicate") or "").lower().split())
-                used_shall_construed = predicate == "shall be construed"
-                used_qualifier = bool(str(m.group("qualifier") or "").strip())
-                raw_prefix = m.group("prefix")
-                used_orphan_separator = bool(re.search(r"[;\.:\u2014]\s*,\s*$", raw_prefix))
-                prefix = re.sub(r"\s*,\s*$", " ", raw_prefix) if used_orphan_separator else raw_prefix
-                if replacement:
-                    replacement_prefix = "" if m.start() == 0 else prefix
-                    joiner = "" if not replacement_prefix or replacement.startswith((" ", ",", ".", ";", ":", ")")) else " "
-                    new_text = f"{text[:m.start()]}{replacement_prefix}{joiner}{replacement}{text[m.end():]}"
-                else:
-                    replacement_prefix = "" if m.start() == 0 or prefix.strip() == "." else prefix
-                    new_text = f"{text[:m.start()]}{replacement_prefix}{text[m.end():]}"
-                recovery_rule_ids = []
-                if used_shall_construed:
-                    recovery_rule_ids.append("uk_replay_definition_predicate_shall_construed_normalized")
-                if used_qualifier:
-                    recovery_rule_ids.append("uk_replay_definition_entry_qualifier_phrase_normalized")
-                if used_orphan_separator:
-                    recovery_rule_ids.append("uk_replay_definition_entry_orphan_separator_normalized")
-                return " ".join(new_text.split()).strip(), True, tuple(recovery_rule_ids)
-
-            if node.text:
-                new_text, changed, definition_recovery_rule_ids = _rewrite_definition_entry(node.text)
-                if changed:
-                    if definition_recovery_rule_ids and recovery_rule_ids_out is not None:
-                        recovery_rule_ids_out.extend(definition_recovery_rule_ids)
-                    if recovery_rule_ids_out is not None:
-                        recovery_rule_ids_out.append(
-                            "uk_replay_definition_entry_text_rewrite_applied"
-                        )
-                    rebuilt = dc_replace(node, text=new_text)
-                    self._replace_node_in_statute(node, rebuilt)
-                    return rebuilt, True
-
-            candidate_paths: list[tuple[tuple[int, ...], UKMutableNode, str, tuple[str, ...]]] = []
-            for path, text_node in text_nodes:
-                if not text_node.text:
-                    continue
-                new_text, changed, definition_recovery_rule_ids = _rewrite_definition_entry(text_node.text)
-                if changed:
-                    candidate_paths.append((path, text_node, new_text, definition_recovery_rule_ids))
-            if len(candidate_paths) != 1:
+            )
+            if not applied:
                 return node, False
-            path, text_node, new_text, definition_recovery_rule_ids = candidate_paths[0]
             if definition_recovery_rule_ids and recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.extend(definition_recovery_rule_ids)
             if recovery_rule_ids_out is not None:
                 recovery_rule_ids_out.append("uk_replay_definition_entry_text_rewrite_applied")
-            rebuilt = self._replace_descendant_at_path(
-                node,
-                path,
-                dc_replace(text_node, text=new_text),
-            )
-            self._replace_node_in_statute(node, rebuilt)
             return rebuilt, True
 
         if match.startswith("TEXT_WORD_"):
