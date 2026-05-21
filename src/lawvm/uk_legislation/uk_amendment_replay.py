@@ -281,6 +281,14 @@ from lawvm.uk_legislation.text_rewrite_fragments import (
     _separate_occurrence_text_replace_fragments,
     _text_rewrite_rule_ids_for_op,
 )
+from lawvm.uk_legislation.source_context import (
+    _first_amendment_container,
+    _source_ancestor_chain,
+    _source_previous_table_entry_label_context,
+    _source_previous_table_entry_relating_context,
+    _source_text_before_extracted_child,
+    _unique_source_ancestor_chain_by_tag_text,
+)
 from lawvm.uk_legislation.target_parser import (
     _parse_affected_target,
     _schedule_part_context_removed_target,
@@ -1415,6 +1423,7 @@ def _uk_table_entry_inline_text_selector(
         entry_context = _source_previous_table_entry_label_context(
             extracted_el=extracted_el,
             source_root=source_root,
+            rule_id=_UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID,
         )
         entry_label = _clean_num(entry_context.get("entry_label") or "")
         if entry_label and column_index is not None and column_index >= 1:
@@ -1525,6 +1534,7 @@ def _uk_table_entry_row_insert_selector(
         entry_context = _source_previous_table_entry_relating_context(
             extracted_el=extracted_el,
             source_root=source_root,
+            rule_id=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
         )
         relating_text = " ".join(str(entry_context.get("relating_text") or "").split()).strip(" ,;.")
         if relating_text:
@@ -2605,17 +2615,6 @@ def _expand_sibling_targets_from_extracted(
     return [f"{base}({raw_num})" for raw_num in child_raw_nums]
 
 
-def _first_amendment_container(el: Optional[ET.Element]) -> Optional[ET.Element]:
-    if el is None:
-        return None
-    if _tag(el) in ("BlockAmendment", "InlineAmendment"):
-        return el
-    for child in el.iter():
-        if child is not el and _tag(child) in ("BlockAmendment", "InlineAmendment"):
-            return child
-    return None
-
-
 def _substituted_series_new_sibling_insert_detail(
     *,
     effect_type: str,
@@ -2812,52 +2811,6 @@ def _is_broad_schedule_flat_replace_payload(
     if actual_source_el is not None and _tag(actual_source_el) in {"Schedule", "Part"}:
         return False
     return bool((payload_node.text or "").strip())
-
-
-def _source_ancestor_chain(source_root: Optional[ET.Element], el: Optional[ET.Element]) -> tuple[ET.Element, ...]:
-    """Return closest-first source ancestors for an extracted source element."""
-    if source_root is None or el is None:
-        return ()
-    target_id = el.get("id")
-    path: list[ET.Element] = []
-
-    def _walk(node: ET.Element, ancestors: tuple[ET.Element, ...]) -> bool:
-        if node is el or (target_id and node.get("id") == target_id):
-            path.extend(reversed(ancestors))
-            return True
-        for child in node:
-            if _walk(child, (*ancestors, node)):
-                return True
-        return False
-
-    if _walk(source_root, ()):
-        return tuple(path)
-    return ()
-
-
-def _unique_source_ancestor_chain_by_tag_text(
-    source_root: Optional[ET.Element],
-    el: Optional[ET.Element],
-) -> tuple[ET.Element, ...]:
-    """Reattach a detached extracted fragment to a unique same-text source node."""
-    if source_root is None or el is None:
-        return ()
-    target_tag = _tag(el)
-    target_text = " ".join(_text_content(el).split())
-    if not target_tag or not target_text:
-        return ()
-    matches: list[tuple[ET.Element, ...]] = []
-
-    def _walk(node: ET.Element, ancestors: tuple[ET.Element, ...]) -> None:
-        if _tag(node) == target_tag and " ".join(_text_content(node).split()) == target_text:
-            matches.append(tuple(reversed(ancestors)))
-        for child in node:
-            _walk(child, (*ancestors, node))
-
-    _walk(source_root, ())
-    if len(matches) != 1:
-        return ()
-    return matches[0]
 
 
 _AFTER_WORDS_INSERTED_BY_SIBLING_RE = re.compile(
@@ -3204,21 +3157,6 @@ def _source_definition_term_from_local_ancestor_context(
     return ""
 
 
-def _source_text_before_extracted_child(parent: ET.Element, extracted_el: Optional[ET.Element]) -> str:
-    """Return source text in an immediate parent before the extracted child row."""
-    extracted_id = extracted_el.get("id") if extracted_el is not None else None
-    parts: list[str] = []
-    if parent.text:
-        parts.append(parent.text)
-    for child in parent:
-        if child is extracted_el or (extracted_id and child.get("id") == extracted_id):
-            break
-        parts.append(_text_content(child))
-        if child.tail:
-            parts.append(child.tail)
-    return " ".join(" ".join(parts).split())
-
-
 def _source_definition_child_context_for_direct_section_paragraph(
     *,
     target: LegalAddress,
@@ -3454,92 +3392,6 @@ def _previous_source_sibling_label(
                 return ""
             return _clean_num(_direct_structural_num(children[index - 1]))
     return ""
-
-
-def _source_previous_table_entry_label_context(
-    *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
-) -> dict[str, str]:
-    """Return an explicit table entry label from a previous sibling source row."""
-    ancestors = _source_ancestor_chain(source_root, extracted_el)
-    if not ancestors:
-        return {}
-    parent = ancestors[0]
-    children = list(parent)
-    extracted_id = extracted_el.get("id") if extracted_el is not None else None
-    extracted_index = -1
-    for index, child in enumerate(children):
-        if child is extracted_el or (extracted_id and child.get("id") == extracted_id):
-            extracted_index = index
-            break
-    if extracted_index <= 0:
-        return {}
-    for sibling in reversed(children[:extracted_index]):
-        sibling_text = " ".join(_text_content(sibling).split())
-        match = re.search(r"\bin\s+entry\s+(?P<label>[0-9A-Z]+)\b", sibling_text, flags=re.I)
-        if match is None:
-            continue
-        entry_label = _clean_num(match.group("label"))
-        if not entry_label:
-            continue
-        return {
-            "entry_label": entry_label,
-            "source_context_rule_id": _UK_TABLE_ENTRY_DEICTIC_LABEL_COLUMN_TEXT_RULE_ID,
-            "source_context": "previous_source_sibling_entry_label",
-            "source_sibling_label": _clean_num(_direct_structural_num(sibling)),
-            "source_sibling_id": str(sibling.get("id") or sibling.get("Id") or ""),
-        }
-    return {}
-
-
-def _source_previous_table_entry_relating_context(
-    *,
-    extracted_el: Optional[ET.Element],
-    source_root: Optional[ET.Element],
-) -> dict[str, Any]:
-    """Return a source-owned table-entry relation from a previous sibling row."""
-    ancestors = _source_ancestor_chain(source_root, extracted_el)
-    if not ancestors:
-        return {}
-    parent = ancestors[0]
-    children = list(parent)
-    extracted_id = extracted_el.get("id") if extracted_el is not None else None
-    extracted_index = -1
-    for index, child in enumerate(children):
-        if child is extracted_el or (extracted_id and child.get("id") == extracted_id):
-            extracted_index = index
-            break
-    if extracted_index <= 0:
-        return {}
-    for sibling in reversed(children[:extracted_index]):
-        sibling_text = " ".join(_text_content(sibling).split())
-        match = re.search(
-            r"\bin\s+the\s+entry\s+(?:relating\s+to|for)\s+(?:the\s+)?(?P<relating>.*?)(?:,\s+(?:for|after|omit|insert|substitute)\b|$)",
-            sibling_text,
-            flags=re.I,
-        )
-        if match is None:
-            continue
-        relating_text = " ".join(match.group("relating").split()).strip(" ,;.")
-        if not relating_text:
-            continue
-        row_anchor_texts: list[str] = []
-        for fragment in parse_fragment_substitution(sibling_text):
-            original = " ".join(str(fragment.get("original") or "").split()).strip(" ,;.")
-            replacement = " ".join(str(fragment.get("replacement") or "").split()).strip(" ,;.")
-            for candidate in (original, replacement):
-                if candidate and candidate not in row_anchor_texts:
-                    row_anchor_texts.append(candidate)
-        return {
-            "relating_text": relating_text,
-            "row_anchor_texts": tuple(row_anchor_texts),
-            "source_context_rule_id": _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
-            "source_context": "previous_source_sibling_entry_relating_text",
-            "source_sibling_label": _clean_num(_direct_structural_num(sibling)),
-            "source_sibling_id": str(sibling.get("id") or sibling.get("Id") or ""),
-        }
-    return {}
 
 
 def _fragment_substitution_source_carried_definition_child_insert(
