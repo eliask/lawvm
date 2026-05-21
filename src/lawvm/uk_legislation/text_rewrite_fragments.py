@@ -144,6 +144,60 @@ def _fragment_rule_ids(fragment_subs: Optional[list]) -> tuple[str, ...]:
     return tuple(rule_ids)
 
 
+def append_all_occurrences_text_rewrite_observations(
+    *,
+    effect: UKEffectRecord,
+    target: LegalAddress,
+    target_ref: str,
+    fragment_subs: Optional[list[dict[str, Any]]],
+    op_text_match: Optional[str],
+    op_text_replacement: Optional[str],
+    op_text_occurrence: int,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> None:
+    for rewrite_rule_id in _fragment_rule_ids(fragment_subs):
+        if rewrite_rule_id not in UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS:
+            continue
+        rewrite_fragments = [
+            item
+            for item in fragment_subs or []
+            if str(item.get("rule_id") or "") == rewrite_rule_id
+        ]
+        if not rewrite_fragments:
+            rewrite_fragments = [
+                {
+                    "original": op_text_match,
+                    "replacement": op_text_replacement,
+                    "occurrence": str(op_text_occurrence),
+                }
+            ]
+        for rewrite_fragment in rewrite_fragments:
+            _append_uk_effect_lowering_observation(
+                lowering_rejections_out,
+                rule_id=rewrite_rule_id,
+                family="text_rewrite_lowering",
+                reason_code="explicit_all_occurrences_text_patch",
+                reason=(
+                    "UK effect source explicitly applies a word-level "
+                    "text rewrite wherever/in each place it occurs; "
+                    "lowering preserves that as an all-occurrences "
+                    "text patch scoped to the affected target."
+                ),
+                effect=effect,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
+                detail={
+                    "target_ref": target_ref,
+                    "target": str(target),
+                    "text_match": str(rewrite_fragment.get("original") or ""),
+                    "replacement": str(rewrite_fragment.get("replacement") or ""),
+                    "occurrence": int(str(rewrite_fragment.get("occurrence") or "0") or "0"),
+                },
+            )
+
+
 def _fragment_target_suffix(fragment: object) -> tuple[str, str] | None:
     if not isinstance(fragment, dict):
         return None
