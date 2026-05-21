@@ -568,6 +568,7 @@ def summarize_uk_effect(
 def uk_effects_summary_counts(
     rows: tuple[_EffectReportRow, ...],
     *,
+    statute_id: str = "",
     matched_effect_count_before_limit: int | None = None,
 ) -> dict[str, Any]:
     """Aggregate UK effect classifications without changing row semantics."""
@@ -599,6 +600,7 @@ def uk_effects_summary_counts(
     source_acquisition_rejection_rule_counts: dict[str, int] = {}
     manual_compile_status_counts: dict[str, int] = {}
     manual_compile_rule_counts: dict[str, int] = {}
+    suggested_claim_template_status_counts: dict[str, int] = {}
     rows_with_resolver_eids = 0
     for row in rows:
         effect = row.effect
@@ -615,6 +617,18 @@ def uk_effects_summary_counts(
         manual_compile_rule_counts[manual_rule_key] = (
             manual_compile_rule_counts.get(manual_rule_key, 0) + 1
         )
+        if summary.manual_compile_status in {
+            "deterministic_frontend_candidate",
+            "manual_compile_candidate",
+        } and summary.manual_compile_rule_id:
+            suggested_claim_template = _manual_compile_suggested_claim_template(
+                statute_id=statute_id,
+                row=row,
+            )
+            template_status = "available" if suggested_claim_template else "not_available"
+            suggested_claim_template_status_counts[template_status] = (
+                suggested_claim_template_status_counts.get(template_status, 0) + 1
+            )
         if summary.candidate:
             candidate_counts["candidate"] += 1
         else:
@@ -686,6 +700,9 @@ def uk_effects_summary_counts(
         "compare_shape_counts": dict(sorted(compare_shape_counts.items())),
         "manual_compile_status_counts": dict(sorted(manual_compile_status_counts.items())),
         "manual_compile_rule_counts": dict(sorted(manual_compile_rule_counts.items())),
+        "suggested_claim_template_status_counts": dict(
+            sorted(suggested_claim_template_status_counts.items())
+        ),
         "total_compiled_ops": total_ops,
         "rows_with_resolver_eids": rows_with_resolver_eids,
         "rows_with_lowering_observations": rows_with_lowering_observations,
@@ -732,6 +749,7 @@ def uk_effects_report_jsonable(
         "filters": _effect_filters_jsonable(filters),
         "summary": uk_effects_summary_counts(
             rows,
+            statute_id=statute_id,
             matched_effect_count_before_limit=matched_effect_count_before_limit,
         ),
         "effect_feed_parse_rejections": {
@@ -1520,6 +1538,15 @@ def _print_uk_effects_summary(summary_counts: dict[str, Any]) -> None:
         print(
             "Manual compile frontier statuses: "
             + _format_count_map(manual_compile_status_counts)
+        )
+    suggested_claim_template_status_counts = summary_counts.get(
+        "suggested_claim_template_status_counts",
+        {},
+    )
+    if suggested_claim_template_status_counts:
+        print(
+            "Suggested claim templates: "
+            + _format_count_map(suggested_claim_template_status_counts)
         )
     manual_compile_rule_counts = summary_counts.get("manual_compile_rule_counts", {})
     if manual_compile_rule_counts:
