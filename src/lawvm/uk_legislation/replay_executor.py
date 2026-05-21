@@ -17,6 +17,7 @@ from lawvm.uk_legislation.replay_records import (
     UKReplayPrepareResult,
     append_replay_fold_text_duplication_adjudications,
     _append_uk_replay_adjudication,
+    uk_replay_blocking_action_target_detail,
 )
 from lawvm.uk_legislation.replay_renumber_apply import UKReplayRenumberApplyMixin
 from lawvm.uk_legislation.replay_repeal_apply import UKReplayRepealApplyMixin
@@ -90,7 +91,7 @@ class UKReplayExecutor(
                     kind="uk_replay_unsupported_action",
                     message="UK replay skipped unsupported whole-act action.",
                     op=op,
-                    detail={"action": _action_name(op.action), "target": str(target)},
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             return
 
@@ -132,11 +133,11 @@ class UKReplayExecutor(
                 kind="uk_replay_empty_schedule_shape_gap",
                 message="UK replay skipped text-based op: empty schedule root has no descendant target shape.",
                 op=op,
-                detail={
-                    "action": _action_name(op.action),
-                    "target": str(target),
-                    "source_shape": "empty_schedule_root",
-                },
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    source_shape="empty_schedule_root",
+                ),
             )
             return
 
@@ -162,7 +163,7 @@ class UKReplayExecutor(
                 kind="uk_replay_unsupported_action",
                 message="UK replay skipped unsupported action.",
                 op=op,
-                detail={"action": _action_name(op.action), "target": str(target)},
+                detail=uk_replay_blocking_action_target_detail(op, target),
             )
         else:
             raise ValueError(

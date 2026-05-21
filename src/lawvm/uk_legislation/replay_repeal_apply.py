@@ -7,7 +7,10 @@ from lawvm.uk_legislation.addressing import _action_name
 from lawvm.uk_legislation.heading_facets import _UK_REPLAY_CROSSHEADING_AND_STRUCTURAL_REPEAL_UNRESOLVED_RULE_ID
 from lawvm.uk_legislation.mutable_ir import UKMutableNode
 from lawvm.uk_legislation.provenance_notes import _crossheading_group_repeal_selector, _schedule_list_entry_repeal_selector
-from lawvm.uk_legislation.replay_records import _append_uk_replay_adjudication
+from lawvm.uk_legislation.replay_records import (
+    _append_uk_replay_adjudication,
+    uk_replay_blocking_action_target_detail,
+)
 from lawvm.uk_legislation.replay_target_gaps import uk_missing_source_target_gap
 
 
@@ -42,12 +45,12 @@ class UKReplayRepealApplyMixin:
                     "structural target was not found."
                 ),
                 op=op,
-                detail={
-                    "action": _action_name(op.action),
-                    "target": str(target),
-                    "reason_code": "target_not_found",
-                    "selector": dict(crossheading_group_repeal_selector),
-                },
+                detail=uk_replay_blocking_action_target_detail(
+                    op,
+                    target,
+                    reason_code="target_not_found",
+                    selector=dict(crossheading_group_repeal_selector),
+                ),
             )
             return
         if node is None:
@@ -76,7 +79,7 @@ class UKReplayRepealApplyMixin:
                     kind="uk_replay_absent_sibling_range_gap",
                     message="UK replay skipped repeal: target falls inside an absent doubled-alpha sibling range under the parent path.",
                     op=op,
-                    detail={"action": _action_name(op.action), "target": str(target)},
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._malformed_target_gap(target):
                 _append_uk_replay_adjudication(
@@ -84,7 +87,7 @@ class UKReplayRepealApplyMixin:
                     kind=self._malformed_target_gap_kind(target),
                     message="UK replay skipped repeal: lowered target path is malformed.",
                     op=op,
-                    detail={"action": _action_name(op.action), "target": str(target)},
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif uk_missing_source_target_gap(op):
                 _append_uk_replay_adjudication(
@@ -92,7 +95,7 @@ class UKReplayRepealApplyMixin:
                     kind="uk_replay_missing_source_target_gap",
                     message="UK replay skipped repeal: target comes from index-only effect row without extracted source text.",
                     op=op,
-                    detail={"action": _action_name(op.action), "target": str(target)},
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._missing_sibling_range_gap(target):
                 _append_uk_replay_adjudication(
@@ -100,7 +103,7 @@ class UKReplayRepealApplyMixin:
                     kind="uk_replay_absent_sibling_range_gap",
                     message="UK replay skipped repeal: target falls inside an absent sibling range under the parent path.",
                     op=op,
-                    detail={"action": _action_name(op.action), "target": str(target)},
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._empty_descendant_shape_gap(target):
                 _append_uk_replay_adjudication(
@@ -108,7 +111,7 @@ class UKReplayRepealApplyMixin:
                     kind="uk_replay_empty_descendant_shape_gap",
                     message="UK replay skipped repeal: parent target exists but has no descendant structural shape.",
                     op=op,
-                    detail={"action": _action_name(op.action), "target": str(target)},
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._missing_sectionlike_gap(target):
                 _append_uk_replay_adjudication(
@@ -116,7 +119,7 @@ class UKReplayRepealApplyMixin:
                     kind="uk_replay_missing_sectionlike_range_gap",
                     message="UK replay skipped repeal: target falls inside an absent sectionlike range gap.",
                     op=op,
-                    detail={"action": _action_name(op.action), "target": str(target)},
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._missing_schedule_branch_gap(target):
                 _append_uk_replay_adjudication(
@@ -124,7 +127,7 @@ class UKReplayRepealApplyMixin:
                     kind="uk_replay_missing_schedule_branch_gap",
                     message="UK replay skipped repeal: schedule root branch is absent.",
                     op=op,
-                    detail={"action": _action_name(op.action), "target": str(target)},
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._missing_schedule_root_gap(target):
                 _append_uk_replay_adjudication(
@@ -132,7 +135,7 @@ class UKReplayRepealApplyMixin:
                     kind="uk_replay_missing_schedule_range_gap",
                     message="UK replay skipped repeal: target falls inside an absent alphanumeric schedule range gap.",
                     op=op,
-                    detail={"action": _action_name(op.action), "target": str(target)},
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._missing_schedule_branch_gap(target):
                 _append_uk_replay_adjudication(
@@ -140,7 +143,7 @@ class UKReplayRepealApplyMixin:
                     kind="uk_replay_missing_schedule_branch_gap",
                     message="UK replay skipped repeal: schedule root branch is absent.",
                     op=op,
-                    detail={"action": _action_name(op.action), "target": str(target)},
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._missing_parent_shape_gap(target):
                 _append_uk_replay_adjudication(
@@ -148,7 +151,7 @@ class UKReplayRepealApplyMixin:
                     kind=self._missing_parent_shape_gap_kind(target),
                     message="UK replay skipped repeal: immediate parent target path is structurally absent.",
                     op=op,
-                    detail={"action": _action_name(op.action), "target": str(target)},
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._schedule_paragraph_carrier_gap(target):
                 _append_uk_replay_adjudication(
@@ -156,7 +159,7 @@ class UKReplayRepealApplyMixin:
                     kind=self._schedule_paragraph_carrier_gap_kind(target),
                     message="UK replay skipped repeal: schedule paragraph carrier is structurally absent or wrapped.",
                     op=op,
-                    detail={"action": _action_name(op.action), "target": str(target)},
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._leading_blank_subparagraph_gap(target):
                 _append_uk_replay_adjudication(
@@ -164,7 +167,7 @@ class UKReplayRepealApplyMixin:
                     kind="uk_replay_absent_sibling_range_gap",
                     message="UK replay skipped repeal: target falls inside an absent leading numeric subparagraph gap under blank schedule placeholders.",
                     op=op,
-                    detail={"action": _action_name(op.action), "target": str(target)},
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             else:
                 _append_uk_replay_adjudication(
@@ -172,7 +175,7 @@ class UKReplayRepealApplyMixin:
                     kind="uk_replay_target_not_found",
                     message="UK replay skipped repeal: target not found.",
                     op=op,
-                    detail={"action": _action_name(op.action), "target": str(target)},
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             return
         if parent and idx is not None:
@@ -185,4 +188,3 @@ class UKReplayRepealApplyMixin:
             self._record_repealed_target(target)
         self._record_invariant_violations(op)
         self._emit_top_section_snapshot(op)
-

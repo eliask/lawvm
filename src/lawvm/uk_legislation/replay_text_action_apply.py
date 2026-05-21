@@ -17,7 +17,10 @@ from lawvm.uk_legislation.provenance_notes import (
     NOTE_TEXT_REWRITE_RULE as _NOTE_TEXT_REWRITE_RULE,
     _table_cell_selector,
 )
-from lawvm.uk_legislation.replay_records import _append_uk_replay_adjudication
+from lawvm.uk_legislation.replay_records import (
+    _append_uk_replay_adjudication,
+    uk_replay_blocking_action_target_detail,
+)
 from lawvm.uk_legislation.replay_recovery_observations import uk_replay_recovery_observation
 from lawvm.uk_legislation.replay_table_geometry import (
     resolve_uk_table_entry_inline_cell,
@@ -116,16 +119,6 @@ def _uk_replay_text_miss_source_shape(kind: str) -> str:
     }:
         return "broad_schedule_without_table_or_provision_structure"
     return _UK_REPLAY_TEXT_MISS_SOURCE_SHAPE_BY_KIND.get(kind, "")
-
-
-def _uk_replay_blocking_target_gap_detail(action: str, target: LegalAddress) -> dict[str, Any]:
-    return {
-        "action": action,
-        "target": str(target),
-        "blocking": True,
-        "strict_disposition": "block",
-        "quirks_disposition": "record",
-    }
 
 
 class UKReplayTextActionApplyMixin:
@@ -1021,7 +1014,7 @@ class UKReplayTextActionApplyMixin:
                     kind="uk_replay_table_shape_gap",
                     message="UK replay skipped text-based op: table target has no structural table node.",
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._empty_descendant_shape_gap(target):
                 _append_uk_replay_adjudication(
@@ -1029,7 +1022,7 @@ class UKReplayTextActionApplyMixin:
                     kind="uk_replay_empty_descendant_shape_gap",
                     message="UK replay skipped text-based op: parent target exists but has no descendant structural shape.",
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._target_under_repealed_prefix(target):
                 _append_uk_replay_adjudication(
@@ -1037,7 +1030,7 @@ class UKReplayTextActionApplyMixin:
                     kind="uk_replay_repealed_target_gap",
                     message="UK replay skipped text-based op: target path was already repealed earlier in the chain.",
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._doubled_alpha_gap(target):
                 _append_uk_replay_adjudication(
@@ -1045,7 +1038,7 @@ class UKReplayTextActionApplyMixin:
                     kind="uk_replay_absent_sibling_range_gap",
                     message="UK replay skipped text-based op: target falls inside an absent doubled-alpha sibling range under the parent path.",
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._missing_sibling_range_gap(target):
                 _append_uk_replay_adjudication(
@@ -1053,7 +1046,7 @@ class UKReplayTextActionApplyMixin:
                     kind="uk_replay_absent_sibling_range_gap",
                     message="UK replay skipped text-based op: target falls inside an absent sibling range under the parent path.",
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._annex_schedule_mismatch_gap(op):
                 _append_uk_replay_adjudication(
@@ -1061,7 +1054,7 @@ class UKReplayTextActionApplyMixin:
                     kind="uk_replay_annex_schedule_reference_gap",
                     message="UK replay skipped text-based op: Annex reference was lowered to a missing schedule root target.",
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._container_text_target_gap(op):
                 _append_uk_replay_adjudication(
@@ -1069,7 +1062,7 @@ class UKReplayTextActionApplyMixin:
                     kind="uk_replay_schedule_container_text_target_gap",
                     message="UK replay skipped text-based op: lowered target points at a missing schedule container instead of the textual descendant.",
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._subsection_alpha_text_target_gap(op):
                 _append_uk_replay_adjudication(
@@ -1077,7 +1070,7 @@ class UKReplayTextActionApplyMixin:
                     kind="uk_replay_subsection_descendant_target_collapse_gap",
                     message="UK replay skipped text-based op: lowered target collapsed a numeric subsection and alphabetic descendant into one subsection label.",
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._malformed_target_gap(target):
                 _append_uk_replay_adjudication(
@@ -1085,7 +1078,7 @@ class UKReplayTextActionApplyMixin:
                     kind=self._malformed_target_gap_kind(target),
                     message="UK replay skipped text-based op: lowered target path is malformed.",
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._missing_schedule_branch_gap(target):
                 _append_uk_replay_adjudication(
@@ -1093,7 +1086,7 @@ class UKReplayTextActionApplyMixin:
                     kind="uk_replay_missing_schedule_branch_gap",
                     message="UK replay skipped text-based op: schedule root branch is absent.",
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._missing_parent_shape_gap(target):
                 _append_uk_replay_adjudication(
@@ -1101,7 +1094,7 @@ class UKReplayTextActionApplyMixin:
                     kind=self._missing_parent_shape_gap_kind(target),
                     message="UK replay skipped text-based op: immediate parent target path is structurally absent.",
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._schedule_paragraph_carrier_gap(target):
                 _append_uk_replay_adjudication(
@@ -1109,7 +1102,7 @@ class UKReplayTextActionApplyMixin:
                     kind=self._schedule_paragraph_carrier_gap_kind(target),
                     message="UK replay skipped text-based op: schedule paragraph carrier is structurally absent or wrapped.",
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._recover_text_patch_on_direct_section_paragraph_child_text(
                 op,
@@ -1131,7 +1124,7 @@ class UKReplayTextActionApplyMixin:
                         "target is not represented as an addressable carrier in source XML."
                     ),
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._leading_blank_subparagraph_gap(target):
                 _append_uk_replay_adjudication(
@@ -1139,7 +1132,7 @@ class UKReplayTextActionApplyMixin:
                     kind="uk_replay_absent_sibling_range_gap",
                     message="UK replay skipped text-based op: target falls inside an absent leading numeric subparagraph gap under blank schedule placeholders.",
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif self._missing_sectionlike_gap(target):
                 _append_uk_replay_adjudication(
@@ -1147,7 +1140,7 @@ class UKReplayTextActionApplyMixin:
                     kind="uk_replay_missing_sectionlike_range_gap",
                     message="UK replay skipped text-based op: target falls inside an absent sectionlike range gap.",
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             elif prior_kind := self._prior_same_target_gap_kind(target):
                 _append_uk_replay_adjudication(
@@ -1155,7 +1148,7 @@ class UKReplayTextActionApplyMixin:
                     kind=prior_kind,
                     message="UK replay skipped text-based op: target already exhibited the same structural gap earlier in the chain.",
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
             else:
                 _append_uk_replay_adjudication(
@@ -1163,5 +1156,5 @@ class UKReplayTextActionApplyMixin:
                     kind="uk_replay_target_not_found",
                     message="UK replay skipped text-based op: target not found.",
                     op=op,
-                    detail=_uk_replay_blocking_target_gap_detail(_action_name(op.action), target),
+                    detail=uk_replay_blocking_action_target_detail(op, target),
                 )
