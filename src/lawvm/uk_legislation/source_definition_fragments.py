@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
 import xml.etree.ElementTree as ET
-from typing import Optional
+from typing import Any, Optional
 
+from lawvm.core.ir import LegalAddress
+from lawvm.uk_legislation.effects import UKEffectRecord
+from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
 from lawvm.uk_legislation.nlp_parser import US
 from lawvm.uk_legislation.provision_extractor import _instruction_text_before_amendment_container
 from lawvm.uk_legislation.source_context import (
@@ -21,6 +25,15 @@ from lawvm.uk_legislation.source_fragment_context import (
 )
 from lawvm.uk_legislation.uk_grafter import _clean_num
 from lawvm.uk_legislation.xml_helpers import _direct_structural_num, _tag, _text_content
+
+
+@dataclass(frozen=True)
+class UKDefinitionTextPatchLowering:
+    curr_action: str
+    content_ir: Optional[dict[str, Any]]
+    fragment_subs: Optional[list[dict[str, str]]]
+    op_text_match: Optional[str]
+    op_text_replacement: Optional[str]
 
 
 _SOURCE_CARRIED_AFTER_THAT_DEFINITION_CHILD_INSERT_RE = re.compile(
@@ -224,6 +237,75 @@ def _fragment_substitution_source_carried_definition_child_text_omission(
         "source_child_original_text": original,
         "rule_id": "uk_effect_source_carried_definition_child_text_omission_text_patch",
     }
+
+
+def lower_source_carried_definition_child_text_omission(
+    *,
+    effect: UKEffectRecord,
+    curr_action: str,
+    content_ir: Optional[dict[str, Any]],
+    fragment_subs: Optional[list[dict[str, str]]],
+    op_text_match: Optional[str],
+    op_text_replacement: Optional[str],
+    target: LegalAddress,
+    target_ref: str,
+    extracted_el: Optional[ET.Element],
+    source_root: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKDefinitionTextPatchLowering:
+    detail = (
+        _fragment_substitution_source_carried_definition_child_text_omission(
+            extracted_el=extracted_el,
+            source_root=source_root,
+            extracted_text=extracted_text,
+        )
+        if extracted_text
+        else None
+    )
+    if detail is None:
+        return UKDefinitionTextPatchLowering(
+            curr_action=curr_action,
+            content_ir=content_ir,
+            fragment_subs=fragment_subs,
+            op_text_match=op_text_match,
+            op_text_replacement=op_text_replacement,
+        )
+
+    text_match = detail["original"]
+    replacement = detail["replacement"]
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id="uk_effect_source_carried_definition_child_text_omission_text_patch",
+        family="source_context_elaboration",
+        reason_code="definition_child_text_omission_resolved_from_parent_source",
+        reason=(
+            "UK child-row source names only a definition paragraph and quoted "
+            "omitted text, while the parent source instruction names the "
+            "definition term; lowering combines those source-local facts into "
+            "a bounded definition-child text omission instead of deleting the "
+            "quoted word from the whole target subsection."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": target_ref,
+            "target": str(target),
+            "source_parent_id": str(detail.get("source_parent_id") or ""),
+            "source_definition_term": str(detail.get("source_definition_term") or ""),
+            "source_child_label": str(detail.get("source_child_label") or ""),
+            "text_match": text_match,
+            "replacement": replacement,
+        },
+    )
+    return UKDefinitionTextPatchLowering(
+        curr_action="text_repeal" if replacement == "" else "text_replace",
+        content_ir=None,
+        fragment_subs=[detail],
+        op_text_match=text_match,
+        op_text_replacement=replacement,
+    )
 
 
 def _fragment_substitution_source_carried_definition_entry_insert(
