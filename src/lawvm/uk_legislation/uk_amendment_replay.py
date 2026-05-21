@@ -330,6 +330,11 @@ from lawvm.uk_legislation.replay_records import (
     _append_uk_replay_adjudication,
     _build_uk_replay_adjudication,
 )
+from lawvm.uk_legislation.replay_table_geometry import (
+    expanded_uk_table_rows,
+    expanded_uk_table_rows_with_physical_index,
+    uk_table_cell_span,
+)
 from lawvm.uk_legislation.schedule_list_selectors import (
     UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID as _UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
     UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID as _UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
@@ -5543,63 +5548,6 @@ class UKReplayExecutor:
         node.attrs = dict(attrs)
         return True
 
-    @staticmethod
-    def _table_cell_span(cell: UKMutableNode) -> tuple[int, int]:
-        try:
-            rowspan = int(str(cell.attrs.get("rowspan") or "1"))
-        except ValueError:
-            rowspan = 1
-        try:
-            morerows = int(str(cell.attrs.get("morerows") or "0"))
-        except ValueError:
-            morerows = 0
-        if morerows:
-            rowspan = max(rowspan, morerows + 1)
-        try:
-            colspan = int(str(cell.attrs.get("colspan") or "1"))
-        except ValueError:
-            colspan = 1
-        return max(rowspan, 1), max(colspan, 1)
-
-    def _expanded_table_rows(self, table: UKMutableNode) -> list[dict[int, UKMutableNode]]:
-        return [row_cells for _, row_cells in self._expanded_table_rows_with_physical_index(table)]
-
-    def _expanded_table_rows_with_physical_index(
-        self,
-        table: UKMutableNode,
-    ) -> list[tuple[int, dict[int, UKMutableNode]]]:
-        rows: list[tuple[int, dict[int, UKMutableNode]]] = []
-        active_rowspans: dict[int, tuple[int, UKMutableNode]] = {}
-        for row_index, row in enumerate(table.children):
-            if _uk_kind_value(row.kind).lower() != "row":
-                continue
-            row_cells: dict[int, UKMutableNode] = {
-                col: cell for col, (_, cell) in active_rowspans.items()
-            }
-            next_rowspans: dict[int, tuple[int, UKMutableNode]] = {
-                col: (remaining - 1, cell)
-                for col, (remaining, cell) in active_rowspans.items()
-                if remaining > 1
-            }
-            col = 1
-            for cell in row.children:
-                cell_kind = _uk_kind_value(cell.kind).lower()
-                if cell_kind not in {"cell", "header_cell"}:
-                    continue
-                while col in row_cells:
-                    col += 1
-                rowspan, colspan = self._table_cell_span(cell)
-                for offset in range(colspan):
-                    current_col = col + offset
-                    row_cells[current_col] = cell
-                    if rowspan > 1:
-                        next_rowspans[current_col] = (rowspan - 1, cell)
-                col += colspan
-            if row_cells:
-                rows.append((row_index, row_cells))
-            active_rowspans = next_rowspans
-        return rows
-
     def _resolve_table_entry_row_insert_index(
         self,
         node: UKMutableNode,
@@ -5661,7 +5609,7 @@ class UKReplayExecutor:
                 return True
             return bool(texts and texts[0] and all(not text for text in texts[1:]))
 
-        expanded_rows = self._expanded_table_rows_with_physical_index(table)
+        expanded_rows = expanded_uk_table_rows_with_physical_index(table)
         if selector_mode == "entry_group_heading":
             matching_groups: list[tuple[int, str]] = []
             for row_position, (row_index, row_cells) in enumerate(expanded_rows):
@@ -5734,7 +5682,7 @@ class UKReplayExecutor:
                 selector_mode == "relating_entry"
                 and str(selector.get("source_payload_mode") or "") == "logical_table_entry_group"
             ):
-                rowspan, _colspan = self._table_cell_span(target_cell)
+                rowspan, _colspan = uk_table_cell_span(target_cell)
                 insert_index = min(len(table.children), row_index + max(rowspan, 1))
             matching_rows.append(
                 (
@@ -5826,7 +5774,7 @@ class UKReplayExecutor:
                     continue
                 while col in row_cells:
                     col += 1
-                rowspan, colspan = self._table_cell_span(cell)
+                rowspan, colspan = uk_table_cell_span(cell)
                 start_col = col
                 end_col = col + colspan - 1
                 owned_ranges.append((start_col, end_col, cell, physical_index))
@@ -6240,7 +6188,7 @@ class UKReplayExecutor:
 
         matching_cells: list[UKMutableNode] = []
         matching_rows: list[str] = []
-        for row_cells in self._expanded_table_rows(tables[0]):
+        for row_cells in expanded_uk_table_rows(tables[0]):
             target_cell = row_cells.get(column_index)
             if target_cell is None:
                 continue
@@ -6293,7 +6241,7 @@ class UKReplayExecutor:
             return [], "table_not_unique", {"table_count": len(tables), **carrier_detail}
 
         matches_by_label: dict[str, list[tuple[UKMutableNode, str]]] = {label: [] for label in entry_labels}
-        for row_cells in self._expanded_table_rows(tables[0]):
+        for row_cells in expanded_uk_table_rows(tables[0]):
             row_texts = [
                 str(row_cells[col].text or "")
                 for col in sorted(row_cells)
@@ -6373,7 +6321,7 @@ class UKReplayExecutor:
 
         matching_cells: list[UKMutableNode] = []
         matching_rows: list[str] = []
-        for row_cells in self._expanded_table_rows(tables[0]):
+        for row_cells in expanded_uk_table_rows(tables[0]):
             row_texts = [
                 str(row_cells[col].text or "")
                 for col in sorted(row_cells)
@@ -6420,7 +6368,7 @@ class UKReplayExecutor:
 
         matching_cells: list[UKMutableNode] = []
         matching_rows: list[str] = []
-        for row_cells in self._expanded_table_rows(tables[0]):
+        for row_cells in expanded_uk_table_rows(tables[0]):
             row_texts = [
                 str(row_cells[col].text or "")
                 for col in sorted(row_cells)
@@ -6474,7 +6422,7 @@ class UKReplayExecutor:
 
         matching_cells: list[UKMutableNode] = []
         matching_rows: list[str] = []
-        for row_cells in self._expanded_table_rows(tables[0]):
+        for row_cells in expanded_uk_table_rows(tables[0]):
             if not any(
                 _compact_normalized_text(cell.text or "") == entry_label_norm
                 for cell in row_cells.values()
@@ -6524,7 +6472,7 @@ class UKReplayExecutor:
 
         matching_cells: list[UKMutableNode] = []
         matching_rows: list[str] = []
-        for row_cells in self._expanded_table_rows(tables[0]):
+        for row_cells in expanded_uk_table_rows(tables[0]):
             target_cell = row_cells.get(column_index)
             if target_cell is None:
                 continue
@@ -13686,7 +13634,7 @@ class UKReplayExecutor:
             return True
         matched_rows: list[tuple[int, str, str]] = []
         last_anchor_cell: UKMutableNode | None = None
-        for row_index, row_cells in self._expanded_table_rows_with_physical_index(table):
+        for row_index, row_cells in expanded_uk_table_rows_with_physical_index(table):
             anchor_cell = row_cells.get(1)
             if anchor_cell is None or anchor_cell is last_anchor_cell:
                 continue
