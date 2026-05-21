@@ -9,6 +9,7 @@ Shared library used by:
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Iterator
 from collections import Counter
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 from lawvm.core.compile_records import is_blocking_compile_record
@@ -26,6 +28,55 @@ _USER_AGENT = "LawVM UK fetch/0.1 (+https://github.com/lawvm)"
 
 # Minimum inter-request delay (seconds).
 _MIN_DELAY = 0.5
+
+
+def fetch_affecting_act(act_id: str, out_path: Path, dry_run: bool = False) -> bool:
+    """Fetch one affecting act XML to the legacy filesystem cache."""
+    url = f"{_LEG_BASE}/{act_id}/data.xml"
+    print(f"  fetch {url} -> {out_path}")
+    if dry_run:
+        return True
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = resp.read()
+        out_path.write_bytes(data)
+        meta = {
+            "url": url,
+            "bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+        }
+        out_path.with_suffix(".xml.meta.json").write_text(
+            json.dumps(meta, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return True
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError) as exc:
+        print(f"  ERROR fetching {url}: {exc}")
+        return False
+
+
+def fetch_affecting_acts_from_manifest(
+    manifest: dict[str, Any], repo_root: Path, dry_run: bool = False, limit: int | None = None
+) -> tuple[int, int]:
+    """Fetch all filesystem artifacts described by a UK acquisition manifest."""
+    sources = manifest.get("sources", [])
+    if limit:
+        sources = sources[:limit]
+    ok = fail = 0
+    for src in sources:
+        for artifact in src.get("artifacts", []):
+            out = repo_root / artifact["path"]
+            if out.exists():
+                ok += 1
+                continue
+            success = fetch_affecting_act(src["act_id"], out, dry_run=dry_run)
+            if success:
+                ok += 1
+            else:
+                fail += 1
+    return ok, fail
 
 
 @dataclass(frozen=True)
