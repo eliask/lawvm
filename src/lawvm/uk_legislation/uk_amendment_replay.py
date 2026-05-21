@@ -327,8 +327,8 @@ from lawvm.uk_legislation.replay_records import (
     _build_uk_replay_adjudication,
 )
 from lawvm.uk_legislation.replay_prepare_ordering import (
+    _classify_same_source_text_patch_overlaps,
     _order_ops_by_before_edges,
-    _same_source_ordinal_text_patch_overlap_status,
 )
 from lawvm.uk_legislation.replay_prepare_filters import _is_unsafe_schedule_entry_repeal_op
 from lawvm.uk_legislation.schedule_list_selectors import (
@@ -15573,59 +15573,14 @@ def _prepare_replay_uk_ops(
 ) -> UKReplayPrepareResult:
     """Normalize replay ops so every entry point applies the same semantics."""
     base_executor: Optional[UKReplayExecutor] = UKReplayExecutor(base_ir) if base_ir is not None else None
-    overlapping_text_patch_op_ids: set[str] = set()
-    disjoint_text_patch_overlap_op_ids: set[str] = set()
-    disjoint_text_patch_before_edges: dict[str, set[str]] = {}
-    grouped_text_ops: dict[tuple[str, str, str, tuple[tuple[str, str], ...]], list[LegalOperation]] = {}
-    for op in ops:
-        if _action_name(op.action) != "text_replace" or op.text_patch is None:
-            continue
-        match_text = op.text_patch.selector.match_text
-        if match_text.startswith(("TEXT_", "FROM_")):
-            continue
-        source = op.source
-        group_key = (
-            source.statute_id if source else "",
-            source.effective if source else "",
-            str(op.target.special or ""),
-            op.target.path,
-        )
-        grouped_text_ops.setdefault(group_key, []).append(op)
-
-    for group_ops in grouped_text_ops.values():
-        if len(group_ops) < 2:
-            continue
-        for op in group_ops:
-            if op.text_patch is None or op.text_patch.selector.occurrence == 0:
-                continue
-            match_text = op.text_patch.selector.match_text
-            if len(match_text.strip()) < 3:
-                continue
-            broader_ops: list[LegalOperation] = []
-            for other in group_ops:
-                if other is op or other.text_patch is None:
-                    continue
-                other_match = other.text_patch.selector.match_text
-                if other_match.startswith(("TEXT_", "FROM_")):
-                    continue
-                if len(other_match) <= len(match_text):
-                    continue
-                if match_text.strip() in other_match:
-                    broader_ops.append(other)
-            if not broader_ops:
-                continue
-            overlap_status = _same_source_ordinal_text_patch_overlap_status(
-                op,
-                broader_ops,
-                base_executor=base_executor,
-            )
-            if overlap_status == "disjoint":
-                disjoint_text_patch_overlap_op_ids.add(op.op_id)
-                disjoint_text_patch_before_edges.setdefault(op.op_id, set()).update(
-                    broader_op.op_id for broader_op in broader_ops
-                )
-            else:
-                overlapping_text_patch_op_ids.add(op.op_id)
+    (
+        overlapping_text_patch_op_ids,
+        disjoint_text_patch_overlap_op_ids,
+        disjoint_text_patch_before_edges,
+    ) = _classify_same_source_text_patch_overlaps(
+        ops,
+        base_executor=base_executor,
+    )
 
     filtered_ops: list[LegalOperation] = []
     rejected_adjudications: list[CompileAdjudication] = []
