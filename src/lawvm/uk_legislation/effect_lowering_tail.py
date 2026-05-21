@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+import re
 import xml.etree.ElementTree as ET
 from typing import Any, Optional
 
@@ -12,6 +14,9 @@ from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.lowering_records import (
     _append_uk_effect_lowering_observation,
     _append_uk_effect_lowering_rejection,
+)
+from lawvm.uk_legislation.provision_extractor import (
+    _instruction_text_before_amendment_container,
 )
 from lawvm.uk_legislation.source_parent_payloads import (
     UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID as _UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID,
@@ -24,6 +29,10 @@ from lawvm.uk_legislation.source_payload_elaboration import (
     _extract_crossheading_payload_from_extracted,
 )
 from lawvm.uk_legislation.target_parser import _parse_affected_target
+from lawvm.uk_legislation.target_anchors import (
+    _source_after_insertion_anchor,
+    _source_before_insertion_anchor,
+)
 from lawvm.uk_legislation.witness_builders import (
     _uk_target_expansion_witness,
     _uk_temporal_group_id,
@@ -37,6 +46,75 @@ from lawvm.uk_legislation.witnesses import (
     UKLoweredOperationWitness,
     UKProvisionExtractionWitness,
 )
+
+
+@dataclass(frozen=True)
+class UKInsertionAnchorContext:
+    preceding_eid: Optional[str]
+    preceding_eid_source: str
+    following_eid: Optional[str]
+    following_eid_source: Optional[str]
+    used_chained_insert_anchor: bool
+
+
+def resolve_uk_insertion_anchor_context(
+    *,
+    effect: UKEffectRecord,
+    curr_action: str,
+    target: LegalAddress,
+    chained_insert_preceding_eid: Optional[str],
+    chained_insert_preceding_eid_source: str,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+) -> UKInsertionAnchorContext:
+    preceding_eid = None
+    preceding_eid_source = "effect_comments_after_clause"
+    used_chained_insert_anchor = False
+    if chained_insert_preceding_eid:
+        preceding_eid = chained_insert_preceding_eid
+        preceding_eid_source = chained_insert_preceding_eid_source
+        used_chained_insert_anchor = True
+
+    source_anchor_text = ""
+    if extracted_el is not None:
+        source_anchor_text = _instruction_text_before_amendment_container(extracted_el) or (
+            extracted_text or ""
+        )
+    source_preceding_eid, source_preceding_eid_source = _source_after_insertion_anchor(
+        source_anchor_text,
+        target,
+    )
+    if source_preceding_eid and not preceding_eid:
+        preceding_eid = source_preceding_eid
+        preceding_eid_source = source_preceding_eid_source or preceding_eid_source
+
+    following_eid = None
+    following_eid_source = None
+    if curr_action == "insert":
+        following_eid, following_eid_source = _source_before_insertion_anchor(
+            source_anchor_text,
+            target,
+        )
+
+    if "after " in effect.comments.lower():
+        rel_m = re.search(
+            r"after (?:paragraph|section|ss\.|s\.)\s?\(?([0-9a-zA-Z]+)\)?",
+            effect.comments,
+            re.I,
+        )
+        if rel_m and not preceding_eid:
+            num = rel_m.group(1)
+            preceding_eid = (
+                f"p1-{num}" if "paragraph" in effect.comments.lower() else f"section-{num}"
+            )
+
+    return UKInsertionAnchorContext(
+        preceding_eid=preceding_eid,
+        preceding_eid_source=preceding_eid_source,
+        following_eid=following_eid,
+        following_eid_source=following_eid_source,
+        used_chained_insert_anchor=used_chained_insert_anchor,
+    )
 
 
 def append_unlowered_overlap_substitution_rejection(

@@ -24,7 +24,6 @@ Current status:
 from __future__ import annotations
 
 import json as json  # noqa: F401
-import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, List, Optional
@@ -57,6 +56,7 @@ from lawvm.uk_legislation.effect_lowering_tail import (
     append_unlowered_overlap_substitution_rejection,
     build_crossheading_insert_ops,
     build_trailing_repeal_ops,
+    resolve_uk_insertion_anchor_context,
 )
 from lawvm.uk_legislation.effect_operation_builder import (
     build_lowered_operations_for_text_patches,
@@ -130,7 +130,6 @@ from lawvm.uk_legislation.metadata_rewrites import (
     _uk_source_text_corrected_renumber_targets,
 )
 from lawvm.uk_legislation.provision_extractor import (
-    _instruction_text_before_amendment_container,
     extract_provision_element_from_bytes,
 )
 from lawvm.uk_legislation.source_context import (
@@ -182,8 +181,6 @@ from lawvm.uk_legislation.source_parent_payloads import (
 from lawvm.uk_legislation.source_structural_sibling import lower_source_structural_sibling_insert
 from lawvm.uk_legislation.target_anchors import (
     _fallback_target_eid,
-    _source_after_insertion_anchor,
-    _source_before_insertion_anchor,
     _target_anchor_eid,
 )
 from lawvm.uk_legislation.target_parser import (
@@ -925,35 +922,19 @@ def compile_effect_to_ir_ops(
             )
 
         if curr_action:
-            preceding_eid = None
-            preceding_eid_source = "effect_comments_after_clause"
-            used_chained_insert_anchor = False
-            if chained_insert_preceding_eid:
-                preceding_eid = chained_insert_preceding_eid
-                preceding_eid_source = chained_insert_preceding_eid_source
-                used_chained_insert_anchor = True
-            source_anchor_text = ""
-            if extracted_el is not None:
-                source_anchor_text = _instruction_text_before_amendment_container(extracted_el) or (extracted_text or "")
-            source_preceding_eid, source_preceding_eid_source = _source_after_insertion_anchor(
-                source_anchor_text,
-                target,
+            anchor_context = resolve_uk_insertion_anchor_context(
+                effect=effect,
+                curr_action=curr_action,
+                target=target,
+                chained_insert_preceding_eid=chained_insert_preceding_eid,
+                chained_insert_preceding_eid_source=chained_insert_preceding_eid_source,
+                extracted_el=extracted_el,
+                extracted_text=extracted_text,
             )
-            if source_preceding_eid and not preceding_eid:
-                preceding_eid = source_preceding_eid
-                preceding_eid_source = source_preceding_eid_source or preceding_eid_source
-            following_eid = None
-            following_eid_source = None
-            if curr_action == "insert":
-                following_eid, following_eid_source = _source_before_insertion_anchor(
-                    source_anchor_text,
-                    target,
-                )
-            if "after " in effect.comments.lower():
-                rel_m = re.search(r"after (?:paragraph|section|ss\.|s\.)\s?\(?([0-9a-zA-Z]+)\)?", effect.comments, re.I)
-                if rel_m and not preceding_eid:
-                    num = rel_m.group(1)
-                    preceding_eid = f"p1-{num}" if "paragraph" in effect.comments.lower() else f"section-{num}"
+            preceding_eid = anchor_context.preceding_eid
+            preceding_eid_source = anchor_context.preceding_eid_source
+            following_eid = anchor_context.following_eid
+            following_eid_source = anchor_context.following_eid_source
 
             payload_preparation = prepare_uk_operation_payload_node(
                 effect=effect,
@@ -989,7 +970,7 @@ def compile_effect_to_ir_ops(
                 target=target,
                 preceding_eid=preceding_eid,
                 preceding_eid_source=preceding_eid_source,
-                used_chained_insert_anchor=used_chained_insert_anchor,
+                used_chained_insert_anchor=anchor_context.used_chained_insert_anchor,
                 extracted_el=extracted_el,
                 extracted_text=extracted_text,
             )
