@@ -23,7 +23,6 @@ Current status:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import xml.etree.ElementTree as ET
@@ -31,8 +30,6 @@ import Levenshtein
 from dataclasses import replace as dc_replace
 from pathlib import Path
 from typing import Any, List, Optional, Sequence, cast
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 from lawvm.core import tree_ops
 from lawvm.core.ir import (
@@ -92,8 +89,6 @@ from lawvm.uk_legislation.effects import (
     STRUCTURAL_EFFECT_TYPES,
     UKEffectRecord,
     _COMMENCEMENT_EFFECT_TYPES,
-    _LEG_BASE,
-    _USER_AGENT,
     _is_uk_renumber_effect_type,
     build_acquisition_manifest,
     fetch_effects_for_statute,
@@ -322,6 +317,10 @@ from lawvm.uk_legislation.payload_identity import (
     _synthesize_whole_schedule_payload_descendant_eids,
 )
 from lawvm.uk_legislation.payload_conversion import _to_irnode, _to_mutable_node
+from lawvm.uk_legislation.uk_prefetch import (
+    fetch_affecting_act,
+    fetch_affecting_acts_from_manifest,
+)
 from lawvm.uk_legislation.replay_records import (
     UKReplayPrepareResult,
     _append_uk_replay_adjudication,
@@ -15844,55 +15843,3 @@ def replay_uk_ops(
             seen_duplicate_keys.add(key)
 
     return executor.statute.to_irstatute()
-
-
-# ---------------------------------------------------------------------------
-# Affecting Act Fetcher
-# ---------------------------------------------------------------------------
-
-
-def fetch_affecting_act(act_id: str, out_path: Path, dry_run: bool = False) -> bool:
-    url = f"{_LEG_BASE}/{act_id}/data.xml"
-    print(f"  fetch {url} -> {out_path}")
-    if dry_run:
-        return True
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        req = Request(url, headers={"User-Agent": _USER_AGENT})
-        with urlopen(req, timeout=30) as resp:
-            data = resp.read()
-        out_path.write_bytes(data)
-        meta = {
-            "url": url,
-            "bytes": len(data),
-            "sha256": hashlib.sha256(data).hexdigest(),
-        }
-        out_path.with_suffix(".xml.meta.json").write_text(
-            json.dumps(meta, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        return True
-    except (HTTPError, URLError, OSError) as exc:
-        print(f"  ERROR fetching {url}: {exc}")
-        return False
-
-
-def fetch_affecting_acts_from_manifest(
-    manifest: dict[str, Any], repo_root: Path, dry_run: bool = False, limit: Optional[int] = None
-) -> tuple[int, int]:
-    sources = manifest.get("sources", [])
-    if limit:
-        sources = sources[:limit]
-    ok = fail = 0
-    for src in sources:
-        for artifact in src.get("artifacts", []):
-            out = repo_root / artifact["path"]
-            if out.exists():
-                ok += 1
-                continue
-            success = fetch_affecting_act(src["act_id"], out, dry_run=dry_run)
-            if success:
-                ok += 1
-            else:
-                fail += 1
-    return ok, fail

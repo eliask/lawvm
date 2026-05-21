@@ -7,8 +7,8 @@ from email.message import Message
 from urllib.error import HTTPError
 
 from lawvm.uk_legislation import uk_prefetch
-from lawvm.uk_legislation import uk_amendment_replay
-from lawvm.uk_legislation.uk_amendment_replay import UKEffectRecord, fetch_affecting_act
+from lawvm.uk_legislation.uk_amendment_replay import UKEffectRecord
+from lawvm.uk_legislation.uk_prefetch import fetch_affecting_act
 
 
 class _FakeArchive:
@@ -86,7 +86,7 @@ def test_fetch_affecting_act_writes_sha256_metadata(monkeypatch, tmp_path) -> No
         assert req.full_url == "https://www.legislation.gov.uk/ukpga/2025/1/data.xml"
         return _FakeResponse()
 
-    monkeypatch.setattr(uk_amendment_replay, "urlopen", fake_urlopen)
+    monkeypatch.setattr(uk_prefetch.urllib.request, "urlopen", fake_urlopen)
     out_path = tmp_path / "ukpga-2025-1.xml"
 
     assert fetch_affecting_act("ukpga/2025/1", out_path) is True
