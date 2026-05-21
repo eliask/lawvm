@@ -8,7 +8,12 @@ from typing import Any, Optional, Sequence
 from lawvm.core.compile_records import is_blocking_compile_record
 from lawvm.core.ir import IRNode, LegalOperation
 from lawvm.uk_legislation.addressing import _action_name
-from lawvm.uk_legislation.effects import _COMMENCEMENT_EFFECT_TYPES, UKEffectRecord, uk_nonstructural_replay_candidate_family
+from lawvm.uk_legislation.effects import (
+    _COMMENCEMENT_EFFECT_TYPES,
+    UKEffectRecord,
+    uk_nonstructural_replay_candidate_family,
+)
+from lawvm.uk_legislation.manual_claim_templates import uk_manual_claim_template_status
 from lawvm.uk_legislation.source_adjudication import classify_uk_manual_compile_frontier
 from lawvm.uk_legislation.source_payload_helpers import (
     UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID,
@@ -383,36 +388,41 @@ def append_manual_compile_frontier_diagnostic(
         replay_applicable=replay_applicable,
         structural_for_replay=structural_for_replay,
     )
-    diagnostics_out.append(
-        {
-            "rule_id": "uk_manual_compile_frontier_classified",
-            "family": "manual_compile_frontier",
-            "phase": "lowering",
-            "effect_id": str(effect.effect_id or ""),
-            "affecting_act_id": str(effect.affecting_act_id or ""),
-            "affected_provisions": str(effect.affected_provisions or ""),
-            "affecting_provisions": str(effect.affecting_provisions or ""),
-            "effect_type": str(effect.effect_type or ""),
-            "manual_compile_status": manual_frontier["status"],
-            "manual_compile_rule_id": manual_frontier["rule_id"],
-            "manual_compile_reason": manual_frontier["reason"],
-            "lowering_rule_ids": _lowering_record_rule_ids(current_lowering_rejections),
-            "blocking_lowering_rule_ids": _lowering_record_rule_ids(
-                tuple(
-                    row
-                    for row in current_lowering_rejections
-                    if is_blocking_compile_record(row)
-                )
-            ),
-            "source_pathology": source_pathology or "",
-            "structural_for_replay": structural_for_replay,
-            "replay_applicable": replay_applicable,
-            "compiled_op_count": compiled_op_count,
-            "blocking": False,
-            "strict_disposition": "record",
-            "quirks_disposition": "record",
-        }
+    record = {
+        "rule_id": "uk_manual_compile_frontier_classified",
+        "family": "manual_compile_frontier",
+        "phase": "lowering",
+        "effect_id": str(effect.effect_id or ""),
+        "affecting_act_id": str(effect.affecting_act_id or ""),
+        "affected_provisions": str(effect.affected_provisions or ""),
+        "affecting_provisions": str(effect.affecting_provisions or ""),
+        "effect_type": str(effect.effect_type or ""),
+        "manual_compile_status": manual_frontier["status"],
+        "manual_compile_rule_id": manual_frontier["rule_id"],
+        "manual_compile_reason": manual_frontier["reason"],
+        "lowering_rule_ids": _lowering_record_rule_ids(current_lowering_rejections),
+        "blocking_lowering_rule_ids": _lowering_record_rule_ids(
+            tuple(
+                row
+                for row in current_lowering_rejections
+                if is_blocking_compile_record(row)
+            )
+        ),
+        "source_pathology": source_pathology or "",
+        "structural_for_replay": structural_for_replay,
+        "replay_applicable": replay_applicable,
+        "compiled_op_count": compiled_op_count,
+        "blocking": False,
+        "strict_disposition": "record",
+        "quirks_disposition": "record",
+    }
+    template_status = uk_manual_claim_template_status(
+        manual_compile_status=record["manual_compile_status"],
+        manual_compile_rule_id=record["manual_compile_rule_id"],
     )
+    if template_status:
+        record["suggested_claim_template_status"] = template_status
+    diagnostics_out.append(record)
 
 
 def append_pit_date_filter_rejection(
