@@ -6804,7 +6804,14 @@ def test_executor_rewrites_inserted_payload_of_target_amendment_instruction() ->
         "after paragraph (a) insert— aa its chief executive appointed under— "
         "i section 54 of the 2021 Act, or ii regulations made under Part 5 of that Act"
     )
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_amendment_insert_tail_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["text_match"] == "TEXT_AFTER_AMENDMENT_INSERT_TO_END"
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "amendment_instruction_insert_tail_selector"
 
 
 def test_executor_rejects_inserted_payload_rewrite_without_insert_verb() -> None:
