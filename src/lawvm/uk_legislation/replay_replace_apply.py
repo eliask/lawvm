@@ -65,15 +65,13 @@ class UKReplayReplaceApplyMixin:
                         "replacement payload was missing."
                     ),
                     op=op,
-                    detail={
-                        "target": str(target),
-                        "selector": dict(schedule_list_entry_replace_selector),
-                        "reason_code": "payload_missing",
-                        "family": "source_schedule_list_entry_elaboration",
-                        "blocking": True,
-                        "strict_disposition": "block",
-                        "quirks_disposition": "record",
-                    },
+                    detail=uk_replay_blocking_action_target_detail(
+                        op,
+                        target,
+                        selector=dict(schedule_list_entry_replace_selector),
+                        reason_code="payload_missing",
+                        family="source_schedule_list_entry_elaboration",
+                    ),
                 )
                 return
             new_node = UKMutableNode.from_dict(op.payload.to_jsonable_dict())

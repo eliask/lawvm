@@ -711,6 +711,7 @@ def test_executor_records_punctuation_spacing_text_match_recovery() -> None:
     ]
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
     assert adjudications[0].detail["family"] == "text_match_recovery"
 
 
@@ -970,6 +971,7 @@ def test_executor_records_word_punctuation_elision_text_match_recovery() -> None
     ]
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
     assert adjudications[0].detail["family"] == "text_match_recovery"
 
 
@@ -5354,6 +5356,8 @@ def test_executor_observes_descendant_repeal_after_prior_parent_repeal() -> None
     ]
     assert adjudications[0].detail["blocking"] is False
     assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["quirks_disposition"] == "record"
+    assert adjudications[0].detail["reason_code"] == "target_previously_repealed"
 
 
 def test_executor_applies_before_definition_insert_at_explicit_definition_anchor() -> None:
