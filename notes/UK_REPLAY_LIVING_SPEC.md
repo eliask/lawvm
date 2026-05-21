@@ -1203,6 +1203,10 @@ Current tooling-consistency invariant:
     compiler observations. This is the full effect-feed/lowering ledger;
     `uk_compile_rejection_summary` is blocking-only, with missing `blocking`
     treated as blocking for legacy safety.
+    Manual-frontier observations in this summary also carry
+    `suggested_claim_template_status_counts` when the underlying diagnostics
+    include `suggested_claim_template_status`; human-readable evidence output
+    prints this as `manual compile claim templates: ...`.
   - `uk-replay` JSON and text summaries must also expose blocking compile
     rejection counts/rules separately from total feed-parse/lowering/authority
     rejections. Blocking controls replay-candidate status; total unsupported
