@@ -4,13 +4,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import xml.etree.ElementTree as ET
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 
-from lawvm.core.ir import LegalAddress
+from lawvm.core.ir import IRNode, LegalAddress
+from lawvm.core.semantic_types import IRNodeKind
 from lawvm.uk_legislation.addressing import _addr_container, _addr_leaf_kind, _addr_leaf_label
 from lawvm.uk_legislation.effects import UKEffectRecord
+from lawvm.uk_legislation.effect_payload_rejections import (
+    reject_broad_schedule_flat_replace_payload,
+    reject_non_substantive_structural_payload,
+)
 from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
 from lawvm.uk_legislation.metadata_rewrites import _select_whole_schedule_element
+from lawvm.uk_legislation.mutable_ir import UKMutableNode
+from lawvm.uk_legislation.payload_conversion import _to_mutable_node
+from lawvm.uk_legislation.payload_identity import (
+    _synthesize_payload_descendant_eids,
+    _synthesize_whole_schedule_payload_descendant_eids,
+)
 from lawvm.uk_legislation.source_payload_elaboration import (
     _retarget_instruction_element_to_target,
     _source_payload_matches_target_leaf,
@@ -50,6 +61,12 @@ class UKStructuralPayloadExtraction:
     actual_el: Optional[ET.Element]
     flat_p1para_schedule_insert_lowered: bool
     source_structural_payload_matches_target: bool
+
+
+@dataclass(frozen=True)
+class UKPayloadNodePreparation:
+    payload_node: Optional[IRNode]
+    skip_effect: bool = False
 
 
 def lower_flat_p1para_schedule_paragraph_insert_payload(
@@ -239,6 +256,96 @@ def extract_uk_structural_payload_ir(
         actual_el=actual_el,
         flat_p1para_schedule_insert_lowered=flat_p1para_schedule_insert_lowered,
         source_structural_payload_matches_target=source_structural_payload_matches_target,
+    )
+
+
+def prepare_uk_operation_payload_node(
+    *,
+    effect: UKEffectRecord,
+    curr_action: str,
+    content_ir: Optional[dict[str, Any]],
+    target_ref: str,
+    target: LegalAddress,
+    payload_match_target: LegalAddress,
+    target_replacement_leaf_override: Optional[str],
+    target_replacement_leaf_kind: Optional[str],
+    actual_el: Optional[ET.Element],
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    allow_payload_identity_synthesis: bool,
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKPayloadNodePreparation:
+    """Prepare the structural payload node and enforce payload safety gates."""
+    payload_node_mut: Optional[UKMutableNode] = _to_mutable_node(content_ir) if content_ir else None
+    if (
+        payload_node_mut is not None
+        and target_replacement_leaf_override
+        and target_replacement_leaf_kind
+        and str(payload_node_mut.kind).lower() == target_replacement_leaf_kind
+    ):
+        payload_node_mut.label = target_replacement_leaf_override
+
+    if payload_node_mut is not None and curr_action == "insert":
+        leaf_kind = _addr_leaf_kind(target) or ""
+        leaf_label = _addr_leaf_label(target) or ""
+        if (
+            leaf_kind
+            and leaf_label
+            and payload_node_mut.kind == leaf_kind
+            and not _clean_num(payload_node_mut.label or "")
+        ):
+            payload_node_mut.label = leaf_label
+        leafish_kinds = {"subsection", "paragraph", "subparagraph", "item", "point"}
+        if (
+            leaf_kind in leafish_kinds
+            and payload_node_mut.kind in leafish_kinds
+            and payload_node_mut.kind != leaf_kind
+            and _clean_num(payload_node_mut.label or "") == _clean_num(leaf_label)
+        ):
+            payload_node_mut.kind = cast(IRNodeKind, leaf_kind)
+
+    if payload_node_mut is not None and curr_action in ("insert", "replace"):
+        payload_identity_target = payload_match_target if curr_action == "replace" else target
+        payload_node_mut = _synthesize_whole_schedule_payload_descendant_eids(
+            payload_node_mut,
+            target=payload_identity_target,
+            effect=effect,
+            lowering_records_out=lowering_rejections_out,
+            allow_payload_identity_synthesis=allow_payload_identity_synthesis,
+        )
+        payload_node_mut = _synthesize_payload_descendant_eids(
+            payload_node_mut,
+            target=payload_identity_target,
+            effect=effect,
+            lowering_records_out=lowering_rejections_out,
+            allow_payload_identity_synthesis=allow_payload_identity_synthesis,
+        )
+
+    if reject_non_substantive_structural_payload(
+        effect=effect,
+        curr_action=curr_action,
+        t_str=target_ref,
+        payload_node_mut=payload_node_mut,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    ):
+        return UKPayloadNodePreparation(payload_node=None, skip_effect=True)
+    if reject_broad_schedule_flat_replace_payload(
+        effect=effect,
+        curr_action=curr_action,
+        t_str=target_ref,
+        target=target,
+        payload_node_mut=payload_node_mut,
+        actual_el=actual_el,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        lowering_rejections_out=lowering_rejections_out,
+    ):
+        return UKPayloadNodePreparation(payload_node=None, skip_effect=True)
+
+    return UKPayloadNodePreparation(
+        payload_node=payload_node_mut.to_irnode() if payload_node_mut is not None else None,
     )
 
 
