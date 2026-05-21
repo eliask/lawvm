@@ -37,6 +37,65 @@ _UK_REPLAY_SOURCE_CARRIED_LABELED_CHILD_TEXT_SUBSTITUTION_RULE_ID = (
 )
 
 
+def _descendant_labels_by_kind(node: UKMutableNode, *, kinds: set[str]) -> list[str]:
+    out: list[str] = []
+    stack = list(getattr(node, "children", []) or [])
+    while stack:
+        curr = stack.pop()
+        curr_kind = str(getattr(curr, "kind", "") or "").lower()
+        if curr_kind in kinds:
+            out.append(re.sub(r"[^0-9a-z]+", "", str(getattr(curr, "label", "") or "").lower()))
+        stack.extend(list(getattr(curr, "children", []) or []))
+    return out
+
+
+def _local_alnum_suffix_key(text: str) -> tuple[int, int] | None:
+    match = re.fullmatch(r"(\d+)([a-z])", text.strip().lower())
+    if not match:
+        return None
+    return (int(match.group(1)), ord(match.group(2)) - ord("a") + 1)
+
+
+def _alnum_multi_suffix_key(text: str) -> tuple[int, str] | None:
+    match = re.fullmatch(r"(\d+)([a-z]{2,})", text.lower())
+    if not match:
+        return None
+    return (int(match.group(1)), match.group(2))
+
+
+def _alpha_num_suffix_key(text: str) -> tuple[str, int] | None:
+    match = re.fullmatch(r"([a-z]+)(\d+)", text.lower())
+    if not match:
+        return None
+    return (match.group(1), int(match.group(2)))
+
+
+def _part_numeric_value(raw: str) -> int | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    text = re.sub(r"^(?:part)\s+", "", text, flags=re.I).strip()
+    if text.isdigit():
+        return int(text)
+    return _shared_roman_to_arabic(text)
+
+
+def _collect_sectionlike_descendant_labels(node: UKMutableNode | None) -> list[str]:
+    if node is None:
+        return []
+    labels: list[str] = []
+    stack = [node]
+    while stack:
+        curr = stack.pop()
+        for child in getattr(curr, "children", []) or []:
+            if str(getattr(child, "kind", "") or "").lower() in {"section", "article", "rule", "regulation"}:
+                label = str(getattr(child, "label", "") or "").strip()
+                if label:
+                    labels.append(label)
+            stack.append(child)
+    return labels
+
+
 class UKReplayTargetDiagnosticsMixin:
 
     def _schedule_unlabeled_paragraph_target_gap(self, target: LegalAddress) -> bool:
@@ -89,17 +148,6 @@ class UKReplayTargetDiagnosticsMixin:
         )
 
     def _malformed_target_gap(self, target: LegalAddress) -> bool:
-        def _descendant_labels(node: UKMutableNode, *, kinds: set[str]) -> list[str]:
-            out: list[str] = []
-            stack = list(getattr(node, "children", []) or [])
-            while stack:
-                curr = stack.pop()
-                curr_kind = str(getattr(curr, "kind", "") or "").lower()
-                if curr_kind in kinds:
-                    out.append(re.sub(r"[^0-9a-z]+", "", str(getattr(curr, "label", "") or "").lower()))
-                stack.extend(list(getattr(curr, "children", []) or []))
-            return out
-
         path = tuple(getattr(target, "path", ()) or ())
         if not path:
             return False
@@ -323,7 +371,7 @@ class UKReplayTargetDiagnosticsMixin:
                     return True
                 if re.fullmatch(r"[a-z]+\d+", textual_leaf):
                     paragraph_labels = [
-                        label for label in _descendant_labels(parent_node, kinds={"paragraph"}) if label
+                        label for label in _descendant_labels_by_kind(parent_node, kinds={"paragraph"}) if label
                     ]
                     if paragraph_labels and all(re.fullmatch(r"\d+[a-z]?", label) for label in paragraph_labels):
                         return True
@@ -935,12 +983,6 @@ class UKReplayTargetDiagnosticsMixin:
         return True
 
     def _leading_blank_subparagraph_gap(self, target: LegalAddress) -> bool:
-        def _local_alnum_suffix_key(text: str) -> tuple[int, int] | None:
-            m = re.fullmatch(r"(\d+)([a-z])", text.strip().lower())
-            if not m:
-                return None
-            return (int(m.group(1)), ord(m.group(2)) - ord("a") + 1)
-
         path = tuple(getattr(target, "path", ()) or ())
         if not path:
             return False
@@ -1044,36 +1086,6 @@ class UKReplayTargetDiagnosticsMixin:
         # latent bug where ``prev`` only updated in the additive branch.
         _roman_to_int = _shared_roman_to_arabic
 
-        def _alnum_suffix_key(text: str) -> tuple[int, int] | None:
-            m = re.fullmatch(r"(\d+)([a-z])", text.lower())
-            if not m:
-                return None
-            return (int(m.group(1)), ord(m.group(2)) - ord("a") + 1)
-
-        def _alnum_multi_suffix_key(text: str) -> tuple[int, str] | None:
-            m = re.fullmatch(r"(\d+)([a-z]{2,})", text.lower())
-            if not m:
-                return None
-            return (int(m.group(1)), m.group(2))
-
-        def _alpha_num_suffix_key(text: str) -> tuple[str, int] | None:
-            m = re.fullmatch(r"([a-z]+)(\d+)", text.lower())
-            if not m:
-                return None
-            return (m.group(1), int(m.group(2)))
-
-        def _part_numeric_value(raw: str) -> int | None:
-            text = str(raw or "").strip()
-            if not text:
-                return None
-            text = re.sub(r"^(?:part)\s+", "", text, flags=re.I).strip()
-            if text.isdigit():
-                return int(text)
-            roman = _roman_to_int(text)
-            if roman is not None:
-                return roman
-            return None
-
         path = tuple(getattr(target, "path", ()) or ())
         if len(path) < 2:
             return False
@@ -1100,7 +1112,7 @@ class UKReplayTargetDiagnosticsMixin:
             mode = "roman"
             want = roman
         elif re.fullmatch(r"\d+[a-z]", text):
-            pair = _alnum_suffix_key(text)
+            pair = _local_alnum_suffix_key(text)
             if pair is None:
                 return False
             mode = "alnum_suffix"
@@ -1188,7 +1200,7 @@ class UKReplayTargetDiagnosticsMixin:
                     blank_same_kind_present = True
                 if mode == "numeric" and label_text.isdigit():
                     sibling_labels.append(int(label_text))
-                elif mode == "numeric" and (pair := _alnum_suffix_key(label_text)) is not None:
+                elif mode == "numeric" and (pair := _local_alnum_suffix_key(label_text)) is not None:
                     numeric_suffix_labels.append(int(pair[0]))
                 elif mode == "alpha" and re.fullmatch(r"[a-z]", label_text.lower()):
                     sibling_labels.append(ord(label_text.lower()) - ord("a") + 1)
@@ -1205,7 +1217,7 @@ class UKReplayTargetDiagnosticsMixin:
                     if roman is not None:
                         sibling_labels.append(roman)
                 elif mode == "alnum_suffix":
-                    pair = _alnum_suffix_key(label_text)
+                    pair = _local_alnum_suffix_key(label_text)
                     if pair is not None:
                         sibling_pairs.append(pair)
                     elif label_text.isdigit():
@@ -1214,7 +1226,7 @@ class UKReplayTargetDiagnosticsMixin:
                     pair = _alnum_multi_suffix_key(label_text)
                     if pair is not None:
                         sibling_multi_pairs.append(pair)
-                    elif (pair1 := _alnum_suffix_key(label_text)) is not None:
+                    elif (pair1 := _local_alnum_suffix_key(label_text)) is not None:
                         sibling_multi_pairs.append((pair1[0], chr(ord("a") + pair1[1] - 1)))
                     elif label_text.isdigit():
                         numeric_suffix_labels.append(int(label_text))
@@ -1234,7 +1246,7 @@ class UKReplayTargetDiagnosticsMixin:
                         blank_same_kind_present = True
                     if mode == "numeric" and label_text.isdigit():
                         sibling_labels.append(int(label_text))
-                    elif mode == "numeric" and (pair := _alnum_suffix_key(label_text)) is not None:
+                    elif mode == "numeric" and (pair := _local_alnum_suffix_key(label_text)) is not None:
                         numeric_suffix_labels.append(int(pair[0]))
                     elif mode == "alpha" and re.fullmatch(r"[a-z]", label_text.lower()):
                         sibling_labels.append(ord(label_text.lower()) - ord("a") + 1)
@@ -1251,7 +1263,7 @@ class UKReplayTargetDiagnosticsMixin:
                         if roman is not None:
                             sibling_labels.append(roman)
                     elif mode == "alnum_suffix":
-                        pair = _alnum_suffix_key(label_text)
+                        pair = _local_alnum_suffix_key(label_text)
                         if pair is not None:
                             sibling_pairs.append(pair)
                         elif label_text.isdigit():
@@ -1260,7 +1272,7 @@ class UKReplayTargetDiagnosticsMixin:
                         pair = _alnum_multi_suffix_key(label_text)
                         if pair is not None:
                             sibling_multi_pairs.append(pair)
-                        elif (pair1 := _alnum_suffix_key(label_text)) is not None:
+                        elif (pair1 := _local_alnum_suffix_key(label_text)) is not None:
                             sibling_multi_pairs.append((pair1[0], chr(ord("a") + pair1[1] - 1)))
                         elif label_text.isdigit():
                             numeric_suffix_labels.append(int(label_text))
@@ -1488,17 +1500,7 @@ class UKReplayTargetDiagnosticsMixin:
         if not want_label:
             return False
         want_key = _label_sort_key(want_label)
-        labels: list[str] = []
-
-        def _walk(node: UKMutableNode) -> None:
-            for child in getattr(node, "children", []) or []:
-                if str(getattr(child, "kind", "") or "").lower() in {"section", "article", "rule", "regulation"}:
-                    label = str(getattr(child, "label", "") or "").strip()
-                    if label:
-                        labels.append(label)
-                _walk(child)
-
-        _walk(self.statute.body)
+        labels = _collect_sectionlike_descendant_labels(self.statute.body)
         if not labels:
             return False
         existing = sorted({_label_sort_key(label): label for label in labels}.keys())
