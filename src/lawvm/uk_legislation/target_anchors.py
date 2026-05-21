@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.addressing import (
@@ -12,7 +12,7 @@ from lawvm.uk_legislation.addressing import (
     _canonicalize_schedule_paragraph_eid_label,
     _schedule_target_levels,
 )
-from lawvm.uk_legislation.canonicalize import canonicalize_uk_address
+from lawvm.uk_legislation.canonicalize import canonicalize_uk_address, uk_kind_matches
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
@@ -135,3 +135,30 @@ def _target_anchor_eid(target: LegalAddress) -> Optional[str]:
     if clean_kind == "paragraph":
         return f"p1-{clean_label}"
     return None
+
+
+def uk_match_kind_label(node: Any, kind: str, label: Optional[str]) -> bool:
+    """Return whether a UK IR-like node matches a target kind/label pair."""
+    nk = str(node.kind)
+    tk = kind.lower()
+    node_label = _clean_num(node.label or "")
+    want_label = _clean_num(label or "") if label else ""
+
+    if not uk_kind_matches(
+        node_kind=nk,
+        target_kind=tk,
+        node_label=node_label,
+        target_label=want_label,
+    ):
+        return False
+
+    if not label:
+        return True
+    if tk == "schedule" and want_label:
+        schedule_labels = {want_label}
+        if want_label.startswith("schedule "):
+            schedule_labels.add(want_label.removeprefix("schedule ").strip())
+        else:
+            schedule_labels.add(f"schedule {want_label}")
+        return node_label in schedule_labels
+    return node_label == want_label

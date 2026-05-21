@@ -470,6 +470,7 @@ from lawvm.uk_legislation.target_anchors import (
     _source_after_insertion_anchor,
     _source_before_insertion_anchor,
     _target_anchor_eid,
+    uk_match_kind_label,
 )
 from lawvm.uk_legislation.target_parser import (
     _parse_affected_target,
@@ -8126,39 +8127,13 @@ class UKReplayExecutor:
         if parent_candidate is None:
             return None, None, None, ""
         for child_idx, child in enumerate(parent_candidate.children):
-            if self._match_kind_label(child, leaf_kind, leaf_label) and uk_existing_target_insert_gap(
+            if uk_match_kind_label(child, leaf_kind, leaf_label) and uk_existing_target_insert_gap(
                 target,
                 child,
                 op,
             ):
                 return child, parent_candidate, child_idx, "explicit_parent_leaf_same_kind_label"
         return None, None, None, ""
-
-    def _match_kind_label(self, node: Any, kind: str, label: Optional[str]) -> bool:
-        """Shared matching logic for UK IR nodes."""
-        nk = str(node.kind)
-        tk = kind.lower()
-        node_label = _clean_num(node.label or "")
-        want_label = _clean_num(label or "") if label else ""
-
-        if not uk_kind_matches(
-            node_kind=nk,
-            target_kind=tk,
-            node_label=node_label,
-            target_label=want_label,
-        ):
-            return False
-
-        if not label:
-            return True
-        if tk == "schedule" and want_label:
-            schedule_labels = {want_label}
-            if want_label.startswith("schedule "):
-                schedule_labels.add(want_label.removeprefix("schedule ").strip())
-            else:
-                schedule_labels.add(f"schedule {want_label}")
-            return node_label in schedule_labels
-        return node_label == want_label
 
     def _find_compound_subsection_candidate(
         self,
@@ -8169,7 +8144,7 @@ class UKReplayExecutor:
         return uk_compound_subsection_candidate(
             cast(IRNode, curr_node),
             label,
-            match_kind_label=self._match_kind_label,
+            match_kind_label=uk_match_kind_label,
         )
 
     def _find_node_by_target(
@@ -8195,7 +8170,7 @@ class UKReplayExecutor:
                     cast(list[IRNode], self.statute.supplements),
                     sched_label=sched_label,
                     remaining_path=tuple(remaining),
-                    match_kind_label=self._match_kind_label,
+                    match_kind_label=uk_match_kind_label,
                 )
                 if sched_label and roots and not remaining:
                     sch, _, idx = roots[0]
@@ -8214,7 +8189,7 @@ class UKReplayExecutor:
                 next_cands: list[tuple[IRNode, Optional[IRNode], Optional[int]]] = []
                 for curr_node, _, _ in curr_cands:
                     for i, child in enumerate(curr_node.children):
-                        if self._match_kind_label(child, p_kind, p_label):
+                        if uk_match_kind_label(child, p_kind, p_label):
                             next_cands.append((child, curr_node, i))
                     if not next_cands and allow_compound_subsection_alias and p_kind.lower() == "subsection" and p_label:
                         compound = self._find_compound_subsection_candidate(cast(UKMutableNode, curr_node), p_label)
@@ -8312,7 +8287,7 @@ class UKReplayExecutor:
             cast(list[IRNode], self.statute.supplements),
             sched_label=schedule_label,
             remaining_path=(),
-            match_kind_label=self._match_kind_label,
+            match_kind_label=uk_match_kind_label,
         )
         candidates: list[tuple[UKMutableNode, UKMutableNode, int]] = []
 
@@ -8359,7 +8334,7 @@ class UKReplayExecutor:
             cast(IRNode, node),
             kind=str(kind),
             label=label,
-            match_kind_label=self._match_kind_label,
+            match_kind_label=uk_match_kind_label,
         )
 
     def _empty_schedule_root_shape_gap(self, target: LegalAddress) -> bool:
@@ -8370,7 +8345,7 @@ class UKReplayExecutor:
         if not sched_label:
             return False
         for sch in self.statute.supplements:
-            if self._match_kind_label(sch, "schedule", sched_label):
+            if uk_match_kind_label(sch, "schedule", sched_label):
                 return len(sch.children) == 0
         return False
 
@@ -13510,7 +13485,7 @@ class UKReplayExecutor:
         leaf_kind = _addr_leaf_kind(target)
         if not leaf_kind:
             return True
-        return self._match_kind_label(node, str(leaf_kind), _addr_leaf_label(target))
+        return uk_match_kind_label(node, str(leaf_kind), _addr_leaf_label(target))
 
     def _derive_target_eid(self, addr: LegalAddress) -> str:
         is_eur = self.statute.metadata.get("is_eur", False)
