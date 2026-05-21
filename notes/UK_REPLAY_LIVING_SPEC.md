@@ -3939,6 +3939,10 @@ Current bench replay-regime invariant:
     `required_ownership`
   - manual-frontier classification emits
   `uk_manual_frontier_range_to_container_candidate`
+  - suggested semantic-compile claim templates copy the bounded payload root and
+    replacement-section evidence into the work item so a reviewer can validate
+    the claimed replacement range without reverse-engineering the lowering
+    record
   - a future replay implementation must own the replaced section range, the new
     container payload, and lineage/migration evidence before mutating the tree
   - current witness: `asp/2001/2`, affected by `asp/2019/17 s. 35(2)` and

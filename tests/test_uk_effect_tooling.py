@@ -2821,6 +2821,24 @@ def test_uk_manual_compile_evidence_jsonl_templates_range_to_container_claim() -
                     "target_container_ref": "Pt. 2 Ch. 1",
                     "compiled_targets": ("part:2/chapter:1",),
                     "payload_kinds": ("chapter",),
+                    "payload_roots": (
+                        {
+                            "kind": "chapter",
+                            "label": "1",
+                            "eid": "part-2-chapter-1",
+                            "direct_child_count": 1,
+                            "direct_children": (
+                                {"kind": "crossheading", "label": "", "eid": ""},
+                            ),
+                            "truncated_direct_children": False,
+                            "descendant_section_count": 2,
+                            "descendant_sections": (
+                                {"label": "3A", "eid": "section-3A"},
+                                {"label": "3B", "eid": "section-3B"},
+                            ),
+                            "truncated_descendant_sections": False,
+                        },
+                    ),
                     "required_ownership": (
                         "source_range",
                         "container_payload",
@@ -2872,6 +2890,14 @@ def test_uk_manual_compile_evidence_jsonl_templates_range_to_container_claim() -
     assert template["source_range_start"] == "3"
     assert template["source_range_end"] == "12"
     assert template["target_container_surface"] == "Pt. 2 Ch. 1"
+    assert template["compiled_targets"] == ["part:2/chapter:1"]
+    assert template["payload_kinds"] == ["chapter"]
+    assert template["replacement_section_count"] == 2
+    assert template["replacement_sections"] == [
+        {"label": "3A", "eid": "section-3A"},
+        {"label": "3B", "eid": "section-3B"},
+    ]
+    assert template["payload_roots"][0]["descendant_section_count"] == 2
     assert template["required_ownership"] == [
         "source_range",
         "container_payload",

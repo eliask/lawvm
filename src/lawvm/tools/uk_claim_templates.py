@@ -27,6 +27,27 @@ def _quoted_for_substitute_pair(source_preview: str) -> tuple[str, str]:
     )
 
 
+def _range_to_container_replacement_sections(
+    payload_roots: Any,
+) -> tuple[dict[str, str], ...]:
+    """Return bounded replacement section labels from range-to-container payload evidence."""
+    sections: list[dict[str, str]] = []
+    for root in payload_roots or ():
+        if not isinstance(root, dict):
+            continue
+        root_sections = root.get("descendant_sections") or ()
+        for section in root_sections:
+            if not isinstance(section, dict):
+                continue
+            sections.append(
+                {
+                    "label": str(section.get("label") or ""),
+                    "eid": str(section.get("eid") or ""),
+                }
+            )
+    return tuple(sections)
+
+
 def _surface_text_rewrite_claim_template(
     *,
     statute_id: str,
@@ -357,6 +378,8 @@ def manual_compile_suggested_claim_template(
             if str(row.get("rule_id") or "") == "uk_effect_range_to_container_substitution_rejected"
         )
         detail = dict(blocking_rows[0]) if blocking_rows else {}
+        payload_roots = tuple(detail.get("payload_roots") or ())
+        replacement_sections = _range_to_container_replacement_sections(payload_roots)
         return {
             "schema": "lawvm.uk_semantic_compile_claim_template.v1",
             "claim_kind": "semantic_compile",
@@ -379,6 +402,9 @@ def manual_compile_suggested_claim_template(
             ),
             "compiled_targets": list(detail.get("compiled_targets") or ()),
             "payload_kinds": list(detail.get("payload_kinds") or ()),
+            "payload_roots": list(payload_roots),
+            "replacement_section_count": len(replacement_sections),
+            "replacement_sections": list(replacement_sections),
             "required_ownership": list(detail.get("required_ownership") or ()),
             "required_validator_checks": [
                 "source_witness_contains_range_to_container_substitution",
