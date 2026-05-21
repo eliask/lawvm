@@ -35,6 +35,22 @@ class UKMetadataRenumberTargets:
     metadata_destination: Optional[LegalAddress] = None
 
 
+def _renumbered_descendant_text(
+    text: str,
+    *,
+    source_label: Optional[str],
+    destination_label: Optional[str],
+) -> str:
+    source_clean = _clean_num(source_label or "")
+    destination_clean = _clean_num(destination_label or "")
+    if not text or not source_clean or not destination_clean:
+        return text
+    pattern = re.compile(rf"^\s*{re.escape(source_clean)}(?![0-9A-Za-z])[\s\u00a0]*")
+    if pattern.search(text):
+        return pattern.sub(destination_clean, text, count=1)
+    return text
+
+
 def _uk_metadata_renumber_targets(effect: UKEffectRecord) -> Optional[UKMetadataRenumberTargets]:
     """Return source/destination targets for an explicit UK metadata renumber row.
 
