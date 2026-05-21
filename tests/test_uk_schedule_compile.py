@@ -8919,6 +8919,7 @@ def test_executor_range_text_patch_uses_independent_end_occurrence() -> None:
 
 
 def test_executor_bounded_range_text_patch_preserves_node_children_when_own_text_matches() -> None:
+    adjudications: list[CompileAdjudication] = []
     statute = IRStatute(
         statute_id="asp/2001/14",
         title="Test Act",
@@ -8948,7 +8949,7 @@ def test_executor_bounded_range_text_patch_preserves_node_children_when_own_text
         ),
         supplements=(),
     )
-    executor: Any = UKReplayExecutor(statute)
+    executor: Any = UKReplayExecutor(statute, adjudications_out=adjudications)
     op = LegalOperation(
         op_id="uk_test_node_local_range_patch_preserves_children",
         sequence=0,
@@ -8969,6 +8970,64 @@ def test_executor_bounded_range_text_patch_preserves_node_children_when_own_text
     )
     assert [child.label for child in subsection.children] == ["a", "b"]
     assert [child.text for child in subsection.children] == ["first limb", "second limb"]
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_text_range_anchor_word_boundary_normalized",
+        "uk_replay_node_local_range_text_rewrite_applied",
+    ]
+    assert adjudications[1].detail["blocking"] is False
+    assert adjudications[1].detail["strict_disposition"] == "record"
+    assert adjudications[1].detail["source_shape"] == "node_local_range_selector"
+
+
+def test_executor_range_to_end_text_patch_records_node_local_leaf_rewrite() -> None:
+    adjudications: list[CompileAdjudication] = []
+    statute = IRStatute(
+        statute_id="asp/2001/14",
+        title="Test Act",
+        body=IRNode(
+            kind=IRNodeKind.BODY,
+            label=None,
+            text="",
+            children=(
+                IRNode(
+                    kind=IRNodeKind.SECTION,
+                    label="3",
+                    children=(
+                        IRNode(
+                            kind=IRNodeKind.SUBSECTION,
+                            label="1",
+                            text="A police authority may obtain any record formerly recalled.",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        supplements=(),
+    )
+    executor: Any = UKReplayExecutor(statute, adjudications_out=adjudications)
+    op = LegalOperation(
+        op_id="uk_test_node_local_range_to_end_leaf_patch",
+        sequence=0,
+        action=StructuralAction.TEXT_REPLACE,
+        target=LegalAddress(path=(("section", "3"), ("subsection", "1"))),
+        text_patch=TextPatchSpec(
+            kind=TextPatchKindEnum.REPLACE,
+            selector=TextSelector(match_text="TEXT_FROM_any_TO_END", occurrence=1),
+            replacement="the Police Service of Scotland.",
+        ),
+    )
+
+    executor.apply_op(op)
+
+    subsection = executor.statute.body.children[0].children[0]
+    assert subsection.text == "A police authority may obtain the Police Service of Scotland."
+    assert not subsection.children
+    assert [row.kind for row in adjudications] == [
+        "uk_replay_node_local_range_to_end_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "node_local_range_to_end_selector"
 
 
 def test_compile_range_to_end_second_occurrence_to_text_replace() -> None:
