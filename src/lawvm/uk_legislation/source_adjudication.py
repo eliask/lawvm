@@ -347,6 +347,151 @@ UK_REPLAY_BUG_PROOF_KIND_PRIORITY = (
     "uk_replay_unsupported_action",
 )
 
+_UK_REPLAY_SOURCE_SHAPE_RESIDUAL_KIND_PRIORITY: tuple[tuple[str, str], ...] = (
+    ("uk_replay_absent_sibling_range_gap", "uk_absent_sibling_range_gap"),
+    ("uk_replay_empty_descendant_shape_gap", "uk_empty_descendant_shape_gap"),
+    ("uk_replay_annex_schedule_reference_gap", "uk_annex_schedule_reference_gap"),
+    ("uk_replay_existing_target_conflict_gap", "uk_existing_target_conflict_gap"),
+    ("uk_replay_existing_target_gap", "uk_existing_target_gap"),
+    ("uk_replay_heading_facet_target_gap", "uk_heading_facet_target_gap"),
+    ("uk_replay_missing_source_target_gap", "uk_missing_source_target_gap"),
+    (
+        "uk_replay_missing_parent_grandparent_present_gap",
+        "uk_missing_parent_grandparent_present_gap",
+    ),
+    ("uk_replay_missing_root_parent_shape_gap", "uk_missing_root_parent_shape_gap"),
+    ("uk_replay_missing_parent_shape_gap", "uk_missing_parent_shape_gap"),
+    ("uk_replay_missing_schedule_branch_gap", "uk_missing_schedule_branch_gap"),
+    ("uk_replay_missing_schedule_range_gap", "uk_missing_schedule_range_gap"),
+    ("uk_replay_missing_sectionlike_range_gap", "uk_missing_sectionlike_range_gap"),
+    ("uk_replay_part_order_shape_gap", "uk_part_order_shape_gap"),
+    ("uk_replay_chapter_order_shape_gap", "uk_chapter_order_shape_gap"),
+    ("uk_replay_crossheading_target_gap", "uk_crossheading_target_gap"),
+    (
+        "uk_replay_broad_schedule_part_table_shape_gap",
+        "uk_broad_schedule_part_table_shape_gap",
+    ),
+    ("uk_replay_broad_schedule_table_shape_gap", "uk_broad_schedule_table_shape_gap"),
+    ("uk_replay_definition_entry_shape_gap", "uk_definition_entry_shape_gap"),
+    ("uk_replay_definition_child_shape_gap", "uk_definition_child_shape_gap"),
+    (
+        "uk_replay_direct_section_paragraph_carrier_gap",
+        "uk_direct_section_paragraph_carrier_gap",
+    ),
+    ("uk_replay_paragraph_order_shape_gap", "uk_paragraph_order_shape_gap"),
+    ("uk_replay_subparagraph_order_shape_gap", "uk_subparagraph_order_shape_gap"),
+    ("uk_replay_item_order_shape_gap", "uk_item_order_shape_gap"),
+    ("uk_replay_section_order_shape_gap", "uk_section_order_shape_gap"),
+    (
+        "uk_replay_schedule_partition_part_target_gap",
+        "uk_schedule_partition_part_target_gap",
+    ),
+    ("uk_replay_schedule_partition_target_gap", "uk_schedule_partition_target_gap"),
+    (
+        "uk_replay_schedule_p1group_wrapper_carrier_gap",
+        "uk_schedule_p1group_wrapper_carrier_gap",
+    ),
+    ("uk_replay_schedule_paragraph_carrier_gap", "uk_schedule_paragraph_carrier_gap"),
+    (
+        "uk_replay_schedule_entry_repeal_granularity_blocked",
+        "uk_schedule_entry_repeal_granularity_blocked",
+    ),
+    (
+        "uk_replay_schedule_list_entry_repeal_unresolved",
+        "uk_schedule_list_entry_repeal_unresolved",
+    ),
+    (
+        "uk_replay_schedule_list_entry_anchor_unresolved",
+        "uk_schedule_list_entry_anchor_unresolved",
+    ),
+    (
+        "uk_replay_schedule_container_text_target_gap",
+        "uk_schedule_container_text_target_gap",
+    ),
+    (
+        "uk_replay_schedule_unlabeled_paragraph_target_gap",
+        "uk_schedule_unlabeled_paragraph_target_gap",
+    ),
+    (
+        "uk_replay_subsection_descendant_target_collapse_gap",
+        "uk_subsection_descendant_target_collapse_gap",
+    ),
+    (
+        "uk_replay_repeated_form_label_payload_shape_gap",
+        "uk_repeated_form_label_payload_shape_gap",
+    ),
+    ("uk_replay_payload_shape_gap", "uk_payload_shape_gap"),
+    (
+        "uk_replay_malformed_target_placeholder_label_gap",
+        "uk_malformed_target_placeholder_label_gap",
+    ),
+    (
+        "uk_replay_malformed_target_note_or_crossheading_gap",
+        "uk_malformed_target_note_or_crossheading_gap",
+    ),
+    (
+        "uk_replay_malformed_target_sectionlike_label_gap",
+        "uk_malformed_target_sectionlike_label_gap",
+    ),
+    (
+        "uk_replay_malformed_target_schedule_root_label_gap",
+        "uk_malformed_target_schedule_root_label_gap",
+    ),
+    (
+        "uk_replay_malformed_target_granularity_collapse_gap",
+        "uk_malformed_target_granularity_collapse_gap",
+    ),
+    ("uk_replay_malformed_target_gap", "uk_malformed_target_gap"),
+    (
+        "uk_replay_replace_payload_target_leaf_mismatch_gap",
+        "uk_replace_payload_target_leaf_mismatch_gap",
+    ),
+    ("uk_replay_table_shape_gap", "uk_table_shape_gap"),
+    ("uk_replay_text_target_empty_surface_gap", "uk_text_target_empty_surface_gap"),
+    (
+        "uk_replay_text_match_citation_tail_surface_gap",
+        "uk_text_match_citation_tail_surface_gap",
+    ),
+    (
+        "uk_replay_text_match_normalized_preimage_present_gap",
+        "uk_text_match_normalized_preimage_present_gap",
+    ),
+    (
+        "uk_replay_text_match_non_substantive_selector_gap",
+        "uk_text_match_non_substantive_selector_gap",
+    ),
+    (
+        "uk_replay_text_match_multi_fragment_selector_gap",
+        "uk_text_match_multi_fragment_selector_gap",
+    ),
+    (
+        "uk_replay_text_match_synthetic_selector_gap",
+        "uk_text_match_synthetic_selector_gap",
+    ),
+    (
+        "uk_replay_text_patch_preimage_drift_multi_prior_same_target",
+        "uk_text_patch_preimage_drift_multi_prior_same_target",
+    ),
+    ("uk_replay_repealed_target_gap", "uk_repealed_target_gap"),
+)
+
+_UK_REPLAY_SOURCE_SHAPE_RESIDUAL_DEFAULT_KIND = "uk_empty_schedule_shape_gap"
+_UK_REPLAY_SOURCE_SHAPE_RESIDUAL_DEFAULT_ADJUDICATION_KINDS = frozenset(
+    {
+        "uk_replay_crossheading_and_structural_repeal_unresolved",
+        "uk_replay_definition_anchor_lexical_variant_recovered",
+        "uk_replay_empty_schedule_shape_gap",
+        "uk_replay_same_source_text_patch_overlap_blocked",
+        "uk_replay_schedule_list_entry_replace_unresolved",
+        "uk_replay_schedule_list_entry_table_rows_insert_unresolved",
+        "uk_replay_schedule_table_end_rows_insert_unresolved",
+        "uk_replay_table_column_insert_unresolved",
+        "uk_replay_table_entry_inline_text_insertion_unresolved",
+        "uk_replay_table_entry_inline_text_preimage_gap",
+        "uk_replay_table_entry_row_insert_unresolved",
+    }
+)
+
 
 def classify_uk_replay_adjudication_bucket(kind: str) -> str:
     """Classify an emitted UK replay adjudication into an evidence bucket."""
@@ -621,113 +766,10 @@ def classify_uk_replay_residual(
             if kind in adjudications:
                 return ("PROVED_REPLAY_BUG", UK_REPLAY_BUG_PROOF_KIND_BY_ADJUDICATION_KIND[kind])
     if adjudications & UK_REPLAY_SOURCE_SHAPE_ADJUDICATION_KINDS:
-        if "uk_replay_absent_sibling_range_gap" in adjudications:
-            return ("UNRESOLVED", "uk_absent_sibling_range_gap")
-        if "uk_replay_empty_descendant_shape_gap" in adjudications:
-            return ("UNRESOLVED", "uk_empty_descendant_shape_gap")
-        if "uk_replay_annex_schedule_reference_gap" in adjudications:
-            return ("UNRESOLVED", "uk_annex_schedule_reference_gap")
-        if "uk_replay_existing_target_conflict_gap" in adjudications:
-            return ("UNRESOLVED", "uk_existing_target_conflict_gap")
-        if "uk_replay_existing_target_gap" in adjudications:
-            return ("UNRESOLVED", "uk_existing_target_gap")
-        if "uk_replay_heading_facet_target_gap" in adjudications:
-            return ("UNRESOLVED", "uk_heading_facet_target_gap")
-        if "uk_replay_missing_source_target_gap" in adjudications:
-            return ("UNRESOLVED", "uk_missing_source_target_gap")
-        if "uk_replay_missing_parent_grandparent_present_gap" in adjudications:
-            return ("UNRESOLVED", "uk_missing_parent_grandparent_present_gap")
-        if "uk_replay_missing_root_parent_shape_gap" in adjudications:
-            return ("UNRESOLVED", "uk_missing_root_parent_shape_gap")
-        if "uk_replay_missing_parent_shape_gap" in adjudications:
-            return ("UNRESOLVED", "uk_missing_parent_shape_gap")
-        if "uk_replay_missing_schedule_branch_gap" in adjudications:
-            return ("UNRESOLVED", "uk_missing_schedule_branch_gap")
-        if "uk_replay_missing_schedule_range_gap" in adjudications:
-            return ("UNRESOLVED", "uk_missing_schedule_range_gap")
-        if "uk_replay_missing_sectionlike_range_gap" in adjudications:
-            return ("UNRESOLVED", "uk_missing_sectionlike_range_gap")
-        if "uk_replay_part_order_shape_gap" in adjudications:
-            return ("UNRESOLVED", "uk_part_order_shape_gap")
-        if "uk_replay_chapter_order_shape_gap" in adjudications:
-            return ("UNRESOLVED", "uk_chapter_order_shape_gap")
-        if "uk_replay_crossheading_target_gap" in adjudications:
-            return ("UNRESOLVED", "uk_crossheading_target_gap")
-        if "uk_replay_broad_schedule_part_table_shape_gap" in adjudications:
-            return ("UNRESOLVED", "uk_broad_schedule_part_table_shape_gap")
-        if "uk_replay_broad_schedule_table_shape_gap" in adjudications:
-            return ("UNRESOLVED", "uk_broad_schedule_table_shape_gap")
-        if "uk_replay_definition_entry_shape_gap" in adjudications:
-            return ("UNRESOLVED", "uk_definition_entry_shape_gap")
-        if "uk_replay_definition_child_shape_gap" in adjudications:
-            return ("UNRESOLVED", "uk_definition_child_shape_gap")
-        if "uk_replay_direct_section_paragraph_carrier_gap" in adjudications:
-            return ("UNRESOLVED", "uk_direct_section_paragraph_carrier_gap")
-        if "uk_replay_paragraph_order_shape_gap" in adjudications:
-            return ("UNRESOLVED", "uk_paragraph_order_shape_gap")
-        if "uk_replay_subparagraph_order_shape_gap" in adjudications:
-            return ("UNRESOLVED", "uk_subparagraph_order_shape_gap")
-        if "uk_replay_item_order_shape_gap" in adjudications:
-            return ("UNRESOLVED", "uk_item_order_shape_gap")
-        if "uk_replay_section_order_shape_gap" in adjudications:
-            return ("UNRESOLVED", "uk_section_order_shape_gap")
-        if "uk_replay_schedule_partition_part_target_gap" in adjudications:
-            return ("UNRESOLVED", "uk_schedule_partition_part_target_gap")
-        if "uk_replay_schedule_partition_target_gap" in adjudications:
-            return ("UNRESOLVED", "uk_schedule_partition_target_gap")
-        if "uk_replay_schedule_p1group_wrapper_carrier_gap" in adjudications:
-            return ("UNRESOLVED", "uk_schedule_p1group_wrapper_carrier_gap")
-        if "uk_replay_schedule_paragraph_carrier_gap" in adjudications:
-            return ("UNRESOLVED", "uk_schedule_paragraph_carrier_gap")
-        if "uk_replay_schedule_entry_repeal_granularity_blocked" in adjudications:
-            return ("UNRESOLVED", "uk_schedule_entry_repeal_granularity_blocked")
-        if "uk_replay_schedule_list_entry_repeal_unresolved" in adjudications:
-            return ("UNRESOLVED", "uk_schedule_list_entry_repeal_unresolved")
-        if "uk_replay_schedule_list_entry_anchor_unresolved" in adjudications:
-            return ("UNRESOLVED", "uk_schedule_list_entry_anchor_unresolved")
-        if "uk_replay_schedule_container_text_target_gap" in adjudications:
-            return ("UNRESOLVED", "uk_schedule_container_text_target_gap")
-        if "uk_replay_schedule_unlabeled_paragraph_target_gap" in adjudications:
-            return ("UNRESOLVED", "uk_schedule_unlabeled_paragraph_target_gap")
-        if "uk_replay_subsection_descendant_target_collapse_gap" in adjudications:
-            return ("UNRESOLVED", "uk_subsection_descendant_target_collapse_gap")
-        if "uk_replay_repeated_form_label_payload_shape_gap" in adjudications:
-            return ("UNRESOLVED", "uk_repeated_form_label_payload_shape_gap")
-        if "uk_replay_payload_shape_gap" in adjudications:
-            return ("UNRESOLVED", "uk_payload_shape_gap")
-        if "uk_replay_malformed_target_placeholder_label_gap" in adjudications:
-            return ("UNRESOLVED", "uk_malformed_target_placeholder_label_gap")
-        if "uk_replay_malformed_target_note_or_crossheading_gap" in adjudications:
-            return ("UNRESOLVED", "uk_malformed_target_note_or_crossheading_gap")
-        if "uk_replay_malformed_target_sectionlike_label_gap" in adjudications:
-            return ("UNRESOLVED", "uk_malformed_target_sectionlike_label_gap")
-        if "uk_replay_malformed_target_schedule_root_label_gap" in adjudications:
-            return ("UNRESOLVED", "uk_malformed_target_schedule_root_label_gap")
-        if "uk_replay_malformed_target_granularity_collapse_gap" in adjudications:
-            return ("UNRESOLVED", "uk_malformed_target_granularity_collapse_gap")
-        if "uk_replay_malformed_target_gap" in adjudications:
-            return ("UNRESOLVED", "uk_malformed_target_gap")
-        if "uk_replay_replace_payload_target_leaf_mismatch_gap" in adjudications:
-            return ("UNRESOLVED", "uk_replace_payload_target_leaf_mismatch_gap")
-        if "uk_replay_table_shape_gap" in adjudications:
-            return ("UNRESOLVED", "uk_table_shape_gap")
-        if "uk_replay_text_target_empty_surface_gap" in adjudications:
-            return ("UNRESOLVED", "uk_text_target_empty_surface_gap")
-        if "uk_replay_text_match_citation_tail_surface_gap" in adjudications:
-            return ("UNRESOLVED", "uk_text_match_citation_tail_surface_gap")
-        if "uk_replay_text_match_normalized_preimage_present_gap" in adjudications:
-            return ("UNRESOLVED", "uk_text_match_normalized_preimage_present_gap")
-        if "uk_replay_text_match_non_substantive_selector_gap" in adjudications:
-            return ("UNRESOLVED", "uk_text_match_non_substantive_selector_gap")
-        if "uk_replay_text_match_multi_fragment_selector_gap" in adjudications:
-            return ("UNRESOLVED", "uk_text_match_multi_fragment_selector_gap")
-        if "uk_replay_text_match_synthetic_selector_gap" in adjudications:
-            return ("UNRESOLVED", "uk_text_match_synthetic_selector_gap")
-        if "uk_replay_text_patch_preimage_drift_multi_prior_same_target" in adjudications:
-            return ("UNRESOLVED", "uk_text_patch_preimage_drift_multi_prior_same_target")
-        if "uk_replay_repealed_target_gap" in adjudications:
-            return ("UNRESOLVED", "uk_repealed_target_gap")
-        return ("UNRESOLVED", "uk_empty_schedule_shape_gap")
+        for adjudication_kind, residual_kind in _UK_REPLAY_SOURCE_SHAPE_RESIDUAL_KIND_PRIORITY:
+            if adjudication_kind in adjudications:
+                return ("UNRESOLVED", residual_kind)
+        return ("UNRESOLVED", _UK_REPLAY_SOURCE_SHAPE_RESIDUAL_DEFAULT_KIND)
     if "uk_replay_text_match_already_rewritten" in adjudications:
         if replay_only and oracle_only:
             return ("UNRESOLVED", "uk_text_match_already_rewritten_mixed_residual_eids")
