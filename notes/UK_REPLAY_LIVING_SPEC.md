@@ -1482,6 +1482,14 @@ Current block-substitution context invariant:
   `occurrence=2`. This is only allowed for explicit quoted anchors and quoted
   insertion payloads. Current witness: `asp/2003/1` affected `s. 61(c)(iv)` by
   `asp/2005/12 Sch. 1 para. 15(5)`.
+- definition-scoped range-to-end substitutions may also preserve explicit
+  source occurrence, e.g. `in the definition of "joint fire board" for the
+  words from "board", where it secondly occurs, to the end substitute "..."`.
+  Lowering emits
+  `uk_effect_definition_range_to_end_occurrence_substitution_text_patch`, and
+  replay uses the requested occurrence within the definition entry instead of
+  requiring the start anchor to be unique. Current witness: `asp/2003/1`
+  affected `s. 61` by `asp/2005/5 Sch. 3 para. 23(5)`.
 - the parser may lower `after the definition of "X" insert- <block text>` and
   `after the definition of "X", insert- <block text>` to a
   `TEXT_AFTER_DEFINITION_X` patch using the named rule

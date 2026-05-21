@@ -1080,6 +1080,21 @@ def test_parse_fragment_substitution_preserves_definition_context_for_range_to_e
     }
 
 
+def test_parse_fragment_substitution_preserves_definition_range_to_end_occurrence() -> None:
+    subs = parse_fragment_substitution(
+        "in the definition of \u201cjoint fire board\u201d for the words from "
+        "\u201cboard\u201d, where it secondly occurs, to the end substitute "
+        "\u201cand rescue board constituted by an amalgamation scheme\u201d ."
+    )
+
+    assert subs[0] == {
+        "original": "TEXT_IN_DEFINITION_joint fire board\x1fFROM\x1fboard\x1fTO_END",
+        "replacement": "and rescue board constituted by an amalgamation scheme",
+        "occurrence": "2",
+        "rule_id": "uk_effect_definition_range_to_end_occurrence_substitution_text_patch",
+    }
+
+
 def test_parse_fragment_substitution_handles_unprefixed_anchor_to_end_substitution() -> None:
     subs = parse_fragment_substitution(
         "ii in sub-paragraph (2)(a), from \u201csection 28\u201d to the end substitute "

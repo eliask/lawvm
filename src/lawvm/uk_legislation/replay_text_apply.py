@@ -589,6 +589,7 @@ def _rewrite_definition_range_to_end_text(
     term: str,
     start_anchor: str,
     replacement: str,
+    occurrence: int,
     allow_punctuation_spacing: bool,
     allow_word_punctuation_elision: bool,
 ) -> tuple[str, bool]:
@@ -608,9 +609,12 @@ def _rewrite_definition_range_to_end_text(
         allow_word_punctuation_elision=allow_word_punctuation_elision,
     )
     start_matches = list(re.finditer(start_pattern, entry_text, flags=re.I | re.S))
-    if len(start_matches) != 1:
+    start_ordinal = occurrence if occurrence > 0 else 1
+    if len(start_matches) < start_ordinal:
         return text, False
-    start_match = start_matches[0]
+    if occurrence <= 0 and len(start_matches) != 1:
+        return text, False
+    start_match = start_matches[start_ordinal - 1]
     terminator = str(definition_match.group("terminator") or "")
     replacement_text = replacement.strip()
     if terminator and not replacement_text.endswith(terminator):
@@ -1571,6 +1575,7 @@ class UKReplayTextApplyMixin:
                         term=term,
                         start_anchor=start_anchor,
                         replacement=replacement,
+                        occurrence=occurrence,
                         allow_punctuation_spacing=allow_punctuation_spacing,
                         allow_word_punctuation_elision=allow_word_punctuation_elision,
                     ),

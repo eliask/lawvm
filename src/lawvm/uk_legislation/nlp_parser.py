@@ -355,6 +355,30 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
             }
         )
 
+    matches_definition_range_to_end_occurrence_substituted = re.finditer(
+        r"in the definition of [“\"'‘](?P<term>.*?)[”\"'’],?\s+"
+        r"for (?:the )?words? from [“\"'‘](?P<start>.*?)[”\"'’],?\s+"
+        rf"where\s+(?:(?:it|they|those words?)\s+)?"
+        rf"(?P<ordinal>{_ORDINAL_OCCURRENCE_WORDS})\s+"
+        r"(?:occurs?|occurring|appear)s?,?\s+to the end"
+        r"(?: of (?:the )?(?:definition|subsection|paragraph|sub-paragraph|section))?"
+        r",?\s+substitute\s+[“\"'‘](?P<replacement>.*?)[”\"'’]",
+        text,
+        re.I,
+    )
+    for m in matches_definition_range_to_end_occurrence_substituted:
+        subs.append(
+            {
+                "original": (
+                    f"TEXT_IN_DEFINITION_{m.group('term').strip()}"
+                    f"{US}FROM{US}{m.group('start').strip()}{US}TO_END"
+                ),
+                "replacement": m.group("replacement").strip(),
+                "occurrence": _ORDINAL_OCCURRENCES[m.group("ordinal").lower()],
+                "rule_id": "uk_effect_definition_range_to_end_occurrence_substitution_text_patch",
+            }
+        )
+
     matches_same_anchor_adjacent_occurrence_range_substituted = re.finditer(
         r"for (?:the )?words? from [“\"‘](?P<start>.*?)[”\"’],?"
         r"\s+where it (?P<start_ordinal>first|1st|second|2nd|third|3rd|fourth|4th)\s+occurs,?"
