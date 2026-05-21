@@ -336,7 +336,7 @@ from lawvm.uk_legislation.source_payload_elaboration import (
 from lawvm.uk_legislation.source_parent_payloads import (
     _source_after_paragraph_insert_labelled_series,
 )
-from lawvm.uk_legislation.source_structural_sibling import _structural_sibling_insert_from_source
+from lawvm.uk_legislation.source_structural_sibling import lower_source_structural_sibling_insert
 from lawvm.uk_legislation.source_table_entry_paragraph import (
     UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID as _UK_SOURCE_CARRIED_TABLE_ENTRY_PARAGRAPH_RULE_ID,
 )
@@ -1251,62 +1251,20 @@ def compile_effect_to_ir_ops(
                 },
             )
 
-        structural_sibling_insert_detail = (
-            _structural_sibling_insert_from_source(
-                extracted_text=extracted_text,
-                target=target,
-            )
-            if curr_action == "insert"
-            and effect_type in {"words inserted", "word inserted"}
-            and extracted_text
-            else None
+        structural_sibling_insert = lower_source_structural_sibling_insert(
+            effect=effect,
+            effect_type=effect_type,
+            curr_action=curr_action,
+            target=target,
+            content_ir=content_ir,
+            target_ref=t_str,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            lowering_rejections_out=lowering_rejections_out,
         )
-        if structural_sibling_insert_detail is not None:
-            target = canonicalize_uk_address(
-                LegalAddress(
-                    path=(
-                        *target.path,
-                        (
-                            structural_sibling_insert_detail["child_kind"],
-                            structural_sibling_insert_detail["inserted_label"],
-                        ),
-                    )
-                )
-            )
-            content_ir = {
-                "kind": structural_sibling_insert_detail["child_kind"],
-                "label": structural_sibling_insert_detail["inserted_label"],
-                "text": structural_sibling_insert_detail["inserted_text"],
-                "attrs": {
-                    "source_rule_id": "uk_effect_structural_sibling_insert_lowered",
-                    "source_anchor_child_label": structural_sibling_insert_detail["anchor_label"],
-                    "source_child_kind": structural_sibling_insert_detail["source_kind"],
-                },
-                "children": [],
-            }
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id="uk_effect_structural_sibling_insert_lowered",
-                family="source_context_elaboration",
-                reason_code="source_owned_structural_sibling_insert",
-                reason=(
-                    "UK source text explicitly inserts a new labelled structural "
-                    "sibling after a named child of the affected parent; lowering "
-                    "emits a child insert at the source-owned sibling target "
-                    "instead of appending payload text to the anchor."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "original_target_ref": t_str,
-                    "source_anchor_child_label": structural_sibling_insert_detail["anchor_label"],
-                    "source_child_kind": structural_sibling_insert_detail["source_kind"],
-                    "inserted_child_kind": structural_sibling_insert_detail["child_kind"],
-                    "inserted_child_label": structural_sibling_insert_detail["inserted_label"],
-                    "target": str(target),
-                },
-            )
+        target = structural_sibling_insert.target
+        content_ir = structural_sibling_insert.content_ir
+        structural_sibling_insert_detail = structural_sibling_insert.detail
 
         amendment_program_inserted_parent_structural_insert = (
             _amendment_program_inserted_parent_structural_insert(

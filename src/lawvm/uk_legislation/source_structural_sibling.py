@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
-from typing import Optional
+import xml.etree.ElementTree as ET
+from typing import Any, Optional
 
 from lawvm.core.ir import LegalAddress
 from lawvm.uk_legislation.addressing import (
@@ -11,6 +13,8 @@ from lawvm.uk_legislation.addressing import (
     _looks_like_lettered_item_label,
 )
 from lawvm.uk_legislation.canonicalize import canonicalize_uk_address
+from lawvm.uk_legislation.effects import UKEffectRecord
+from lawvm.uk_legislation.lowering_records import _append_uk_effect_lowering_observation
 from lawvm.uk_legislation.uk_grafter import _clean_num
 
 
@@ -22,6 +26,17 @@ _SOURCE_CARRIED_STRUCTURAL_SIBLING_INSERT_RE = re.compile(
     r"(?P<inserted_text>.+?)\s*$",
     flags=re.I | re.S,
 )
+
+
+@dataclass(frozen=True)
+class UKStructuralSiblingInsertLowering:
+    target: LegalAddress
+    content_ir: Optional[dict[str, Any]]
+    detail: Optional[dict[str, str]]
+
+    @property
+    def applied(self) -> bool:
+        return self.detail is not None
 
 
 def _normalize_structural_sibling_source_kind(text: str) -> str:
@@ -101,3 +116,80 @@ def _structural_sibling_insert_from_source(
         "new_target": str(new_target),
         "source_kind": _normalize_structural_sibling_source_kind(match.group("source_kind")),
     }
+
+
+def lower_source_structural_sibling_insert(
+    *,
+    effect: UKEffectRecord,
+    effect_type: str,
+    curr_action: str,
+    target: LegalAddress,
+    content_ir: Optional[dict[str, Any]],
+    target_ref: str,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> UKStructuralSiblingInsertLowering:
+    detail = (
+        _structural_sibling_insert_from_source(
+            extracted_text=extracted_text,
+            target=target,
+        )
+        if curr_action == "insert"
+        and effect_type in {"words inserted", "word inserted"}
+        and extracted_text
+        else None
+    )
+    if detail is None:
+        return UKStructuralSiblingInsertLowering(target=target, content_ir=content_ir, detail=None)
+
+    lowered_target = canonicalize_uk_address(
+        LegalAddress(
+            path=(
+                *target.path,
+                (
+                    detail["child_kind"],
+                    detail["inserted_label"],
+                ),
+            )
+        )
+    )
+    lowered_content_ir = {
+        "kind": detail["child_kind"],
+        "label": detail["inserted_label"],
+        "text": detail["inserted_text"],
+        "attrs": {
+            "source_rule_id": "uk_effect_structural_sibling_insert_lowered",
+            "source_anchor_child_label": detail["anchor_label"],
+            "source_child_kind": detail["source_kind"],
+        },
+        "children": [],
+    }
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id="uk_effect_structural_sibling_insert_lowered",
+        family="source_context_elaboration",
+        reason_code="source_owned_structural_sibling_insert",
+        reason=(
+            "UK source text explicitly inserts a new labelled structural "
+            "sibling after a named child of the affected parent; lowering "
+            "emits a child insert at the source-owned sibling target "
+            "instead of appending payload text to the anchor."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "original_target_ref": target_ref,
+            "source_anchor_child_label": detail["anchor_label"],
+            "source_child_kind": detail["source_kind"],
+            "inserted_child_kind": detail["child_kind"],
+            "inserted_child_label": detail["inserted_label"],
+            "target": str(lowered_target),
+        },
+    )
+    return UKStructuralSiblingInsertLowering(
+        target=lowered_target,
+        content_ir=lowered_content_ir,
+        detail=detail,
+    )
