@@ -26,6 +26,32 @@ def _normalized_replay_subtree_text(node: IRNode | UKMutableNode) -> str:
     return _normalize_text_for_grounding(" ".join(parts))
 
 
+def _node_text_contains_text(node: UKMutableNode, needle: str) -> bool:
+    """Return whether *needle* is present in one node text field only."""
+    normalized_needle = " ".join((needle or "").split())
+    if not normalized_needle:
+        return False
+    text = node.text or ""
+    pattern = re.escape(normalized_needle).replace(r"\ ", r"\s+")
+    return normalized_needle in text or bool(re.search(pattern, text, flags=re.I))
+
+
+def _subtree_contains_text(node: UKMutableNode, needle: str) -> bool:
+    """Return whether *needle* is already present in the target subtree text."""
+    normalized_needle = " ".join((needle or "").split())
+    if not normalized_needle:
+        return False
+    pattern = re.escape(normalized_needle).replace(r"\ ", r"\s+")
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        text = current.text or ""
+        if normalized_needle in text or re.search(pattern, text, flags=re.I):
+            return True
+        stack.extend(reversed(current.children))
+    return False
+
+
 def _compact_normalized_text(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
 

@@ -222,10 +222,12 @@ from lawvm.uk_legislation.replay_text import (
     _normalized_replay_subtree_text,
     _normalized_replacement_text_present,
     _normalized_text_match_present,
+    _node_text_contains_text,
     _parenthetical_omission_text_selector,
     _range_anchor_matches,
     _replay_subtree_text_preview,
     _schedule_entry_parenthetical_paragraph_anchor,
+    _subtree_contains_text,
     _synthetic_text_selector,
     _text_patch_replacement_preserves_anchor,
 )
@@ -7684,7 +7686,7 @@ class UKReplayExecutor:
         if parent_node is None or getattr(parent_node, "children", None):
             return False
         match_text = text_patch.selector.match_text
-        if not self._node_text_contains_text(parent_node, match_text):
+        if not _node_text_contains_text(parent_node, match_text):
             return False
         rebuilt, applied = self._apply_text_replace_on_node_text_only(
             parent_node,
@@ -7753,7 +7755,7 @@ class UKReplayExecutor:
         if parent_node is None:
             return False
         match_text = text_patch.selector.match_text
-        if not self._node_text_contains_text(parent_node, match_text):
+        if not _node_text_contains_text(parent_node, match_text):
             return False
         rebuilt, applied = self._apply_text_replace_on_node_text_only(
             parent_node,
@@ -10533,9 +10535,9 @@ class UKReplayExecutor:
                         text_patch.kind is TextPatchKindEnum.REPLACE
                         and bool(replacement)
                         and (
-                            self._node_text_contains_text(node, replacement)
+                            _node_text_contains_text(node, replacement)
                             if heading_carrier is not None
-                            else self._subtree_contains_text(node, replacement)
+                            else _subtree_contains_text(node, replacement)
                         )
                     )
                     if already_rewritten:
@@ -13032,30 +13034,6 @@ class UKReplayExecutor:
                             self._replace_node_in_statute(node, rebuilt)
                             return rebuilt, True
             return node, False
-
-    def _subtree_contains_text(self, node: UKMutableNode, needle: str) -> bool:
-        """Return whether *needle* is already present in the target subtree text."""
-        normalized_needle = " ".join((needle or "").split())
-        if not normalized_needle:
-            return False
-        pattern = re.escape(normalized_needle).replace(r"\ ", r"\s+")
-        stack = [node]
-        while stack:
-            current = stack.pop()
-            text = current.text or ""
-            if normalized_needle in text or re.search(pattern, text, flags=re.I):
-                return True
-            stack.extend(reversed(current.children))
-        return False
-
-    def _node_text_contains_text(self, node: UKMutableNode, needle: str) -> bool:
-        """Return whether *needle* is present in one node text field only."""
-        normalized_needle = " ".join((needle or "").split())
-        if not normalized_needle:
-            return False
-        text = node.text or ""
-        pattern = re.escape(normalized_needle).replace(r"\ ", r"\s+")
-        return normalized_needle in text or bool(re.search(pattern, text, flags=re.I))
 
     def _apply_text_substitution_on_node(self, node: UKMutableNode, subs: list[dict]) -> UKMutableNode:
         text = node.text or ""
