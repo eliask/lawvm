@@ -104,7 +104,10 @@ from lawvm.uk_legislation.effect_schedule_lowering import (
     try_lower_schedule_list_entry_mutation,
     try_lower_schedule_table_end_rows_insert,
 )
-from lawvm.uk_legislation.effect_table_lowering import try_lower_table_column_insert
+from lawvm.uk_legislation.effect_table_lowering import (
+    try_lower_table_column_insert,
+    try_lower_table_row_insert,
+)
 from lawvm.uk_legislation.effect_target_prelude import (
     append_target_shape_observations,
     expand_single_target_prelude,
@@ -227,15 +230,10 @@ from lawvm.uk_legislation.table_selectors import (
     UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID as _UK_TABLE_ENTRY_LABEL_TEXT_RULE_ID,
     UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID as _UK_TABLE_ENTRY_RELATING_COLUMN_TEXT_RULE_ID,
     UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID as _UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID,
-    UK_TABLE_ENTRY_ROW_INSERT_RULE_ID as _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
-    _uk_schedule_list_entry_table_payload,
-    _uk_single_logical_table_entry_group_payload,
-    _uk_single_table_row_payload,
     _uk_broad_table_entry_instruction,
     _uk_parent_target_before_table_marker,
     _uk_table_column_text_patch_selector,
     _uk_table_entry_inline_text_selector,
-    _uk_table_entry_row_insert_selector,
 )
 from lawvm.uk_legislation.substitution_metadata import (
     UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID as _UK_SOURCE_LABEL_CHANGING_SUBSTITUTION_RULE_ID,
@@ -814,325 +812,23 @@ def compile_effect_to_ir_ops(
             if table_column_insert.op is not None:
                 ops.append(table_column_insert.op)
             continue
-        table_row_insert_selector = (
-            _uk_table_entry_row_insert_selector(
-                target_ref=t_str,
-                target=target,
-                extracted_text=extracted_text,
-                extracted_el=extracted_el,
-                source_root=source_root,
-            )
-            if action == "insert"
-            else None
+        table_row_insert = try_lower_table_row_insert(
+            effect=effect,
+            action=action,
+            t_str=t_str,
+            target=target,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            source_root=source_root,
+            sequence=sequence,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            original_targets_str=original_targets_str,
+            lowering_rejections_out=lowering_rejections_out,
         )
-        if table_row_insert_selector is not None:
-            table_marker_parent = _uk_parent_target_before_table_marker(target)
-            parent_target = table_marker_parent
-            if (
-                parent_target is None
-                and table_row_insert_selector.get("source_names_table")
-                and _addr_leaf_kind(target)
-                in {"section", "subsection", "paragraph", "schedule", "part", "chapter"}
-            ):
-                parent_target = target
-            if (
-                parent_target is None
-                and str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows"
-                and _addr_leaf_kind(target) == "subsection"
-            ):
-                parent_target = target
-            if (
-                parent_target is not None
-                and len(parent_target.path) >= 2
-                and parent_target.path[-1] == ("subsection", "1")
-                and parent_target.path[-2][0] == "section"
-            ):
-                table_row_insert_selector = {
-                    **table_row_insert_selector,
-                    "allow_implicit_subsection_one_table": True,
-                    "table_marker_parent_target": str(parent_target),
-                }
-                parent_target = LegalAddress(path=parent_target.path[:-1], special=parent_target.special)
-            if parent_target is None:
-                _append_uk_effect_lowering_rejection(
-                    lowering_rejections_out,
-                    rule_id="uk_effect_table_entry_row_insert_target_unresolved",
-                    family="source_table_elaboration",
-                    reason_code="table_marker_parent_missing",
-                    reason=(
-                        "UK table-row insertion source names a table entry, "
-                        "but the affected target could not be reduced to a "
-                        "containing provision for table-row replay."
-                    ),
-                    effect=effect,
-                    extracted_el=extracted_el,
-                    extracted_text=extracted_text,
-                    detail={"target_ref": t_str, "target": str(target), **table_row_insert_selector},
-                )
-                continue
-            entry_label_table_rows = (
-                str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
-                and str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows"
-            )
-            logical_entry_group_payload = (
-                str(table_row_insert_selector.get("source_payload_mode") or "")
-                == "logical_table_entry_group"
-            )
-            needs_single_source_row_payload = (
-                str(table_row_insert_selector.get("source_payload_mode") or "") == "single_table_row"
-                or (
-                    str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
-                    and not entry_label_table_rows
-                )
-            )
-            source_row_payload = (
-                _uk_single_table_row_payload(extracted_el)
-                if needs_single_source_row_payload
-                else None
-            )
-            source_table_payload = (
-                _uk_schedule_list_entry_table_payload(extracted_el)
-                if str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows"
-                else None
-            )
-            source_logical_entry_group_payload = (
-                _uk_single_logical_table_entry_group_payload(extracted_el)
-                if logical_entry_group_payload
-                else None
-            )
-            if needs_single_source_row_payload and source_row_payload is None:
-                _append_uk_effect_lowering_rejection(
-                    lowering_rejections_out,
-                    rule_id=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
-                    family="source_table_elaboration",
-                    reason_code=(
-                        "explicit_table_entry_label_insert_without_single_row_payload"
-                        if str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
-                        else "deictic_table_entry_insert_without_single_row_payload"
-                    ),
-                    reason=(
-                        "UK table-row insertion resolves a table-entry anchor, but "
-                        "the source does not carry exactly one BlockAmendment "
-                        "table row payload; lowering blocks instead of "
-                        "inventing a row from flattened text."
-                    ),
-                    effect=effect,
-                    extracted_el=extracted_el,
-                    extracted_text=extracted_text,
-                    detail={
-                        "target_ref": t_str,
-                        "original_target": str(target),
-                        "containing_target": str(parent_target),
-                        "entry_shape": (
-                            "deictic_table_entry"
-                            if str(table_row_insert_selector.get("source_payload_mode") or "")
-                            == "single_table_row"
-                            else "numbered_entry"
-                        ),
-                        **table_row_insert_selector,
-                    },
-                )
-                continue
-            if logical_entry_group_payload and source_logical_entry_group_payload is None:
-                _append_uk_effect_lowering_rejection(
-                    lowering_rejections_out,
-                    rule_id=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
-                    family="source_table_elaboration",
-                    reason_code="deictic_table_entry_insert_without_single_logical_entry_payload",
-                    reason=(
-                        "UK table-row insertion resolves a deictic table-entry "
-                        "anchor, but the source table payload is not exactly one "
-                        "logical entry group owned by a rowspanning first cell."
-                    ),
-                    effect=effect,
-                    extracted_el=extracted_el,
-                    extracted_text=extracted_text,
-                    detail={
-                        "target_ref": t_str,
-                        "original_target": str(target),
-                        "containing_target": str(parent_target),
-                        "entry_shape": "deictic_logical_table_entry_group",
-                        **table_row_insert_selector,
-                    },
-                )
-                continue
-            if (
-                str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows"
-                and source_table_payload is None
-            ):
-                _append_uk_effect_lowering_rejection(
-                    lowering_rejections_out,
-                    rule_id=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
-                    family="source_table_elaboration",
-                    reason_code="explicit_table_entry_group_insert_without_table_payload",
-                    reason=(
-                        "UK table-entry group insertion names an entry anchor, "
-                        "but the source does not carry a BlockAmendment table "
-                        "payload; lowering blocks instead of inventing table "
-                        "rows from flattened text."
-                    ),
-                    effect=effect,
-                    extracted_el=extracted_el,
-                    extracted_text=extracted_text,
-                    detail={
-                        "target_ref": t_str,
-                        "original_target": str(target),
-                        "containing_target": str(parent_target),
-                        **table_row_insert_selector,
-                    },
-                )
-                continue
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
-                family="source_table_elaboration",
-                reason_code="explicit_table_entry_row_insert_selector",
-                reason=(
-                    "UK table-row insertion lowered as a typed row insert; "
-                    "replay must resolve the source-owned table row before "
-                    "mutating table structure."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail={
-                    "target_ref": t_str,
-                    "original_target": str(target),
-                    "containing_target": str(parent_target),
-                    **table_row_insert_selector,
-                },
-            )
-            if str(table_row_insert_selector.get("source_payload_mode") or "") == "table_rows":
-                assert source_table_payload is not None
-                payload_node = dc_replace(
-                    source_table_payload,
-                    attrs={
-                        **dict(source_table_payload.attrs or {}),
-                        "source_rule_id": "uk_table_entry_group_insert_payload"
-                        if str(table_row_insert_selector.get("selector_mode") or "") == "entry_group_heading"
-                        else "uk_table_entry_label_insert_payload",
-                        "anchor_direction": str(table_row_insert_selector["direction"]),
-                        **(
-                            {
-                                "relating_text": str(table_row_insert_selector["relating_text"]),
-                            }
-                            if str(table_row_insert_selector.get("selector_mode") or "")
-                            == "entry_group_heading"
-                            else {
-                                "anchor_entry_label": str(
-                                    table_row_insert_selector["anchor_entry_label"]
-                                ),
-                            }
-                        ),
-                    },
-                )
-            elif logical_entry_group_payload:
-                assert source_logical_entry_group_payload is not None
-                payload_node = dc_replace(
-                    source_logical_entry_group_payload,
-                    attrs={
-                        **dict(source_logical_entry_group_payload.attrs or {}),
-                        "source_rule_id": "uk_table_entry_logical_group_insert_payload",
-                        "relating_text": str(table_row_insert_selector["relating_text"]),
-                        "source_context": str(table_row_insert_selector.get("source_context") or ""),
-                    },
-                )
-            elif (
-                str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
-                or str(table_row_insert_selector.get("source_payload_mode") or "") == "single_table_row"
-            ):
-                assert source_row_payload is not None
-                payload_node = dc_replace(
-                    source_row_payload,
-                    attrs={
-                        **dict(source_row_payload.attrs or {}),
-                        "source_rule_id": "uk_table_entry_row_insert_payload",
-                        **(
-                            {
-                                "anchor_entry_label": str(
-                                    table_row_insert_selector["anchor_entry_label"]
-                                ),
-                            }
-                            if str(table_row_insert_selector.get("selector_mode") or "") == "entry_label"
-                            else {
-                                "relating_text": str(table_row_insert_selector["relating_text"]),
-                                "source_context": str(
-                                    table_row_insert_selector.get("source_context") or ""
-                                ),
-                            }
-                        ),
-                    },
-                )
-            else:
-                column_index = int(table_row_insert_selector["column_index"])
-                payload_node = IRNode(
-                    kind=IRNodeKind.ROW,
-                    label=None,
-                    attrs={
-                        "source_rule_id": "uk_table_entry_row_insert_payload",
-                        "target_column_index": str(column_index),
-                        "relating_text": str(table_row_insert_selector["relating_text"]),
-                    },
-                    children=tuple(
-                        IRNode(
-                            kind=IRNodeKind.CELL,
-                            label=None,
-                            text=(
-                                str(table_row_insert_selector["inserted_text"])
-                                if cell_index == column_index
-                                else ""
-                            ),
-                            attrs={
-                                "source_rule_id": "uk_table_entry_row_insert_cell",
-                                "column_index": str(cell_index),
-                            },
-                        )
-                        for cell_index in range(1, column_index + 1)
-                    ),
-                )
-            src = OperationSource(
-                statute_id=effect.affecting_act_id,
-                title=effect.affecting_title,
-                effective=effect_witness.applicability.effective_date or "",
-                raw_text=extraction_witness.extracted_text,
-            )
-            target_expansion_witness = _uk_target_expansion_witness(
-                t_str,
-                [t_str],
-                original_targets_str=original_targets_str,
-            )
-            lowered_witness = UKLoweredOperationWitness(
-                op_id=effect.effect_id,
-                sequence=sequence,
-                action=StructuralAction.INSERT,
-                target=parent_target,
-                payload=payload_node,
-                source=src,
-                effect_witness=effect_witness,
-                extraction_witness=extraction_witness,
-                target_expansion_witness=target_expansion_witness,
-                text_rewrite_witness=None,
-                insertion_anchor_witness=None,
-            )
-            ops.append(
-                LegalOperation(
-                    op_id=lowered_witness.op_id,
-                    sequence=lowered_witness.sequence,
-                    action=StructuralAction.INSERT,
-                    target=parent_target,
-                    payload=_payload_with_rewrite_witness(payload_node, lowered_witness),
-                    source=src,
-                    group_id=_uk_temporal_group_id(effect),
-                    provenance_tags=(
-                        *_uk_lowered_op_provenance_tags(lowered_witness),
-                        (
-                            f"{_NOTE_TABLE_ROW_INSERT_SELECTOR}"
-                            f"{json.dumps(table_row_insert_selector, ensure_ascii=False)}"
-                        ),
-                    ),
-                    witness_rule_id=_UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
-                )
-            )
+        if table_row_insert.handled:
+            if table_row_insert.op is not None:
+                ops.append(table_row_insert.op)
             continue
         repeal_table_structural_repeal = _uk_table_driven_repeal_table_structural_repeal(
             effect=effect,
