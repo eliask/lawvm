@@ -216,7 +216,10 @@ from lawvm.uk_legislation.source_context import (
     _extract_from_affecting_source_context_with_observations,
     _select_enacted_source_for_current_shell,
 )
-from lawvm.uk_legislation.source_action_inference import infer_uk_effect_action_from_source
+from lawvm.uk_legislation.source_action_inference import (
+    append_no_supported_action_rejection,
+    infer_uk_effect_action_from_source,
+)
 from lawvm.uk_legislation.source_text_reclassifications import (
     _quote_only_definition_list_omission_payload_match,
     _quote_only_omission_payload_match,
@@ -439,19 +442,12 @@ def compile_effect_to_ir_ops(
     source_parent_at_end_added_payload = action_inference.source_parent_at_end_added_payload
 
     if not action:
-        _append_uk_effect_lowering_rejection(
-            lowering_rejections_out,
-            rule_id="uk_effect_lowering_no_supported_action_rejected",
-            family="unsupported_or_unresolved_action",
-            reason_code="no_supported_action",
-            reason=(
-                "UK effect lowered to no replay operations because no supported "
-                "action could be inferred"
-            ),
+        append_no_supported_action_rejection(
             effect=effect,
+            effect_type=effect_type,
             extracted_el=extracted_el,
             extracted_text=extracted_text,
-            detail={"effect_type_normalized": effect_type},
+            lowering_rejections_out=lowering_rejections_out,
         )
         return []
 
