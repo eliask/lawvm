@@ -443,6 +443,7 @@ class UKReplayTextActionApplyMixin:
             applied_replacement = replacement
             applied_rule_id = ""
             for recovery_rule_id in recovery_rule_ids:
+                source_shape = None
                 if recovery_rule_id == "uk_replay_definition_predicate_shall_construed_normalized":
                     message = (
                         "UK replay applied definition-entry text op after recognizing "
@@ -506,6 +507,15 @@ class UKReplayTextActionApplyMixin:
                     )
                     family = "text_rewrite_recovery"
                     strict_disposition = "record"
+                elif recovery_rule_id == "uk_replay_source_carried_child_tail_text_rewrite_applied":
+                    message = (
+                        "UK replay applied a source-carried child-tail text rewrite "
+                        "against the collapsed parent text after proving the named "
+                        "child is the final child."
+                    )
+                    family = "text_rewrite_recovery"
+                    strict_disposition = "record"
+                    source_shape = "source_carried_child_tail_selector"
                 else:
                     message = (
                         "UK replay applied text-based op after normalizing "
@@ -513,21 +523,24 @@ class UKReplayTextActionApplyMixin:
                     )
                     family = "text_match_recovery"
                     strict_disposition = "record"
+                detail = {
+                    "action": _action_name(op.action),
+                    "target": str(target),
+                    "text_match": text_patch.selector.match_text,
+                    "replacement_text": replacement,
+                    "family": family,
+                    "blocking": False,
+                    "strict_disposition": strict_disposition,
+                    "quirks_disposition": "record",
+                }
+                if source_shape is not None:
+                    detail["source_shape"] = source_shape
                 _append_uk_replay_adjudication(
                     self.adjudications_out,
                     kind=recovery_rule_id,
                     message=message,
                     op=op,
-                    detail={
-                        "action": _action_name(op.action),
-                        "target": str(target),
-                        "text_match": text_patch.selector.match_text,
-                        "replacement_text": replacement,
-                        "family": family,
-                        "blocking": False,
-                        "strict_disposition": strict_disposition,
-                        "quirks_disposition": "record",
-                    },
+                    detail=detail,
                 )
             if not applied:
                 if heading_carrier is not None:

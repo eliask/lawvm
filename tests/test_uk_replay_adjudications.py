@@ -6228,7 +6228,14 @@ def test_executor_deletes_source_carried_child_tail_from_collapsed_parent_text()
         "eligible for appointment as an auditor, or",
         "a member of a body of accountants;",
     ]
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_source_carried_child_tail_text_rewrite_applied"
+    ]
+    assert adjudications[0].detail["text_match"] == "TEXT_AFTER_CHILD_TAIL_paragraph_b"
+    assert adjudications[0].detail["family"] == "text_rewrite_recovery"
+    assert adjudications[0].detail["blocking"] is False
+    assert adjudications[0].detail["strict_disposition"] == "record"
+    assert adjudications[0].detail["source_shape"] == "source_carried_child_tail_selector"
 
 
 def test_executor_replaces_source_carried_child_tail_in_collapsed_parent_text() -> None:
@@ -6280,7 +6287,9 @@ def test_executor_replaces_source_carried_child_tail_in_collapsed_parent_text() 
     subsection = executor.statute.body.children[0].children[0]
     assert subsection.text == "The court may impose a sentence for— for a term exceeding the applicable limit"
     assert [child.label for child in subsection.children] == ["a", "b"]
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_source_carried_child_tail_text_rewrite_applied"
+    ]
 
 
 def test_executor_replaces_source_carried_child_tail_when_tail_is_not_connector_word() -> None:
@@ -6338,7 +6347,9 @@ def test_executor_replaces_source_carried_child_tail_when_tail_is_not_connector_
         "for a term exceeding the applicable limit in respect of any one offence"
     )
     assert [child.label for child in subsection.children] == ["a", "b"]
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_source_carried_child_tail_text_rewrite_applied"
+    ]
 
 
 def test_executor_rejects_child_tail_delete_when_anchor_is_not_last_child() -> None:
@@ -6455,7 +6466,9 @@ def test_executor_deletes_source_carried_subparagraph_tail_from_collapsed_parent
     paragraph = executor.statute.body.children[0].children[0].children[0]
     assert paragraph.text == "The condition is met if—"
     assert [child.label for child in paragraph.children] == ["i", "ii"]
-    assert adjudications == []
+    assert [finding.kind for finding in adjudications] == [
+        "uk_replay_source_carried_child_tail_text_rewrite_applied"
+    ]
 
 
 def test_executor_rejects_subparagraph_tail_delete_when_anchor_is_not_last_child() -> None:

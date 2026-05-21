@@ -315,6 +315,7 @@ UK_REPLAY_NONBLOCKING_OBSERVATION_KINDS = frozenset(
         "uk_replay_table_entry_multi_cell_text_patch_resolved",
         "uk_replay_source_label_changing_substitution_resolved",
         "uk_replay_source_carried_labeled_child_text_substitution_recovered",
+        "uk_replay_source_carried_child_tail_text_rewrite_applied",
         "uk_replay_source_carried_structured_tail_substitution_recovered",
         "uk_replay_same_source_text_patch_overlap_disjoint",
         "uk_replay_crossheading_and_structural_repeal_resolved",
