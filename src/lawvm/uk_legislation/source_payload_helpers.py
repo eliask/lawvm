@@ -27,6 +27,55 @@ UK_NONADDRESSABLE_SCHEDULE_PART_INSERT_TARGET_RULE_ID = (
 )
 
 
+def _direct_payload_text(el: ET.Element) -> str:
+    """Collect direct/local text for extracted payload compilation only."""
+    structural_tags = {
+        "part",
+        "chapter",
+        "euchapter",
+        "p1group",
+        "section",
+        "p1",
+        "article",
+        "eusection",
+        "conventionrights",
+        "pblock",
+        "p2",
+        "p3",
+        "p4",
+        "subsection",
+        "paragraph",
+        "schedule",
+    }
+    transparent_tags = {
+        "pnumber",
+        "number",
+        "title",
+        "commentaryref",
+        "blockamendment",
+        "inlineamendment",
+    }
+    editorial_tags = {"commentary", "citation", "citationsubref"}
+
+    def _collect_local(node: ET.Element) -> list[str]:
+        parts: list[str] = []
+        if node.text:
+            parts.append(node.text)
+        for child in node:
+            ct = _tag(child).lower()
+            if ct in editorial_tags:
+                pass
+            elif ct in structural_tags or ct in transparent_tags:
+                pass
+            else:
+                parts.extend(_collect_local(child))
+            if child.tail:
+                parts.append(child.tail)
+        return parts
+
+    return " ".join(" ".join(_collect_local(el)).split())
+
+
 def _inserted_section_p1group_heading_text(
     actual_el: ET.Element,
     extracted_el: ET.Element,
