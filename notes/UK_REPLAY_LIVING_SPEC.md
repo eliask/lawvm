@@ -1647,6 +1647,13 @@ Current block-substitution context invariant:
   `uk_effect_post_quoted_where_ordinal_substitution_text_patch` with occurrence
   `1`. Current witness: `asp/2000/4` affected `s. 64(1)` by `asp/2007/10`
   `s. 60(4)(b)`.
+- post-quoted ordinal substitutions may also use passive `there is substituted`
+  wording after an explicit occurrence selector, for example `for the word "X"
+  in the second place where it appears there is substituted "Y"`. This lowers
+  under `uk_effect_post_quoted_ordinal_substitution_text_patch`, preserves the
+  bounded occurrence selector, and is not an all-occurrences rewrite. Current
+  witness: `asp/2002/3` affected `s. 30(4)` by `asp/2005/3`
+  `s. 21(2)(c)(ii)`.
 - the parser may lower `for the words from "X" where it first appears to the
   end substitute- Y` where `Y` is unquoted block text to `TEXT_FROM_X_TO_END`
   with the recorded start occurrence using
@@ -2394,6 +2401,11 @@ Current block-substitution context invariant:
   `uk_replay_heading_text_preimage_gap`; this nonblocking treatment is limited
   to the explicit respectively/all-occurrences rule, because the legal
   instruction is conditional on occurrence.
+- the same respectively/all-occurrences family covers Scottish wording such as
+  `for the words "A" and "B" wherever occurring there is substituted "C" and
+  "D" respectively`. The feed target still supplies the replay address; a
+  source header such as `In each of the following provisions...` does not let
+  lowering invent additional targets beyond the effect-feed row.
 - source text that says `from "X" to the end substitute-` followed by an
   unquoted block lowers under
   `uk_effect_anchor_to_end_block_substitution_text_patch`. The rule is limited

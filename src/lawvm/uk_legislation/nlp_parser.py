@@ -201,6 +201,30 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
                 }
             )
 
+    matches_respectively_there_is_substituted = re.finditer(
+        r"for\s+(?:(?:the\s+)?words?\s+)?[“\"'‘](?P<original_1>.*?)[”\"'’]\s+and\s+"
+        r"[“\"'‘](?P<original_2>.*?)[”\"'’],?\s+"
+        r"wherever\s+(?:occurring|(?:these\s+expressions|they|those\s+words?)\s+"
+        r"(?:occur|occurs|appear|appears)),?\s+"
+        r"there\s+(?:is|are|shall\s+be)\s+substituted\s+"
+        r"[“\"'‘](?P<replacement_1>.*?)[”\"'’]\s+and\s+"
+        r"[“\"'‘](?P<replacement_2>.*?)[”\"'’]\s+respectively\b",
+        text,
+        re.I,
+    )
+    for m in matches_respectively_there_is_substituted:
+        for original_name, replacement_name in (
+            ("original_1", "replacement_1"),
+            ("original_2", "replacement_2"),
+        ):
+            subs.append(
+                {
+                    "original": m.group(original_name).strip(),
+                    "replacement": m.group(replacement_name).strip(),
+                    "rule_id": "uk_effect_respectively_all_occurrences_substitution_text_patch",
+                }
+            )
+
     # Pattern 1: Substitution (Multiple possible)
     # Use non-greedy match for the fragments.
     # Allow an optional comma (and whitespace) between the quoted original and “substitute”,
@@ -287,16 +311,17 @@ def parse_fragment_substitution(text: str) -> List[Dict[str, str]]:
     matches_post_quoted_ordinal_substituted = re.finditer(
         r"for (?:(?:the )?words? )?[“”\"'‘](.*?)[”\"'’],?\s+"
         r"in the (first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th) place"
-        r"(?:\s+(?:it|they|those words?)\s+(?:occurs?|appear)s?)?,?\s+"
-        r"substitute\s+[“”\"'‘](.*?)[”\"'’]",
+        r"(?:\s+(?:where\s+)?(?:it|they|those words?)\s+(?:occurs?|appear)s?)?,?\s+"
+        r"(?:substitute|there\s+(?:is|are|shall\s+be)\s+substituted)"
+        r"\s+[“”\"'‘](.*?)[”\"'’]",
         text,
         re.I,
     )
     for m in matches_post_quoted_ordinal_substituted:
         subs.append(
             {
-                "original": m.group(1),
-                "replacement": m.group(3),
+                "original": m.group(1).strip(),
+                "replacement": m.group(3).strip(),
                 "occurrence": _ORDINAL_OCCURRENCES[m.group(2).lower()],
                 "rule_id": "uk_effect_post_quoted_ordinal_substitution_text_patch",
             }
