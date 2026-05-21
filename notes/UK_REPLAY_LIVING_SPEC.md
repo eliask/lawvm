@@ -463,6 +463,14 @@ counted as actionable template work.
 The same actionable status is filterable with
 `uk-effects --claim-template-status available|not_available`, including when
 writing `--evidence-jsonl`; non-actionable rows do not match either value.
+Archive-backed `uk-candidates` rows and summaries carry the same
+`suggested_claim_template_status_counts`, and text summaries print it under
+`manual_compile_frontier` as `claim_templates=...`. The
+`uk-candidates --claim-template-status available|not_available` filter is an
+archive-backed inspection filter: it emits statutes with at least one
+actionable inspected effect row matching that template status. Saved-bench-only
+rows cannot answer this because they do not retain the full per-effect witness
+needed to determine template availability.
 
 The claim output should be typed, for example:
 
