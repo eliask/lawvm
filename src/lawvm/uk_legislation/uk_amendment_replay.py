@@ -24,8 +24,7 @@ Current status:
 from __future__ import annotations
 
 import json as json  # noqa: F401
-import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+import xml.etree.ElementTree as ET  # noqa: F401
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -50,6 +49,12 @@ from lawvm.uk_legislation.authority_filter import (
 )
 from lawvm.uk_legislation.compiled_effect_facts import uk_compiled_effect_facts
 from lawvm.uk_legislation.effect_compiler import compile_effect_to_ir_ops
+from lawvm.uk_legislation.effect_source_selection import (
+    EffectSourceSelection as _EffectSourceSelection,
+    extracted_tag_and_text as _extracted_tag_and_text,
+    select_source_for_effect as _select_source_for_effect,
+    source_context_for_effect as _source_context_for_effect,
+)
 from lawvm.uk_legislation.lowering_records import (
     append_manual_compile_frontier_diagnostic,
     append_metadata_only_selection_rejection,
@@ -60,15 +65,8 @@ from lawvm.uk_legislation.lowering_records import (
     append_source_pathology_filter_lowering_rejections,
     mark_nonreplay_lowering_rejections_nonblocking,
 )
-from lawvm.uk_legislation.provision_extractor import (
-    extract_provision_element_from_bytes,
-)
 from lawvm.uk_legislation.source_context import (
     UKAffectingSourceContext,
-    _append_affecting_source_context_diagnostic,
-    _build_affecting_source_context,
-    _extract_from_affecting_source_context_with_observations,
-    _select_enacted_source_for_current_shell,
 )
 from lawvm.uk_legislation.ordering import (
     _order_uk_effects_for_replay,
@@ -111,11 +109,15 @@ from lawvm.uk_legislation.provenance_notes import (  # noqa: F401
     NOTE_TEXT_REWRITE_RULE as _NOTE_TEXT_REWRITE_RULE,
 )
 from lawvm.uk_legislation.provision_extractor import (  # noqa: F401
+    extract_provision_element_from_bytes as extract_provision_element_from_bytes,
     _parse_ref as _parse_ref,
 )
 from lawvm.uk_legislation.replay_executor import replay_uk_ops as replay_uk_ops  # noqa: F401
 from lawvm.uk_legislation.source_context import (  # noqa: F401
+    _build_affecting_source_context as _build_affecting_source_context,
     _extract_from_affecting_source_context as _extract_from_affecting_source_context,
+    _extract_from_affecting_source_context_with_observations as _extract_from_affecting_source_context_with_observations,
+    _select_enacted_source_for_current_shell as _select_enacted_source_for_current_shell,
 )
 from lawvm.uk_legislation.substitution_metadata import (  # noqa: F401
     _repeal_tail_for_substituted_series_replacement as _repeal_tail_for_substituted_series_replacement,
@@ -136,43 +138,6 @@ from lawvm.uk_legislation.xml_helpers import (  # noqa: F401
 # ---------------------------------------------------------------------------
 # Replay Pipeline
 # ---------------------------------------------------------------------------
-
-
-def _source_context_for_effect(
-    *,
-    effect: UKEffectRecord,
-    source_required_for_replay: bool,
-    archive: Any,
-    extraction_cache: dict[str, UKAffectingSourceContext],
-    effect_diagnostics_out: Optional[list[dict[str, Any]]],
-) -> UKAffectingSourceContext:
-    """Return the current affecting-source context for one UK effect row."""
-    if not source_required_for_replay:
-        source_context, _parse_error = _build_affecting_source_context(
-            xml_bytes=None,
-            locator="",
-            authority_layer="EFFECT_FEED_INDEX",
-            provision_extractor=extract_provision_element_from_bytes,
-        )
-        return source_context
-    if effect.affecting_act_id in extraction_cache:
-        return extraction_cache[effect.affecting_act_id]
-
-    current_locator = f"https://www.legislation.gov.uk/{effect.affecting_act_id}/data.xml"
-    source_context, parse_error = _build_affecting_source_context(
-        xml_bytes=get_affecting_act_xml_from_archive(effect.affecting_act_id, archive),
-        locator=current_locator,
-        authority_layer="AFFECTING_ACT_TEXT",
-        provision_extractor=extract_provision_element_from_bytes,
-    )
-    _append_affecting_source_context_diagnostic(
-        effect_diagnostics_out,
-        effect=effect,
-        source_context=source_context,
-        parse_error=parse_error,
-    )
-    extraction_cache[effect.affecting_act_id] = source_context
-    return source_context
 
 
 def _classify_compiled_effect_source_pathology(
@@ -202,68 +167,6 @@ def _classify_compiled_effect_source_pathology(
         lowering_rule_ids=facts.lowering_rule_ids,
         effect_type=effect.effect_type,
         is_structural=structural_for_replay,
-    )
-
-
-@dataclass(frozen=True)
-class _EffectSourceSelection:
-    source_context: UKAffectingSourceContext
-    extracted_el: Optional[ET.Element]
-    source_required_for_replay: bool
-
-
-def _select_source_for_effect(
-    *,
-    effect: UKEffectRecord,
-    archive: Any,
-    applicability_mode: str,
-    extraction_cache: dict[str, UKAffectingSourceContext],
-    enacted_extraction_cache: dict[str, UKAffectingSourceContext],
-    effect_diagnostics_out: Optional[list[dict[str, Any]]],
-) -> _EffectSourceSelection:
-    source_required_for_replay = uk_effect_requires_affecting_source_for_replay(
-        effect,
-        applicability_mode=applicability_mode,
-    )
-    source_context = _source_context_for_effect(
-        effect=effect,
-        source_required_for_replay=source_required_for_replay,
-        archive=archive,
-        extraction_cache=extraction_cache,
-        effect_diagnostics_out=effect_diagnostics_out,
-    )
-    extracted_el, source_extraction_observations = (
-        _extract_from_affecting_source_context_with_observations(
-            source_context,
-            effect,
-        )
-    )
-    source_context, extracted_el, source_lane_observations = (
-        _select_enacted_source_for_current_shell(
-            effect=effect,
-            archive=archive,
-            current_context=source_context,
-            current_el=extracted_el,
-            enacted_context_cache=enacted_extraction_cache,
-            enacted_xml_loader=get_affecting_act_enacted_xml_from_archive,
-        )
-    )
-    if effect_diagnostics_out is not None:
-        effect_diagnostics_out.extend(source_extraction_observations)
-        effect_diagnostics_out.extend(source_lane_observations)
-    return _EffectSourceSelection(
-        source_context=source_context,
-        extracted_el=extracted_el,
-        source_required_for_replay=source_required_for_replay,
-    )
-
-
-def _extracted_tag_and_text(el: Optional[ET.Element]) -> tuple[Optional[str], str]:
-    if el is None:
-        return None, ""
-    return (
-        el.tag.rsplit("}", 1)[-1],
-        " ".join(t.strip() for t in el.itertext() if t and t.strip()),
     )
 
 
@@ -346,6 +249,9 @@ class UKReplayPipeline:
                 extraction_cache=extraction_cache,
                 enacted_extraction_cache=enacted_extraction_cache,
                 effect_diagnostics_out=effect_diagnostics_out,
+                current_xml_loader=get_affecting_act_xml_from_archive,
+                enacted_xml_loader=get_affecting_act_enacted_xml_from_archive,
+                provision_extractor=extract_provision_element_from_bytes,
             )
             source_required_for_replay = source_selection.source_required_for_replay
             source_context = source_selection.source_context
