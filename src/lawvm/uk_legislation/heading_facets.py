@@ -172,7 +172,9 @@ def _heading_facet_full_replacement_fragment(extracted_text: Optional[str]) -> O
         return None
     match = re.search(
         r"\b(?:the\s+)?(?:section\s+)?(?:heading|title|sidenote)"
-        r"(?:\s+to\s+the\s+section)?\s+becomes\s+(?P<replacement>.+)$",
+        r"(?:\s+(?:to\s+the\s+section|of\s+(?:the\s+)?(?:section|part|chapter|schedule|article|rule|regulation)\s+[0-9A-Za-z]+"
+        r"(?:\s+of\s+(?:the\s+)?(?:[0-9]{4}\s+)?Act)?))?"
+        r"\s+becomes\s+(?P<replacement>.+)$",
         text,
         flags=re.I | re.S,
     )

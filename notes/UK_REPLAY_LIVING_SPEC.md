@@ -2331,6 +2331,7 @@ Current block-substitution context invariant:
   `after "X" insert "Y"` insertion against a quoted heading anchor. Explicit
   full-facet forms such as `the section heading becomes "X"`,
   `the title to the section becomes "X"`, and
+  `the title of section N becomes "X"`, and
   `for the heading of Part N substitute "X"` lower as
   `uk_effect_heading_facet_full_replacement_lowered` with a `TEXT_ALL` selector
   only when the affected target itself is a heading/title/sidenote facet; this
