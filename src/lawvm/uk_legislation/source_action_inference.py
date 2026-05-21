@@ -28,6 +28,31 @@ class UKActionInference:
     source_parent_at_end_added_payload: Optional[dict[str, Any]] = None
 
 
+def append_no_supported_action_rejection(
+    *,
+    effect: UKEffectRecord,
+    effect_type: str,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> None:
+    """Record the terminal missing-action lane after source inference fails."""
+    _append_uk_effect_lowering_rejection(
+        lowering_rejections_out,
+        rule_id="uk_effect_lowering_no_supported_action_rejected",
+        family="unsupported_or_unresolved_action",
+        reason_code="no_supported_action",
+        reason=(
+            "UK effect lowered to no replay operations because no supported "
+            "action could be inferred"
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={"effect_type_normalized": effect_type},
+    )
+
+
 def infer_uk_effect_action_from_source(  # noqa: PLR0913
     *,
     effect: UKEffectRecord,
