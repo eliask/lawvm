@@ -460,6 +460,9 @@ ledger emits canonical operations and provenance.
 runs can distinguish template-ready rows from rows that still need a family
 model. Source-insufficient, already-supported, and out-of-scope rows are not
 counted as actionable template work.
+The same actionable status is filterable with
+`uk-effects --claim-template-status available|not_available`, including when
+writing `--evidence-jsonl`; non-actionable rows do not match either value.
 
 The claim output should be typed, for example:
 

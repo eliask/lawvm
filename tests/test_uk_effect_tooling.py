@@ -32,6 +32,7 @@ from lawvm.tools.uk_effects import (
     _EffectSummaryContext,
     _effect_context_source_jsonable,
     _effect_report_row_jsonable,
+    _effect_row_matches_filters,
     _effect_rows_to_summarize,
     _effect_summary_matches_filters,
     _manual_compile_evidence_row_jsonable,
@@ -3827,6 +3828,92 @@ def test_uk_effect_summary_matches_post_summary_filters() -> None:
     )
 
 
+def test_uk_effect_row_matches_claim_template_status_filter() -> None:
+    def _row(
+        *,
+        effect_id: str,
+        rule_id: str,
+        source_text: str,
+        status: str = "manual_compile_candidate",
+    ) -> _EffectReportRow:
+        return _EffectReportRow(
+            effect=UKEffectRecord(
+                effect_id=effect_id,
+                effect_type="words substituted",
+                applied=True,
+                requires_applied=True,
+                modified="2024-01-01",
+                affected_uri="/id/ukpga/2000/1/section/1",
+                affected_class="UnitedKingdomPublicGeneralAct",
+                affected_year="2000",
+                affected_number="1",
+                affected_provisions="s. 1",
+                affecting_uri="/id/ukpga/2024/1",
+                affecting_class="UnitedKingdomPublicGeneralAct",
+                affecting_year="2024",
+                affecting_number="1",
+                affecting_provisions="s. 2",
+                affecting_title="Test Act 2024",
+            ),
+            summary=_EffectSummary(
+                source_pathology="unhandled_instruction_text",
+                compare_shape="",
+                n_ops=0,
+                candidate=False,
+                resolver_eids=(),
+                lowering_rejections=(
+                    {"rule_id": "uk_effect_overlap_substitution_unlowered", "blocking": True},
+                ),
+                replay_applicable=True,
+                structural_for_replay=True,
+                source_extracted=True,
+                source_extracted_tag="P1",
+                source_extracted_text_preview=source_text,
+                manual_compile_status=status,
+                manual_compile_rule_id=rule_id,
+                manual_compile_reason="test",
+            ),
+        )
+
+    available_row = _row(
+        effect_id="available-template",
+        rule_id="uk_manual_frontier_heading_facet_candidate",
+        source_text='In the title, for "old" substitute "new".',
+    )
+    unavailable_row = _row(
+        effect_id="unavailable-template",
+        rule_id="uk_manual_frontier_unclassified",
+        source_text="Do something currently unclassified.",
+    )
+    out_of_scope_row = _row(
+        effect_id="out-of-scope",
+        rule_id="uk_manual_frontier_as_if_application_modification_out_of_scope",
+        source_text="The Act applies as if modified.",
+        status="non_textual_or_out_of_scope",
+    )
+
+    assert _effect_row_matches_filters(
+        available_row,
+        statute_id="ukpga/2000/1",
+        claim_template_status="available",
+    )
+    assert not _effect_row_matches_filters(
+        unavailable_row,
+        statute_id="ukpga/2000/1",
+        claim_template_status="available",
+    )
+    assert _effect_row_matches_filters(
+        unavailable_row,
+        statute_id="ukpga/2000/1",
+        claim_template_status="not_available",
+    )
+    assert not _effect_row_matches_filters(
+        out_of_scope_row,
+        statute_id="ukpga/2000/1",
+        claim_template_status="not_available",
+    )
+
+
 def test_uk_effects_report_jsonable_can_omit_rows_for_summary_only() -> None:
     report = uk_effects_report_jsonable(
         statute_id="ukpga/2000/1",
@@ -3852,6 +3939,7 @@ def test_uk_effects_report_jsonable_can_omit_rows_for_summary_only() -> None:
         "source_acquisition_rule": "",
         "manual_compile_status": "",
         "manual_compile_rule": "",
+        "claim_template_status": "",
         "applied_only": True,
         "structural_only": True,
         "candidate_only": True,
@@ -3947,7 +4035,8 @@ def test_uk_effects_evidence_jsonl_requires_manual_frontier_filter(capsys) -> No
 
     assert excinfo.value.code == 2
     assert (
-        "--evidence-jsonl requires --manual-compile-status or --manual-compile-rule"
+        "--evidence-jsonl requires --manual-compile-status, "
+        "--manual-compile-rule, or --claim-template-status"
         in capsys.readouterr().err
     )
 
