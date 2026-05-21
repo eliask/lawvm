@@ -7,6 +7,14 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any, Optional
 
+from lawvm.core.ir import LegalAddress
+from lawvm.uk_legislation.addressing import (
+    _addr_container,
+    _addr_field,
+    _addr_leaf_kind,
+    _addr_leaf_label,
+)
+from lawvm.uk_legislation.canonicalize import canonicalize_uk_address
 from lawvm.uk_legislation.effects import UKEffectRecord
 from lawvm.uk_legislation.heading_facets import (
     _is_heading_facet_word_patch_supported,
@@ -20,8 +28,19 @@ from lawvm.uk_legislation.lowering_records import (
 )
 from lawvm.uk_legislation.source_context import _first_amendment_container
 from lawvm.uk_legislation.source_payload_elaboration import _expand_sibling_targets_from_extracted
-from lawvm.uk_legislation.substitution_metadata import _expand_sibling_targets_from_text
+from lawvm.uk_legislation.substitution_metadata import (
+    _expand_sibling_targets_from_text,
+    _source_text_schedule_paragraph_target_override,
+)
 from lawvm.uk_legislation.xml_helpers import _tag
+
+
+_UK_ENACTED_SCHEDULE_TABLE_ROW_PART_TARGET_RULE_ID = (
+    "uk_effect_enacted_schedule_table_row_part_target_refined"
+)
+_UK_SOURCE_TEXT_SCHEDULE_PARAGRAPH_TARGET_OVERRIDE_RULE_ID = (
+    "uk_effect_source_text_schedule_paragraph_target_overrides_metadata"
+)
 
 
 @dataclass(frozen=True)
@@ -174,3 +193,112 @@ def reject_unsupported_target_facet(
         return True
 
     return False
+
+
+def refine_enacted_schedule_table_row_part_target(
+    *,
+    effect: UKEffectRecord,
+    action: str,
+    t_str: str,
+    target: LegalAddress,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> LegalAddress:
+    source_schedule_table_row_part_label = (
+        str(extracted_el.get("source_part_label") or "")
+        if extracted_el is not None
+        and str(extracted_el.get("source_rule_id") or "")
+        == "uk_affecting_act_enacted_schedule_table_row_source_extracted"
+        else ""
+    )
+    if not (
+        action == "insert"
+        and source_schedule_table_row_part_label
+        and _addr_container(target) == "schedule"
+        and _addr_field(target, "part") is None
+        and _addr_leaf_kind(target) == "paragraph"
+    ):
+        return target
+
+    schedule_label = _addr_field(target, "schedule") or ""
+    paragraph_label = _addr_leaf_label(target) or ""
+    refined_target = canonicalize_uk_address(
+        LegalAddress(
+            path=(
+                ("schedule", schedule_label),
+                ("part", source_schedule_table_row_part_label),
+                ("paragraph", paragraph_label),
+            )
+        )
+    )
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_ENACTED_SCHEDULE_TABLE_ROW_PART_TARGET_RULE_ID,
+        family="target_resolution_recovery",
+        reason_code="source_enacted_schedule_table_row_part_context",
+        reason=(
+            "UK enacted affecting source exposed the added schedule "
+            "paragraph as a unique row under a schedule Part; lowering "
+            "refines the metadata paragraph target to that source-owned "
+            "Part instead of inserting under the schedule root."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": t_str,
+            "metadata_target": str(target),
+            "refined_target": str(refined_target),
+            "source_part_label": source_schedule_table_row_part_label,
+            "source_rule_id": str(extracted_el.get("source_rule_id") or "") if extracted_el is not None else "",
+            "source_row_text": str(extracted_el.get("source_row_text") or "") if extracted_el is not None else "",
+        },
+    )
+    return refined_target
+
+
+def refine_source_text_schedule_paragraph_target(
+    *,
+    effect: UKEffectRecord,
+    action: str,
+    is_word_level: bool,
+    t_str: str,
+    target: LegalAddress,
+    extracted_el: Optional[ET.Element],
+    extracted_text: Optional[str],
+    lowering_rejections_out: Optional[list[dict[str, Any]]],
+) -> LegalAddress:
+    source_text_target_override = (
+        _source_text_schedule_paragraph_target_override(
+            extracted_text=extracted_text,
+            target=target,
+        )
+        if is_word_level and action == "replace"
+        else None
+    )
+    if source_text_target_override is None:
+        return target
+
+    refined_target = canonicalize_uk_address(source_text_target_override)
+    _append_uk_effect_lowering_observation(
+        lowering_rejections_out,
+        rule_id=_UK_SOURCE_TEXT_SCHEDULE_PARAGRAPH_TARGET_OVERRIDE_RULE_ID,
+        family="target_resolution_recovery",
+        reason_code="explicit_source_schedule_paragraph_overrides_metadata",
+        reason=(
+            "UK source text explicitly names a different paragraph in "
+            "the same schedule than the effect metadata; lowering uses "
+            "the source-named target and records the metadata target as "
+            "overridden evidence."
+        ),
+        effect=effect,
+        extracted_el=extracted_el,
+        extracted_text=extracted_text,
+        detail={
+            "target_ref": t_str,
+            "metadata_target": str(target),
+            "source_target": str(refined_target),
+        },
+    )
+    return refined_target
