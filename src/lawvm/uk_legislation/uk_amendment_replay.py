@@ -100,6 +100,10 @@ from lawvm.uk_legislation.effect_crossheading_prelude import (
     reject_unsupported_crossheading_replace,
 )
 from lawvm.uk_legislation.effect_replace_prelude import plan_replace_effect_prelude
+from lawvm.uk_legislation.effect_schedule_lowering import (
+    try_lower_schedule_list_entry_mutation,
+    try_lower_schedule_table_end_rows_insert,
+)
 from lawvm.uk_legislation.effect_target_prelude import (
     append_target_shape_observations,
     expand_single_target_prelude,
@@ -182,9 +186,6 @@ from lawvm.uk_legislation.provenance_notes import (
     NOTE_PRECEDING_EID as _NOTE_PRECEDING_EID,
     NOTE_RAW_TEXT as _NOTE_RAW_TEXT,
     NOTE_REWRITE_WITNESS as _NOTE_REWRITE_WITNESS,
-    NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR as _NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR,
-    NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR as _NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR,
-    NOTE_SCHEDULE_LIST_ENTRY_SELECTOR as _NOTE_SCHEDULE_LIST_ENTRY_SELECTOR,
     NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR as _NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR,
     NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR as _NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR,
     NOTE_SOURCE_LABEL_CHANGE_SUBSTITUTION as _NOTE_SOURCE_LABEL_CHANGE_SUBSTITUTION,
@@ -215,7 +216,6 @@ from lawvm.uk_legislation.source_text_reclassifications import (
     _word_level_structural_subsection_omission,
 )
 from lawvm.uk_legislation.table_selectors import (
-    UK_SCHEDULE_TABLE_END_ROWS_RULE_ID as _UK_SCHEDULE_TABLE_END_ROWS_RULE_ID,
     UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID as _UK_TABLE_COLUMN_HEADING_TEXT_RULE_ID,
     UK_TABLE_COLUMN_INSERT_RULE_ID as _UK_TABLE_COLUMN_INSERT_RULE_ID,
     UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID as _UK_TABLE_COLUMN_TEXT_PATCH_RULE_ID,
@@ -229,7 +229,6 @@ from lawvm.uk_legislation.table_selectors import (
     UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID as _UK_TABLE_ENTRY_RELATING_TEXT_RULE_ID,
     UK_TABLE_ENTRY_ROW_INSERT_RULE_ID as _UK_TABLE_ENTRY_ROW_INSERT_RULE_ID,
     _uk_schedule_list_entry_table_payload,
-    _uk_schedule_table_end_rows_selector,
     _uk_single_logical_table_entry_group_payload,
     _uk_single_table_column_payload,
     _uk_single_table_row_payload,
@@ -294,14 +293,8 @@ from lawvm.uk_legislation.replay_executor import (
     replay_uk_ops,
 )
 from lawvm.uk_legislation.schedule_list_selectors import (
-    UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID as _UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
-    UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID as _UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
-    UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID as _UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID,
     _strip_schedule_entry_payload,
     _strip_schedule_entry_phrase,
-    _uk_schedule_list_entry_insert_selector,
-    _uk_schedule_list_entry_repeal_selector,
-    _uk_schedule_list_entry_replace_selector,
 )
 from lawvm.uk_legislation.text_rewrite_fragments import (
     UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS as _UK_ALL_OCCURRENCES_TEXT_REWRITE_RULE_IDS,
@@ -365,11 +358,9 @@ from lawvm.uk_legislation.source_payload_elaboration import (
     _with_trailing_subordinate_siblings,
 )
 from lawvm.uk_legislation.source_parent_payloads import (
-    SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE as _SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE,
     UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID as _UK_SOURCE_PARENT_AT_END_ADDED_PAYLOAD_RULE_ID,
     UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID as _UK_SOURCE_PARENT_SUBSTITUTION_RANGE_PAYLOAD_RULE_ID,
     _source_after_paragraph_insert_labelled_series,
-    _source_parent_instruction_with_payload,
 )
 from lawvm.uk_legislation.source_structural_sibling import _structural_sibling_insert_from_source
 from lawvm.uk_legislation.source_table_entry_paragraph import (
@@ -411,7 +402,6 @@ from lawvm.uk_legislation.xml_helpers import (
 # ---------------------------------------------------------------------------
 
 
-_UK_SCHEDULE_LIST_ENTRY_TABLE_ROWS_RULE_ID = "uk_effect_schedule_list_entry_table_rows_lowered"
 _UK_RANGE_TO_END_THERE_IS_SUBSTITUTED_RULE_ID = "uk_effect_range_to_end_there_is_substituted_text_patch"
 def compile_effect_to_ir_ops(
     effect: UKEffectRecord,
@@ -771,428 +761,43 @@ def compile_effect_to_ir_ops(
                     lowering_rejections_out=lowering_rejections_out,
                 )
             )
-        schedule_table_end_rows_selector = (
-            _uk_schedule_table_end_rows_selector(
-                target_ref=t_str,
-                target=target,
-                extracted_text=extracted_text,
-            )
-            if action == "insert" and not heading_facet_target
-            else None
+        schedule_table_end_rows = try_lower_schedule_table_end_rows_insert(
+            effect=effect,
+            action=action,
+            t_str=t_str,
+            target=target,
+            heading_facet_target=heading_facet_target,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            sequence=sequence,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            original_targets_str=original_targets_str,
+            lowering_rejections_out=lowering_rejections_out,
         )
-        if schedule_table_end_rows_selector is not None:
-            table_payload_node = _uk_schedule_list_entry_table_payload(extracted_el)
-            if table_payload_node is None:
-                _append_uk_effect_lowering_rejection(
-                    lowering_rejections_out,
-                    rule_id=_UK_SCHEDULE_TABLE_END_ROWS_RULE_ID,
-                    family="source_table_elaboration",
-                    reason_code="explicit_schedule_end_insert_without_table_payload",
-                    reason=(
-                        "UK source text explicitly inserts at the end of a "
-                        "schedule, but no single BlockAmendment table payload "
-                        "was available; lowering blocks instead of inventing "
-                        "flattened text or schedule entries."
-                    ),
-                    effect=effect,
-                    extracted_el=extracted_el,
-                    extracted_text=extracted_text,
-                    detail=dict(schedule_table_end_rows_selector),
-                )
-                continue
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id=_UK_SCHEDULE_TABLE_END_ROWS_RULE_ID,
-                family="source_table_elaboration",
-                reason_code="explicit_schedule_end_insert_table_payload",
-                reason=(
-                    "UK source text explicitly inserts source-owned tabular "
-                    "rows at the end of a schedule table; lowering preserves "
-                    "the BlockAmendment table rows and replay must resolve a "
-                    "unique table-backed schedule carrier."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail=dict(schedule_table_end_rows_selector),
-            )
-            payload_node = dc_replace(
-                table_payload_node,
-                attrs={
-                    **dict(table_payload_node.attrs or {}),
-                    "source_rule_id": "uk_schedule_table_end_rows_payload",
-                    "anchor_direction": "end",
-                },
-            )
-            src = OperationSource(
-                statute_id=effect.affecting_act_id,
-                title=effect.affecting_title,
-                effective=effect_witness.applicability.effective_date or "",
-                raw_text=extraction_witness.extracted_text,
-            )
-            target_expansion_witness = _uk_target_expansion_witness(
-                t_str,
-                [t_str],
-                original_targets_str=original_targets_str,
-            )
-            lowered_witness = UKLoweredOperationWitness(
-                op_id=effect.effect_id,
-                sequence=sequence,
-                action=StructuralAction.INSERT,
-                target=target,
-                payload=payload_node,
-                source=src,
-                effect_witness=effect_witness,
-                extraction_witness=extraction_witness,
-                target_expansion_witness=target_expansion_witness,
-                text_rewrite_witness=None,
-                insertion_anchor_witness=None,
-            )
-            ops.append(
-                LegalOperation(
-                    op_id=lowered_witness.op_id,
-                    sequence=lowered_witness.sequence,
-                    action=StructuralAction.INSERT,
-                    target=target,
-                    payload=_payload_with_rewrite_witness(payload_node, lowered_witness),
-                    source=src,
-                    group_id=_uk_temporal_group_id(effect),
-                    provenance_tags=(
-                        *_uk_lowered_op_provenance_tags(lowered_witness),
-                        (
-                            f"{_NOTE_SCHEDULE_TABLE_END_ROWS_SELECTOR}"
-                            f"{json.dumps(schedule_table_end_rows_selector, ensure_ascii=False)}"
-                        ),
-                    ),
-                    witness_rule_id=_UK_SCHEDULE_TABLE_END_ROWS_RULE_ID,
-                )
-            )
+        if schedule_table_end_rows.handled:
+            if schedule_table_end_rows.op is not None:
+                ops.append(schedule_table_end_rows.op)
             continue
-        schedule_list_entry_selector = (
-            _uk_schedule_list_entry_insert_selector(
-                target_ref=t_str,
-                target=target,
-                extracted_text=extracted_text,
-            )
-            if action == "insert" and not heading_facet_target
-            else None
+        schedule_list_entry = try_lower_schedule_list_entry_mutation(
+            effect=effect,
+            action=action,
+            effect_type=effect_type,
+            t_str=t_str,
+            target=target,
+            heading_facet_target=heading_facet_target,
+            extracted_el=extracted_el,
+            extracted_text=extracted_text,
+            source_root=source_root,
+            sequence=sequence,
+            effect_witness=effect_witness,
+            extraction_witness=extraction_witness,
+            original_targets_str=original_targets_str,
+            lowering_rejections_out=lowering_rejections_out,
         )
-        source_parent_schedule_entry_insert = (
-            _source_parent_instruction_with_payload(
-                extracted_el=extracted_el,
-                source_root=source_root,
-                extracted_text=extracted_text,
-                instruction_pattern=_SOURCE_PARENT_SCHEDULE_ENTRY_INSERT_RE,
-            )
-            if schedule_list_entry_selector is None and action == "insert" and not heading_facet_target
-            else None
-        )
-        if source_parent_schedule_entry_insert is not None:
-            schedule_list_entry_selector = _uk_schedule_list_entry_insert_selector(
-                target_ref=t_str,
-                target=target,
-                extracted_text=source_parent_schedule_entry_insert["combined_text"],
-            )
-            if schedule_list_entry_selector is not None:
-                schedule_list_entry_selector = {
-                    **schedule_list_entry_selector,
-                    "source_parent_id": source_parent_schedule_entry_insert["source_parent_id"],
-                    "source_parent_instruction": source_parent_schedule_entry_insert[
-                        "source_parent_instruction"
-                    ],
-                }
-        if schedule_list_entry_selector is not None:
-            table_payload_node = _uk_schedule_list_entry_table_payload(extracted_el)
-            if table_payload_node is not None:
-                _append_uk_effect_lowering_observation(
-                    lowering_rejections_out,
-                    rule_id=_UK_SCHEDULE_LIST_ENTRY_TABLE_ROWS_RULE_ID,
-                    family="source_table_elaboration",
-                    reason_code="explicit_schedule_entry_insert_table_payload",
-                    reason=(
-                        "UK schedule-list-entry insertion carried a tabular "
-                        "source payload; lowering preserves source rows and "
-                        "replay must resolve the entry anchor in the target "
-                        "schedule table before inserting rows."
-                    ),
-                    effect=effect,
-                    extracted_el=extracted_el,
-                    extracted_text=extracted_text,
-                    detail={
-                        "selector_rule_id": str(schedule_list_entry_selector.get("rule_id") or ""),
-                        **{
-                            key: value
-                            for key, value in schedule_list_entry_selector.items()
-                            if key != "rule_id"
-                        },
-                    },
-                )
-                payload_node = dc_replace(
-                    table_payload_node,
-                    attrs={
-                        **dict(table_payload_node.attrs or {}),
-                        "source_rule_id": "uk_schedule_list_entry_table_rows_payload",
-                        "anchor_text": str(schedule_list_entry_selector["anchor_text"]),
-                        "anchor_direction": str(schedule_list_entry_selector["direction"]),
-                    },
-                )
-                src = OperationSource(
-                    statute_id=effect.affecting_act_id,
-                    title=effect.affecting_title,
-                    effective=effect_witness.applicability.effective_date or "",
-                    raw_text=extraction_witness.extracted_text,
-                )
-                target_expansion_witness = _uk_target_expansion_witness(
-                    t_str,
-                    [t_str],
-                    original_targets_str=original_targets_str,
-                )
-                lowered_witness = UKLoweredOperationWitness(
-                    op_id=effect.effect_id,
-                    sequence=sequence,
-                    action=StructuralAction.INSERT,
-                    target=target,
-                    payload=payload_node,
-                    source=src,
-                    effect_witness=effect_witness,
-                    extraction_witness=extraction_witness,
-                    target_expansion_witness=target_expansion_witness,
-                    text_rewrite_witness=None,
-                    insertion_anchor_witness=None,
-                )
-                ops.append(
-                    LegalOperation(
-                        op_id=lowered_witness.op_id,
-                        sequence=lowered_witness.sequence,
-                        action=StructuralAction.INSERT,
-                        target=target,
-                        payload=_payload_with_rewrite_witness(payload_node, lowered_witness),
-                        source=src,
-                        group_id=_uk_temporal_group_id(effect),
-                        provenance_tags=(
-                            *_uk_lowered_op_provenance_tags(lowered_witness),
-                            (
-                                f"{_NOTE_SCHEDULE_LIST_ENTRY_TABLE_ROWS_SELECTOR}"
-                                f"{json.dumps(schedule_list_entry_selector, ensure_ascii=False)}"
-                            ),
-                        ),
-                        witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_TABLE_ROWS_RULE_ID,
-                    )
-                )
-                continue
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id=_UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
-                family="source_schedule_list_entry_elaboration",
-                reason_code="explicit_schedule_list_entry_anchor",
-                reason=(
-                    "UK schedule-list-entry insertion lowered as a typed "
-                    "schedule-entry sibling insert; replay must resolve exactly "
-                    "one anchor entry before mutating schedule children."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail=dict(schedule_list_entry_selector),
-            )
-            payload_node = IRNode(
-                kind=IRNodeKind.SCHEDULE_ENTRY,
-                label=None,
-                text=str(schedule_list_entry_selector["inserted_text"]),
-                attrs={
-                    "source_rule_id": "uk_schedule_list_entry_insert_payload",
-                    "anchor_text": str(schedule_list_entry_selector["anchor_text"]),
-                    "anchor_direction": str(schedule_list_entry_selector["direction"]),
-                },
-            )
-            src = OperationSource(
-                statute_id=effect.affecting_act_id,
-                title=effect.affecting_title,
-                effective=effect_witness.applicability.effective_date or "",
-                raw_text=extraction_witness.extracted_text,
-            )
-            target_expansion_witness = _uk_target_expansion_witness(
-                t_str,
-                [t_str],
-                original_targets_str=original_targets_str,
-            )
-            lowered_witness = UKLoweredOperationWitness(
-                op_id=effect.effect_id,
-                sequence=sequence,
-                action=StructuralAction.INSERT,
-                target=target,
-                payload=payload_node,
-                source=src,
-                effect_witness=effect_witness,
-                extraction_witness=extraction_witness,
-                target_expansion_witness=target_expansion_witness,
-                text_rewrite_witness=None,
-                insertion_anchor_witness=None,
-            )
-            ops.append(
-                LegalOperation(
-                    op_id=lowered_witness.op_id,
-                    sequence=lowered_witness.sequence,
-                    action=StructuralAction.INSERT,
-                    target=target,
-                    payload=_payload_with_rewrite_witness(payload_node, lowered_witness),
-                    source=src,
-                    group_id=_uk_temporal_group_id(effect),
-                    provenance_tags=(
-                        *_uk_lowered_op_provenance_tags(lowered_witness),
-                        f"{_NOTE_SCHEDULE_LIST_ENTRY_SELECTOR}{json.dumps(schedule_list_entry_selector, ensure_ascii=False)}",
-                    ),
-                    witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_INSERT_RULE_ID,
-                )
-            )
-            continue
-        schedule_list_entry_repeal_selector = (
-            _uk_schedule_list_entry_repeal_selector(
-                target_ref=t_str,
-                target=target,
-                extracted_text=extracted_text,
-            )
-            if action == "repeal"
-            or effect_type in {"words omitted", "word omitted", "words repealed", "word repealed"}
-            else None
-        )
-        if schedule_list_entry_repeal_selector is not None:
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id=_UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
-                family="source_schedule_list_entry_elaboration",
-                reason_code="explicit_schedule_list_entry_repeal_anchor",
-                reason=(
-                    "UK schedule-list-entry repeal lowered as a typed "
-                    "entry-level schedule mutation; replay must resolve every "
-                    "claimed entry anchor before deleting any schedule child."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail=dict(schedule_list_entry_repeal_selector),
-            )
-            src = OperationSource(
-                statute_id=effect.affecting_act_id,
-                title=effect.affecting_title,
-                effective=effect_witness.applicability.effective_date or "",
-                raw_text=extraction_witness.extracted_text,
-            )
-            target_expansion_witness = _uk_target_expansion_witness(
-                t_str,
-                [t_str],
-                original_targets_str=original_targets_str,
-            )
-            lowered_witness = UKLoweredOperationWitness(
-                op_id=effect.effect_id,
-                sequence=sequence,
-                action=StructuralAction.REPEAL,
-                target=target,
-                payload=None,
-                source=src,
-                effect_witness=effect_witness,
-                extraction_witness=extraction_witness,
-                target_expansion_witness=target_expansion_witness,
-                text_rewrite_witness=None,
-                insertion_anchor_witness=None,
-            )
-            ops.append(
-                LegalOperation(
-                    op_id=lowered_witness.op_id,
-                    sequence=lowered_witness.sequence,
-                    action=StructuralAction.REPEAL,
-                    target=target,
-                    payload=None,
-                    source=src,
-                    group_id=_uk_temporal_group_id(effect),
-                    provenance_tags=(
-                        *_uk_lowered_op_provenance_tags(lowered_witness),
-                        (
-                            f"{_NOTE_SCHEDULE_LIST_ENTRY_REPEAL_SELECTOR}"
-                            f"{json.dumps(schedule_list_entry_repeal_selector, ensure_ascii=False)}"
-                        ),
-                    ),
-                    witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_REPEAL_RULE_ID,
-                )
-            )
-            continue
-        schedule_list_entry_replace_selector = (
-            _uk_schedule_list_entry_replace_selector(
-                target_ref=t_str,
-                target=target,
-                extracted_text=extracted_text,
-            )
-            if action == "replace" or effect_type in {"words substituted", "word substituted"}
-            else None
-        )
-        if schedule_list_entry_replace_selector is not None:
-            _append_uk_effect_lowering_observation(
-                lowering_rejections_out,
-                rule_id=_UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID,
-                family="source_schedule_list_entry_elaboration",
-                reason_code="explicit_schedule_list_entry_replace_anchor",
-                reason=(
-                    "UK schedule-list-entry replacement lowered as a typed "
-                    "entry-level schedule mutation; replay must resolve the "
-                    "claimed entry anchor before replacing a schedule child."
-                ),
-                effect=effect,
-                extracted_el=extracted_el,
-                extracted_text=extracted_text,
-                detail=dict(schedule_list_entry_replace_selector),
-            )
-            payload_node = IRNode(
-                kind=IRNodeKind.SCHEDULE_ENTRY,
-                label=None,
-                text=str(schedule_list_entry_replace_selector["replacement_text"]),
-                attrs={
-                    "source_rule_id": "uk_schedule_list_entry_replace_payload",
-                    "anchor_text": str(schedule_list_entry_replace_selector["anchor"]),
-                },
-            )
-            src = OperationSource(
-                statute_id=effect.affecting_act_id,
-                title=effect.affecting_title,
-                effective=effect_witness.applicability.effective_date or "",
-                raw_text=extraction_witness.extracted_text,
-            )
-            target_expansion_witness = _uk_target_expansion_witness(
-                t_str,
-                [t_str],
-                original_targets_str=original_targets_str,
-            )
-            lowered_witness = UKLoweredOperationWitness(
-                op_id=effect.effect_id,
-                sequence=sequence,
-                action=StructuralAction.REPLACE,
-                target=target,
-                payload=payload_node,
-                source=src,
-                effect_witness=effect_witness,
-                extraction_witness=extraction_witness,
-                target_expansion_witness=target_expansion_witness,
-                text_rewrite_witness=None,
-                insertion_anchor_witness=None,
-            )
-            ops.append(
-                LegalOperation(
-                    op_id=lowered_witness.op_id,
-                    sequence=lowered_witness.sequence,
-                    action=StructuralAction.REPLACE,
-                    target=target,
-                    payload=_payload_with_rewrite_witness(payload_node, lowered_witness),
-                    source=src,
-                    group_id=_uk_temporal_group_id(effect),
-                    provenance_tags=(
-                        *_uk_lowered_op_provenance_tags(lowered_witness),
-                        (
-                            f"{_NOTE_SCHEDULE_LIST_ENTRY_REPLACE_SELECTOR}"
-                            f"{json.dumps(schedule_list_entry_replace_selector, ensure_ascii=False)}"
-                        ),
-                    ),
-                    witness_rule_id=_UK_SCHEDULE_LIST_ENTRY_REPLACE_RULE_ID,
-                )
-            )
+        if schedule_list_entry.handled:
+            if schedule_list_entry.op is not None:
+                ops.append(schedule_list_entry.op)
             continue
         table_column_insert_selector = (
             _uk_table_column_insert_selector(
