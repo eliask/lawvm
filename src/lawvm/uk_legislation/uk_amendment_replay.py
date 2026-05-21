@@ -121,11 +121,9 @@ from lawvm.uk_legislation.effect_target_prelude import (
 from lawvm.uk_legislation.addressing import (
     _action_name,
     _addr_container,
-    _addr_field,
     _addr_leaf_kind,
     _addr_leaf_label,
     _order_schedule_materialization_ops,
-    _schedule_target_levels,
     _uk_eid_value,
     _uk_kind_value,
 )
@@ -319,6 +317,7 @@ from lawvm.uk_legislation.source_payload_helpers import (
     UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID as _UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID,
     _direct_payload_text,
     _flat_p1para_schedule_paragraph_insert_payload,
+    infer_source_payload_from_target,
     _inserted_section_p1group_heading_text,
     _prepend_inserted_section_heading_carrier,
 )
@@ -1140,67 +1139,14 @@ def compile_effect_to_ir_ops(
             continue
 
         if content_ir is None:
-            # Infer kind and label from target if metadata points to a specific provision
-            inferred_kind = "content"
-            inferred_label = None
-            _container = _addr_container(target)
-            _t_section = _addr_field(target, "section") or _addr_field(target, "schedule")
-            _t_part = _addr_field(target, "part")
-            _t_chapter = _addr_field(target, "chapter")
-            _schedule_paragraph = None
-            _schedule_subparagraph = None
-            _schedule_items: list[str] = []
-            if _container == "schedule":
-                _schedule_paragraph, _schedule_subparagraph, _schedule_items = _schedule_target_levels(target)
-                _t_subsection = _schedule_subparagraph
-                _t_item = _schedule_items[-1] if _schedule_items else None
-            else:
-                _paras2 = [lbl for k, lbl in target.path if k == "paragraph"]
-                _subsec_field2 = _addr_field(target, "subsection")
-                if _subsec_field2:
-                    _t_subsection = _subsec_field2
-                    _t_item = _paras2[0] if _paras2 else None
-                else:
-                    _t_subsection = _paras2[0] if _paras2 else None
-                    _t_item = _paras2[1] if len(_paras2) >= 2 else None
-            if _container == "schedule" and not _t_subsection and not _t_item:
-                if _schedule_paragraph:
-                    inferred_kind = "paragraph"
-                    inferred_label = _schedule_paragraph
-                else:
-                    inferred_kind = "schedule"
-                    inferred_label = _t_section
-            elif _container == "schedule" and _t_item:
-                inferred_kind = "item"
-                inferred_label = _t_item
-            elif _container == "schedule" and _t_subsection:
-                inferred_kind = "subparagraph"
-                inferred_label = _t_subsection
-            elif _t_item:
-                inferred_kind = "paragraph"
-                inferred_label = _t_item
-            elif _t_subsection:
-                inferred_kind = "subsection"
-                inferred_label = _t_subsection
-            elif _t_section:
-                inferred_kind = "section"
-                inferred_label = _t_section
-            elif _t_chapter:
-                inferred_kind = "chapter"
-                inferred_label = _t_chapter
-            elif _t_part:
-                inferred_kind = "part"
-                inferred_label = _t_part
-
-            inferred_text = extracted_text or ""
-            if use_metadata_fallback and not inferred_text and not _is_heading_only_ref(t_str):
-                inferred_text = f"[inserted by metadata source only: {effect.effect_id}]"
-            content_ir = {
-                "kind": inferred_kind,
-                "label": inferred_label,
-                "text": inferred_text,
-                "children": [],
-            }
+            content_ir = infer_source_payload_from_target(
+                target=target,
+                extracted_text=extracted_text,
+                effect_id=effect.effect_id,
+                use_metadata_fallback=(
+                    use_metadata_fallback and not _is_heading_only_ref(t_str)
+                ),
+            )
 
         # Safety guard: if extraction failed (extracted_el is None) and the action is a
         # structural replace or insert, we have no payload text.  Applying a replace with an

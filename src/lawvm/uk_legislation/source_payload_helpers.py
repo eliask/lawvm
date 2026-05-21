@@ -7,8 +7,10 @@ from typing import Any, Callable, Optional
 from lawvm.core.ir import IRNodeKind, LegalAddress
 from lawvm.uk_legislation.addressing import (
     _addr_container,
+    _addr_field,
     _addr_leaf_kind,
     _addr_leaf_label,
+    _schedule_target_levels,
 )
 from lawvm.uk_legislation.source_context import _first_amendment_container
 from lawvm.uk_legislation.uk_grafter import _LEG_NS, _clean_num
@@ -25,6 +27,76 @@ UK_FLAT_P1PARA_SCHEDULE_PARAGRAPH_INSERT_RULE_ID = (
 UK_NONADDRESSABLE_SCHEDULE_PART_INSERT_TARGET_RULE_ID = (
     "uk_effect_nonaddressable_schedule_part_insert_target_normalized"
 )
+
+
+def infer_source_payload_from_target(
+    *,
+    target: LegalAddress,
+    extracted_text: Optional[str],
+    effect_id: str,
+    use_metadata_fallback: bool,
+) -> dict[str, Any]:
+    inferred_kind = "content"
+    inferred_label = None
+    container = _addr_container(target)
+    target_section = _addr_field(target, "section") or _addr_field(target, "schedule")
+    target_part = _addr_field(target, "part")
+    target_chapter = _addr_field(target, "chapter")
+    schedule_paragraph = None
+    schedule_subparagraph = None
+    schedule_items: list[str] = []
+    if container == "schedule":
+        schedule_paragraph, schedule_subparagraph, schedule_items = _schedule_target_levels(target)
+        target_subsection = schedule_subparagraph
+        target_item = schedule_items[-1] if schedule_items else None
+    else:
+        paragraphs = [label for kind, label in target.path if kind == "paragraph"]
+        subsection_field = _addr_field(target, "subsection")
+        if subsection_field:
+            target_subsection = subsection_field
+            target_item = paragraphs[0] if paragraphs else None
+        else:
+            target_subsection = paragraphs[0] if paragraphs else None
+            target_item = paragraphs[1] if len(paragraphs) >= 2 else None
+
+    if container == "schedule" and not target_subsection and not target_item:
+        if schedule_paragraph:
+            inferred_kind = "paragraph"
+            inferred_label = schedule_paragraph
+        else:
+            inferred_kind = "schedule"
+            inferred_label = target_section
+    elif container == "schedule" and target_item:
+        inferred_kind = "item"
+        inferred_label = target_item
+    elif container == "schedule" and target_subsection:
+        inferred_kind = "subparagraph"
+        inferred_label = target_subsection
+    elif target_item:
+        inferred_kind = "paragraph"
+        inferred_label = target_item
+    elif target_subsection:
+        inferred_kind = "subsection"
+        inferred_label = target_subsection
+    elif target_section:
+        inferred_kind = "section"
+        inferred_label = target_section
+    elif target_chapter:
+        inferred_kind = "chapter"
+        inferred_label = target_chapter
+    elif target_part:
+        inferred_kind = "part"
+        inferred_label = target_part
+
+    inferred_text = extracted_text or ""
+    if use_metadata_fallback and not inferred_text:
+        inferred_text = f"[inserted by metadata source only: {effect_id}]"
+    return {
+        "kind": inferred_kind,
+        "label": inferred_label,
+        "text": inferred_text,
+        "children": [],
+    }
 
 
 def _direct_payload_text(el: ET.Element) -> str:
